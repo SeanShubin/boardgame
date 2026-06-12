@@ -2,9 +2,11 @@
 
 The beating heart of the game: a hidden-information, rock-paper-scissors-style
 contest. Every participant — human, computer stand-in for a human, or non-player
-environment creature — makes the **same kind of choice** under the **same
-rules**. They differ only in *how* the choice is generated, and only the
-non-player environment uses a **deck** to do it.
+environment creature — makes the **same kind of choice** under the **same rules**,
+and resolution treats them identically. They differ in one decisive way: whether
+they have a **theory of mind** — the ability to model *you* as a strategist and
+anticipate your plan. Humans and their stand-ins do; creatures don't — which is why
+only creatures decide by **deck**.
 
 ## The core exchange
 
@@ -38,9 +40,10 @@ identically.
 
 ### Human player
 
-Chooses freely and secretly: by judgment, reading opponents, bluffing, and
-managing their own predictability — which erodes as cards exhaust (see
-[zones](zones.md)). Unpredictability comes from free will.
+A human's cards are a **toolkit** — *what the character can do*; the **agency** is
+the player's, laid on top: which option to commit, when to bluff, how to read the
+opponent. The human supplies the theory of mind. Unpredictability comes from free
+will, and predictability is a managed resource as cards exhaust (see [zones](zones.md)).
 
 ### Computer stand-in for a human
 
@@ -48,9 +51,12 @@ Represents a human opponent and is **bound by the same rules** (constraint
 [C3](constraints.md#c3--every-agent-is-bound-by-the-same-rules)). It plays a
 **game-theoretically optimal mixed strategy by computing it directly**, in the
 moment — exactly as a thoughtful human could. It does **not** use a deck; a deck
-would only be a way to fake what a real mind can simply do. This is possible
-because the tactical exchange is deliberately **constrained to be computable**
-(see [philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)).
+would only be a way to fake what a real mind can simply do. Above all it has a
+**theory of mind** — it models *this* opponent and adapts, reading your tendencies
+and bluffing back; that adaptiveness is exactly why it must **compute live** rather
+than draw a fixed deck. (This stays feasible because the tactical exchange is
+deliberately **constrained to be computable** —
+see [philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy).)
 
 This role is **optional and never required by the system**: a computer fills it
 in a digital game, another human fills it at a physical table, and in the default
@@ -65,35 +71,61 @@ needs no computer to *run*; a computer merely substitutes for a human *player*.
 
 ### Environment creatures & hazards (non-player)
 
-Creatures, traps, and hazards that **no player controls**. These are the agents
-that use a **deck**, and they differ from a human's cards in two key ways:
+Creatures, traps, and hazards that **no player controls**. These decide by **deck** —
+and the deck is not a menu they choose from, it **is the decision**: the cards are the
+creature's **instinct made physical**, drawn to produce its action. There is no
+separate chooser; drawing *is* choosing.
 
-- **They reshuffle after every play** (drawn, in effect, *with replacement*), so
-  a creature deck **never depletes or exhausts** the way a human's Potential does. Its
-  behavior distribution is **stationary**.
-- The deck encodes the creature's **tendencies** — a fixed, *learnable* behavior,
-  deliberately **readable rather than arbitrary noise**. The player is meant to be
-  **rewarded for reading and exploiting** how a creature tends to act. (This is
-  the human-intellect north star applied to solo and co-op play: the cleverness
-  is the player's, drawn out by a legible opponent.)
+That instinct can be **sophisticated and even unpredictable** — reposition, lunge,
+claw, retreat, regroup, ambush — and it can be **conditional on what the creature
+observes**. A behavior card might read:
 
-> **The deck as a stationary mixed strategy.** Because a creature deck reshuffles,
-> drawing its top card samples a *fixed* distribution every time. The player's
-> edge comes from learning that distribution and winning the rock-paper-scissors
-> reads — not from counting down a depleting deck.
+> *If outnumbered, dive the enemy back line; if alone, flee; otherwise press the
+> front line.*
+
+So creatures are **not** simple or perfectly predictable. **Game theory can be baked
+into the deck** — sound play in the abstract — and the conditions let it react to the
+board. What the deck **cannot** do is condition on *you*: it responds to observable
+state (numbers, position, wounds), never to a model of the opponent's mind. It will
+not learn your habits, bait your tells, or build a counter-strategy to your plan.
+
+A creature deck also **reshuffles after every play** (drawn with replacement), so it
+**never depletes or exhausts** the way a human's Potential does — its instinct has no
+fatigue and no memory.
+
+> **The deck is instinct, not a mind.** A creature can surprise you with *what* it
+> does, but never out-think you about *who you are*. Your edge is to study its rules
+> and devise a strategy it has no way to counter — exactly the human intellect the
+> game rewards.
+
+### The line: theory of mind
+
+The decisive difference among the three is **theory of mind** — modelling the
+opponent as a strategist and anticipating their plan. Humans and their stand-ins have
+it; creatures do not. This is why their **cards serve different purposes**:
+
+- A **human's** cards are *options under agency* — the character's toolkit, with the
+  player reasoning over them, reading, and bluffing on top.
+- A **creature's** cards *are the agency* — the rule-based instinct that decides for
+  it, with no mind behind the wheel.
+
+Same physical medium, opposite role: for the human the cards are *what they can do*;
+for the creature they are *how it decides*. And only a mind can get inside another
+mind — so the read is **two-way against a human or stand-in** (you read each other)
+but **one-way against a creature** (you read its rules; it cannot read you back).
 
 ### How the three compare
 
-| | Source of the hidden choice | Uses a deck? | Depletes / exhausts? |
-| --- | --- | --- | --- |
-| **Human player** | free, secret reasoning | no — plays from Potential | yes — predictability erodes as cards exhaust ([zones](zones.md)) |
-| **Computer stand-in** | game theory, computed live | no | n/a |
-| **Environment creature** | a stationary behavior deck | yes | no — reshuffles after every play |
+| | Source of the hidden choice | Models *you*? | Uses a deck? | Exhausts? |
+| --- | --- | --- | --- | --- |
+| **Human player** | free, secret reasoning | yes — theory of mind | no — plays from Potential | yes — predictability erodes ([zones](zones.md)) |
+| **Computer stand-in** | game theory, computed live | yes — adapts to this opponent | no | n/a |
+| **Environment creature** | a conditional behavior deck (instinct) | **no** — reacts to the board, not to you | yes | no — reshuffles each play |
 
-The player's own capability decks are **never shuffled** (deliberate order is part
-of the skill); their hidden-ness comes from *which card they choose to commit*,
-and their predictability is a managed resource. Environment creatures invert both:
-shuffled and reshuffled, never deliberate, never exhausting.
+The player's own capability decks are **never shuffled** (deliberate order is part of
+the skill); their hidden-ness comes from *which card they choose to commit*. Creatures
+invert this: their cards are **drawn, not chosen**, and they decide by **rule, not by
+reading you**.
 
 ## The action cycle
 
@@ -104,9 +136,9 @@ forfeits it. It now has its own home: see
 
 ## Open questions
 
-- **Situation-dependent creature behavior.** A creature's right tendencies change
-  with its situation (fresh, wounded, cornered, enraged). Does a creature carry
-  several behavior decks keyed to state, or one base deck plus modifier cards?
+- **Conditional behavior, in practice.** Creature actions branch on observable state
+  via rule-based cards (settled above). Open: how complex those conditions can get
+  while staying quick to adjudicate by hand.
 - **Human predictability is a managed resource**, eroding as cards exhaust and
   restored by recovery at a tempo cost — see [zones](zones.md). Open question:
   how fast it erodes and how costly recovery is.

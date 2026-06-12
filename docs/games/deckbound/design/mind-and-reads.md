@@ -8,12 +8,19 @@ cycle.
 
 ## The four reads
 
-The reads are **cards that start in Potential** and carry a **self-return** effect:
-played into Active for the exchange, then back to Potential afterwards. So the core
-read game **never exhausts you**, unlike one-shot cards that go Dormant. (Self-return
-isn't unique to reads — other cards may carry it.) Access to the reads is granted by
-your **Mind capability** in [Form](form-and-defeat.md); seal the Mind and Block /
-Evade / Scheme go with it, leaving only the bare Body **Strike**.
+The reads are **cards that start in Potential**, and they part ways by temperament.
+The defensive and setup reads — **Block, Evade, Scheme** — carry a **self-return**
+effect (Active → Potential after the exchange), so cautious play never exhausts you.
+The aggressive **Strike** instead **exhausts** (Active → Dormant): committing offense
+spends you, which is why a striker leans on **recovery** (a Mind tactic, often a
+teammate's) to keep swinging. Access to the reads is granted by your **Mind
+capability** in [Form](form-and-defeat.md); seal the Mind and Block / Evade / Scheme
+go with it, leaving only the bare Body **Strike**.
+
+The **read** you play is separate from your **stance**: stance (Attack or Hold) is
+*whom you engage* on the [battlefield](coordination-and-interruption.md); the read is
+*how you play the clash* once engaged. You can Attack a target and still Block its
+counter.
 
 - **Strike** — attack now. Direct damage; Power resists interruption; faster strikes
   resolve first. This is the **cash-in**.
@@ -63,12 +70,14 @@ pile. The original instincts fall straight out:
 - They throw **slow, heavy** strikes → **Evade** for Speed and a counter-tempo extra
   action.
 
-## Mindless vs minded
+## Against instinct vs against a mind
 
-- vs a **mindless** [behavior deck](decision-making.md#environment-creatures--hazards-non-player):
-  read its tendencies and bank reliably — skill is learning the deck.
-- vs a **minded** opponent (a Trickster, another player, a stand-in): a true bluff
-  war — they'll bait your Scheme with a Strike, so *when to cash in* is itself a read.
+- vs a **creature** — no [theory of mind](decision-making.md#the-line-theory-of-mind):
+  the read is **one-way**. You study its rule-based instinct and out-read it; it reacts
+  to the board but never to you.
+- vs a **mind** — a Trickster, another player, a stand-in: the read is **two-way**, a
+  true bluff war. It baits your Scheme with a Strike and adapts to your habits, so
+  *when to cash in* is itself a read.
 
 The exchange stays **computable** ([philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)):
 bounded reads plus a countable bank.

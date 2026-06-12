@@ -126,6 +126,83 @@ The strategic decisions are push-your-luck and opportunity cost: how far to push
 into danger for power, when to consolidate, and which capabilities to chase against
 a clock you only partly see.
 
+## Power, scaling, and the balance budget
+
+Numbers scale **linearly and without a cap**: higher always means more, and a
+**substantial** number gap is a **god-like** disparity — the bigger side simply
+dominates. That single rule yields the cleanest knob in the design — a **balance
+budget**:
+
+> **The world hands out a roughly constant amount of power, divided among the party,
+> and challenges are tuned to the party's *total*.** 600 power in one character, or
+> 600 split across six, is the **same difficulty** — and a **completely different
+> game**.
+
+- **Solo concentrates.** One character must raise **every** dimension toward god-level
+  — including **Speed**, so a lone hero can engage a whole swarm at once
+  ([engagement bandwidth](coordination-and-interruption.md#speed-is-the-currency-of-engagement))
+  rather than be mobbed. The solo experience is **raw dominance** across the board.
+- **Co-op distributes.** Six specialists each hold a slice and must **combine** —
+  many bodies' coverage instead of one god's Speed, focus-fire to aggregate damage.
+  The co-op experience is **coordination**: the same 600, but pooled in play rather
+  than owned by one.
+
+The two answers to one swarm are the two faces of the budget: **one god-Speed body, or
+many ordinary bodies**. Balance falls out of the total; the *distribution* is what
+makes solo and co-op feel like different games. (This is the
+[asymmetry pillar](philosophy.md) made quantitative.)
+
+## The shape of progression — the rule of three
+
+At any point the [world deck](#world-deck) offers, on average, **three places to go**,
+each **balanced to your current power** and each holding **different cards** to acquire.
+"Balanced" is precise:
+
+- **You will wipe if you don't play strategically** — a balanced fight is a *real*
+  fight.
+- **But barring exceptionally bad luck you prevail** — typically with **at least one
+  character left standing to revive the others.** Survival has a *margin*, not a
+  guarantee.
+
+Beyond the three, there is always the option to **press into harder ground** — success
+no longer certain, but the **reward proportional**: the push-your-luck accelerator for
+players willing to gamble for faster power.
+
+Strategic depth differs by mode:
+
+- **Solo** — at least **three viable routes** to power (different orders, places, and
+  builds all reach strength), so optimizing your path is a skill, not a solved line.
+- **Co-op** — a standing choice between **splitting up** (cover more
+  [regions](turn-structure.md#regions) at once, in parallel) and **staying together**
+  (concentrate to take on situations harder than any one of you could). Both viable;
+  the call is the strategy.
+
+## Inside a location — levels and the cleared marker
+
+A location need not be one fight. A natural shape: it holds **several levels** (say
+five), each harder than the last, and a single **"highest cleared" marker** records how
+far you have gotten. This is the press-on accelerator made concrete — and **card-cheap**:
+
+- **Grind or skip.** Attempt the level **balanced to your power** for a safe gain, or
+  **skip ahead** to a harder one for more — success isn't certain, but the **reward is
+  cumulative**: clearing level *N* hands you the rewards of levels 1..*N* you hadn't yet
+  taken (the location card lists which **reward cards** each rung grants; on a clear you
+  take the stack up to your highest). **Fail** the gamble and you gain nothing — but the
+  marker holds at your last cleared rung, so you lose the *attempt*, not your *progress*.
+  A whole **location is one of the three places**; the *level* is its internal risk dial.
+- **The marker is the state.** One marker per location ("cleared to *N*") is the *only*
+  persistent bookkeeping — no per-level tracking, no double-dipping (clear level 5 later
+  and you collect only 5). It also powers the **doom-to-mastery** return: a location that
+  was certain death is one you come back to and push *deeper* once strong.
+- **Levels are the power tags.** A location's ladder *is* the
+  [power-tagging](#the-shape-of-progression--the-rule-of-three) the world deck needs — the
+  rung matching your power is the "balanced" node; higher rungs are the press-on. Three
+  locations thus present nine graded options through **three cards plus three markers**.
+
+Card economy: the location card carries the **level ladder and its reward schedule**; the
+fights themselves are **scaled draws** from the shared enemy / scenario decks, not bespoke
+per-level cards; a marker tracks progress. State stays tiny.
+
 ## Progression, risk, and doom
 
 The intended arc:

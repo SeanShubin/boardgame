@@ -77,6 +77,15 @@ player's unpredictability is a **managed resource** that erodes as cards exhaust
 and is restored only at a tempo cost. See [zones](zones.md) and
 [decks-and-aspects](decks-and-aspects.md#never-shuffled).
 
+## 9. Every rule rides on a solid metaphor
+
+The game must be **remembered without a rulebook**. So each mechanic rests on a clear
+physical image: you block a path by *keeping pace* with someone; running past a guard
+*gets you hit*; more guards *cover more angles*; aggression *spends you*. If a rule
+can't be stated as an intuitive picture, it is too abstract to hold at the table —
+rework the rule, or the metaphor, until it can. Mechanics serve the metaphor, not the
+other way around.
+
 ---
 
 **Using this document.** Every other design note should trace back to one or more

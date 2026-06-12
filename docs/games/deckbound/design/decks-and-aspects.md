@@ -14,27 +14,44 @@ Characters are **not meant to be balanced** against each other; uneven
 capabilities are a feature. Fairness comes from scenario design (see
 [world-and-progression](world-and-progression.md)).
 
-## Aspects: effect, means, and the read
+## The four aspects
 
-Aspects **split apart the dimensions of a single action** — above all, *the
-effect you want to achieve* from *the means you use to achieve it*, plus the read
-of your opponent. A character acting plays **one card from each aspect they
-have**, and the cards combine into a single result.
+An **aspect** is a dimension of a single action: a character acting plays **one card
+per aspect they have**, and the cards combine into one result. (The capability to use
+an aspect at all comes from your **Form** cards — see
+[form-and-defeat](form-and-defeat.md).) The four split cleanly into **outer** (they
+manifest physical, typed effects — armor applies) and **inner** (they reach the
+*capacity to act*, not the body — armor is no defense):
 
-The current aspects — a starting set, with more to come — are **Body**, **Mind**,
-**Magic**, and **Spirit**. Take "I want to deal damage":
+**Outer — physical:**
 
-- **Body** — the **means**: the physical action, e.g. *punch*.
-- **Magic** / **Spirit** — other means and modifiers, e.g. a *fire* spell, or
-  reaching something *incorporeal*.
-- **Mind** — the **read**: anticipating the opponent and shaping the action to
-  suit — e.g. *dodge* their punch so yours lands harder, or *punch faster*. Mind is
-  the **tactical** aspect.
+- **Body** — your own **physical means**: Power and Speed; the punch, the parry, the
+  run. Force on flesh. *Muscle and bone.*
+- **Magic** — a **source** that *conjures* a physical effect (heat, cold, lightning,
+  force). It touches you only through that effect, which is **typed and stopped by
+  armor** like any blow; magic's distinctiveness is its **range, area, and status**,
+  never a bypass. *The conjurer's fire still burns like fire.*
 
-So the aspects answer different questions about the same act: *what am I doing*
-(Body / Magic / Spirit) and *how does it account for the opponent* (Mind). The
-capability to use an aspect at all comes from your **Form** cards — see
-[form-and-defeat](form-and-defeat.md).
+**Inner — the capacity to act:**
+
+- **Mind** — the **read**: cognition, anticipation, **Precision** (knowing where to
+  strike), the [rock-paper-scissors](mind-and-reads.md) of reads. Hit it with
+  **confusion** and a foe can no longer out-think you. *Wits.*
+- **Spirit** — the **will to act**: courage against fear, resolve against faltering,
+  morale, disposition. It lands no physical blow and works **only if you let it** —
+  it acts *through your own response*. A **fearless** character ignores a ghost
+  outright; a **fearful** one can be **scared to death** by their own body's panic.
+  (A ghost is essentially a *fear elemental*: no physical effect, only the
+  psychological — and the only thing that touches the incorporeal, which has will and
+  presence but no body.) *A sound body is useless if the spirit won't swing it.*
+
+So a full action answers two questions at once: *what physical thing happens* (Body,
+Magic) and *how the actor thinks and wills it* (Mind, Spirit). "I want to deal
+damage": a **Body** punch, maybe with a **Magic** flame on it, shaped by a **Mind**
+read of the dodge, driven by the **Spirit** to commit. **Outer** aspects are stopped
+by armor and toughness; **inner** aspects are turned aside only by **composure and
+resolve** — meet them with enough and they wash over you; fall short and you undo
+yourself. The set will grow, but these four are the spine.
 
 ### Order never matters between aspects
 

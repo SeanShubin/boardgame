@@ -27,7 +27,7 @@ diverse.
 | **Skirmisher** | Speed + Precision | diver / assassin; slips to the enemy back line, exploits weak spots |
 | **Channeler** | Magic | AoE and status from the back line; glass cannon, needs a wall |
 | **Tactician** | Mind | the read, **recovery**, enabling allies' Precision, sealing enemy Minds |
-| **Spiritualist** | Spirit *(deferred)* | the only answer to incorporeal threats |
+| **Spiritualist** | Spirit | the will-breaker (fear, morale) and the only answer to incorporeal threats |
 
 **Synergy example:** the Bulwark's coverage seals the line so the Channeler nukes
 safely; the Tactician recovers the team's options and shocks the enemy caster; the
@@ -52,18 +52,23 @@ plays the [read](decision-making.md)) or **mindless** (a readable, fixed
 | **Frost elemental** — freezes | **tempo** — it Seals your cards and cuts Speed | mindless |
 | **Storm elemental** — shocks | **Mind resilience** — it Seals your tactics, killing reads *and* recovery | mindless |
 | **Reaver** — disarms and seals | **Form depth** — backup capabilities, the re-equip maneuver | **minded** |
-| **Wraith** — incorporeal | the **Spirit** aspect *(deferred)* — nothing else touches it | mindless |
+| **Wraith** — incorporeal | the **Spirit** aspect — a fear-elemental nothing physical touches; resolve is the only shield | mindless |
 | **Attritionist** — drags the fight out | **recovery** — run your Potential dry and you go predictable and helpless | mindless |
+
+*("Mindless" here means **no [theory of mind](decision-making.md#the-line-theory-of-mind)**
+— instinct-driven, not unsophisticated. Such a creature can still reposition, ambush,
+and react to the board with rich conditional behavior; it just can't model and counter
+*you*.)*
 
 ## Why this matters for the Mind RPS
 
-The roster splits cleanly into **mindless** monsters — predictable, beaten by learning
-their fixed behavior deck — and **minded** ones (Tricksters, and other players or
-stand-ins) that play the read *back*. The Mind RPS cycle we design next must be
-satisfying in **both** cases: exploiting a legible deck, *and* dueling a thinking
-opponent. The **Sentinel** (Precision) and **Storm** (sealing Minds) also show why the
-Mind aspect is load-bearing — whole archetypes exist to punish a character who skimps
-on it.
+The roster splits by **theory of mind**: most creatures run on **instinct** — rich,
+conditional behavior you can study and out-read, but no model of *you* — while a few
+(Tricksters, and other players or stand-ins) are **minds** that read *back*. The Mind
+RPS cycle must satisfy **both**: out-reading instinct one-way, and dueling a thinking
+opponent two-way. The **Sentinel** (Precision) and **Storm** (sealing Minds) also show
+why the Mind aspect is load-bearing — whole archetypes exist to punish a character who
+skimps on it.
 
 ## Open questions
 

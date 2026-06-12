@@ -109,10 +109,15 @@ first; it is the charter the rest of these notes must serve. In brief:
   computer stand-in, and environment agents differ.
 - [The Mind — reads & momentum](mind-and-reads.md) — the RPS cycle, the uncapped
   momentum it banks, and the misread that forfeits it.
+- [Combos & interactions](combos.md) — the design target: meaningful play as
+  **combinations** of effects (aspect chords, multi-effect cards, read-outcome chains).
 - [Combat resolution](combat.md) — the magnitude layer: Speed order, interruption,
   and how a read becomes damage.
+- [The Spirit aspect](spirit.md) — will & morale: Resolve, Rally, Dread, fear, and
+  dispositional traits.
 - [Coordination & interruption](coordination-and-interruption.md) — the cardless
-  positioning layer: front/back lines, Attack/Hold, diving, interception, coverage.
+  positioning layer: front/back lines, Attack/Hold, and diving as a **gauntlet** of
+  free strikes and Speed + Power interrupts.
 
 **Play & world**
 
@@ -123,9 +128,12 @@ first; it is the charter the rest of these notes must serve. In brief:
 
 **Prototype**
 
-- [Skirmish prototype (6 vs 9)](skirmish-prototype.md) — the first runnable combat:
-  just-enough rules plus stat-block cards for a 6-hero party against a 9-creature
-  warband, tuned to show coordination beating lethal creatures.
+- [Sample combat (4 vs 5)](sample-round.md) — the current card-level play-by-play:
+  all four aspects, the gauntlet, fear vs resolve, momentum and combos, tracked
+  through the zones. **Start here.**
+- [Skirmish prototype (6 vs 9)](skirmish-prototype.md) — an earlier, larger draft
+  (its coverage rule and numbers predate the gauntlet); kept for the bigger roster
+  and the one-threat-per-mechanic table.
 
 **Reference**
 
@@ -147,4 +155,6 @@ first; it is the charter the rest of these notes must serve. In brief:
   between scenarios.
 - How a card — or an entirely new **aspect** — is **acquired**, and the full aspect
   list beyond Body / Mind / Magic / Spirit.
-- The **Spirit** aspect, still deferred.
+- **Spirit's** cards and effects — its identity is set (the will to act; see
+  [decks & aspects](decks-and-aspects.md#the-four-aspects)), the mechanics still to
+  build.

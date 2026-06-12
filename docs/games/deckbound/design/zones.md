@@ -20,6 +20,21 @@ lethal; only Form is.
 once its work is done (or it is sealed) it goes Dormant, unavailable until
 recovered. Each card **defines its own starting zone**.
 
+## Beyond the four — shared zones
+
+The four zones above are **personal**. Two more are **shared**:
+
+- **The table** — the world, region, environment, and event cards everyone faces.
+- **The party zone** — a shared space for **collective** effects among allies. A
+  **Rally** goes here, and **every Rally in the zone boosts every other**: the more of
+  the party that rallies together, the stronger each one's resolve — morale as
+  something built *between* people, not held alone.
+
+And a **transient** space is where **accumulation** happens: a round's incoming hits
+pile up as cards (see
+[form-and-defeat](form-and-defeat.md#accumulation-is-always-cards-in-a-zone)) and clear
+at round's end. Nothing accumulates in the head — only ever as cards in a zone.
+
 ## Lasting vs Fleeting
 
 Every playable card is one or the other, which decides where it goes after it
@@ -55,7 +70,10 @@ As cards leave **Potential** for **Active** and **Dormant**, your remaining opti
 **shrink and narrow**, and an opponent can **predict you more easily** — your
 effective mixed strategy collapses toward something readable. So:
 
-- **Predictability is a managed resource.** Aggression spends it.
+- **Predictability is a managed resource.** Aggression spends it — and unevenly:
+  **aggressive, high-damage cards** (a Strike) exhaust to **Dormant**, while
+  **defensive and setup cards** (Block, Evade, Scheme) **self-return** to Potential.
+  So pressing the attack narrows you, while a patient defense is repeatable.
 - **Recovery trades tempo for unpredictability.** Rousing Dormant cards restores
   your options (and your room to bluff) but costs the action you spend on it.
 

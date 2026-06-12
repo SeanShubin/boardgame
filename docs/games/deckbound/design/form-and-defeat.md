@@ -15,7 +15,8 @@ is:
 - **Body** — physically strike.
 - **Mind** — choose tactics: the hidden-information [read](decision-making.md).
 - **Magic** — cast spells.
-- **Spirit** — affect the incorporeal (e.g. damage a ghost).
+- **Spirit** — the **will to act**: fear, morale, resolve; reaches the incorporeal
+  (see [aspects](decks-and-aspects.md#the-four-aspects)).
 
 A capability card both **grants an action** in its aspect (one play per card — a
 *Human Body* "may play one physical attack") **and is a point of health** in that
@@ -52,39 +53,73 @@ still deferred.)
 
 ## How damage resolves
 
-Damage is **typed** and **targets an aspect's cards** — a physical blow eats
-**Body** cards, a mental assault eats **Mind**, and so on. Resolution is governed
-by **Form cards**, which makes it modular per creature.
+Two kinds of card do the work, kept deliberately apart:
 
-### Toughness (quantity)
+- **Capability cards carry no magnitude.** A Body card, a Resolve card, an Armor card
+  is simply **up (in Form)** or **down (in Dormant)** — a plain token you flip.
+- A separate **rules card** (one per aspect) says **how much each card is worth and how
+  damage resolves**: the threshold to flip one down, how **partial** damage is handled,
+  and whether multiple sources count **separately or cumulatively**. Resilience is
+  *built* from a rules card plus a stack of plain capability cards — modular per
+  creature.
 
-A Form card sets the **quantity** — how much damage each capability card of an
-aspect absorbs. Cards lost to one attack ≈ ⌊ damage ÷ quantity ⌋. Worked example,
-**Body quantity 2 with 3 Body cards**:
+Damage is **typed** and **targets an aspect's cards** — a physical blow eats **Body**,
+fear eats **Resolve**, and so on.
 
-| Damage | Body cards lost |
+### Accumulation is always cards in a zone
+
+Nothing is tracked in the head: when damage **accumulates**, it does so as **cards
+added to a zone** (the round's incoming hits pile up there as tokens), and the rules
+card reads that pile to decide how many capability cards flip down.
+
+- **Body and Resolve** accumulate **within a round, not between rounds**: several small
+  hits in one round combine to wound you, but **partial** damage that never crossed a
+  threshold is **cleared at round's end** — you shrug off scratches; a focused round
+  draws blood.
+- **Armor** is **not cumulative at all**: it reduces **each source independently**,
+  fresh every hit, and never depletes.
+
+### Example rules card — toughness
+
+A common rules card sets a **quantity**: how much accumulated damage flips one card
+down (`cards down ≈ ⌊ damage ÷ quantity ⌋`). Quantity 2 over 3 Body cards:
+
+| Damage (this round) | Body cards down |
 | --- | --- |
 | 1 | none — below quantity, shrugged off |
 | 2–3 | 1 |
 | 4–5 | 2 |
 | 6+ | all 3 → **body fails → knocked out** |
 
-Higher **quantity** = tougher (each card soaks more, small hits ignored); more
-**cards** = more hits before the aspect fails.
+Higher **quantity** = tougher; more **cards** = more hits before the aspect fails.
+Other rules cards do other things — "at most one card per source," "ignore hits under
+strength 1," "each source resolved separately."
 
-### Defensive Form cards & damage types
+### Defensive rules cards & damage types
 
-Form cards can also **counter damage by type**, applied before toughness. The
-*Armor* card, for instance:
+A defensive rules card **counters damage by type**, applied per source before toughness
+— the *Armor* card reduces **blunt** by × 2, **sharp** by × 1, and **not piercing**
+(the type armor can't stop) — and, being armor, applies **fresh to each source**
+(never cumulative).
 
-- reduces **blunt** damage by amount × 2,
-- reduces **sharp** damage by amount × 1,
-- does **not** reduce **piercing** — piercing is the type armor can't stop.
+### Incorporeal — no body, no shelter for the soul
 
-Other Form cards carry resolution rules of their own ("lose at most 2 Body per
-attack," "ignore attacks under strength 1"). Toughness, type defenses, and which
-aspect a card protects are all just Form cards — so a creature's resilience is
-**built, not fixed**.
+A creature may carry an **Incorporeal** card: it has **no Body**, so physical aspects
+(Body, and Magic's physical effects) **cannot touch or block** it — it drifts past the
+[gauntlet](coordination-and-interruption.md) and shrugs off blade and fire. But a thing
+with no flesh to hide behind is **wide open to the inner aspects**: **Spirit** cuts
+straight to what it *is*. A Wraith is near-immune to steel and **acutely vulnerable to
+Dread** — physical immunity bought with a bare soul. (Different incorporeal beings can
+strike that bargain differently.)
+
+### Bespoke traits are a feature
+
+Incorporeal is the first of a deliberately **growing library of strange traits**, each
+weighed on **its own balance considerations** rather than forced into a uniform rule —
+a thing that can't be touched physically, a thing that splits when struck, a thing that
+*feeds* on a damage type. The variety is the point: the **core systems stay few and
+emergent** ([§6](philosophy.md#6-many-systems-from-few-rules)), and a curated layer of
+weird, individually-balanced traits sits on top for **identity and surprise**.
 
 ## Why this matters for the game
 

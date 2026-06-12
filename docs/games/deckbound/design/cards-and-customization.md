@@ -92,17 +92,30 @@ damage — a Seal / restrain effect. And metal armor (mail / plate), strong agai
 steel, may be a **liability** against lightning or heat — so the right armor
 depends on the threat.
 
-## Magic — a parallel track
+## Magic — a source, not a bypass
 
-Magic deals its own damage **types** (Heat, Cold, Lightning) and carries **status
-effects** that hook into existing mechanics:
+Magic is the **contrivance** that explains how an effect manifests — but **magic alone
+touches no one**. It must **manifest a physical effect** (heat, cold, force,
+lightning), and that *physical* effect, with its physical properties, is what does the
+affecting. A fire spell manifests **heat** damage, a frost spell **cold**, a storm
+spell **lightning** — and that damage is **typed** and meets armor
+through the **same matrix** as any weapon (so the metal armor that turns a blade is a
+*liability* against heat or lightning). **There is no "magic ignores armor."** What
+makes magic distinct is its **effects** — status, area, and range — never a bypass:
 
-- **Heat → burn** — a *Lasting* card dealing Body damage each turn.
+- **Heat → burn** — a *Lasting* card dealing damage each turn.
 - **Cold → freeze / slow** — **Seal** cards, or cut Speed.
-- **Lightning → shock** — **Seal a Mind tactic** (can't read) or stun.
+- **Lightning → shock** — **Seal a Mind tactic** (no reads, no recovery) or stun.
 
-"As many effects as we have mechanics to interact with," so magic grows with the
-rest of the system.
+"As many effects as we have mechanics to interact with," so magic grows with the rest
+of the system — but always as **typed, physical** effects, however they're explained.
+
+Bypassing physical constraints altogether is the province of the **Spirit** aspect,
+*not* Magic. Spirit has **no physical effects** of its own; it reaches the
+**incorporeal** and the **will to act** — fear, morale, resolve, disposition — and
+works *through your own response*, so a fearless character ignores it while a fearful
+one is undone by their own panic. See
+[the four aspects](decks-and-aspects.md#the-four-aspects).
 
 ## Body actions — a starting set
 

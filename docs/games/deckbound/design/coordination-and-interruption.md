@@ -13,9 +13,10 @@ Each character takes one of two **stances** — a free declaration, no card:
   *other* attacker auto-succeeds against you. You get the [RPS](decision-making.md)
   read only against a target who is attacking you back (a mutual engagement).
 - **Hold** — forgo attacking. Instead you **RPS-respond to whoever attacks you**
-  (your safety), and, on the front line, you **intercept and nuke any diver** that
-  crosses you toward your back line. Holding is how a back-liner buys safety at the
-  cost of output, and how a front line becomes a **wall**.
+  (your safety), and, on the front line, you **free-strike (and may interrupt) any
+  diver** crossing you toward your back line — see [the gauntlet](#running-the-gauntlet).
+  Holding is how a back-liner buys safety at the cost of output, and how a front line
+  becomes a **gauntlet**.
 
 The whole positioning game turns on this: a front line that **Holds** gates the back
 line; a front line that **Attacks** is aggressive but leaves the gate open. Push or
@@ -81,26 +82,39 @@ effects** depending on its nature (a shield bash staggers; a grapple locks; …)
 
 To intercept an enemy you need **both**:
 
-- **Speed — one more than theirs.** Your Speed ≥ their Speed + 1: you reach them in
-  time.
+- **Speed — match theirs.** Your Speed ≥ their Speed: you keep up and impose. (To stop
+  a moving **dive**, bodies **pool** their speed — see
+  [the gauntlet](#running-the-gauntlet).)
 - **Power — at least what they are using.** Your Power ≥ the Power they are
   committing, so they can't simply shrug you off and push through.
 
-## Speed is engagement bandwidth
+## Speed is the currency of engagement
 
-The Speed budget that gates several divers also lets a fast character **engage
-several opponents at once**. By default you engage **one** — your mutual target, or,
-Holding, one attacker — and any further attacker **auto-succeeds**. Each *additional*
-opponent you engage (to read and defend, or to intercept a diver) is bought with
-Speed by the same rule:
+One principle underlies blocking, interrupting, and defending at once: **to impose on
+someone your Speed must match theirs (≥), with Power ≥ theirs so you can't be shrugged
+off.** From there, **numbers pool and spreading divides**:
 
-> **one more Speed than theirs**, then **subtract their Speed** and judge the next
-> against what is left. Power is checked at full against each, and is never spent.
+- **Pool (coverage).** Several bodies covering a lane add up — fastest **+1 per extra
+  Holder** — so slow bodies together wall a fast diver (the
+  [gauntlet](#running-the-gauntlet)).
+- **Divide (bandwidth).** Engaging several opponents spends Speed: you engage **one**
+  for free, then pay each further opponent against what's left —
+
+> at least their Speed, then **subtract their Speed** and judge the next against what
+> is left. Power is checked at full against each, and is never spent
+
+— and you may **overextend** past your budget to oppose one more, at the price of
+**taking a hit**.
 
 So Speed is **how many fights you can be in at once**. A blur of a duelist parries
 two or three foes and stops their dives; a slow bruiser engages one and is
 **swarmed** — the rest auto-succeed. It is what makes focus-fire deadly against a
 *slow* target, and what lets a fast hero stand against a crowd.
+
+**Defending several** means **one defensive read per attacker** you engage, paying
+Speed for each beyond your first; an attacker you cannot afford **auto-succeeds**, and
+you choose which to oppose and which to take. (The finer **targeting rules** — who
+must be opposed, in what order — still want spelling out.)
 
 Bandwidth covers **offense** too: a fast enough character **attacks several targets**
 in one round — each still legal under the line rules (a back-liner's extra targets
@@ -110,34 +124,34 @@ capabilities to match) and one character becomes a **one-man army**. That is the
 [asymmetry](philosophy.md) pillar at combat scale — characters aren't balanced;
 scenarios are.
 
-## Coverage — stopping a diver no one can catch
+## Running the gauntlet
 
-Interception is measured in **Speed** (reaction time). Coverage is the *other* axis,
-measured in **bodies** (obstruction): you can't pool Speed, but you can pool coverage.
-On each front, count your **Holders** against the enemy **divers** aimed at your back
-line:
+A dive is not stopped by a wall; it **runs a gauntlet**. To reach a back-liner, a
+diver must pass the **Holders** covering that lane, and **each Holder it passes lands a
+free strike** — an opportunity attack. The diver is committed to the dive (not
+[responding](#the-coherence-principle) to the Holder), so each free strike
+**auto-lands**: bodies always get their swing, however fast the diver.
 
-- Each **Holder ties up one diver** simply by standing in the way — **no Speed
-  check**. That is coverage.
-- **Holders ≥ divers → the back line is sealed.** Even a lone, un-interceptable,
-  hyper-fast diver is blocked: it can't be everywhere, and your bodies can.
-- **Divers > Holders → the surplus get a clean run**, and only *those* are contested
-  the usual way — a Holder fast enough
-  ([Speed bandwidth](#speed-is-engagement-bandwidth)) may still **intercept** one.
-  Divers neither bodied nor intercepted get through.
+**Free strikes** are the damage; **stopping the dive** is where coverage meets speed.
+A diver is **blocked** when the wall can **keep up** with it: the wall's speed is its
+**fastest Holder, +1 for each extra body** in the lane (more guards cover more
+angles). If that **≥ the diver's Speed** — and a Holder's **Power ≥ the diver's** —
+the **dive is stopped**:
 
-So **sufficient coverage = at least as many Holders as divers**; Speed is only what
-lets an *outnumbered* wall catch the overflow. (Only **Hold**-stance front-liners
-count — a front-liner who Attacks is pressing the enemy, not holding the wall.)
+- A diver **faster than a lone blocker slips past** — but **two slower blockers still
+  catch it**, the second covering the angle the first can't.
+- A **really fast** diver outruns even that and **slips through**, bloodied.
+- A diver that takes **too much** from the free strikes **dies on the run**.
 
-**Example.** Three enemies dive your back line; you hold two front-liners. Coverage
-bodies two of them with no Speed check; one breaks through. If one of your Holders is
-fast enough (Speed ≥ that diver + 1, Power to match) it intercepts the runner and the
-line holds; otherwise one diver reaches your back line.
+So coverage matters without being an absolute wall: more bodies = more free strikes
+**and** more speed to catch the runner. A **gap** (a front-liner Attacking, not
+Holding) is an open lane. A Holder may **overextend** to block while already busy, but
+**takes a hit** for the divided attention — often worth it.
 
-This is why a wall of Holders is **impenetrable but toothless** (all bodies, no
-offense), and why cracking a back line means **out-numbering the wall with divers**
-faster than it can catch the overflow.
+**Agency, no wasted turns.** Because the lines are open information, a diver chooses
+the gauntlet only when it is worth it; against a wall too thick to survive it simply
+**engages the front instead**, spending its turn on a Holder rather than throwing it
+away.
 
 ## Creature targeting (from the deck)
 
@@ -145,9 +159,9 @@ A creature's targeting is part of its [behavior
 deck](decision-making.md#environment-creatures--hazards-non-player):
 
 - **Front line** — attack whoever stands in front (the default).
-- **Priority target** — dive for a preferred victim (the healer), **accepting the
-  front line's interrupt** to reach it. Only a front line quick and strong enough
-  stops it.
+- **Priority target** — dive for a preferred victim (the healer), **running the
+  [gauntlet](#running-the-gauntlet)** to reach it. Only free strikes that drop it, or a
+  Holder quick and strong enough to interrupt, stop it.
 
 ## Why cardless
 
@@ -159,5 +173,7 @@ take a stance.
 
 - How **Speed / Power** numbers scale across the power curve (shared with the
   [combat](combat.md) sketch).
-- Whether to later promote coverage from a **count** (Holders vs divers) to
-  **positions** (a row of slots) for flanking and localized gaps.
+- How hard a **free strike** hits (a full attack, or reduced), and whether a diver may
+  ever defend against one or always eats it.
+- Whether to later add **positions** (a row of slots) for flanking and localized gaps
+  in the gauntlet.

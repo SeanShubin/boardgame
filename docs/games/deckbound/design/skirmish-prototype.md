@@ -1,5 +1,10 @@
 # Deckbound — Skirmish Prototype (6 vs 9)
 
+> **Earlier draft.** This 6v9 predates the gauntlet model and the four fleshed
+> aspects; its coverage rule and numbers are superseded. The current combat on the
+> live rules is the focused [4v5 sample](sample-round.md) — start there. This is kept
+> for its larger roster and the one-threat-per-mechanic table.
+
 The first **concrete, runnable** combat: a 6-hero party (3 front, 3 back) against a
 9-creature warband. Its job is to turn the design notes into numbers you can play,
 and to demonstrate the thesis — **the creatures are lethal to a careless party, but
@@ -25,10 +30,11 @@ with one exception each — the full damage-type matrix is deferred.)*
    the opposing **front** line; **front** line may attack the front line or **dive**
    the back line; **ranged** weapons may target the opposing **back** line directly.
 3. **Resolve in Speed order**, highest first:
-   - **Coverage** — a diver is body-blocked if the defenders' **Holders ≥ divers** on
-     that side (no Speed check — pure bodies).
-   - **Interception** — a Holder with **Spd ≥ diver+1 and Pow ≥ the diver's** cancels
-     the dive (a fast Holder can gate several, spending Speed per the bandwidth rule).
+   - **Gauntlet** — a dive runs past the covering **Holders**; each lands a **free
+     strike** (auto-hit), and a Holder with **Spd ≥ diver+1 and Pow ≥ the diver's**
+     also **cancels** the dive. Survive the free strikes uninterrupted → reach the back
+     line, bloodied. A fast Holder gauntlets several, paying Speed per the bandwidth
+     rule.
    - **Reads** — in a mutual engagement (or Hold-vs-attacker) both pick **Strike /
      Block / Evade / Scheme**; the cycle (Strike > Scheme, Defense > Strike, Scheme >
      Defense) decides it, the winner banks a bonus (Block → +Pow, Evade → +Spd,
@@ -57,8 +63,8 @@ Back line (safe only if the wall holds):
 | **Tactician** | 4 | 2 | 3 | — | 3 × T2 | **Recover** (return spent cards to an ally), **Read** (grant an ally Precision / cancel a telegraph), **Steady** (soften misread loss). Keeps the engine running. |
 | **Marksman** | 3 | 3 | 5 | — | 2 × T1 | **Bow** (ranged, pierce), **Snipe** (hits the enemy **back** line; Pre 5 bypasses armor). Kills the back-line casters; cracks the Sentinel. |
 
-**Synergy:** Bulwark (and Skirmisher) **Hold** → coverage seals the back line → the
-three squishies operate safely. Channeler AoEs the front swarm; Marksman snipes the
+**Synergy:** Bulwark (and Skirmisher) **Hold** → divers must run their gauntlet of free
+strikes → the three squishies stay protected. Channeler AoEs the front swarm; Marksman snipes the
 back-line casters; Vanguard duels the Juggernaut; Skirmisher gates fast divers or
 cracks the Sentinel; Tactician recovers spent reads and steadies against Shock. Pull
 any one and a job goes uncovered.
@@ -70,7 +76,7 @@ any one and a job goes uncovered.
 | **Juggernaut** ×1 | 1 | 4 | 1 | 5 × T3 | Armor **−3** (blunt only −1). Brute force bounces — **only Vanguard's blunt + Power** cracks it. Slow (acts last). |
 | **Sentinel** ×1 | 2 | 3 | 2 | 4 × T2 | Armor **−4 except a Pre ≥ 4 weak-spot hit**. **Only Precision** (Marksman / Skirmisher) hurts it. |
 | **Swarmling** ×4 | 4 | 2 | 1 | 1 × T1 | Weak alone; **2 hold the front, 2 dive**. As divers they need **coverage + AoE** — Firestorm one-shots the front pack. |
-| **Stalker** ×1 | 5 | 3 | 4 | 2 × T1 | Dives the **Channeler**. Too strong to intercept (Pow 3 beats your fast low-Power Holders) — **must be body-blocked by coverage**, not speed. |
+| **Stalker** ×1 | 5 | 3 | 4 | 2 × T1 | Dives the **Channeler**. Too strong to *interrupt* (Pow 3 beats your fast low-Power Holders), so it can't be cancelled — but it **runs the gauntlet**, and a dense wall's free strikes bleed it out (Body 2). |
 | **Artillery** ×1 | 2 | 5 | 3 | 2 × T1 | **Ranged**: nukes a back-liner each round (Pow 5 kills a T1 squishy). **Marksman snipes it**, or Skirmisher dives it. |
 | **Stormcaller** ×1 | 3 | 2 | 2 | 3 × T1 | **Shock**: seals one hero's Mind each round (Strike-only; disrupts Recover). **Kill it fast** (Snipe) or Steady through it. |
 
@@ -98,7 +104,8 @@ A few exchanges show the math:
 - **Swarmling vs an uncovered Channeler:** Pow 2 → ⌊2 ÷ 1⌋ = **2 Body** → the
   Channeler (Body 2) is **down in one hit**. *Cover the back line.*
 - **Stalker vs your interceptors:** Skirmisher reaches it (Spd 6 ≥ 5+1) but Pow 2 < 3
-  can't cancel it — only **a Holder's body** (coverage) stops it. *Coverage ≠ speed.*
+  can't *cancel* it — yet every Holder it passes lands a **free strike**, and a fragile
+  diver (Body 2) bleeds out in a dense gauntlet. *Free strikes ≠ interrupts.*
 
 **The coordinated plan:** Bulwark + Skirmisher Hold → 2 Holders cover 2 of the 3
 divers (Bulwark bodies the Stalker; Skirmisher intercepts a Swarmling); Channeler
