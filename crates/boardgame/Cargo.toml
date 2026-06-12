@@ -1,0 +1,13 @@
+[package]
+name = "boardgame"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "boardgame"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { workspace = true }
+tabletop = { workspace = true }
+treasure-dive = { workspace = true }

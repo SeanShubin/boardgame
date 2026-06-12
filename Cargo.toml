@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/engine",
+    "crates/tabletop",
+    "crates/treasure-dive",
+    "crates/boardgame",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+bevy = { version = "0.18.0", features = ["wav"] }
+engine = { path = "crates/engine" }
+tabletop = { path = "crates/tabletop" }
+treasure-dive = { path = "crates/treasure-dive" }
+
+# Enable fast compiles for development (Bevy recommendation).
+# Disable when profiling or benchmarking.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

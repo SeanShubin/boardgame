@@ -1,0 +1,72 @@
+//! The contract every game implements.
+
+use std::fmt;
+
+use crate::player::PlayerId;
+use crate::view::TableView;
+
+/// How a finished game turned out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// A single player won outright.
+    Win(PlayerId),
+    /// Several players tied for the win.
+    Tie(Vec<PlayerId>),
+}
+
+/// An attempt to apply an illegal or impossible action.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GameError(pub String);
+
+impl GameError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
+impl fmt::Display for GameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GameError {}
+
+/// A complete, self-contained, turn-based game.
+///
+/// Implementations are the single source of truth for a game's rules. They are
+/// pure: given a state and an action they produce the next state, with all
+/// randomness flowing from the seed passed to [`Game::new_game`]. This keeps a
+/// game fully reproducible and unit-testable, and lets the same implementation
+/// drive a renderer, a bot, or a test harness.
+pub trait Game: Send + Sync + 'static {
+    /// The full state of a game in progress.
+    type State: Clone + Send + Sync + 'static;
+    /// A single decision a player can make.
+    type Action: Clone + Send + Sync + 'static;
+
+    /// Sets up a fresh game for `players` seats, seeding all randomness from
+    /// `seed`.
+    fn new_game(&self, seed: u64, players: usize) -> Self::State;
+
+    /// Whose decision the game is waiting on, or `None` once it is over.
+    fn current_player(&self, state: &Self::State) -> Option<PlayerId>;
+
+    /// Every action the current player may legally take right now. Empty once
+    /// the game is over.
+    fn legal_actions(&self, state: &Self::State) -> Vec<Self::Action>;
+
+    /// A short, human-readable label for an action, e.g. "Draw a card".
+    fn action_label(&self, state: &Self::State, action: &Self::Action) -> String;
+
+    /// Applies `action` to `state`, advancing the game. Returns an error
+    /// without modifying `state` if the action is not legal.
+    fn apply(&self, state: &mut Self::State, action: &Self::Action) -> Result<(), GameError>;
+
+    /// The result of the game, or `None` while it is still in progress.
+    fn outcome(&self, state: &Self::State) -> Option<Outcome>;
+
+    /// A renderer-agnostic snapshot of the table from `perspective`'s point of
+    /// view (`None` for a neutral, all-knowing spectator).
+    fn view(&self, state: &Self::State, perspective: Option<PlayerId>) -> TableView;
+}

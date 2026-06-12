@@ -1,0 +1,8 @@
+[package]
+name = "tabletop"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+engine = { workspace = true }
+bevy = { workspace = true }
