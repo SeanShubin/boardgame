@@ -121,6 +121,12 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [World & progression](world-and-progression.md) — the world, scenario, enemy, and
   event decks; exploration and the doom-to-mastery arc.
 
+**Prototype**
+
+- [Skirmish prototype (6 vs 9)](skirmish-prototype.md) — the first runnable combat:
+  just-enough rules plus stat-block cards for a 6-hero party against a 9-creature
+  warband, tuned to show coordination beating lethal creatures.
+
 **Reference**
 
 - [Archetypes](archetypes.md) — character archetypes (solo generalist vs co-op
