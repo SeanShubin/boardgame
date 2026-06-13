@@ -111,13 +111,16 @@ first; it is the charter the rest of these notes must serve. In brief:
   momentum it banks, and the misread that forfeits it.
 - [Combos & interactions](combos.md) — the design target: meaningful play as
   **combinations** of effects (aspect chords, multi-effect cards, read-outcome chains).
-- [Combat resolution](combat.md) — the magnitude layer: Speed order, interruption,
-  and how a read becomes damage.
+- [Combat resolution](combat.md) — the magnitude layer: first strike by tempo,
+  interruption, and how a read becomes damage.
+- [Speed & tempo](speed-and-tempo.md) — Speed as a per-round tempo pool: spend it to
+  evade/engage/strike, first-strike by tempo, overextending, and the Mind/Speed/Power
+  split.
 - [The Spirit aspect](spirit.md) — will & morale: Resolve, Rally, Dread, fear, and
   dispositional traits.
 - [Coordination & interruption](coordination-and-interruption.md) — the cardless
-  positioning layer: front/back lines, Attack/Hold, and diving as a **gauntlet** of
-  free strikes and Speed + Power interrupts.
+  positioning layer: front/back lines, Attack/Hold, and running as a **gauntlet** that
+  drains a Runner's Speed, with Speed + Power interrupts.
 
 **Play & world**
 
@@ -131,6 +134,11 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [Sample combat (4 vs 5)](sample-round.md) — the current card-level play-by-play:
   all four aspects, the gauntlet, fear vs resolve, momentum and combos, tracked
   through the zones. **Start here.**
+- [Interactive tutorial](../tutorial.html) — the sample combat as a narrated,
+  Back/Next walkthrough (open in a browser; no build); the board illustrates each beat.
+- [Physical representation](physical-representation.md) — the sample combat rendered as
+  actual cards and tokens: every card face, its starting zone, and when it moves — a
+  pressure test of the cards-only pillar.
 - [Skirmish prototype (6 vs 9)](skirmish-prototype.md) — an earlier, larger draft
   (its coverage rule and numbers predate the gauntlet); kept for the bigger roster
   and the one-threat-per-mechanic table.

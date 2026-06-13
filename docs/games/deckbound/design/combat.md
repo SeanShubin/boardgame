@@ -8,12 +8,15 @@ playtest.
 
 ## Order and interruption
 
-- **Speed sets the order** — faster actions resolve first (Speed 0 = motionless).
-- **Power resists interruption** — a higher-Power action is harder to interrupt; a
-  fast, strong strike can cancel a slower or fragile one (notably a Scheme).
-- The full **interrupt rule** — Speed to arrive in time, Power to not be ignored —
-  and front-line interception live in
-  [coordination & interruption](coordination-and-interruption.md).
+- **Speed decides who lands first** — not a global turn order but a **per-clash** edge:
+  the fighter with more [tempo](speed-and-tempo.md) left **strikes first**, and **equal
+  tempo means both land**. Reads are still chosen **blind and simultaneous**.
+- **Power resists interruption** — landing first only *stops* the other's action if your
+  **Power ≥ what they commit**; a light blow wounds but can't halt a heavy one (notably
+  it can spoil a fragile Scheme).
+- The full **tempo pool** — spend to evade/engage/strike, overextend, volume — is in
+  [speed & tempo](speed-and-tempo.md); the **interrupt rule** and front-line
+  interception in [coordination & interruption](coordination-and-interruption.md).
 
 ## From a read to damage
 
@@ -25,7 +28,7 @@ through their armor and toughness — see
 [form & defeat](form-and-defeat.md#how-damage-resolves).
 
 Mirror and trade matchups in the [read cycle](mind-and-reads.md#the-cycle) (Strike vs
-Strike, Block vs Evade, …) are settled here, by Speed order and Power.
+Strike, Block vs Evade, …) are settled here, by **tempo** (first strike) and **Power**.
 
 ## Open questions
 

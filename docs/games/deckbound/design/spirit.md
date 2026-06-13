@@ -22,10 +22,9 @@ flipping *Body* cards). A **Resolute** character shrugs it; a **Coward** crumble
 
 **Actions** (played from Potential):
 
-- **Dread** — a Spirit attack: **Fear X** against a target's Resolve. It is the *only*
-  thing that harms the [incorporeal](form-and-defeat.md#incorporeal--no-body-no-shelter-for-the-soul)
-  — Dread strips a Wraith's Presence where steel and fire do nothing. *Aggressive →
-  exhausts.*
+- **Dread** — a Spirit attack: **Fear X** against a target's Resolve. It **bypasses
+  armor entirely** (resolve, not armor, is the only shield), so it threatens even the
+  most heavily armored foe. *Aggressive → exhausts.*
 - **Terror** — an **area** Fear (a banshee's wail): lower X, many targets — the line-
   breaker that routs a whole front by morale.
 - **Steel** — recover your own Resolve: clear the round's accumulated fear. *Defensive
@@ -48,12 +47,12 @@ flipping *Body* cards). A **Resolute** character shrugs it; a **Coward** crumble
 
 ## Offense, defense, and the Warden
 
-- **Offense:** Dread / Terror break enemy will — rout a line, strip an incorporeal, set
-  up a "scared to death."
+- **Offense:** Dread / Terror break enemy will — rout a line, shatter morale, set up a
+  "scared to death."
 - **Defense:** Rally / Inspire / Steel raise Resolve so inner attacks wash over you;
   Resolute / Fanatic bake it in.
 - The **Warden** archetype is the home of all this — the will-specialist who rallies the
-  party and banishes wraiths nothing else can touch.
+  party and breaks the enemy's nerve.
 
 ## Open questions (numbers)
 
@@ -62,7 +61,8 @@ flipping *Body* cards). A **Resolute** character shrugs it; a **Coward** crumble
   but unbounded *compounding* could explode — does Rally need its own curve?
 - **Fear → effect** — how much overcoming Resolve makes you freeze vs flee vs the lethal
   "scared to death," and the thresholds for each.
-- **Incorporeal's vulnerability** — Spirit only, or *all* inner aspects (does **confusion**
-  also bite a Wraith)?
+- *(Deferred)* the **incorporeal** trait and what bites it (Spirit only, or all inner
+  aspects) are parked with the [special-card library](form-and-defeat.md#bespoke-traits-are-a-feature)
+  until the core is solid.
 - **Fanatic / Bloodlust** — the exact "can't retreat" / "must attack" rules, and what
   they buy in exchange.

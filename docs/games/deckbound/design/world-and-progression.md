@@ -161,8 +161,10 @@ each **balanced to your current power** and each holding **different cards** to 
 - **You will wipe if you don't play strategically** — a balanced fight is a *real*
   fight.
 - **But barring exceptionally bad luck you prevail** — typically with **at least one
-  character left standing to revive the others.** Survival has a *margin*, not a
-  guarantee.
+  character still standing when the last enemy falls**, which is exactly the condition
+  that **resets the whole party to full**
+  ([recovery](form-and-defeat.md#knockout-recovery-and-the-wipe)). Survival has a
+  *margin*, not a guarantee.
 
 Beyond the three, there is always the option to **press into harder ground** — success
 no longer certain, but the **reward proportional**: the push-your-luck accelerator for

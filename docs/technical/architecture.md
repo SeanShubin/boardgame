@@ -6,12 +6,12 @@ renderer; the renderer never knows which game it is showing.
 
 ## Workspace crates
 
-| Crate                  | Kind | What it is |
-| ---------------------- | ---- | ---------- |
+| Crate                  | Kind | What it is                                                                                                                                                                                                  |
+| ---------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crates/engine`        | lib  | The framework. Defines the [`Game`](#the-game-trait) trait, reusable card-game building blocks (`Zone`, seeded `Rng`), and `TableView` — a renderer-agnostic snapshot of the table. **No Bevy dependency.** |
-| `crates/treasure-dive` | lib  | The first game. Pure logic, fully unit-tested. Depends only on `engine`. |
-| `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into clickable buttons. The only crate that depends on Bevy and on a game's *shape* (not its rules). |
-| `crates/boardgame`     | bin  | The launcher. Wires one game into the `tabletop` renderer and runs it. |
+| `crates/treasure-dive` | lib  | The first game. Pure logic, fully unit-tested. Depends only on `engine`.                                                                                                                                    |
+| `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into clickable buttons. The only crate that depends on Bevy and on a game's *shape* (not its rules).                              |
+| `crates/boardgame`     | bin  | The launcher. Wires one game into the `tabletop` renderer and runs it.                                                                                                                                      |
 
 Each new game is a new pure crate that implements `engine::Game`; the renderer
 and the launcher do not change.

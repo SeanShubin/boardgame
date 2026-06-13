@@ -49,11 +49,11 @@ upside you haven't yet cashed, the more you stand to lose.
 
 **Cashing in** — each banked quality has its own conversion:
 
-| Banked | Spend it on |
-| --- | --- |
-| **Power** | **attach** to a Strike ([modifiers](decks-and-aspects.md#kinds-of-card)) — a blow too strong to Block |
-| **Speed** | an **extra, unopposed action** — you act again before they can respond; it auto-succeeds, nothing to read |
-| **Precision** | a **weak-spot** hit — bypass armor / bonus damage (the Mind's gift) |
+| Banked        | Spend it on                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| **Power**     | **attach** to a Strike ([modifiers](decks-and-aspects.md#kinds-of-card)) — a blow too strong to Block     |
+| **Speed**     | an **extra, unopposed action** — you act again before they can respond; it auto-succeeds, nothing to read |
+| **Precision** | a **weak-spot** hit — bypass armor / bonus damage (the Mind's gift)                                       |
 
 **Losing the bank — the misread.** Lose a read (your intent is countered: Scheme
 struck, Strike defended, Defense schemed) and you **forfeit your *entire* accumulated
@@ -81,6 +81,14 @@ pile. The original instincts fall straight out:
 
 The exchange stays **computable** ([philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)):
 bounded reads plus a countable bank.
+
+## One read against many
+
+A [multi-target attack](cards-and-customization.md#how-targets-reach-and-the-read-interact)
+commits **one** read to all its targets and **resolves pairwise** — each engaged defender
+reads back, and whoever reads it right negates it *for themselves* (the rest eat it).
+**Breadth forgoes anticipation:** you can't out-guess several foes with a single read, so
+going wide **trades the read advantage** that single-target dueling buys.
 
 ## Open questions
 

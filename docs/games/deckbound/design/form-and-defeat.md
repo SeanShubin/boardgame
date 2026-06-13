@@ -15,8 +15,8 @@ is:
 - **Body** — physically strike.
 - **Mind** — choose tactics: the hidden-information [read](decision-making.md).
 - **Magic** — cast spells.
-- **Spirit** — the **will to act**: fear, morale, resolve; reaches the incorporeal
-  (see [aspects](decks-and-aspects.md#the-four-aspects)).
+- **Spirit** — the **will to act**: fear, morale, resolve, disposition (see
+  [aspects](decks-and-aspects.md#the-four-aspects)).
 
 A capability card both **grants an action** in its aspect (one play per card — a
 *Human Body* "may play one physical attack") **and is a point of health** in that
@@ -37,18 +37,26 @@ is lost, **you are knocked out** — Mind, Magic, and Spirit all shut down with 
 having no living body to act through. The keystone is named by a Form card, so it
 is **modular**: an incorporeal creature might key on Spirit instead.
 
-### Knockout, revival, and death
+### Knockout, recovery, and the wipe
 
-When your **Body** fails (last Body card lost) you are **knocked out**. From there:
+When your **Body** fails (last Body card lost) you are **knocked out** — and you stay
+down for the **rest of this combat**, Mind / Magic / Spirit shutting down with it.
+There is **no mid-combat revival**: a fallen ally is a real loss for the duration of
+the fight, and the party fights on short-handed.
 
-- **Revival is a passive action.** An ally — or, solo, a dedicated revive card —
-  with the ability brings a knocked-out character back **without spending its
-  turn's choices** on it.
-- **Death happens only if your Body is at zero *and no one remains to revive
-  you***. A lone fall is recoverable; a full wipe (nobody left to revive) is how a
-  run actually ends.
+- **Winning resets the party.** The moment **every enemy is defeated** with **at least
+  one character still standing**, the combat is won and the **whole party returns to
+  full** — every Dormant capability card flips back to Form. Health is a **per-combat**
+  resource: spent during a fight, restored by winning it, not carried between fights as
+  attrition.
+- **A full wipe ends the run.** If your **last standing character falls** before the
+  enemies are beaten, no one is left to win — that is the loss, the way a run actually
+  ends.
 
-(What death *costs* beyond ending the run — permadeath, attrition, lost cards — is
+So a fight is binary at the edges: survive with *anyone* up and you recover everything;
+lose the last body and it's over. This is what makes "at least one character standing"
+the real [balance margin](world-and-progression.md#the-shape-of-progression--the-rule-of-three).
+(What a wipe *costs* beyond ending the run — permadeath, lost cards, world state — is
 still deferred.)
 
 ## How damage resolves
@@ -84,16 +92,25 @@ card reads that pile to decide how many capability cards flip down.
 A common rules card sets a **quantity**: how much accumulated damage flips one card
 down (`cards down ≈ ⌊ damage ÷ quantity ⌋`). Quantity 2 over 3 Body cards:
 
-| Damage (this round) | Body cards down |
-| --- | --- |
-| 1 | none — below quantity, shrugged off |
-| 2–3 | 1 |
-| 4–5 | 2 |
-| 6+ | all 3 → **body fails → knocked out** |
+| Damage (this round) | Body cards down                      |
+| ------------------- | ------------------------------------ |
+| 1                   | none — below quantity, shrugged off  |
+| 2–3                 | 1                                    |
+| 4–5                 | 2                                    |
+| 6+                  | all 3 → **body fails → knocked out** |
 
 Higher **quantity** = tougher; more **cards** = more hits before the aspect fails.
 Other rules cards do other things — "at most one card per source," "ignore hits under
 strength 1," "each source resolved separately."
+
+**Quantity is also how health *scales* — without more cards.** A 100-Body creature is
+**10 cards at quantity 10**; a 1000-Body one is **10 cards at quantity 100.** The **card
+count stays roughly constant; the number on the rules card grows.** So even god-tier
+durability is a small, legible stack. The coarseness is *deliberate*: it shrugs off
+sub-quantity chip, because **we don't represent the difference between 98 and 99** —
+**every card-state change is meaningful.** A blow only matters when it's big enough to
+cross the quantity, which is exactly what **Power**, **Precision**, and banked
+[momentum](mind-and-reads.md) are *for*: building a hit large enough to *count*.
 
 ### Defensive rules cards & damage types
 
@@ -102,24 +119,29 @@ A defensive rules card **counters damage by type**, applied per source before to
 (the type armor can't stop) — and, being armor, applies **fresh to each source**
 (never cumulative).
 
-### Incorporeal — no body, no shelter for the soul
+### Incorporeal — *(deferred special card)*
 
-A creature may carry an **Incorporeal** card: it has **no Body**, so physical aspects
-(Body, and Magic's physical effects) **cannot touch or block** it — it drifts past the
-[gauntlet](coordination-and-interruption.md) and shrugs off blade and fire. But a thing
-with no flesh to hide behind is **wide open to the inner aspects**: **Spirit** cuts
-straight to what it *is*. A Wraith is near-immune to steel and **acutely vulnerable to
-Dread** — physical immunity bought with a bare soul. (Different incorporeal beings can
-strike that bargain differently.)
+> **Parked until the core is solid.** Incorporeal is one **special card**, not a core
+> rule — captured here but set aside while Body / Mind / Magic / Spirit and the tempo +
+> read loop are nailed down. Don't build on it yet.
+
+In brief: an **Incorporeal** creature has **no Body**, so physical aspects can't touch
+it — but with no flesh to hide behind it lies wide open to the **inner aspects**
+(Spirit). It is one entry in the
+[special-card library](#bespoke-traits-are-a-feature) below.
 
 ### Bespoke traits are a feature
 
-Incorporeal is the first of a deliberately **growing library of strange traits**, each
-weighed on **its own balance considerations** rather than forced into a uniform rule —
-a thing that can't be touched physically, a thing that splits when struck, a thing that
-*feeds* on a damage type. The variety is the point: the **core systems stay few and
-emergent** ([§6](philosophy.md#6-many-systems-from-few-rules)), and a curated layer of
-weird, individually-balanced traits sits on top for **identity and surprise**.
+Beyond the core, Deckbound grows a curated **library of special cards** — strange,
+individually-balanced traits, each weighed on **its own** considerations rather than
+forced into a uniform rule (a thing that can't be touched physically, a thing that
+splits when struck, a thing that *feeds* on a damage type). The intended **shape: a
+handful per stat — roughly three special cards for each** of Body, Mind, Magic, Spirit
+(and Speed, Power, …), so every stat gets its own pocket of surprises. The variety is
+the point — the **core systems stay few and emergent**
+([§6](philosophy.md#6-many-systems-from-few-rules)), with this weird layer on top for
+**identity and surprise**. **Incorporeal is one such card; the whole library is deferred
+until the core is solid.**
 
 ## Why this matters for the game
 
@@ -135,9 +157,10 @@ weird, individually-balanced traits sits on top for **identity and surprise**.
 ## Open questions
 
 - Beyond knockout → retreat, what (if anything) is **death**? Deferred.
-- Revival is passive and **choice recovery** is a Mind tactic — but is **healing a
-  Dormant *capability* card** (Form) a separate thing (a Magic / healing effect),
-  and how hard?
+- Recovery is now **post-combat** (win → full party reset), and **choice recovery**
+  is a Mind tactic — but is **mid-combat healing of a Dormant *capability* card** a
+  separate thing (a Magic / healing effect) worth having at all, given a win restores
+  everyone anyway?
 - Do **non-keystone** aspects (Mind / Magic / Spirit) have consequences beyond
   "that aspect shuts off"?
 - The full **aspect list** beyond Body / Mind / Magic / Spirit.

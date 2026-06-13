@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deckbound — Sample Combat (cards in zones)</title>
+<style>
+  :root{
+    --felt:#0b1f17; --felt2:#0e261c; --ink:#e9efe9; --dim:#8aa597;
+    --gold:#e8c479; --you:#3a6ea5; --enemy:#a5453a; --good:#5fae6b; --bad:#c8584d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(120% 120% at 50% 0%,var(--felt2),var(--felt));
+    color:var(--ink);font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;min-height:100vh}
+  header{padding:13px 20px;border-bottom:1px solid #ffffff14;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;color:var(--gold);letter-spacing:.3px}
+  header .sub{color:var(--dim);font-size:12px}
+  header .prog{margin-left:auto;color:var(--dim);font-size:12px}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  .zone-label{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.13em;margin:4px 2px}
+  .band{padding:6px 10px;border-radius:9px;margin-bottom:10px;font-size:11.5px;color:var(--dim);background:#ffffff08;border:1px dashed #ffffff1f}
+  .band b{color:#c7d6cd}
+  .side{padding:9px;border-radius:12px;margin-bottom:12px}
+  .side.enemy{background:#a5453a14;border:1px solid #a5453a33}
+  .side.you{background:#3a6ea514;border:1px solid #3a6ea533}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .creature{position:relative;width:166px;border-radius:10px;padding:8px 9px;background:#10241b;border:1px solid #ffffff1f;box-shadow:0 2px 0 #00000040}
+  .creature .nm{font-weight:600;font-size:13px;color:#e8a59e}
+  .creature .st{font-size:10.5px;color:#c7d6cd;margin-top:1px}
+  .creature .beh{font-size:10px;color:var(--dim);margin-top:3px;font-style:italic;min-height:13px}
+  .creature .deck{font-size:10px;margin-top:3px;color:#d9c38a}
+  .creature.dead{opacity:.4;filter:grayscale(.6)}
+  .mats{display:flex;gap:10px;flex-wrap:wrap}
+  .mat{flex:1 1 490px;border-radius:11px;padding:9px 11px;background:#0f2233;border:1px solid #ffffff1f;box-shadow:0 2px 0 #00000040}
+  .mat-head{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .mat-head .nm{font-weight:600;font-size:13.5px;color:#9ec2e8}
+  .mat-head .stance{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#ffffff14}
+  .mat-head .stance.HOLD{background:#3a6ea540;color:#bcd6f0}
+  .mat-head .stance.ATTACK{background:#a5453a40;color:#f0c1bb}
+  .zrow{display:flex;align-items:flex-start;gap:7px;padding:2px 0;border-top:1px solid #ffffff0d}
+  .zrow .zl{flex:0 0 62px;color:var(--dim);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;padding-top:3px}
+  .zrow .zc{flex:1;display:flex;gap:4px;flex-wrap:wrap;min-height:18px}
+  .chip{font-size:10.5px;padding:2px 7px;border-radius:6px;background:#ffffff14;color:#dfeae2}
+  .chip.action{background:#1c3a52;color:#cfe6fb}
+  .chip.read{background:#ffffff10;color:#aebfcf}
+  .chip.trait{background:#1d3a2b;color:#9ec9ad}
+  .chip.momentum{background:#5a4a1e;color:#f0d99a}
+  .pips{display:flex;gap:3px;flex-wrap:wrap;align-items:center}
+  .pip{width:8px;height:8px;border-radius:2px;background:#5fae6b;border:1px solid #00000040}
+  .pip.down{background:#2b372f;border-color:#ffffff10}
+  .cnt{font-size:11px;color:#c7d6cd;margin-right:5px;font-weight:600}
+  .tempo{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font-size:9.5px;color:var(--dim)}
+  .tpip{width:8px;height:8px;border-radius:50%;background:var(--gold);border:1px solid #00000040}
+  .tpip.spent{background:#3a3320;border-color:#ffffff10}
+  .exposed{color:var(--bad);font-weight:700}
+  .status{position:absolute;top:7px;right:8px;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:#000a}
+  .status.dead{color:#e8847a;border:1px solid #c8584d66}
+  .status.good{color:#9ce0a6}
+  .focus{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.3s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 #e8c47900}50%{box-shadow:0 0 15px 2px #e8c47955}}
+  .drag{margin:2px 0 8px;font-size:11.5px;color:#bcd6f0;font-weight:600}
+  .drag .n{color:var(--gold)}
+  .party{padding:6px 10px;border-radius:9px;margin-bottom:12px;background:#5a4a1e22;border:1px solid #e8c47933;display:flex;align-items:center;gap:8px;min-height:30px}
+  .party .zl{color:#d9c38a;font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+  .panel{margin-top:12px;background:#0a1813;border:1px solid #ffffff1f;border-radius:12px;padding:15px 17px}
+  .panel .narr{font-size:14.5px;min-height:76px}
+  .controls{display:flex;align-items:center;gap:11px;margin-top:13px}
+  .btn{cursor:pointer;border:none;background:#1c3a52;color:#dCEAF7;font:inherit;font-weight:600;font-size:14px;padding:8px 17px;border-radius:9px}
+  .btn:hover{background:#234a69}
+  .btn.next{outline:2px solid #e8c47966}
+  .btn:disabled{opacity:.35;cursor:default;outline:none}
+  .controls .count{margin-left:auto;color:var(--dim);font-size:12px}
+  .legend{color:var(--dim);font-size:10.5px;margin-top:9px}
+  [data-tip]{cursor:help}
+  #tip{position:fixed;z-index:50;max-width:290px;background:#06120d;border:1px solid #e8c47966;color:#e9efe9;
+    font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;box-shadow:0 6px 22px #000a;pointer-events:none;display:none}
+</style>
+</head>
+<body>
+<div id="tip"></div>
+<header>
+  <h1>Deckbound — Sample Combat</h1>
+  <span class="sub">cards in zones · four aspects, one fight · <b>hover anything</b> to see what it does</span>
+  <span class="prog" id="prog"></span>
+</header>
+<main>
+  <div class="band" data-tip="Zones nest: World (event and world decks) contains the Region (this encounter), which holds the two sides, their front and back lines, and each combatant's Form / Potential / Active / Dormant.">
+    <b>World</b> — event deck ▸ ticking &nbsp;·&nbsp; <b>Region</b> — this encounter (everything below lives in the region's zone)</div>
+
+  <div class="side enemy">
+    <div class="zone-label">The warband — one stat-block card each (a deck, three lines, a swarm)</div>
+    <div class="row" id="enemyRow"></div>
+  </div>
+
+  <div class="party" data-tip="Party zone — shared space for collective effects. Rally lives here and lifts every ally; every Rally boosts every other.">
+    <span class="zl">Party zone</span><span id="partyRow" class="row" style="gap:4px"></span></div>
+
+  <div class="side you">
+    <div class="zone-label">Your party — each a play-mat of four zones</div>
+    <div class="drag" id="dragBar" data-tip="Front-line drag — the Guards' combined Speed, spent to stop or slow Runners. Drag ≥ a Runner's Speed stops it; less only trims its lead."></div>
+    <div class="mats" id="mats"></div>
+  </div>
+
+  <div class="panel">
+    <div class="narr" id="narr"></div>
+    <div class="controls">
+      <button class="btn" id="back">← Back</button>
+      <button class="btn next" id="next">Next →</button>
+      <span class="count" id="count"></span>
+    </div>
+  </div>
+  <div class="legend">Green = Body in Form (health); dim = Dormant. <b>×N</b> = a swarm's count.
+    Gold dots = <b>tempo</b>. <b>Reach [min,max]</b> = how far an attack reaches (melee [1,1], ranged [2,2]).
+    Cards move <b>Potential → Active → Dormant</b>. Gold-lit = this step's focus.
+    <b>Hover</b> any card, chip, stat, or zone for what it does. ← → arrow keys.</div>
+</main>
+
+<script>
+"use strict";
+
+// ---- tooltip text ------------------------------------------------------
+const TIP = {
+  body: "Body — health, held as capability cards. A hit flips cards from Form to Dormant; lose your last and you're knocked out.",
+  swarm: "Swarm count — how many bodies remain. Damage removes them one at a time; AoE clears a whole pack at once.",
+  tempo: "Tempo — your Speed as a spendable pool this round. Spent engaging foes (each costs their Speed); what's left decides who strikes first. Resets each round.",
+  resolve: "Resolve — your will, the Spirit health track. Fear damages it; overcome it and you panic. Resolute = fearless. Accumulates within a round, resets between.",
+  stance: "Stance — Hold (a Guard: defend, and add your Speed to the front-line drag) or Attack (commit to a target, or run the gauntlet).",
+  behLine: "Behavior line — a fixed, readable rule this creature follows. No theory of mind: you can study and out-read it.",
+  deck: "Behavior deck — a face-down, shuffled choice this creature bluffs with (Strike / Feint). Revealed when it acts; the one foe you must truly read.",
+  trait: "Trait — a passive Form card.",
+};
+const ZONE_TIP = {
+  Form: "Form — your capabilities, health, traits and stats: what you are. Health cards flip here ↔ Dormant.",
+  Potential: "Potential — the reads and actions you could still play this round.",
+  Active: "Active — what's in play right now: a played card, or banked momentum.",
+  Dormant: "Dormant — spent or sealed cards, unavailable until recovered.",
+};
+const CARD_TIP = {
+  "Bash": "Bash — a fast blunt Strike off the shield. Low damage but a strong stagger; its Power can interrupt a Runner the wall catches.",
+  "reads ◆": "Reads — your four hidden choices: Strike / Block / Evade / Scheme. Picked blind, revealed at once; the cycle decides the exchange.",
+  "Riposte": "Riposte — a combo: Evade the blow, counter, reposition. The Evade beats a Strike and banks +Speed. Defensive, so it self-returns to Potential.",
+  "+Spd": "+Speed — momentum banked from winning a read; spare tempo toward a bigger blow. Stays Active.",
+  "Firestorm": "Firestorm — Magic, heat, AoE on the enemy front. Heat is the one type the Ironclad's plate can't reduce. Fleeting: exhausts after one use.",
+  "Frostbite": "Frostbite — Magic, cold. Slows a target (cuts Speed), making it cheaper for the wall to stop.",
+  "Rally": "Rally — Spirit. Moves to the party zone and raises allies' Resolve; every Rally boosts every other. Lasting.",
+  "Dread": "Dread — a Spirit attack: Fear against a target's Resolve. Bypasses armor entirely; only resolve shields.",
+  "Steel": "Steel — recover your own Resolve, clearing this round's accumulated fear.",
+};
+const TRAIT_TIP = {
+  "Plate": "Plate — armor. Cuts physical damage by type (sharp, blunt), but heat passes through (−0). Per source, never cumulative.",
+  "Shield": "Shield — Form equipment. Enables the Block read and the Bash strike.",
+  "Blade": "Blade — a sharp weapon. Sharp damage; glances off heavy plate.",
+};
+const HERO_TIP = {
+  aldric: "Aldric, Knight (Body) — the wall. Holds the front, feeds the drag pool, and Power-interrupts the Runner it stops. Melee [1,1].",
+  vera: "Vera, Duelist (Mind) — high reads. Out-duels the Ironclad (Evade beats its Strike) and helps hold the line. Melee [1,1].",
+  sefa: "Sefa, Mage (Magic) — the only one who cracks the Ironclad's plate (heat). Fragile and fearful; must be protected. Ranged [2,2] — reaches the enemy front.",
+  bram: "Bram, Warden (Spirit) — Rally (party-wide) shields the party's nerve against the Howler; Dread breaks enemy will. Ranged/inner [2,2].",
+};
+const CREATURE_TIP = {
+  ironclad: "Ironclad — armored brute, the win-condition lock. Plate ignores blade and blunt; only Magic heat cracks it. Pow 6 is lethal unless its attack is read. Bluffs via a face-down deck.",
+  husks: "Husk swarm — many weak bodies (Body 1 each): one card plus a count. A blade kills one; AoE clears a pack. The AoE lock.",
+  stalker: "Stalker — a fast Runner (Speed 6) that runs the gauntlet for Sefa. Stopped only if the front-line drag reaches its Speed; otherwise it slips through. The Body-and-tempo lock.",
+  howler: "Howler — a front-line fear-caster at reach [2,2]: its howl reaches your back line over the wall. Armor-proof Fear vs Resolve — only Rally and resolve answer it. The Spirit lock.",
+};
+const T = s => (s||"").replace(/"/g,"'"); // attribute-safe
+
+// ---- state -------------------------------------------------------------
+function fresh(){ return {
+  drag: null,
+  creatures: [
+    {id:'ironclad',nm:'Ironclad', st:'Spd 2 · Pow 6 · plate (heat −0) · melee [1,1]', body:8, max:8, tempo:2, tmax:2, beh:'press the front', deck:'face-down ▸ Strike / Feint'},
+    {id:'husks',  nm:'Husk swarm', st:'Spd 3 · Pow 1 · Body 1 · melee [1,1]', count:6, countMax:6, tempo:3, tmax:3, beh:'shamble at the front'},
+    {id:'stalker',nm:'Stalker',    st:'Spd 6 · Pow 3 · Runner', body:6, max:6, tempo:6, tmax:6, beh:'runs the gauntlet for Sefa'},
+    {id:'howler', nm:'Howler',     st:'Spd 4 · Fear 5 · reach [2,2]', body:4, max:4, tempo:4, tmax:4, beh:'front-line caster: howl at the least-resolute'},
+  ],
+  heroes: [
+    {id:'aldric', nm:'Aldric · Knight', line:'front', tempo:4, tmax:4, stance:'—', body:8, max:8, resolve:'R4 · Resolute', traits:['Plate','Shield'],
+      cards:[{n:'Bash',k:'action',z:'potential'},{n:'reads ◆',k:'read',z:'potential'}]},
+    {id:'vera', nm:'Vera · Duelist', line:'front', tempo:5, tmax:5, stance:'—', body:4, max:4, resolve:'R2', traits:['Blade'],
+      cards:[{n:'Riposte',k:'action',z:'potential'},{n:'reads ◆',k:'read',z:'potential'},{n:'+Spd',k:'momentum',z:'none'}]},
+    {id:'sefa', nm:'Sefa · Mage', line:'back', tempo:2, tmax:2, stance:'—', body:3, max:3, resolve:'R1 · fearful', traits:[],
+      cards:[{n:'Firestorm',k:'action',z:'potential'},{n:'Frostbite',k:'action',z:'potential'},{n:'reads ◆',k:'read',z:'potential'}]},
+    {id:'bram', nm:'Bram · Warden', line:'back', tempo:3, tmax:3, stance:'—', body:5, max:5, resolve:'R4', traits:[],
+      cards:[{n:'Rally',k:'action',z:'potential'},{n:'Dread',k:'action',z:'potential'},{n:'Steel',k:'action',z:'potential'},{n:'reads ◆',k:'read',z:'potential'}]},
+  ],
+}; }
+let S = fresh();
+const H = id => S.heroes.find(h=>h.id===id);
+const C = id => S.creatures.find(c=>c.id===id);
+const Z = (hid,name,z) => { const c=H(hid).cards.find(x=>x.n===name); if(c) c.z=z; };
+
+const steps = [
+  { focus:[], do(){},
+    narr:"<b>Four aspects, one fight</b> — as cards in zones. Each creature is one stat-block card (a <b>deck</b> foe that bluffs, three <b>line</b> foes, a <b>swarm</b>); each hero is a play-mat with <b>Form / Potential / Active / Dormant</b> and a tempo track. <b>Hover anything</b> to see what it does. The front-line <b>Guards</b> stop <b>Runners</b>; <b>Next</b> walks the round." },
+
+  { focus:['aldric','vera','sefa','bram'], do(){},
+    narr:"<b>Form up.</b> The warband presses with the <b>Ironclad</b> and a <b>Husk swarm</b>; a <b>Stalker</b> <b>runs the gauntlet</b> for Sefa; a <b>Howler</b> howls at her. Each is a lock only one aspect opens — and they come at once, so the party must split correctly." },
+
+  { focus:['aldric','vera'], do(){ H('aldric').stance='HOLD'; H('vera').stance='HOLD'; S.drag=9; },
+    narr:"<b>Declare — front.</b> Aldric and Vera both <b>HOLD</b>, becoming <b>Guards</b>. They pool their Speeds into a <b>front-line drag of 9</b> (Aldric 4 + Vera 5) — the wall's capacity to slow or stop Runners. No order to it; it's one combined pool." },
+
+  { focus:['sefa','bram'], do(){ S.drag=9; H('sefa').stance='ATTACK'; H('bram').stance='ATTACK'; },
+    narr:"<b>Declare — back.</b> Sefa will <b>ATTACK</b> (Firestorm — the <i>only</i> thing that cracks the Ironclad's plate); Bram will <b>ATTACK</b> (Rally, to steel Sefa against the Howler)." },
+
+  { focus:['bram','sefa'], do(){ S.drag=9; Z('bram','Rally','party'); H('sefa').resolve='R1 → 5 · Rallied'; },
+    narr:"<b>Bram's Rally</b> leaves Potential for the <b>party zone</b> (a Lasting, <b>collective</b> effect): it raises the <b>whole party's</b> Resolve — crucially Sefa's, from 1 to <b>5</b> — bracing her for the Howler." },
+
+  { focus:['stalker','aldric'], do(){ S.drag=3; C('stalker').body=1; C('stalker').status=['good','STOPPED']; C('stalker').beh='stopped at the wall'; Z('aldric','Bash','active'); },
+    narr:"<b>The gauntlet — combined drag.</b> The <b>Stalker</b> runs it at <b>Speed 6</b>. The front-line drag is <b>9</b>, and <b>9 ≥ 6</b>, so the wall <b>stops it</b> — <i>no sequence</i>. The defenders put <b>Aldric</b> (Pow 5 ≥ 3) on it; his <b>Bash</b> goes Active and <b>interrupts</b> → the Stalker is bloodied to <b>Body 1</b>, halted before Sefa. The line spent <b>6</b> of its 9 drag (→ 3 left)." },
+
+  { focus:['ironclad','vera'], do(){ S.drag=3; C('ironclad').deck='committed ▸ STRIKE (Pow 6)'; Z('vera','Riposte','active'); Z('vera','+Spd','active'); H('vera').tempo=3; },
+    narr:"<b>Mind — the read.</b> The Ironclad reveals its hidden choice: <b>Strike</b>, Pow 6 — lethal if it lands. <b>Vera reads it</b> and plays <b>Riposte</b> (an Evade): Evade beats Strike → the six Power is <b>negated</b>, and she <b>banks +Speed</b> (tempo 5 → 3 for the engagement). A wrong read here folds the front — why only Mind takes the Ironclad." },
+
+  { focus:['sefa','ironclad','husks'], do(){ S.drag=3; Z('sefa','Firestorm','active'); C('ironclad').body=7; C('husks').count=2; },
+    narr:"<b>Magic — armor means nothing to heat.</b> Sefa's <b>Firestorm</b> goes Active and strikes <b>5 targets</b> on the front: the Ironclad — plate heat −0, so it finally <b>takes a wound (8 → 7)</b> (blade and mace bounced) — and <b>4 Husks burn</b>. The <b>2 Husks outside the five overflow</b> (×6 → ×2). Breadth guts the pack — but only as many as it has targets." },
+
+  { focus:['howler','sefa'], do(){ S.drag=3; C('howler').status=['good','FEAR HELD']; },
+    narr:"<b>Spirit — resolve over fear.</b> From the enemy front line the Howler howls <b>Fear 5</b> at Sefa (reach <b>[2,2]</b>, over the wall — armor-proof, so the wall can't help). But Bram's Rally has her Resolve at <b>5</b>: Fear 5 vs Resolve 5 → it <b>washes over her</b>, and she casts unshaken." },
+
+  { focus:[], do(){ S.drag=3; Z('aldric','Bash','dormant'); Z('sefa','Firestorm','dormant'); Z('vera','Riposte','potential'); },
+    narr:"<b>Round settles.</b> Bash & Firestorm exhaust to <b>Dormant</b>; Vera's defensive <b>Riposte self-returns to Potential</b>; her <b>+Spd</b> stays Active; <b>Rally</b> stays in the party zone.<br><br><b>All four lanes held</b> — Body's wall (combined drag) stopped the Runner, Mind read the boss, Magic cracked the plate, Spirit held the nerve. The Ironclad (8→7) is a multi-round kill only Sefa can finish. <i>Pull any one hero and Sefa — the only Ironclad-killer — dies or falters, and its Pow 6 grinds the party to a wipe. You can't solve it in sequence, only together.</i>" },
+];
+let cur = 0;
+
+function healthCells(c){
+  if(c.count!==undefined){
+    let s=`<span class="cnt">×${c.count}</span>`;
+    for(let i=0;i<c.countMax;i++) s+=`<span class="pip ${i<c.count?'':'down'}"></span>`;
+    return s;
+  }
+  let s='';
+  for(let i=0;i<c.max;i++) s+=`<span class="pip ${i<c.body?'':'down'}"></span>`;
+  return s;
+}
+function tempoBar(c){
+  let s=''; for(let i=0;i<c.tmax;i++) s+=`<span class="tpip ${i<c.tempo?'':'spent'}"></span>`;
+  return `<span class="tempo" data-tip="${T(TIP.tempo)}">${c.exposed?`<span class="exposed">EXPOSED</span>`:`tempo`} ${s}</span>`;
+}
+function creatureHTML(c,F){
+  const status = c.status?`<div class="status ${c.status[0]}">${c.status[1]}</div>`:'';
+  const cls = ['creature', (c.status&&c.status[0]==='dead')?'dead':'', F.has(c.id)?'focus':''].filter(Boolean).join(' ');
+  const deck = c.deck?`<div class="deck" data-tip="${T(TIP.deck)}">${c.deck}</div>`:'';
+  const hpTip = c.count!==undefined?TIP.swarm:TIP.body;
+  return `<div class="${cls}" data-tip="${T(CREATURE_TIP[c.id]||'')}">${status}
+    <div class="nm">${c.nm}</div><div class="st">${c.st}</div>
+    <div class="pips" style="margin-top:5px" data-tip="${T(hpTip)}">${healthCells(c)}</div>
+    <div style="margin-top:4px">${tempoBar(c)}</div>
+    <div class="beh" data-tip="${T(TIP.behLine)}">${c.beh}</div>${deck}</div>`;
+}
+function zrow(label,inner){ return `<div class="zrow"><div class="zl" data-tip="${T(ZONE_TIP[label]||'')}">${label}</div><div class="zc">${inner||''}</div></div>`; }
+function chips(cards,z){ return cards.filter(c=>c.z===z).map(c=>`<span class="chip ${c.k}" data-tip="${T(CARD_TIP[c.n]||'')}">${c.n}</span>`).join(''); }
+function heroHTML(h,F){
+  let bp=''; for(let i=0;i<h.max;i++) bp+=`<span class="pip ${i<h.body?'':'down'}"></span>`;
+  const form = `<span class="pips" data-tip="${T(TIP.body)}">${bp}</span>`
+    + `<span class="chip" style="background:#241a1a;color:#d9b38a" data-tip="${T(TIP.resolve)}">${h.resolve}</span>`
+    + h.traits.map(t=>`<span class="chip trait" data-tip="${T(TRAIT_TIP[t]||TIP.trait)}">${t}</span>`).join('');
+  const cls=['mat',F.has(h.id)?'focus':''].filter(Boolean).join(' ');
+  const st = h.stance==='—'?'':`<span class="stance ${h.stance}" data-tip="${T(TIP.stance)}">${h.stance==='HOLD'?'HOLD · Guard':h.stance}</span>`;
+  return `<div class="${cls}">
+    <div class="mat-head"><span class="nm" data-tip="${T(HERO_TIP[h.id]||'')}">${h.nm}</span>${st}${tempoBar(h)}</div>
+    ${zrow('Form',form)}
+    ${zrow('Potential',chips(h.cards,'potential'))}
+    ${zrow('Active',chips(h.cards,'active'))}
+    ${zrow('Dormant',chips(h.cards,'dormant'))}
+  </div>`;
+}
+function render(){
+  const F=new Set(steps[cur].focus||[]);
+  enemyRow.innerHTML=S.creatures.map(c=>creatureHTML(c,F)).join('');
+  mats.innerHTML=S.heroes.map(h=>heroHTML(h,F)).join('');
+  dragBar.innerHTML = S.drag===null ? '' : `⛨ Front-line drag: <span class="n">${S.drag}</span> — the Guards' combined Speed, spent to stop Runners`;
+  const party=S.heroes.flatMap(h=>h.cards.filter(c=>c.z==='party').map(c=>`<span class="chip ${c.k}" data-tip="${T(CARD_TIP[c.n]||'')}">${c.n}</span>`)).join('');
+  partyRow.innerHTML=party||`<span style="color:#6f7f76;font-size:11px;font-style:italic">— empty —</span>`;
+  narr.innerHTML=steps[cur].narr;
+  back.disabled=cur===0;
+  next.textContent=cur===steps.length-1?'↻ Replay':'Next →';
+  const tag=cur===steps.length-1?'round end':`step ${cur+1} / ${steps.length-1}`;
+  prog.textContent=tag; count.textContent=tag;
+}
+function goto(n){ n=Math.max(0,Math.min(steps.length-1,n)); S=fresh(); for(let i=1;i<=n;i++) steps[i].do(); cur=n; render(); }
+back.onclick=()=>goto(cur-1);
+next.onclick=()=>goto(cur===steps.length-1?0:cur+1);
+document.addEventListener('keydown',e=>{ if(e.key==='ArrowRight') next.click(); else if(e.key==='ArrowLeft'&&cur>0) goto(cur-1); });
+
+// ---- tooltip follow-the-cursor -----------------------------------------
+const tip=document.getElementById('tip');
+document.addEventListener('mousemove',e=>{
+  const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+  const txt = el && el.getAttribute('data-tip');
+  if(txt){
+    tip.textContent=txt; tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+16)+'px';
+    const r=tip.getBoundingClientRect();
+    if(r.right>innerWidth)  tip.style.left=(e.clientX-r.width-14)+'px';
+    if(r.bottom>innerHeight) tip.style.top=(e.clientY-r.height-12)+'px';
+  } else { tip.style.display='none'; }
+});
+
+render();
+</script>
+</body>
+</html>

@@ -8,12 +8,12 @@ only, for now.)
 
 ## Workspace layout
 
-| Crate                  | Kind | What it is |
-| ---------------------- | ---- | ---------- |
+| Crate                  | Kind | What it is                                                                                                                                                          |
+| ---------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crates/engine`        | lib  | The framework: the `Game` trait, card-game building blocks (`Zone`, seeded `Rng`), and `TableView` — a renderer-agnostic snapshot of the table. No Bevy dependency. |
-| `crates/treasure-dive` | lib  | The first game: *Treasure Dive*, an original push-your-luck card game. Pure logic, fully unit-tested. |
-| `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into buttons. |
-| `crates/boardgame`     | bin  | The launcher. Wires one game into the renderer and runs it. |
+| `crates/treasure-dive` | lib  | The first game: *Treasure Dive*, an original push-your-luck card game. Pure logic, fully unit-tested.                                                               |
+| `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into buttons.                                                                             |
+| `crates/boardgame`     | bin  | The launcher. Wires one game into the renderer and runs it.                                                                                                         |
 
 Each new game is a new pure crate that implements `engine::Game`; the renderer
 and launcher do not change. See

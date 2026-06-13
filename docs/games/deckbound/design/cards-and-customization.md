@@ -35,15 +35,15 @@ Precision likely still draws on Mind. Deferred.)
 A character — and each action — is built by combining cards across orthogonal
 dimensions:
 
-| Dimension | Aspect / kind | Role |
-| --- | --- | --- |
-| **Action** | Body — playable (Potential) | the *means*: what you physically do |
-| **Tactic** | Mind — playable (Potential) | the *read* (RPS) + meta (recovery) |
-| **Spell** | Magic — playable (Potential) | a parallel attack track + status effects |
-| **Quality** | modifier | which axis an action pushes (Power / Speed / Precision) |
-| **Weapon** | Form (equipment) | enables / reshapes actions; sets damage type & profile |
-| **Armor** | Form (defense) | reduces incoming damage *by type* |
-| **Damage type** | property | carried by weapons / spells; meets armor in an RPS |
+| Dimension       | Aspect / kind                | Role                                                    |
+| --------------- | ---------------------------- | ------------------------------------------------------- |
+| **Action**      | Body — playable (Potential)  | the *means*: what you physically do                     |
+| **Tactic**      | Mind — playable (Potential)  | the *read* (RPS) + meta (recovery)                      |
+| **Spell**       | Magic — playable (Potential) | a parallel attack track + status effects                |
+| **Quality**     | modifier                     | which axis an action pushes (Power / Speed / Precision) |
+| **Weapon**      | Form (equipment)             | enables / reshapes actions; sets damage type & profile  |
+| **Armor**       | Form (defense)               | reduces incoming damage *by type*                       |
+| **Damage type** | property                     | carried by weapons / spells; meets armor in an RPS      |
 
 ### How an action resolves (the chord)
 
@@ -81,16 +81,36 @@ cleanly.
 Cloth / Leather / Chainmail / Plate each reduce damage **by type**, so no armor is
 universally best; the foe's armor tells you which weapon to bring:
 
-| Damage ↓ \ Armor → | Cloth | Leather | Chainmail | Plate |
-| --- | --- | --- | --- | --- |
-| **Blunt** (bash) | ok | ok | good | **strong** — concussion through plate |
-| **Sharp** (slice) | **strong** | good | weak | weak |
-| **Pierce** (poke) | good | ok | **strong** — between the rings | weak |
+| Damage ↓ \ Armor → | Cloth      | Leather | Chainmail                      | Plate                                 |
+| ------------------ | ---------- | ------- | ------------------------------ | ------------------------------------- |
+| **Blunt** (bash)   | ok         | ok      | good                           | **strong** — concussion through plate |
+| **Sharp** (slice)  | **strong** | good    | weak                           | weak                                  |
+| **Pierce** (poke)  | good       | ok      | **strong** — between the rings | weak                                  |
 
 Profiles are a starting *shape*; numbers TBD. **Entangle** is **control**, not
 damage — a Seal / restrain effect. And metal armor (mail / plate), strong against
 steel, may be a **liability** against lightning or heat — so the right armor
 depends on the threat.
+
+## Artifacts — acquired modifiers that scale the numbers
+
+Growth doesn't mean a fatter stack of cards. An **artifact** is a single acquired card
+that **tunes a value** on your rules or capability cards — you get stronger by **scaling
+a number, not adding to the pile** (the same principle that lets a 100-Body creature be
+ten cards; see [form & defeat](form-and-defeat.md#example-rules-card--toughness)):
+
+- *Aegis* — **+1 to the quantity of every Body card** (each now absorbs one more
+  damage): a real durability gain from **one card**.
+- *Whetstone* — **+1 Power**; *Boots of the Hart* — **+1 Speed**; *Wardplate* — **+1
+  armor vs a damage type**.
+- Bigger finds add a whole **option** instead of a number — a new read, a new Body
+  action, even a new **aspect** (a whole new deck).
+
+Artifacts live in **Form** (persistent), or **attach** as modifier cards — and per the
+modifier rule, **attachment order can matter** (+1 then ×2 ≠ ×2 then +1). They are the
+physical face of [acquisition](world-and-progression.md#exploration--acquisition): you
+explore, you find one, you slot it — and the table shows your growth as a **few telling
+cards**, never a bloated hand. (Every card you hold still earns its cell.)
 
 ## Magic — a source, not a bypass
 
@@ -101,7 +121,8 @@ affecting. A fire spell manifests **heat** damage, a frost spell **cold**, a sto
 spell **lightning** — and that damage is **typed** and meets armor
 through the **same matrix** as any weapon (so the metal armor that turns a blade is a
 *liability* against heat or lightning). **There is no "magic ignores armor."** What
-makes magic distinct is its **effects** — status, area, and range — never a bypass:
+makes magic distinct is its **effects** — status, **targets** (how many), and **reach**
+(how far) — never a bypass:
 
 - **Heat → burn** — a *Lasting* card dealing damage each turn.
 - **Cold → freeze / slow** — **Seal** cards, or cut Speed.
@@ -112,10 +133,56 @@ of the system — but always as **typed, physical** effects, however they're exp
 
 Bypassing physical constraints altogether is the province of the **Spirit** aspect,
 *not* Magic. Spirit has **no physical effects** of its own; it reaches the
-**incorporeal** and the **will to act** — fear, morale, resolve, disposition — and
+**will to act** — fear, morale, resolve, disposition — and
 works *through your own response*, so a fearless character ignores it while a fearful
 one is undone by their own panic. See
 [the four aspects](decks-and-aspects.md#the-four-aspects).
+
+## Targets — breadth, the second damage axis
+
+"AoE" is just a special case of a cleaner property: **number of targets.** An attack or
+spell names how many **distinct** entities it may hit — *the same entity can't be
+targeted twice* — and its **magnitude** lands on each. So damage scales on **two
+independent axes**:
+
+- **Magnitude** — how hard each hit lands (Power / Mag vs toughness).
+- **Targets** — how many entities it strikes at once.
+
+A plain blow is **1 target**; a cleave or **Firestorm** hits **several**; true "area" is
+simply **targets ≥ everything in range**. Against a
+[swarm](physical-representation.md#swarms--a-hundred-as-one-card-and-a-count), an
+N-target effect removes **N bodies** (each taking the magnitude) — so a Firestorm that
+hits **5** clears five of a six-Husk pack and the sixth overflows. Scale a spell up
+either way: **harder** (magnitude) or **wider** (targets).
+
+### How targets, reach, and the read interact
+
+A few rules keep multi-target attacks coherent — especially against the
+[read](mind-and-reads.md):
+
+- **Targets are drawn from within reach.** Reach sets *where* you can hit; the target
+  count is *how many* of the entities there you strike. A melee `[1,1]` cleave hits
+  several in the **adjacent rank only**, never beyond its reach.
+- **Targeting is enemy-directional.** You choose targets from the *enemy* entities in
+  reach; your own ranks are never auto-hit. Friendly fire is a special trait, not the
+  default.
+- **Breadth ≠ bandwidth.** A multi-target attack is **one ability, paid once** (its
+  magnitude to each target). Making *separate* attacks instead is **bandwidth**, paid in
+  [tempo](speed-and-tempo.md) per engagement. Two different ways to hit many — don't
+  conflate them.
+- **It resolves *pairwise* against the read.** A multi-target attack commits **one** read
+  (a Strike) to all its targets; each target *engaging* the attacker
+  ([Holding or mutual](coordination-and-interruption.md#the-coherence-principle)) reads
+  back, and the cycle settles **per pair** — so a cleave can be **partly foiled** (whoever
+  reads it right negates it *for themselves*; the rest eat it). A read protects only its
+  owner; a target not engaging the attacker **auto-takes** it.
+- **Breadth forgoes anticipation.** You can't out-read several foes with one read — going
+  wide means committing **blind** to a single read against all of them. Tailoring a read
+  to a specific foe is what **single-target** engagements are for. *Width trades the read
+  advantage.*
+
+*(Open number: when one multi-target Strike beats several defenders' reads, **cap** the
+momentum it banks — width already paid for itself in damage.)*
 
 ## Body actions — a starting set
 

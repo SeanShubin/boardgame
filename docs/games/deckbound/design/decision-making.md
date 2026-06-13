@@ -80,7 +80,7 @@ That instinct can be **sophisticated and even unpredictable** — reposition, lu
 claw, retreat, regroup, ambush — and it can be **conditional on what the creature
 observes**. A behavior card might read:
 
-> *If outnumbered, dive the enemy back line; if alone, flee; otherwise press the
+> *If outnumbered, run the enemy back line; if alone, flee; otherwise press the
 > front line.*
 
 So creatures are **not** simple or perfectly predictable. **Game theory can be baked
@@ -116,11 +116,11 @@ but **one-way against a creature** (you read its rules; it cannot read you back)
 
 ### How the three compare
 
-| | Source of the hidden choice | Models *you*? | Uses a deck? | Exhausts? |
-| --- | --- | --- | --- | --- |
-| **Human player** | free, secret reasoning | yes — theory of mind | no — plays from Potential | yes — predictability erodes ([zones](zones.md)) |
-| **Computer stand-in** | game theory, computed live | yes — adapts to this opponent | no | n/a |
-| **Environment creature** | a conditional behavior deck (instinct) | **no** — reacts to the board, not to you | yes | no — reshuffles each play |
+|                          | Source of the hidden choice            | Models *you*?                            | Uses a deck?              | Exhausts?                                       |
+| ------------------------ | -------------------------------------- | ---------------------------------------- | ------------------------- | ----------------------------------------------- |
+| **Human player**         | free, secret reasoning                 | yes — theory of mind                     | no — plays from Potential | yes — predictability erodes ([zones](zones.md)) |
+| **Computer stand-in**    | game theory, computed live             | yes — adapts to this opponent            | no                        | n/a                                             |
+| **Environment creature** | a conditional behavior deck (instinct) | **no** — reacts to the board, not to you | yes                       | no — reshuffles each play                       |
 
 The player's own capability decks are **never shuffled** (deliberate order is part of
 the skill); their hidden-ness comes from *which card they choose to commit*. Creatures

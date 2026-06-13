@@ -19,19 +19,19 @@ diverse.
 
 ## Character archetypes
 
-| Archetype | Leans on | Role |
-| --- | --- | --- |
-| **Sovereign** *(solo)* | everything | self-sufficient one-army; broad max investment, self-recovers, engages crowds |
-| **Bulwark** | Body toughness + Speed | the wall — **Holds**, coverage and interception; little offense |
-| **Vanguard** | Power + Speed | front-line killer; mutual-engagement duels and dives |
-| **Skirmisher** | Speed + Precision | diver / assassin; slips to the enemy back line, exploits weak spots |
-| **Channeler** | Magic | AoE and status from the back line; glass cannon, needs a wall |
-| **Tactician** | Mind | the read, **recovery**, enabling allies' Precision, sealing enemy Minds |
-| **Spiritualist** | Spirit | the will-breaker (fear, morale) and the only answer to incorporeal threats |
+| Archetype              | Leans on               | Role                                                                          |
+| ---------------------- | ---------------------- | ----------------------------------------------------------------------------- |
+| **Sovereign** *(solo)* | everything             | self-sufficient one-army; broad max investment, self-recovers, engages crowds |
+| **Bulwark**            | Body toughness + Speed | the wall — **Holds**, coverage and interception; little offense               |
+| **Vanguard**           | Power + Speed          | front-line killer; mutual-engagement duels and runs                           |
+| **Skirmisher**         | Speed + Precision      | Runner / assassin; slips to the enemy back line, exploits weak spots          |
+| **Channeler**          | Magic                  | AoE and status from the back line; glass cannon, needs a wall                 |
+| **Tactician**          | Mind                   | the read, **recovery**, enabling allies' Precision, sealing enemy Minds       |
+| **Spiritualist**       | Spirit                 | the will-breaker — Resolve, Rally, Dread; fear and morale                     |
 
 **Synergy example:** the Bulwark's coverage seals the line so the Channeler nukes
 safely; the Tactician recovers the team's options and shocks the enemy caster; the
-Skirmisher dives their back line while the Vanguard focus-fires the front. Pull one
+Skirmisher runs their back line while the Vanguard focus-fires the front. Pull one
 specialist and a whole job goes uncovered.
 
 ## Monster archetypes — one per mechanic you can't ignore
@@ -40,20 +40,20 @@ Each archetype **punishes neglecting a specific mechanic**, and each is **minded
 plays the [read](decision-making.md)) or **mindless** (a readable, fixed
 [behavior deck](decision-making.md#environment-creatures--hazards-non-player)):
 
-| Monster | Forces you to use… | Mind? |
-| --- | --- | --- |
-| **Juggernaut** — heavy armor, huge toughness | the right **damage type** + Power (blunt / pierce, or you tickle it) | mindless |
-| **Swarm** — many weak, fast bodies | **coverage** (bodies) and AoE / Speed, or be overrun and out-dived | mindless |
-| **Stalker** — fast, dives for your back line | **Speed** (interception) or coverage, or your fragile die | mindless (priority targeting) |
-| **Artillery** — back-line ranged nuker | **front/back play** — dive or interrupt it, or eat ranged death | mindless |
-| **Sentinel** — armored but for one weak point | **Precision** (a Mind) — brute force bounces off | mindless |
-| **Trickster** — a cunning duelist | **the RPS read** — out-read its weighted tendencies | **minded** |
-| **Fire elemental** — burns | **non-metal defense** / heat resist; metal armor is a *liability* | mindless |
-| **Frost elemental** — freezes | **tempo** — it Seals your cards and cuts Speed | mindless |
-| **Storm elemental** — shocks | **Mind resilience** — it Seals your tactics, killing reads *and* recovery | mindless |
-| **Reaver** — disarms and seals | **Form depth** — backup capabilities, the re-equip maneuver | **minded** |
-| **Wraith** — incorporeal | the **Spirit** aspect — a fear-elemental nothing physical touches; resolve is the only shield | mindless |
-| **Attritionist** — drags the fight out | **recovery** — run your Potential dry and you go predictable and helpless | mindless |
+| Monster                                       | Forces you to use…                                                                 | Mind?                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------- |
+| **Juggernaut** — heavy armor, huge toughness  | the right **damage type** + Power (blunt / pierce, or you tickle it)               | mindless                      |
+| **Swarm** — many weak, fast bodies            | **coverage** (bodies) and AoE / Speed, or be overrun and out-run                   | mindless                      |
+| **Stalker** — fast, runs for your back line   | **Speed** (interception) or coverage, or your fragile die                          | mindless (priority targeting) |
+| **Artillery** — back-line ranged nuker        | **front/back play** — run or interrupt it, or eat ranged death                     | mindless                      |
+| **Sentinel** — armored but for one weak point | **Precision** (a Mind) — brute force bounces off                                   | mindless                      |
+| **Trickster** — a cunning duelist             | **the RPS read** — out-read its weighted tendencies                                | **minded**                    |
+| **Fire elemental** — burns                    | **non-metal defense** / heat resist; metal armor is a *liability*                  | mindless                      |
+| **Frost elemental** — freezes                 | **tempo** — it Seals your cards and cuts Speed                                     | mindless                      |
+| **Storm elemental** — shocks                  | **Mind resilience** — it Seals your tactics, killing reads *and* recovery          | mindless                      |
+| **Reaver** — disarms and seals                | **Form depth** — backup capabilities, the re-equip maneuver                        | **minded**                    |
+| **Howler** — a corporeal fear-beast           | the **Spirit** aspect — its howl is armor-proof **Fear**; only **Resolve** shields | mindless                      |
+| **Attritionist** — drags the fight out        | **recovery** — run your Potential dry and you go predictable and helpless          | mindless                      |
 
 *("Mindless" here means **no [theory of mind](decision-making.md#the-line-theory-of-mind)**
 — instinct-driven, not unsophisticated. Such a creature can still reposition, ambush,
@@ -76,4 +76,4 @@ skimps on it.
   pass).
 - Which archetypes are **starter** threats vs late, "certain-doom" ones on the
   progression curve.
-- The **Spirit** aspect, needed before the Wraith is real.
+- The **Spirit** aspect's deeper cards (well underway — see [spirit](spirit.md)).

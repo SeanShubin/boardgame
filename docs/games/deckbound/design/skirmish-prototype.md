@@ -49,19 +49,19 @@ with one exception each — the full damage-type matrix is deferred.)*
 
 Front line (the wall and its hammer):
 
-| Hero | Spd | Pow | Pre | Body×T | Kit & role |
-| --- | --- | --- | --- | --- | --- |
-| **Bulwark** | 3 | 2 | 1 | 6 × T3 | Plate (−3 phys), Shield (strong **Block**, **Shield-bash** interrupt). **Holds** — coverage + gating. The wall. |
-| **Vanguard** | 3 | 5 | 2 | 4 × T2 | Two-handed **maul** (blunt, +Pow). **Attacks** — the only one who cracks the Juggernaut. |
-| **Skirmisher** | 6 | 2 | 4 | 3 × T1 | Light blade (pierce). Fastest — gates fast divers *or* dives. Pre 4 cracks the Sentinel. Fragile. |
+| Hero           | Spd | Pow | Pre | Body×T | Kit & role                                                                                                      |
+| -------------- | --- | --- | --- | ------ | --------------------------------------------------------------------------------------------------------------- |
+| **Bulwark**    | 3   | 2   | 1   | 6 × T3 | Plate (−3 phys), Shield (strong **Block**, **Shield-bash** interrupt). **Holds** — coverage + gating. The wall. |
+| **Vanguard**   | 3   | 5   | 2   | 4 × T2 | Two-handed **maul** (blunt, +Pow). **Attacks** — the only one who cracks the Juggernaut.                        |
+| **Skirmisher** | 6   | 2   | 4   | 3 × T1 | Light blade (pierce). Fastest — gates fast divers *or* dives. Pre 4 cracks the Sentinel. Fragile.               |
 
 Back line (safe only if the wall holds):
 
-| Hero | Spd | Pow | Pre | Mag | Body×T | Kit & role |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Channeler** | 2 | 1 | — | 5 | 2 × T1 | **Firestorm** (AoE: all enemy front line) + **Frost** (slow/seal one). Glass cannon; the swarm answer. |
-| **Tactician** | 4 | 2 | 3 | — | 3 × T2 | **Recover** (return spent cards to an ally), **Read** (grant an ally Precision / cancel a telegraph), **Steady** (soften misread loss). Keeps the engine running. |
-| **Marksman** | 3 | 3 | 5 | — | 2 × T1 | **Bow** (ranged, pierce), **Snipe** (hits the enemy **back** line; Pre 5 bypasses armor). Kills the back-line casters; cracks the Sentinel. |
+| Hero          | Spd | Pow | Pre | Mag | Body×T | Kit & role                                                                                                                                                        |
+| ------------- | --- | --- | --- | --- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Channeler** | 2   | 1   | —   | 5   | 2 × T1 | **Firestorm** (AoE: all enemy front line) + **Frost** (slow/seal one). Glass cannon; the swarm answer.                                                            |
+| **Tactician** | 4   | 2   | 3   | —   | 3 × T2 | **Recover** (return spent cards to an ally), **Read** (grant an ally Precision / cancel a telegraph), **Steady** (soften misread loss). Keeps the engine running. |
+| **Marksman**  | 3   | 3   | 5   | —   | 2 × T1 | **Bow** (ranged, pierce), **Snipe** (hits the enemy **back** line; Pre 5 bypasses armor). Kills the back-line casters; cracks the Sentinel.                       |
 
 **Synergy:** Bulwark (and Skirmisher) **Hold** → divers must run their gauntlet of free
 strikes → the three squishies stay protected. Channeler AoEs the front swarm; Marksman snipes the
@@ -71,14 +71,14 @@ any one and a job goes uncovered.
 
 ## The warband — 9 creatures
 
-| Creature | Spd | Pow | Pre | Body×T | Threat — *and the only answer* |
-| --- | --- | --- | --- | --- | --- |
-| **Juggernaut** ×1 | 1 | 4 | 1 | 5 × T3 | Armor **−3** (blunt only −1). Brute force bounces — **only Vanguard's blunt + Power** cracks it. Slow (acts last). |
-| **Sentinel** ×1 | 2 | 3 | 2 | 4 × T2 | Armor **−4 except a Pre ≥ 4 weak-spot hit**. **Only Precision** (Marksman / Skirmisher) hurts it. |
-| **Swarmling** ×4 | 4 | 2 | 1 | 1 × T1 | Weak alone; **2 hold the front, 2 dive**. As divers they need **coverage + AoE** — Firestorm one-shots the front pack. |
-| **Stalker** ×1 | 5 | 3 | 4 | 2 × T1 | Dives the **Channeler**. Too strong to *interrupt* (Pow 3 beats your fast low-Power Holders), so it can't be cancelled — but it **runs the gauntlet**, and a dense wall's free strikes bleed it out (Body 2). |
-| **Artillery** ×1 | 2 | 5 | 3 | 2 × T1 | **Ranged**: nukes a back-liner each round (Pow 5 kills a T1 squishy). **Marksman snipes it**, or Skirmisher dives it. |
-| **Stormcaller** ×1 | 3 | 2 | 2 | 3 × T1 | **Shock**: seals one hero's Mind each round (Strike-only; disrupts Recover). **Kill it fast** (Snipe) or Steady through it. |
+| Creature           | Spd | Pow | Pre | Body×T | Threat — *and the only answer*                                                                                                                                                                                |
+| ------------------ | --- | --- | --- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Juggernaut** ×1  | 1   | 4   | 1   | 5 × T3 | Armor **−3** (blunt only −1). Brute force bounces — **only Vanguard's blunt + Power** cracks it. Slow (acts last).                                                                                            |
+| **Sentinel** ×1    | 2   | 3   | 2   | 4 × T2 | Armor **−4 except a Pre ≥ 4 weak-spot hit**. **Only Precision** (Marksman / Skirmisher) hurts it.                                                                                                             |
+| **Swarmling** ×4   | 4   | 2   | 1   | 1 × T1 | Weak alone; **2 hold the front, 2 dive**. As divers they need **coverage + AoE** — Firestorm one-shots the front pack.                                                                                        |
+| **Stalker** ×1     | 5   | 3   | 4   | 2 × T1 | Dives the **Channeler**. Too strong to *interrupt* (Pow 3 beats your fast low-Power Holders), so it can't be cancelled — but it **runs the gauntlet**, and a dense wall's free strikes bleed it out (Body 2). |
+| **Artillery** ×1   | 2   | 5   | 3   | 2 × T1 | **Ranged**: nukes a back-liner each round (Pow 5 kills a T1 squishy). **Marksman snipes it**, or Skirmisher dives it.                                                                                         |
+| **Stormcaller** ×1 | 3   | 2   | 2   | 3 × T1 | **Shock**: seals one hero's Mind each round (Strike-only; disrupts Recover). **Kill it fast** (Snipe) or Steady through it.                                                                                   |
 
 That is exactly one threat per mechanic — damage-type, Precision, coverage, AoE,
 ranged reach, interception-vs-coverage, and Mind-resilience. **Neglect any one role
