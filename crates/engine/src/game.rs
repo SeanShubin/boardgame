@@ -69,4 +69,12 @@ pub trait Game: Send + Sync + 'static {
     /// A renderer-agnostic snapshot of the table from `perspective`'s point of
     /// view (`None` for a neutral, all-knowing spectator).
     fn view(&self, state: &Self::State, perspective: Option<PlayerId>) -> TableView;
+
+    /// The action that rewinds one step of a multi-step decision (undo a
+    /// partial selection), or `None` when there is nothing to cancel. A
+    /// presentation layer can bind this to Escape. Defaults to `None`, so games
+    /// without staged input need not implement it.
+    fn cancel_action(&self, _state: &Self::State) -> Option<Self::Action> {
+        None
+    }
 }

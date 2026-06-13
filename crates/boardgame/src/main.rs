@@ -20,7 +20,8 @@ fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Boardgame — Deckbound".into(),
+                title: "Boardgame - Deckbound".into(),
+                resolution: (1320u32, 860u32).into(),
                 ..default()
             }),
             ..default()

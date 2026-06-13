@@ -1,18 +1,19 @@
 //! A Bevy presentation layer that can draw and drive any [`engine::Game`].
 //!
 //! [`TabletopPlugin`] is generic over the game. It holds the game's rules, runs
-//! a fresh match, renders the game's [`TableView`](engine::TableView) as a
-//! simple UI, and offers the current player's legal actions as buttons.
-//! Clicking a button applies that action and the table redraws. Because the
-//! plugin only ever talks to the [`engine::Game`] trait, it never needs to know
-//! which game it is showing.
+//! a fresh match, renders the game's [`TableView`](engine::TableView), and
+//! offers the current player's legal actions as buttons. Clicking a button
+//! applies that action and the table redraws; Escape (or Backspace) applies the
+//! game's [`cancel_action`](engine::Game::cancel_action) to rewind a multi-step
+//! choice. Because the plugin only ever talks to the [`engine::Game`] trait, it
+//! never needs to know which game it is showing.
 //!
-//! This is a deliberately plain skeleton: cards are coloured boxes with a
-//! label, zones are rows, and actions are buttons. It is enough to see a game
-//! play through; richer table rendering can grow on top of the same seam.
+//! Cards are drawn collectible-card-game style — a title bar, a type line, a
+//! body of stat / rules lines, and a corner badge — coloured by the card's
+//! [`Accent`](engine::Accent). There is no art, so the space is information.
 
 use bevy::prelude::*;
-use engine::{CardFace, Game, TableView, ZoneView};
+use engine::{Accent, CardFace, Game, TableView, ZoneView};
 
 /// Drives a single match of `G` on a Bevy app.
 pub struct TabletopPlugin<G: Game> {
@@ -40,7 +41,15 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(StateRes::<G>(state))
             .insert_resource(NeedsRedraw(true))
             .add_systems(Startup, setup_camera)
-            .add_systems(Update, (apply_clicked_action::<G>, redraw::<G>).chain());
+            .add_systems(
+                Update,
+                (
+                    apply_clicked_action::<G>,
+                    cancel_on_key::<G>,
+                    redraw::<G>,
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -89,6 +98,22 @@ fn apply_clicked_action<G: Game + Clone>(
     }
 }
 
+/// Escape / Backspace rewind one step of a multi-step decision.
+fn cancel_on_key<G: Game + Clone>(
+    keys: Res<ButtonInput<KeyCode>>,
+    game: Res<GameRes<G>>,
+    mut state: ResMut<StateRes<G>>,
+    mut redraw: ResMut<NeedsRedraw>,
+) {
+    if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
+        if let Some(action) = game.0.cancel_action(&state.0) {
+            if game.0.apply(&mut state.0, &action).is_ok() {
+                redraw.0 = true;
+            }
+        }
+    }
+}
+
 fn redraw<G: Game + Clone>(
     mut commands: Commands,
     game: Res<GameRes<G>>,
@@ -115,13 +140,29 @@ fn redraw<G: Game + Clone>(
     build_table(&mut commands, &view, &labels);
 }
 
-/// Some shared colours for the table.
-const FELT: Color = Color::srgb(0.05, 0.16, 0.11);
+// ---- palette ------------------------------------------------------------
+
+const FELT: Color = Color::srgb(0.06, 0.13, 0.10);
 const INK: Color = Color::srgb(0.92, 0.95, 0.93);
-const CARD_FACE: Color = Color::srgb(0.93, 0.91, 0.80);
-const CARD_BACK: Color = Color::srgb(0.28, 0.30, 0.46);
-const CARD_INK: Color = Color::srgb(0.08, 0.08, 0.12);
-const BUTTON: Color = Color::srgb(0.20, 0.42, 0.62);
+const PANEL: Color = Color::srgb(0.10, 0.18, 0.15);
+const CARD_FACE: Color = Color::srgb(0.94, 0.92, 0.84);
+const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
+const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
+const CARD_BACK_INNER: Color = Color::srgb(0.30, 0.35, 0.56);
+const BADGE: Color = Color::srgb(0.14, 0.14, 0.18);
+const TITLE_INK: Color = Color::srgb(0.97, 0.97, 0.98);
+const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
+
+fn accent_color(accent: Accent) -> Color {
+    match accent {
+        Accent::Neutral => Color::srgb(0.34, 0.36, 0.40),
+        Accent::Ally => Color::srgb(0.20, 0.42, 0.66),
+        Accent::Foe => Color::srgb(0.62, 0.22, 0.24),
+        Accent::Warn => Color::srgb(0.72, 0.48, 0.14),
+        Accent::Good => Color::srgb(0.22, 0.52, 0.32),
+        Accent::Selected => Color::srgb(0.66, 0.56, 0.16),
+    }
+}
 
 fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[String]) {
     commands
@@ -130,47 +171,82 @@ fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[Strin
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::SpaceBetween,
-                padding: UiRect::all(Val::Px(20.0)),
-                row_gap: Val::Px(16.0),
+                flex_direction: FlexDirection::Row,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // Status line.
+            // LEFT: the choices to make, stacked top to bottom.
             root.spawn((
-                Text::new(view.status.clone()),
-                TextFont {
-                    font_size: 28.0,
+                Node {
+                    width: Val::Px(300.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(12.0)),
+                    row_gap: Val::Px(8.0),
+                    overflow: Overflow::clip(),
                     ..default()
                 },
-                TextColor(INK),
-            ));
-
-            // The zones, stacked top to bottom.
-            root.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(10.0),
-                ..default()
-            })
-            .with_children(|zones| {
-                for zone in &view.zones {
-                    spawn_zone(zones, zone);
+                BackgroundColor(PANEL),
+            ))
+            .with_children(|left| {
+                left.spawn((
+                    Text::new("Choose an action"),
+                    TextFont {
+                        font_size: 17.0,
+                        ..default()
+                    },
+                    TextColor(INK),
+                ));
+                for (index, label) in action_labels.iter().enumerate() {
+                    spawn_action_button(left, index, label);
                 }
             });
 
-            // The action buttons for the current player.
+            // CENTER: status on top, then the board filling the rest.
             root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(12.0),
+                flex_grow: 1.0,
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(16.0)),
+                row_gap: Val::Px(12.0),
+                overflow: Overflow::clip(),
                 ..default()
             })
-            .with_children(|row| {
-                for (index, label) in action_labels.iter().enumerate() {
-                    spawn_action_button(row, index, label);
-                }
+            .with_children(|main| {
+                // Status / log panel.
+                main.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL),
+                ))
+                .with_children(|panel| {
+                    panel.spawn((
+                        Text::new(view.status.clone()),
+                        TextFont {
+                            font_size: 18.0,
+                            ..default()
+                        },
+                        TextColor(INK),
+                    ));
+                });
+
+                // The zones fill the remaining space.
+                main.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    flex_grow: 1.0,
+                    ..default()
+                })
+                .with_children(|zones| {
+                    for zone in &view.zones {
+                        spawn_zone(zones, zone);
+                    }
+                });
             });
         });
 }
@@ -178,61 +254,185 @@ fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[Strin
 fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView) {
     parent
         .spawn(Node {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
             ..default()
         })
-        .with_children(|row| {
-            row.spawn((
-                Node {
-                    width: Val::Px(230.0),
-                    ..default()
-                },
+        .with_children(|col| {
+            col.spawn((
                 Text::new(zone.label.clone()),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: 15.0,
                     ..default()
                 },
                 TextColor(INK),
             ));
-            for card in &zone.cards {
-                spawn_card(row, &card.face);
-            }
+            col.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                align_items: AlignItems::FlexStart,
+                column_gap: Val::Px(8.0),
+                row_gap: Val::Px(8.0),
+                ..default()
+            })
+            .with_children(|row| {
+                for card in &zone.cards {
+                    spawn_card(row, &card.face);
+                }
+            });
         });
 }
 
+const CARD_W: f32 = 156.0;
+const CARD_H: f32 = 196.0;
+
 fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace) {
-    let (text, background) = match face {
-        CardFace::Down => ("\u{2592}".to_string(), CARD_BACK),
-        CardFace::Up { title, value } => {
-            let text = match value {
-                Some(value) => format!("{title}\n{value}"),
-                None => title.clone(),
-            };
-            (text, CARD_FACE)
-        }
-    };
+    match face {
+        CardFace::Down => spawn_card_back(parent),
+        CardFace::Up {
+            title,
+            type_line,
+            body,
+            corner,
+            accent,
+        } => spawn_card_face(parent, title, type_line.as_deref(), body, corner.as_deref(), *accent),
+    }
+}
+
+fn spawn_card_back(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Node {
-                width: Val::Px(74.0),
-                height: Val::Px(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
+                width: Val::Px(CARD_W),
+                height: Val::Px(CARD_H),
+                padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             },
-            BackgroundColor(background),
+            BackgroundColor(CARD_BACK),
         ))
         .with_children(|card| {
             card.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: 14.0,
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..default()
                 },
-                TextColor(CARD_INK),
+                BackgroundColor(CARD_BACK_INNER),
             ));
+        });
+}
+
+fn spawn_card_face(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    type_line: Option<&str>,
+    body: &[String],
+    corner: Option<&str>,
+    accent: Accent,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(CARD_W),
+                height: Val::Px(CARD_H),
+                flex_direction: FlexDirection::Column,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(CARD_FACE),
+        ))
+        .with_children(|card| {
+            // Title bar (accent-coloured).
+            card.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                    ..default()
+                },
+                BackgroundColor(accent_color(accent)),
+            ))
+            .with_children(|bar| {
+                bar.spawn((
+                    Text::new(title.to_string()),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(TITLE_INK),
+                ));
+            });
+
+            // Type line.
+            if let Some(t) = type_line {
+                card.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.86, 0.84, 0.74)),
+                ))
+                .with_children(|line| {
+                    line.spawn((
+                        Text::new(t.to_string()),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.28, 0.28, 0.30)),
+                    ));
+                });
+            }
+
+            // Body — stat / rules lines.
+            card.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(8.0)),
+                row_gap: Val::Px(3.0),
+                flex_grow: 1.0,
+                ..default()
+            })
+            .with_children(|b| {
+                for line in body {
+                    b.spawn((
+                        Text::new(line.clone()),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(CARD_INK),
+                    ));
+                }
+            });
+
+            // Corner badge (the power/toughness spot).
+            if let Some(c) = corner {
+                card.spawn(Node {
+                    width: Val::Percent(100.0),
+                    justify_content: JustifyContent::FlexEnd,
+                    padding: UiRect::all(Val::Px(6.0)),
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        Node {
+                            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(BADGE),
+                    ))
+                    .with_children(|badge| {
+                        badge.spawn((
+                            Text::new(c.to_string()),
+                            TextFont {
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(TITLE_INK),
+                        ));
+                    });
+                });
+            }
         });
 }
 
@@ -242,7 +442,10 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
             Button,
             ActionButton(index),
             Node {
-                padding: UiRect::axes(Val::Px(18.0), Val::Px(12.0)),
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
+                justify_content: JustifyContent::FlexStart,
+                align_items: AlignItems::Center,
                 ..default()
             },
             BackgroundColor(BUTTON),
@@ -251,7 +454,7 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
             button.spawn((
                 Text::new(label.to_string()),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: 16.0,
                     ..default()
                 },
                 TextColor(INK),

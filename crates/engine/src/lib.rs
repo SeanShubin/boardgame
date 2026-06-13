@@ -19,5 +19,5 @@ pub mod zone;
 pub use game::{Game, GameError, Outcome};
 pub use player::PlayerId;
 pub use rng::Rng;
-pub use view::{CardFace, CardView, Layout, TableView, ZoneView};
+pub use view::{Accent, CardFace, CardView, Layout, TableView, ZoneView};
 pub use zone::Zone;

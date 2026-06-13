@@ -36,5 +36,5 @@ pub mod stats;
 pub use actors::{Behavior, Creature, Hero, Line, Play};
 pub use game::{Action, Deckbound};
 pub use read::{Clash, Read, clash};
-pub use state::State;
+pub use state::{Phase, State};
 pub use stats::{Armor, Body, DamageType};
