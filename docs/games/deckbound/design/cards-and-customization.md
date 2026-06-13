@@ -11,8 +11,8 @@ action, and a starting set per dimension. Focus is **physical / mental / magical
 Three magnitude axes drive an action, and — crucially — they are **sourced from
 different aspects**:
 
-- **Power — Body.** Force → damage; hard to interrupt. Available even **mindless or
-  blind**.
+- **Power — Body.** Force → damage and **dropping** a foe; pure magnitude, no separate
+  interrupt job. Available even **mindless or blind**.
 - **Speed — Body** (modified by weapon weight). Act earlier; harder to be hit. A
   correct **Mind** read can grant initiative on top.
 - **Precision — Mind-gated.** Hit weak spots → bonus damage / bypass armor. With no
@@ -199,8 +199,9 @@ Each action earns its cell with a **signature effect**, not just stats
 - **Tackle** — close distance **and** knock down. Repositioning.
 - **Sweep** — low damage; **knockdown** (tempo swing).
 - **Shield bash** — needs a **shield**; blunt and fast with low damage but a strong
-  **stagger** — high Speed and just enough Power to interrupt. The natural guard's
-  tool: an ideal opportunity-attack / [interrupt](coordination-and-interruption.md).
+  **stagger** — high Speed plus the **stagger** keyword: land first and the target loses
+  its action. The natural guard's tool: an ideal opportunity-attack /
+  [pre-emption](coordination-and-interruption.md#pre-emption--stopping-a-foes-blow).
 
 *(Block and Evade are defensive **reads** — see [the Mind](mind-and-reads.md). A
 shield is the Form card that enables both Block and the Shield bash above.)*

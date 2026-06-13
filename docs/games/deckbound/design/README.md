@@ -112,15 +112,15 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [Combos & interactions](combos.md) — the design target: meaningful play as
   **combinations** of effects (aspect chords, multi-effect cards, read-outcome chains).
 - [Combat resolution](combat.md) — the magnitude layer: first strike by tempo,
-  interruption, and how a read becomes damage.
+  pre-emption (drop them / out-read them), and how a read becomes damage.
 - [Speed & tempo](speed-and-tempo.md) — Speed as a per-round tempo pool: spend it to
   evade/engage/strike, first-strike by tempo, overextending, and the Mind/Speed/Power
   split.
 - [The Spirit aspect](spirit.md) — will & morale: Resolve, Rally, Dread, fear, and
   dispositional traits.
 - [Coordination & interruption](coordination-and-interruption.md) — the cardless
-  positioning layer: front/back lines, Attack/Hold, and running as a **gauntlet** that
-  drains a Runner's Speed, with Speed + Power interrupts.
+  positioning layer: front/back lines, Attack/Hold, running as a **gauntlet** whose
+  drag (Speed) stops Runners, and reading-bandwidth as **Mind**.
 
 **Play & world**
 
@@ -142,6 +142,18 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [Skirmish prototype (6 vs 9)](skirmish-prototype.md) — an earlier, larger draft
   (its coverage rule and numbers predate the gauntlet); kept for the bigger roster
   and the one-threat-per-mechanic table.
+
+**Building it**
+
+- [Engine architecture](engine-architecture.md) — the rulebook / appendix / components
+  tiers, the keyword model, and one engine (WASM + native) behind three projections
+  (HTML, Bevy, and a generated tabletop kit).
+- [Resolution procedure](resolution.md) — the deterministic round the engine runs.
+- [Keyword vocabulary](keywords.md) — the rulebook glossary: each keyword's engine
+  intent + one-line manual text.
+- [Tabletop rulebook](rulebook.md) — the human-facing manual, appendix, and card listing
+  for the sample combat; the comprehensibility-pressure artifact (hand-written now,
+  generated later).
 
 **Reference**
 

@@ -136,11 +136,11 @@ const ZONE_TIP = {
   Dormant: "Dormant — spent or sealed cards, unavailable until recovered.",
 };
 const CARD_TIP = {
-  "Bash": "Bash — a fast blunt Strike off the shield. Low damage but a strong stagger; its Power can interrupt a Runner the wall catches.",
+  "Bash": "Bash — a fast blunt Strike off the shield. Low damage but a strong stagger: if it lands first, the target loses its action. Handy on a Runner the wall has caught (its Power is just the damage).",
   "reads ◆": "Reads — your four hidden choices: Strike / Block / Evade / Scheme. Picked blind, revealed at once; the cycle decides the exchange.",
   "Riposte": "Riposte — a combo: Evade the blow, counter, reposition. The Evade beats a Strike and banks +Speed. Defensive, so it self-returns to Potential.",
   "+Spd": "+Speed — momentum banked from winning a read; spare tempo toward a bigger blow. Stays Active.",
-  "Firestorm": "Firestorm — Magic, heat, AoE on the enemy front. Heat is the one type the Ironclad's plate can't reduce. Fleeting: exhausts after one use.",
+  "Firestorm": "Firestorm — Magic, heat, up to 5 targets on the enemy front. Heat is the one type the Ironclad's plate can't reduce. Fleeting: exhausts after one use.",
   "Frostbite": "Frostbite — Magic, cold. Slows a target (cuts Speed), making it cheaper for the wall to stop.",
   "Rally": "Rally — Spirit. Moves to the party zone and raises allies' Resolve; every Rally boosts every other. Lasting.",
   "Dread": "Dread — a Spirit attack: Fear against a target's Resolve. Bypasses armor entirely; only resolve shields.",
@@ -152,7 +152,7 @@ const TRAIT_TIP = {
   "Blade": "Blade — a sharp weapon. Sharp damage; glances off heavy plate.",
 };
 const HERO_TIP = {
-  aldric: "Aldric, Knight (Body) — the wall. Holds the front, feeds the drag pool, and Power-interrupts the Runner it stops. Melee [1,1].",
+  aldric: "Aldric, Knight (Body) — the wall. Holds the front, feeds the drag pool, and strikes/staggers the Runner the wall stops. Melee [1,1].",
   vera: "Vera, Duelist (Mind) — high reads. Out-duels the Ironclad (Evade beats its Strike) and helps hold the line. Melee [1,1].",
   sefa: "Sefa, Mage (Magic) — the only one who cracks the Ironclad's plate (heat). Fragile and fearful; must be protected. Ranged [2,2] — reaches the enemy front.",
   bram: "Bram, Warden (Spirit) — Rally (party-wide) shields the party's nerve against the Howler; Dread breaks enemy will. Ranged/inner [2,2].",
@@ -207,7 +207,7 @@ const steps = [
     narr:"<b>Bram's Rally</b> leaves Potential for the <b>party zone</b> (a Lasting, <b>collective</b> effect): it raises the <b>whole party's</b> Resolve — crucially Sefa's, from 1 to <b>5</b> — bracing her for the Howler." },
 
   { focus:['stalker','aldric'], do(){ S.drag=3; C('stalker').body=1; C('stalker').status=['good','STOPPED']; C('stalker').beh='stopped at the wall'; Z('aldric','Bash','active'); },
-    narr:"<b>The gauntlet — combined drag.</b> The <b>Stalker</b> runs it at <b>Speed 6</b>. The front-line drag is <b>9</b>, and <b>9 ≥ 6</b>, so the wall <b>stops it</b> — <i>no sequence</i>. The defenders put <b>Aldric</b> (Pow 5 ≥ 3) on it; his <b>Bash</b> goes Active and <b>interrupts</b> → the Stalker is bloodied to <b>Body 1</b>, halted before Sefa. The line spent <b>6</b> of its 9 drag (→ 3 left)." },
+    narr:"<b>The gauntlet — combined drag.</b> The <b>Stalker</b> runs it at <b>Speed 6</b>. The front-line drag is <b>9</b>, and <b>9 ≥ 6</b>, so the wall <b>stops it</b> — <i>no sequence</i>. The defenders put <b>Aldric</b> on it; his <b>Bash</b> goes Active and <b>staggers</b> → the Stalker is bloodied to <b>Body 1</b>, halted before Sefa. The line spent <b>6</b> of its 9 drag (→ 3 left)." },
 
   { focus:['ironclad','vera'], do(){ S.drag=3; C('ironclad').deck='committed ▸ STRIKE (Pow 6)'; Z('vera','Riposte','active'); Z('vera','+Spd','active'); H('vera').tempo=3; },
     narr:"<b>Mind — the read.</b> The Ironclad reveals its hidden choice: <b>Strike</b>, Pow 6 — lethal if it lands. <b>Vera reads it</b> and plays <b>Riposte</b> (an Evade): Evade beats Strike → the six Power is <b>negated</b>, and she <b>banks +Speed</b> (tempo 5 → 3 for the engagement). A wrong read here folds the front — why only Mind takes the Ironclad." },

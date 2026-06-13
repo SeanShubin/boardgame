@@ -34,10 +34,9 @@ protect.
   **auto-succeeds** against you.
 
 Consequences fall out for free: **attacking exposes you**, you **can't strike in two
-directions and stay safe**, and **focus-fire is deadly against the slow** — you read
-only as many attackers as your **Speed** affords (one by default; see [engagement
-bandwidth](#speed-is-engagement-bandwidth)), while a Guard pours that whole budget
-into defense and gating but lands no offense of its own.
+directions and stay safe**, and **focus-fire punishes a thin Mind** — you read only as
+many attackers as your **Mind** affords (one by default), while a Guard turns its whole
+turn to defense and gating but lands no offense of its own.
 
 ### Breadth, reads, and the gank
 
@@ -46,22 +45,22 @@ Offense and defense obey **different limits**, which is what makes the asymmetry
 - **Offense breadth hits everyone in reach** — a multi-target attack lands on all its
   targets regardless of your read-budget (it's [breadth, not bandwidth](cards-and-customization.md#how-targets-reach-and-the-read-interact)).
 - **Reads are bandwidth-limited.** You **defend** only the attackers you're engaging — as
-  many as your **Speed** affords. An attacker you can't afford to read **free-strikes**
-  you (an auto-success).
+  many as your **Mind** affords. An attacker you can't afford to read **free-strikes** you
+  (an auto-success).
 - **A target defends *your* attack only if it is reading *you*** — and the two checks are
   independent. So **focusing a foe who's occupied elsewhere is a one-way gank:** you read
   (and counter) their blows *and* land yours free, because their read is spent on someone
-  else. The asymmetry is always **paid for by Speed** — the occupied side could buy the
-  bandwidth to read you back (see [engagement bandwidth](#speed-is-the-currency-of-engagement)).
+  else. The asymmetry is always **paid for by Mind** — the occupied side could buy the
+  Mind to read you back (see [engagement bandwidth](#speed-is-the-currency-of-engagement)).
 
 Two consequences worth naming:
 
-- **The cleave is a Speed-poor tool.** Breadth forgoes anticipation *because you can't
-  afford to duel each foe*; enough Speed buys separate, anticipated engagements on all of
-  them and the tradeoff vanishes.
-- **Being ganked is a Speed deficit.** One-way dominance is always a gap in the victim's
-  bandwidth — closeable by buying the Speed to read back. No one is ganked who could
-  afford it.
+- **The cleave trades finesse for width.** One blind read can't out-guess each foe;
+  reading and countering them separately takes **Mind** (to track the crowd) *and*
+  **Speed** (to act on each), so a hero rich in both **duels** the crowd instead of
+  **cleaving** it.
+- **Being ganked is a Mind deficit.** One-way dominance is always a gap in the victim's
+  **reading** — closeable by buying the **Mind** to watch the extra attacker.
 
 ## Front line and back line
 
@@ -112,60 +111,51 @@ phases:
    a **stance** (Attack / Hold) and **target(s)**, obeying the targeting rules above.
    Crucially, **the choice to run is informed** — you see the enemy's front line and
    where their back line sits before committing.
-3. **Reveal & resolve** — reads are revealed **simultaneously**; each clash then
-   settles by **[tempo](speed-and-tempo.md)** — whoever has more Speed left **lands
-   first**, and **interrupts** (cancels) the other's action if its **Power** suffices:
-   a guard catching a Runner, a quick strike spoiling a slow Scheme — per the
-   [interrupt rule](#interruption-the-rule). A defender reads with RPS where engaged,
-   else takes the hit.
+3. **Reveal & resolve** — reads flip **simultaneously**; the clash then settles by
+   [tempo](speed-and-tempo.md) (who lands first) and the read cycle. The full round
+   (Form Up → Declare → Reveal → Clash → Recover) and how one blow **pre-empts** another
+   is the **[resolution procedure](resolution.md)**. A defender reads where engaged, else
+   takes the hit.
 
 Gating is **not** a special step — the front line simply **spends its combined tempo to
 engage** Runners as part of resolution (see [the gauntlet](#running-the-gauntlet)).
 
-## Interruption (the rule)
+## Pre-emption — stopping a foe's blow
 
-A **successful interrupt cancels the target's action**, and may carry **its own
-effects** depending on its nature (a shield bash staggers; a grapple locks; …).
+You **cancel** a committed blow only by:
 
-To intercept an enemy you need **both**:
+- **Dropping them first** — a [faster](speed-and-tempo.md) blow that fells the target
+  before it can swing (inherent — no acting once felled); or
+- **Out-reading them** — the [read cycle](mind-and-reads.md): a Defense negates a Strike,
+  a Strike spoils a Scheme.
 
-- **Speed — match theirs.** Your Speed ≥ their Speed: you keep up and impose. (To stop
-  a **run**, the front line spends its **combined tempo** to engage the Runner — see
-  [the gauntlet](#running-the-gauntlet).)
-- **Power — at least what they are using.** Your Power ≥ the Power they are
-  committing, so they can't simply shrug you off and push through.
+There is **no universal "Power interrupts" rule** — **Power is magnitude** (it cracks
+armor and drops foes; *dropping* is what pre-empts). A deliberate non-lethal **stagger** —
+"land first and the target loses its action" — is a **[keyword](keywords.md)** on cards
+that earn it (a shield **Bash**), never something every blow does.
+
+A **Runner** is stopped by the wall's **drag** (Speed), not by an interrupt: cover its
+Speed and it's halted at the front — then a Guard's **Power** simply damages it.
 
 ## Speed is the currency of engagement
 
-One principle underlies blocking, interrupting, and defending at once: **to impose on
-someone your Speed must match theirs (≥), with Power ≥ theirs so you can't be shrugged
-off.** From there, **numbers pool and spreading divides**:
+Engagement has **two** "handle many" limits, on two different stats:
 
-- **Pool (coverage).** Several Guards pool their tempo into one **combined** pool the
-  line spends to **engage Runners** — the [gauntlet](#running-the-gauntlet) is just
-  bandwidth pointed outward, with no order to it.
-- **Divide (bandwidth).** Engaging several opponents spends Speed: each foe costs
-  **their Speed** from your [tempo](speed-and-tempo.md) pool, paid after, and the
-  engagement that takes you **negative overextends** you — it lands, but you're left
-  **exposed**. (Power is checked at full against each, and is never spent.)
+- **Speed = how many blows you can land.** Striking several foes (or several times)
+  spends [tempo](speed-and-tempo.md): each engagement costs the target's Speed, paid
+  after; **overextend** (go negative) and the extra blow still lands but leaves you
+  **exposed**. Speed also catches Runners (the wall's [drag](#running-the-gauntlet)) and
+  decides who lands first.
+- **Mind = how many foes you can read.** You get **one defensive read per attacker you
+  can watch**, up to your **Mind**; an attacker beyond that **auto-succeeds** (a free
+  strike). Reading a crowd is cognition, not reflex.
 
-So Speed is **how many fights you can be in at once**. A blur of a duelist parries
-two or three foes and stops their runs; a slow bruiser engages one and is
-**swarmed** — the rest auto-succeed. It is what makes focus-fire deadly against a
-*slow* target, and what lets a fast hero stand against a crowd.
-
-**Defending several** means **one defensive read per attacker** you engage, paying
-Speed for each beyond your first; an attacker you cannot afford **auto-succeeds**, and
-you choose which to oppose and which to take. (The finer **targeting rules** — who
-must be opposed, in what order — still want spelling out.)
-
-Bandwidth covers **offense** too: a fast enough character **attacks several targets**
-in one round — each still legal under the line rules (a back-liner's extra targets
-are still front-line only; a front-liner splits between the line and runs).
-Powerscaling is **uncapped by design**: stack enough Speed (with the Power and
-capabilities to match) and one character becomes a **one-man army**. That is the
-[asymmetry](philosophy.md) pillar at combat scale — characters aren't balanced;
-scenarios are.
+So a **blur of a duelist** strikes several and stops their runs (Speed), while a **sharp
+mind** reads several at once and can't be ganked (Mind) — offense-at-scale and
+defense-at-scale on different stats. A thin Mind gets **focus-fired**; a thin Speed
+**can't press a crowd**. Powerscaling stays **uncapped**: stack both (with the **Power**
+to make the blows bite) and one character becomes a **one-man army** — the
+[asymmetry](philosophy.md) pillar, now spread across stats so it isn't a Speed monopoly.
 
 ## Running the gauntlet
 
@@ -179,8 +169,8 @@ crossing it**, and whatever it can't afford **passes through.**
   one derivable number, spent as **drag** subtracted from Runners.
 - The defenders **allocate drag** across the incoming Runners. For a Runner of Speed *s*
   hit with drag *d*:
-  - **d ≥ s → STOPPED** — caught, and **struck / interrupted** if an engaging Guard's
-    **Power ≥** it ([the interrupt rule](#interruption-the-rule)).
+  - **d ≥ s → STOPPED** — halted at the wall; an engaging Guard then **strikes** it
+    (its **Power** is the damage; a **[stagger](keywords.md)** card also cancels its action).
   - **d < s → SLOWED, and through:** it reaches its target with **leftover tempo =
     s − d** (telegraphed), but **untouched** — too fast to grab, you only trim its lead.
   - **d = 0 → through at full Speed.**
@@ -213,8 +203,9 @@ deck](decision-making.md#environment-creatures--hazards-non-player):
 
 - **Front line** — attack whoever stands in front (the default).
 - **Priority target** — run for a preferred victim (the healer), **running the
-  [gauntlet](#running-the-gauntlet)** to reach it. Only a guard **quick enough to catch
-  it and strong enough to interrupt** stops it; lesser guards merely bleed its Speed.
+  [gauntlet](#running-the-gauntlet)** to reach it. Only the wall's **drag** (enough
+  Speed) stops it; a Guard's **Power** then damages it, and a thinner wall merely bleeds
+  its Speed.
 
 ## Why cardless
 

@@ -21,8 +21,8 @@ only creatures decide by **deck**.
    [aspects](decks-and-aspects.md#only-the-tactical-aspect-is-rock-paper-scissors)).
 4. **Resolve magnitude.** The other aspects — the Body means, Magic and other
    modifiers, and any attached numbered cards — combine **deterministically and
-   order-independently** into *how much*: damage dealt, size of a bonus, whether an
-   interrupt lands.
+   order-independently** into *how much*: damage dealt, size of a bonus, whether a blow
+   **drops** its target.
 
 The read is categorical (who gains the upper hand); magnitude is numeric (by how
 much). The hidden commitment is what makes it a game of reads and bluffs rather
@@ -144,7 +144,7 @@ forfeits it. It now has its own home: see
   how fast it erodes and how costly recovery is.
 - **Mixing the magnitude layer in.** Exactly how numberless qualities and
   numbered multipliers turn a categorical win into a number (damage, bonus size,
-  interrupt threshold).
+  the lethal threshold).
 - **Bluff space.** With hidden commitment, do players have feints / partial
   information / tells, or is it pure simultaneous reveal?
 - **Multi-party exchanges.** How resolution generalizes when several allies (who

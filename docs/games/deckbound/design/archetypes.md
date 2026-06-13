@@ -7,7 +7,7 @@ who fights, how they specialize, and why no mechanic is safe to ignore.
 
 - **Solo plays tall.** With no ally to cover a gap, a lone hero must **max every
   axis** — Body, Mind, Magic, toughness, Speed — and self-recover. Powerscaling is
-  [uncapped](coordination-and-interruption.md#speed-is-engagement-bandwidth), so the
+  [uncapped](coordination-and-interruption.md#speed-is-the-currency-of-engagement), so the
   fantasy is the *Solo-Leveling* one-person army with an answer to everything.
 - **Co-op plays wide.** A group wins through **specialization and synergy** — each
   member leans hard into a few axes and relies on the others for the rest. A

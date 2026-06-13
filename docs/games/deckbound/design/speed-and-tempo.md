@@ -64,8 +64,8 @@ Nothing resolves "in Speed order." Reads are chosen **simultaneously and blind**
 [hidden-information](decision-making.md) core is intact); then, when two blows clash,
 **whoever has more tempo right then lands first:**
 
-- **Faster lands first.** If that blow **interrupts** (below), the slower's never
-  happens.
+- **Faster lands first.** If that blow **drops** the target — or carries a
+  [stagger](keywords.md) — the slower's never happens; otherwise both blows land.
 - **Equal tempo → both land.** Simultaneous trades are real, and **mutual kills are
   possible** — every point of Speed matters.
 - **The leftover is the telegraph.** A wall's **drag** trims a
@@ -76,17 +76,23 @@ Nothing resolves "in Speed order." Reads are chosen **simultaneously and blind**
 Landing first is **resolution** order, **not information** — nobody reveals their read
 early. **Speed sequences the blows, not the secrets.**
 
-## Speed vs Power — landing first vs stopping them
+## Speed vs Power — timing vs force
 
-Landing first only **stops** the other's action if you also have the **Power** to
-interrupt it ([the interrupt rule](coordination-and-interruption.md#interruption-the-rule)):
+The two split cleanly, **no overlap**:
 
-- **Faster + Power ≥ theirs** → you hit first **and interrupt**; their blow never lands.
-- **Faster but weaker** → you hit first and wound them, but a light blow **can't stop a
-  heavy one** — **their powerful swing still completes.**
+- **Speed = who lands first.** More leftover tempo strikes first; equal tempo trades.
+- **Power = how hard it lands** — magnitude: whether it cracks armor and toughness, and
+  whether it **drops** the target. Power has **no separate "interrupt" job**.
 
-So Speed is never an auto-win: a glass-cannon speedster can land first and **still die**
-to a slow bruiser's haymaker. **Speed buys timing; Power buys the right to stop them.**
+So you **stop** a foe's blow only two ways: **drop them first** (a lethal first-strike —
+no swinging once felled), or **out-read them** (the [cycle](mind-and-reads.md): a Defense
+negates a Strike, a Strike spoils a Scheme). A deliberate non-lethal **stagger** is a
+**[keyword](keywords.md)** on cards that earn it (a shield **Bash**), not a universal
+rule.
+
+So Speed is never an auto-win: a glass-cannon speedster lands first but, without the
+**Power** to drop a tough foe, just trades blows and may **still die** to the heavier
+hitter. **Speed buys timing; Power buys the killing weight.**
 
 ## Volume — extra hits
 
@@ -99,14 +105,14 @@ the asymmetry pillar.
 
 ## The three stats, divided cleanly
 
-| Stat                          | Job in a clash                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **[Mind](mind-and-reads.md)** | the **read** — which of Strike / Block / Evade / Scheme, its depth and bluff (blind, simultaneous)                        |
-| **Speed**                     | **tempo** — *who lands first* (ties both land) **and** *how many hits* (surplus buys more)                                |
-| **Power**                     | **force** — magnitude, and the **interrupt threshold** (a blow stops the other's action only if Power ≥ what they commit) |
+| Stat                          | Job in a clash                                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **[Mind](mind-and-reads.md)** | the **read** (which move, depth, bluff), **how many foes you can read at once** (defensive bandwidth), Precision, recovery |
+| **Speed**                     | **tempo** — *who lands first*, *how many you can strike* (offensive volume), and catching Runners (drag)                   |
+| **Power**                     | **force** — magnitude: cracking armor / toughness and **dropping** the target (no separate interrupt)                      |
 
-No overlap: **Mind picks the move, Speed times and multiplies it, Power gives it weight
-and the power to stop.**
+No overlap: **Mind picks the move and reads the crowd; Speed times and multiplies your
+blows; Power gives them killing weight.**
 
 ## Open questions
 

@@ -48,13 +48,13 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 ### Tempo & the gauntlet
 
-| Element                          | How                                            | When                               | Lives                                          |
-| -------------------------------- | ---------------------------------------------- | ---------------------------------- | ---------------------------------------------- |
-| **Tempo** (per-round Speed pool) | a **derivable number**                         | spent at resolve; resets round-end | **head** = Speed − engagements visible in play |
-| **First-strike order**           | *derived* — compare leftover tempo             | resolve                            | head (= two tempo numbers)                     |
-| **Interrupt**                    | *derived* — Power ≥ what they commit           | resolve                            | head (= two Power numbers)                     |
-| **Gauntlet drag pool**           | a **derivable number** = sum of Guards' Speeds | resolve                            | head (= sum of visible Guard Speeds)           |
-| **Overextended / Exposed**       | a **marker** (tempo gone negative)             | resolve; clears round-end          | table                                          |
+| Element                          | How                                                      | When                               | Lives                                          |
+| -------------------------------- | -------------------------------------------------------- | ---------------------------------- | ---------------------------------------------- |
+| **Tempo** (per-round Speed pool) | a **derivable number**                                   | spent at resolve; resets round-end | **head** = Speed − engagements visible in play |
+| **First-strike order**           | *derived* — compare leftover tempo                       | resolve                            | head (= two tempo numbers)                     |
+| **Pre-emption**                  | *derived* — a lethal first-strike, or a **stagger** card | resolve                            | head (who's felled before they swing)          |
+| **Gauntlet drag pool**           | a **derivable number** = sum of Guards' Speeds           | resolve                            | head (= sum of visible Guard Speeds)           |
+| **Overextended / Exposed**       | a **marker** (tempo gone negative)                       | resolve; clears round-end          | table                                          |
 
 ### Actions, effects, damage
 
@@ -89,7 +89,7 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 Every **structural** question has an answer: state is either a **card / marker / token on
 the table**, or a **single number re-derivable from the table** (tempo, drag,
-first-strike, interrupt, a swarm count). The remaining blanks are **numeric knobs**, not
+first-strike, stagger, a swarm count). The remaining blanks are **numeric knobs**, not
 representation holes:
 
 - the **gate aggregate** (sum of Guard Speeds, or gentler);
@@ -162,8 +162,8 @@ A handful of rules keep the whole game legible as cards **at any power level**:
 | **Resolute:** *fearless — fear cannot break you*                                   | trait (needs no Resolve cards)    |
 
 **In Potential** (playable this round): **Strike · Block · Evade · Scheme** (the four
-reads) + **Bash** *(Strike, blunt; on hit, interrupt if Power ≥ target's committed
-Power)*.
+reads) + **Bash** *(Strike, blunt; on hit, **stagger** — land first and the target loses
+its action)*.
 
 **At round start:** 4 **tempo tokens** (= Speed). **Stance:** an Attack/Hold marker.
 
@@ -282,16 +282,16 @@ the sum. (This is what the [tutorial](../tutorial.html) draws as a **tempo bar**
 **Setup:** each side lays Form face-up into front/back lines; each combatant places
 **tempo = Speed**; behavior decks sit face-down; reads/actions wait in **Potential**.
 
-| #   | What happens                                                                                                                                                                                                       | Cards / tokens that move                                                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Declare.** Aldric & Vera → **Hold**; Sefa → **Attack** (Firestorm); Bram → **Attack** (Rally). Creatures flip their behavior top cards.                                                                          | stance markers placed; behavior cards revealed (Potential→Active)                                                                           |
-| 2   | **Stalker runs, slips Vera** (spends Vera's Speed).                                                                                                                                                                | Stalker **tempo 6 → 1** (5 to spent)                                                                                                        |
-| 3   | **Stalker caught by Aldric** (tempo 1 < 4). It takes the hit; Aldric plays **Bash**, Pow 4 ≥ Pow 3 → **interrupt**. Aldric engaging costs 6 tempo, he has 4 → **overextends, Exposed**. Bash 4 → T1 → 4 Body flip. | Bash: Potential→Active→**Dormant**; Stalker **Body ×4: Form→Dormant** (6→2); Aldric tempo→0 + **Exposed** marker; Stalker run **cancelled** |
-| 4   | **Wraith haunts Sefa.** Fear 5 vs Rallied Resolve 5 → no break → **recoil**.                                                                                                                                       | Wraith behavior card Active→**Dormant**                                                                                                     |
-| 5   | **Bram's Rally** lands in the **party zone**, holding Sefa at Resolve 5.                                                                                                                                           | Rally: Potential→Active→**party zone** (Lasting)                                                                                            |
-| 6   | **Sefa's Firestorm.** Imps: 5 ≥ Body 1 → **die**. Ogre: heat −0, 5÷T3 = 1 → 1 Body flip.                                                                                                                           | Firestorm: Potential→Active→**Dormant** (Fleeting); each Imp **Body: Form→Dormant**; Ogre **Body ×1: Form→Dormant** (8→7)                   |
-| 7   | **Vera's Riposte** vs the Ogre's Press: **Evade** negates, **+Speed** banked, counter 0 (armor).                                                                                                                   | Riposte/Evade: Potential→Active→**Potential** (self-returns); **+Speed token → Active**                                                     |
-| 8   | **Round end.** Partial damage clears (none pending); tempo **refills** to Speed; spent *reads* that self-return go back to Potential; spent *actions* stay Dormant.                                                | round-damage zones emptied; tempo pools reset; Aldric's **Exposed** marker cleared                                                          |
+| #   | What happens                                                                                                                                                                                                                    | Cards / tokens that move                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Declare.** Aldric & Vera → **Hold**; Sefa → **Attack** (Firestorm); Bram → **Attack** (Rally). Creatures flip their behavior top cards.                                                                                       | stance markers placed; behavior cards revealed (Potential→Active)                                                                           |
+| 2   | **Stalker runs, slips Vera** (spends Vera's Speed).                                                                                                                                                                             | Stalker **tempo 6 → 1** (5 to spent)                                                                                                        |
+| 3   | **Stalker caught by Aldric** (tempo 1 < 4). It takes the hit; Aldric plays **Bash** → it lands and **staggers** (run cancelled). Aldric engaging costs 6 tempo, he has 4 → **overextends, Exposed**. Bash 4 → T1 → 4 Body flip. | Bash: Potential→Active→**Dormant**; Stalker **Body ×4: Form→Dormant** (6→2); Aldric tempo→0 + **Exposed** marker; Stalker run **cancelled** |
+| 4   | **Wraith haunts Sefa.** Fear 5 vs Rallied Resolve 5 → no break → **recoil**.                                                                                                                                                    | Wraith behavior card Active→**Dormant**                                                                                                     |
+| 5   | **Bram's Rally** lands in the **party zone**, holding Sefa at Resolve 5.                                                                                                                                                        | Rally: Potential→Active→**party zone** (Lasting)                                                                                            |
+| 6   | **Sefa's Firestorm.** Imps: 5 ≥ Body 1 → **die**. Ogre: heat −0, 5÷T3 = 1 → 1 Body flip.                                                                                                                                        | Firestorm: Potential→Active→**Dormant** (Fleeting); each Imp **Body: Form→Dormant**; Ogre **Body ×1: Form→Dormant** (8→7)                   |
+| 7   | **Vera's Riposte** vs the Ogre's Press: **Evade** negates, **+Speed** banked, counter 0 (armor).                                                                                                                                | Riposte/Evade: Potential→Active→**Potential** (self-returns); **+Speed token → Active**                                                     |
+| 8   | **Round end.** Partial damage clears (none pending); tempo **refills** to Speed; spent *reads* that self-return go back to Potential; spent *actions* stay Dormant.                                                             | round-damage zones emptied; tempo pools reset; Aldric's **Exposed** marker cleared                                                          |
 
 **End state, in cards:** Imps' Body in Dormant (dead); **Stalker** 2 Body in Form / 4 in
 Dormant (bloodied, stopped); Ogre 7/8; Wraith Presence ×3 (untouched); heroes' Body

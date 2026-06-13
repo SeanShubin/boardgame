@@ -6,17 +6,20 @@ How a committed exchange resolves into **magnitude**. Once the reads
 that turns them into an outcome. Numbers here are deferred until there is something to
 playtest.
 
-## Order and interruption
+## Order and pre-emption
 
 - **Speed decides who lands first** — not a global turn order but a **per-clash** edge:
   the fighter with more [tempo](speed-and-tempo.md) left **strikes first**, and **equal
   tempo means both land**. Reads are still chosen **blind and simultaneous**.
-- **Power resists interruption** — landing first only *stops* the other's action if your
-  **Power ≥ what they commit**; a light blow wounds but can't halt a heavy one (notably
-  it can spoil a fragile Scheme).
+- **Power is pure magnitude** — it sets force and cracks armor; it has **no separate
+  interrupt job**. You **stop** the other's blow only by **dropping them first** (a lethal
+  first-strike — no swinging once felled) or **out-reading them** (a Defense beats their
+  Strike, a Strike spoils their Scheme). A non-lethal **stagger** is a
+  [keyword](keywords.md) on specific cards, not a universal rule.
 - The full **tempo pool** — spend to evade/engage/strike, overextend, volume — is in
-  [speed & tempo](speed-and-tempo.md); the **interrupt rule** and front-line
-  interception in [coordination & interruption](coordination-and-interruption.md).
+  [speed & tempo](speed-and-tempo.md);
+  **[pre-emption](coordination-and-interruption.md#pre-emption--stopping-a-foes-blow)** and
+  front-line interception in [coordination & interruption](coordination-and-interruption.md).
 
 ## From a read to damage
 

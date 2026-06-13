@@ -22,8 +22,8 @@ The **read** you play is separate from your **stance**: stance (Attack or Hold) 
 *how you play the clash* once engaged. You can Attack a target and still Block its
 counter.
 
-- **Strike** — attack now. Direct damage; Power resists interruption; faster strikes
-  resolve first. This is the **cash-in**.
+- **Strike** — attack now. Direct damage; faster strikes resolve first, and enough
+  **Power** drops a foe before they can swing back. This is the **cash-in**.
 - **Block** — absorb a strike. Fast, doable while immobile. Win → bank **Power**.
 - **Evade** — dodge a strike and reposition. Win → bank **Speed**.
 - **Scheme** — set up. Gain position / distance, but very exposed to a Strike. Win
@@ -81,6 +81,15 @@ pile. The original instincts fall straight out:
 
 The exchange stays **computable** ([philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)):
 bounded reads plus a countable bank.
+
+## How many you can read — bandwidth is Mind
+
+You get **one defensive read per attacker you can watch**, up to your **Mind** — reading
+a crowd is cognition, not reflex. Beyond your Mind, an extra attacker
+**[auto-succeeds](coordination-and-interruption.md#the-coherence-principle)** (a free
+strike). So **Mind is the anti-gank stat**: a sharp mind tracks and counters several foes
+at once; a thin one is focus-fired. (Speed governs how many you *act on*; Mind, how many
+you *read*.)
 
 ## One read against many
 

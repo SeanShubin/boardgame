@@ -11,12 +11,12 @@ self-returns); `Firestorm: P→A→D` (Fleeting); `+Spd →A` (momentum banked).
 
 ## The party — one lean per aspect
 
-| Hero                | Spd · Pow · (Mag/Spr) · **Resolve** | Body×T | Aspect & job                                                                                                                 |
-| ------------------- | ----------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Aldric** (Knight) | 4 · **5** · — · R4                  | 8×T2   | **Body** — Plate (sharp −3, blunt −1, **heat −0**), Shield/**Bash**. The wall; **catches** the Runner, Power-**interrupts**. |
-| **Vera** (Duelist)  | **5** · 3 · — · R2                  | 4×T1   | **Mind** — Blade, **Riposte**. High reads: **out-duels** the Ironclad and **bleeds** the Runner's tempo.                     |
-| **Sefa** (Mage)     | 2 · 1 · **Mag 5** · R1              | 3×T1   | **Magic** — **Firestorm** (heat, AoE), Frostbite (cold). The *only* one who cracks the Ironclad; **fearful**.                |
-| **Bram** (Warden)   | 3 · 2 · **Spr 5** · R4              | 5×T2   | **Spirit** — **Rally**, **Dread**, Steel. **Shields Sefa's nerve** and breaks enemy morale.                                  |
+| Hero                | Spd · Pow · (Mag/Spr) · **Resolve** | Body×T | Aspect & job                                                                                                                                         |
+| ------------------- | ----------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Aldric** (Knight) | 4 · **5** · — · R4                  | 8×T2   | **Body** — Plate (sharp −3, blunt −1, **heat −0**), Shield/**Bash**. The wall; **catches** the Runner (drag) and **strikes** it — Bash **staggers**. |
+| **Vera** (Duelist)  | **5** · 3 · — · R2                  | 4×T1   | **Mind** — Blade, **Riposte**. High reads: **out-duels** the Ironclad and **bleeds** the Runner's tempo.                                             |
+| **Sefa** (Mage)     | 2 · 1 · **Mag 5** · R1              | 3×T1   | **Magic** — **Firestorm** (heat, 5 targets), Frostbite (cold). The *only* one who cracks the Ironclad; **fearful**.                                  |
+| **Bram** (Warden)   | 3 · 2 · **Spr 5** · R4              | 5×T2   | **Spirit** — **Rally**, **Dread**, Steel. **Shields Sefa's nerve** and breaks enemy morale.                                                          |
 
 **Reach:** Aldric & Vera fight **melee `[1,1]`**; Sefa & Bram are **ranged / inner
 `[2,2]`**, reaching the enemy front from the back.
@@ -51,9 +51,9 @@ two **line** foes (Stalker, Howler), and a **swarm** (Husks = one card + a count
 
 **Body + tempo — the gauntlet.** The heroes' front line pools its tempo as **drag:
 Aldric 4 + Vera 5 = 9.** The **Stalker** (Speed 6) runs — **9 ≥ 6**, so the line
-**stops it.** The defenders put **Aldric** on it (Pow 5 ≥ 3); his **Bash** (`P→A`)
-**interrupts** — `Bash → Body ×5: Form→D` leaves the Stalker at **Body 1**, halted before
-Sefa. *No sequence — the line's combined tempo simply out-drags a Speed-6 runner, and the
+**stops it.** The defenders put **Aldric** on it; his **Bash** (`P→A`)
+**lands** — `Bash → Body ×5: Form→D` leaves the Stalker at **Body 1**, halted before
+Sefa (the drag already stopped the run; Bash also carries **stagger**). *No sequence — the line's combined tempo simply out-drags a Speed-6 runner, and the
 party spends its tanky, high-Power body to make the stop.*
 
 **Mind — the read.** The **Ironclad** presses, its committed choice **hidden in its
@@ -105,7 +105,7 @@ only together.**
 ## Core mechanics this exercises
 
 - **Tempo gauntlet** (combined drag stops the Runner): Stalker vs Vera + Aldric, pooled `9 ≥ 6`.
-- **First strike + Power-interrupt**: Aldric's Bash stops the Stalker.
+- **Charge + stagger**: combined drag stops the Stalker (9 ≥ 6); Aldric's Bash bloodies and **staggers** it.
 - **Reads / RPS + momentum**: Vera Evades the Ironclad's hidden Strike, banks +Speed.
 - **Typed damage vs armor**: only heat passes the Ironclad's plate; blade/blunt bounce.
 - **Targets / breadth**: Firestorm hits **5 targets** — four Husks burn, two overflow (swarm = one card + a count).
