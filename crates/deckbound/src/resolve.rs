@@ -5,7 +5,7 @@
 //! imposed only where it is inherent. Within the exchange a felled or staggered
 //! actor's blow is cancelled; everything else lands. Power is pure magnitude
 //! (it cracks armor and drops foes); there is no separate "Power interrupts"
-//! rule — only a lethal first-strike, a won read, or a `stagger` card pre-empts.
+//! rule - only a lethal first-strike, a won read, or a `stagger` card pre-empts.
 //!
 //! Simplifications in this first playable cut (all faithful in spirit, flagged
 //! for the next pass): reach is not enforced (any living foe is targetable in
@@ -20,14 +20,14 @@ use crate::read::{Clash, Read, clash};
 use crate::state::State;
 use crate::stats::DamageType;
 
-/// How much a Rally (or Steel) lifts Resolve — enough that Sefa (base 1) holds
+/// How much a Rally (or Steel) lifts Resolve - enough that Sefa (base 1) holds
 /// against the Howler's Fear 5.
 const RALLY_BONUS: i32 = 4;
 
 /// Resolve the whole round from the heroes' recorded declarations.
 pub fn resolve_round(state: &mut State) {
     state.log.clear();
-    state.log.push(format!("── Round {} ──", state.round));
+    state.log.push(format!("== Round {} ==", state.round));
 
     reset_transient(state);
 
@@ -40,7 +40,7 @@ pub fn resolve_round(state: &mut State) {
         .filter_map(|(i, d)| d.as_ref().map(|d| (i, d.play, d.target)))
         .collect();
 
-    support(state, &decls); // Rally / Steel — before nerve is tested
+    support(state, &decls); // Rally / Steel - before nerve is tested
     morale(state, &decls); // Dread routs, then the Howl
     charge(state); // the gauntlet stops or lets through Runners
     hero_offense(state, &decls); // Strikes, Firestorm, Frostbite
@@ -75,7 +75,7 @@ fn support(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
                 }
                 state
                     .log
-                    .push(format!("{who} Rallies — the party steels its nerve."));
+                    .push(format!("{who} Rallies - the party steels its nerve."));
             }
             Play::Steel => {
                 let h = &mut state.heroes[hi];
@@ -105,7 +105,7 @@ fn morale(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
             state.creatures[ci].disabled = true;
             state
                 .log
-                .push(format!("{who}'s Dread routs the {cname} — it cowers."));
+                .push(format!("{who}'s Dread routs the {cname} - it cowers."));
         } else {
             state
                 .log
@@ -134,7 +134,7 @@ fn morale(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
             h.panicked = true;
             state
                 .log
-                .push(format!("{who} panics — the action is lost!"));
+                .push(format!("{who} panics - the action is lost!"));
         } else {
             state.log.push(format!("{who} holds firm."));
         }
@@ -155,7 +155,7 @@ fn charge(state: &mut State) {
         };
         if drag >= cspeed {
             state.log.push(format!(
-                "The wall drags the {cname} (drag {drag} ≥ Speed {cspeed}) — stopped cold."
+                "The wall drags the {cname} (drag {drag} >= Speed {cspeed}) - stopped cold."
             ));
             if let Some(gi) = strongest_holding_front(state) {
                 let (gp, gtype, gname) = {
@@ -165,7 +165,7 @@ fn charge(state: &mut State) {
                 let flips = state.creatures[ci].take_hit(gp, gtype);
                 state
                     .log
-                    .push(format!("{gname} strikes the stopped {cname} — {flips} down."));
+                    .push(format!("{gname} strikes the stopped {cname} - {flips} down."));
                 if !state.creatures[ci].alive() {
                     state.log.push(format!("The {cname} falls."));
                 }
@@ -241,13 +241,13 @@ fn ironclad_attack(state: &mut State, ci: usize) {
     if !strikes {
         state
             .log
-            .push(format!("The {cname} feints at {who} — no blow falls."));
+            .push(format!("The {cname} feints at {who} - no blow falls."));
         return;
     }
 
     match engagement_read(state, hi, ci) {
         None => {
-            // Not engaging it — a free strike on the exposed hero.
+            // Not engaging it - a free strike on the exposed hero.
             state
                 .log
                 .push(format!("The {cname} strikes the exposed {who} (Pow {cpow})."));
@@ -268,7 +268,7 @@ fn ironclad_attack(state: &mut State, ci: usize) {
             }
             Clash::AttackerWins => {
                 state.log.push(format!(
-                    "{who}'s Scheme is shattered — the {cname} lands Pow {cpow}!"
+                    "{who}'s Scheme is shattered - the {cname} lands Pow {cpow}!"
                 ));
                 creature_hit_hero(state, ci, hi);
             }
@@ -335,7 +335,7 @@ fn hero_strike(state: &mut State, hi: usize, ci: usize) {
     let flips = state.creatures[ci].take_hit(power, dtype);
     if flips > 0 {
         state.log.push(format!(
-            "{who} strikes the {cname} ({}) — {flips} down.",
+            "{who} strikes the {cname} ({}) - {flips} down.",
             dtype.name()
         ));
     } else {
@@ -401,7 +401,7 @@ fn firestorm(state: &mut State, hi: usize) {
         } else {
             let lost = before[ci].0 - c.body.remaining;
             if lost > 0 {
-                parts.push(format!("{} −{lost}", c.name));
+                parts.push(format!("{} -{lost}", c.name));
             } else {
                 parts.push(format!("{} unscathed", c.name));
             }
@@ -427,7 +427,7 @@ fn frostbite(state: &mut State, hi: usize, ci: usize) {
     state.creatures[ci].speed = state.creatures[ci].speed.saturating_sub(2);
     state
         .log
-        .push(format!("{who}'s Frostbite chills the {cname} (−{flips}) and slows it."));
+        .push(format!("{who}'s Frostbite chills the {cname} (-{flips}) and slows it."));
     if !state.creatures[ci].alive() {
         state.log.push(format!("The {cname} falls."));
     }
@@ -536,11 +536,11 @@ pub fn update_outcome(state: &mut State) {
         state.outcome = Some(Outcome::Win(PlayerId(0)));
         state
             .log
-            .push("Every foe is down — the party stands victorious!".into());
+            .push("Every foe is down - the party stands victorious!".into());
     } else if !heroes {
         state.outcome = Some(Outcome::Win(PlayerId(1)));
         state
             .log
-            .push("The last hero falls — the run ends.".into());
+            .push("The last hero falls - the run ends.".into());
     }
 }

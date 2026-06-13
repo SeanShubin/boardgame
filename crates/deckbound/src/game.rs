@@ -96,9 +96,9 @@ impl Game for Deckbound {
             .unwrap_or("?");
         match action.play {
             Play::Read(Read::Strike) => format!("{who}: Strike the {target_name}"),
-            Play::Read(r) => format!("{who}: Hold — {}", r.name()),
+            Play::Read(r) => format!("{who}: Hold - {}", r.name()),
             Play::Bash => format!("{who}: Bash the {target_name}"),
-            Play::Riposte => format!("{who}: Hold — Riposte"),
+            Play::Riposte => format!("{who}: Hold - Riposte"),
             Play::Firestorm => format!("{who}: Firestorm (heat, up to 5 foes)"),
             Play::Frostbite => format!("{who}: Frostbite the {target_name}"),
             Play::Rally => format!("{who}: Rally (party Resolve)"),
@@ -157,7 +157,7 @@ impl Game for Deckbound {
                 .filter(|c| c.alive())
                 .map(|c| {
                     let title = if c.is_swarm() {
-                        format!("{} ×{}\nSpd{} Pow{}", c.name, c.count, c.speed, c.power)
+                        format!("{} x{}\nSpd{} Pow{}", c.name, c.count, c.speed, c.power)
                     } else {
                         let armor = if c.armor.is_some() { " plate" } else { "" };
                         format!("{}\nSpd{} Pow{}{}", c.name, c.speed, c.power, armor)
@@ -198,13 +198,13 @@ impl Deckbound {
         let recent: Vec<String> = state.log.iter().rev().take(10).rev().cloned().collect();
         let log = recent.join("\n");
         match &state.outcome {
-            Some(Outcome::Win(PlayerId(0))) => format!("Victory — the warband is broken.\n\n{log}"),
-            Some(Outcome::Win(_)) => format!("Defeat — the party has fallen.\n\n{log}"),
+            Some(Outcome::Win(PlayerId(0))) => format!("Victory - the warband is broken.\n\n{log}"),
+            Some(Outcome::Win(_)) => format!("Defeat - the party has fallen.\n\n{log}"),
             Some(Outcome::Tie(_)) => format!("The fight ends in a stalemate.\n\n{log}"),
             None => {
                 let hero = state.current_hero().map(|i| state.heroes[i].name).unwrap_or("?");
                 format!(
-                    "Round {} — declare for {hero}. (Front holds the wall; the back acts over it.)\n\n{log}",
+                    "Round {} - declare for {hero}. (Front holds the wall; the back acts over it.)\n\n{log}",
                     state.round
                 )
             }
@@ -218,7 +218,7 @@ fn hero_card(state: &State, index: usize, h: &crate::actors::Hero) -> CardView {
     }
     let declared = state.declarations[index]
         .as_ref()
-        .map(|d| format!(" ✓{}", d.play.name()))
+        .map(|d| format!(" *{}", d.play.name()))
         .unwrap_or_default();
     let aspect = if h.magic > 0 {
         format!("Mag{}", h.magic)
@@ -303,7 +303,7 @@ mod tests {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
         declare_winning_round(&game, &mut state);
-        // Stalker dragged to Body 1 (6 − Aldric's Pow 5), Howler burned down,
+        // Stalker dragged to Body 1 (6 - Aldric's Pow 5), Howler burned down,
         // husks thinned. Sefa unharmed (held her nerve via Rally).
         let stalker = state.creatures.iter().find(|c| c.name == "Stalker").unwrap();
         assert_eq!(stalker.body.remaining, 1);
