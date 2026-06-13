@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "seanshubin": {
+      "source": {
+        "source": "github",
+        "repo": "SeanShubin/rules-ecs"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "code-quality-ecs@seanshubin": true
+  }
+}

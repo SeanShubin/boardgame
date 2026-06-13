@@ -4,6 +4,7 @@ members = [
     "crates/engine",
     "crates/tabletop",
     "crates/treasure-dive",
+    "crates/deckbound",
     "crates/boardgame",
 ]
 
@@ -16,6 +17,7 @@ bevy = { version = "0.18.0", features = ["wav"] }
 engine = { path = "crates/engine" }
 tabletop = { path = "crates/tabletop" }
 treasure-dive = { path = "crates/treasure-dive" }
+deckbound = { path = "crates/deckbound" }
 
 # Enable fast compiles for development (Bevy recommendation).
 # Disable when profiling or benchmarking.
