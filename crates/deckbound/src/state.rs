@@ -1,13 +1,12 @@
-//! The state of a duel-sandbox combat in progress.
+//! The state of a combat in progress.
 //!
-//! Combat is a sequence of one-on-one duels. The human and a creature are paired
-//! (first living vs first living); the human picks stances, the creature reads back
-//! through its policy, and each beat resolves until a strike lands and the duel
-//! ends. Then the next pair forms. Edge is **per-duel** — it resets each duel.
+//! Combat is a sequence of **rounds**. In a round the human engages foes (spending
+//! **tempo** = Speed) through interactive duels; at round end the creatures act and
+//! foes the heroes couldn't **cover** (focus = Mind) free-hit. Edge is per-duel.
 
 use engine::{Outcome, Rng};
 
-use crate::actors::{Creature, Hero};
+use crate::actor::Actor;
 use crate::scenarios::Scenario;
 
 /// Which menu page is showing.
@@ -15,6 +14,7 @@ use crate::scenarios::Scenario;
 pub enum Menu {
     Top,
     Scenarios,
+    God,
     Tutorial,
 }
 
@@ -22,14 +22,14 @@ pub enum Menu {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Menu(Menu),
-    /// Matchmaking: pick which hero duels which foe (skipped when there is only
-    /// one of each).
+    /// The player's phase: engage foes, play actions, or end the round.
     Choosing,
+    /// An interactive duel is running, beat by beat.
     Combat,
 }
 
-/// The active duel: who's in it, both Edge banks (public), the beat counter, and
-/// a run of mutual-Marshals for the stall backstop.
+/// The active duel: who's in it, both Edge banks (public), the beat counter, and a
+/// run of mutual-Marshals for the stall backstop.
 #[derive(Clone, Copy, Debug)]
 pub struct Duel {
     pub hero: usize,
@@ -42,10 +42,9 @@ pub struct Duel {
 
 #[derive(Clone, Debug)]
 pub struct State {
-    /// Which duel of the fight this is (1-based).
-    pub duel_no: u32,
-    pub heroes: Vec<Hero>,
-    pub creatures: Vec<Creature>,
+    pub round: u32,
+    pub heroes: Vec<Actor>,
+    pub creatures: Vec<Actor>,
     pub phase: Phase,
     pub duel: Option<Duel>,
     pub scenario: Option<Scenario>,
@@ -71,5 +70,12 @@ impl State {
 
     pub fn living_creatures(&self) -> usize {
         self.creatures.iter().filter(|c| !c.is_down()).count()
+    }
+
+    /// A hero may still take an offensive engagement this round.
+    pub fn hero_can_act(&self, i: usize) -> bool {
+        self.heroes
+            .get(i)
+            .is_some_and(|h| !h.is_down() && !h.exposed && h.tempo > 0)
     }
 }

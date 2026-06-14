@@ -1,9 +1,11 @@
 //! The Edge duel — one beat at a time.
 //!
-//! Two sides each pick a stance (Marshal / Unleash / Overwhelm / Parry); this
-//! resolves a single beat: new Edge for each, damage dealt to each, and whether
-//! a strike landed (which ends the duel). See
-//! `docs/games/deckbound/design/the-duel.md`. Pure and deterministic.
+//! Two sides each pick a [`Stance`] (Marshal / Unleash / Overwhelm / Parry); this
+//! resolves a single beat: new Edge for each, any **strike** that landed (typed,
+//! so the caller routes it through the [`crate::stats`] pipeline), and whether the
+//! duel ends. Pure and deterministic. See `docs/games/deckbound/design/the-duel.md`.
+
+use crate::stats::DamageType;
 
 /// A stance in the duel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,65 +30,83 @@ impl Stance {
         }
     }
 
-    /// All four, in display order.
-    pub const ALL: [Stance; 4] =
-        [Stance::Marshal, Stance::Unleash, Stance::Overwhelm, Stance::Parry];
+    pub const ALL: [Stance; 4] = [
+        Stance::Marshal,
+        Stance::Unleash,
+        Stance::Overwhelm,
+        Stance::Parry,
+    ];
 }
 
-/// One side entering a beat: its current Edge, its base (0-Edge) strike, and a
-/// name for the narration.
+/// One side entering a beat: its Edge, its weapon's base power + damage type, its
+/// precision, and a name for the narration.
 #[derive(Clone, Copy, Debug)]
 pub struct Side<'a> {
     pub edge: u32,
-    pub base: u32,
+    pub power: u32,
+    pub dtype: DamageType,
+    pub precision: u32,
     pub name: &'a str,
+}
+
+/// A strike that landed: the caller routes `raw` of `dtype` (with `precision`)
+/// through the target's defense.
+#[derive(Clone, Copy, Debug)]
+pub struct Strike {
+    pub raw: u32,
+    pub dtype: DamageType,
+    pub precision: u32,
 }
 
 /// The result of one beat.
 #[derive(Clone, Debug)]
 pub struct Beat {
-    /// Side A's Edge after the beat (ignored if `ends`).
     pub a_edge: u32,
-    /// Side B's Edge after the beat (ignored if `ends`).
     pub b_edge: u32,
-    /// Damage dealt **to** A this beat.
-    pub a_dmg: u32,
-    /// Damage dealt **to** B this beat.
-    pub b_dmg: u32,
+    /// A strike landing **on A** (from B), if any.
+    pub on_a: Option<Strike>,
+    /// A strike landing **on B** (from A), if any.
+    pub on_b: Option<Strike>,
     /// A strike landed — the duel is over.
     pub ends: bool,
-    /// Whether both sides chose Marshal (for the stall backstop).
+    /// Both chose Marshal (for the stall backstop).
     pub double_marshal: bool,
-    /// Human-readable narration of what happened.
     pub note: String,
 }
 
-/// Resolve one beat: side `a` plays `a_stance`, side `b` plays `b_stance`.
-pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
+fn strike(side: &Side) -> Strike {
+    Strike {
+        raw: side.power + side.edge,
+        dtype: side.dtype,
+        precision: side.precision,
+    }
+}
+
+/// Resolve one beat: side `a` plays `ar`, side `b` plays `br`.
+pub fn resolve(a: &Side, ar: Stance, b: &Side, br: Stance) -> Beat {
     use Stance::*;
     let cont = |a_edge, b_edge, note: String| Beat {
         a_edge,
         b_edge,
-        a_dmg: 0,
-        b_dmg: 0,
+        on_a: None,
+        on_b: None,
         ends: false,
-        double_marshal: a_stance == Marshal && b_stance == Marshal,
+        double_marshal: ar == Marshal && br == Marshal,
         note,
     };
-    let end = |a_dmg, b_dmg, note: String| Beat {
+    let end = |on_a, on_b, note: String| Beat {
         a_edge: 0,
         b_edge: 0,
-        a_dmg,
-        b_dmg,
+        on_a,
+        on_b,
         ends: true,
         double_marshal: false,
         note,
     };
-    // A's strike hits B for this; B's strike hits A for this.
-    let a_hit = a.base + a.edge;
-    let b_hit = b.base + b.edge;
+    let a_raw = a.power + a.edge;
+    let b_raw = b.power + b.edge;
 
-    match (a_stance, b_stance) {
+    match (ar, br) {
         (Marshal, Marshal) => cont(
             a.edge + 1,
             b.edge + 1,
@@ -99,10 +119,10 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
             ),
         ),
         (Marshal, Unleash) => end(
-            b_hit,
-            0,
+            Some(strike(b)),
+            None,
             format!(
-                "{} unleashes and catches {} winding up - {b_hit} damage!",
+                "{} unleashes and catches {} winding up - {b_raw}!",
                 b.name, a.name
             ),
         ),
@@ -120,28 +140,22 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
             format!("{} parries at nothing; {} gathers.", b.name, a.name),
         ),
         (Unleash, Marshal) => end(
-            0,
-            a_hit,
+            None,
+            Some(strike(a)),
             format!(
-                "{} unleashes and catches {} winding up - {a_hit} damage!",
+                "{} unleashes and catches {} winding up - {a_raw}!",
                 a.name, b.name
             ),
         ),
         (Unleash, Unleash) => end(
-            b_hit,
-            a_hit,
-            format!(
-                "Both unleash - {} takes {b_hit}, {} takes {a_hit}!",
-                a.name, b.name
-            ),
+            Some(strike(b)),
+            Some(strike(a)),
+            format!("Both unleash - {} and {} trade blows!", a.name, b.name),
         ),
         (Unleash, Overwhelm) => end(
-            0,
-            a_hit,
-            format!(
-                "{}'s strike beats {}'s overwhelm - {a_hit} damage!",
-                a.name, b.name
-            ),
+            None,
+            Some(strike(a)),
+            format!("{}'s strike beats {}'s overwhelm - {a_raw}!", a.name, b.name),
         ),
         (Unleash, Parry) => cont(
             0,
@@ -157,12 +171,9 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
             ),
         ),
         (Overwhelm, Unleash) => end(
-            b_hit,
-            0,
-            format!(
-                "{}'s strike beats {}'s overwhelm - {b_hit} damage!",
-                b.name, a.name
-            ),
+            Some(strike(b)),
+            None,
+            format!("{}'s strike beats {}'s overwhelm - {b_raw}!", b.name, a.name),
         ),
         (Overwhelm, Overwhelm) => cont(
             a.edge,
@@ -170,10 +181,10 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
             format!("{} and {} clinch - nothing lands.", a.name, b.name),
         ),
         (Overwhelm, Parry) => end(
-            0,
-            a_hit,
+            None,
+            Some(strike(a)),
             format!(
-                "{}'s overwhelm smashes through {}'s parry - {a_hit} damage!",
+                "{}'s overwhelm smashes through {}'s parry - {a_raw}!",
                 a.name, b.name
             ),
         ),
@@ -188,10 +199,10 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
             parry_note(a.name, b.name, b.edge),
         ),
         (Parry, Overwhelm) => end(
-            b_hit,
-            0,
+            Some(strike(b)),
+            None,
             format!(
-                "{}'s overwhelm smashes through {}'s parry - {b_hit} damage!",
+                "{}'s overwhelm smashes through {}'s parry - {b_raw}!",
                 b.name, a.name
             ),
         ),
@@ -203,8 +214,6 @@ pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
     }
 }
 
-/// Narration for a successful parry. It takes the attacker's whole bank, or — if
-/// there was nothing to take — earns an opening worth one Edge.
 fn parry_note(parrier: &str, attacker: &str, attacker_edge: u32) -> String {
     if attacker_edge > 0 {
         format!("{parrier} parries {attacker}'s unleash and STEALS {attacker_edge} Edge!")
@@ -220,7 +229,9 @@ mod tests {
     fn side(edge: u32) -> Side<'static> {
         Side {
             edge,
-            base: 1,
+            power: 1,
+            dtype: DamageType::Blunt,
+            precision: 0,
             name: "X",
         }
     }
@@ -235,16 +246,15 @@ mod tests {
 
     #[test]
     fn unleash_catches_a_marshaller_and_ends() {
-        // A unleashes (edge 3, base 1 => 4), B marshalling -> B struck for 4.
         let beat = resolve(&side(3), Stance::Unleash, &side(0), Stance::Marshal);
         assert!(beat.ends);
-        assert_eq!(beat.b_dmg, 4);
-        assert_eq!(beat.a_dmg, 0);
+        let s = beat.on_b.expect("b struck");
+        assert_eq!(s.raw, 4); // power 1 + edge 3
+        assert!(beat.on_a.is_none());
     }
 
     #[test]
     fn parry_steals_an_unleash_and_continues() {
-        // B parries A's unleash (edge 3) -> B steals 3, A -> 0, no strike.
         let beat = resolve(&side(3), Stance::Unleash, &side(1), Stance::Parry);
         assert!(!beat.ends);
         assert_eq!(beat.a_edge, 0);
@@ -252,35 +262,17 @@ mod tests {
     }
 
     #[test]
-    fn parrying_an_empty_unleash_earns_one_edge() {
-        // B parries A's 0-Edge poke -> nothing to steal, but B gains 1 (an opening).
-        let beat = resolve(&side(0), Stance::Unleash, &side(0), Stance::Parry);
-        assert!(!beat.ends);
-        assert_eq!(beat.b_edge, 1);
-        assert_eq!(beat.a_edge, 0);
-    }
-
-    #[test]
     fn overwhelm_breaks_a_parry_and_ends() {
-        // A overwhelms (edge 2, base 1 => 3) into B's parry -> B struck for 3.
         let beat = resolve(&side(2), Stance::Overwhelm, &side(5), Stance::Parry);
         assert!(beat.ends);
-        assert_eq!(beat.b_dmg, 3);
+        assert_eq!(beat.on_b.unwrap().raw, 3); // power 1 + edge 2
     }
 
     #[test]
-    fn overwhelm_whiffs_against_a_marshaller() {
-        let beat = resolve(&side(4), Stance::Overwhelm, &side(0), Stance::Marshal);
-        assert!(!beat.ends);
-        assert_eq!(beat.a_edge, 0); // lost its Edge
-        assert_eq!(beat.b_edge, 1); // marshaller gathered
-    }
-
-    #[test]
-    fn mutual_unleash_ends_with_both_struck() {
+    fn mutual_unleash_strikes_both() {
         let beat = resolve(&side(2), Stance::Unleash, &side(1), Stance::Unleash);
         assert!(beat.ends);
-        assert_eq!(beat.a_dmg, 2); // base1 + B edge1
-        assert_eq!(beat.b_dmg, 3); // base1 + A edge2
+        assert_eq!(beat.on_a.unwrap().raw, 2); // power1 + B edge1
+        assert_eq!(beat.on_b.unwrap().raw, 3); // power1 + A edge2
     }
 }

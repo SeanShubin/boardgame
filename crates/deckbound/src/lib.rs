@@ -1,25 +1,26 @@
 //! Deckbound — the cooperative card-combat game, as an [`engine::Game`].
 //!
-//! This is the **duel sandbox**: the playable realization of the Edge duel
-//! (`docs/games/deckbound/design/the-duel.md`). Combat is a sequence of
-//! one-on-one duels — Marshal / Unleash / Overwhelm / Parry, with a public,
-//! per-duel **Edge** bank that builds and is stolen. Creatures duel through
-//! stance-policies. No Bevy dependency, so the whole thing is unit-testable and
-//! reproducible from a seed; the `tabletop` plugin renders it.
-//!
-//! The earlier Strike/Block/Evade/Scheme combat (formation, gauntlet, fear,
-//! multi-target) is parked while we tune the duel.
+//! Combat is a sequence of **rounds** built on the documented model: three aspects
+//! (Body/Mind/Spirit), the cut→bar→pool defense (`stats`), data-driven action/effect
+//! cards (`cards`), the Marshal/Unleash/Overwhelm/Parry duel as the engagement atom
+//! (`duel`), and a round loop with Tempo/Focus budgets, overflow free-hits, the
+//! gauntlet, and AoE (`combat`). Actors are Characters (human) or Creatures
+//! (scripted). No Bevy dependency, so it's unit-testable and seed-reproducible; the
+//! `tabletop` plugin renders it. All numbers live in `data/booklet.ron`.
 
-pub mod actors;
+pub mod actor;
+pub mod cards;
+pub mod combat;
 pub mod duel;
 pub mod game;
 pub mod scenarios;
 pub mod state;
 pub mod stats;
 
-pub use actors::{Creature, Hero, StancePolicy};
+pub use actor::{Actor, Behavior, Driver, StancePolicy, TargetRule};
+pub use cards::{Card, Effect, Lifecycle};
 pub use duel::{Side, Stance, resolve};
 pub use game::{Action, Deckbound};
-pub use scenarios::{Scenario, campaign, tutorials};
+pub use scenarios::{Scenario, campaign, god, tutorials};
 pub use state::{Duel, Menu, Phase, State};
-pub use stats::Body;
+pub use stats::{Aspect, DamageType, Defense, Health, Offense};

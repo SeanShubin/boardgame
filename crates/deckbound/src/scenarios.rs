@@ -1,41 +1,73 @@
-//! The booklet: loads the card list and scenario booklet from `data/booklet.ron`
-//! and maps its keywords onto engine types. No fighter or scenario is defined in
-//! code here — only the schema and the keyword handlers.
+//! The booklet: loads cards, traits, actors, and scenarios from
+//! `data/booklet.ron` and builds [`Actor`]s. All numbers live in data so they
+//! retune without recompiling the engine.
 
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actors::{Creature, Hero, StancePolicy};
-use crate::stats::Body;
+use crate::actor::{Actor, Behavior, Driver, StancePolicy, TargetRule};
+use crate::cards::Card;
+use crate::stats::{Aspect, DamageType, Defense, Offense};
 
 #[derive(Debug, Deserialize)]
 struct Catalog {
-    heroes: Vec<HeroCard>,
-    creatures: Vec<CreatureCard>,
+    cards: Vec<Card>,
+    traits: Vec<TraitCard>,
+    actors: Vec<ActorCard>,
     campaign: Vec<ScenarioCard>,
+    god: Vec<ScenarioCard>,
     tutorials: Vec<ScenarioCard>,
 }
 
 #[derive(Debug, Deserialize)]
-struct HeroCard {
+struct TraitCard {
     name: String,
-    role: String,
-    body: u32,
-    toughness: u32,
-    base: u32,
-    bandwidth: u32,
+    #[serde(default)]
+    armor: Vec<(DamageType, u32)>,
+    #[serde(default)]
+    ward: Vec<(DamageType, u32)>,
+    #[serde(default)]
+    resolve: u32,
+    #[serde(default)]
+    mind: u32,
+    #[serde(default)]
+    keystone: Option<Aspect>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CreatureCard {
+struct ActorCard {
     name: String,
     role: String,
+    /// "hero" (human) or a creature stance-policy keyword (dummy/brute/turtle/…).
+    driver: String,
+    speed: u32,
+    power: u32,
+    #[serde(default)]
+    precision: u32,
+    #[serde(default)]
+    spirit: u32,
     body: u32,
+    #[serde(default = "one")]
     toughness: u32,
-    base: u32,
-    bandwidth: u32,
-    policy: String,
+    #[serde(default)]
+    resolve: u32,
+    #[serde(default = "one")]
+    mind: u32,
+    weapon: String,
+    #[serde(default)]
+    actions: Vec<String>,
+    #[serde(default)]
+    traits: Vec<String>,
+    #[serde(default)]
+    runner: bool,
+    #[serde(default)]
+    target_rule: Option<TargetRule>,
+}
+
+fn one() -> u32 {
+    1
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +78,7 @@ struct ScenarioCard {
     foes: Vec<String>,
 }
 
-/// A selectable scenario: name, teaching blurb, and the cards it uses.
+/// A selectable scenario.
 #[derive(Clone, Debug)]
 pub struct Scenario {
     pub name: String,
@@ -56,16 +88,20 @@ pub struct Scenario {
 }
 
 impl Scenario {
-    pub fn roster(&self) -> (Vec<Hero>, Vec<Creature>) {
+    pub fn roster(&self) -> (Vec<Actor>, Vec<Actor>) {
         let cat = catalog();
-        let heroes = self.heroes.iter().map(|n| build_hero(cat, n)).collect();
-        let foes = self.foes.iter().map(|n| build_creature(cat, n)).collect();
+        let heroes = self.heroes.iter().map(|n| build_actor(cat, n)).collect();
+        let foes = self.foes.iter().map(|n| build_actor(cat, n)).collect();
         (heroes, foes)
     }
 }
 
 pub fn campaign() -> Vec<Scenario> {
     catalog().campaign.iter().map(scenario_from).collect()
+}
+
+pub fn god() -> Vec<Scenario> {
+    catalog().god.iter().map(scenario_from).collect()
 }
 
 pub fn tutorials() -> Vec<Scenario> {
@@ -88,35 +124,12 @@ fn scenario_from(card: &ScenarioCard) -> Scenario {
     }
 }
 
-fn build_hero(cat: &Catalog, name: &str) -> Hero {
-    let c = cat
-        .heroes
-        .iter()
-        .find(|h| h.name == name)
-        .unwrap_or_else(|| panic!("booklet has no hero named {name:?}"));
-    Hero {
-        name: c.name.clone(),
-        role: c.role.clone(),
-        body: Body::new(c.body, c.toughness),
-        base: c.base,
-        bandwidth: c.bandwidth,
-    }
-}
-
-fn build_creature(cat: &Catalog, name: &str) -> Creature {
-    let c = cat
-        .creatures
+fn find_card(cat: &Catalog, name: &str) -> Card {
+    cat.cards
         .iter()
         .find(|c| c.name == name)
-        .unwrap_or_else(|| panic!("booklet has no creature named {name:?}"));
-    Creature {
-        name: c.name.clone(),
-        role: c.role.clone(),
-        body: Body::new(c.body, c.toughness),
-        base: c.base,
-        bandwidth: c.bandwidth,
-        policy: policy(&c.policy),
-    }
+        .unwrap_or_else(|| panic!("booklet has no card named {name:?}"))
+        .clone()
 }
 
 fn policy(keyword: &str) -> StancePolicy {
@@ -131,19 +144,88 @@ fn policy(keyword: &str) -> StancePolicy {
     }
 }
 
+fn build_actor(cat: &Catalog, name: &str) -> Actor {
+    let c = cat
+        .actors
+        .iter()
+        .find(|a| a.name == name)
+        .unwrap_or_else(|| panic!("booklet has no actor named {name:?}"));
+
+    let mut defense = Defense::new(c.body, c.toughness, c.resolve, c.mind);
+    let mut armor: BTreeMap<DamageType, u32> = BTreeMap::new();
+    let mut ward: BTreeMap<DamageType, u32> = BTreeMap::new();
+    for tname in &c.traits {
+        let t = cat
+            .traits
+            .iter()
+            .find(|t| &t.name == tname)
+            .unwrap_or_else(|| panic!("booklet has no trait named {tname:?}"));
+        for (dt, v) in &t.armor {
+            *armor.entry(*dt).or_insert(0) += v;
+        }
+        for (dt, v) in &t.ward {
+            *ward.entry(*dt).or_insert(0) += v;
+        }
+        defense.resolve += t.resolve;
+        defense.mind += t.mind;
+        if let Some(k) = t.keystone {
+            defense.keystone = k;
+        }
+    }
+    defense.armor = armor;
+    defense.ward = ward;
+
+    let offense = Offense {
+        power: c.power,
+        precision: c.precision,
+        speed: c.speed,
+        spirit: c.spirit,
+    };
+
+    let driver = if c.driver == "hero" {
+        Driver::Human
+    } else {
+        Driver::Creature(Behavior {
+            policy: policy(&c.driver),
+            target_rule: c.target_rule.unwrap_or(TargetRule::Front),
+        })
+    };
+
+    let mut actor = Actor {
+        name: c.name.clone(),
+        role: c.role.clone(),
+        offense,
+        defense,
+        weapon: find_card(cat, &c.weapon),
+        actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
+        driver,
+        runner: c.runner,
+        tempo: 0,
+        focus: 0,
+        exposed: false,
+    };
+    actor.refresh_round();
+    actor
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn booklet_parses_with_tutorials_and_campaign() {
+    fn booklet_parses() {
         assert!(!campaign().is_empty());
+        assert!(!god().is_empty());
         assert!(tutorials().len() >= 4);
     }
 
     #[test]
     fn every_scenario_builds_a_roster() {
-        for s in campaign().into_iter().chain(tutorials()) {
+        for s in campaign()
+            .into_iter()
+            .chain(god())
+            .chain(tutorials())
+        {
             let (h, f) = s.roster();
             assert!(!h.is_empty() && !f.is_empty(), "{} empty roster", s.name);
         }

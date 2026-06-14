@@ -1,98 +1,163 @@
-// Deckbound booklet — the duel sandbox. Card list + scenario booklet, as data.
+// Deckbound booklet — cards, traits, actors, and scenarios, as data.
 //
-//   base      : damage of a 0-Edge strike (Edge adds on top, linearly)
-//   bandwidth : how many foes it can watch; foes beyond this free-hit it each
-//               beat (1 = normal, higher = god-tier attention)
-//   policy    : how a creature reads -
-//               "dummy" "brute" "turtle" "grappler" "aggressor" "duelist"
+// NUMBERS ARE FIRST-PASS and meant to be rebalanced by playtest. Stats:
+//   speed     -> tempo pool (offense breadth, first-strike, drag)
+//   power     -> magnitude (cracks armor+toughness, drops); weapon gives the TYPE
+//   precision -> shaves armor (the Mind's gift)
+//   spirit    -> force of fear
+//   body/toughness -> the Body Health pool (the only health track)
+//   resolve   -> Spirit bar (fear must exceed it)
+//   mind      -> Mind-capacity = Focus pool (active-defense breadth)
+//   traits set armor/ward (typed cuts), resolve/mind bonuses, keystone.
+//   driver    -> "hero" (human) or a creature stance-policy:
+//                "dummy" "brute" "turtle" "grappler" "aggressor" "duelist"
 Catalog(
-    heroes: [
-        HeroCard( name: "Vera",    role: "Duelist",    body: 8,  toughness: 1, base: 1, bandwidth: 1 ),
-        HeroCard( name: "Aldric",  role: "Knight",     body: 12, toughness: 1, base: 2, bandwidth: 1 ),
-        HeroCard( name: "Mira",    role: "Skirmisher", body: 8,  toughness: 1, base: 1, bandwidth: 1 ),
-        HeroCard( name: "Kael",    role: "Colossus",   body: 30, toughness: 1, base: 3, bandwidth: 4 ),
-        HeroCard( name: "Recruit", role: "Militia",    body: 3,  toughness: 1, base: 1, bandwidth: 1 ),
+    cards: [
+        // --- weapons (the duel's 0-Edge strike supplies a TYPE; Power is magnitude)
+        Card( name: "Fist",      effects: [Damage(power: 0, dtype: Blunt)] ),
+        Card( name: "Blade",     effects: [Damage(power: 0, dtype: Sharp)] ),
+        Card( name: "Bash",      effects: [Damage(power: 0, dtype: Blunt), Stagger] ),
+        Card( name: "Maul",      effects: [Damage(power: 1, dtype: Blunt)] ),
+        Card( name: "Mace",      effects: [Damage(power: 0, dtype: Blunt)] ),
+        Card( name: "Flame",     effects: [Damage(power: 3, dtype: Heat)] ),
+        Card( name: "Claw",      effects: [Damage(power: 0, dtype: Sharp)] ),
+        Card( name: "Spear",     effects: [Damage(power: 0, dtype: Sharp)] ),
+        Card( name: "Slam",      effects: [Damage(power: 1, dtype: Blunt)] ),
+        Card( name: "Staff",     effects: [Damage(power: 0, dtype: Blunt)] ),
+        Card( name: "Wail",      effects: [Damage(power: 5, dtype: Fear)] ),
+        // --- actions (played in the round; AoE / support)
+        Card( name: "Firestorm", targets: 5, reach: (2, 2), effects: [Damage(power: 5, dtype: Heat)] ),
+        Card( name: "Cleave",    targets: 3, effects: [Damage(power: 0, dtype: Sharp)] ),
+        Card( name: "Pierce",    reach: (2, 2), effects: [Damage(power: 1, dtype: Pierce)] ),
+        Card( name: "Dread",     reach: (2, 2), effects: [Damage(power: 5, dtype: Fear)] ),
+        Card( name: "Terror",    targets: 3, effects: [Damage(power: 4, dtype: Fear)] ),
+        Card( name: "Confuse",   reach: (2, 2), effects: [Damage(power: 4, dtype: Confusion)] ),
+        Card( name: "Rally",     lifecycle: Lasting, effects: [Rally(resolve: 4)] ),
+        Card( name: "Steel",     effects: [Steel] ),
+        Card( name: "Riposte",   lifecycle: SelfReturn, effects: [BankSpeed(amount: 2)] ),
     ],
-    creatures: [
-        CreatureCard( name: "Pell",     role: "Sandbag",        body: 8,  toughness: 1, base: 1, bandwidth: 1, policy: "dummy" ),
-        CreatureCard( name: "Bron",     role: "Brute",          body: 10, toughness: 1, base: 1, bandwidth: 1, policy: "brute" ),
-        CreatureCard( name: "Hollow",   role: "Shield-Turtle",  body: 9,  toughness: 1, base: 1, bandwidth: 1, policy: "turtle" ),
-        CreatureCard( name: "Maw",      role: "Grappler",       body: 9,  toughness: 1, base: 1, bandwidth: 1, policy: "grappler" ),
-        CreatureCard( name: "Rage",     role: "Berserker",      body: 9,  toughness: 1, base: 1, bandwidth: 1, policy: "aggressor" ),
-        CreatureCard( name: "Sable",    role: "Duelist",        body: 9,  toughness: 1, base: 1, bandwidth: 1, policy: "duelist" ),
-        CreatureCard( name: "Ironclad", role: "Bruiser",        body: 14, toughness: 1, base: 2, bandwidth: 1, policy: "brute" ),
-        CreatureCard( name: "Stalker",  role: "Killer",         body: 8,  toughness: 1, base: 1, bandwidth: 1, policy: "duelist" ),
-        CreatureCard( name: "Husk",     role: "Swarmer",        body: 2,  toughness: 1, base: 1, bandwidth: 1, policy: "aggressor" ),
-        CreatureCard( name: "Titan",    role: "God-Boss",       body: 30, toughness: 1, base: 3, bandwidth: 4, policy: "duelist" ),
+    traits: [
+        TraitCard( name: "Plate",       armor: [(Sharp, 3), (Blunt, 1), (Heat, 0)] ),
+        TraitCard( name: "Heavy-Plate", armor: [(Sharp, 4), (Blunt, 3), (Heat, 0)] ),
+        TraitCard( name: "Shield",      armor: [(Blunt, 1)] ),
+        TraitCard( name: "Resolute",    resolve: 99 ),
+        TraitCard( name: "Ward-charm",  ward: [(Fear, 2)] ),
+        TraitCard( name: "Stalwart",    mind: 2 ),
+    ],
+    actors: [
+        // ---- cooperation-set heroes (one role each) ----
+        ActorCard( name: "Aldric", role: "Knight",  driver: "hero", speed: 4, power: 5, precision: 2,
+                   body: 8, toughness: 2, resolve: 4, mind: 1,
+                   weapon: "Bash", actions: ["Cleave"], traits: ["Plate", "Shield"] ),
+        ActorCard( name: "Vera",   role: "Duelist", driver: "hero", speed: 5, power: 3, precision: 4,
+                   body: 4, toughness: 1, resolve: 2, mind: 3,
+                   weapon: "Blade", actions: ["Riposte"] ),
+        ActorCard( name: "Sefa",   role: "Mage",    driver: "hero", speed: 2, power: 2, precision: 1,
+                   body: 3, toughness: 1, resolve: 1, mind: 1,
+                   weapon: "Flame", actions: ["Firestorm"] ),
+        ActorCard( name: "Bram",   role: "Warden",  driver: "hero", speed: 3, power: 2, spirit: 5,
+                   body: 5, toughness: 2, resolve: 4, mind: 1,
+                   weapon: "Mace", actions: ["Rally", "Dread", "Steel"] ),
+        // ---- god-set heroes ----
+        ActorCard( name: "Kael",       role: "Colossus",   driver: "hero", speed: 8, power: 6, precision: 3,
+                   body: 12, toughness: 3, resolve: 6, mind: 6,
+                   weapon: "Maul", actions: ["Cleave"], traits: ["Plate"] ),
+        ActorCard( name: "Blademaster", role: "Blur (glass cannon)", driver: "hero", speed: 10, power: 7, precision: 3,
+                   body: 8, toughness: 2, resolve: 4, mind: 2,
+                   weapon: "Blade", actions: ["Cleave"] ),
+        ActorCard( name: "Sage",       role: "Serene Genius", driver: "hero", speed: 3, power: 2, precision: 5,
+                   body: 10, toughness: 2, resolve: 8, mind: 10,
+                   weapon: "Staff", actions: ["Confuse"] ),
+        ActorCard( name: "Recruit",    role: "Militia", driver: "hero", speed: 3, power: 2,
+                   body: 3, toughness: 1, resolve: 2, mind: 1, weapon: "Spear" ),
+        // ---- cooperation-set foes (four locks) ----
+        ActorCard( name: "Ironclad", role: "Bruiser", driver: "brute", speed: 2, power: 6,
+                   body: 8, toughness: 3, weapon: "Maul", traits: ["Heavy-Plate"] ),
+        ActorCard( name: "Stalker",  role: "Runner",  driver: "duelist", speed: 6, power: 3,
+                   body: 6, toughness: 1, weapon: "Claw", runner: true, target_rule: Some(Runner) ),
+        ActorCard( name: "Howler",   role: "Fear-caster", driver: "aggressor", speed: 4, power: 0, spirit: 5,
+                   body: 4, toughness: 1, weapon: "Wail", target_rule: Some(LeastResolute) ),
+        ActorCard( name: "Husk",     role: "Swarmer", driver: "aggressor", speed: 3, power: 1,
+                   body: 1, toughness: 1, weapon: "Claw" ),
+        // ---- god-set foes ----
+        ActorCard( name: "Leech",     role: "Attritionist", driver: "duelist", speed: 4, power: 3,
+                   body: 6, toughness: 2, weapon: "Claw" ),
+        ActorCard( name: "Juggernaut", role: "Threshold", driver: "brute", speed: 1, power: 4,
+                   body: 10, toughness: 5, weapon: "Slam", traits: ["Heavy-Plate"] ),
+        ActorCard( name: "Titan",     role: "God-Boss", driver: "duelist", speed: 8, power: 6,
+                   body: 20, toughness: 3, resolve: 8, mind: 6, weapon: "Maul", traits: ["Plate"] ),
+        // ---- duel-tutorial dummies (1v1) ----
+        ActorCard( name: "Pell",   role: "Sandbag",       driver: "dummy",     speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Bron",   role: "Brute",         driver: "brute",     speed: 2, power: 1, body: 10, weapon: "Claw" ),
+        ActorCard( name: "Hollow", role: "Shield-Turtle", driver: "turtle",    speed: 2, power: 1, body: 9, weapon: "Claw" ),
+        ActorCard( name: "Maw",    role: "Grappler",      driver: "grappler",  speed: 2, power: 1, body: 9, weapon: "Claw" ),
+        ActorCard( name: "Rage",   role: "Berserker",     driver: "aggressor", speed: 2, power: 1, body: 9, weapon: "Claw" ),
+        ActorCard( name: "Sable",  role: "Duelist",       driver: "duelist",   speed: 2, power: 1, body: 9, weapon: "Claw" ),
     ],
     campaign: [
         ScenarioCard(
-            name: "The Warband",
-            blurb: "A mixed fight: duel the warband one foe at a time. Read each, bank Edge when you can, and finish them.",
+            name: "Shield & Blade (2v2)",
+            blurb: "Aldric tanks and drags; Vera duels. Learn how two roles cover a fast Runner and a swarmer.",
             heroes: ["Aldric", "Vera"],
-            foes: ["Ironclad", "Stalker", "Sable"],
+            foes: ["Stalker", "Husk"],
         ),
         ScenarioCard(
-            name: "Even Skirmish (team)",
-            blurb: "Two vs two. Choose who duels whom: send the right hero into each foe, and manage everyone's health.",
-            heroes: ["Aldric", "Mira"],
-            foes: ["Bron", "Hollow"],
+            name: "Crack the Plate (2v2)",
+            blurb: "The Ironclad's plate bounces steel — only Sefa's heat cracks it. Aldric holds while Sefa burns.",
+            heroes: ["Aldric", "Sefa"],
+            foes: ["Ironclad", "Husk"],
         ),
         ScenarioCard(
-            name: "Outnumbered (team)",
-            blurb: "Two vs three - while you duel one foe, the others you can't watch chip you each beat. Kill fast to thin the swarm before it grinds you down.",
-            heroes: ["Aldric", "Mira"],
-            foes: ["Bron", "Sable", "Maw"],
+            name: "Hold the Nerve (2v2)",
+            blurb: "The Howler's fear targets the shakiest nerve (Sefa). Bram's Rally raises her Resolve so she can act.",
+            heroes: ["Bram", "Sefa"],
+            foes: ["Howler", "Husk"],
         ),
         ScenarioCard(
-            name: "Goliath's Stand (god vs horde)",
-            blurb: "One colossus, eight husks. Kael's wide attention (bandwidth 4) shrugs off most of the swarm - but eight is past it, so thin them quickly before the overflow wears you down.",
+            name: "The Warband (full cascade)",
+            blurb: "Four locks, four keys: heat (Sefa) + read (Vera) for the Ironclad, drag (Aldric) for the Stalker, Resolve (Bram) for the Howler, AoE for the Husks. Pull any hero and a lock goes unanswered.",
+            heroes: ["Aldric", "Vera", "Sefa", "Bram"],
+            foes: ["Ironclad", "Stalker", "Howler", "Husk", "Husk", "Husk"],
+        ),
+    ],
+    god: [
+        ScenarioCard(
+            name: "Glass-Cannon Blur",
+            blurb: "A blur with huge Speed/Power but thin Mind. Greedy attacks overextend; the swarm you can't cover free-hits you. Thin them fast, don't overreach.",
+            heroes: ["Blademaster"],
+            foes: ["Husk", "Husk", "Husk", "Husk", "Husk", "Husk", "Husk", "Husk"],
+        ),
+        ScenarioCard(
+            name: "Serene Genius",
+            blurb: "Vast Mind, little Power. You can cover everything but barely scratch them — you must concentrate to drop a foe before attrition wears you down.",
+            heroes: ["Sage"],
+            foes: ["Leech", "Leech", "Leech"],
+        ),
+        ScenarioCard(
+            name: "Goliath's Stand",
+            blurb: "A balanced colossus vs a horde past its Mind. Mode-switch: Attack rounds to thin, then weather what overflows.",
             heroes: ["Kael"],
             foes: ["Husk", "Husk", "Husk", "Husk", "Husk", "Husk", "Husk", "Husk"],
         ),
         ScenarioCard(
-            name: "Slay the Titan (swarm a god)",
-            blurb: "Six recruits against a god-boss. Alone each is outclassed, but six exceed the Titan's bandwidth - the ones not dueling chip it every beat. Feed it duels and let the swarm grind it down.",
+            name: "The Juggernaut",
+            blurb: "Armor so thick only a concentrated, Edge-banked blow gets through. Build Edge and land the big one — chip does nothing.",
+            heroes: ["Kael"],
+            foes: ["Juggernaut"],
+        ),
+        ScenarioCard(
+            name: "Slay the Titan",
+            blurb: "Six recruits gank a god: alone each is outclassed, but together they swarm past its Mind so the uncovered ones chip it down.",
             heroes: ["Recruit", "Recruit", "Recruit", "Recruit", "Recruit", "Recruit"],
             foes: ["Titan"],
         ),
     ],
     tutorials: [
-        ScenarioCard(
-            name: "1. Build & Unleash",
-            blurb: "Pell never attacks - Marshal to bank Edge, then Unleash. The bigger your Edge, the bigger the blow. (Unleash beats a gathering foe.)",
-            heroes: ["Vera"],
-            foes: ["Pell"],
-        ),
-        ScenarioCard(
-            name: "2. Parry & Steal",
-            blurb: "Bron winds up (watch its Edge climb) then swings. Parry the Unleash to negate it AND steal its whole bank - your comeback. A parry with nothing to steal still earns +1.",
-            heroes: ["Vera"],
-            foes: ["Bron"],
-        ),
-        ScenarioCard(
-            name: "3. Crack the Guard",
-            blurb: "Hollow just parries. Unleashing only feeds its steal - so bank Edge and Overwhelm: a throw beats a guard.",
-            heroes: ["Vera"],
-            foes: ["Hollow"],
-        ),
-        ScenarioCard(
-            name: "4. Beat the Throw",
-            blurb: "Maw winds up and throws (Overwhelm). Don't Parry a thrower - it smashes guards. Unleash instead: a strike beats a throw.",
-            heroes: ["Vera"],
-            foes: ["Maw"],
-        ),
-        ScenarioCard(
-            name: "5. Don't Trade",
-            blurb: "Rage swings constantly. Trading Unleashes hurts you both - Parry its swings instead (negate, and bank an opening each time), then punish.",
-            heroes: ["Vera"],
-            foes: ["Rage"],
-        ),
-        ScenarioCard(
-            name: "6. The Duelist",
-            blurb: "Sable reads you back: it parries when you're loaded and swings when it is. The full mind-game - no safe option.",
-            heroes: ["Vera"],
-            foes: ["Sable"],
-        ),
+        ScenarioCard( name: "1. Build & Unleash", blurb: "Pell never attacks - Marshal to bank Edge, then Unleash.", heroes: ["Vera"], foes: ["Pell"] ),
+        ScenarioCard( name: "2. Parry & Steal",   blurb: "Bron winds up then swings. Parry the Unleash to negate AND steal its bank.", heroes: ["Vera"], foes: ["Bron"] ),
+        ScenarioCard( name: "3. Crack the Guard",  blurb: "Hollow just parries. Bank Edge and Overwhelm - a throw beats a guard.", heroes: ["Vera"], foes: ["Hollow"] ),
+        ScenarioCard( name: "4. Beat the Throw",   blurb: "Maw winds up and throws. Don't Parry a thrower - Unleash: a strike beats a throw.", heroes: ["Vera"], foes: ["Maw"] ),
+        ScenarioCard( name: "5. Don't Trade",      blurb: "Rage swings constantly. Parry its swings (negate, bank an opening), then punish.", heroes: ["Vera"], foes: ["Rage"] ),
+        ScenarioCard( name: "6. The Duelist",      blurb: "Sable reads you back: parries when you're loaded, swings when it is. The full mind-game.", heroes: ["Vera"], foes: ["Sable"] ),
     ],
 )
