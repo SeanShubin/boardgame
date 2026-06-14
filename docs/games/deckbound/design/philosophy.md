@@ -19,7 +19,7 @@ The **tactical** layer — a single hidden, simultaneous exchange — is deliber
 **constrained enough to be computable**: a well-defined rock-paper-scissors-plus-
 magnitude game with a solvable optimal (mixed) strategy. That is what lets a
 computer stand-in, or a sharp human, play it game-theoretically, and what makes
-reads and bluffs meaningful.
+predictions and bluffs meaningful.
 
 The **strategic** layer — which conflicts to enter, when to push your luck, what
 to spend and exhaust, which capabilities to chase, when to retreat — is governed
@@ -40,7 +40,7 @@ exhaustion, routing), where it should *not* be solvable.
 ## 3. Hidden information, simultaneous reveal
 
 Every contest is a hidden, simultaneous commitment resolved at once — a game of
-reads and bluffs, not of reacting to a revealed move. See
+predictions and bluffs, not of reacting to a revealed move. See
 [decision-making](decision-making.md).
 
 ## 4. Asymmetry by design, balance by scenario

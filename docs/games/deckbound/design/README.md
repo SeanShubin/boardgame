@@ -37,7 +37,7 @@ first; it is the charter the rest of these notes must serve. In brief:
    decks.
 2. **Computable tactics, uncomputable strategy** — the exchange is solvable;
    the campaign is risk/reward, push-your-luck, and opportunity cost.
-3. **One hidden choice, simultaneous reveal** — a game of reads and bluffs.
+3. **One hidden choice, simultaneous reveal** — a game of prediction and bluffs.
 4. **A character is their decks**, which are **never shuffled** — order is intent,
    and an action is a *chord* of one card per aspect.
 5. **Asymmetry by design, balance by scenario** — characters are deliberately
@@ -53,9 +53,26 @@ first; it is the charter the rest of these notes must serve. In brief:
 
 - **Deck** — an ordered, never-shuffled pile of cards owned by a character. A
   character can have many, of different **deck types**.
-- **Aspect** — a way of acting (**Body**, **Mind**, **Magic**, **Spirit**, …; a
+- **Aspect** — a way of acting (**Body**, **Mind**, **Spirit**, …; a
   starting set). One action draws one card per aspect, and **Mind** is the tactical
-  read. Capability cards for each aspect live in the **Form** zone.
+  stance. Capability cards for each aspect live in the **Form** zone. The **outer**
+  aspect (Body) is a **pool** (Health cards + the Vitality card); **inner** aspects
+  (Mind, Spirit) are **thresholds/capacities** with no Health stack.
+- **"Speed swings, Mind reads, toughness endures."** The named split of how an Actor
+  removes and survives blows: **Speed** = how many you strike + Runners you drag +
+  first-strike; **Mind** = how many you negate by **predicting** (a focus pool, each
+  prediction costs the attacker's Speed); **toughness** = how many you absorb without
+  predicting.
+- **Mind** — prediction-bandwidth **capacity**: a **focus pool** sized to Mind that
+  negates blows by anticipating a foe's stance, plus the read/stance job (the tactical
+  RPS). It is an **inner** aspect — a capacity, not a depleting Health pool;
+  **Confusion** shrinks the focus pool.
+- **Resolve** — the **threshold** the Spirit aspect defends: a **standing value Fear
+  must exceed** to break the will (Fear > Resolve → panic). It is **not** a card pool
+  that depletes — an inner capacity, not an outer Health stack.
+- **Ward** — a **passive, typed inner cut** (vs-fear, vs-confusion), the inner twin
+  of Armor: applied per-source, never depleting, before the Resolve / Mind-capacity
+  bar. It is **not** anti-magic — it guards only fear (Spirit) and confusion (Mind).
 - **Numberless card** — represents a quality or effect itself (e.g. *speed*,
   *power*, *precision*, *1 damage*).
 - **Modifier card** — **attaches** to another card and changes its value (*+1*,
@@ -64,23 +81,25 @@ first; it is the charter the rest of these notes must serve. In brief:
   an action (e.g. an *armor* card that changes how physical damage applies).
 - **Conflict** — a contest against other characters and/or the environment.
 - **Zone** — where a card currently is: **Form** (capabilities + health),
-  **Potential** (playable), **Active** (in play), or **Dormant** (used or sealed).
-  Form is vitality ([form-and-defeat](form-and-defeat.md)); the rest are the
-  tactical layer, where cards **exhaust** and predictability erodes
+  **Potential** (playable), or **Active** (in play). A card on the table has a
+  **facing**: face up = currently in effect; face down = not in effect (used or
+  sealed). Form is vitality ([form-and-defeat](form-and-defeat.md)); the rest are
+  the tactical layer, where cards **exhaust** and predictability erodes
   ([zones](zones.md)).
 - **Lasting / Fleeting** — whether a played card's effect persists (stays Active)
-  or happens once (then goes Dormant).
-- **Read** — the Mind's rock-paper-scissors choice (Strike / Block / Evade / Scheme);
-  winning reads bank **momentum** (see [the Mind](mind-and-reads.md)).
+  or happens once (then is turned face down).
+- **Stance** — the Mind's rock-paper-scissors choice (Strike / Block / Evade / Scheme);
+  winning stances bank **momentum** (see [the Mind](mind-and-stances.md)).
 - **Region** — a grouping of locations; players in the same region coordinate
   their turns (see [turn structure](turn-structure.md#regions)).
 - **Event deck** — the tension engine that emits threats and victory/loss
   conditions (see
   [world-and-progression](world-and-progression.md#the-event-deck)).
-- **Capability / damage / defeat** — your **Form** capability cards (Body, Mind,
-  Magic, Spirit) are your health; **typed** damage knocks them Dormant, and when
-  your **Body** fails you are knocked out → retreat (see
-  [form-and-defeat](form-and-defeat.md)).
+- **Capability / damage / defeat** — your **outer** Form cards (Body) are
+  **Health-card pools**; **typed** damage turns them face down in Form. **Inner**
+  aspects (Mind, Spirit) are **thresholds**, not pools. An Actor is removed when *any*
+  channel breaks — and when your **Body** (keystone) fails you are knocked out →
+  retreat (see [form-and-defeat](form-and-defeat.md)).
 - **Scenario deck / enemy deck / world deck** — the non-player decks that run
   the game (see [world-and-progression](world-and-progression.md)).
 
@@ -91,12 +110,16 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [Philosophy](philosophy.md) — the north stars; read this first.
 - [Constraints](constraints.md) — no computer required, cards only, every agent
   bound by the same rules.
+- [Entities](entities.md) — the noun taxonomy: **Actor** (the umbrella), and the two
+  kinds — **Character** (agency; improvises) and **Creature** (rule-driven; scripted).
 
 **The character**
 
+- [Stats overview](stats.md) — the full stat lineup on one page: the three aspects,
+  the cut→bar→pool defense model, the offense/timing stats, and the Tempo/Focus budgets.
 - [Decks & aspects](decks-and-aspects.md) — a character as a set of never-shuffled
   decks; aspects, the action *chord*, and card kinds.
-- [Zones](zones.md) — the tactical choice cycle (Potential → Active → Dormant),
+- [Zones](zones.md) — the tactical choice cycle (Potential → Active → face down),
   Lasting vs Fleeting, exhaustion as predictability.
 - [Form & defeat](form-and-defeat.md) — the Form zone as capabilities + health +
   defenses; typed damage, toughness, knockout.
@@ -107,16 +130,16 @@ first; it is the charter the rest of these notes must serve. In brief:
 
 - [Decision-making](decision-making.md) — the hidden-information core; how human,
   computer stand-in, and environment agents differ.
-- [The Mind — reads & momentum](mind-and-reads.md) — the RPS cycle, the uncapped
-  momentum it banks, and the misread that forfeits it.
-- [The duel](the-duel.md) — the read-game **Marshal / Unleash / Overwhelm /
+- [The Mind — stances & momentum](mind-and-stances.md) — the RPS cycle, the uncapped
+  momentum it banks, and the misprediction that forfeits it.
+- [The duel](the-duel.md) — the stance-game **Marshal / Unleash / Overwhelm /
   Parry** (the strike/throw/block mix-up), the public **Edge** bank, and the
-  spend that scales a card's primary effect. Supersedes the RPS read cycle +
+  spend that scales a card's primary effect. Supersedes the RPS stance cycle +
   momentum above.
 - [Combos & interactions](combos.md) — the design target: meaningful play as
-  **combinations** of effects (aspect chords, multi-effect cards, read-outcome chains).
+  **combinations** of effects (aspect chords, multi-effect cards, stance-outcome chains).
 - [Combat resolution](combat.md) — the magnitude layer: first strike by tempo,
-  pre-emption (drop them / out-read them), and how a read becomes damage.
+  pre-emption (drop them / out-predict them), and how a stance becomes damage.
 - [Speed & tempo](speed-and-tempo.md) — Speed as a per-round tempo pool: spend it to
   evade/engage/strike, first-strike by tempo, overextending, and the Mind/Speed/Power
   split.
@@ -124,7 +147,7 @@ first; it is the charter the rest of these notes must serve. In brief:
   dispositional traits.
 - [Coordination & interruption](coordination-and-interruption.md) — the cardless
   positioning layer: front/back lines, Attack/Hold, running as a **gauntlet** whose
-  drag (Speed) stops Runners, and reading-bandwidth as **Mind**.
+  drag (Speed) stops Runners, and prediction-bandwidth as **Mind**.
 
 **Play & world**
 
@@ -136,7 +159,7 @@ first; it is the charter the rest of these notes must serve. In brief:
 **Prototype**
 
 - [Sample combat (4 vs 5)](sample-round.md) — the current card-level play-by-play:
-  all four aspects, the gauntlet, fear vs resolve, momentum and combos, tracked
+  all three aspects, the gauntlet, fear vs resolve, momentum and combos, tracked
   through the zones. **Start here.**
 - [Interactive tutorial](../tutorial.html) — the sample combat as a narrated,
   Back/Next walkthrough (open in a browser; no build); the board illustrates each beat.
@@ -178,7 +201,7 @@ first; it is the charter the rest of these notes must serve. In brief:
 - **Death** beyond knockout → retreat (permadeath? attrition?), and what **persists**
   between scenarios.
 - How a card — or an entirely new **aspect** — is **acquired**, and the full aspect
-  list beyond Body / Mind / Magic / Spirit.
+  list beyond Body / Mind / Spirit.
 - **Spirit's** cards and effects — its identity is set (the will to act; see
-  [decks & aspects](decks-and-aspects.md#the-four-aspects)), the mechanics still to
+  [decks & aspects](decks-and-aspects.md#the-aspects)), the mechanics still to
   build.

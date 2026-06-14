@@ -11,12 +11,17 @@ Each character takes one of two **stances** — a free declaration, no card:
 - **Attack** — commit to a target: the opposing front line, or a **run** to their
   back line. You deal your attack, but you are **exposed everywhere else** — any
   *other* attacker auto-succeeds against you. You get the [RPS](decision-making.md)
-  read only against a target who is attacking you back (a mutual engagement).
-- **Hold** — forgo attacking. Instead you **RPS-respond to whoever attacks you**
-  (your safety), and you add your tempo to the front line's **combined pool**, which it
-  spends to **engage Runners** crossing toward the back line — see
-  [the gauntlet](#running-the-gauntlet). Holding is how a back-liner buys safety at the
-  cost of output, and how a front line becomes a **gauntlet**.
+  stance only against a target who is attacking you back (a mutual engagement).
+- **Hold** — forgo attacking. Instead you make yourself **available to answer any
+  attacker** (your safety) — but availability is not free coverage: you **negate** a blow
+  only while your **focus pool** still covers it, each prediction costing the
+  **attacker's Speed** out of focus (the
+  [symmetric drain](speed-and-tempo.md#symmetric-drain--tempo-and-focus)). What your focus
+  can't cover overflows and is **absorbed by toughness**, not magically predicted. You
+  also add your tempo to the front line's **combined pool**, which it spends to **engage
+  Runners** crossing toward the back line — see [the gauntlet](#running-the-gauntlet).
+  Holding is how a back-liner buys safety at the cost of output, and how a front line
+  becomes a **gauntlet**.
 
 The whole positioning game turns on this: a front line that **Holds** gates the back
 line; a front line that **Attacks** is aggressive but leaves the gate open. Push or
@@ -24,43 +29,47 @@ protect.
 
 ## The coherence principle
 
-> The **RPS read happens only when you are engaging your attacker** — by **Holding**
-> (you respond to all comers), or by **mutually attacking** the same character.
+> The **RPS stance happens only when you are engaging your attacker** — by **Holding**
+> (you are available to all comers), or by **mutually attacking** the same character.
 > Against anyone you are *not* engaging, their attack **auto-succeeds**.
 
-- **Hold** → you read and defend **every** attacker.
+- **Hold** → you are **available to every** attacker, but **negate only while your focus
+  pool covers them** (each prediction costs the attacker's Speed); the overflow is
+  **absorbed by toughness**, not predicted.
 - **Mutual attack** → a full [rock-paper-scissors](decision-making.md) duel.
 - **An attacker you're not engaging** (you committed your Attack elsewhere) →
   **auto-succeeds** against you.
 
 Consequences fall out for free: **attacking exposes you**, you **can't strike in two
-directions and stay safe**, and **focus-fire punishes a thin Mind** — you read only as
-many attackers as your **Mind** affords (one by default), while a Guard turns its whole
-turn to defense and gating but lands no offense of its own.
+directions and stay safe**, and **focus-fire punishes a thin Mind** — your **focus pool**
+covers only so many attackers' Speed (one Speed-1 foe by default), while a Guard turns its
+whole turn to defense and gating but lands no offense of its own.
 
-### Breadth, reads, and the gank
+### Breadth, prediction, and the gank
 
 Offense and defense obey **different limits**, which is what makes the asymmetry fair:
 
 - **Offense breadth hits everyone in reach** — a multi-target attack lands on all its
-  targets regardless of your read-budget (it's [breadth, not bandwidth](cards-and-customization.md#how-targets-reach-and-the-read-interact)).
-- **Reads are bandwidth-limited.** You **defend** only the attackers you're engaging — as
-  many as your **Mind** affords. An attacker you can't afford to read **free-strikes** you
-  (an auto-success).
-- **A target defends *your* attack only if it is reading *you*** — and the two checks are
-  independent. So **focusing a foe who's occupied elsewhere is a one-way gank:** you read
-  (and counter) their blows *and* land yours free, because their read is spent on someone
+  targets regardless of your prediction budget (it's [breadth, not bandwidth](cards-and-customization.md#how-targets-reach-and-the-stance-interact)).
+- **Prediction is focus-pool-limited.** You **negate** an attacker's blow only while your
+  **focus pool** (sized to your **Mind**) covers it, each prediction costing the
+  **attacker's Speed** out of focus — so **fast attackers are harder to wall** than slow
+  ones. An attacker your focus can't afford to predict **free-strikes** you (an
+  auto-success), and **toughness** absorbs what lands.
+- **A target defends *your* attack only if it is predicting *you*** — and the two checks are
+  independent. So **focusing a foe who's occupied elsewhere is a one-way gank:** you predict
+  (and counter) their blows *and* land yours free, because their prediction is spent on someone
   else. The asymmetry is always **paid for by Mind** — the occupied side could buy the
-  Mind to read you back (see [engagement bandwidth](#speed-is-the-currency-of-engagement)).
+  Mind to predict you back (see [engagement bandwidth](#speed-is-the-currency-of-engagement)).
 
 Two consequences worth naming:
 
-- **The cleave trades finesse for width.** One blind read can't out-guess each foe;
-  reading and countering them separately takes **Mind** (to track the crowd) *and*
+- **The cleave trades finesse for width.** One blind stance can't out-guess each foe;
+  predicting and countering them separately takes **Mind** (to track the crowd) *and*
   **Speed** (to act on each), so a hero rich in both **duels** the crowd instead of
   **cleaving** it.
 - **Being ganked is a Mind deficit.** One-way dominance is always a gap in the victim's
-  **reading** — closeable by buying the **Mind** to watch the extra attacker.
+  **prediction** — closeable by buying the **Mind** to watch the extra attacker.
 
 ## Front line and back line
 
@@ -111,10 +120,10 @@ phases:
    a **stance** (Attack / Hold) and **target(s)**, obeying the targeting rules above.
    Crucially, **the choice to run is informed** — you see the enemy's front line and
    where their back line sits before committing.
-3. **Reveal & resolve** — reads flip **simultaneously**; the clash then settles by
-   [tempo](speed-and-tempo.md) (who lands first) and the read cycle. The full round
+3. **Reveal & resolve** — stances flip **simultaneously**; the clash then settles by
+   [tempo](speed-and-tempo.md) (who lands first) and the stance cycle. The full round
    (Form Up → Declare → Reveal → Clash → Recover) and how one blow **pre-empts** another
-   is the **[resolution procedure](resolution.md)**. A defender reads where engaged, else
+   is the **[resolution procedure](resolution.md)**. A defender predicts where engaged, else
    takes the hit.
 
 Gating is **not** a special step — the front line simply **spends its combined tempo to
@@ -126,7 +135,7 @@ You **cancel** a committed blow only by:
 
 - **Dropping them first** — a [faster](speed-and-tempo.md) blow that fells the target
   before it can swing (inherent — no acting once felled); or
-- **Out-reading them** — the [read cycle](mind-and-reads.md): a Defense negates a Strike,
+- **Out-predicting them** — the [stance cycle](mind-and-stances.md): a Defense negates a Strike,
   a Strike spoils a Scheme.
 
 There is **no universal "Power interrupts" rule** — **Power is magnitude** (it cracks
@@ -139,19 +148,27 @@ Speed and it's halted at the front — then a Guard's **Power** simply damages i
 
 ## Speed is the currency of engagement
 
-Engagement has **two** "handle many" limits, on two different stats:
+The split has a name — **"Speed swings, Mind reads, toughness endures"** (see
+[speed & tempo](speed-and-tempo.md)): Speed is how many foes you **land** on, Mind is how
+many you **predict**. Engagement has **two** mirrored "handle many" limits, one **pool**
+per stat:
 
 - **Speed = how many blows you can land.** Striking several foes (or several times)
   spends [tempo](speed-and-tempo.md): each engagement costs the target's Speed, paid
   after; **overextend** (go negative) and the extra blow still lands but leaves you
   **exposed**. Speed also catches Runners (the wall's [drag](#running-the-gauntlet)) and
   decides who lands first.
-- **Mind = how many foes you can read.** You get **one defensive read per attacker you
-  can watch**, up to your **Mind**; an attacker beyond that **auto-succeeds** (a free
-  strike). Reading a crowd is cognition, not reflex.
+- **Mind = how many blows you can negate.** Prediction spends a **focus pool** sized to
+  your **Mind**, the [mirror](speed-and-tempo.md#symmetric-drain--tempo-and-focus) of the
+  tempo pool. Each defensive stance costs the **attacker's Speed** out of focus — so a
+  **fast** attacker is **harder to wall** than a slow one, and a slow or overextended one
+  is cheap to predict (an **inverse telegraph**). When your focus is spent, the foes you
+  can no longer cover **free-hit** you; the **toughness** of your Health absorbs whatever
+  lands. The old "one slot per attacker, up to Mind" is the **unweighted special case**
+  (every foe Speed 1).
 
 So a **blur of a duelist** strikes several and stops their runs (Speed), while a **sharp
-mind** reads several at once and can't be ganked (Mind) — offense-at-scale and
+mind** predicts several at once and can't be ganked (Mind) — offense-at-scale and
 defense-at-scale on different stats. A thin Mind gets **focus-fired**; a thin Speed
 **can't press a crowd**. Powerscaling stays **uncapped**: stack both (with the **Power**
 to make the blows bite) and one character becomes a **one-man army** — the
@@ -221,3 +238,4 @@ take a stance.
   (first-pass), or a gentler function?
 - We are **deliberately staying abstract** — a front line is an **unordered set**, no
   rows or positions. Revisit only if play surfaces a concrete reason to add them.
+- How **prediction** numbers scale across the power curve (with [speed & tempo](speed-and-tempo.md)).

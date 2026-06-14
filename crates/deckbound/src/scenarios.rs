@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actors::{Creature, Hero, ReadPolicy};
+use crate::actors::{Creature, Hero, StancePolicy};
 use crate::stats::Body;
 
 #[derive(Debug, Deserialize)]
@@ -119,15 +119,15 @@ fn build_creature(cat: &Catalog, name: &str) -> Creature {
     }
 }
 
-fn policy(keyword: &str) -> ReadPolicy {
+fn policy(keyword: &str) -> StancePolicy {
     match keyword {
-        "dummy" => ReadPolicy::Dummy,
-        "brute" => ReadPolicy::Brute,
-        "turtle" => ReadPolicy::Turtle,
-        "duelist" => ReadPolicy::Duelist,
-        "grappler" => ReadPolicy::Grappler,
-        "aggressor" => ReadPolicy::Aggressor,
-        other => panic!("unknown read-policy keyword {other:?}"),
+        "dummy" => StancePolicy::Dummy,
+        "brute" => StancePolicy::Brute,
+        "turtle" => StancePolicy::Turtle,
+        "duelist" => StancePolicy::Duelist,
+        "grappler" => StancePolicy::Grappler,
+        "aggressor" => StancePolicy::Aggressor,
+        other => panic!("unknown stance-policy keyword {other:?}"),
     }
 }
 

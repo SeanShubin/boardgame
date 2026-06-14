@@ -82,7 +82,7 @@ characters. Balance is tuned by varying:
 
 Enemies have their **own decks**. **Portions of an enemy deck are shuffled** to
 represent **simultaneous decisions** — the opponent's hidden, committed choice
-that the player must read into (this is the randomness the player's never-shuffled
+that the player must predict (this is the randomness the player's never-shuffled
 decks deliberately lack).
 
 ### The event deck
@@ -151,6 +151,59 @@ The two answers to one swarm are the two faces of the budget: **one god-Speed bo
 many ordinary bodies**. Balance falls out of the total; the *distribution* is what
 makes solo and co-op feel like different games. (This is the
 [asymmetry pillar](philosophy.md) made quantitative.)
+
+### God vs party — depth for breadth at equal budget
+
+Spend the same fixed budget *B* as **one god** (all *B*) or a **party of N** (*B/N*
+each) and you buy **roughly equal raw throughput in an opposite shape**. Stats **add
+linearly under concentration** — the god's Speed is the sum of the party's Speeds, its
+Mind the sum of their Minds, and so on — so neither shape is inherently stronger; they
+fail and win against *different* things.
+
+- **Party = wide & simultaneous.** Division of labor across bodies **in one round** —
+  one Holds the wall, one nukes from the back, one Runs the flank. Redundant against
+  debuffs and seals (lose one capability, the others still act), but it **cannot
+  concentrate force** and is **fragile to losing a specialist**.
+- **God = deep & sequential.** It cannot split, so it **mode-switches across rounds**
+  (an Attack round is the blade clearing the crowd it can predict; a Hold round is the
+  wall absorbing and dragging) and **concentrates force to cross thresholds no single
+  party member could**. But it is **one body, one place, one Mind to seal**.
+- **Signature counters.** The god's is the **gank** — swarm past its Mind so the
+  overflow free-hits, or seal its one Mind. The party's is a **threshold or an AoE** — a
+  Juggernaut no member can crack, or one blast catching the clustered party.
+
+Capability for capability at equal budget:
+
+| Capability                           | Winner              | Why                                                                                   |
+| ------------------------------------ | ------------------- | ------------------------------------------------------------------------------------- |
+| **Strike many**                      | ≈ even              | totals match; the god is more flexible about who                                      |
+| **Negate many** (predict blows)      | ≈ even total        | same total focus; the **per-body cap** differs                                        |
+| **Absorb** (toughness)               | differs *by design* | same total HP; god's one pool is **chip-immune**, party's N pools risk **focus-fire** |
+| **Be in many places**                | **party**           | one god has one stance per round                                                      |
+| **Concentrate to cross a threshold** | **god**             | linear sum clears a bar no single member reaches                                      |
+| **Survive a seal**                   | **party**           | the god is a single point of failure                                                  |
+| **Coordination tax**                 | **god**             | no synergy to set up; nothing to mis-time                                             |
+
+#### Linearity invariants
+
+For the equivalence above to hold, these must stay true:
+
+1. **Concentration is linear** — no big-number bonus and no concentration penalty;
+   summing stats into one body neither over- nor under-pays.
+2. **Bandwidth caps are real and per-body** — the Mind **focus pool** is per-Actor, and
+   a fast attacker drains a defender's focus faster (each prediction costs the attacker's
+   Speed). This is what keeps "negate many" even in *total* but capped per body.
+3. **Thresholds must exist** — Juggernaut armor, drag ≥ Runner Speed, the Power needed to
+   drop a target. Thresholds are the **god's unique payoff**: the one place linear
+   concentration buys something a divided budget cannot.
+4. **HP concentration is flat.** A god's one pool and a party's N pools carry the **same
+   total** effective HP; the *shape* difference is intended texture — a god is
+   **chip-immune** (each hit meets its toughness once, so swarms of weak hits do little;
+   the **gank** counters it by free-hitting *past* the duel, not through toughness), while
+   a party risks **focus-fire dropping a whole capability** (countered by protecting
+   keystone members). Toughness stays **flat under concentration**; a **concentration
+   tax** is held in reserve as a tuning knob, applied only if playtest shows the god too
+   chip-immune.
 
 ## The shape of progression — the rule of three
 
@@ -234,3 +287,9 @@ decks to do it.
   crafting from card sets?
 - How much of a scenario is **authored vs shuffled**, and who decides per
   scenario?
+- **HP concentration tax (tuning knob, not an open design question).** The *rule* is
+  settled — toughness stays **flat**, so one pool vs N pools have the **same total** HP and
+  the shape-asymmetry (god chip-immune; party focus-fire-vulnerable) is **intended**, each
+  with its own counter (see [god vs party](#god-vs-party--depth-for-breadth-at-equal-budget)).
+  The only open *number* is whether playtest forces a mild concentration tax to rein in a
+  too-chip-immune god.

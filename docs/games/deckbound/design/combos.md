@@ -2,19 +2,19 @@
 
 The design target: **the meaningful choices are combinations.** A single atomic
 action is rarely the interesting unit; the richness is in **chaining effects into one
-interaction** — anticipate a strike, dodge it, counter, and recover, all in the same
+interaction** — predict a strike, dodge it, counter, and recover, all in the same
 breath. Combos are what the game is *for*.
 
 ## Three sources of combination
 
 1. **Aspect chords.** One card per aspect combines into a single action (the core —
    see [decks & aspects](decks-and-aspects.md)). Physical, tactical, and magical
-   layers compose: a thrown strike, a fire manifestation, and a read of the dodge are
+   layers compose: a thrown strike, a fire manifestation, and a prediction of the dodge are
    *one* act.
 2. **Multi-effect cards.** A single card can carry several effects that all fire in
-   one interaction — e.g. a *Riposte* that anticipates a strike, evades it,
-   counterattacks, **and** recovers a Dormant card.
-3. **Read-outcome chains.** Winning a [read](mind-and-reads.md) doesn't just bank a
+   one interaction — e.g. a *Riposte* that predicts a strike, evades it,
+   counterattacks, **and** turns a face-down card back up.
+3. **Stance-outcome chains.** Winning a [stance](mind-and-stances.md) doesn't just bank a
    number; it opens a follow-up. A successful **Evade** repositions *and* sets up a
    counter; a **Block** banks Power *and* leaves the attacker committed.
 
@@ -26,12 +26,12 @@ is **computed, not adjudicated ad hoc** — which keeps even rich interactions
 ## Worked examples
 
 - **Strike + Dodge → counterattack with positional advantage.** Commit a Strike intent
-  *and* an Evade read: you slip the incoming blow (Evade), and the strike you prepared
+  *and* an Evade stance: you slip the incoming blow (Evade), and the strike you prepared
   lands as a **counter**, carrying the **positional advantage** the Evade grants. Two
   simple pieces, a richer outcome than either alone.
-- **Anticipate + Dodge + Counter + Recover** — one *Riposte* interaction: read the
+- **Predict + Dodge + Counter + Recover** — one *Riposte* interaction: predict the
   strike, evade it (bank Speed, reposition), counterattack on the banked tempo, and
-  rouse a Dormant card back to Potential — resolved together.
+  turn a face-down card back up (or return it to hand) — resolved together.
 
 ## Why combos, not atoms
 

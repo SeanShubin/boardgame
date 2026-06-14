@@ -1,12 +1,12 @@
-//! Combatants and the read-policies creatures duel with.
+//! Combatants and the stance-policies creatures duel with.
 //!
-//! A hero is human-driven; a creature plays the duel through a **read-policy** —
-//! its "deck" of reads. Policies see only the *public* Edge banks (both sides),
+//! A hero is human-driven; a creature plays the duel through a **stance-policy** —
+//! its "deck" of stances. Policies see only the *public* Edge banks (both sides),
 //! never the human's hidden pick this beat, so the duel stays a blind read.
 
 use engine::Rng;
 
-use crate::duel::Read;
+use crate::duel::Stance;
 use crate::stats::Body;
 
 /// A player-controlled fighter.
@@ -28,9 +28,9 @@ impl Hero {
     }
 }
 
-/// How a creature picks its reads — the AI "deck".
+/// How a creature picks its stances — the AI "deck".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReadPolicy {
+pub enum StancePolicy {
     /// Always gathers — never threatens. A sandbag to learn Build + Unleash on.
     Dummy,
     /// Winds up, then swings: Marshal until loaded, then Unleash. Telegraphs a
@@ -49,15 +49,15 @@ pub enum ReadPolicy {
     Aggressor,
 }
 
-impl ReadPolicy {
+impl StancePolicy {
     pub fn label(self) -> &'static str {
         match self {
-            ReadPolicy::Dummy => "Sandbag",
-            ReadPolicy::Brute => "Brute",
-            ReadPolicy::Turtle => "Turtle",
-            ReadPolicy::Duelist => "Duelist",
-            ReadPolicy::Grappler => "Grappler",
-            ReadPolicy::Aggressor => "Berserker",
+            StancePolicy::Dummy => "Sandbag",
+            StancePolicy::Brute => "Brute",
+            StancePolicy::Turtle => "Turtle",
+            StancePolicy::Duelist => "Duelist",
+            StancePolicy::Grappler => "Grappler",
+            StancePolicy::Aggressor => "Berserker",
         }
     }
 }
@@ -70,7 +70,7 @@ pub struct Creature {
     pub body: Body,
     pub base: u32,
     pub bandwidth: u32,
-    pub policy: ReadPolicy,
+    pub policy: StancePolicy,
 }
 
 impl Creature {
@@ -78,64 +78,64 @@ impl Creature {
         self.body.is_down()
     }
 
-    /// The creature's read this beat. `own` is its Edge, `foe` the hero's Edge
+    /// The creature's stance this beat. `own` is its Edge, `foe` the hero's Edge
     /// (both public); `rng` supplies the bluff.
-    pub fn read(&self, own: u32, foe: u32, rng: &mut Rng) -> Read {
+    pub fn stance(&self, own: u32, foe: u32, rng: &mut Rng) -> Stance {
         match self.policy {
-            ReadPolicy::Dummy => Read::Marshal,
-            ReadPolicy::Brute => {
+            StancePolicy::Dummy => Stance::Marshal,
+            StancePolicy::Brute => {
                 if own >= 3 {
-                    Read::Unleash
+                    Stance::Unleash
                 } else {
-                    Read::Marshal
+                    Stance::Marshal
                 }
             }
-            ReadPolicy::Turtle => {
+            StancePolicy::Turtle => {
                 // Mostly guards; occasionally gathers so it isn't a pure wall.
                 if rng.below(5) == 0 {
-                    Read::Marshal
+                    Stance::Marshal
                 } else {
-                    Read::Parry
+                    Stance::Parry
                 }
             }
-            ReadPolicy::Grappler => {
+            StancePolicy::Grappler => {
                 // Builds, then throws - so an Unleash beats it.
                 if own < 2 {
-                    Read::Marshal
+                    Stance::Marshal
                 } else {
-                    Read::Overwhelm
+                    Stance::Overwhelm
                 }
             }
-            ReadPolicy::Aggressor => {
+            StancePolicy::Aggressor => {
                 // Mostly swings; occasionally winds up for a bigger one.
                 if rng.below(10) < 7 {
-                    Read::Unleash
+                    Stance::Unleash
                 } else {
-                    Read::Marshal
+                    Stance::Marshal
                 }
             }
-            ReadPolicy::Duelist => {
+            StancePolicy::Duelist => {
                 if foe >= 2 {
                     // You're loaded — it expects a big blow. Mostly parry, but
                     // sometimes overwhelm-bait or gather to stay honest.
                     match rng.below(4) {
-                        0 => Read::Marshal,
-                        1 => Read::Overwhelm,
-                        _ => Read::Parry,
+                        0 => Stance::Marshal,
+                        1 => Stance::Overwhelm,
+                        _ => Stance::Parry,
                     }
                 } else if own >= 2 {
                     // It's loaded — cash, or feint a parry-punish.
                     if rng.below(3) == 0 {
-                        Read::Overwhelm
+                        Stance::Overwhelm
                     } else {
-                        Read::Unleash
+                        Stance::Unleash
                     }
                 } else {
                     // Neutral — gather, with the odd poke.
                     if rng.below(3) == 0 {
-                        Read::Unleash
+                        Stance::Unleash
                     } else {
-                        Read::Marshal
+                        Stance::Marshal
                     }
                 }
             }

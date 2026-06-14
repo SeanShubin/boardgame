@@ -5,7 +5,7 @@ contest. Every participant — human, computer stand-in for a human, or non-play
 environment creature — makes the **same kind of choice** under the **same rules**,
 and resolution treats them identically. They differ in one decisive way: whether
 they have a **theory of mind** — the ability to model *you* as a strategist and
-anticipate your plan. Humans and their stand-ins do; creatures don't — which is why
+predict your plan. Humans and their stand-ins do; creatures don't — which is why
 only creatures decide by **deck**.
 
 ## The core exchange
@@ -15,17 +15,17 @@ only creatures decide by **deck**.
 2. **Reveal.** All sides flip **simultaneously**. No one reacts to another's
    choice within the exchange (constraint
    [C4](constraints.md#c4--hidden-simultaneous-choice-must-be-physical)).
-3. **Resolve the read.** The **tactical** aspect is the rock-paper-scissors layer:
-   who read whom decides who gains the upper hand (see
+3. **Resolve the stances.** The **tactical** aspect is the rock-paper-scissors layer:
+   who predicted whom decides who gains the upper hand (see
    [the action cycle](#the-action-cycle) and
    [aspects](decks-and-aspects.md#only-the-tactical-aspect-is-rock-paper-scissors)).
-4. **Resolve magnitude.** The other aspects — the Body means, Magic and other
-   modifiers, and any attached numbered cards — combine **deterministically and
+4. **Resolve magnitude.** The other aspects — the Body means (a strike or a cast
+   alike) and other modifiers, and any attached numbered cards — combine **deterministically and
    order-independently** into *how much*: damage dealt, size of a bonus, whether a blow
    **drops** its target.
 
-The read is categorical (who gains the upper hand); magnitude is numeric (by how
-much). The hidden commitment is what makes it a game of reads and bluffs rather
+The stance outcome is categorical (who gains the upper hand); magnitude is numeric (by how
+much). The hidden commitment is what makes it a game of stances and bluffs rather
 than pure arithmetic.
 
 ## The three decision-makers
@@ -41,7 +41,7 @@ identically.
 ### Human player
 
 A human's cards are a **toolkit** — *what the character can do*; the **agency** is
-the player's, laid on top: which option to commit, when to bluff, how to read the
+the player's, laid on top: which option to commit, when to bluff, how to predict the
 opponent. The human supplies the theory of mind. Unpredictability comes from free
 will, and predictability is a managed resource as cards exhaust (see [zones](zones.md)).
 
@@ -52,7 +52,7 @@ Represents a human opponent and is **bound by the same rules** (constraint
 **game-theoretically optimal mixed strategy by computing it directly**, in the
 moment — exactly as a thoughtful human could. It does **not** use a deck; a deck
 would only be a way to fake what a real mind can simply do. Above all it has a
-**theory of mind** — it models *this* opponent and adapts, reading your tendencies
+**theory of mind** — it models *this* opponent and adapts, predicting your tendencies
 and bluffing back; that adaptiveness is exactly why it must **compute live** rather
 than draw a fixed deck. (This stays feasible because the tactical exchange is
 deliberately **constrained to be computable** —
@@ -94,25 +94,25 @@ A creature deck also **reshuffles after every play** (drawn with replacement), s
 fatigue and no memory.
 
 > **The deck is instinct, not a mind.** A creature can surprise you with *what* it
-> does, but never out-think you about *who you are*. Your edge is to study its rules
+> does, but never out-predict you about *who you are*. Your edge is to study its rules
 > and devise a strategy it has no way to counter — exactly the human intellect the
 > game rewards.
 
 ### The line: theory of mind
 
 The decisive difference among the three is **theory of mind** — modelling the
-opponent as a strategist and anticipating their plan. Humans and their stand-ins have
+opponent as a strategist and predicting their plan. Humans and their stand-ins have
 it; creatures do not. This is why their **cards serve different purposes**:
 
 - A **human's** cards are *options under agency* — the character's toolkit, with the
-  player reasoning over them, reading, and bluffing on top.
+  player reasoning over them, predicting, and bluffing on top.
 - A **creature's** cards *are the agency* — the rule-based instinct that decides for
   it, with no mind behind the wheel.
 
 Same physical medium, opposite role: for the human the cards are *what they can do*;
 for the creature they are *how it decides*. And only a mind can get inside another
-mind — so the read is **two-way against a human or stand-in** (you read each other)
-but **one-way against a creature** (you read its rules; it cannot read you back).
+mind — so prediction is **two-way against a human or stand-in** (you predict each other)
+but **one-way against a creature** (you study its rules; it cannot predict you back).
 
 ### How the three compare
 
@@ -125,14 +125,14 @@ but **one-way against a creature** (you read its rules; it cannot read you back)
 The player's own capability decks are **never shuffled** (deliberate order is part of
 the skill); their hidden-ness comes from *which card they choose to commit*. Creatures
 invert this: their cards are **drawn, not chosen**, and they decide by **rule, not by
-reading you**.
+predicting you**.
 
 ## The action cycle
 
-The rock-paper-scissors cycle is the **Mind** aspect's read game — Strike / Block /
-Evade / Scheme, the **momentum** winning reads bank, and the **misread** that
+The rock-paper-scissors cycle is the **Mind** aspect's stance game — Strike / Block /
+Evade / Scheme, the **momentum** winning stances bank, and the **misjudged stance** that
 forfeits it. It now has its own home: see
-[the Mind: reads & momentum](mind-and-reads.md).
+[the Mind: stances & momentum](mind-and-stances.md).
 
 ## Open questions
 

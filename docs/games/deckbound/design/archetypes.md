@@ -1,12 +1,12 @@
 # Deckbound — Character & Monster Archetypes
 
-Context for tuning the systems and for designing the [Mind read](decision-making.md):
+Context for tuning the systems and for designing the [Mind stance](decision-making.md):
 who fights, how they specialize, and why no mechanic is safe to ignore.
 
 ## Solo vs cooperative — the core split
 
 - **Solo plays tall.** With no ally to cover a gap, a lone hero must **max every
-  axis** — Body, Mind, Magic, toughness, Speed — and self-recover. Powerscaling is
+  axis** — Body, Mind, toughness, Speed — and self-recover. Powerscaling is
   [uncapped](coordination-and-interruption.md#speed-is-the-currency-of-engagement), so the
   fantasy is the *Solo-Leveling* one-person army with an answer to everything.
 - **Co-op plays wide.** A group wins through **specialization and synergy** — each
@@ -19,25 +19,51 @@ diverse.
 
 ## Character archetypes
 
-| Archetype              | Leans on               | Role                                                                          |
-| ---------------------- | ---------------------- | ----------------------------------------------------------------------------- |
-| **Sovereign** *(solo)* | everything             | self-sufficient one-army; broad max investment, self-recovers, engages crowds |
-| **Bulwark**            | Body toughness + Speed | the wall — **Holds**, coverage and interception; little offense               |
-| **Vanguard**           | Power + Speed          | front-line killer; mutual-engagement duels and runs                           |
-| **Skirmisher**         | Speed + Precision      | Runner / assassin; slips to the enemy back line, exploits weak spots          |
-| **Channeler**          | Magic                  | AoE and status from the back line; glass cannon, needs a wall                 |
-| **Tactician**          | Mind                   | the read, **recovery**, enabling allies' Precision, sealing enemy Minds       |
-| **Spiritualist**       | Spirit                 | the will-breaker — Resolve, Rally, Dread; fear and morale                     |
+| Archetype              | Leans on                    | Role                                                                                        |
+| ---------------------- | --------------------------- | ------------------------------------------------------------------------------------------- |
+| **Sovereign** *(solo)* | everything                  | self-sufficient one-army; broad max investment, self-recovers, engages crowds               |
+| **Bulwark**            | Body toughness + Speed      | the wall — **Holds**: **absorbs** (toughness) and **drags** Runners (Speed); little offense |
+| **Vanguard**           | Power + Speed               | front-line killer; mutual-engagement duels and runs                                         |
+| **Skirmisher**         | Speed + Precision           | Runner / assassin; slips to the enemy back line, exploits weak spots                        |
+| **Channeler**          | elemental / ranged delivery | AoE and status from the back line; glass cannon, needs a wall                               |
+| **Tactician**          | Mind                        | the stance, **recovery**, enabling allies' Precision, sealing enemy Minds                   |
+| **Spiritualist**       | Spirit                      | the will-breaker — Resolve, Rally, Dread; fear and morale                                   |
 
-**Synergy example:** the Bulwark's coverage seals the line so the Channeler nukes
+**Synergy example:** the Bulwark walls the line so the Channeler nukes
 safely; the Tactician recovers the team's options and shocks the enemy caster; the
 Skirmisher runs their back line while the Vanguard focus-fires the front. Pull one
 specialist and a whole job goes uncovered.
 
+**The wall's coverage is toughness + Speed, not Mind.** A Bulwark's "coverage" is the
+two physical lanes: **toughness-absorb** (blows it eats without predicting) and
+**Speed-drag** (Runners it catches at the front line). It does **not** cover by
+**predicting** — that is **Mind-predict**, the [Tactician's](#character-archetypes)
+lane (a focus pool that negates blows by anticipating them). A *complete* wall therefore
+wants **all three**: toughness to absorb, Speed to drag, and a Mind (its own or a
+Tactician beside it) to predict; a pure-toughness Bulwark still falls to attacks that
+bypass body — Fear, Confusion, or a foe it can't drag. Mixing the two coverages up
+double-counts a job neither stat does alone.
+
+**God-tier (Sovereign) failure modes.** Because the [budget is
+linear](world-and-progression.md#god-vs-party--depth-for-breadth-at-equal-budget), a
+solo god is only as broad as it pays to be, and skimping shows two ways:
+
+- **Glass-cannon blur** — all Speed and Power, thin Mind and toughness. It strikes many
+  but gets **ganked**: swarm past its one Mind and the overflow free-hits a body that
+  can't absorb.
+- **Serene genius** — all Mind, thin Speed and body. It predicts everything yet
+  **strikes and drags too little to matter**, and a fast attacker drains its focus pool
+  faster than it refills.
+
+A **balanced god needs Speed + Mind + Power** (and toughness): Speed to swing and catch,
+Mind to predict, Power to cross the thresholds (Juggernaut armor, the drop) that are its
+whole reason to concentrate. "Speed swings, Mind reads, toughness endures" applies to one
+body as much as to a party.
+
 ## Monster archetypes — one per mechanic you can't ignore
 
 Each archetype **punishes neglecting a specific mechanic**, and each is **minded** (it
-plays the [read](decision-making.md)) or **mindless** (a readable, fixed
+plays the [stance](decision-making.md)) or **mindless** (a predictable, fixed
 [behavior deck](decision-making.md#environment-creatures--hazards-non-player)):
 
 | Monster                                       | Forces you to use…                                                                 | Mind?                         |
@@ -47,10 +73,10 @@ plays the [read](decision-making.md)) or **mindless** (a readable, fixed
 | **Stalker** — fast, runs for your back line   | **Speed** (interception) or coverage, or your fragile die                          | mindless (priority targeting) |
 | **Artillery** — back-line ranged nuker        | **front/back play** — run or interrupt it, or eat ranged death                     | mindless                      |
 | **Sentinel** — armored but for one weak point | **Precision** (a Mind) — brute force bounces off                                   | mindless                      |
-| **Trickster** — a cunning duelist             | **the RPS read** — out-read its weighted tendencies                                | **minded**                    |
+| **Trickster** — a cunning duelist             | **the RPS stance** — out-predict its weighted tendencies                           | **minded**                    |
 | **Fire elemental** — burns                    | **non-metal defense** / heat resist; metal armor is a *liability*                  | mindless                      |
 | **Frost elemental** — freezes                 | **tempo** — it Seals your cards and cuts Speed                                     | mindless                      |
-| **Storm elemental** — shocks                  | **Mind resilience** — it Seals your tactics, killing reads *and* recovery          | mindless                      |
+| **Storm elemental** — shocks                  | **Mind resilience** — it Seals your tactics, killing stances *and* recovery        | mindless                      |
 | **Reaver** — disarms and seals                | **Form depth** — backup capabilities, the re-equip maneuver                        | **minded**                    |
 | **Howler** — a corporeal fear-beast           | the **Spirit** aspect — its howl is armor-proof **Fear**; only **Resolve** shields | mindless                      |
 | **Attritionist** — drags the fight out        | **recovery** — run your Potential dry and you go predictable and helpless          | mindless                      |
@@ -63,9 +89,9 @@ and react to the board with rich conditional behavior; it just can't model and c
 ## Why this matters for the Mind RPS
 
 The roster splits by **theory of mind**: most creatures run on **instinct** — rich,
-conditional behavior you can study and out-read, but no model of *you* — while a few
-(Tricksters, and other players or stand-ins) are **minds** that read *back*. The Mind
-RPS cycle must satisfy **both**: out-reading instinct one-way, and dueling a thinking
+conditional behavior you can study and out-predict, but no model of *you* — while a few
+(Tricksters, and other players or stand-ins) are **minds** that predict *back*. The Mind
+RPS cycle must satisfy **both**: out-predicting instinct one-way, and dueling a thinking
 opponent two-way. The **Sentinel** (Precision) and **Storm** (sealing Minds) also show
 why the Mind aspect is load-bearing — whole archetypes exist to punish a character who
 skimps on it.

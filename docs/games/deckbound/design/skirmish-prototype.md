@@ -13,9 +13,9 @@ several systems are simplified to "just enough" (noted inline).
 
 ## Just-enough rules
 
-**Stats.** Each combatant has **Speed (Spd)**, **Power (Pow)**, **Precision (Pre)**,
-and casters a **Magic (Mag)** rating. Health is **Body** cards with a **Toughness**
-rating — written **Body N × T**.
+**Stats.** Each combatant has **Speed (Spd)**, **Power (Pow)**, and **Precision (Pre)**;
+casters' attack cards carry **Power** (no separate caster rating). Health is **Body** cards
+with a **Toughness** rating — written **Body N × T**.
 
 **Damage → Body.** A landed hit deals **Damage**; subtract the target's **armor**;
 it removes **⌊remaining ÷ Toughness⌋** Body cards. **0 Body = knocked out** (an ally
@@ -35,14 +35,14 @@ with one exception each — the full damage-type matrix is deferred.)*
      also **cancels** the dive. Survive the free strikes uninterrupted → reach the back
      line, bloodied. A fast Holder gauntlets several, paying Speed per the bandwidth
      rule.
-   - **Reads** — in a mutual engagement (or Hold-vs-attacker) both pick **Strike /
+   - **Prediction** — in a mutual engagement (or Hold-vs-attacker) both pick **Strike /
      Block / Evade / Scheme**; the cycle (Strike > Scheme, Defense > Strike, Scheme >
      Defense) decides it, the winner banks a bonus (Block → +Pow, Evade → +Spd,
-     Scheme → +all), a misread forfeits the bank. Otherwise the attack **auto-succeeds**.
+     Scheme → +all), a mispredict forfeits the bank. Otherwise the attack **auto-succeeds**.
    - Apply damage; banked **Speed** may buy an **extra unopposed action**.
 4. Resolve knockouts; next round.
 
-**Creatures are mindless** — stance and read come from a fixed, *readable* behavior
+**Creatures are mindless** — stance and Stance card come from a fixed, *readable* behavior
 (no bluffing). The deep bluff-RPS is for minded foes and is deferred.
 
 ## The party — 3 front, 3 back
@@ -57,16 +57,16 @@ Front line (the wall and its hammer):
 
 Back line (safe only if the wall holds):
 
-| Hero          | Spd | Pow | Pre | Mag | Body×T | Kit & role                                                                                                                                                        |
-| ------------- | --- | --- | --- | --- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Channeler** | 2   | 1   | —   | 5   | 2 × T1 | **Firestorm** (AoE: all enemy front line) + **Frost** (slow/seal one). Glass cannon; the swarm answer.                                                            |
-| **Tactician** | 4   | 2   | 3   | —   | 3 × T2 | **Recover** (return spent cards to an ally), **Read** (grant an ally Precision / cancel a telegraph), **Steady** (soften misread loss). Keeps the engine running. |
-| **Marksman**  | 3   | 3   | 5   | —   | 2 × T1 | **Bow** (ranged, pierce), **Snipe** (hits the enemy **back** line; Pre 5 bypasses armor). Kills the back-line casters; cracks the Sentinel.                       |
+| Hero          | Spd | Pow | Pre | Power | Body×T | Kit & role                                                                                                                                                              |
+| ------------- | --- | --- | --- | ----- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Channeler** | 2   | 1   | —   | 5     | 2 × T1 | **Firestorm** (AoE elemental delivery: all enemy front line) + **Frost** (slow/seal one). Glass cannon; the swarm answer.                                               |
+| **Tactician** | 4   | 2   | 3   | —     | 3 × T2 | **Recover** (return spent cards to an ally), **Predict** (grant an ally Precision / cancel a telegraph), **Steady** (soften mispredict loss). Keeps the engine running. |
+| **Marksman**  | 3   | 3   | 5   | —     | 2 × T1 | **Bow** (ranged, pierce), **Snipe** (hits the enemy **back** line; Pre 5 bypasses armor). Kills the back-line casters; cracks the Sentinel.                             |
 
 **Synergy:** Bulwark (and Skirmisher) **Hold** → divers must run their gauntlet of free
 strikes → the three squishies stay protected. Channeler AoEs the front swarm; Marksman snipes the
 back-line casters; Vanguard duels the Juggernaut; Skirmisher gates fast divers or
-cracks the Sentinel; Tactician recovers spent reads and steadies against Shock. Pull
+cracks the Sentinel; Tactician recovers spent stances and steadies against Shock. Pull
 any one and a job goes uncovered.
 
 ## The warband — 9 creatures
@@ -111,7 +111,7 @@ A few exchanges show the math:
 divers (Bulwark bodies the Stalker; Skirmisher intercepts a Swarmling); Channeler
 Firestorms the front swarm before they pile on; Marksman snipes the Artillery (its
 biggest single threat) then the Stormcaller; Vanguard grinds the Juggernaut; Tactician
-recovers the front line's spent reads and steadies whoever gets Shocked. The party
+recovers the front line's spent stances and steadies whoever gets Shocked. The party
 trades efficiently and wins.
 
 **The careless line:** the front line all **Attacks** for damage → coverage 0 → all
@@ -130,7 +130,7 @@ Open / to tune by playtest:
 
 - The **numbers** — Toughness, armor values, and damage so fights last a satisfying
   few rounds rather than one-shotting (the squishies are currently *very* fragile).
-- The **read/momentum** loop is barely exercised here (creatures don't bluff); it
+- The **prediction/momentum** loop is barely exercised here (creatures don't bluff); it
   wants a minded opponent or a PvP slice to test.
 - Creature **behavior cards** — the actual readable patterns (when each dives, who it
   targets) need writing out.

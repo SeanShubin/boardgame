@@ -2,32 +2,32 @@
 
 > **Status:** **implemented** as the duel sandbox (`crates/deckbound`) — combat is
 > now a sequence of these duels (Marshal / Unleash / Overwhelm / Parry, public
-> per-duel Edge), with creature read-policies and tutorials that isolate each
-> read. The older Strike/Block/Evade/Scheme warband (formation, gauntlet, fear,
+> per-duel Edge), with creature stance-policies and tutorials that isolate each
+> stance. The older Strike/Block/Evade/Scheme warband (formation, gauntlet, fear,
 > multi-target) is parked while the duel numbers are tuned. Team and god-tier test
 > scenarios add matchmaking (you pick who duels whom) and a simplified swarm rule
 > (foes beyond your **bandwidth** chip you each beat — the multi-engagement
 > approximation). Numbers are first-pass and live in `data/booklet.ron`.
 
-The tactical heart of combat: two fighters **reading each other**. A whole duel
+The tactical heart of combat: two fighters **predicting each other**. A whole duel
 is the mind-game of **a single clash** — one throw, one melee exchange — and it
 runs to completion **inside one round** (the round's **Clash** phase). So the
-reads below are the moments *within* an attack, not a fight-long timeline.
+stances below are the moments *within* an attack, not a fight-long timeline.
 
-## What a duel is — anticipation, at any range, within one clash
+## What a duel is — prediction, at any range, within one clash
 
-A **duel** is a mutual-anticipation contest between two actors, resolved in a
-single round. It is **not melee-specific** — it is *anticipation*-specific, at any
+A **duel** is a mutual-prediction contest between two actors, resolved in a
+single round. It is **not melee-specific** — it is *prediction*-specific, at any
 range.
 
 - A thrown rock against someone dodging *is* a duel: you throw where you think
-  they'll go; they dodge, or read it. The whole series of reads is the mind-game
+  they'll go; they dodge, or predict it. The whole series of stances is the mind-game
   of that one throw.
-- It is about **anticipation, not symmetric offense.** Reach can be lopsided; the
-  read stays two-way.
+- It is about **prediction, not symmetric offense.** Reach can be lopsided; the
+  prediction stays two-way.
 - **No duel → direct resolution.** Mindless fodder, or a target that cannot
-  respond to you, just takes the hit by magnitude — the one-way vs two-way read
-  distinction from [mind-and-reads](mind-and-reads.md#against-instinct-vs-against-a-mind).
+  respond to you, just takes the hit by magnitude — the one-way vs two-way prediction
+  distinction from [mind-and-stances](mind-and-stances.md#against-instinct-vs-against-a-mind).
 
 ## Edge — per-duel, all-in, linear, public
 
@@ -47,7 +47,7 @@ range.
   its Edge** (or **+1** if it had none — a parry always pays) — the lead flips
   mid-duel. An **Overwhelm** is never stolen.
 
-## The four reads — Marshal · Unleash · Overwhelm · Parry
+## The four stances — Marshal · Unleash · Overwhelm · Parry
 
 Each fighter secretly commits one; reveal at once. They are the fighting-game
 mix-up — **neutral, strike, throw, block** — a proven, learnable, non-degenerate
@@ -60,7 +60,7 @@ four-way:
 - **Overwhelm** *(throw)* — drive **all** your Edge *through* a guard. Beats a
   **Parry** — but whiffs against anyone not guarding (a Marshaller, or an
   Unleasher), losing your Edge for nothing.
-- **Parry** *(block)* — read the Unleash: negate it **and steal the whole bank**
+- **Parry** *(block)* — predict the Unleash: negate it **and steal the whole bank**
   (or, if it had none, earn **+1 Edge** — a parry is never dead), the game's
   biggest comeback. But it loses to an **Overwhelm**, and a Marshaller just banks
   while you guard at air.
@@ -100,7 +100,7 @@ Because a base Unleash already ends it, the duel has a clean arc:
   nothing; Overwhelm punches through a Parry to end the duel. A parry-crouch is
   punished (by Overwhelm), and a parried Unleash flips the Edge.
 
-## Why four reads, not three — the parry problem
+## Why four stances, not three — the parry problem
 
 With only Marshal / Unleash / Parry, a fighter who didn't want to be hit could just
 **always Parry**: it negates the Unleash and steals it, with no downside but a
@@ -135,13 +135,21 @@ One global rule, no bespoke per-card logic: **every card has a primary effect (i
 headline), and spending your Edge scales that effect.** Three clean roles:
 
 - **Card = *what*** — the maneuver and its primary effect.
-- **Read (Marshal / Unleash / Overwhelm / Parry) = the *anticipation*** — hidden,
-  decoupled from the card, so the card never telegraphs the read.
+- **Stance (Marshal / Unleash / Overwhelm / Parry) = the *prediction*** — hidden,
+  decoupled from the card, so the card never telegraphs the stance.
 - **Edge = *how much*** — spent all at once.
 
 Damage is the common primary effect (a strike maneuver → devastation), but not the
 only one — a **Sunder** shears off armor, a **Disarm** rips cards from hand, a
 **Shove** breaks them out of the line. No card has to "know about" Edge.
+
+**The rate is uniform and linear: 1 Edge = +1 of the card's primary effect in its
+natural unit**, added on top of the card's base magnitude — the default unit being a
+strike's **1 Edge = 1 damage**. Each non-damage maneuver names its own per-Edge unit (a
+Sunder's armor pip, a Disarm's card). Two things still bound it: **toughness gates** the
+result (at toughness *T* you need *T* raw damage to turn one more Health card face down),
+and **Power sets the base** that Edge adds to. The exact unit-values per effect are a
+balance-pass detail; the rule is fixed.
 
 ## Range, split attention, and many at once
 
@@ -149,15 +157,35 @@ A duel is pairwise, so engaging a crowd means **several simultaneous pairwise
 duels** (or one sweeping breadth-attack), governed by the coordination layer:
 
 - **Symmetric reach** → a full duel; both run the four-way.
-- **Lopsided reach** → the out-ranged fighter is in the duel *defensively* (read
+- **Lopsided reach** → the out-ranged fighter is in the duel *defensively* (predict
   and Parry/dodge) but **cannot Unleash or Overwhelm back**, and their **attention
-  is split** — each turn, read the blow *or* act in their own range, not both.
-- **Bandwidth = Mind.** You can fully duel as many foes as your Mind affords;
-  beyond that, the extra attackers **free-hit** you. A god clears the crowd it can
-  attend to and is countered by being **swarmed past its bandwidth** (the gank) —
-  asymmetry by design, balance by scenario. Because Edge **resets per duel**,
-  breadth never compounds into one mega-bank: a god is a stack of independent short
-  duels, powerful in each but hard-capped on how many it can read.
+  is split** — each turn, predict the blow *or* act in their own range, not both.
+- **Bandwidth = Mind, and a duel composes attack-many with defend-many.** A mutual
+  engagement is offense **and** defense in one exchange (Marshal/Unleash/Overwhelm/Parry
+  threaten and guard together), so facing a crowd is **K simultaneous duels**. Two
+  separate caps gate K:
+  - **Speed (tempo)** caps how many duels you can **sustain offensively** — engaging
+    each costs the *target's* Speed from your tempo pool.
+  - **Mind (focus)** caps how many you can **predict in** — defending each costs the
+    *attacker's* Speed from your focus pool ([mind-and-stances](mind-and-stances.md#how-many-you-can-predict--bandwidth-is-the-mind-focus-pool)).
+
+  When Speed affords **K** but Mind covers only **J < K**, the **K−J** extra duels are
+  **one-way**: you still strike them, but can't predict them, so they **free-hit** back
+  (the gank / lopsided-reach case). Because Edge **resets per duel**, breadth never
+  compounds into one mega-bank — a god is a stack of independent short duels, powerful
+  in each but hard-capped on how many it can predict. **Overextending is table-wide:**
+  go negative in any *one* duel — tempo *or* focus — and you drop to the bottom of the
+  first-strike order in **every** duel this round, so overreaching against a crowd is
+  lethal.
+- **Two god-flavors fall out of the Speed/Mind imbalance:**
+  - **Glass-cannon blur** (Speed ≫ Mind) — engages the whole crowd, predicted by none
+    it overcommits to, and **dies to a swarm**.
+  - **Serene genius** (Mind ≫ Speed) — predicts everyone but can't press, so it **wins
+    slowly and dies to attrition**.
+
+  A balanced god needs **Speed + Mind + Power** together: Speed buys timing and Mind
+  buys safety, but neither *kills* — only **Power** supplies the weight to actually drop
+  foes. Asymmetry by design, balance by scenario.
 
 ## A worked exchange — the rock *(one duel, all-in, linear)*
 
@@ -178,7 +206,7 @@ cracking a parry to finish. Next round is a fresh duel at 0 Edge.
 ## Lineage
 
 The closest solved version is the fighting-game cluster of **meter + supers +
-yomi**: build in neutral (**Marshal**), pop a super (**Unleash**), a hard-read
+yomi**: build in neutral (**Marshal**), pop a super (**Unleash**), a hard-predicted
 whiff-punish (**Parry**), and a throw that beats the block (**Overwhelm**) — the
 **strike / throw / block** mix-up with Marshal as neutral. A bank that changes the
 opponent's behaviour is "respecting the meter," and "scale a normal with spent
@@ -187,16 +215,17 @@ brawlers; *Doom Eternal* contributes "play aggressively to fuel yourself."
 
 ## What this supersedes
 
-- The four reads **Strike / Block / Evade / Scheme** as the RPS cycle → replaced by
-  **Marshal / Unleash / Overwhelm / Parry**. The old "reads" become **maneuver
+- The four stances **Strike / Block / Evade / Scheme** as the RPS cycle → replaced by
+  **Marshal / Unleash / Overwhelm / Parry**. The old "stances" become **maneuver
   cards** (what you Unleash with).
 - **Momentum banking Power / Speed / Precision** → collapsed into one generic,
   public, **per-duel Edge**.
 
 ## Open questions — the tuning lives here
 
-- **Edge → effect rate.** 1 Edge = how much of a primary effect (1 damage? one
-  target? one armor pip?). Each effect needs its natural per-Edge unit.
+- **Per-Edge unit values (tuning).** The *rule* is settled — **1 Edge = +1 of the card's
+  primary effect in its natural unit**, additive and linear (default 1 Edge = 1 damage).
+  Only the exact unit for each non-damage effect is a numbers-pass detail.
 - **Perfect-parry counter.** The steal is settled; does a Parry *also* deal
   counter-damage, and how much?
 - **Clinch (Overwhelm vs Overwhelm).** Provisionally a wash — nothing happens.
@@ -205,4 +234,4 @@ brawlers; *Doom Eternal* contributes "play aggressively to fuel yourself."
   beats — a "single throw" — rather than a long dance. (Pacing, not termination;
   termination is settled above.)
 - **Duel detection.** The exact "can respond to me" rule that switches the
-  read-game on, and how split-attention is modelled for lopsided reach.
+  stance-game on, and how split-attention is modelled for lopsided reach.

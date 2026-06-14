@@ -1,7 +1,7 @@
 //! The state of a duel-sandbox combat in progress.
 //!
 //! Combat is a sequence of one-on-one duels. The human and a creature are paired
-//! (first living vs first living); the human picks reads, the creature reads back
+//! (first living vs first living); the human picks stances, the creature reads back
 //! through its policy, and each beat resolves until a strike lands and the duel
 //! ends. Then the next pair forms. Edge is **per-duel** — it resets each duel.
 

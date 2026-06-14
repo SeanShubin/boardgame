@@ -4,7 +4,7 @@
 //! (`docs/games/deckbound/design/the-duel.md`). Combat is a sequence of
 //! one-on-one duels — Marshal / Unleash / Overwhelm / Parry, with a public,
 //! per-duel **Edge** bank that builds and is stolen. Creatures duel through
-//! read-policies. No Bevy dependency, so the whole thing is unit-testable and
+//! stance-policies. No Bevy dependency, so the whole thing is unit-testable and
 //! reproducible from a seed; the `tabletop` plugin renders it.
 //!
 //! The earlier Strike/Block/Evade/Scheme combat (formation, gauntlet, fear,
@@ -17,8 +17,8 @@ pub mod scenarios;
 pub mod state;
 pub mod stats;
 
-pub use actors::{Creature, Hero, ReadPolicy};
-pub use duel::{Read, Side, resolve};
+pub use actors::{Creature, Hero, StancePolicy};
+pub use duel::{Side, Stance, resolve};
 pub use game::{Action, Deckbound};
 pub use scenarios::{Scenario, campaign, tutorials};
 pub use state::{Duel, Menu, Phase, State};

@@ -17,15 +17,15 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 ### Character — Form & stats
 
-| Element                                                            | How represented                                                  | When                                             | Lives |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------ | ----- |
-| **Body / Mind / Magic / Spirit health**                            | capability **cards**, flip Form ↔ Dormant                        | authored (count); flips at **resolve**           | table |
-| **Resolve**                                                        | capability cards + a rules card; fear accumulates within a round | authored; flips at resolve; resets **round-end** | table |
-| **Stats** (Speed, Power, Precision, Mag, Spr)                      | numbers on the **identity card**                                 | authored; changed by **acquisition**             | table |
-| **Toughness / armor / Resolve rules**                              | **rules cards**                                                  | authored                                         | table |
-| **Traits & equipment** (Plate, Shield, weapons, Resolute, Coward…) | **cards** in Form                                                | authored / acquisition                           | table |
-| **Keystone** (which aspect is lethal)                              | named by a Form card                                             | authored                                         | table |
-| **Knockout** (keystone at 0)                                       | the flipped cards + a down marker                                | resolve                                          | table |
+| Element                                                            | How represented                                                           | When                                                      | Lives |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------- | ----- |
+| **Body health** (outer pool)                                       | generic **Health cards**, turn face up ↔ face down (in Form)              | authored (count); flips at **resolve**                    | table |
+| **Resolve / Mind** (inner thresholds)                              | a standing **capacity value** — *no* Health stack; effects raise/lower it | Fear/Confusion vs it at **resolve**; clears **round-end** | table |
+| **Stats** (Speed, Power, Precision, Spr)                           | numbers on the **identity card**                                          | authored; changed by **acquisition**                      | table |
+| **Vitality (count + toughness) / armor rules**                     | **rules cards** (the health one is the **Vitality card**)                 | authored                                                  | table |
+| **Traits & equipment** (Plate, Shield, weapons, Resolute, Coward…) | **cards** in Form                                                         | authored / acquisition                                    | table |
+| **Keystone** (which aspect is lethal)                              | named by a Form card                                                      | authored                                                  | table |
+| **Knockout** (keystone at 0)                                       | the flipped cards + a down marker                                         | resolve                                                   | table |
 
 ### Positioning & stance
 
@@ -36,15 +36,15 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 | **Guard / Runner** (roles) | *derived* from line + stance + target | declare                       | table (read off position + marker) |
 | **Target**                 | a **declaration** (pointer)           | declare                       | table                              |
 
-### The read (Mind)
+### The stance (Mind)
 
-| Element                                     | How                                           | When                                        | Lives                       |
-| ------------------------------------------- | --------------------------------------------- | ------------------------------------------- | --------------------------- |
-| **Reads** (Strike/Block/Evade/Scheme)       | **cards**, P → A → D (defensive self-returns) | committed **declare**, revealed **resolve** | table                       |
-| **Hidden commitment**                       | a **face-down** card                          | declare                                     | table                       |
-| **Damage type** (blunt/sharp/heat/fear…)    | printed on the weapon / spell card            | authored                                    | table                       |
-| **Momentum** (banked Power/Speed/Precision) | **cards** moved to Active                     | resolve                                     | table                       |
-| **Read outcome**                            | *derived* from the two revealed reads         | resolve                                     | head (= the revealed cards) |
+| Element                                     | How                                                             | When                                        | Lives                       |
+| ------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------- | --------------------------- |
+| **Stances** (Strike/Block/Evade/Scheme)     | **cards**, hand → Active → face down (defensive return to hand) | committed **declare**, revealed **resolve** | table                       |
+| **Hidden commitment**                       | a **face-down** card                                            | declare                                     | table                       |
+| **Damage type** (blunt/sharp/heat/fear…)    | printed on the weapon / spell card                              | authored                                    | table                       |
+| **Momentum** (banked Power/Speed/Precision) | **cards** moved to Active                                       | resolve                                     | table                       |
+| **Stance outcome**                          | *derived* from the two revealed stances                         | resolve                                     | head (= the revealed cards) |
 
 ### Tempo & the gauntlet
 
@@ -58,13 +58,13 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 ### Actions, effects, damage
 
-| Element                                                    | How                                                   | When                                   | Lives                                  |
-| ---------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------- | -------------------------------------- |
-| **Action cards** (Bash, Firestorm, Rally, Dread, Riposte…) | **cards**, P → A → D (or → Potential / → party zone)  | committed declare, resolved at resolve | table                                  |
-| **Lasting vs Fleeting**                                    | printed on the card                                   | authored                               | table                                  |
-| **Collective effects** (Rally)                             | **cards** in the **party zone**                       | resolve                                | table                                  |
-| **Incoming damage** (accumulation)                         | **tokens** in a transient round-damage pile           | accrues at resolve; clears round-end   | table                                  |
-| **Damage magnitude of a hit**                              | *derived* — Power/Precision/type vs armor + toughness | resolve                                | head → result flips cards on the table |
+| Element                                                    | How                                                             | When                                   | Lives                                  |
+| ---------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
+| **Action cards** (Bash, Firestorm, Rally, Dread, Riposte…) | **cards**, hand → Active → face down (or → hand / → party zone) | committed declare, resolved at resolve | table                                  |
+| **Lasting vs Fleeting**                                    | printed on the card                                             | authored                               | table                                  |
+| **Collective effects** (Rally)                             | **cards** in the **party zone**                                 | resolve                                | table                                  |
+| **Incoming damage** (accumulation)                         | **tokens** in a transient round-damage pile                     | accrues at resolve; clears round-end   | table                                  |
+| **Damage magnitude of a hit**                              | *derived* — Power/Precision/type vs armor + toughness           | resolve                                | head → result flips cards on the table |
 
 ### Creatures
 
@@ -77,13 +77,13 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 ### Zones & the world (between combats)
 
-| Element                                                           | How                             | When                        | Lives |
-| ----------------------------------------------------------------- | ------------------------------- | --------------------------- | ----- |
-| **The zones** (combat ▸ side ▸ front/back ▸ individual ▸ F/P/A/D) | the **table layout** itself     | form-up                     | table |
-| **World / event / scenario decks**                                | **decks of cards**              | authored; tick on **event** | table |
-| **Level-cleared marker**                                          | one **marker** per location     | acquisition                 | table |
-| **Acquired cards / artifacts**                                    | **cards** added to Form / decks | acquisition                 | table |
-| **Post-combat reset** (win → full)                                | flip all Dormant back to Form   | combat end                  | table |
+| Element                                                         | How                              | When                        | Lives |
+| --------------------------------------------------------------- | -------------------------------- | --------------------------- | ----- |
+| **The zones** (combat ▸ side ▸ front/back ▸ individual ▸ F/P/A) | the **table layout** itself      | form-up                     | table |
+| **World / event / scenario decks**                              | **decks of cards**               | authored; tick on **event** | table |
+| **Level-cleared marker**                                        | one **marker** per location      | acquisition                 | table |
+| **Acquired cards / artifacts**                                  | **cards** added to Form / decks  | acquisition                 | table |
+| **Post-combat reset** (win → full)                              | turn all face-down cards back up | combat end                  | table |
 
 ### Completeness check
 
@@ -94,7 +94,7 @@ representation holes:
 
 - the **gate aggregate** (sum of Guard Speeds, or gentler);
 - the **damage formula** (how Power, Precision, and multipliers combine);
-- **read-cycle payoffs** (how much momentum a win banks);
+- **stance-cycle payoffs** (how much momentum a win banks);
 - whether **non-combat actions** (a cast, a Scheme) draw from the tempo pool.
 
 Those are tuning numbers for playtest — the **representation is closed.**
@@ -103,7 +103,7 @@ Those are tuning numbers for playtest — the **representation is closed.**
 
 Three physical things:
 
-1. **Cards** — identity, capabilities (health), reads, actions, traits, rules. Each
+1. **Cards** — identity, capabilities (health), stances, actions, traits, rules. Each
    lives in a **zone**.
 2. **Tokens** — generic, reusable counters for the two things that *accumulate*:
    **tempo** (Speed) and **damage**. (Forced by the math — see findings.)
@@ -138,10 +138,10 @@ A handful of rules keep the whole game legible as cards **at any power level**:
 ## Zones
 
 - **Form** — your capabilities, health, traits, stats, rules cards: the "character
-  sheet made of cards," face-up. Health flips here ↔ Dormant.
-- **Potential** — reads and actions you *could* play this round.
-- **Active** — what's in play now (a played read/action, banked momentum).
-- **Dormant** — spent or sealed cards.
+  sheet made of cards," face-up. Health turns face up ↔ face down here.
+- **Potential** — stances and actions you *could* play this round.
+- **Active** — what's in play now (a played stance/action, banked momentum). Spent or
+  sealed cards are **turned face down in place**.
 - **Party zone** (shared) — collective effects (Rally) live here.
 - **Round-damage zone** (per aspect, transient) — incoming damage tokens pile here; the
   rules card reads the pile; partials clear at round's end.
@@ -152,60 +152,60 @@ A handful of rules keep the whole game legible as cards **at any power level**:
 
 **In Form** (the always-there sheet):
 
-| Card face                                                                          | Kind                              |
-| ---------------------------------------------------------------------------------- | --------------------------------- |
-| **Aldric — Knight** · Spd 4 · Pow 4 · Pre 2 · *keystone: Body*                     | identity + stats                  |
-| **Body** ×8 *(plain tokens)*                                                       | health — flip to Dormant when hit |
-| **Toughness (Body):** *2 damage flips 1 Body. Partial clears at round end.*        | rules                             |
-| **Plate:** *armor — physical −3 (blunt −1), heat −0; per source, never cumulative* | trait                             |
-| **Shield:** *you may play Block and Bash*                                          | trait                             |
-| **Resolute:** *fearless — fear cannot break you*                                   | trait (needs no Resolve cards)    |
+| Card face                                                                                                     | Kind                               |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Aldric — Knight** · Spd 4 · Pow 4 · Pre 2 · *keystone: Body*                                                | identity + stats                   |
+| **Body** — 8 **Health cards** *(generic tokens)*                                                              | health — turned face down when hit |
+| **Vitality (Body):** *8 Health cards, toughness 2 — 2 damage turns 1 face down. Partial clears at round end.* | Vitality card                      |
+| **Plate:** *armor — physical −3 (blunt −1), heat −0; per source, never cumulative*                            | trait                              |
+| **Shield:** *you may play Block and Bash*                                                                     | trait                              |
+| **Resolute:** *fearless — fear cannot break you*                                                              | trait (Resolve can't be broken)    |
 
 **In Potential** (playable this round): **Strike · Block · Evade · Scheme** (the four
-reads) + **Bash** *(Strike, blunt; on hit, **stagger** — land first and the target loses
+stances) + **Bash** *(Strike, blunt; on hit, **stagger** — land first and the target loses
 its action)*.
 
 **At round start:** 4 **tempo tokens** (= Speed). **Stance:** an Attack/Hold marker.
 
-→ ~6 Form cards + **8 Body tokens** + 5 Potential cards + tempo. The **8 Body tokens are
-the bulk** — flag for later.
+→ ~6 Form cards + **8 Body Health cards** + 5 Potential cards + tempo. The **8 Health
+cards are the bulk** — flag for later.
 
 ## The others (distinctive cards only; same skeleton)
 
-- **Vera (Duelist)** — Spd 5 · Pow 3 · Pre 4, Body ×4, Resolve ×2 + rules. Potential:
-  four reads + **Blade** *(Strike, sharp)* + **Riposte** *(combo: Evade → counter →
+- **Vera (Duelist)** — Spd 5 · Pow 3 · Pre 4, Body ×4, Resolve 2. Potential:
+  four stances + **Blade** *(Strike, sharp)* + **Riposte** *(combo: Evade → counter →
   reposition; on the Evade, bank +Speed)*.
-- **Sefa (Mage)** — Spd 2 · Mag 5, Body ×3, **fearful** (Resolve ×1 + rules). Potential:
-  reads + **Firestorm** *(Magic, heat, AoE enemy front; Mag 5)* + **Frostbite** *(Magic,
-  cold, slows)*.
-- **Bram (Warden)** — Spd 3 · Spr 5, Body ×5, Resolve ×4. Potential: reads + **Rally**
+- **Sefa (Mage)** — Spd 2 · Power 5, Body ×3, **fearful** (Resolve 1). Potential:
+  stances + **Firestorm** *(heat, AoE, ranged enemy front)* + **Frostbite** *(cold,
+  slows)*.
+- **Bram (Warden)** — Spd 3 · Spr 5, Body ×5, Resolve 4. Potential: stances + **Rally**
   *(→ party zone: +4 Resolve to each ally; every Rally boosts every other)* + **Dread**
-  *(Spirit attack — Fear vs Resolve)* + **Steel** *(recover your own Resolve)*.
+  *(Spirit attack — Fear vs Resolve)* + **Steel** *(steady your nerve — clear accumulated Fear)*.
 - **Ironclad** — Spd 2 · Pow 6, Body ×8 (T3), **plate** *(sharp −4, blunt −3, heat −0)*,
   and a small **behavior deck** *(Strike / Feint — it bluffs)*: the one foe with a hidden
-  read.
+  stance.
 - **Stalker** — Spd 6 · Pow 3, Body ×6, **line:** *run the lowest-Body.*
 - **Howler** — Spd 4, **Fear 5**, Body ×4, **line:** *howl at the least-resolute;
   fearless → cower.* (Corporeal — its threat is armor-proof Fear, not untouchability.)
 - **Husk ×6** — Spd 3 · Pow 1, Body ×1, **swarm line:** *shamble at the front* — one
   card + a count.
-- **Shared utility:** one set of **toughness / armor / Resolve rules cards** referenced
+- **Shared utility:** one set of **toughness / armor rules cards** referenced
   by all; the **party zone** (empty until a Rally lands).
 
 ## Packing a creature onto one card
 
 A hero fans out across many cards because *the player drives him* — identity, health,
-the four reads, actions, traits, artifacts. A **creature needs almost none of that**, so
+the four stances, actions, traits, artifacts. A **creature needs almost none of that**, so
 its whole presence fits on **one stat-block card**:
 
 > **Stalker** · Spd 6 · Pow 3 · **Body 6 (T1)** · *run the lowest-Body; alone → flee*
 
 What lets it pack so tight:
 
-- **No reads.** With no theory of mind it has no Strike/Block/Evade/Scheme pool — it
+- **No stances.** With no theory of mind it has no Strike/Block/Evade/Scheme pool — it
   acts off its printed behavior, not a hand of tactics.
 - **Health is a number, not a heap** — `Body 6 (T1)` is a re-derivable count (the
-  [quantity rule](form-and-defeat.md#example-rules-card--toughness) plus the
+  [toughness rule](form-and-defeat.md#example--a-vitality-card) plus the
   derivable-number rule do the work); no tokens.
 - **Traits are compact tags** — *armor −3*, *plate*, and the like.
 
@@ -213,9 +213,9 @@ What lets it pack so tight:
 
 - **A behavior *line*** (printed on the card) when its behavior is **deterministic or
   conditional on visible state** — *press the front; if wounded, Smash.* No hidden
-  choice → nothing to shuffle, nothing to read. **Most creatures.**
+  choice → nothing to shuffle, nothing to predict. **Most creatures.**
 - **A behavior *deck*** (face-down, shuffled) only when it makes a **hidden, simultaneous
-  choice you must read** — it enters the [read game](decision-making.md) as an opponent
+  choice you must predict** — it enters the [stance game](decision-making.md) as an opponent
   that might bluff. The deck is its **mixed strategy made physical** (the randomness your
   never-shuffled deck deliberately lacks). Reserved for the sophisticated — a rival
   duelist, a boss.
@@ -280,42 +280,42 @@ the sum. (This is what the [tutorial](../tutorial.html) draws as a **tempo bar**
 
 
 **Setup:** each side lays Form face-up into front/back lines; each combatant places
-**tempo = Speed**; behavior decks sit face-down; reads/actions wait in **Potential**.
+**tempo = Speed**; behavior decks sit face-down; stances/actions wait in **Potential**.
 
-| #   | What happens                                                                                                                                                                                                                    | Cards / tokens that move                                                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Declare.** Aldric & Vera → **Hold**; Sefa → **Attack** (Firestorm); Bram → **Attack** (Rally). Creatures flip their behavior top cards.                                                                                       | stance markers placed; behavior cards revealed (Potential→Active)                                                                           |
-| 2   | **Stalker runs, slips Vera** (spends Vera's Speed).                                                                                                                                                                             | Stalker **tempo 6 → 1** (5 to spent)                                                                                                        |
-| 3   | **Stalker caught by Aldric** (tempo 1 < 4). It takes the hit; Aldric plays **Bash** → it lands and **staggers** (run cancelled). Aldric engaging costs 6 tempo, he has 4 → **overextends, Exposed**. Bash 4 → T1 → 4 Body flip. | Bash: Potential→Active→**Dormant**; Stalker **Body ×4: Form→Dormant** (6→2); Aldric tempo→0 + **Exposed** marker; Stalker run **cancelled** |
-| 4   | **Wraith haunts Sefa.** Fear 5 vs Rallied Resolve 5 → no break → **recoil**.                                                                                                                                                    | Wraith behavior card Active→**Dormant**                                                                                                     |
-| 5   | **Bram's Rally** lands in the **party zone**, holding Sefa at Resolve 5.                                                                                                                                                        | Rally: Potential→Active→**party zone** (Lasting)                                                                                            |
-| 6   | **Sefa's Firestorm.** Imps: 5 ≥ Body 1 → **die**. Ogre: heat −0, 5÷T3 = 1 → 1 Body flip.                                                                                                                                        | Firestorm: Potential→Active→**Dormant** (Fleeting); each Imp **Body: Form→Dormant**; Ogre **Body ×1: Form→Dormant** (8→7)                   |
-| 7   | **Vera's Riposte** vs the Ogre's Press: **Evade** negates, **+Speed** banked, counter 0 (armor).                                                                                                                                | Riposte/Evade: Potential→Active→**Potential** (self-returns); **+Speed token → Active**                                                     |
-| 8   | **Round end.** Partial damage clears (none pending); tempo **refills** to Speed; spent *reads* that self-return go back to Potential; spent *actions* stay Dormant.                                                             | round-damage zones emptied; tempo pools reset; Aldric's **Exposed** marker cleared                                                          |
+| #   | What happens                                                                                                                                                                                                                    | Cards / tokens that move                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Declare.** Aldric & Vera → **Hold**; Sefa → **Attack** (Firestorm); Bram → **Attack** (Rally). Creatures flip their behavior top cards.                                                                                       | stance markers placed; behavior cards revealed (hand→Active)                                                                                         |
+| 2   | **Stalker runs, slips Vera** (spends Vera's Speed).                                                                                                                                                                             | Stalker **tempo 6 → 1** (5 to spent)                                                                                                                 |
+| 3   | **Stalker caught by Aldric** (tempo 1 < 4). It takes the hit; Aldric plays **Bash** → it lands and **staggers** (run cancelled). Aldric engaging costs 6 tempo, he has 4 → **overextends, Exposed**. Bash 4 → T1 → 4 Body flip. | Bash: hand→Active→**face down**; Stalker **Body ×4: turned face down in Form** (6→2); Aldric tempo→0 + **Exposed** marker; Stalker run **cancelled** |
+| 4   | **Wraith haunts Sefa.** Fear 5 vs Rallied Resolve 5 → no break → **recoil**.                                                                                                                                                    | Wraith behavior card Active→**face down**                                                                                                            |
+| 5   | **Bram's Rally** lands in the **party zone**, holding Sefa at Resolve 5.                                                                                                                                                        | Rally: hand→Active→**party zone** (Lasting)                                                                                                          |
+| 6   | **Sefa's Firestorm.** Imps: Power 5 ≥ Body 1 → **die**. Ogre: heat −0, 5÷T3 = 1 → 1 Body flip.                                                                                                                                  | Firestorm: hand→Active→**face down** (Fleeting); each Imp **Body: turned face down in Form**; Ogre **Body ×1: turned face down in Form** (8→7)       |
+| 7   | **Vera's Riposte** vs the Ogre's Press: **Evade** negates, **+Speed** banked, counter 0 (armor).                                                                                                                                | Riposte/Evade: hand→Active→**hand** (returns to hand); **+Speed token → Active**                                                                     |
+| 8   | **Round end.** Partial damage clears (none pending); tempo **refills** to Speed; spent *stances* that self-return go back to hand; spent *actions* stay **face down**.                                                          | round-damage zones emptied; tempo pools reset; Aldric's **Exposed** marker cleared                                                                   |
 
-**End state, in cards:** Imps' Body in Dormant (dead); **Stalker** 2 Body in Form / 4 in
-Dormant (bloodied, stopped); Ogre 7/8; Wraith Presence ×3 (untouched); heroes' Body
+**End state, in cards:** Imps' Body **face down** (dead); **Stalker** 2 Body face up / 4
+face down (in Form) (bloodied, stopped); Ogre 7/8; Wraith Presence ×3 (untouched); heroes' Body
 untouched; a **+Speed** token in Vera's Active; a **Rally** in the party zone.
 
 ## Pressure-test findings
 
 **Clean as cards:**
 
-- **Capabilities, reads, actions, traits, rules** are all just cards moving among four
+- **Capabilities, stances, actions, traits, rules** are all just cards moving among the
   zones — tactile and legible. The "character sheet made of cards" works.
-- **Read/action lifecycle** (Potential→Active→Dormant, or →Potential) is a clear
+- **Stance/action lifecycle** (hand→Active→face down, or →hand) is a clear
   physical motion you can see across the table.
 - **Tempo as spent tokens** is *more* intuitive in hand than on paper: you push Speed
   tokens away to slip a guard, and the pile that's left **is** how fast you still are.
   First strike = compare the two piles. Overextend = you ran the pile out.
 
-**Health needs no heap — *quantity* scales it.** A 100-Body creature is **10 cards at
-quantity 10**; a 1000-Body one is **10 cards at quantity 100**. The **card count stays
-constant; the rules-card number grows** (see
-[form & defeat](form-and-defeat.md#example-rules-card--toughness)). Even god-tier
-durability is a small, legible stack, and the coarseness is *deliberate* — sub-quantity
+**Health needs no heap — *toughness* scales it.** A 100-Body creature is **10 cards at
+toughness 10**; a 1000-Body one is **10 cards at toughness 100**. The **card count stays
+constant; the Vitality-card number grows** (see
+[form & defeat](form-and-defeat.md#example--a-vitality-card)). Even god-tier
+durability is a small, legible stack, and the coarseness is *deliberate* — sub-toughness
 chip is shrugged off, because **we don't represent 98 vs 99: every card-state change is
-meaningful.** Aldric's "8 Body" is just a low-quantity case; a tougher foe isn't more
+meaningful.** Aldric's "8 Body" is just a low-toughness case; a tougher foe isn't more
 cards, it's a bigger number.
 
 **Utility decks carry bonuses and temporary effects.** Rather than track ad-hoc state,
@@ -328,7 +328,7 @@ then remove, never bookkeeping in the head.
 what you visibly did (*dove past two guards, made three attacks*). So you keep the
 running total in your head as a convenience and re-derive it from play whenever it's
 questioned — no heap, no denominations. (A small **round-end ritual** remains: refill
-tempo, clear partial damage, return self-returning reads, drop Exposed markers.)
+tempo, clear partial damage, return self-returning stances, drop Exposed markers.)
 
 **Verdict:** representable by hand, and the economy concern largely **dissolves** under
 one rule — **scale the *number* on a rules card, not the *count* of cards.** Health is a
@@ -342,5 +342,5 @@ utility decks absorb temporary state. The cards-only pillar holds **at any power
   on.
 - How a creature's whole **stats + health + behavior** packs onto the fewest cards —
   creatures outnumber heroes, so *their* economy matters most.
-- Whether **quantity** should ever be *non-uniform* across a creature's cards (a tough
-  hide that cracks — later cards at lower quantity), or always flat.
+- Whether **toughness** should ever be *non-uniform* across a creature's cards (a tough
+  hide that cracks — later Health cards at lower toughness), or always flat.

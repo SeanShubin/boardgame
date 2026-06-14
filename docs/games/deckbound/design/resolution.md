@@ -11,14 +11,14 @@ conversions, thresholds) live in the **appendix**; this is the *procedure*.
 2. **Declare** — every actor, with formations open:
    - a **stance** (Attack / Hold),
    - **target(s)** legal under [reach + targeting](coordination-and-interruption.md),
-   - one **read** (Strike / Block / Evade / Scheme), committed **face-down**,
+   - one **stance** (Strike / Block / Evade / Scheme), committed **face-down**,
    - any **plays** (action cards), committed face-down.
    Creatures declare from their behavior: a **line** resolves deterministically off the
-   visible board; a **deck** supplies a **shuffled, hidden** read (the bluff).
-3. **Reveal.** All reads and plays flip **simultaneously**.
+   visible board; a **deck** supplies a **shuffled, hidden** stance (the bluff).
+3. **Reveal.** All stances and plays flip **simultaneously**.
 4. **Clash** — the meat: **Charge** (the gauntlet) then **Exchange** (the blows), below.
 5. **Recover.** Clear partial (sub-threshold) damage; **refill tempo** to Speed;
-   self-returning reads (Block/Evade/Scheme) → Potential; aggressive/Fleeting → Dormant;
+   self-returning stances (Block/Evade/Scheme) return to hand; aggressive/Fleeting turned face down;
    drop **Exposed** markers; **check win/loss**.
 
 ## Clash (step 4) — Charge, then Exchange
@@ -53,15 +53,15 @@ So pre-emption needs **no Power threshold**: **Power is pure magnitude**, and *d
 the target (a lethal first-strike) is what stops their blow — as is a **stagger** keyword.
 Within that rule:
 
-- **Pairwise clashes.** Each engagement resolves the read cycle
+- **Pairwise clashes.** Each engagement resolves the stance cycle
   (`Strike → Scheme → Defense → Strike`) **per pair**. A multi-target attack commits **one**
-  read against each engaged target pairwise; a target **not reading the attacker** (it can't
-  afford the read) **auto-takes** it. Reads are **bandwidth-limited by
-  [Mind](mind-and-reads.md)** — you defend only as many attackers as your Mind affords.
+  stance against each engaged target pairwise; a target **not predicting the attacker** (it can't
+  afford the stance) **auto-takes** it. Stances are **bandwidth-limited by
+  [Mind](mind-and-stances.md)** — you defend only as many attackers as your Mind affords.
 - **Damage.** A landed attack's **magnitude** (Power / Precision / type vs armor +
-  toughness — appendix formula) flips capability cards **Form → Dormant**. **Fear** erodes
+  toughness — appendix formula) turns capability cards **face down in Form**. **Fear** erodes
   **Resolve** the same way.
-- **Momentum.** A won read banks Power / Speed / Precision into **Active**; a misread
+- **Momentum.** A won stance banks Power / Speed / Precision into **Active**; a misjudged stance
   **forfeits the bank**. A multi-target win banks at the appendix **cap** (so breadth
   doesn't out-snowball depth).
 - **Knockout.** Any actor whose **keystone** (usually Body) loses its last card is
@@ -89,5 +89,6 @@ What the build still has to fix is **numbers and one interaction**, not the shap
   recorded (an interaction; deterministic once chosen).
 - **Tie-breaks** past "equal tempo → both land" — e.g. mutual lethal first-strikes (a
   mutual kill by default).
-- Whether **casting / Scheme** draws from the tempo pool (the open
+- **Casting / Scheme tempo cost (RESOLVED).** A cast is a **physical action**, so it
+  **draws tempo** like any action; the only open part is the Scheme's cost (the
   [speed-and-tempo](speed-and-tempo.md) question).

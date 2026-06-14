@@ -22,7 +22,7 @@
 - **Trust in choice is cumulative.** Early choices that matter teach players to
   engage; early choices that don't train them to disengage.
   *(meaningful-choice-analysis.md)* — **Deckbound:** the first exchanges must
-  visibly reward reads and punish predictability.
+  visibly reward predictions and punish predictability.
 
 ## Progression & difficulty
 
@@ -30,12 +30,12 @@
   challenge should be solvable through persistence, mastery, *or* curiosity, no
   one axis invalidating the others. *(design-philosophy.md,
   emergent-gameplay-and-progression.md)* — **Deckbound:** acquire new
-  cards/aspects (power), read opponents better (skill), or discover card
+  cards/aspects (power), predict opponents better (skill), or discover card
   interactions (knowledge).
 - **Soft gates over hard gates.** Prefer obstacles that are much harder without
   the intended tool but still possible; reserve hard gates for major milestones.
   *(progression-and-difficulty-design.md)* — **Deckbound:** lacking an entire
-  aspect is a hard gate; a known opponent pattern you can out-read is a soft one.
+  aspect is a hard gate; a known opponent pattern you can out-predict is a soft one.
 - **Player-ordered challenges = self-chosen difficulty.** If players pick the
   order, they pick their own curve, so encounters shouldn't auto-scale; optional
   power that helps but isn't required is the elegant middle.
@@ -72,7 +72,7 @@
 - **Interconnected systems reward experimentation.** Mechanics interact in ways
   the game doesn't explicitly teach. *(design-philosophy.md,
   emergent-gameplay-and-progression.md)* — **Deckbound:** let aspect combinations
-  and exhaustion-reading interact without spelling them out.
+  and exhaustion-prediction interact without spelling them out.
 
 ## Discovery & learning
 

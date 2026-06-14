@@ -1,13 +1,13 @@
 //! The Edge duel — one beat at a time.
 //!
-//! Two sides each pick a read (Marshal / Unleash / Overwhelm / Parry); this
+//! Two sides each pick a stance (Marshal / Unleash / Overwhelm / Parry); this
 //! resolves a single beat: new Edge for each, damage dealt to each, and whether
 //! a strike landed (which ends the duel). See
 //! `docs/games/deckbound/design/the-duel.md`. Pure and deterministic.
 
-/// A read in the duel.
+/// A stance in the duel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Read {
+pub enum Stance {
     /// Gather — build Edge. Neutral.
     Marshal,
     /// Pour all Edge into a strike. Beats Marshal/Overwhelm; a Parry steals it.
@@ -18,18 +18,19 @@ pub enum Read {
     Parry,
 }
 
-impl Read {
+impl Stance {
     pub fn name(self) -> &'static str {
         match self {
-            Read::Marshal => "Marshal",
-            Read::Unleash => "Unleash",
-            Read::Overwhelm => "Overwhelm",
-            Read::Parry => "Parry",
+            Stance::Marshal => "Marshal",
+            Stance::Unleash => "Unleash",
+            Stance::Overwhelm => "Overwhelm",
+            Stance::Parry => "Parry",
         }
     }
 
     /// All four, in display order.
-    pub const ALL: [Read; 4] = [Read::Marshal, Read::Unleash, Read::Overwhelm, Read::Parry];
+    pub const ALL: [Stance; 4] =
+        [Stance::Marshal, Stance::Unleash, Stance::Overwhelm, Stance::Parry];
 }
 
 /// One side entering a beat: its current Edge, its base (0-Edge) strike, and a
@@ -60,16 +61,16 @@ pub struct Beat {
     pub note: String,
 }
 
-/// Resolve one beat: side `a` plays `ar`, side `b` plays `br`.
-pub fn resolve(a: &Side, ar: Read, b: &Side, br: Read) -> Beat {
-    use Read::*;
+/// Resolve one beat: side `a` plays `a_stance`, side `b` plays `b_stance`.
+pub fn resolve(a: &Side, a_stance: Stance, b: &Side, b_stance: Stance) -> Beat {
+    use Stance::*;
     let cont = |a_edge, b_edge, note: String| Beat {
         a_edge,
         b_edge,
         a_dmg: 0,
         b_dmg: 0,
         ends: false,
-        double_marshal: ar == Marshal && br == Marshal,
+        double_marshal: a_stance == Marshal && b_stance == Marshal,
         note,
     };
     let end = |a_dmg, b_dmg, note: String| Beat {
@@ -85,7 +86,7 @@ pub fn resolve(a: &Side, ar: Read, b: &Side, br: Read) -> Beat {
     let a_hit = a.base + a.edge;
     let b_hit = b.base + b.edge;
 
-    match (ar, br) {
+    match (a_stance, b_stance) {
         (Marshal, Marshal) => cont(
             a.edge + 1,
             b.edge + 1,
@@ -226,7 +227,7 @@ mod tests {
 
     #[test]
     fn marshal_builds_edge_and_continues() {
-        let beat = resolve(&side(2), Read::Marshal, &side(1), Read::Marshal);
+        let beat = resolve(&side(2), Stance::Marshal, &side(1), Stance::Marshal);
         assert!(!beat.ends);
         assert_eq!((beat.a_edge, beat.b_edge), (3, 2));
         assert!(beat.double_marshal);
@@ -235,7 +236,7 @@ mod tests {
     #[test]
     fn unleash_catches_a_marshaller_and_ends() {
         // A unleashes (edge 3, base 1 => 4), B marshalling -> B struck for 4.
-        let beat = resolve(&side(3), Read::Unleash, &side(0), Read::Marshal);
+        let beat = resolve(&side(3), Stance::Unleash, &side(0), Stance::Marshal);
         assert!(beat.ends);
         assert_eq!(beat.b_dmg, 4);
         assert_eq!(beat.a_dmg, 0);
@@ -244,7 +245,7 @@ mod tests {
     #[test]
     fn parry_steals_an_unleash_and_continues() {
         // B parries A's unleash (edge 3) -> B steals 3, A -> 0, no strike.
-        let beat = resolve(&side(3), Read::Unleash, &side(1), Read::Parry);
+        let beat = resolve(&side(3), Stance::Unleash, &side(1), Stance::Parry);
         assert!(!beat.ends);
         assert_eq!(beat.a_edge, 0);
         assert_eq!(beat.b_edge, 4); // 1 + stolen 3
@@ -253,7 +254,7 @@ mod tests {
     #[test]
     fn parrying_an_empty_unleash_earns_one_edge() {
         // B parries A's 0-Edge poke -> nothing to steal, but B gains 1 (an opening).
-        let beat = resolve(&side(0), Read::Unleash, &side(0), Read::Parry);
+        let beat = resolve(&side(0), Stance::Unleash, &side(0), Stance::Parry);
         assert!(!beat.ends);
         assert_eq!(beat.b_edge, 1);
         assert_eq!(beat.a_edge, 0);
@@ -262,14 +263,14 @@ mod tests {
     #[test]
     fn overwhelm_breaks_a_parry_and_ends() {
         // A overwhelms (edge 2, base 1 => 3) into B's parry -> B struck for 3.
-        let beat = resolve(&side(2), Read::Overwhelm, &side(5), Read::Parry);
+        let beat = resolve(&side(2), Stance::Overwhelm, &side(5), Stance::Parry);
         assert!(beat.ends);
         assert_eq!(beat.b_dmg, 3);
     }
 
     #[test]
     fn overwhelm_whiffs_against_a_marshaller() {
-        let beat = resolve(&side(4), Read::Overwhelm, &side(0), Read::Marshal);
+        let beat = resolve(&side(4), Stance::Overwhelm, &side(0), Stance::Marshal);
         assert!(!beat.ends);
         assert_eq!(beat.a_edge, 0); // lost its Edge
         assert_eq!(beat.b_edge, 1); // marshaller gathered
@@ -277,7 +278,7 @@ mod tests {
 
     #[test]
     fn mutual_unleash_ends_with_both_struck() {
-        let beat = resolve(&side(2), Read::Unleash, &side(1), Read::Unleash);
+        let beat = resolve(&side(2), Stance::Unleash, &side(1), Stance::Unleash);
         assert!(beat.ends);
         assert_eq!(beat.a_dmg, 2); // base1 + B edge1
         assert_eq!(beat.b_dmg, 3); // base1 + A edge2

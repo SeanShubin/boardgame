@@ -14,44 +14,74 @@ Characters are **not meant to be balanced** against each other; uneven
 capabilities are a feature. Fairness comes from scenario design (see
 [world-and-progression](world-and-progression.md)).
 
-## The four aspects
+## The aspects
 
 An **aspect** is a dimension of a single action: a character acting plays **one card
 per aspect they have**, and the cards combine into one result. (The capability to use
 an aspect at all comes from your **Form** cards — see
-[form-and-defeat](form-and-defeat.md).) The four split cleanly into **outer** (they
-manifest physical, typed effects — armor applies) and **inner** (they reach the
-*capacity to act*, not the body — armor is no defense):
+[form-and-defeat](form-and-defeat.md).) They split cleanly into **outer** (it
+manifests physical, typed effects — armor applies) and **inner** (they reach the
+*capacity to act*, not the body — armor is no defense).
 
-**Outer — physical:**
+The distinction is deeper than "armor doesn't help against the inner ones." It is
+structural: **inner aspects (Mind, Spirit) are thresholds; the outer aspect (Body)
+is a pool.** The outer aspect is a *pool* of Health cards (governed by a Vitality card)
+that typed damage **erodes** card by card until it runs out — cut by **Armor** and
+gated by **Toughness** (per-card capacity). An inner aspect is a **standing capacity /
+threshold** — a value an attack must **overcome**, not deplete — with **no Health-card
+stack** behind it. Inner attacks are first cut by **Ward** (a passive, typed
+vs-fear / vs-confusion number on a card, applied before the inner bar), then must clear
+a **bar**: **Resolve** for Spirit, **Mind-capacity** for Mind — mirroring
+**Armor → Toughness** on the outer side:
+
+- **Mind** is a **prediction-bandwidth capacity** — a focus pool sized by Mind, spent
+  predicting attackers; **Confusion lowers the capacity** rather than chipping a stack.
+- **Spirit** is the **Resolve threshold** — a single standing value that accumulated
+  **Fear** must *exceed* to break you; Resolve itself never depletes.
+
+See [form & defeat](form-and-defeat.md#how-damage-resolves--the-vitality-card-and-health-cards)
+for the full pools-vs-thresholds mechanics.
+
+**Outer — physical (Body only):**
 
 - **Body** — your own **physical means**: Power and Speed; the punch, the parry, the
-  run. Force on flesh. *Muscle and bone.*
-- **Magic** — a **source** that *conjures* a physical effect (heat, cold, lightning,
-  force). It touches you only through that effect, which is **typed and stopped by
-  armor** like any blow; magic's distinctiveness is its **range, area, and status**,
-  never a bypass. *The conjurer's fire still burns like fire.*
+  run. Force on flesh. It is the **one outer pool** and the **one outer health pool**.
+  A Body card carries a **damage type** (heat, cold, lightning, force, …) and
+  **delivery** properties (range, area, status); a conjured effect is just a Body
+  delivery — **typed and stopped by Armor vs that type** (e.g. vs-heat) like any blow,
+  never a bypass. *Muscle and bone — and a conjurer's fire still burns like fire.*
 
 **Inner — the capacity to act:**
 
-- **Mind** — the **read**: cognition, anticipation, **Precision** (knowing where to
-  strike), the [rock-paper-scissors](mind-and-reads.md) of reads. Hit it with
-  **confusion** and a foe can no longer out-think you. *Wits.*
+- **Mind** — the **stance**: cognition, prediction, **Precision** (knowing where to
+  strike), the [rock-paper-scissors](mind-and-stances.md) of stances. Its bar is a
+  **focus pool / Mind-capacity** (prediction bandwidth) sized by Mind; hit it with
+  **Confusion** and you shrink that capacity until the foe can no longer out-predict
+  you. Incoming confusion is first cut by **Ward (vs-confusion)** — a passive, typed,
+  per-source, never-depleting number on a card, applied **before** the Mind-capacity
+  bar (the inner analogue of Armor → Toughness). *Wits.*
 - **Spirit** — the **will to act**: courage against fear, resolve against faltering,
-  morale, disposition. It lands no physical blow and works **only if you let it** —
-  it acts *through your own response*. A **fearless** character ignores a ghost
+  morale, disposition. Its bar is the **Resolve threshold** — a standing value that
+  accumulated **Fear** must *exceed* to break you. Incoming fear is first cut by
+  **Ward (vs-fear)** — a passive, typed, per-source, never-depleting number on a card,
+  applied **before** the Resolve bar (the inner analogue of Armor → Toughness). Ward
+  guards only **fear (Spirit)** and **confusion (Mind)**; it is **not** anti-magic — a
+  conjured fireball is stopped by **Armor vs-heat**, not Ward. Spirit lands no physical
+  blow and works **only if you let it** — it acts *through your own response*. A
+  **fearless** character
+  ignores a ghost
   outright; a **fearful** one can be **scared to death** by their own body's panic.
   (A ghost is essentially a *fear elemental*: no physical effect, only the
   psychological — and the only thing that touches the incorporeal, which has will and
   presence but no body.) *A sound body is useless if the spirit won't swing it.*
 
-So a full action answers two questions at once: *what physical thing happens* (Body,
-Magic) and *how the actor thinks and wills it* (Mind, Spirit). "I want to deal
-damage": a **Body** punch, maybe with a **Magic** flame on it, shaped by a **Mind**
-read of the dodge, driven by the **Spirit** to commit. **Outer** aspects are stopped
-by armor and toughness; **inner** aspects are turned aside only by **composure and
-resolve** — meet them with enough and they wash over you; fall short and you undo
-yourself. The set will grow, but these four are the spine.
+So a full action answers two questions at once: *what physical thing happens* (Body)
+and *how the actor thinks and wills it* (Mind, Spirit). "I want to deal
+damage": a **Body** punch, maybe with a fire **damage type** on it, shaped by a **Mind**
+stance against the dodge, driven by the **Spirit** to commit. The **outer** aspect is stopped
+by **Armor and Toughness**; **inner** aspects are turned aside by **Ward** and then by
+**composure and resolve (the bar)** — meet them with enough and they wash over you;
+fall short and you undo yourself. The set will grow, but these three are the spine.
 
 ### Order never matters between aspects
 
@@ -63,8 +93,8 @@ never ad-hoc. (This is the deliberate opposite of
 ### Only the tactical aspect is rock-paper-scissors
 
 The **tactical aspect — Mind — is the only one with rock-paper-scissors
-behavior**: it is where the hidden-information mind-game lives, reading and
-countering the opponent. The other aspects (Body, Magic, Spirit) **compose
+behavior**: it is where the hidden-information mind-game lives, predicting and
+countering the opponent. The other aspects (Body, Spirit) **compose
 deterministically** — they add magnitude and modifiers but do not themselves play
 the guessing game. (This is also why disabling a creature's Mind makes it
 predictable; see [form-and-defeat](form-and-defeat.md).)
@@ -111,10 +141,11 @@ that, and how order is manipulated, is an open question.
 
 ## Card zones
 
-A character's cards live in four **zones** — **Form** (your capability cards and
-health), **Potential** (the cards you can play), **Active** (cards in play,
-including Lasting effects), and **Dormant** (used or sealed cards). Form is your
-vitality ([form-and-defeat](form-and-defeat.md)); Potential → Active → Dormant is
+A character's cards live in three **zones** — **Form** (your capability cards and
+health), **Potential** (the cards you can play), and **Active** (cards in play,
+including Lasting effects). A card on the table has a **facing**: face up = in effect,
+face down = not in effect (a spent or sealed card). Form is your
+vitality ([form-and-defeat](form-and-defeat.md)); Potential → Active is
 the tactical layer, where playing cards exhausts options and makes you more
 predictable, and recovery costs tempo ([zones](zones.md)).
 
@@ -131,7 +162,7 @@ character.
 ## Open questions
 
 - What are the **exact combination rules** for a chord — how the physical means,
-  modifiers, and the tactical read produce one result? (Settled in principle:
+  modifiers, and the tactical stance produce one result? (Settled in principle:
   aspects combine commutatively, and only the tactical aspect is rock-paper-
   scissors.)
 - How much of the **never-shuffled order** does the player see and control? Can

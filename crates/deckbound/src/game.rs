@@ -8,7 +8,7 @@
 
 use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
 
-use crate::duel::{self, Read, Side};
+use crate::duel::{self, Side, Stance};
 use crate::scenarios::{self, Scenario};
 use crate::state::{Duel, Menu, Phase, State};
 
@@ -29,8 +29,8 @@ pub enum Action {
     Replay,
     /// Matchmaking: this hero duels this foe.
     PickPair(usize, usize),
-    /// A duel read.
-    Read(Read),
+    /// A duel stance.
+    Stance(Stance),
 }
 
 /// The ruleset. Holds no state of its own.
@@ -116,8 +116,8 @@ fn menu_catalog(phase: &Phase) -> Vec<Scenario> {
 }
 
 impl Deckbound {
-    /// Resolve one beat of the active duel against `hero_read`.
-    fn beat(&self, state: &mut State, hero_read: Read) {
+    /// Resolve one beat of the active duel against `hero_stance`.
+    fn beat(&self, state: &mut State, hero_stance: Stance) {
         let Some(duel) = state.duel else { return };
 
         // Living counts at the start of the beat drive the swarm overflow.
@@ -126,20 +126,20 @@ impl Deckbound {
 
         // The creature reads back off the public Edge banks (not the human's
         // hidden pick this beat), so the read stays blind.
-        let creature_read = {
+        let creature_stance = {
             let c = &state.creatures[duel.foe];
-            c.read(duel.foe_edge, duel.hero_edge, &mut state.rng)
+            c.stance(duel.foe_edge, duel.hero_edge, &mut state.rng)
         };
 
         // Stall backstop: after STALL_CAP mutual-Marshals, force the exchange.
-        let mut hero_read = hero_read;
-        let mut creature_read = creature_read;
+        let mut hero_stance = hero_stance;
+        let mut creature_stance = creature_stance;
         let mut double_marshals = 0;
-        if hero_read == Read::Marshal && creature_read == Read::Marshal {
+        if hero_stance == Stance::Marshal && creature_stance == Stance::Marshal {
             double_marshals = duel.double_marshals + 1;
             if double_marshals >= STALL_CAP {
-                hero_read = Read::Unleash;
-                creature_read = Read::Unleash;
+                hero_stance = Stance::Unleash;
+                creature_stance = Stance::Unleash;
                 state
                     .log
                     .push("(stalemate held too long - forced exchange)".into());
@@ -165,7 +165,7 @@ impl Deckbound {
             base: c_base,
             name: &c_name,
         };
-        let result = duel::resolve(&a, hero_read, &b, creature_read);
+        let result = duel::resolve(&a, hero_stance, &b, creature_stance);
 
         if result.a_dmg > 0 {
             state.heroes[duel.hero].body.take(result.a_dmg);
@@ -233,12 +233,12 @@ impl Deckbound {
             }
             (None, Phase::Menu(Menu::Scenarios)) => "Scenarios - pick one. (Esc: back)".to_string(),
             (None, Phase::Menu(Menu::Tutorial)) => {
-                "Tutorials - each isolates one read. (Esc: back)".to_string()
+                "Tutorials - each isolates one stance. (Esc: back)".to_string()
             }
             (None, Phase::Choosing) => "Choose a matchup - who duels whom? (Esc: menu)".to_string(),
             (None, Phase::Combat) => match state.duel {
                 Some(d) => format!(
-                    "Duel {}: {} vs the {} - your read? (Esc: menu)",
+                    "Duel {}: {} vs the {} - your stance? (Esc: menu)",
                     state.duel_no, state.heroes[d.hero].name, state.creatures[d.foe].name
                 ),
                 None => "...".to_string(),
@@ -301,7 +301,7 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
-            Phase::Combat => Read::ALL.iter().map(|&r| Action::Read(r)).collect(),
+            Phase::Combat => Stance::ALL.iter().map(|&s| Action::Stance(s)).collect(),
         }
     }
 
@@ -322,10 +322,10 @@ impl Game for Deckbound {
                 let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
                 format!("{hero} vs the {foe}")
             }
-            Action::Read(Read::Marshal) => "Marshal - gather Edge".into(),
-            Action::Read(Read::Unleash) => "Unleash - strike with all Edge".into(),
-            Action::Read(Read::Overwhelm) => "Overwhelm - break a guard".into(),
-            Action::Read(Read::Parry) => "Parry - read the strike & steal".into(),
+            Action::Stance(Stance::Marshal) => "Marshal - gather Edge".into(),
+            Action::Stance(Stance::Unleash) => "Unleash - strike with all Edge".into(),
+            Action::Stance(Stance::Overwhelm) => "Overwhelm - break a guard".into(),
+            Action::Stance(Stance::Parry) => "Parry - read the strike & steal".into(),
         }
     }
 
@@ -389,11 +389,11 @@ impl Game for Deckbound {
                     return Err(GameError::new("that matchup is not available"));
                 }
             }
-            (Phase::Combat, Action::Read(r)) => {
+            (Phase::Combat, Action::Stance(s)) => {
                 if state.duel.is_none() {
                     return Err(GameError::new("no active duel"));
                 }
-                self.beat(state, *r);
+                self.beat(state, *s);
             }
             _ => return Err(GameError::new("that action is not legal right now")),
         }
@@ -548,7 +548,7 @@ fn menu_options_zone() -> ZoneView {
                 .accent(Accent::Ally),
             CardView::up("Tutorial")
                 .typed("menu")
-                .body(vec!["Learn one read at a time.".into()])
+                .body(vec!["Learn one stance at a time.".into()])
                 .accent(Accent::Good),
             CardView::up("Exit").typed("menu").body(vec!["Quit.".into()]),
         ],
@@ -607,7 +607,7 @@ mod tests {
         let game = Deckbound;
         let mut s = game.new_game(1, 1);
         launch_tutorial(&game, &mut s, 0); // Pell always Marshals
-        game.apply(&mut s, &Action::Read(Read::Marshal)).unwrap();
+        game.apply(&mut s, &Action::Stance(Stance::Marshal)).unwrap();
         let d = s.duel.unwrap();
         assert_eq!(d.hero_edge, 1);
         assert_eq!(d.foe_edge, 1);
@@ -621,8 +621,8 @@ mod tests {
         let mut guard = 0;
         while game.current_player(&s).is_some() {
             let edge = s.duel.map(|d| d.hero_edge).unwrap_or(0);
-            let read = if edge >= 3 { Read::Unleash } else { Read::Marshal };
-            game.apply(&mut s, &Action::Read(read)).unwrap();
+            let stance = if edge >= 3 { Stance::Unleash } else { Stance::Marshal };
+            game.apply(&mut s, &Action::Stance(stance)).unwrap();
             guard += 1;
             assert!(guard < 500, "should resolve");
         }
@@ -651,8 +651,8 @@ mod tests {
         assert_eq!(s.phase, Phase::Choosing);
         game.apply(&mut s, &Action::PickPair(0, 0)).unwrap();
         let kael_before = s.heroes[0].body.remaining;
-        game.apply(&mut s, &Action::Read(Read::Marshal)).unwrap();
-        // Kael lost at least the 4 overflow chip (possibly more from the read).
+        game.apply(&mut s, &Action::Stance(Stance::Marshal)).unwrap();
+        // Kael lost at least the 4 overflow chip (possibly more from the stance).
         assert!(s.heroes[0].body.remaining <= kael_before.saturating_sub(4));
     }
 
@@ -683,9 +683,9 @@ mod tests {
                             // a rough strategy: build a little, then unleash/overwhelm
                             let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
                             if e >= 2 {
-                                Action::Read(Read::Unleash)
+                                Action::Stance(Stance::Unleash)
                             } else {
-                                Action::Read(Read::Marshal)
+                                Action::Stance(Stance::Marshal)
                             }
                         }
                         _ => break,
