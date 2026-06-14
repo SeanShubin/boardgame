@@ -67,7 +67,7 @@ fn support(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
         }
         match play {
             Play::Rally => {
-                let who = state.heroes[hi].name;
+                let who = state.heroes[hi].name.clone();
                 for h in &mut state.heroes {
                     if !h.is_down() {
                         h.rally_bonus = h.rally_bonus.max(RALLY_BONUS);
@@ -79,7 +79,7 @@ fn support(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
             }
             Play::Steel => {
                 let h = &mut state.heroes[hi];
-                let who = h.name;
+                let who = h.name.clone();
                 h.rally_bonus = h.rally_bonus.max(RALLY_BONUS);
                 state.log.push(format!("{who} steels their own nerve."));
             }
@@ -99,8 +99,8 @@ fn morale(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
             continue;
         }
         let spirit = state.heroes[hi].spirit as i32;
-        let who = state.heroes[hi].name;
-        let cname = state.creatures[ci].name;
+        let who = state.heroes[hi].name.clone();
+        let cname = state.creatures[ci].name.clone();
         if spirit > state.creatures[ci].resolve {
             state.creatures[ci].disabled = true;
             state
@@ -120,11 +120,11 @@ fn morale(state: &mut State, decls: &[(usize, Play, Option<usize>)]) {
             continue;
         }
         let fear = c.fear as i32;
-        let cname = c.name;
+        let cname = c.name.clone();
         let Some(hi) = least_resolute(state) else {
             continue;
         };
-        let who = state.heroes[hi].name;
+        let who = state.heroes[hi].name.clone();
         state
             .log
             .push(format!("The {cname} howls Fear {fear} at {who}."));
@@ -149,7 +149,7 @@ fn charge(state: &mut State) {
             continue;
         }
         let cspeed = c.speed;
-        let cname = c.name;
+        let cname = c.name.clone();
         let Some(target) = lowest_body_any(state) else {
             continue;
         };
@@ -160,7 +160,7 @@ fn charge(state: &mut State) {
             if let Some(gi) = strongest_holding_front(state) {
                 let (gp, gtype, gname) = {
                     let h = &state.heroes[gi];
-                    (h.power, h.strike_type, h.name)
+                    (h.power, h.strike_type, h.name.clone())
                 };
                 let flips = state.creatures[ci].take_hit(gp, gtype);
                 state
@@ -172,7 +172,7 @@ fn charge(state: &mut State) {
             }
             state.creatures[ci].disabled = true; // staggered: the run is cancelled
         } else {
-            let who = state.heroes[target].name;
+            let who = state.heroes[target].name.clone();
             state.creatures[ci].reached = Some(target);
             state.log.push(format!(
                 "The {cname} (Speed {cspeed}) slips the thin wall (drag {drag}) and bears down on {who}!"
@@ -214,8 +214,8 @@ fn creature_attacks(state: &mut State) {
             Behavior::Swarm => swarm_attack(state, ci),
             Behavior::Runner => {
                 if let Some(hi) = state.creatures[ci].reached {
-                    let cname = state.creatures[ci].name;
-                    let who = state.heroes[hi].name;
+                    let cname = state.creatures[ci].name.clone();
+                    let who = state.heroes[hi].name.clone();
                     state
                         .log
                         .push(format!("The {cname} runs {who} down!"));
@@ -232,9 +232,9 @@ fn ironclad_attack(state: &mut State, ci: usize) {
     let Some(hi) = weakest_front(state).or_else(|| lowest_body_any(state)) else {
         return;
     };
-    let cname = state.creatures[ci].name;
+    let cname = state.creatures[ci].name.clone();
     let cpow = state.creatures[ci].power;
-    let who = state.heroes[hi].name;
+    let who = state.heroes[hi].name.clone();
 
     // The bluff: the deck commits Strike or Feint, hidden until now.
     let strikes = state.rng.below(2) == 0;
@@ -288,7 +288,7 @@ fn ironclad_attack(state: &mut State, ci: usize) {
 fn swarm_attack(state: &mut State, ci: usize) {
     let count = state.creatures[ci].count;
     let per = state.creatures[ci].power;
-    let cname = state.creatures[ci].name;
+    let cname = state.creatures[ci].name.clone();
     if count == 0 {
         return;
     }
@@ -313,11 +313,11 @@ fn swarm_attack(state: &mut State, ci: usize) {
             .push(format!("The wall holds the {cname} at bay.")),
         Some(hi) => {
             let raw = count * per;
-            let who = state.heroes[hi].name;
+            let who = state.heroes[hi].name.clone();
             state
                 .log
                 .push(format!("{count} {cname} swarm the exposed {who} (Pow {raw})."));
-            creature_raw_hit_hero(state, hi, raw, DamageType::Blunt, cname);
+            creature_raw_hit_hero(state, hi, raw, DamageType::Blunt, &cname);
         }
     }
 }
@@ -329,9 +329,9 @@ fn hero_strike(state: &mut State, hi: usize, ci: usize) {
     }
     let (power, dtype, who) = {
         let h = &state.heroes[hi];
-        (h.power, h.strike_type, h.name)
+        (h.power, h.strike_type, h.name.clone())
     };
-    let cname = state.creatures[ci].name;
+    let cname = state.creatures[ci].name.clone();
     let flips = state.creatures[ci].take_hit(power, dtype);
     if flips > 0 {
         state.log.push(format!(
@@ -352,7 +352,7 @@ fn hero_strike(state: &mut State, hi: usize, ci: usize) {
 /// creatures first, then swarm members; Runners are not in the front).
 fn firestorm(state: &mut State, hi: usize) {
     let mag = state.heroes[hi].magic;
-    let who = state.heroes[hi].name;
+    let who = state.heroes[hi].name.clone();
 
     let mut slots: Vec<usize> = Vec::new();
     for (ci, c) in state.creatures.iter().enumerate() {
@@ -420,9 +420,9 @@ fn frostbite(state: &mut State, hi: usize, ci: usize) {
     }
     let (mag, who) = {
         let h = &state.heroes[hi];
-        (h.magic, h.name)
+        (h.magic, h.name.clone())
     };
-    let cname = state.creatures[ci].name;
+    let cname = state.creatures[ci].name.clone();
     let flips = state.creatures[ci].take_hit(mag, DamageType::Cold);
     state.creatures[ci].speed = state.creatures[ci].speed.saturating_sub(2);
     state
@@ -437,9 +437,9 @@ fn frostbite(state: &mut State, hi: usize, ci: usize) {
 fn creature_hit_hero(state: &mut State, ci: usize, hi: usize) {
     let (raw, ty, cname) = {
         let c = &state.creatures[ci];
-        (c.power, c.strike_type, c.name)
+        (c.power, c.strike_type, c.name.clone())
     };
-    creature_raw_hit_hero(state, hi, raw, ty, cname);
+    creature_raw_hit_hero(state, hi, raw, ty, &cname);
 }
 
 /// Apply `raw` typed damage from `source` to a hero, through armor and toughness.
@@ -450,7 +450,7 @@ fn creature_raw_hit_hero(
     ty: DamageType,
     source: &str,
 ) {
-    let who = state.heroes[hi].name;
+    let who = state.heroes[hi].name.clone();
     let after = raw.saturating_sub(state.heroes[hi].armor.reduce(ty));
     let flips = state.heroes[hi].body.flips_for(after);
     state.heroes[hi].body.remaining -= flips;

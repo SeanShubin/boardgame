@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 engine = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }

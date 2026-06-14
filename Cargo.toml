@@ -18,6 +18,8 @@ engine = { path = "crates/engine" }
 tabletop = { path = "crates/tabletop" }
 treasure-dive = { path = "crates/treasure-dive" }
 deckbound = { path = "crates/deckbound" }
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
 
 # Enable fast compiles for development (Bevy recommendation).
 # Disable when profiling or benchmarking.

@@ -10,6 +10,7 @@
 use engine::{Outcome, Rng};
 
 use crate::actors::{Creature, Hero, Line, Play};
+use crate::scenarios::Scenario;
 
 /// One hero's committed choice for the round.
 #[derive(Clone, Debug)]
@@ -18,9 +19,22 @@ pub struct Decl {
     pub target: Option<usize>,
 }
 
-/// Where the round is in its decision flow.
+/// Which menu page is showing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Menu {
+    /// The top menu: Scenarios / Tutorial / Exit.
+    Top,
+    /// The campaign scenario list.
+    Scenarios,
+    /// The tutorial list.
+    Tutorial,
+}
+
+/// Where the game is in its decision flow.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
+    /// Browsing menus before a scenario is chosen.
+    Menu(Menu),
     /// Assigning each hero to the front or back line, before the fight.
     Formation,
     /// Gathering this round's declarations. `hero` is the one being declared for
@@ -52,6 +66,10 @@ pub struct State {
     pub formation_order: Vec<usize>,
     /// Where the decision flow currently sits.
     pub phase: Phase,
+    /// The scenario being played, once one is chosen (used to replay it).
+    pub scenario: Option<Scenario>,
+    /// Set when the player chooses Exit; the presentation layer closes the app.
+    pub exiting: bool,
     /// A play-by-play of the most recent resolution, for the table view.
     pub log: Vec<String>,
     /// All randomness (the Ironclad's bluff) flows from here.
@@ -67,6 +85,25 @@ impl State {
     /// Whether every hero has been assigned a line.
     pub fn formation_complete(&self) -> bool {
         self.formation.iter().all(Option::is_some)
+    }
+
+    /// How many placed heroes hold the front line.
+    pub fn front_placed(&self) -> usize {
+        self.formation
+            .iter()
+            .filter(|x| matches!(x, Some(Line::Front)))
+            .count()
+    }
+
+    /// How many heroes are not yet placed.
+    pub fn unplaced(&self) -> usize {
+        self.formation.iter().filter(|x| x.is_none()).count()
+    }
+
+    /// A formation is legal only if someone holds the front line — there is no
+    /// back line without a front line.
+    pub fn formation_legal(&self) -> bool {
+        self.front_placed() > 0
     }
 
     /// Living heroes that still owe a declaration this round.

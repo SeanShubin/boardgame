@@ -10,19 +10,30 @@ use engine::{
     Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
 };
 
-use crate::actors::{Behavior, Hero, Line, Play, roster};
+use crate::actors::{Behavior, Hero, Line, Play};
 use crate::read::Read;
 use crate::resolve::resolve_round;
-use crate::state::{Decl, Phase, State};
+use crate::scenarios::{self, Scenario};
+use crate::state::{Decl, Menu, Phase, State};
 
 /// One step of the party's decision flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
+    /// Menu: open the campaign scenario list.
+    OpenScenarios,
+    /// Menu: open the tutorial list.
+    OpenTutorial,
+    /// Menu: choose the scenario at this index on the current page.
+    PickScenario(usize),
+    /// Menu: quit the application.
+    Exit,
+    /// Return to the top menu (from a finished fight, formation, or round start).
+    ToMenu,
     /// Formation: assign a hero to a line.
     Place(usize, Line),
     /// Formation: lines are set — start the fight.
     Begin,
-    /// Once the battle is over: start a fresh fight.
+    /// Once the battle is over: replay the same scenario.
     Replay,
     /// Declaring (round start): re-open the formation to rearrange lines.
     Reform,
@@ -40,23 +51,49 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Deckbound;
 
-/// A fresh battle seeded by `seed`: full rosters, at the formation step.
-fn initial_state(seed: u64) -> State {
-    let (heroes, creatures) = roster();
-    let n = heroes.len();
+/// A fresh state at the top menu, seeded by `seed`.
+fn menu_state(seed: u64) -> State {
     State {
         round: 1,
-        heroes,
-        creatures,
-        declarations: vec![None; n],
+        heroes: Vec::new(),
+        creatures: Vec::new(),
+        declarations: Vec::new(),
         declared_order: Vec::new(),
-        formation: vec![None; n],
+        formation: Vec::new(),
         formation_order: Vec::new(),
-        phase: Phase::Formation,
-        log: vec!["Set your formation: assign each hero to a line.".into()],
+        phase: Phase::Menu(Menu::Top),
+        scenario: None,
+        exiting: false,
+        log: vec!["Deckbound. Choose Scenarios, Tutorial, or Exit.".into()],
         rng: Rng::new(seed),
         seed,
         outcome: None,
+    }
+}
+
+/// Load a scenario's roster from the booklet and drop into the formation step.
+fn load_scenario(state: &mut State, scenario: Scenario) {
+    let (heroes, creatures) = scenario.roster();
+    let n = heroes.len();
+    state.heroes = heroes;
+    state.creatures = creatures;
+    state.declarations = vec![None; n];
+    state.declared_order = Vec::new();
+    state.formation = vec![None; n];
+    state.formation_order = Vec::new();
+    state.round = 1;
+    state.outcome = None;
+    state.log = vec![scenario.blurb.clone()];
+    state.scenario = Some(scenario);
+    state.phase = Phase::Formation;
+}
+
+/// The scenario list shown for a menu page (empty off the menu).
+fn menu_catalog(phase: &Phase) -> Vec<Scenario> {
+    match phase {
+        Phase::Menu(Menu::Scenarios) => scenarios::campaign(),
+        Phase::Menu(Menu::Tutorial) => scenarios::tutorials(),
+        _ => Vec::new(),
     }
 }
 
@@ -92,15 +129,24 @@ impl Deckbound {
             .join("\n");
         let prompt = match &state.outcome {
             Some(Outcome::Win(PlayerId(0))) => {
-                "Victory - the warband is broken. Replay to fight again.".to_string()
+                "Victory - the warband is broken. Replay, or return to the Main menu.".to_string()
             }
             Some(Outcome::Win(_)) => {
-                "Defeat - the party has fallen. Replay to fight again.".to_string()
+                "Defeat - the party has fallen. Replay, or return to the Main menu.".to_string()
             }
             Some(Outcome::Tie(_)) => {
-                "The fight ends in a stalemate. Replay to fight again.".to_string()
+                "The fight ends in a stalemate. Replay, or Main menu.".to_string()
             }
             None => match &state.phase {
+                Phase::Menu(Menu::Top) => {
+                    "Deckbound - choose Scenarios, Tutorial, or Exit.".to_string()
+                }
+                Phase::Menu(Menu::Scenarios) => {
+                    "Scenarios - pick one to play. (Esc: back)".to_string()
+                }
+                Phase::Menu(Menu::Tutorial) => {
+                    "Tutorials - each isolates one mechanic. (Esc: back)".to_string()
+                }
                 Phase::Formation => {
                     let placed = state.formation.iter().filter(|x| x.is_some()).count();
                     if state.formation_complete() {
@@ -149,7 +195,7 @@ impl Game for Deckbound {
     type Action = Action;
 
     fn new_game(&self, seed: u64, _players: usize) -> State {
-        initial_state(seed)
+        menu_state(seed)
     }
 
     fn current_player(&self, state: &State) -> Option<PlayerId> {
@@ -162,32 +208,59 @@ impl Game for Deckbound {
 
     fn legal_actions(&self, state: &State) -> Vec<Action> {
         if state.outcome.is_some() {
-            return vec![Action::Replay];
+            return vec![Action::Replay, Action::ToMenu];
         }
         let mut acts = Vec::new();
         match &state.phase {
+            Phase::Menu(Menu::Top) => {
+                acts.push(Action::OpenScenarios);
+                acts.push(Action::OpenTutorial);
+                acts.push(Action::Exit);
+            }
+            Phase::Menu(Menu::Scenarios) => {
+                for i in 0..scenarios::campaign().len() {
+                    acts.push(Action::PickScenario(i));
+                }
+                acts.push(Action::Back);
+            }
+            Phase::Menu(Menu::Tutorial) => {
+                for i in 0..scenarios::tutorials().len() {
+                    acts.push(Action::PickScenario(i));
+                }
+                acts.push(Action::Back);
+            }
             Phase::Formation => {
                 if state.formation_complete() {
                     acts.push(Action::Begin);
                 } else {
+                    // The front must end up occupied: forbid putting the LAST
+                    // hero in the back while no one holds the front.
+                    let forbid_back = state.unplaced() == 1 && state.front_placed() == 0;
                     for (h, slot) in state.formation.iter().enumerate() {
                         if slot.is_none() {
                             acts.push(Action::Place(h, Line::Front));
-                            acts.push(Action::Place(h, Line::Back));
+                            if !forbid_back {
+                                acts.push(Action::Place(h, Line::Back));
+                            }
                         }
                     }
                 }
                 if !state.formation_order.is_empty() {
                     acts.push(Action::Back);
                 }
+                acts.push(Action::ToMenu);
             }
             Phase::Declaring { hero: None, .. } => {
                 for h in state.undeclared_living() {
                     acts.push(Action::PickHero(h));
                 }
                 if state.declared_order.is_empty() {
-                    // Clean round start — offer to rearrange before committing.
-                    acts.push(Action::Reform);
+                    // Clean round start. Reforming is only useful when more than
+                    // one legal formation exists (i.e. with two or more heroes).
+                    if state.heroes.len() >= 2 {
+                        acts.push(Action::Reform);
+                    }
+                    acts.push(Action::ToMenu);
                 } else {
                     acts.push(Action::Back);
                 }
@@ -226,12 +299,20 @@ impl Game for Deckbound {
                 format!("{} -> {} line", state.heroes[*h].name, line)
             }
             Action::Begin => "Begin the battle".to_string(),
-            Action::Replay => "Replay the battle".to_string(),
+            Action::Replay => "Replay this scenario".to_string(),
             Action::Reform => "Change formation".to_string(),
+            Action::OpenScenarios => "Scenarios".to_string(),
+            Action::OpenTutorial => "Tutorial".to_string(),
+            Action::Exit => "Exit".to_string(),
+            Action::ToMenu => "Main menu".to_string(),
+            Action::PickScenario(i) => menu_catalog(&state.phase)
+                .get(*i)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| "?".to_string()),
             Action::PickHero(h) => format!("Declare for {}", state.heroes[*h].name),
             Action::PickPlay(p) => play_label(*p),
             Action::PickTarget(ci) => {
-                let name = state.creatures.get(*ci).map(|c| c.name).unwrap_or("?");
+                let name = state.creatures.get(*ci).map(|c| c.name.as_str()).unwrap_or("?");
                 format!("vs the {name}")
             }
             Action::Back => "< Back".to_string(),
@@ -239,22 +320,65 @@ impl Game for Deckbound {
     }
 
     fn apply(&self, state: &mut State, action: &Action) -> Result<(), GameError> {
-        if let Action::Replay = action {
-            if state.outcome.is_none() {
-                return Err(GameError::new("the battle is not over yet"));
+        // Lifecycle actions work regardless of phase or outcome.
+        match action {
+            Action::Exit => {
+                state.exiting = true;
+                return Ok(());
             }
-            // A fresh attempt: same scenario, re-rolled warband bluffs.
-            *state = initial_state(state.seed.wrapping_add(1));
-            return Ok(());
+            Action::ToMenu => {
+                *state = menu_state(state.seed);
+                return Ok(());
+            }
+            Action::Replay => {
+                if state.outcome.is_none() {
+                    return Err(GameError::new("the battle is not over yet"));
+                }
+                let seed = state.seed.wrapping_add(1);
+                state.seed = seed;
+                state.rng = Rng::new(seed);
+                if let Some(scenario) = state.scenario.clone() {
+                    // A fresh attempt: same scenario, re-rolled warband bluffs.
+                    load_scenario(state, scenario);
+                }
+                return Ok(());
+            }
+            _ => {}
         }
         if state.outcome.is_some() {
             return Err(GameError::new("the fight is already over"));
         }
         let phase = state.phase.clone();
         match (phase, action) {
+            (Phase::Menu(Menu::Top), Action::OpenScenarios) => {
+                state.phase = Phase::Menu(Menu::Scenarios);
+            }
+            (Phase::Menu(Menu::Top), Action::OpenTutorial) => {
+                state.phase = Phase::Menu(Menu::Tutorial);
+            }
+            (Phase::Menu(Menu::Scenarios), Action::PickScenario(i)) => {
+                let scenario = scenarios::campaign()
+                    .into_iter()
+                    .nth(*i)
+                    .ok_or_else(|| GameError::new("no such scenario"))?;
+                load_scenario(state, scenario);
+            }
+            (Phase::Menu(Menu::Tutorial), Action::PickScenario(i)) => {
+                let scenario = scenarios::tutorials()
+                    .into_iter()
+                    .nth(*i)
+                    .ok_or_else(|| GameError::new("no such tutorial"))?;
+                load_scenario(state, scenario);
+            }
+            (Phase::Menu(Menu::Scenarios | Menu::Tutorial), Action::Back) => {
+                state.phase = Phase::Menu(Menu::Top);
+            }
             (Phase::Formation, Action::Place(h, line)) => {
                 if state.formation[*h].is_some() {
                     return Err(GameError::new("that hero is already placed"));
+                }
+                if *line == Line::Back && state.unplaced() == 1 && state.front_placed() == 0 {
+                    return Err(GameError::new("someone must hold the front line"));
                 }
                 state.formation[*h] = Some(*line);
                 state.heroes[*h].line = *line;
@@ -263,6 +387,9 @@ impl Game for Deckbound {
             (Phase::Formation, Action::Begin) => {
                 if !state.formation_complete() {
                     return Err(GameError::new("place every hero first"));
+                }
+                if !state.formation_legal() {
+                    return Err(GameError::new("someone must hold the front line"));
                 }
                 state.phase = Phase::Declaring {
                     hero: None,
@@ -345,18 +472,37 @@ impl Game for Deckbound {
             return None;
         }
         match &state.phase {
-            Phase::Formation => (!state.formation_order.is_empty()).then_some(Action::Back),
-            Phase::Declaring { hero: None, .. } => {
-                (!state.declared_order.is_empty()).then_some(Action::Back)
-            }
+            Phase::Menu(Menu::Top) => None,
+            Phase::Menu(_) => Some(Action::Back),
+            Phase::Formation => Some(if state.formation_order.is_empty() {
+                Action::ToMenu
+            } else {
+                Action::Back
+            }),
+            Phase::Declaring { hero: None, .. } => Some(if state.declared_order.is_empty() {
+                Action::ToMenu
+            } else {
+                Action::Back
+            }),
             Phase::Declaring { hero: Some(_), .. } => Some(Action::Back),
         }
+    }
+
+    fn exit_requested(&self, state: &State) -> bool {
+        state.exiting
     }
 
     fn view(&self, state: &State, _perspective: Option<PlayerId>) -> TableView {
         let mut zones = Vec::new();
 
         match &state.phase {
+            Phase::Menu(Menu::Top) => zones.push(menu_options_zone()),
+            Phase::Menu(Menu::Scenarios) => {
+                zones.push(scenario_list_zone("Scenarios", &scenarios::campaign()))
+            }
+            Phase::Menu(Menu::Tutorial) => {
+                zones.push(scenario_list_zone("Tutorials", &scenarios::tutorials()))
+            }
             Phase::Formation => {
                 zones.push(warband_zone(state, "The warband (incoming)"));
                 zones.push(ZoneView {
@@ -392,7 +538,7 @@ impl Game for Deckbound {
                             .iter()
                             .filter_map(|&h| {
                                 state.declarations[h].as_ref().map(|d| {
-                                    CardView::up(state.heroes[h].name)
+                                    CardView::up(state.heroes[h].name.clone())
                                         .typed("locked")
                                         .body(vec![decl_label(state, d)])
                                         .accent(Accent::Good)
@@ -458,7 +604,7 @@ fn decl_label(state: &State, d: &Decl) -> String {
 fn hero_card(state: &State, i: usize, line_label: String) -> CardView {
     let h: &Hero = &state.heroes[i];
     if h.is_down() {
-        return CardView::up(h.name)
+        return CardView::up(h.name.clone())
             .typed(format!("{} - down", h.role))
             .body(vec!["(out of the fight)".into()])
             .corner(format!("0/{}", h.body.max))
@@ -479,7 +625,7 @@ fn hero_card(state: &State, i: usize, line_label: String) -> CardView {
     if let Some(decl) = &state.declarations[i] {
         body.push(format!("> {}", decl_label(state, decl)));
     }
-    CardView::up(h.name)
+    CardView::up(h.name.clone())
         .typed(format!("{} - {}", h.role, line_label))
         .body(body)
         .corner(format!("{}/{}", h.body.remaining, h.body.max))
@@ -521,7 +667,7 @@ fn creature_card(state: &State, i: usize) -> CardView {
         ));
         format!("{}/{}", c.body.remaining, c.body.max)
     };
-    CardView::up(c.name)
+    CardView::up(c.name.clone())
         .typed(format!("{behavior} - {place}"))
         .body(body)
         .corner(corner)
@@ -540,28 +686,70 @@ fn warband_zone(state: &State, label: &str) -> ZoneView {
     }
 }
 
+fn menu_options_zone() -> ZoneView {
+    ZoneView {
+        label: "Deckbound".into(),
+        layout: Layout::Row,
+        owner: None,
+        cards: vec![
+            CardView::up("Scenarios")
+                .typed("menu")
+                .body(vec!["Play a full scenario.".into()])
+                .accent(Accent::Ally),
+            CardView::up("Tutorial")
+                .typed("menu")
+                .body(vec!["Learn one mechanic at a time.".into()])
+                .accent(Accent::Good),
+            CardView::up("Exit")
+                .typed("menu")
+                .body(vec!["Quit the game.".into()])
+                .accent(Accent::Neutral),
+        ],
+    }
+}
+
+fn scenario_list_zone(label: &str, scenarios: &[Scenario]) -> ZoneView {
+    ZoneView {
+        label: label.into(),
+        layout: Layout::Row,
+        owner: None,
+        cards: scenarios
+            .iter()
+            .map(|s| {
+                CardView::up(s.name.clone())
+                    .typed("lesson")
+                    .body(vec![s.blurb.clone()])
+                    .accent(Accent::Good)
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Drive the formation step: place the named heroes in front, the rest in
-    /// back, then Begin.
+    /// back, then Begin. Fronts are placed first so the front is never empty.
     fn set_formation(game: &Deckbound, state: &mut State, fronts: &[&str]) {
-        while matches!(state.phase, Phase::Formation) {
-            if state.formation_complete() {
-                game.apply(state, &Action::Begin).unwrap();
-                break;
+        let names: Vec<String> = state.heroes.iter().map(|h| h.name.clone()).collect();
+        for (i, name) in names.iter().enumerate() {
+            if fronts.contains(&name.as_str()) {
+                game.apply(state, &Action::Place(i, Line::Front)).unwrap();
             }
-            let h = (0..state.heroes.len())
-                .find(|&i| state.formation[i].is_none())
-                .unwrap();
-            let line = if fronts.contains(&state.heroes[h].name) {
-                Line::Front
-            } else {
-                Line::Back
-            };
-            game.apply(state, &Action::Place(h, line)).unwrap();
         }
+        for (i, name) in names.iter().enumerate() {
+            if !fronts.contains(&name.as_str()) {
+                game.apply(state, &Action::Place(i, Line::Back)).unwrap();
+            }
+        }
+        game.apply(state, &Action::Begin).unwrap();
+    }
+
+    /// From the top menu, open the campaign list and launch the full fight.
+    fn launch_campaign(game: &Deckbound, state: &mut State) {
+        game.apply(state, &Action::OpenScenarios).unwrap();
+        game.apply(state, &Action::PickScenario(0)).unwrap();
     }
 
     fn creature_index(state: &State, name: &str) -> usize {
@@ -586,15 +774,15 @@ mod tests {
                     game.apply(state, &Action::PickHero(h)).unwrap();
                 }
                 Phase::Declaring { hero: Some(h), play: None } => {
-                    let (play, _) = pick(state.heroes[h].name);
+                    let (play, _) = pick(&state.heroes[h].name);
                     game.apply(state, &Action::PickPlay(play)).unwrap();
                 }
                 Phase::Declaring { hero: Some(h), play: Some(_) } => {
-                    let (_, target) = pick(state.heroes[h].name);
+                    let (_, target) = pick(&state.heroes[h].name);
                     let ci = creature_index(state, target.expect("a target name"));
                     game.apply(state, &Action::PickTarget(ci)).unwrap();
                 }
-                Phase::Formation => break,
+                Phase::Formation | Phase::Menu(_) => break,
             }
         }
     }
@@ -610,26 +798,99 @@ mod tests {
     }
 
     #[test]
-    fn new_game_starts_in_formation() {
+    fn new_game_starts_in_menu() {
         let state = Deckbound.new_game(1, 1);
-        assert_eq!(state.phase, Phase::Formation);
-        assert!(!state.formation_complete());
-        assert_eq!(state.heroes.len(), 4);
+        assert_eq!(state.phase, Phase::Menu(Menu::Top));
+        assert!(state.heroes.is_empty());
+    }
+
+    #[test]
+    fn menu_navigates_both_ways() {
+        let game = Deckbound;
+        let mut state = game.new_game(1, 1);
+        game.apply(&mut state, &Action::OpenTutorial).unwrap();
+        assert_eq!(state.phase, Phase::Menu(Menu::Tutorial));
+        assert_eq!(game.cancel_action(&state), Some(Action::Back));
+        game.apply(&mut state, &Action::Back).unwrap();
+        assert_eq!(state.phase, Phase::Menu(Menu::Top));
+    }
+
+    #[test]
+    fn exit_sets_the_quit_flag() {
+        let game = Deckbound;
+        let mut state = game.new_game(1, 1);
+        assert!(!game.exit_requested(&state));
+        game.apply(&mut state, &Action::Exit).unwrap();
+        assert!(game.exit_requested(&state));
     }
 
     #[test]
     fn begin_requires_a_full_formation() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
-        assert!(game.apply(&mut state, &Action::Begin).is_err());
+        launch_campaign(&game, &mut state);
+        assert!(game.apply(&mut state, &Action::Begin).is_err()); // formation incomplete
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         assert!(matches!(state.phase, Phase::Declaring { .. }));
+    }
+
+    #[test]
+    fn last_hero_must_hold_the_front_when_back_is_empty() {
+        let game = Deckbound;
+        let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
+        // Put the first three heroes in the back.
+        for _ in 0..3 {
+            let h = (0..state.heroes.len())
+                .find(|&i| state.formation[i].is_none())
+                .unwrap();
+            game.apply(&mut state, &Action::Place(h, Line::Back)).unwrap();
+        }
+        let last = (0..state.heroes.len())
+            .find(|&i| state.formation[i].is_none())
+            .unwrap();
+        // Back is no longer offered, and is rejected; only Front remains.
+        let acts = game.legal_actions(&state);
+        assert!(acts.contains(&Action::Place(last, Line::Front)));
+        assert!(!acts.contains(&Action::Place(last, Line::Back)));
+        assert!(game.apply(&mut state, &Action::Place(last, Line::Back)).is_err());
+        game.apply(&mut state, &Action::Place(last, Line::Front)).unwrap();
+        assert!(state.formation_legal());
+    }
+
+    #[test]
+    fn single_hero_tutorial_forbids_back_and_reform() {
+        let game = Deckbound;
+        let mut state = game.new_game(1, 1);
+        game.apply(&mut state, &Action::OpenTutorial).unwrap();
+        game.apply(&mut state, &Action::PickScenario(0)).unwrap(); // Vera alone
+        assert_eq!(state.heroes.len(), 1);
+        // The lone hero can only hold the front.
+        let acts = game.legal_actions(&state);
+        assert!(acts.contains(&Action::Place(0, Line::Front)));
+        assert!(!acts.contains(&Action::Place(0, Line::Back)));
+        game.apply(&mut state, &Action::Place(0, Line::Front)).unwrap();
+        game.apply(&mut state, &Action::Begin).unwrap();
+        // Only one legal formation exists, so no "Change formation".
+        assert!(!game.legal_actions(&state).contains(&Action::Reform));
+    }
+
+    #[test]
+    fn a_tutorial_loads_only_its_cards() {
+        let game = Deckbound;
+        let mut state = game.new_game(1, 1);
+        game.apply(&mut state, &Action::OpenTutorial).unwrap();
+        game.apply(&mut state, &Action::PickScenario(0)).unwrap(); // "1. The Read"
+        assert_eq!(state.phase, Phase::Formation);
+        assert_eq!(state.heroes.len(), 1); // just Vera
+        assert_eq!(state.creatures.len(), 1); // just the Bandit
     }
 
     #[test]
     fn back_rewinds_a_partial_declaration() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         // Pick a hero, then a target-needing play, then rewind twice.
         let h = state.undeclared_living()[0];
@@ -648,6 +909,7 @@ mod tests {
     fn first_round_stops_the_stalker_and_burns_the_howler() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         declare_round(&game, &mut state, winning_pick);
         let stalker = state.creatures.iter().find(|c| c.name == "Stalker").unwrap();
@@ -660,6 +922,7 @@ mod tests {
     fn change_formation_reopens_placement_without_advancing_the_round() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         let round = state.round;
         game.apply(&mut state, &Action::Reform).unwrap();
@@ -674,6 +937,7 @@ mod tests {
     fn the_winning_line_wins_in_finite_rounds() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         let mut guard = 0;
         while game.current_player(&state).is_some() {
@@ -688,12 +952,16 @@ mod tests {
     fn replay_resets_a_finished_battle() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         while game.current_player(&state).is_some() {
             declare_round(&game, &mut state, winning_pick);
         }
         assert!(state.outcome.is_some());
-        assert_eq!(game.legal_actions(&state), vec![Action::Replay]);
+        assert_eq!(
+            game.legal_actions(&state),
+            vec![Action::Replay, Action::ToMenu]
+        );
         game.apply(&mut state, &Action::Replay).unwrap();
         assert!(state.outcome.is_none());
         assert_eq!(state.phase, Phase::Formation);
@@ -706,6 +974,7 @@ mod tests {
     fn dropping_the_wall_lets_the_stalker_kill_sefa() {
         let game = Deckbound;
         let mut state = game.new_game(1, 1);
+        launch_campaign(&game, &mut state);
         set_formation(&game, &mut state, &["Aldric", "Vera"]);
         // Aldric leaves the wall to Bash a husk -> drag 5 < Stalker's 6.
         declare_round(&game, &mut state, |name| match name {

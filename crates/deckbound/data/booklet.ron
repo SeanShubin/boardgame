@@ -1,0 +1,138 @@
+// Deckbound booklet — the card list and scenario booklet, as data.
+//
+// This file is the "components + scenarios" tier: the engine (Rust) reads it;
+// no card or creature is defined in code. Keywords (line, strike, plays,
+// behavior, armor types) are mapped to engine handlers by the loader.
+//
+//   line     : "front" | "back"
+//   strike   : "sharp" | "blunt" | "heat" | "cold"
+//   armor    : list of (type, reduction)
+//   plays    : "block" "evade" "scheme" "strike" "bash" "riposte"
+//              "firestorm" "frostbite" "rally" "dread" "steel"
+//   behavior : "bluff" | "runner" | "howl" | "swarm"
+Catalog(
+    heroes: [
+        HeroCard(
+            name: "Aldric", role: "Knight",
+            speed: 4, power: 5, magic: 0, spirit: 0, resolve: 4,
+            body: 8, toughness: 2,
+            armor: [("sharp", 3), ("blunt", 1)],
+            line: "front", strike: "blunt",
+            plays: ["block", "evade", "scheme", "strike", "bash"],
+        ),
+        HeroCard(
+            name: "Vera", role: "Duelist",
+            speed: 5, power: 3, magic: 0, spirit: 0, resolve: 2,
+            body: 4, toughness: 1,
+            armor: [],
+            line: "front", strike: "sharp",
+            plays: ["block", "evade", "scheme", "strike", "riposte"],
+        ),
+        HeroCard(
+            name: "Sefa", role: "Mage",
+            speed: 2, power: 1, magic: 5, spirit: 0, resolve: 1,
+            body: 3, toughness: 1,
+            armor: [],
+            line: "back", strike: "blunt",
+            plays: ["firestorm", "frostbite", "block", "evade", "scheme"],
+        ),
+        HeroCard(
+            name: "Bram", role: "Warden",
+            speed: 3, power: 2, magic: 0, spirit: 5, resolve: 4,
+            body: 5, toughness: 2,
+            armor: [],
+            line: "back", strike: "blunt",
+            plays: ["rally", "dread", "steel", "block", "evade", "scheme"],
+        ),
+    ],
+    creatures: [
+        CreatureCard(
+            name: "Ironclad",
+            speed: 2, power: 6, fear: 0, resolve: 5,
+            body: 8, toughness: 3,
+            armor: [("sharp", 4), ("blunt", 3)], // only heat cracks it
+            line: "front", strike: "sharp",
+            behavior: "bluff", count: 1, runner: false,
+        ),
+        CreatureCard(
+            name: "Stalker",
+            speed: 6, power: 3, fear: 0, resolve: 3,
+            body: 6, toughness: 1,
+            armor: [],
+            line: "front", strike: "sharp",
+            behavior: "runner", count: 1, runner: true,
+        ),
+        CreatureCard(
+            name: "Howler",
+            speed: 4, power: 0, fear: 5, resolve: 2,
+            body: 4, toughness: 1,
+            armor: [],
+            line: "front", strike: "heat",
+            behavior: "howl", count: 1, runner: false,
+        ),
+        CreatureCard(
+            name: "Husks",
+            speed: 3, power: 1, fear: 0, resolve: 0,
+            body: 1, toughness: 1,
+            armor: [],
+            line: "front", strike: "blunt",
+            behavior: "swarm", count: 6, runner: false,
+        ),
+        CreatureCard(
+            name: "Bandit",
+            speed: 3, power: 3, fear: 0, resolve: 2,
+            body: 4, toughness: 1,
+            armor: [],
+            line: "front", strike: "sharp",
+            behavior: "bluff", count: 1, runner: false,
+        ),
+        CreatureCard(
+            name: "Bulwark", // a smaller armored training foe
+            speed: 2, power: 6, fear: 0, resolve: 5,
+            body: 4, toughness: 2,
+            armor: [("sharp", 4), ("blunt", 3)],
+            line: "front", strike: "sharp",
+            behavior: "bluff", count: 1, runner: false,
+        ),
+    ],
+    campaign: [
+        ScenarioCard(
+            name: "The Warband",
+            blurb: "All four aspects at once: hold the wall, read the Ironclad, Rally Sefa, and burn the only-heat foe down. Coordinate or fall.",
+            heroes: ["Aldric", "Vera", "Sefa", "Bram"],
+            foes: ["Ironclad", "Stalker", "Howler", "Husks"],
+        ),
+    ],
+    tutorials: [
+        ScenarioCard(
+            name: "1. The Read",
+            blurb: "Rock-paper-scissors: a Block or Evade beats a Strike. Hold and read the Bandit's bluff - Riposte turns its blow back on it, unscathed.",
+            heroes: ["Vera"],
+            foes: ["Bandit"],
+        ),
+        ScenarioCard(
+            name: "2. Armor & Heat",
+            blurb: "Damage types vs armor: plate stops blade and blunt, so Aldric's blows bounce. Only Sefa's heat cracks it - Firestorm burns it down.",
+            heroes: ["Aldric", "Sefa"],
+            foes: ["Bulwark"],
+        ),
+        ScenarioCard(
+            name: "3. The Wall",
+            blurb: "The gauntlet: hold both front-liners and their combined Speed drags the Runner to a stop. Leave the wall and it slips through to your mage.",
+            heroes: ["Aldric", "Vera", "Sefa"],
+            foes: ["Stalker"],
+        ),
+        ScenarioCard(
+            name: "4. Fear & Rally",
+            blurb: "Morale: the Howler's fear panics a weak nerve and cancels the action. Rally the whole party first, then burn the Howler down.",
+            heroes: ["Sefa", "Bram"],
+            foes: ["Howler"],
+        ),
+        ScenarioCard(
+            name: "5. Swarm & Firestorm",
+            blurb: "Breadth: Firestorm hits up to five foes at once, and the wall keeps the husks off your mage. Clear the swarm - overflow waits its turn.",
+            heroes: ["Aldric", "Sefa"],
+            foes: ["Husks"],
+        ),
+    ],
+)

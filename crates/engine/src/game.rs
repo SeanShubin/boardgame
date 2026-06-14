@@ -77,4 +77,11 @@ pub trait Game: Send + Sync + 'static {
     fn cancel_action(&self, _state: &Self::State) -> Option<Self::Action> {
         None
     }
+
+    /// Whether the game is asking the host application to quit (e.g. the player
+    /// chose "Exit" from a menu). A presentation layer can poll this and close
+    /// the window. Defaults to `false`.
+    fn exit_requested(&self, _state: &Self::State) -> bool {
+        false
+    }
 }

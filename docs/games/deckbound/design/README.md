@@ -109,6 +109,10 @@ first; it is the charter the rest of these notes must serve. In brief:
   computer stand-in, and environment agents differ.
 - [The Mind — reads & momentum](mind-and-reads.md) — the RPS cycle, the uncapped
   momentum it banks, and the misread that forfeits it.
+- [The duel](the-duel.md) — the read-game **Marshal / Unleash / Overwhelm /
+  Parry** (the strike/throw/block mix-up), the public **Edge** bank, and the
+  spend that scales a card's primary effect. Supersedes the RPS read cycle +
+  momentum above.
 - [Combos & interactions](combos.md) — the design target: meaningful play as
   **combinations** of effects (aspect chords, multi-effect cards, read-outcome chains).
 - [Combat resolution](combat.md) — the magnitude layer: first strike by tempo,

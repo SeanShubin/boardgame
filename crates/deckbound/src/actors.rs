@@ -79,8 +79,8 @@ impl Play {
 /// A player-controlled hero.
 #[derive(Clone, Debug)]
 pub struct Hero {
-    pub name: &'static str,
-    pub role: &'static str,
+    pub name: String,
+    pub role: String,
     pub speed: u32,
     pub power: u32,
     pub magic: u32,
@@ -127,7 +127,7 @@ pub enum Behavior {
 /// A non-player creature.
 #[derive(Clone, Debug)]
 pub struct Creature {
-    pub name: &'static str,
+    pub name: String,
     pub speed: u32,
     pub power: u32,
     /// Fear rating (for `Howl`); 0 for non-fearful foes.
@@ -179,170 +179,72 @@ impl Creature {
     }
 }
 
-/// Build the sample-combat party and warband.
-pub fn roster() -> (Vec<Hero>, Vec<Creature>) {
-    use DamageType::*;
-    use Play::{Bash, Dread, Firestorm, Frostbite, Rally, Riposte, Steel};
-    use Read::{Block, Evade, Scheme, Strike};
+/// Construct a hero with the per-round transient fields cleared. The booklet
+/// loader supplies a card's data — no hero is defined in code.
+#[allow(clippy::too_many_arguments)]
+pub fn new_hero(
+    name: String,
+    role: String,
+    speed: u32,
+    power: u32,
+    magic: u32,
+    spirit: u32,
+    resolve_base: i32,
+    body: Body,
+    armor: Armor,
+    line: Line,
+    strike_type: DamageType,
+    plays: Vec<Play>,
+) -> Hero {
+    Hero {
+        name,
+        role,
+        speed,
+        power,
+        magic,
+        spirit,
+        resolve_base,
+        rally_bonus: 0,
+        fear_taken: 0,
+        panicked: false,
+        body,
+        armor,
+        line,
+        strike_type,
+        plays,
+    }
+}
 
-    // The three holding reads every hero shares.
-    let reads = || vec![Play::Read(Block), Play::Read(Evade), Play::Read(Scheme)];
-
-    let heroes = vec![
-        Hero {
-            name: "Aldric",
-            role: "Knight",
-            speed: 4,
-            power: 5,
-            magic: 0,
-            spirit: 0,
-            resolve_base: 4,
-            rally_bonus: 0,
-            fear_taken: 0,
-            panicked: false,
-            body: Body::new(8, 2),
-            armor: Armor::new(vec![(Sharp, 3), (Blunt, 1)]), // heat passes whole
-            line: Line::Front,
-            strike_type: Blunt,
-            plays: {
-                let mut p = reads();
-                p.push(Play::Read(Strike));
-                p.push(Bash);
-                p
-            },
-        },
-        Hero {
-            name: "Vera",
-            role: "Duelist",
-            speed: 5,
-            power: 3,
-            magic: 0,
-            spirit: 0,
-            resolve_base: 2,
-            rally_bonus: 0,
-            fear_taken: 0,
-            panicked: false,
-            body: Body::new(4, 1),
-            armor: Armor::none(),
-            line: Line::Front,
-            strike_type: Sharp,
-            plays: {
-                let mut p = reads();
-                p.push(Play::Read(Strike));
-                p.push(Riposte);
-                p
-            },
-        },
-        Hero {
-            name: "Sefa",
-            role: "Mage",
-            speed: 2,
-            power: 1,
-            magic: 5,
-            spirit: 0,
-            resolve_base: 1,
-            rally_bonus: 0,
-            fear_taken: 0,
-            panicked: false,
-            body: Body::new(3, 1),
-            armor: Armor::none(),
-            line: Line::Back,
-            strike_type: Blunt,
-            plays: {
-                let mut p = vec![Firestorm, Frostbite];
-                p.extend(reads());
-                p
-            },
-        },
-        Hero {
-            name: "Bram",
-            role: "Warden",
-            speed: 3,
-            power: 2,
-            magic: 0,
-            spirit: 5,
-            resolve_base: 4,
-            rally_bonus: 0,
-            fear_taken: 0,
-            panicked: false,
-            body: Body::new(5, 2),
-            armor: Armor::none(),
-            line: Line::Back,
-            strike_type: Blunt,
-            plays: {
-                let mut p = vec![Rally, Dread, Steel];
-                p.extend(reads());
-                p
-            },
-        },
-    ];
-
-    let creatures = vec![
-        Creature {
-            name: "Ironclad",
-            speed: 2,
-            power: 6,
-            fear: 0,
-            resolve: 5,
-            body: Body::new(8, 3),
-            armor: Armor::new(vec![(Sharp, 4), (Blunt, 3)]), // only heat cracks it
-            line: Line::Front,
-            strike_type: Sharp,
-            behavior: Behavior::Bluff,
-            count: 1,
-            runner: false,
-            disabled: false,
-            reached: None,
-        },
-        Creature {
-            name: "Stalker",
-            speed: 6,
-            power: 3,
-            fear: 0,
-            resolve: 3,
-            body: Body::new(6, 1),
-            armor: Armor::none(),
-            line: Line::Front,
-            strike_type: Sharp,
-            behavior: Behavior::Runner,
-            count: 1,
-            runner: true,
-            disabled: false,
-            reached: None,
-        },
-        Creature {
-            name: "Howler",
-            speed: 4,
-            power: 0,
-            fear: 5,
-            resolve: 2,
-            body: Body::new(4, 1),
-            armor: Armor::none(),
-            line: Line::Front,
-            strike_type: Heat, // unused; it attacks nerve, not body
-            behavior: Behavior::Howl,
-            count: 1,
-            runner: false,
-            disabled: false,
-            reached: None,
-        },
-        Creature {
-            name: "Husks",
-            speed: 3,
-            power: 1,
-            fear: 0,
-            resolve: 0,
-            body: Body::new(1, 1),
-            armor: Armor::none(),
-            line: Line::Front,
-            strike_type: Blunt,
-            behavior: Behavior::Swarm,
-            count: 6,
-            runner: false,
-            disabled: false,
-            reached: None,
-        },
-    ];
-
-    (heroes, creatures)
+/// Construct a creature with the per-round transient fields cleared.
+#[allow(clippy::too_many_arguments)]
+pub fn new_creature(
+    name: String,
+    speed: u32,
+    power: u32,
+    fear: u32,
+    resolve: i32,
+    body: Body,
+    armor: Armor,
+    line: Line,
+    strike_type: DamageType,
+    behavior: Behavior,
+    count: u32,
+    runner: bool,
+) -> Creature {
+    Creature {
+        name,
+        speed,
+        power,
+        fear,
+        resolve,
+        body,
+        armor,
+        line,
+        strike_type,
+        behavior,
+        count,
+        runner,
+        disabled: false,
+        reached: None,
+    }
 }

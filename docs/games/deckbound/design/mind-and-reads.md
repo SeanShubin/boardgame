@@ -1,5 +1,12 @@
 # Deckbound — The Mind: Reads & Momentum
 
+> **Superseded — tactical layer:** the Strike / Block / Evade / Scheme cycle and
+> the Power / Speed / Precision momentum below are being replaced by the
+> [duel system](the-duel.md) — a **Marshal / Unleash / Overwhelm / Parry** read
+> (the strike/throw/block mix-up) with one public **Edge** bank. This note is kept
+> for the Mind-aspect framing and the build-vs-cash instincts, which carry over;
+> reconcile when the duel is built.
+
 The Mind aspect is the **rock-paper-scissors read** — the hidden-information heart of
 the game. The Body supplies Power, Speed, and the physical delivery; the **Mind**
 chooses the *intent* (the read) and turns winning reads into snowballing advantage.

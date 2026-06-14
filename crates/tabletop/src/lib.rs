@@ -46,6 +46,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                 (
                     apply_clicked_action::<G>,
                     cancel_on_key::<G>,
+                    quit_if_requested::<G>,
                     redraw::<G>,
                 )
                     .chain(),
@@ -111,6 +112,17 @@ fn cancel_on_key<G: Game + Clone>(
                 redraw.0 = true;
             }
         }
+    }
+}
+
+/// Close the app when the game requests it (e.g. the player chose "Exit").
+fn quit_if_requested<G: Game + Clone>(
+    game: Res<GameRes<G>>,
+    state: Res<StateRes<G>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if game.0.exit_requested(&state.0) {
+        exit.write(AppExit::Success);
     }
 }
 

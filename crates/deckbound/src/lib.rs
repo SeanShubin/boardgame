@@ -30,11 +30,13 @@ pub mod actors;
 pub mod game;
 pub mod read;
 pub mod resolve;
+pub mod scenarios;
 pub mod state;
 pub mod stats;
 
 pub use actors::{Behavior, Creature, Hero, Line, Play};
 pub use game::{Action, Deckbound};
 pub use read::{Clash, Read, clash};
-pub use state::{Phase, State};
+pub use scenarios::{Scenario, campaign, tutorials};
+pub use state::{Menu, Phase, State};
 pub use stats::{Armor, Body, DamageType};
