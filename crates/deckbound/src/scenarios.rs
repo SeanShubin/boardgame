@@ -1,20 +1,13 @@
-//! The booklet: loads the card list and scenario booklet from data
-//! (`data/booklet.ron`) and maps its keywords onto engine types.
-//!
-//! No hero, creature, or scenario is defined in code here — only the schema for
-//! the data file and the keyword handlers that turn data into engine values.
-//! This is the "components + scenarios" tier of the design's three-tier model;
-//! the engine (the rest of the crate) is the "rulebook".
+//! The booklet: loads the card list and scenario booklet from `data/booklet.ron`
+//! and maps its keywords onto engine types. No fighter or scenario is defined in
+//! code here — only the schema and the keyword handlers.
 
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actors::{Behavior, Creature, Hero, Line, Play, new_creature, new_hero};
-use crate::read::Read;
-use crate::stats::{Armor, Body, DamageType};
-
-// ---- the data schema (mirrors booklet.ron) -----------------------------
+use crate::actors::{Creature, Hero, ReadPolicy};
+use crate::stats::Body;
 
 #[derive(Debug, Deserialize)]
 struct Catalog {
@@ -28,34 +21,21 @@ struct Catalog {
 struct HeroCard {
     name: String,
     role: String,
-    speed: u32,
-    power: u32,
-    magic: u32,
-    spirit: u32,
-    resolve: i32,
     body: u32,
     toughness: u32,
-    armor: Vec<(String, u32)>,
-    line: String,
-    strike: String,
-    plays: Vec<String>,
+    base: u32,
+    bandwidth: u32,
 }
 
 #[derive(Debug, Deserialize)]
 struct CreatureCard {
     name: String,
-    speed: u32,
-    power: u32,
-    fear: u32,
-    resolve: i32,
+    role: String,
     body: u32,
     toughness: u32,
-    armor: Vec<(String, u32)>,
-    line: String,
-    strike: String,
-    behavior: String,
-    count: u32,
-    runner: bool,
+    base: u32,
+    bandwidth: u32,
+    policy: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +46,7 @@ struct ScenarioCard {
     foes: Vec<String>,
 }
 
-/// A selectable scenario: its name, its teaching blurb, and the cards it uses.
+/// A selectable scenario: name, teaching blurb, and the cards it uses.
 #[derive(Clone, Debug)]
 pub struct Scenario {
     pub name: String,
@@ -76,7 +56,6 @@ pub struct Scenario {
 }
 
 impl Scenario {
-    /// Build this scenario's party and warband from the card list.
     pub fn roster(&self) -> (Vec<Hero>, Vec<Creature>) {
         let cat = catalog();
         let heroes = self.heroes.iter().map(|n| build_hero(cat, n)).collect();
@@ -85,23 +64,18 @@ impl Scenario {
     }
 }
 
-/// The campaign scenarios.
 pub fn campaign() -> Vec<Scenario> {
     catalog().campaign.iter().map(scenario_from).collect()
 }
 
-/// The tutorial scenarios, each isolating one mechanic.
 pub fn tutorials() -> Vec<Scenario> {
     catalog().tutorials.iter().map(scenario_from).collect()
 }
 
-// ---- loading ------------------------------------------------------------
-
 fn catalog() -> &'static Catalog {
     static CATALOG: OnceLock<Catalog> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        ron::from_str(include_str!("../data/booklet.ron"))
-            .expect("data/booklet.ron should parse")
+        ron::from_str(include_str!("../data/booklet.ron")).expect("data/booklet.ron should parse")
     })
 }
 
@@ -120,20 +94,13 @@ fn build_hero(cat: &Catalog, name: &str) -> Hero {
         .iter()
         .find(|h| h.name == name)
         .unwrap_or_else(|| panic!("booklet has no hero named {name:?}"));
-    new_hero(
-        c.name.clone(),
-        c.role.clone(),
-        c.speed,
-        c.power,
-        c.magic,
-        c.spirit,
-        c.resolve,
-        Body::new(c.body, c.toughness),
-        armor(&c.armor),
-        line(&c.line),
-        damage_type(&c.strike),
-        c.plays.iter().map(|p| play(p)).collect(),
-    )
+    Hero {
+        name: c.name.clone(),
+        role: c.role.clone(),
+        body: Body::new(c.body, c.toughness),
+        base: c.base,
+        bandwidth: c.bandwidth,
+    }
 }
 
 fn build_creature(cat: &Catalog, name: &str) -> Creature {
@@ -142,73 +109,25 @@ fn build_creature(cat: &Catalog, name: &str) -> Creature {
         .iter()
         .find(|c| c.name == name)
         .unwrap_or_else(|| panic!("booklet has no creature named {name:?}"));
-    new_creature(
-        c.name.clone(),
-        c.speed,
-        c.power,
-        c.fear,
-        c.resolve,
-        Body::new(c.body, c.toughness),
-        armor(&c.armor),
-        line(&c.line),
-        damage_type(&c.strike),
-        behavior(&c.behavior),
-        c.count,
-        c.runner,
-    )
-}
-
-// ---- keyword handlers (data -> engine) ----------------------------------
-
-fn armor(entries: &[(String, u32)]) -> Armor {
-    if entries.is_empty() {
-        return Armor::none();
-    }
-    Armor::new(entries.iter().map(|(t, v)| (damage_type(t), *v)).collect())
-}
-
-fn damage_type(keyword: &str) -> DamageType {
-    match keyword {
-        "sharp" => DamageType::Sharp,
-        "blunt" => DamageType::Blunt,
-        "heat" => DamageType::Heat,
-        "cold" => DamageType::Cold,
-        other => panic!("unknown damage-type keyword {other:?}"),
+    Creature {
+        name: c.name.clone(),
+        role: c.role.clone(),
+        body: Body::new(c.body, c.toughness),
+        base: c.base,
+        bandwidth: c.bandwidth,
+        policy: policy(&c.policy),
     }
 }
 
-fn line(keyword: &str) -> Line {
+fn policy(keyword: &str) -> ReadPolicy {
     match keyword {
-        "front" => Line::Front,
-        "back" => Line::Back,
-        other => panic!("unknown line keyword {other:?}"),
-    }
-}
-
-fn behavior(keyword: &str) -> Behavior {
-    match keyword {
-        "bluff" => Behavior::Bluff,
-        "runner" => Behavior::Runner,
-        "howl" => Behavior::Howl,
-        "swarm" => Behavior::Swarm,
-        other => panic!("unknown behavior keyword {other:?}"),
-    }
-}
-
-fn play(keyword: &str) -> Play {
-    match keyword {
-        "block" => Play::Read(Read::Block),
-        "evade" => Play::Read(Read::Evade),
-        "scheme" => Play::Read(Read::Scheme),
-        "strike" => Play::Read(Read::Strike),
-        "bash" => Play::Bash,
-        "riposte" => Play::Riposte,
-        "firestorm" => Play::Firestorm,
-        "frostbite" => Play::Frostbite,
-        "rally" => Play::Rally,
-        "dread" => Play::Dread,
-        "steel" => Play::Steel,
-        other => panic!("unknown play keyword {other:?}"),
+        "dummy" => ReadPolicy::Dummy,
+        "brute" => ReadPolicy::Brute,
+        "turtle" => ReadPolicy::Turtle,
+        "duelist" => ReadPolicy::Duelist,
+        "grappler" => ReadPolicy::Grappler,
+        "aggressor" => ReadPolicy::Aggressor,
+        other => panic!("unknown read-policy keyword {other:?}"),
     }
 }
 
@@ -217,17 +136,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn booklet_parses_and_has_scenarios() {
-        assert_eq!(campaign().len(), 1);
-        assert_eq!(tutorials().len(), 5);
+    fn booklet_parses_with_tutorials_and_campaign() {
+        assert!(!campaign().is_empty());
+        assert!(tutorials().len() >= 4);
     }
 
     #[test]
     fn every_scenario_builds_a_roster() {
-        for scenario in campaign().into_iter().chain(tutorials()) {
-            let (heroes, foes) = scenario.roster();
-            assert!(!heroes.is_empty(), "{} has no heroes", scenario.name);
-            assert!(!foes.is_empty(), "{} has no foes", scenario.name);
+        for s in campaign().into_iter().chain(tutorials()) {
+            let (h, f) = s.roster();
+            assert!(!h.is_empty() && !f.is_empty(), "{} empty roster", s.name);
         }
     }
 }

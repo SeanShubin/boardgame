@@ -62,7 +62,7 @@ pub enum Accent {
 }
 
 /// A single card as it should appear to the viewer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CardView {
     /// Whether the card's face is visible, and what it shows.
     pub face: CardFace,
@@ -74,7 +74,7 @@ pub struct CardView {
 /// an optional type line, a body of stat / rules lines, and a corner badge
 /// (the "power/toughness" spot) — minus art and flavour, so the space goes to
 /// information.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CardFace {
     /// Face up.
     Up {

@@ -288,10 +288,70 @@ fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView) {
                 ..default()
             })
             .with_children(|row| {
-                for card in &zone.cards {
-                    spawn_card(row, &card.face);
+                // Collapse runs of identical cards into one overlapped stack, so
+                // you read the top card and see how many there are.
+                let cards = &zone.cards;
+                let mut i = 0;
+                while i < cards.len() {
+                    let mut j = i + 1;
+                    while j < cards.len() && cards[j] == cards[i] {
+                        j += 1;
+                    }
+                    spawn_card_group(row, &cards[i].face, j - i);
+                    i = j;
                 }
             });
+        });
+}
+
+const STACK_PEEK: f32 = 24.0;
+
+/// Render `count` identical cards: a single card if one, else an overlapped
+/// stack — the top card fully readable, the rest peeking — with an `xN` badge.
+fn spawn_card_group(parent: &mut ChildSpawnerCommands, face: &CardFace, count: usize) {
+    if count <= 1 {
+        spawn_card(parent, face);
+        return;
+    }
+    let width = CARD_W + (count as f32 - 1.0) * STACK_PEEK;
+    parent
+        .spawn(Node {
+            width: Val::Px(width),
+            height: Val::Px(CARD_H),
+            ..default()
+        })
+        .with_children(|stack| {
+            for k in 0..count {
+                stack
+                    .spawn(Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(k as f32 * STACK_PEEK),
+                        top: Val::Px(0.0),
+                        ..default()
+                    })
+                    .with_children(|slot| spawn_card(slot, face));
+            }
+            stack
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(4.0),
+                        top: Val::Px(4.0),
+                        padding: UiRect::axes(Val::Px(7.0), Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(BADGE),
+                ))
+                .with_children(|b| {
+                    b.spawn((
+                        Text::new(format!("x{count}")),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(TITLE_INK),
+                    ));
+                });
         });
 }
 

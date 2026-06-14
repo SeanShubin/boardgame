@@ -1,9 +1,13 @@
 # Deckbound — The Duel
 
-> **Status:** design. This supersedes the tactical read layer — the
-> Strike/Block/Evade/Scheme RPS and the Power/Speed/Precision momentum in
-> [mind-and-reads](mind-and-reads.md) — with one read-game and one currency. Not
-> yet implemented (the current code still runs the old cycle).
+> **Status:** **implemented** as the duel sandbox (`crates/deckbound`) — combat is
+> now a sequence of these duels (Marshal / Unleash / Overwhelm / Parry, public
+> per-duel Edge), with creature read-policies and tutorials that isolate each
+> read. The older Strike/Block/Evade/Scheme warband (formation, gauntlet, fear,
+> multi-target) is parked while the duel numbers are tuned. Team and god-tier test
+> scenarios add matchmaking (you pick who duels whom) and a simplified swarm rule
+> (foes beyond your **bandwidth** chip you each beat — the multi-engagement
+> approximation). Numbers are first-pass and live in `data/booklet.ron`.
 
 The tactical heart of combat: two fighters **reading each other**. A whole duel
 is the mind-game of **a single clash** — one throw, one melee exchange — and it
@@ -40,7 +44,8 @@ range.
   someone sitting on 3 Edge is a looming Unleash, and the opponent must respect it
   ("respecting the meter," at the scale of a single exchange).
 - **The steal is the comeback.** Parry a real Unleash and you negate it **and take
-  its Edge** — the lead flips mid-duel. An **Overwhelm** is never stolen.
+  its Edge** (or **+1** if it had none — a parry always pays) — the lead flips
+  mid-duel. An **Overwhelm** is never stolen.
 
 ## The four reads — Marshal · Unleash · Overwhelm · Parry
 
@@ -55,9 +60,10 @@ four-way:
 - **Overwhelm** *(throw)* — drive **all** your Edge *through* a guard. Beats a
   **Parry** — but whiffs against anyone not guarding (a Marshaller, or an
   Unleasher), losing your Edge for nothing.
-- **Parry** *(block)* — read the Unleash: negate it **and steal the whole bank**,
-  the game's biggest comeback. But it loses to an **Overwhelm**, and a Marshaller
-  just banks while you guard at air.
+- **Parry** *(block)* — read the Unleash: negate it **and steal the whole bank**
+  (or, if it had none, earn **+1 Edge** — a parry is never dead), the game's
+  biggest comeback. But it loses to an **Overwhelm**, and a Marshaller just banks
+  while you guard at air.
 
 The offensive triangle is **Unleash ▸ Overwhelm ▸ Parry ▸ Unleash**; Marshal is
 the neutral that feeds it.
@@ -71,14 +77,14 @@ connects**, mutual included. The only committed attacks that *don't* end it are 
 guard to break). "Caught while charging" needs no special rule — you simply take
 the hit and the duel is over.
 
-| Ends the duel — a strike lands            | Continues — nobody lands                            |
-| ----------------------------------------- | --------------------------------------------------- |
-| Unleash vs Marshal — marshaller struck    | Marshal vs Marshal — both +Edge                     |
-| Unleash vs Unleash — both struck (mutual) | Marshal vs Parry — marshaller +Edge                 |
-| Unleash vs Overwhelm — overwhelmer struck | Marshal vs Overwhelm — overwhelm whiffs             |
-| Overwhelm vs Parry — parrier struck       | Unleash vs Parry — parried, Edge stolen, roles flip |
-|                                           | Overwhelm vs Overwhelm — clinch, nothing            |
-|                                           | Parry vs Parry — nothing                            |
+| Ends the duel — a strike lands            | Continues — nobody lands                              |
+| ----------------------------------------- | ----------------------------------------------------- |
+| Unleash vs Marshal — marshaller struck    | Marshal vs Marshal — both +Edge                       |
+| Unleash vs Unleash — both struck (mutual) | Marshal vs Parry — marshaller +Edge                   |
+| Unleash vs Overwhelm — overwhelmer struck | Marshal vs Overwhelm — overwhelm whiffs               |
+| Overwhelm vs Parry — parrier struck       | Unleash vs Parry — parried, bank stolen (or +1), flip |
+|                                           | Overwhelm vs Overwhelm — clinch, nothing              |
+|                                           | Parry vs Parry — nothing                              |
 
 ## The shape of a duel
 
