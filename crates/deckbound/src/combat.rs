@@ -80,7 +80,9 @@ fn pick_target(state: &State, rule: TargetRule) -> Option<usize> {
 pub fn creature_phase(state: &mut State) {
     let count = state.creatures.len();
     for ci in 0..count {
-        if state.creatures[ci].is_down() {
+        if state.creatures[ci].is_down() || state.engaged[ci] {
+            // Foes you dueled or traded this round already exchanged blows; only foes
+            // you did not read are uncontested free-hits (§1.8).
             continue;
         }
         let rule = state.creatures[ci]
@@ -205,7 +207,7 @@ pub fn play_action(state: &mut State, hero: usize, action: usize) -> u32 {
                 state.log.push("  nerves settle.".into());
             }
             Effect::BankSpeed { amount } => {
-                state.heroes[hero].tempo += amount;
+                state.heroes[hero].tempo += amount as i32;
                 state.log.push(format!("  +{amount} tempo banked."));
             }
             Effect::Sunder { armor } => {
@@ -225,6 +227,44 @@ pub fn play_action(state: &mut State, hero: usize, action: usize) -> u32 {
     2 // flat tempo cost for an action (tunable)
 }
 
+/// Resolve the round end in tiers (§1.9). The player's duels and trades already landed
+/// live this round; now apply queued breadth-attack cards, then the uncontested
+/// free-hits from foes nobody read, then self/ally cards (buffs) — attacks before buffs.
+pub fn resolve_round(state: &mut State) {
+    // Tier: the player's remaining attacks (breadth-damage cards).
+    for (hero, idx) in state.queued_cards.clone() {
+        if card_is_attack(state, hero, idx) {
+            play_action(state, hero, idx);
+        }
+    }
+    crate::game::check_outcome(state);
+    if state.outcome.is_some() {
+        return;
+    }
+    // Tier: uncontested attacks — every foe the party did not read free-hits. (Defeat
+    // is not finalized here; heroes mortally wounded this tier fall at the round-end
+    // tally — §1.9 down-checks at the boundary.)
+    state.log.push("-- unread foes strike --".into());
+    creature_phase(state);
+    // Tier: self/ally effects (buffs), after the attacks.
+    for (hero, idx) in state.queued_cards.clone() {
+        if !card_is_attack(state, hero, idx) {
+            play_action(state, hero, idx);
+        }
+    }
+}
+
+/// A card whose primary effect is `Damage` is an attack (tier 2); anything else is a
+/// support effect (tier 3).
+fn card_is_attack(state: &State, hero: usize, idx: usize) -> bool {
+    state
+        .heroes
+        .get(hero)
+        .and_then(|h| h.actions.get(idx))
+        .map(|c| matches!(c.effects.first(), Some(Effect::Damage { .. })))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +274,7 @@ mod tests {
 
     fn state_from(scen: &crate::scenarios::Scenario) -> State {
         let (heroes, creatures) = scen.roster();
+        let n_foes = creatures.len();
         State {
             round: 1,
             heroes,
@@ -246,6 +287,8 @@ mod tests {
             rng: Rng::new(1),
             seed: 1,
             outcome: None,
+            engaged: vec![false; n_foes],
+            queued_cards: Vec::new(),
         }
     }
 
@@ -282,5 +325,48 @@ mod tests {
         play_action(&mut s, hi, ai);
         let after = s.creatures.iter().filter(|c| c.name == "Husk" && !c.is_down()).count();
         assert!(after < before, "Firestorm should burn multiple husks");
+    }
+
+    /// §3.3: an Exposed hero's Focus is 0, so it covers no one and the whole swarm
+    /// free-hits — even if it had Focus to spare before overextending. (The Blur has no
+    /// armor, unlike Kael, so the husks' chip actually lands.)
+    #[test]
+    fn exposed_hero_is_free_hit_by_the_whole_swarm() {
+        let scen = scenarios::god()
+            .into_iter()
+            .find(|s| s.name.contains("Blur"))
+            .unwrap();
+        let mut s = state_from(&scen);
+        s.heroes[0].focus = 99;
+        s.heroes[0].expose();
+        assert_eq!(s.heroes[0].focus, 0, "expose() zeroes Focus");
+        let before = s.heroes[0].defense.body.remaining;
+        creature_phase(&mut s);
+        assert!(
+            s.heroes[0].defense.body.remaining < before,
+            "an exposed hero covers no one — the whole swarm free-hits"
+        );
+    }
+
+    /// §1.9/§1.3: a hero whose Body hits 0 mid-round is *mortally wounded*, not removed
+    /// — it keeps acting (so it lands its committed blows regardless of duel order) and
+    /// only falls at the round-end tally.
+    #[test]
+    fn mortally_wounded_hero_acts_until_the_round_end_tally() {
+        let scen = scenarios::god()
+            .into_iter()
+            .find(|s| s.name.contains("Goliath"))
+            .unwrap();
+        let mut s = state_from(&scen);
+        while !s.heroes[0].is_down() {
+            s.heroes[0].defense.take(99, DamageType::Blunt, 0);
+        }
+        assert!(s.heroes[0].is_down(), "Body is spent");
+        assert!(!s.heroes[0].fallen, "but death is not yet finalized");
+        assert!(s.hero_can_act(0), "mortally wounded — still acts this round");
+        assert_eq!(s.living_heroes(), 1, "still in the fight until the tally");
+        s.heroes[0].fallen = true; // the round-end tally
+        assert!(!s.hero_can_act(0), "once fallen, it is out");
+        assert_eq!(s.living_heroes(), 0);
     }
 }

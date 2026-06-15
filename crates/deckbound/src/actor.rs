@@ -138,9 +138,13 @@ pub struct Actor {
     pub runner: bool,
 
     // round-scoped budgets
-    pub tempo: u32,
+    pub tempo: i32,
     pub focus: u32,
     pub exposed: bool,
+    /// Finalized dead. Body reaching 0 is "mortally wounded" — the actor fights on and
+    /// lands its committed blows; death is tallied at the round boundary (§1.9), which
+    /// sets this. Once set it persists (the actor is out of the fight).
+    pub fallen: bool,
 }
 
 impl Actor {
@@ -161,10 +165,17 @@ impl Actor {
 
     /// Refresh tempo & focus and clear round-scoped state.
     pub fn refresh_round(&mut self) {
-        self.tempo = self.offense.speed;
+        self.tempo = self.offense.speed as i32;
         self.focus = self.defense.mind;
         self.exposed = false;
         self.defense.end_round();
+    }
+
+    /// Overextended — Tempo went negative. Go all-in (§3.3): Focus drops to 0, so the
+    /// actor can read no one and every foe free-hits this round.
+    pub fn expose(&mut self) {
+        self.exposed = true;
+        self.focus = 0;
     }
 }
 
@@ -204,6 +215,7 @@ mod tests {
             tempo: 0,
             focus: 0,
             exposed: true,
+            fallen: false,
         };
         a.refresh_round();
         assert_eq!(a.tempo, 5);

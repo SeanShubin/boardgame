@@ -203,6 +203,7 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         tempo: 0,
         focus: 0,
         exposed: false,
+        fallen: false,
     };
     actor.refresh_round();
     actor

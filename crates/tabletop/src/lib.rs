@@ -161,6 +161,9 @@ const CARD_FACE: Color = Color::srgb(0.94, 0.92, 0.84);
 const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
 const CARD_BACK_INNER: Color = Color::srgb(0.30, 0.35, 0.56);
+/// A dark edge drawn around every card so overlapping cards stay distinct.
+const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
+const CARD_BORDER: f32 = 2.0;
 const BADGE: Color = Color::srgb(0.14, 0.14, 0.18);
 const TITLE_INK: Color = Color::srgb(0.97, 0.97, 0.98);
 const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
@@ -378,9 +381,11 @@ fn spawn_card_back(parent: &mut ChildSpawnerCommands) {
                 width: Val::Px(CARD_W),
                 height: Val::Px(CARD_H),
                 padding: UiRect::all(Val::Px(10.0)),
+                border: UiRect::all(Val::Px(CARD_BORDER)),
                 ..default()
             },
             BackgroundColor(CARD_BACK),
+            BorderColor::all(CARD_EDGE),
         ))
         .with_children(|card| {
             card.spawn((
@@ -409,9 +414,11 @@ fn spawn_card_face(
                 height: Val::Px(CARD_H),
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::clip(),
+                border: UiRect::all(Val::Px(CARD_BORDER)),
                 ..default()
             },
             BackgroundColor(CARD_FACE),
+            BorderColor::all(CARD_EDGE),
         ))
         .with_children(|card| {
             // Title bar (accent-coloured).

@@ -8,7 +8,7 @@
 use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
 
 use crate::combat::{self, base_strike};
-use crate::duel::{self, Side, Stance};
+use crate::duel::{self, Side, Stance, Strike};
 use crate::scenarios::{self, Scenario};
 use crate::state::{Duel, Menu, Phase, State};
 
@@ -28,8 +28,10 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// This hero engages this foe (a duel).
+    /// This hero reads + attacks this foe (a duel: spends Focus and Tempo).
     Engage(usize, usize),
+    /// This hero attacks this foe without reading it (a magnitude trade: Tempo only).
+    Trade(usize, usize),
     /// This hero plays this action card.
     PlayAction(usize, usize),
     /// End the player phase; creatures act, then the round refreshes.
@@ -55,6 +57,8 @@ fn menu_state(seed: u64) -> State {
         rng: Rng::new(seed),
         seed,
         outcome: None,
+        engaged: Vec::new(),
+        queued_cards: Vec::new(),
     }
 }
 
@@ -77,9 +81,10 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
     state.log = vec![scenario.blurb.clone(), "-- Round 1 --".into()];
     state.scenario = Some(scenario);
     state.phase = Phase::Choosing;
+    state.reset_round_plan();
 }
 
-fn check_outcome(state: &mut State) {
+pub(crate) fn check_outcome(state: &mut State) {
     if state.living_creatures() == 0 {
         state.duel = None;
         state.outcome = Some(Outcome::Win(PlayerId(0)));
@@ -92,15 +97,17 @@ fn check_outcome(state: &mut State) {
 }
 
 fn form_duel(state: &mut State, hero: usize, foe: usize) {
-    // Engaging costs the foe's Speed from the hero's tempo; overspending exposes.
-    let cost = state.creatures[foe].offense.speed.max(1);
+    // A duel = read (Focus) + engage (Tempo), each costing the foe's Speed (§1.7/§1.8).
+    // Tempo is pay-after: the engage happens and, if it drives Tempo negative, you go
+    // all-in (§3.3). The foe is now engaged and will not also free-hit at round end.
+    let speed = state.creatures[foe].offense.speed.max(1);
     let h = &mut state.heroes[hero];
-    if cost > h.tempo {
-        h.exposed = true;
-        h.tempo = 0;
-    } else {
-        h.tempo -= cost;
+    h.focus = h.focus.saturating_sub(speed);
+    h.tempo -= speed as i32;
+    if h.tempo < 0 {
+        h.expose();
     }
+    state.engaged[foe] = true;
     state.duel = Some(Duel {
         hero,
         foe,
@@ -116,17 +123,56 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
     ));
 }
 
+/// A magnitude trade (§1.8): the hero attacks a foe without reading it — both take one
+/// base strike, no stance, no Edge. Costs Tempo only (pay-after). The foe is engaged
+/// (it will not also free-hit) and its return blow lands unmitigated.
+fn trade(state: &mut State, hero: usize, foe: usize) {
+    let (h_pow, h_dt, h_pre) = base_strike(&state.heroes[hero]);
+    let (c_pow, c_dt, c_pre) = base_strike(&state.creatures[foe]);
+    let h_name = state.heroes[hero].name.clone();
+    let c_name = state.creatures[foe].name.clone();
+    let speed = state.creatures[foe].offense.speed.max(1);
+    state.log.push(format!("{h_name} trades blows with the {c_name}."));
+    combat::apply_strike(
+        &mut state.creatures[foe],
+        Strike { raw: h_pow, dtype: h_dt, precision: h_pre },
+        &h_name,
+        &mut state.log,
+    );
+    combat::apply_strike(
+        &mut state.heroes[hero],
+        Strike { raw: c_pow, dtype: c_dt, precision: c_pre },
+        &c_name,
+        &mut state.log,
+    );
+    state.engaged[foe] = true;
+    let h = &mut state.heroes[hero];
+    h.tempo -= speed as i32;
+    if h.tempo < 0 {
+        h.expose();
+    }
+    check_outcome(state);
+}
+
 impl Deckbound {
     /// Resolve one beat of the active duel against `hero_stance`.
     fn beat(&self, state: &mut State, hero_stance: Stance) {
         let Some(duel) = state.duel else { return };
 
         let creature_stance = {
-            let b = state.creatures[duel.foe]
+            let policy = state.creatures[duel.foe]
                 .behavior()
                 .map(|b| b.policy)
                 .expect("a creature drives the duel");
-            b.stance(duel.foe_edge, duel.hero_edge, &mut state.rng)
+            // Per-duel, per-beat keyed RNG so the order the player resolves duels in
+            // cannot change any duel's rolls (§1.9 order-independence).
+            let key = state.seed
+                ^ (state.round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                ^ (duel.hero as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                ^ (duel.foe as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+                ^ (duel.beat as u64).wrapping_mul(0x27D4_EB2F_1656_67C5);
+            let mut drng = Rng::new(key);
+            policy.stance(duel.foe_edge, duel.hero_edge, &mut drng)
         };
 
         // Stall backstop: after STALL_CAP mutual-Marshals, force the exchange.
@@ -192,8 +238,18 @@ impl Deckbound {
     }
 
     fn end_round(&self, state: &mut State) {
-        state.log.push("-- creatures act --".into());
-        combat::creature_phase(state);
+        combat::resolve_round(state);
+        if state.outcome.is_some() {
+            return;
+        }
+        // Death tally (§1.9 — downs finalize at the round boundary, not mid-stream): a
+        // hero mortally wounded this round fought on and landed its committed blows; now
+        // finalize who fell, then check for defeat.
+        for a in state.heroes.iter_mut().chain(state.creatures.iter_mut()) {
+            if a.is_down() {
+                a.fallen = true;
+            }
+        }
         check_outcome(state);
         if state.outcome.is_some() {
             return;
@@ -204,6 +260,7 @@ impl Deckbound {
             }
         }
         state.round += 1;
+        state.reset_round_plan();
         state.log.push(format!("-- Round {} --", state.round));
     }
 
@@ -225,7 +282,7 @@ impl Deckbound {
             (None, Phase::Menu(Menu::God)) => "God-tier - pick one. (Esc: back)".to_string(),
             (None, Phase::Menu(Menu::Tutorial)) => "Duels - one stance each. (Esc: back)".to_string(),
             (None, Phase::Choosing) => format!(
-                "Round {} - engage a foe, play an action, or end the round. (Esc: menu)",
+                "Round {} - duel (read+strike) or trade a foe, queue a card, or end the round. (Esc: menu)",
                 state.round
             ),
             (None, Phase::Combat) => match state.duel {
@@ -279,9 +336,15 @@ impl Game for Deckbound {
                         continue;
                     }
                     for (f, foe) in state.creatures.iter().enumerate() {
-                        if !foe.is_down() {
+                        if foe.is_down() {
+                            continue;
+                        }
+                        // Duel (read + attack) only if Focus can afford the read; you can
+                        // always Trade (attack without reading).
+                        if hero.focus >= foe.offense.speed.max(1) {
                             a.push(Action::Engage(h, f));
                         }
+                        a.push(Action::Trade(h, f));
                     }
                     for idx in 0..hero.actions.len() {
                         a.push(Action::PlayAction(h, idx));
@@ -312,7 +375,12 @@ impl Game for Deckbound {
             Action::Engage(h, f) => {
                 let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
                 let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
-                format!("{hero} -> the {foe}")
+                format!("{hero} duels the {foe} (read + strike)")
+            }
+            Action::Trade(h, f) => {
+                let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
+                let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
+                format!("{hero} trades with the {foe} (strike, no read)")
             }
             Action::PlayAction(h, idx) => {
                 let hero = state.heroes.get(*h);
@@ -370,25 +438,36 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
             (Phase::Choosing, Action::Engage(h, f)) => {
-                if state.hero_can_act(*h) && state.creatures.get(*f).is_some_and(|x| !x.is_down()) {
+                let can = state.hero_can_act(*h)
+                    && state.creatures.get(*f).is_some_and(|x| !x.is_down())
+                    && state.heroes[*h].focus >= state.creatures[*f].offense.speed.max(1);
+                if can {
                     form_duel(state, *h, *f);
                 } else {
                     return Err(GameError::new("that engagement is not available"));
                 }
             }
-            (Phase::Choosing, Action::PlayAction(h, idx)) => {
-                if !state.hero_can_act(*h) {
-                    return Err(GameError::new("that hero cannot act"));
-                }
-                let cost = combat::play_action(state, *h, *idx).max(ACTION_COST);
-                let hero = &mut state.heroes[*h];
-                if cost > hero.tempo {
-                    hero.exposed = true;
-                    hero.tempo = 0;
+            (Phase::Choosing, Action::Trade(h, f)) => {
+                if state.hero_can_act(*h) && state.creatures.get(*f).is_some_and(|x| !x.is_down()) {
+                    trade(state, *h, *f);
                 } else {
-                    hero.tempo -= cost;
+                    return Err(GameError::new("that trade is not available"));
                 }
-                check_outcome(state);
+            }
+            (Phase::Choosing, Action::PlayAction(h, idx)) => {
+                let valid = state.hero_can_act(*h)
+                    && state.heroes.get(*h).is_some_and(|x| *idx < x.actions.len());
+                if !valid {
+                    return Err(GameError::new("that action is not available"));
+                }
+                // Queue the card; its effects resolve in tiers at round end (§1.9 —
+                // attacks before buffs). Tempo is paid now (pay-after).
+                state.queued_cards.push((*h, *idx));
+                let hero = &mut state.heroes[*h];
+                hero.tempo -= ACTION_COST as i32;
+                if hero.tempo < 0 {
+                    hero.expose();
+                }
             }
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
             (Phase::Combat, Action::Stance(s)) => {
@@ -512,7 +591,7 @@ fn hero_zone(state: &State, active: Option<usize>) -> ZoneView {
             .heroes
             .iter()
             .enumerate()
-            .filter(|(_, h)| !h.is_down())
+            .filter(|(_, h)| !h.fallen)
             .map(|(i, h)| {
                 actor_card(
                     h,
@@ -602,10 +681,12 @@ mod tests {
                     }
                 }
                 Phase::Choosing => {
-                    // engage the first foe if any hero can; else end the round.
-                    game.legal_actions(s)
-                        .into_iter()
+                    // Duel the first affordable foe; else trade; else end the round.
+                    let acts = game.legal_actions(s);
+                    acts.iter()
                         .find(|a| matches!(a, Action::Engage(_, _)))
+                        .or_else(|| acts.iter().find(|a| matches!(a, Action::Trade(_, _))))
+                        .cloned()
                         .unwrap_or(Action::EndRound)
                 }
                 _ => break,
@@ -647,5 +728,115 @@ mod tests {
                 let _ = autoplay(&game, &mut s);
             }
         }
+    }
+
+    fn god_state(seed: u64, name_contains: &str) -> State {
+        let scen = scenarios::god()
+            .into_iter()
+            .find(|s| s.name.contains(name_contains))
+            .unwrap();
+        let mut s = menu_state(seed);
+        load_scenario(&mut s, scen);
+        s
+    }
+
+    fn campaign_state(seed: u64, name_contains: &str) -> State {
+        let scen = scenarios::campaign()
+            .into_iter()
+            .find(|s| s.name.contains(name_contains))
+            .unwrap();
+        let mut s = menu_state(seed);
+        load_scenario(&mut s, scen);
+        s
+    }
+
+    /// Engage a foe and play the duel to its conclusion (Marshal up, then Unleash).
+    fn drive_duel(game: &Deckbound, s: &mut State, hero: usize, foe: usize) {
+        game.apply(s, &Action::Engage(hero, foe)).unwrap();
+        let mut guard = 0;
+        while s.phase == Phase::Combat {
+            let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
+            let stance = if e >= 2 { Stance::Unleash } else { Stance::Marshal };
+            game.apply(s, &Action::Stance(stance)).unwrap();
+            guard += 1;
+            assert!(guard < 1000, "a duel should terminate");
+        }
+    }
+
+    /// §1.9: the order the player resolves duels in must not change the end-state
+    /// (guaranteed by the per-duel keyed RNG).
+    #[test]
+    fn duel_order_does_not_change_outcome() {
+        let game = Deckbound;
+        // Kael (Mind 6) can afford to read two Speed-3 husks.
+        let mut a = god_state(7, "Goliath");
+        drive_duel(&game, &mut a, 0, 0);
+        drive_duel(&game, &mut a, 0, 1);
+
+        let mut b = god_state(7, "Goliath");
+        drive_duel(&game, &mut b, 0, 1);
+        drive_duel(&game, &mut b, 0, 0);
+
+        let bodies = |s: &State| {
+            s.creatures
+                .iter()
+                .map(|c| c.defense.body.remaining)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(bodies(&a), bodies(&b), "duel order changed foe outcomes");
+        assert_eq!(
+            a.heroes[0].defense.body.remaining,
+            b.heroes[0].defense.body.remaining
+        );
+        assert_eq!(a.heroes[0].tempo, b.heroes[0].tempo);
+        assert_eq!(a.heroes[0].focus, b.heroes[0].focus);
+    }
+
+    /// §1.8: a trade is a single base exchange — no duel, no Edge — and engages the foe.
+    #[test]
+    fn trade_exchanges_base_blows_without_a_duel() {
+        let game = Deckbound;
+        let mut s = god_state(3, "Goliath");
+        game.apply(&mut s, &Action::Trade(0, 0)).unwrap();
+        assert!(s.creatures[0].is_down(), "Kael's base strike fells the husk");
+        assert_eq!(s.phase, Phase::Choosing, "a trade starts no duel");
+        assert!(s.duel.is_none());
+        assert!(s.engaged[0], "the traded foe is engaged — it won't also free-hit");
+    }
+
+    /// §1.9: action cards are queued and resolve in tiers at round end (attacks before
+    /// buffs), not the instant they are played.
+    #[test]
+    fn action_cards_resolve_at_round_end_not_immediately() {
+        let game = Deckbound;
+        let mut s = campaign_state(5, "Warband");
+        let sefa = s.heroes.iter().position(|h| h.name == "Sefa").unwrap();
+        let fs = s.heroes[sefa]
+            .actions
+            .iter()
+            .position(|c| c.name == "Firestorm")
+            .unwrap();
+        let before = s.creatures.iter().filter(|c| !c.is_down()).count();
+        game.apply(&mut s, &Action::PlayAction(sefa, fs)).unwrap();
+        let mid = s.creatures.iter().filter(|c| !c.is_down()).count();
+        assert_eq!(before, mid, "the card is queued, not applied immediately");
+        game.apply(&mut s, &Action::EndRound).unwrap();
+        let after = s.creatures.iter().filter(|c| !c.is_down()).count();
+        assert!(after < before, "the queued Firestorm resolves at round end");
+    }
+
+    /// §3.1/§3.3: pay-after — the action that drives Tempo negative still happens, and
+    /// leaves you Exposed (all-in).
+    #[test]
+    fn pay_after_grants_the_action_then_exposes() {
+        let game = Deckbound;
+        let mut s = god_state(1, "Goliath");
+        s.heroes[0].tempo = 1;
+        s.heroes[0].focus = 10;
+        game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
+        assert!(s.heroes[0].exposed, "overdrawing Tempo goes all-in");
+        assert!(s.heroes[0].tempo < 0, "pay-after: the engage still happened");
+        assert_eq!(s.phase, Phase::Combat, "the duel formed");
+        assert!(s.duel.is_some());
     }
 }

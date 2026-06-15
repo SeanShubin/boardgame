@@ -34,7 +34,6 @@ Catalog(
         Card( name: "Confuse",   reach: (2, 2), effects: [Damage(power: 4, dtype: Confusion)] ),
         Card( name: "Rally",     lifecycle: Lasting, effects: [Rally(resolve: 4)] ),
         Card( name: "Steel",     effects: [Steel] ),
-        Card( name: "Riposte",   lifecycle: SelfReturn, effects: [BankSpeed(amount: 2)] ),
     ],
     traits: [
         TraitCard( name: "Plate",       armor: [(Sharp, 3), (Blunt, 1), (Heat, 0)] ),
@@ -51,7 +50,7 @@ Catalog(
                    weapon: "Bash", actions: ["Cleave"], traits: ["Plate", "Shield"] ),
         ActorCard( name: "Vera",   role: "Duelist", driver: "hero", speed: 5, power: 3, precision: 4,
                    body: 4, toughness: 1, resolve: 2, mind: 3,
-                   weapon: "Blade", actions: ["Riposte"] ),
+                   weapon: "Blade" ),
         ActorCard( name: "Sefa",   role: "Mage",    driver: "hero", speed: 2, power: 2, precision: 1,
                    body: 3, toughness: 1, resolve: 1, mind: 1,
                    weapon: "Flame", actions: ["Firestorm"] ),
@@ -87,7 +86,7 @@ Catalog(
         ActorCard( name: "Titan",     role: "God-Boss", driver: "duelist", speed: 8, power: 6,
                    body: 20, toughness: 3, resolve: 8, mind: 6, weapon: "Maul", traits: ["Plate"] ),
         // ---- duel-tutorial dummies (1v1) ----
-        ActorCard( name: "Pell",   role: "Sandbag",       driver: "dummy",     speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Pell",   role: "Charger",       driver: "brute",     speed: 2, power: 1, body: 8, weapon: "Claw" ),
         ActorCard( name: "Bron",   role: "Brute",         driver: "brute",     speed: 2, power: 1, body: 10, weapon: "Claw" ),
         ActorCard( name: "Hollow", role: "Shield-Turtle", driver: "turtle",    speed: 2, power: 1, body: 9, weapon: "Claw" ),
         ActorCard( name: "Maw",    role: "Grappler",      driver: "grappler",  speed: 2, power: 1, body: 9, weapon: "Claw" ),
@@ -153,7 +152,7 @@ Catalog(
         ),
     ],
     tutorials: [
-        ScenarioCard( name: "1. Build & Unleash", blurb: "Pell never attacks - Marshal to bank Edge, then Unleash.", heroes: ["Vera"], foes: ["Pell"] ),
+        ScenarioCard( name: "1. Build & Unleash", blurb: "Pell winds up to a killshot - Marshal to bank Edge, then Unleash before it strikes.", heroes: ["Vera"], foes: ["Pell"] ),
         ScenarioCard( name: "2. Parry & Steal",   blurb: "Bron winds up then swings. Parry the Unleash to negate AND steal its bank.", heroes: ["Vera"], foes: ["Bron"] ),
         ScenarioCard( name: "3. Crack the Guard",  blurb: "Hollow just parries. Bank Edge and Overwhelm - a throw beats a guard.", heroes: ["Vera"], foes: ["Hollow"] ),
         ScenarioCard( name: "4. Beat the Throw",   blurb: "Maw winds up and throws. Don't Parry a thrower - Unleash: a strike beats a throw.", heroes: ["Vera"], foes: ["Maw"] ),

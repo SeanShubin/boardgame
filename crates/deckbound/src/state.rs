@@ -53,6 +53,10 @@ pub struct State {
     pub rng: Rng,
     pub seed: u64,
     pub outcome: Option<Outcome>,
+    /// Foes dueled or traded this round — they do not also free-hit (§1.8).
+    pub engaged: Vec<bool>,
+    /// Action cards played this round, applied in tiers at round end (§1.9): (hero, idx).
+    pub queued_cards: Vec<(usize, usize)>,
 }
 
 impl State {
@@ -65,7 +69,9 @@ impl State {
     }
 
     pub fn living_heroes(&self) -> usize {
-        self.heroes.iter().filter(|h| !h.is_down()).count()
+        // A mortally-wounded hero (Body 0, not yet fallen) is still in the fight this
+        // round — defeat is tallied at the round boundary (§1.9), so count `!fallen`.
+        self.heroes.iter().filter(|h| !h.fallen).count()
     }
 
     pub fn living_creatures(&self) -> usize {
@@ -76,6 +82,12 @@ impl State {
     pub fn hero_can_act(&self, i: usize) -> bool {
         self.heroes
             .get(i)
-            .is_some_and(|h| !h.is_down() && !h.exposed && h.tempo > 0)
+            .is_some_and(|h| !h.fallen && !h.exposed && h.tempo >= 0)
+    }
+
+    /// Clear the per-round plan and size `engaged` to the current foes.
+    pub fn reset_round_plan(&mut self) {
+        self.engaged = vec![false; self.creatures.len()];
+        self.queued_cards.clear();
     }
 }
