@@ -8,7 +8,7 @@
 use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
 
 use crate::combat::{self, base_strike};
-use crate::duel::{self, Side, Stance, Strike};
+use crate::duel::{self, Side, Stance};
 use crate::scenarios::{self, Scenario};
 use crate::state::{Duel, Menu, Phase, State};
 
@@ -28,10 +28,9 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// This hero reads + attacks this foe (a duel: spends Focus and Tempo).
+    /// This hero engages this foe (a clash; spends Tempo). Reading (Focus) is paid
+    /// lazily inside the duel to unlock the non-Unleash stances.
     Engage(usize, usize),
-    /// This hero attacks this foe without reading it (a magnitude trade: Tempo only).
-    Trade(usize, usize),
     /// This hero plays this action card.
     PlayAction(usize, usize),
     /// End the player phase; creatures act, then the round refreshes.
@@ -97,12 +96,12 @@ pub(crate) fn check_outcome(state: &mut State) {
 }
 
 fn form_duel(state: &mut State, hero: usize, foe: usize) {
-    // A duel = read (Focus) + engage (Tempo), each costing the foe's Speed (§1.7/§1.8).
-    // Tempo is pay-after: the engage happens and, if it drives Tempo negative, you go
-    // all-in (§3.3). The foe is now engaged and will not also free-hit at round end.
+    // Engaging spends Tempo (cost = foe's Speed), pay-after: the engage happens and, if
+    // it drives Tempo negative, you go all-in (§3.3). Reading is NOT paid here — it is
+    // paid lazily, the first time the hero uses a non-Unleash stance (§1.8). The foe is
+    // now engaged and will not also free-hit at round end.
     let speed = state.creatures[foe].offense.speed.max(1);
     let h = &mut state.heroes[hero];
-    h.focus = h.focus.saturating_sub(speed);
     h.tempo -= speed as i32;
     if h.tempo < 0 {
         h.expose();
@@ -115,43 +114,13 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
         foe_edge: 0,
         beat: 0,
         double_marshals: 0,
+        read: false,
     });
     state.phase = Phase::Combat;
     state.log.push(format!(
         "{} engages the {} (tempo {} left).",
         state.heroes[hero].name, state.creatures[foe].name, state.heroes[hero].tempo
     ));
-}
-
-/// A magnitude trade (§1.8): the hero attacks a foe without reading it — both take one
-/// base strike, no stance, no Edge. Costs Tempo only (pay-after). The foe is engaged
-/// (it will not also free-hit) and its return blow lands unmitigated.
-fn trade(state: &mut State, hero: usize, foe: usize) {
-    let (h_pow, h_dt, h_pre) = base_strike(&state.heroes[hero]);
-    let (c_pow, c_dt, c_pre) = base_strike(&state.creatures[foe]);
-    let h_name = state.heroes[hero].name.clone();
-    let c_name = state.creatures[foe].name.clone();
-    let speed = state.creatures[foe].offense.speed.max(1);
-    state.log.push(format!("{h_name} trades blows with the {c_name}."));
-    combat::apply_strike(
-        &mut state.creatures[foe],
-        Strike { raw: h_pow, dtype: h_dt, precision: h_pre },
-        &h_name,
-        &mut state.log,
-    );
-    combat::apply_strike(
-        &mut state.heroes[hero],
-        Strike { raw: c_pow, dtype: c_dt, precision: c_pre },
-        &c_name,
-        &mut state.log,
-    );
-    state.engaged[foe] = true;
-    let h = &mut state.heroes[hero];
-    h.tempo -= speed as i32;
-    if h.tempo < 0 {
-        h.expose();
-    }
-    check_outcome(state);
 }
 
 impl Deckbound {
@@ -233,6 +202,7 @@ impl Deckbound {
                 foe_edge: result.b_edge,
                 beat: duel.beat + 1,
                 double_marshals,
+                read: duel.read,
             });
         }
     }
@@ -287,7 +257,7 @@ impl Deckbound {
             ),
             (None, Phase::Combat) => match state.duel {
                 Some(d) => format!(
-                    "Duel: {} vs the {} - your stance? (Esc: menu)",
+                    "Duel: {} vs the {} - Unleash, or read to unlock Parry/Marshal/Overwhelm. (Esc: menu)",
                     state.heroes[d.hero].name, state.creatures[d.foe].name
                 ),
                 None => "...".to_string(),
@@ -336,15 +306,9 @@ impl Game for Deckbound {
                         continue;
                     }
                     for (f, foe) in state.creatures.iter().enumerate() {
-                        if foe.is_down() {
-                            continue;
-                        }
-                        // Duel (read + attack) only if Focus can afford the read; you can
-                        // always Trade (attack without reading).
-                        if hero.focus >= foe.offense.speed.max(1) {
+                        if !foe.is_down() {
                             a.push(Action::Engage(h, f));
                         }
-                        a.push(Action::Trade(h, f));
                     }
                     for idx in 0..hero.actions.len() {
                         a.push(Action::PlayAction(h, idx));
@@ -354,7 +318,19 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
-            Phase::Combat => Stance::ALL.iter().map(|&s| Action::Stance(s)).collect(),
+            Phase::Combat => {
+                // Unleash needs no read; the other three require reading the foe (Focus).
+                let mut a = vec![Action::Stance(Stance::Unleash)];
+                if let Some(d) = state.duel {
+                    let cost = state.creatures[d.foe].offense.speed.max(1);
+                    if d.read || state.heroes[d.hero].focus >= cost {
+                        a.push(Action::Stance(Stance::Marshal));
+                        a.push(Action::Stance(Stance::Overwhelm));
+                        a.push(Action::Stance(Stance::Parry));
+                    }
+                }
+                a
+            }
         }
     }
 
@@ -375,12 +351,7 @@ impl Game for Deckbound {
             Action::Engage(h, f) => {
                 let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
                 let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
-                format!("{hero} duels the {foe} (read + strike)")
-            }
-            Action::Trade(h, f) => {
-                let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
-                let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
-                format!("{hero} trades with the {foe} (strike, no read)")
+                format!("{hero} engages the {foe}")
             }
             Action::PlayAction(h, idx) => {
                 let hero = state.heroes.get(*h);
@@ -438,20 +409,10 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
             (Phase::Choosing, Action::Engage(h, f)) => {
-                let can = state.hero_can_act(*h)
-                    && state.creatures.get(*f).is_some_and(|x| !x.is_down())
-                    && state.heroes[*h].focus >= state.creatures[*f].offense.speed.max(1);
-                if can {
+                if state.hero_can_act(*h) && state.creatures.get(*f).is_some_and(|x| !x.is_down()) {
                     form_duel(state, *h, *f);
                 } else {
                     return Err(GameError::new("that engagement is not available"));
-                }
-            }
-            (Phase::Choosing, Action::Trade(h, f)) => {
-                if state.hero_can_act(*h) && state.creatures.get(*f).is_some_and(|x| !x.is_down()) {
-                    trade(state, *h, *f);
-                } else {
-                    return Err(GameError::new("that trade is not available"));
                 }
             }
             (Phase::Choosing, Action::PlayAction(h, idx)) => {
@@ -471,8 +432,24 @@ impl Game for Deckbound {
             }
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
             (Phase::Combat, Action::Stance(s)) => {
-                if state.duel.is_none() {
+                let Some(duel) = state.duel else {
                     return Err(GameError::new("no active duel"));
+                };
+                // Reading unlocks the non-Unleash stances; pay Focus the first time one is
+                // used (§1.8). Unleash is always free (a blind swing).
+                if *s != Stance::Unleash && !duel.read {
+                    let cost = state.creatures[duel.foe].offense.speed.max(1);
+                    if state.heroes[duel.hero].focus < cost {
+                        return Err(GameError::new("not enough focus to read that foe"));
+                    }
+                    state.heroes[duel.hero].focus -= cost;
+                    if let Some(d) = state.duel.as_mut() {
+                        d.read = true;
+                    }
+                    state.log.push(format!(
+                        "{} reads the {}.",
+                        state.heroes[duel.hero].name, state.creatures[duel.foe].name
+                    ));
                 }
                 self.beat(state, *s);
             }
@@ -673,20 +650,20 @@ mod tests {
         while game.current_player(s).is_some() {
             let action = match s.phase {
                 Phase::Combat => {
+                    // Marshal to bank if we can read; otherwise just Unleash.
+                    let acts = game.legal_actions(s);
                     let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
-                    if e >= 2 {
-                        Action::Stance(Stance::Unleash)
-                    } else {
+                    if e < 2 && acts.contains(&Action::Stance(Stance::Marshal)) {
                         Action::Stance(Stance::Marshal)
+                    } else {
+                        Action::Stance(Stance::Unleash)
                     }
                 }
                 Phase::Choosing => {
-                    // Duel the first affordable foe; else trade; else end the round.
-                    let acts = game.legal_actions(s);
-                    acts.iter()
+                    // Engage the first foe if a hero can; else end the round.
+                    game.legal_actions(s)
+                        .into_iter()
                         .find(|a| matches!(a, Action::Engage(_, _)))
-                        .or_else(|| acts.iter().find(|a| matches!(a, Action::Trade(_, _))))
-                        .cloned()
                         .unwrap_or(Action::EndRound)
                 }
                 _ => break,
@@ -750,13 +727,19 @@ mod tests {
         s
     }
 
-    /// Engage a foe and play the duel to its conclusion (Marshal up, then Unleash).
+    /// Engage a foe and play the duel to its conclusion (Marshal up if we can read,
+    /// then Unleash).
     fn drive_duel(game: &Deckbound, s: &mut State, hero: usize, foe: usize) {
         game.apply(s, &Action::Engage(hero, foe)).unwrap();
         let mut guard = 0;
         while s.phase == Phase::Combat {
+            let acts = game.legal_actions(s);
             let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
-            let stance = if e >= 2 { Stance::Unleash } else { Stance::Marshal };
+            let stance = if e < 2 && acts.contains(&Action::Stance(Stance::Marshal)) {
+                Stance::Marshal
+            } else {
+                Stance::Unleash
+            };
             game.apply(s, &Action::Stance(stance)).unwrap();
             guard += 1;
             assert!(guard < 1000, "a duel should terminate");
@@ -792,16 +775,36 @@ mod tests {
         assert_eq!(a.heroes[0].focus, b.heroes[0].focus);
     }
 
-    /// §1.8: a trade is a single base exchange — no duel, no Edge — and engages the foe.
+    /// §1.8: engaging without reading (no Focus) leaves Unleash as the only stance.
     #[test]
-    fn trade_exchanges_base_blows_without_a_duel() {
+    fn no_read_leaves_only_unleash() {
         let game = Deckbound;
         let mut s = god_state(3, "Goliath");
-        game.apply(&mut s, &Action::Trade(0, 0)).unwrap();
-        assert!(s.creatures[0].is_down(), "Kael's base strike fells the husk");
-        assert_eq!(s.phase, Phase::Choosing, "a trade starts no duel");
-        assert!(s.duel.is_none());
-        assert!(s.engaged[0], "the traded foe is engaged — it won't also free-hit");
+        s.heroes[0].focus = 0; // cannot afford to read anything
+        game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
+        assert_eq!(s.phase, Phase::Combat);
+        assert!(s.engaged[0], "the engaged foe won't also free-hit");
+        let acts = game.legal_actions(&s);
+        assert!(acts.contains(&Action::Stance(Stance::Unleash)), "can always Unleash");
+        assert!(!acts.contains(&Action::Stance(Stance::Parry)), "no read → no Parry");
+        assert!(!acts.contains(&Action::Stance(Stance::Marshal)), "no read → no Marshal");
+        assert!(!acts.contains(&Action::Stance(Stance::Overwhelm)), "no read → no Overwhelm");
+    }
+
+    /// §1.8: reading (Focus) unlocks the full stance menu, and the read is paid the
+    /// first time a non-Unleash stance is used.
+    #[test]
+    fn reading_unlocks_the_full_stance_menu() {
+        let game = Deckbound;
+        let mut s = god_state(3, "Goliath");
+        game.apply(&mut s, &Action::Engage(0, 0)).unwrap(); // Kael (Mind 6) can read
+        assert!(
+            game.legal_actions(&s).contains(&Action::Stance(Stance::Parry)),
+            "can afford the read → Parry offered"
+        );
+        let focus_before = s.heroes[0].focus;
+        game.apply(&mut s, &Action::Stance(Stance::Marshal)).unwrap();
+        assert!(s.heroes[0].focus < focus_before, "using a read-stance pays Focus");
     }
 
     /// §1.9: action cards are queued and resolve in tiers at round end (attacks before

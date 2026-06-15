@@ -38,6 +38,8 @@ pub struct Duel {
     pub foe_edge: u32,
     pub beat: u32,
     pub double_marshals: u32,
+    /// The hero has read this foe (spent Focus) — the non-Unleash stances are unlocked.
+    pub read: bool,
 }
 
 #[derive(Clone, Debug)]

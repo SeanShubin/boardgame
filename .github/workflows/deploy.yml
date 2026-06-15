@@ -1,0 +1,75 @@
+name: Deploy to GitHub Pages
+
+# Builds the `boardgame` binary to WebAssembly with Trunk and publishes the
+# static bundle to GitHub Pages on every push to main. No assets are shipped
+# separately — booklet.ron is embedded via include_str! and the UI uses Bevy's
+# built-in default font, so the deploy is just index.html + the .wasm + JS glue.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required for actions/deploy-pages: write Pages, and id-token for its OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-flight one finish being
+# superseded rather than racing.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: v0.21.7
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # wasm32 target only — the Bevy Linux apt deps (alsa/udev/wayland) are for
+      # native builds; the WASM target links none of them.
+      - name: Install Rust toolchain (wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-pages
+
+      - name: Install Trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xzf - -C /usr/local/bin
+          trunk --version
+
+      # Run from the crate dir: Trunk resolves the cargo manifest from its
+      # working directory, and the workspace root is a virtual manifest with no
+      # root package. --public-url makes the generated asset URLs resolve under
+      # the project subpath at https://seanshubin.github.io/boardgame/.
+      - name: Build (WASM, release)
+        working-directory: crates/boardgame
+        run: trunk build --release --public-url /boardgame/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/boardgame/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Boardgame — Deckbound</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #111;
+        overflow: hidden;
+      }
+      /* Bevy renders into this canvas; center it on the page. */
+      canvas {
+        display: block;
+        margin: auto;
+        outline: none;
+      }
+    </style>
+    <!--
+      Trunk entry point. It lives next to this crate's Cargo.toml so Trunk
+      resolves `boardgame` as the target package (the workspace root is a
+      virtual manifest with no root package). `data-wasm-opt="z"` runs wasm-opt
+      for size; CI passes `--public-url /boardgame/` so asset URLs resolve under
+      the GitHub Pages project subpath.
+    -->
+    <link data-trunk rel="rust" data-bin="boardgame" data-wasm-opt="z" />
+  </head>
+  <body></body>
+</html>

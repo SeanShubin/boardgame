@@ -97,7 +97,9 @@ Parry**; reveal simultaneously.
 - **Parry** *(block)* — beats Unleash; loses to Overwhelm.
 
 The offensive triangle is **Unleash ▸ Overwhelm ▸ Parry ▸ Unleash**; Marshal is
-the neutral that feeds it.
+the neutral that feeds it. **Unleash is the only stance that needs no read** — you can
+always just swing; **Marshal, Overwhelm, and Parry require reading the foe** (Focus,
+§1.8), so an Actor that hasn't read can only Unleash.
 
 **WHY.** Three stances (Marshal/Unleash/Parry) leave a safe square: always-Parry
 negates every Unleash with no downside. Overwhelm dissolves it — the throw beats
@@ -209,39 +211,42 @@ natural counter to a thin Mind (Charter §4: asymmetry by design).
 
 ### 1.8 Duel detection — reading is the contest
 
-**RULE.** An exchange is a **duel** — the stance mix-up (§1.2) and Edge (§1.1) apply
-— when an Actor **reads** its foe: spends **Focus** to predict that foe's stance
-(§3.2). **Reading, not swinging, is the contest.** Two Actors trading blows with **no
-read between them** are in a **magnitude trade**, not a duel — no stance, no Edge,
-each just takes the other's base hit. Everything not read is **unopposed** and
-resolves at flat magnitude or as a state change (§2), no Edge: an action aimed at
-**yourself, an ally, or a crowd** (breadth), and any attacker **you did not read** (a
-free-hit). When only one side reads, that side gets the mind-game and the other is
-free-hit — the **one-way duel** of §1.7.
+**RULE.** Engaging a foe (Tempo) puts you in a **clash**, resolved by the stance mix-up
+(§1.2). **Reading it (Focus) unlocks your stance menu:** with a read you have all four
+stances; **without a read your only stance is Unleash** — a blind strike. The read, not
+the swing, is what buys the *contest* (Parry, the throw, and Edge); a non-reader can only
+swing, and it resolves through **the same duel** as everything else. So two non-readers
+both Unleash — the **magnitude trade** (mutual base hits, no Edge) — and one side reading
+the other is the **one-way duel** of §1.7: the reader works the full mix-up while the
+blind side can only strike, so a blind swing is freely **parried** (§1.4). (Breadth and
+self/ally actions read no one and stay unopposed; a foe you never engage that hits you is
+a **free-hit**, §3.2.)
 
-**WHY.** The mix-up and Edge only mean anything when you are *reading* — predicting a
-foe you can Parry and out-bank. A stance with no read behind it is theatre: against a
-foe you are not reading you would only ever swing, which is just a magnitude trade.
-Making the **read (Focus)** the switch ties the duel to the one resource that is
-*about* prediction, keeps Edge the price of a contested exchange (§1.1), and lets a
-single action face a crowd as cheap magnitude rather than impossible simultaneous
-mind-games.
+**WHY.** The mix-up and Edge only mean anything when you are *reading* — anticipating a
+foe so you can Parry, throw, or bank. So a non-reader keeps exactly the one stance that
+needs no anticipation (Unleash) and loses the three that do. Making the read the single
+switch ties the whole contest to the resource that is *about* prediction, keeps Edge the
+price of a contested exchange (§1.1), and **folds the old "trade" into the duel** — a
+blind swing is just an Unleash, resolved by the same machinery and freely parried by
+anyone reading you — so there is one resolution path, not two.
 
 **GUARANTEES.**
-- No Edge accrues without a read — riskless hoarding is structurally impossible
-  (consistent with §1.1).
+- No Edge accrues without a read — you cannot Marshal without reading, so riskless
+  hoarding is structurally impossible (consistent with §1.1).
+- Unleash is the only read-free stance; Marshal, Overwhelm, and Parry each require the
+  read (§1.2). A blind swing is therefore exploitable — a reader simply Parries it.
 - Defense is never free, but its price is **Focus**, not your action: you may act
-  (Tempo) *and* read attackers (Focus), yet Focus is capped by Mind, so you cannot
-  read everyone — the overflow free-hits you (§3.2). Offense and defense are separate
-  pools that meet only at overextension (§3.3).
-- A breadth action (one action, many targets) is never a duel — you cannot read a
-  crowd — so it is always unopposed (consistent with §1.5).
-- A creature need not read you back: its instinct is its stance (§7). The duel is on
-  the side that reads; the unread side is §1.7's one-way free-hit.
+  (Tempo) *and* read attackers (Focus), yet Focus is capped by Mind, so you cannot read
+  everyone — the overflow free-hits you (§3.2). Offense and defense are separate pools
+  that meet only at overextension (§3.3).
+- A breadth action (one action, many targets) is never a duel — you cannot read a crowd
+  — so it is always unopposed (consistent with §1.5).
+- A creature need not read you back: its instinct is its stance (§7). The duel is on the
+  side that reads; the unread side is §1.7's one-way free-hit.
 
-**MANUAL.** *A duel is a **read**: spend Focus to predict a foe and the stance game is
-on. Swing without reading, act on yourself or a crowd, or let a blow land unread, and
-there is no duel — it just resolves, no Edge.*
+**MANUAL.** *Engage to clash (Tempo). Read the foe (Focus) to unlock Parry, the throw,
+and banking — without a read you can only Unleash. No read, no contest: a blind swing is
+freely parried.*
 
 ### 1.9 Resolution order — engagement first, attacks before buffs
 
