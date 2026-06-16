@@ -531,7 +531,14 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace) {
             body,
             corner,
             accent,
-        } => spawn_card_face(parent, title, type_line.as_deref(), body, corner.as_deref(), *accent),
+        } => spawn_card_face(
+            parent,
+            title,
+            type_line.as_deref(),
+            body,
+            corner.as_deref(),
+            *accent,
+        ),
     }
 }
 

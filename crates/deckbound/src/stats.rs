@@ -336,6 +336,9 @@ mod tests {
         let mut d = knight(); // mind 3
         assert!(d.take(3, DamageType::Confusion, 0).broke.is_none());
         d.end_round();
-        assert_eq!(d.take(4, DamageType::Confusion, 0).broke, Some(Break::Blind));
+        assert_eq!(
+            d.take(4, DamageType::Confusion, 0).broke,
+            Some(Break::Blind)
+        );
     }
 }

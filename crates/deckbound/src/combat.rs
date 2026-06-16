@@ -9,22 +9,21 @@
 use crate::actor::{Actor, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
-use crate::stats::{Break, DamageType};
 use crate::state::State;
+use crate::stats::{Break, DamageType};
 
 /// The 0-Edge strike profile: `(raw, damage type, precision)`. Power is the
 /// magnitude; the weapon supplies the type; a Damage card adds its own power.
 pub fn base_strike(a: &Actor) -> (u32, DamageType, u32) {
-    let (card_pow, dtype) = a
-        .weapon
-        .primary_damage()
-        .unwrap_or((0, DamageType::Blunt));
+    let (card_pow, dtype) = a.weapon.primary_damage().unwrap_or((0, DamageType::Blunt));
     (a.offense.power + card_pow, dtype, a.offense.precision)
 }
 
 /// Route a strike through the target's defense and narrate it.
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
-    let out = target.defense.take(strike.raw, strike.dtype, strike.precision);
+    let out = target
+        .defense
+        .take(strike.raw, strike.dtype, strike.precision);
     if out.cards_flipped > 0 {
         log.push(format!(
             "  {attacker} hits {} for {} ({} {}).",
@@ -107,9 +106,9 @@ pub fn creature_phase(state: &mut State) {
                 if let Some(hi) = state.first_living_hero() {
                     let (hraw, hdt, hp) = base_strike(&state.heroes[hi]);
                     let hname = state.heroes[hi].name.clone();
-                    state
-                        .log
-                        .push(format!("The line drags down the {cname} (drag {drag} ≥ {foe_speed})."));
+                    state.log.push(format!(
+                        "The line drags down the {cname} (drag {drag} ≥ {foe_speed})."
+                    ));
                     apply_strike(
                         &mut state.creatures[ci],
                         Strike {
@@ -123,9 +122,9 @@ pub fn creature_phase(state: &mut State) {
                 }
                 continue;
             }
-            state
-                .log
-                .push(format!("The {cname} slips the line (drag {drag} < {foe_speed})!"));
+            state.log.push(format!(
+                "The {cname} slips the line (drag {drag} < {foe_speed})!"
+            ));
         }
 
         let Some(hi) = pick_target(state, rule) else {
@@ -139,9 +138,10 @@ pub fn creature_phase(state: &mut State) {
                 state.heroes[hi].name, state.heroes[hi].focus
             ));
         } else {
-            state
-                .log
-                .push(format!("{} can't cover the {cname} — free hit!", state.heroes[hi].name));
+            state.log.push(format!(
+                "{} can't cover the {cname} — free hit!",
+                state.heroes[hi].name
+            ));
             apply_strike(
                 &mut state.heroes[hi],
                 Strike {
@@ -215,7 +215,10 @@ pub fn play_action(state: &mut State, hero: usize, action: usize) -> u32 {
                     for v in state.creatures[ti].defense.armor.values_mut() {
                         *v = v.saturating_sub(armor);
                     }
-                    state.log.push(format!("  {}'s armor is sundered.", state.creatures[ti].name));
+                    state.log.push(format!(
+                        "  {}'s armor is sundered.",
+                        state.creatures[ti].name
+                    ));
                 }
             }
             Effect::Disarm | Effect::Shove | Effect::Recover | Effect::Stagger => {
@@ -321,9 +324,17 @@ mod tests {
             .iter()
             .position(|c| c.name == "Firestorm")
             .unwrap();
-        let before = s.creatures.iter().filter(|c| c.name == "Husk" && !c.is_down()).count();
+        let before = s
+            .creatures
+            .iter()
+            .filter(|c| c.name == "Husk" && !c.is_down())
+            .count();
         play_action(&mut s, hi, ai);
-        let after = s.creatures.iter().filter(|c| c.name == "Husk" && !c.is_down()).count();
+        let after = s
+            .creatures
+            .iter()
+            .filter(|c| c.name == "Husk" && !c.is_down())
+            .count();
         assert!(after < before, "Firestorm should burn multiple husks");
     }
 
@@ -363,7 +374,10 @@ mod tests {
         }
         assert!(s.heroes[0].is_down(), "Body is spent");
         assert!(!s.heroes[0].fallen, "but death is not yet finalized");
-        assert!(s.hero_can_act(0), "mortally wounded — still acts this round");
+        assert!(
+            s.hero_can_act(0),
+            "mortally wounded — still acts this round"
+        );
         assert_eq!(s.living_heroes(), 1, "still in the fight until the tally");
         s.heroes[0].fallen = true; // the round-end tally
         assert!(!s.hero_can_act(0), "once fallen, it is out");

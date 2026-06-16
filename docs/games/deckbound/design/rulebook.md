@@ -1,5 +1,17 @@
 # Deckbound — Tabletop Rulebook *(sample combat · first pass)*
 
+> **SUPERSEDED — clash mechanics.** This player-facing manual teaches the older
+> Strike / Block / Evade / Scheme stance cycle and the Speed-first-strike / Power
+> magnitude clash. The tactical core is now the **Clash**
+> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
+> rationale in [the-duel.md](the-duel.md)): each beat both fighters secretly pick one
+> of six moves — **Strike · Throw · Parry · Evade** (standing) plus **Charge ·
+> Recover** (setups) — Charges double damage (×2 each) and the duel runs to **Body
+> 0**. The wall/gauntlet/reach, health-as-cards, fear-vs-resolve, and free-hit
+> bandwidth teaching below still hold; only the stance section (§4–5) is superseded.
+> A Clash-based rewrite of this rulebook is pending — read for the comprehensibility
+> approach, trust §1.0 for the duel.
+
 A **player-facing** manual for the [sample combat](sample-round.md) — written to be read
 and played by a human at a table. Eventually this is *generated* from the engine +
 [keyword glossary](keywords.md); for now it's hand-written, as **pressure on

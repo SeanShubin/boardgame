@@ -5,7 +5,9 @@
 //! at **round end** the creatures act and foes you couldn't cover (focus) free-hit.
 //! A 1v1 tutorial is just the smallest case. All numbers live in `data/booklet.ron`.
 
-use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
+use engine::{
+    Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
+};
 
 use crate::combat::{self, base_strike};
 use crate::duel::{self, Move, Side};
@@ -195,7 +197,9 @@ impl Deckbound {
         } else if stall >= STALL_CAP {
             state.duel = None;
             state.phase = Phase::Choosing;
-            state.log.push("(neither can land a wound — they break off)".into());
+            state
+                .log
+                .push("(neither can land a wound — they break off)".into());
         } else {
             state.duel = Some(Duel {
                 hero: duel.hero,
@@ -251,9 +255,13 @@ impl Deckbound {
             (Some(Outcome::Win(PlayerId(0))), _) => "Victory! Replay, or Main menu.".to_string(),
             (Some(_), _) => "Defeat. Replay, or Main menu.".to_string(),
             (None, Phase::Menu(Menu::Top)) => "Deckbound - pick a scenario set.".to_string(),
-            (None, Phase::Menu(Menu::Scenarios)) => "Cooperation - pick one. (Esc: back)".to_string(),
+            (None, Phase::Menu(Menu::Scenarios)) => {
+                "Cooperation - pick one. (Esc: back)".to_string()
+            }
             (None, Phase::Menu(Menu::God)) => "God-tier - pick one. (Esc: back)".to_string(),
-            (None, Phase::Menu(Menu::Tutorial)) => "Duels - learn the Clash. (Esc: back)".to_string(),
+            (None, Phase::Menu(Menu::Tutorial)) => {
+                "Duels - learn the Clash. (Esc: back)".to_string()
+            }
             (None, Phase::Choosing) => format!(
                 "Round {} - engage a foe, queue a card, or end the round. (Esc: menu)",
                 state.round
@@ -298,7 +306,8 @@ impl Game for Deckbound {
                 Action::Exit,
             ],
             Phase::Menu(m) => {
-                let mut a: Vec<Action> = (0..list_for(*m).len()).map(Action::PickScenario).collect();
+                let mut a: Vec<Action> =
+                    (0..list_for(*m).len()).map(Action::PickScenario).collect();
                 a.push(Action::Back);
                 a
             }
@@ -355,12 +364,19 @@ impl Game for Deckbound {
             Action::Replay => "Replay this scenario".into(),
             Action::EndRound => "End round (foes act)".into(),
             Action::PickScenario(i) => match &state.phase {
-                Phase::Menu(m) => list_for(*m).get(*i).map(|s| s.name.clone()).unwrap_or_else(|| "?".into()),
+                Phase::Menu(m) => list_for(*m)
+                    .get(*i)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "?".into()),
                 _ => "?".into(),
             },
             Action::Engage(h, f) => {
                 let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
-                let foe = state.creatures.get(*f).map(|x| x.name.as_str()).unwrap_or("?");
+                let foe = state
+                    .creatures
+                    .get(*f)
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("?");
                 format!("{hero} engages the {foe}")
             }
             Action::PlayAction(h, idx) => {
@@ -409,9 +425,13 @@ impl Game for Deckbound {
             return Err(GameError::new("the fight is over"));
         }
         match (&state.phase, action) {
-            (Phase::Menu(Menu::Top), Action::OpenScenarios) => state.phase = Phase::Menu(Menu::Scenarios),
+            (Phase::Menu(Menu::Top), Action::OpenScenarios) => {
+                state.phase = Phase::Menu(Menu::Scenarios)
+            }
             (Phase::Menu(Menu::Top), Action::OpenGod) => state.phase = Phase::Menu(Menu::God),
-            (Phase::Menu(Menu::Top), Action::OpenTutorial) => state.phase = Phase::Menu(Menu::Tutorial),
+            (Phase::Menu(Menu::Top), Action::OpenTutorial) => {
+                state.phase = Phase::Menu(Menu::Tutorial)
+            }
             (Phase::Menu(m), Action::PickScenario(i)) if *m != Menu::Top => {
                 let s = list_for(*m)
                     .into_iter()
@@ -528,11 +548,7 @@ fn pips(remaining: u32, max: u32) -> String {
     format!("{}{}", "#".repeat(remaining as usize), ".".repeat(lost))
 }
 
-fn actor_card(
-    a: &crate::actor::Actor,
-    show_budgets: bool,
-    accent: Accent,
-) -> CardView {
+fn actor_card(a: &crate::actor::Actor, show_budgets: bool, accent: Accent) -> CardView {
     let d = &a.defense;
     let mut body = vec![
         format!("HP [{}]", pips(d.body.remaining, d.body.max)),
@@ -567,7 +583,11 @@ fn creature_zone(state: &State, active: Option<usize>) -> ZoneView {
                 actor_card(
                     c,
                     false,
-                    if active == Some(i) { Accent::Selected } else { Accent::Foe },
+                    if active == Some(i) {
+                        Accent::Selected
+                    } else {
+                        Accent::Foe
+                    },
                 )
             })
             .collect(),
@@ -588,7 +608,11 @@ fn hero_zone(state: &State, active: Option<usize>) -> ZoneView {
                 actor_card(
                     h,
                     true,
-                    if active == Some(i) { Accent::Selected } else { Accent::Ally },
+                    if active == Some(i) {
+                        Accent::Selected
+                    } else {
+                        Accent::Ally
+                    },
                 )
             })
             .collect(),
@@ -628,7 +652,9 @@ fn menu_options_zone() -> ZoneView {
                 .typed("set")
                 .body(vec!["Learn one stance at a time.".into()])
                 .accent(Accent::Good),
-            CardView::up("Exit").typed("menu").body(vec!["Quit.".into()]),
+            CardView::up("Exit")
+                .typed("menu")
+                .body(vec!["Quit.".into()]),
         ],
     }
 }
@@ -756,7 +782,11 @@ mod tests {
         while s.phase == Phase::Combat {
             // Alternate Strike/Throw by beat (beats both guards over time).
             let beat = s.duel.map(|d| d.beat).unwrap_or(0);
-            let m = if beat % 2 == 0 { Move::Strike } else { Move::Throw };
+            let m = if beat % 2 == 0 {
+                Move::Strike
+            } else {
+                Move::Throw
+            };
             game.apply(s, &Action::Play(m)).unwrap();
             guard += 1;
             assert!(guard < 1000, "a duel should terminate");
@@ -815,13 +845,20 @@ mod tests {
         let mut s = god_state(3, "Goliath");
         game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
         let acts = game.legal_actions(&s);
-        assert!(acts.contains(&Action::Play(Move::Charge)), "fresh duel → can Charge");
-        assert!(!acts.contains(&Action::Play(Move::Recover)), "no down charges → no Recover");
+        assert!(
+            acts.contains(&Action::Play(Move::Charge)),
+            "fresh duel → can Charge"
+        );
+        assert!(
+            !acts.contains(&Action::Play(Move::Recover)),
+            "no down charges → no Recover"
+        );
         if let Some(d) = s.duel.as_mut() {
             d.hero_down = 1; // a defended attack flipped a charge down
         }
         assert!(
-            game.legal_actions(&s).contains(&Action::Play(Move::Recover)),
+            game.legal_actions(&s)
+                .contains(&Action::Play(Move::Recover)),
             "a face-down charge unlocks Recover"
         );
     }
@@ -857,7 +894,10 @@ mod tests {
         s.heroes[0].focus = 10;
         game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
         assert!(s.heroes[0].exposed, "overdrawing Tempo goes all-in");
-        assert!(s.heroes[0].tempo < 0, "pay-after: the engage still happened");
+        assert!(
+            s.heroes[0].tempo < 0,
+            "pay-after: the engage still happened"
+        );
         assert_eq!(s.phase, Phase::Combat, "the duel formed");
         assert!(s.duel.is_some());
     }

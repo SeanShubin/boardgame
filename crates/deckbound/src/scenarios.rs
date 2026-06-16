@@ -230,11 +230,7 @@ mod tests {
 
     #[test]
     fn every_scenario_builds_a_roster() {
-        for s in campaign()
-            .into_iter()
-            .chain(god())
-            .chain(tutorials())
-        {
+        for s in campaign().into_iter().chain(god()).chain(tutorials()) {
             let (h, f) = s.roster();
             assert!(!h.is_empty() && !f.is_empty(), "{} empty roster", s.name);
         }

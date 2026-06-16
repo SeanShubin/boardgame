@@ -1,237 +1,227 @@
-# Deckbound — The Duel
+# Deckbound — The Duel (the Clash)
 
-> **Status:** **implemented** as the duel sandbox (`crates/deckbound`) — combat is
-> now a sequence of these duels (Marshal / Unleash / Overwhelm / Parry, public
-> per-duel Edge), with creature stance-policies and tutorials that isolate each
-> stance. The older Strike/Block/Evade/Scheme warband (formation, gauntlet, fear,
-> multi-target) is parked while the duel numbers are tuned. Team and god-tier test
-> scenarios add matchmaking (you pick who duels whom) and a simplified swarm rule
-> (foes beyond your **bandwidth** chip you each beat — the multi-engagement
-> approximation). Numbers are first-pass and live in `data/booklet.ron`.
+> **Status:** the duel is now **the Clash**, specced canonically in
+> [`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges)
+> — that section is the **source of truth for mechanics**; this note is its
+> **design background** (the WHY behind the shape). The earlier stance/Edge duel
+> (Marshal · Unleash · Overwhelm · Parry over a tracked Edge meter) it once
+> described is **superseded** — see [What this supersedes](#what-this-supersedes).
+> Its intent carried forward intact; only the mechanics changed.
 
-The tactical heart of combat: two fighters **predicting each other**. A whole duel
-is the mind-game of **a single clash** — one throw, one melee exchange — and it
-runs to completion **inside one round** (the round's **Clash** phase). So the
-stances below are the moments *within* an attack, not a fight-long timeline.
+The tactical heart of combat: two fighters **predicting each other**. A duel is the
+fighting-game **strike / throw / block** mix-up, played as cards — and Deckbound's
+version is the **Clash**: a duel is a **sequence of beats**, each beat both fighters
+secretly pick one move and reveal at once, and the Clash runs **until a Body reaches
+0** (Body-attrition — not "ends on the first strike"). The moves below are the
+moments *within* an exchange, repeated beat by beat, not a fight-long timeline.
 
-## What a duel is — prediction, at any range, within one clash
+## What a duel is — prediction, at any range
 
-A **duel** is a mutual-prediction contest between two actors, resolved in a
-single round. It is **not melee-specific** — it is *prediction*-specific, at any
-range.
+A **duel** is a mutual-prediction contest between two actors. It is **not
+melee-specific** — it is *prediction*-specific, at any range.
 
 - A thrown rock against someone dodging *is* a duel: you throw where you think
-  they'll go; they dodge, or predict it. The whole series of stances is the mind-game
-  of that one throw.
+  they'll go; they read it. The whole beat-by-beat mind-game is that exchange.
 - It is about **prediction, not symmetric offense.** Reach can be lopsided; the
   prediction stays two-way.
 - **No duel → direct resolution.** Mindless fodder, or a target that cannot
-  respond to you, just takes the hit by magnitude — the one-way vs two-way prediction
-  distinction from [mind-and-stances](mind-and-stances.md#against-instinct-vs-against-a-mind).
+  respond to you, just takes the hit by magnitude — the one-way vs two-way
+  prediction distinction from
+  [mind-and-stances](mind-and-stances.md#against-instinct-vs-against-a-mind). A
+  creature does not read you back: its instinct *is* its move, so the duel lives on
+  the side that reads.
 
-## Edge — per-duel, all-in, linear, public
+## The six moves — two kinds
 
-- **Per-duel.** Every duel starts at **0 Edge**; Edge is built and spent *inside*
-  the clash and **does not carry over** to other duels — not even between two
-  duels involving the same character. This is the big simplifier: there is no
-  fight-long meter to hoard, so the cross-round runaway / hoarding / stall problems
-  never arise.
-- **All-or-nothing.** Anything that spends Edge spends **all** of it; there is no
-  "how much to commit." An Unleash's size is simply your current (public) bank.
-- **Linear.** A bank of *n* does *n*. Devastating next to a base poke, but bounded
-  — a short duel only builds so much, so there is no one-shot-from-hoarding.
-- **Public, and it looms within the clash.** Both fighters see the Edge building;
-  someone sitting on 3 Edge is a looming Unleash, and the opponent must respect it
-  ("respecting the meter," at the scale of a single exchange).
-- **The steal is the comeback.** Parry a real Unleash and you negate it **and take
-  its Edge** (or **+1** if it had none — a parry always pays) — the lead flips
-  mid-duel. An **Overwhelm** is never stolen.
+Each beat, each fighter secretly commits **one of six moves** and reveals at once.
+They split by temperament into **standing** moves and **setups**.
 
-## The four stances — Marshal · Unleash · Overwhelm · Parry
+**Standing** *(always available, never deplete)* — the four that resolve a beat:
 
-Each fighter secretly commits one; reveal at once. They are the fighting-game
-mix-up — **neutral, strike, throw, block** — a proven, learnable, non-degenerate
-four-way:
+- **Strike** *(offense)* — a direct blow.
+- **Throw** *(offense)* — a blow aimed *through* a guard.
+- **Parry** *(defense)* — read a Strike and negate it.
+- **Evade** *(defense)* — read a Throw and slip it.
 
-- **Marshal** *(neutral)* — ready and gather. **Bank Edge.** But you're winding up
-  and exposed: an **Unleash** catches you and ends the duel with you struck.
-- **Unleash** *(strike)* — pour **all** your Edge into a blow. Catches a Marshaller
-  and beats an Overwhelm — but a **Parry** turns it *and steals the bank*.
-- **Overwhelm** *(throw)* — drive **all** your Edge *through* a guard. Beats a
-  **Parry** — but whiffs against anyone not guarding (a Marshaller, or an
-  Unleasher), losing your Edge for nothing.
-- **Parry** *(block)* — predict the Unleash: negate it **and steal the whole bank**
-  (or, if it had none, earn **+1 Edge** — a parry is never dead), the game's
-  biggest comeback. But it loses to an **Overwhelm**, and a Marshaller just banks
-  while you guard at air.
+**Setups** *(the escalation resource — durable face-up cards)* — the two that wind
+up rather than resolve:
 
-The offensive triangle is **Unleash ▸ Overwhelm ▸ Parry ▸ Unleash**; Marshal is
-the neutral that feeds it.
+- **Charge** — place one active **Charge** in the open. Each active Charge
+  **doubles** your attack damage (**×2 per Charge**, so *n* Charges = ×2ⁿ). Charge
+  capacity is a per-actor stat ([booklet](../../../../crates/deckbound/data/booklet.ron)),
+  so Charge is offered only below capacity.
+- **Recover** — flip your own **face-down** Charges back up (offered only when you
+  have one). Charges are *disabled* by a successful defense, not destroyed; Recover
+  re-arms them.
 
-## Ends-on-strike
+The crucial property: **the standing moves never deplete.** A perfect reader can
+*always* answer the move in front of them, every beat, for the whole duel. That is
+what makes the invariants below hold across the entire Clash, not just one exchange.
 
-**A 0-Edge Unleash is still a strike** (a base hit) — Unleash *is* the attack;
-Edge only scales it. So **the duel ends the instant any Unleash or Overwhelm
-connects**, mutual included. The only committed attacks that *don't* end it are a
-**parried Unleash** (negated + stolen; roles flip) and a **whiffed Overwhelm** (no
-guard to break). "Caught while charging" needs no special rule — you simply take
-the hit and the duel is over.
+## The counter-cycle
 
-| Ends the duel — a strike lands            | Continues — nobody lands                              |
-| ----------------------------------------- | ----------------------------------------------------- |
-| Unleash vs Marshal — marshaller struck    | Marshal vs Marshal — both +Edge                       |
-| Unleash vs Unleash — both struck (mutual) | Marshal vs Parry — marshaller +Edge                   |
-| Unleash vs Overwhelm — overwhelmer struck | Marshal vs Overwhelm — overwhelm whiffs               |
-| Overwhelm vs Parry — parrier struck       | Unleash vs Parry — parried, bank stolen (or +1), flip |
-|                                           | Overwhelm vs Overwhelm — clinch, nothing              |
-|                                           | Parry vs Parry — nothing                              |
+Re-derivable as one small table:
+
+- **Cycle.** **Strike ▸ Evade ▸ Throw ▸ Parry ▸ Strike** — each attack beats one
+  defense and loses to the other:
+  - **Strike beats Evade** (you can't dodge a direct blow) and **loses to Parry**.
+  - **Throw beats Parry** (the throw goes through a guard) and **loses to Evade**.
+- **Trade.** **Strike vs Strike → both hit.** And **Strike clips Throw** (Strike >
+  Throw): the striker lands, the thrower does not.
+- **Attacks beat setups.** A connecting Strike or Throw **hits and interrupts** a
+  Charging or Recovering foe — the setup does not resolve that beat. Winding up in
+  front of an attacker is punished by the attack itself; no bespoke "interrupt" rule
+  is needed.
+- **Setups resolve if unopposed.** Against anything that does *not* connect (a
+  defense, or the opponent's own setup), Charge places its Charge and Recover
+  re-arms its flipped ones.
+- **The defense flips charges — the comeback.** A *successful* defense (a Parry that
+  catches a Strike, an Evade that slips a Throw) **flips the attacker's active
+  Charges face-down** — disabled, not destroyed. A read wind-up, met by the right
+  guard, is knocked down rather than spent into the void; Recover brings it back.
+- **Damage** = `power × 2^(active Charges)`, routed through the armor/toughness
+  pipeline ([defense model](form-and-defeat.md), spec §2). Body 0 = down.
+
+## The three invariants — the heart of it
+
+Read under **last-word reads** — the opponent commits face-up, then you choose
+(the perfect-read limit). Three things must all hold; the design is the unique shape
+that buys all three at once.
+
+1. **Avoid.** Spending the *defensive* read, you can pass through the **whole** duel
+   **un-hit** if you choose — every attack has a standing defense that negates it
+   (Strike ↦ Parry, Throw ↦ Evade) and the defenses never deplete.
+2. **Land.** Spending the *offensive* read, you can land a hit by the end if you
+   choose — for every move the opponent can make, some standing attack lands (Throw
+   beats Parry; Strike beats Evade, trades into Strike, clips Throw; either attack
+   hits a setup).
+3. **Not both, free.** You **cannot guarantee both at once.** Against a committed
+   **Strike**, the *only* landing answer is Strike — and Strike-vs-Strike **trades**.
+   Landing on a committed attacker means **taking a hit** too.
+
+This is **computable yomi**: defense is *complete* and offense is *complete*, so the
+game is a clean read rather than a guessing game — yet the trade cell forbids a free
+win, so there is **no dominant option**. (The old "always-Parry is safe" hole is
+closed the same way it always was: Throw beats Parry, so a parry-crouch just gets
+thrown — and now the trade also forbids landing for free against a Strike.)
+
+## Charges — escalation made visible
+
+The old duel banked a hidden-ish **Edge** number; the Clash replaces it with
+**Charges** — durable, **face-up**, per-duel cards. The reasons it changed:
+
+- **Visible and durable.** A Charge is a card on the table, not a meter in the head.
+  Both fighters see the wind-up looming and must respect it — yomi over a public
+  quantity, not a hidden one.
+- **Multiplicative, so a completed wind-up is genuinely lethal.** ×2 per Charge
+  means a foe who lands a two-Charge blow hits for **four times** their base. The
+  payoff is what makes charging worth the exposure.
+- **The defended Charge flips, not vanishes — the comeback.** Catch a charged
+  attacker with the right defense and you knock their Charges *down*; they have to
+  spend beats to Recover them. The lead swings without the wind-up being destroyed
+  outright (the same comeback the Parry-steal used to provide).
+- **Per-duel.** Charges reset each duel and never carry between duels — even two
+  duels involving the same Actor. No fight-long hoard, no runaway snowball; facing a
+  crowd is a stack of independent short Clashes, never one accumulating super-bank.
+
+## Body-attrition — the duel runs to 0
+
+A Clash does **not** end on the first strike. It runs **beat by beat until a
+fighter's Body reaches 0**. This is the change the charge → big-hit arc requires: if
+a single hit ended the duel, winding up a doubling blow would be pointless — you'd
+just poke. Because a hit no longer ends it, **charging is meaningful**, the mix-up
+plays out over several beats, and the comeback (flipped Charges) has time to matter.
+
+**Termination is still guaranteed.** Every Clash ends at Body 0; and an engine-only
+backstop ([spec §1.6](../spec/README.md)) breaks off a Clash that makes no progress
+for *N* beats — the corner case where armor/toughness fully absorbs every connecting
+hit so neither side can wound the other. The backstop is invisible in normal play
+and not part of the public rules.
 
 ## The shape of a duel
 
-Because a base Unleash already ends it, the duel has a clean arc:
+- **Floor.** Two fighters who never charge trade base blows until one falls — short,
+  no mind-game. Escalation is **opt-in**.
+- **Escalation = push-your-luck.** Charge to wind up a doubling blow, but every beat
+  you spend charging is a beat you might be **read and interrupted** (an attack hits
+  a setup) or, once charged, **defended and knocked down** (a successful guard flips
+  your Charges). Greed buys a bigger payoff at more exposure.
+- **The read decides it.** Against a committed move there is always a right answer;
+  the duel is won by *reading which move is coming* and paying the right resource —
+  defense to avoid, offense to land, knowing you cannot have both free.
 
-- **Floor.** If neither escalates, someone pokes for a base hit (or both, mutual)
-  and it's over fast. The mind-game is **opt-in**.
-- **Escalation = push-your-luck.** Marshal to build a bigger finisher, but every
-  beat you don't end it you risk the opponent ending it first, or — Unleashing big
-  into a Parry — handing them your Edge. Greed buys a bigger payoff at more
-  exposure.
-- **Parry / Overwhelm.** Parry stops an Unleash and steals it but ends and builds
-  nothing; Overwhelm punches through a Parry to end the duel. A parry-crouch is
-  punished (by Overwhelm), and a parried Unleash flips the Edge.
+## Gandalf vs Balrog — asymmetry by design
 
-## Why four stances, not three — the parry problem
+The invariants are what make a **weak fighter able to steal a duel on perfect
+reads** — defense is complete, so a flawless reader can avoid everything and chip
+back. That is the Gandalf-vs-Balrog fantasy (Charter north star #4): the underdog
+*can* win the exchange.
 
-With only Marshal / Unleash / Parry, a fighter who didn't want to be hit could just
-**always Parry**: it negates the Unleash and steals it, with no downside but a
-wasted turn. **Overwhelm dissolves that** — the throw beats the block, so an
-always-Parry just gets Overwhelmed. No safe square remains: Parry beats Unleash but
-loses to Overwhelm; not-parrying beats Overwhelm but loses to Unleash. And the
-steal-comeback is untouched, because an Overwhelm is never stolen.
+But the **instant a read is wrong, the doubled blow lands** — and the downside is far
+worse for the weaker side (less Body, less Power, less to absorb the ×2). So over
+many duels the upset is a **bad bet**: the asymmetry lets the underdog win *a* duel
+with perfect play, while the math still favors the stronger fighter across the war.
+Folding the **trade** into the cycle (Strike-vs-Strike = both hit) is exactly what
+forbids buying the win for free — you cannot land on a committed striker without
+trading — so neither invariant can be had cheaply.
 
-## Termination — self-resolving, with an engine-only backstop
+## Facing a crowd — K Clashes, two caps
 
-A duel **cannot stall under any reasoning play.** "Both Marshal forever" is not a
-stable strategy: the moment you believe your opponent will Marshal, your best move
-is to **Unleash** (Unleash beats Marshal — you catch them and end it). The belief
-that would sustain the stall is the belief that breaks it. Formally the equilibrium
-is mixed, so every beat has a real chance someone commits; the duel terminates with
-probability 1 and is short in expectation. **No public rule is needed** — at the
-table, two humans simply never both-Marshal indefinitely, and even if they did it
-is only slow, never a winning advantage.
+A Clash is pairwise, so engaging several foes is **K simultaneous pairwise Clashes**
+(or one breadth-attack, which reads no one and stays unopposed). Two separate
+per-Actor pools gate K (spec §1.7):
 
-The only residual risk is non-rational actors at the **implementation** level — a
-buggy AI, or two humans griefing the server by dragging a round out. So the engine
-carries a backstop that is **not part of the public rules:**
+- **Speed / Tempo** caps how many you can sustain **offensively** — engaging each
+  costs the target's Speed from your Tempo.
+- **Mind / Focus** caps how many you can **cover** **defensively** — each costs the
+  attacker's Speed from your Focus.
 
-- After **N consecutive mutual-Marshals** (e.g. 10): if both duelists are
-  **human**, surface a warning and **force an Unleash** next exchange; if **any**
-  duelist is **AI**, raise an **error** — a stalling AI is a bug, not a play
-  pattern.
+When Speed affords **K** but Focus covers only **J < K**, the **K − J** extra foes
+are **one-way**: you strike them, but can't cover them, so they **free-hit** you.
 
-## Unleash and Overwhelm scale the card's *primary effect*
-
-One global rule, no bespoke per-card logic: **every card has a primary effect (its
-headline), and spending your Edge scales that effect.** Three clean roles:
-
-- **Card = *what*** — the maneuver and its primary effect.
-- **Stance (Marshal / Unleash / Overwhelm / Parry) = the *prediction*** — hidden,
-  decoupled from the card, so the card never telegraphs the stance.
-- **Edge = *how much*** — spent all at once.
-
-Damage is the common primary effect (a strike maneuver → devastation), but not the
-only one — a **Sunder** shears off armor, a **Disarm** rips cards from hand, a
-**Shove** breaks them out of the line. No card has to "know about" Edge.
-
-**The rate is uniform and linear: 1 Edge = +1 of the card's primary effect in its
-natural unit**, added on top of the card's base magnitude — the default unit being a
-strike's **1 Edge = 1 damage**. Each non-damage maneuver names its own per-Edge unit (a
-Sunder's armor pip, a Disarm's card). Two things still bound it: **toughness gates** the
-result (at toughness *T* you need *T* raw damage to turn one more Health card face down),
-and **Power sets the base** that Edge adds to. The exact unit-values per effect are a
-balance-pass detail; the rule is fixed.
-
-## Range, split attention, and many at once
-
-A duel is pairwise, so engaging a crowd means **several simultaneous pairwise
-duels** (or one sweeping breadth-attack), governed by the coordination layer:
-
-- **Symmetric reach** → a full duel; both run the four-way.
-- **Lopsided reach** → the out-ranged fighter is in the duel *defensively* (predict
-  and Parry/dodge) but **cannot Unleash or Overwhelm back**, and their **attention
-  is split** — each turn, predict the blow *or* act in their own range, not both.
-- **Bandwidth = Mind, and a duel composes attack-many with defend-many.** A mutual
-  engagement is offense **and** defense in one exchange (Marshal/Unleash/Overwhelm/Parry
-  threaten and guard together), so facing a crowd is **K simultaneous duels**. Two
-  separate caps gate K:
-  - **Speed (tempo)** caps how many duels you can **sustain offensively** — engaging
-    each costs the *target's* Speed from your tempo pool.
-  - **Mind (focus)** caps how many you can **predict in** — defending each costs the
-    *attacker's* Speed from your focus pool ([mind-and-stances](mind-and-stances.md#how-many-you-can-predict--bandwidth-is-the-mind-focus-pool)).
-
-  When Speed affords **K** but Mind covers only **J < K**, the **K−J** extra duels are
-  **one-way**: you still strike them, but can't predict them, so they **free-hit** back
-  (the gank / lopsided-reach case). Because Edge **resets per duel**, breadth never
-  compounds into one mega-bank — a god is a stack of independent short duels, powerful
-  in each but hard-capped on how many it can predict. **Overextending is table-wide:**
-  go negative in any *one* duel — tempo *or* focus — and you drop to the bottom of the
-  first-strike order in **every** duel this round, so overreaching against a crowd is
-  lethal.
-- **Two god-flavors fall out of the Speed/Mind imbalance:**
-  - **Glass-cannon blur** (Speed ≫ Mind) — engages the whole crowd, predicted by none
-    it overcommits to, and **dies to a swarm**.
-  - **Serene genius** (Mind ≫ Speed) — predicts everyone but can't press, so it **wins
-    slowly and dies to attrition**.
-
-  A balanced god needs **Speed + Mind + Power** together: Speed buys timing and Mind
-  buys safety, but neither *kills* — only **Power** supplies the weight to actually drop
-  foes. Asymmetry by design, balance by scenario.
-
-## A worked exchange — the rock *(one duel, all-in, linear)*
-
-Two brawlers, **10 HP** each; Marshal = **+1 Edge**; a spent bank of *n* does *n*.
-This is one duel, resolved inside one round's Clash:
-
-1. **Both Marshal** → Edge **1–1**, banks in the open.
-2. **Both Marshal** → **2–2**; both escalating, two looming bombs.
-3. **A Unleashes (2)** — but **B Parries!** Negated, and B **steals A's 2** → B on
-   **4**, A on **0**. Roles flip mid-duel. *(The steal — the comeback.)*
-4. **B sits on 4** (a near-finisher). A, empty, **Parries** to avoid it — so **B
-   Overwhelms (4)**, punching through the guard: **A struck for 4 (→ 6 HP)**. A
-   strike landed — **the duel ends.**
-
-Four beats, one round: build race, the steal flipping the lead, and Overwhelm
-cracking a parry to finish. Next round is a fresh duel at 0 Edge.
+**A reconciliation note:** in the old duel, Focus gated your *stance menu inside* a
+clash — without a read you could only swing. In the Clash **all six moves are
+standing**, so there is **no Focus gate inside a duel**. Focus is now purely the
+**breadth** resource — round-end coverage of foes you did not engage. What carries
+over unchanged: engaging costs Tempo, an engaged foe doesn't also free-hit, breadth
+and self/ally actions are unopposed, and overextending in any one pool marks you
+**Exposed** table-wide (spec §3.3).
 
 ## Lineage
 
-The closest solved version is the fighting-game cluster of **meter + supers +
-yomi**: build in neutral (**Marshal**), pop a super (**Unleash**), a hard-predicted
-whiff-punish (**Parry**), and a throw that beats the block (**Overwhelm**) — the
-**strike / throw / block** mix-up with Marshal as neutral. A bank that changes the
-opponent's behaviour is "respecting the meter," and "scale a normal with spent
-meter" is the **EX move**. The breakable charge and precise perfect-parry come from
-brawlers; *Doom Eternal* contributes "play aggressively to fuel yourself."
+The closest solved version is the fighting-game cluster of **mix-up + meter + yomi**:
+the **strike / throw / block** triangle (Strike / Throw / Parry-Evade), a wind-up
+resource you can pop for a big payoff (**Charge**, the ×2), and a hard read that
+knocks the wind-up down (a successful defense flipping Charges). Charges-as-cards are
+the brawler's **breakable charge** made durable and public; Body-attrition is the
+"duel runs until someone drops," not "first touch wins"; *Doom Eternal* contributes
+"play aggressively to fuel yourself."
 
 ## What this supersedes
 
-- The four stances **Strike / Block / Evade / Scheme** as the RPS cycle → replaced by
-  **Marshal / Unleash / Overwhelm / Parry**. The old "stances" become **maneuver
-  cards** (what you Unleash with).
-- **Momentum banking Power / Speed / Precision** → collapsed into one generic,
-  public, **per-duel Edge**.
+- The stance/Edge duel **Marshal · Unleash · Overwhelm · Parry** over a tracked
+  **Edge** meter → replaced by the **six-move Clash** (Strike · Throw · Parry ·
+  Evade · Charge · Recover) with **Charges** as the escalation resource. The
+  mapping: the offensive triangle (no dominant option, the throw beating the block)
+  → the §1.0 cycle; the Parry-steal comeback → the **defended Charge flips
+  face-down**; per-duel public Edge → per-duel public **Charges**; Edge's linear
+  `+1/Edge` damage → Charges' multiplicative `×2/Charge`; **ends-on-strike** →
+  **Body-attrition**.
+- Still earlier: Strike / Block / Evade / Scheme as the RPS cycle, and the
+  Power/Speed/Precision momentum banks — both already retired by the stance/Edge
+  duel and now by the Clash.
 
-## Open questions — the tuning lives here
+## Open questions — tuning, not shape
 
-- **Per-Edge unit values (tuning).** The *rule* is settled — **1 Edge = +1 of the card's
-  primary effect in its natural unit**, additive and linear (default 1 Edge = 1 damage).
-  Only the exact unit for each non-damage effect is a numbers-pass detail.
-- **Perfect-parry counter.** The steal is settled; does a Parry *also* deal
-  counter-damage, and how much?
-- **Clinch (Overwhelm vs Overwhelm).** Provisionally a wash — nothing happens.
-  Confirm in play.
-- **Natural duel length.** Tune how risky a caught Marshal is so duels run a few
-  beats — a "single throw" — rather than a long dance. (Pacing, not termination;
-  termination is settled above.)
-- **Duel detection.** The exact "can respond to me" rule that switches the
-  stance-game on, and how split-attention is modelled for lopsided reach.
+- **Charge capacity and the ×2 curve** — how many Charges a fighter can hold, and
+  whether ×2 is the right base; numbers live in `booklet.ron`.
+- **Counter-damage on a defense.** Does a successful Parry/Evade also *deal* damage
+  (beyond flipping Charges), or only negate + disable? (Was open under the old duel
+  too.)
+- **Throw vs Throw, Charge vs Charge.** Provisional reads — two throws clinch
+  (nothing connects), two charges both resolve. Confirm in play.
+- **Natural duel length.** Tune Body, Power, and Charge payoff so a Clash runs a
+  handful of beats — a real exchange, not a long dance. (Pacing; termination is
+  settled above.)
+</content>
+</invoke>

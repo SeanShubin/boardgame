@@ -171,14 +171,27 @@ pub fn resolve(a: &Side, am: Move, b: &Side, bm: Move) -> Clash {
     Clash {
         on_a,
         on_b,
-        a: Charges { up: a_up, down: a_down },
-        b: Charges { up: b_up, down: b_down },
+        a: Charges {
+            up: a_up,
+            down: a_down,
+        },
+        b: Charges {
+            up: b_up,
+            down: b_down,
+        },
         connected: on_a.is_some() || on_b.is_some(),
         note,
     }
 }
 
-fn clash_note(an: &str, am: Move, bn: &str, bm: Move, on_a: &Option<Strike>, on_b: &Option<Strike>) -> String {
+fn clash_note(
+    an: &str,
+    am: Move,
+    bn: &str,
+    bm: Move,
+    on_a: &Option<Strike>,
+    on_b: &Option<Strike>,
+) -> String {
     match (on_a.is_some(), on_b.is_some()) {
         (true, true) => format!("{an} and {bn} trade blows!"),
         (false, true) => format!("{an}'s {} lands on {bn}.", am.name()),
@@ -192,7 +205,15 @@ mod tests {
     use super::*;
 
     fn side(power: u32, up: u32, down: u32, max: u32) -> Side<'static> {
-        Side { power, dtype: DamageType::Blunt, precision: 0, up, down, max, name: "X" }
+        Side {
+            power,
+            dtype: DamageType::Blunt,
+            precision: 0,
+            up,
+            down,
+            max,
+            name: "X",
+        }
     }
 
     /// Invariant 1 — **avoid**: every attack has a defense that negates it (complete
@@ -214,10 +235,16 @@ mod tests {
         let lands = |am: Move, bm: Move| resolve(&me, am, &you, bm).on_b.is_some();
         assert!(lands(Move::Throw, Move::Parry), "Throw beats Parry");
         assert!(lands(Move::Strike, Move::Evade), "Strike beats Evade");
-        assert!(lands(Move::Strike, Move::Strike), "Strike trades into Strike");
+        assert!(
+            lands(Move::Strike, Move::Strike),
+            "Strike trades into Strike"
+        );
         assert!(lands(Move::Strike, Move::Throw), "Strike clips Throw");
         assert!(lands(Move::Strike, Move::Charge), "Strike hits a charger");
-        assert!(lands(Move::Strike, Move::Recover), "Strike hits a recoverer");
+        assert!(
+            lands(Move::Strike, Move::Recover),
+            "Strike hits a recoverer"
+        );
     }
 
     /// Invariant 3 — **not both, free**: against a committed Strike, the *only* landing
@@ -227,11 +254,23 @@ mod tests {
         let me = side(5, 0, 0, 3);
         let you = side(5, 0, 0, 3);
         // The only A move that lands on a B Strike:
-        for am in [Move::Throw, Move::Parry, Move::Evade, Move::Charge, Move::Recover] {
-            assert!(resolve(&me, am, &you, Move::Strike).on_b.is_none(), "{am:?} shouldn't land vs Strike");
+        for am in [
+            Move::Throw,
+            Move::Parry,
+            Move::Evade,
+            Move::Charge,
+            Move::Recover,
+        ] {
+            assert!(
+                resolve(&me, am, &you, Move::Strike).on_b.is_none(),
+                "{am:?} shouldn't land vs Strike"
+            );
         }
         let trade = resolve(&me, Move::Strike, &you, Move::Strike);
-        assert!(trade.on_b.is_some() && trade.on_a.is_some(), "Strike lands but you're also hit");
+        assert!(
+            trade.on_b.is_some() && trade.on_a.is_some(),
+            "Strike lands but you're also hit"
+        );
     }
 
     #[test]
@@ -249,7 +288,11 @@ mod tests {
         let b = side(3, 0, 0, 3);
         let r = resolve(&a, Move::Strike, &b, Move::Parry);
         assert!(r.on_b.is_none(), "parried — no damage");
-        assert_eq!(r.a, Charges { up: 0, down: 2 }, "the parry flipped both charges down");
+        assert_eq!(
+            r.a,
+            Charges { up: 0, down: 2 },
+            "the parry flipped both charges down"
+        );
     }
 
     #[test]
@@ -271,6 +314,10 @@ mod tests {
         let b = side(3, 0, 0, 3);
         let r = resolve(&a, Move::Charge, &b, Move::Strike); // B strikes the charger
         assert!(r.on_a.is_some(), "the charger is hit");
-        assert_eq!(r.a, Charges { up: 0, down: 0 }, "the charge was interrupted");
+        assert_eq!(
+            r.a,
+            Charges { up: 0, down: 0 },
+            "the charge was interrupted"
+        );
     }
 }

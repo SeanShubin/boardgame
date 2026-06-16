@@ -1,5 +1,16 @@
 # Deckbound — Combat Resolution
 
+> **SUPERSEDED — clash mechanics.** The tactical core is now the **Clash**
+> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
+> rationale in [the-duel.md](the-duel.md)): a beat-by-beat duel of six moves
+> (**Strike · Throw · Parry · Evade · Charge · Recover**) with durable ×2 **Charge**
+> cards, run to **Body 0**. The Strike/Block/Evade/Scheme cycle, Power/Precision
+> momentum, and the "Speed = first-strike" pre-emption model below are stale. What
+> carries forward: **Power as pure magnitude**, **typed damage through armor +
+> toughness** (now `power × 2^charges`, spec §2), and the principle that you stop a
+> blow by out-*predicting* it — now via the Clash's complete-defense invariant, not a
+> first-strike race. Read for intent; trust the spec for mechanics.
+
 How a committed exchange resolves into **magnitude**. Once the stances
 ([the Mind](mind-and-stances.md)) and the cards
 ([Body stats & deliveries](cards-and-customization.md)) are chosen, this is the math

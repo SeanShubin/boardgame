@@ -1,11 +1,17 @@
 # Deckbound — The Mind: Stances & Momentum
 
-> **Superseded — tactical layer:** the Strike / Block / Evade / Scheme cycle and
-> the Power / Speed / Precision momentum below are being replaced by the
-> [duel system](the-duel.md) — a **Marshal / Unleash / Overwhelm / Parry** stance
-> (the strike/throw/block mix-up) with one public **Edge** bank. This note is kept
-> for the Mind-aspect framing and the build-vs-cash instincts, which carry over;
-> reconcile when the duel is built.
+> **SUPERSEDED — tactical layer.** The canonical tactical core is now the **Clash**
+> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
+> design rationale in [the-duel.md](the-duel.md)): a beat-by-beat duel where each
+> fighter secretly picks one of six moves — **Strike · Throw · Parry · Evade**
+> (standing) plus **Charge · Recover** (setups) — Charges are durable face-up cards
+> that double damage (×2 each), and the duel runs to **Body 0**. Both the
+> Strike / Block / Evade / Scheme cycle *and* the Power / Speed / Precision momentum
+> banks below are superseded (as is the interim Marshal/Unleash/Overwhelm/Parry Edge
+> duel). What carries forward: the **Mind-aspect framing**, **one-way vs two-way
+> prediction**, and the **Focus pool** (now purely the *breadth* resource — there is
+> no Focus gate *inside* a Clash; see the-duel.md). Read for intent; trust §1.0 for
+> mechanics.
 
 The Mind aspect is the **rock-paper-scissors stance** — the hidden-information heart of
 the game. The Body supplies Power, Speed, and the physical delivery; the **Mind**
