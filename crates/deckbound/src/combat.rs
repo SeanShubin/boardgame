@@ -355,7 +355,11 @@ pub fn free_hit(state: &mut State, foe: usize, hero: usize) {
     ));
     apply_strike(
         &mut state.heroes[hero],
-        Strike { raw, dtype, precision },
+        Strike {
+            raw,
+            dtype,
+            precision,
+        },
         &cname,
         &mut state.log,
     );
@@ -398,6 +402,7 @@ mod tests {
             queued_cards: Vec::new(),
             foe_queue: Vec::new(),
             dive: None,
+            versus: None,
         }
     }
 

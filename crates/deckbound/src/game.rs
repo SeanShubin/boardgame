@@ -12,7 +12,7 @@ use engine::{
 use crate::combat::{self, base_strike};
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
-use crate::state::{Dive, Duel, Menu, Phase, State};
+use crate::state::{Dive, Duel, Menu, Phase, State, Versus};
 
 /// Break off a Clash after this many consecutive beats with no Body lost (a termination
 /// backstop — see §1.6, reworded for Body-attrition).
@@ -26,6 +26,7 @@ pub enum Action {
     OpenScenarios,
     OpenGod,
     OpenTutorial,
+    OpenVersus,
     PickScenario(usize),
     Exit,
     ToMenu,
@@ -80,6 +81,7 @@ fn menu_state(seed: u64) -> State {
         queued_cards: Vec::new(),
         foe_queue: Vec::new(),
         dive: None,
+        versus: None,
     }
 }
 
@@ -88,6 +90,7 @@ fn list_for(menu: Menu) -> Vec<Scenario> {
         Menu::Scenarios => scenarios::campaign(),
         Menu::God => scenarios::god(),
         Menu::Tutorial => scenarios::tutorials(),
+        Menu::Versus => scenarios::versus(),
         Menu::Top => Vec::new(),
     }
 }
@@ -99,10 +102,18 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
     state.duel = None;
     state.round = 1;
     state.outcome = None;
-    state.log = vec![scenario.blurb.clone(), "-- Round 1 --".into()];
-    state.scenario = Some(scenario);
-    state.phase = Phase::Choosing;
     state.reset_round_plan();
+    if scenario.pvp {
+        // A hotseat PvP duel: both sides human, lockstep beats (§3.4).
+        state.versus = Some(Versus::new());
+        state.phase = Phase::Versus;
+        state.log = vec![scenario.blurb.clone(), "-- the duel begins --".into()];
+    } else {
+        state.versus = None;
+        state.phase = Phase::Choosing;
+        state.log = vec![scenario.blurb.clone(), "-- Round 1 --".into()];
+    }
+    state.scenario = Some(scenario);
 }
 
 pub(crate) fn check_outcome(state: &mut State) {
@@ -390,7 +401,11 @@ impl Deckbound {
             return Ok(());
         }
         // Reached the back line — engage the foe (a normal mutual Clash).
-        if state.creatures.get(dive.target).is_some_and(|c| !c.is_down()) {
+        if state
+            .creatures
+            .get(dive.target)
+            .is_some_and(|c| !c.is_down())
+        {
             form_duel(state, h, dive.target);
         } else {
             state.phase = Phase::Choosing;
@@ -472,6 +487,77 @@ impl Deckbound {
         }
     }
 
+    /// Resolve one lockstep beat of a hotseat PvP duel (§3.4): both committed moves are now
+    /// revealed and settled. The duel is a fight to the fall — Body persists, no ends-on-strike
+    /// — until one side drops (or both, a draw). A stalemate backstop caps a stall as a tie.
+    fn versus_beat(&self, state: &mut State, a_move: Move, b_move: Move) {
+        let Some(v) = state.versus else { return };
+        let (a_pow, a_dt, a_pre) = base_strike(&state.heroes[0]);
+        let (b_pow, b_dt, b_pre) = base_strike(&state.creatures[0]);
+        let a_name = state.heroes[0].name.clone();
+        let b_name = state.creatures[0].name.clone();
+        let a = Side {
+            power: a_pow,
+            dtype: a_dt,
+            precision: a_pre,
+            force: v.a_force,
+            name: &a_name,
+        };
+        let b = Side {
+            power: b_pow,
+            dtype: b_dt,
+            precision: b_pre,
+            force: v.b_force,
+            name: &b_name,
+        };
+        let result = duel::resolve(&a, a_move, &b, b_move);
+        state.log.push(format!(
+            "Reveal: {a_name} {} / {b_name} {}.",
+            a_move.name(),
+            b_move.name()
+        ));
+        state.log.push(result.note.clone());
+        if let Some(s) = result.on_a {
+            combat::apply_strike(&mut state.heroes[0], s, &b_name, &mut state.log);
+        }
+        if let Some(s) = result.on_b {
+            combat::apply_strike(&mut state.creatures[0], s, &a_name, &mut state.log);
+        }
+
+        let a_down = state.heroes[0].is_down();
+        let b_down = state.creatures[0].is_down();
+        if a_down || b_down {
+            let outcome = if a_down && b_down {
+                state.log.push("Both fighters fall — a draw!".into());
+                Outcome::Tie(vec![PlayerId(0), PlayerId(1)])
+            } else if b_down {
+                state.log.push(format!("{b_name} falls — Player 1 wins!"));
+                Outcome::Win(PlayerId(0))
+            } else {
+                state.log.push(format!("{a_name} falls — Player 2 wins!"));
+                Outcome::Win(PlayerId(1))
+            };
+            state.outcome = Some(outcome);
+            return;
+        }
+
+        let stall = if result.ends { 0 } else { v.stall + 1 };
+        if stall >= STALL_CAP {
+            state
+                .log
+                .push("Neither can land the killing blow — a draw.".into());
+            state.outcome = Some(Outcome::Tie(vec![PlayerId(0), PlayerId(1)]));
+            return;
+        }
+        state.versus = Some(Versus {
+            a_force: result.a_force,
+            b_force: result.b_force,
+            beat: v.beat + 1,
+            stall,
+            committed: None,
+        });
+    }
+
     fn status(&self, state: &State) -> String {
         let log = state
             .log
@@ -493,6 +579,9 @@ impl Deckbound {
             (None, Phase::Menu(Menu::Tutorial)) => {
                 "Duels - learn the Clash. (Esc: back)".to_string()
             }
+            (None, Phase::Menu(Menu::Versus)) => {
+                "Versus - pick a hotseat duel. (Esc: back)".to_string()
+            }
             (None, Phase::Choosing) => format!(
                 "Round {} - engage a foe, dive, reposition, queue a card, or end the round. (Esc: menu)",
                 state.round
@@ -507,8 +596,16 @@ impl Deckbound {
             (None, Phase::FoePhase) => match state.foe_queue.first() {
                 Some(&(f, t)) => format!(
                     "The {} attacks {} - Defend (Focus), Counter (Tempo), or Take the hit. (Esc: menu)",
-                    state.creatures.get(f).map(|x| x.name.as_str()).unwrap_or("foe"),
-                    state.heroes.get(t).map(|x| x.name.as_str()).unwrap_or("you"),
+                    state
+                        .creatures
+                        .get(f)
+                        .map(|x| x.name.as_str())
+                        .unwrap_or("foe"),
+                    state
+                        .heroes
+                        .get(t)
+                        .map(|x| x.name.as_str())
+                        .unwrap_or("you"),
                 ),
                 None => "...".to_string(),
             },
@@ -531,10 +628,35 @@ impl Deckbound {
                 Some(d) => format!(
                     "The {} dives for {} - pick interceptors, or Let it through. (Esc: menu)",
                     state.creatures[d.runner].name,
-                    state.heroes.get(d.target).map(|x| x.name.as_str()).unwrap_or("the back line"),
+                    state
+                        .heroes
+                        .get(d.target)
+                        .map(|x| x.name.as_str())
+                        .unwrap_or("the back line"),
                 ),
                 None => "...".to_string(),
             },
+            (None, Phase::Versus) => {
+                let a = state
+                    .heroes
+                    .first()
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("P1");
+                let b = state
+                    .creatures
+                    .first()
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("P2");
+                match state.versus.and_then(|v| v.committed) {
+                    // Side A has committed (hidden) — side B chooses without seeing it.
+                    Some(_) => format!(
+                        "Player 2 ({b}): commit your move. Player 1 has chosen — don't peek! (Esc: menu)"
+                    ),
+                    None => format!(
+                        "Player 1 ({a}): commit your move, then pass to Player 2 ({b}). (Esc: menu)"
+                    ),
+                }
+            }
         };
         format!("{prompt}\n\n{log}")
     }
@@ -550,10 +672,18 @@ impl Game for Deckbound {
 
     fn current_player(&self, state: &State) -> Option<PlayerId> {
         if state.outcome.is_some() {
-            None
-        } else {
-            Some(PlayerId(0))
+            return None;
         }
+        // In a hotseat duel, side A commits first (hidden), then side B replies.
+        if state.phase == Phase::Versus {
+            let b_to_move = state
+                .versus
+                .as_ref()
+                .map(|v| v.committed.is_some())
+                .unwrap_or(false);
+            return Some(PlayerId(if b_to_move { 1 } else { 0 }));
+        }
+        Some(PlayerId(0))
     }
 
     fn legal_actions(&self, state: &State) -> Vec<Action> {
@@ -565,6 +695,7 @@ impl Game for Deckbound {
                 Action::OpenTutorial,
                 Action::OpenScenarios,
                 Action::OpenGod,
+                Action::OpenVersus,
                 Action::Exit,
             ],
             Phase::Menu(m) => {
@@ -626,6 +757,16 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
+            Phase::Versus => {
+                // Both sides have the full kit every beat (the same hidden-commit choice).
+                vec![
+                    Action::Play(Move::Strike),
+                    Action::Play(Move::Anticipate),
+                    Action::Play(Move::Gather),
+                    Action::Play(Move::Evade),
+                    Action::ToMenu,
+                ]
+            }
             Phase::HeroDive => {
                 vec![Action::PushThrough, Action::Halt, Action::ToMenu]
             }
@@ -650,6 +791,7 @@ impl Game for Deckbound {
             Action::OpenScenarios => "Cooperation".into(),
             Action::OpenGod => "God-tier".into(),
             Action::OpenTutorial => "Duels".into(),
+            Action::OpenVersus => "Versus (hotseat)".into(),
             Action::Exit => "Exit".into(),
             Action::ToMenu => "Main menu".into(),
             Action::Back => "< Back".into(),
@@ -783,6 +925,7 @@ impl Game for Deckbound {
             (Phase::Menu(Menu::Top), Action::OpenTutorial) => {
                 state.phase = Phase::Menu(Menu::Tutorial)
             }
+            (Phase::Menu(Menu::Top), Action::OpenVersus) => state.phase = Phase::Menu(Menu::Versus),
             (Phase::Menu(m), Action::PickScenario(i)) if *m != Menu::Top => {
                 let s = list_for(*m)
                     .into_iter()
@@ -847,12 +990,38 @@ impl Game for Deckbound {
             (Phase::HeroDive, Action::PushThrough) => self.hero_push_through(state)?,
             (Phase::HeroDive, Action::Halt) => {
                 if let Some(d) = state.dive.take() {
-                    state.log.push(format!("{} pulls back.", state.heroes[d.runner].name));
+                    state
+                        .log
+                        .push(format!("{} pulls back.", state.heroes[d.runner].name));
                 }
                 state.phase = Phase::Choosing;
             }
             (Phase::FoeDive, Action::Intercept(g)) => self.foe_dive_intercept(state, *g)?,
             (Phase::FoeDive, Action::LetThrough) => self.foe_dive_let_through(state),
+            (Phase::Versus, Action::Play(m)) => {
+                let committed = state
+                    .versus
+                    .as_ref()
+                    .ok_or_else(|| GameError::new("no duel in progress"))?
+                    .committed;
+                match committed {
+                    None => {
+                        // Side A commits in secret; pass the device to side B.
+                        if let Some(v) = state.versus.as_mut() {
+                            v.committed = Some(*m);
+                        }
+                        state
+                            .log
+                            .push("Player 1 has committed — pass to Player 2.".into());
+                    }
+                    Some(am) => {
+                        if let Some(v) = state.versus.as_mut() {
+                            v.committed = None;
+                        }
+                        self.versus_beat(state, am, *m);
+                    }
+                }
+            }
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
             (Phase::Combat, Action::Play(m)) => {
                 if state.duel.is_none() {
@@ -915,7 +1084,7 @@ impl Game for Deckbound {
             Phase::Menu(Menu::Top) => None,
             Phase::Menu(_) => Some(Action::Back),
             Phase::HeroDive => Some(Action::Halt),
-            Phase::Choosing | Phase::Combat | Phase::FoePhase | Phase::FoeDive => {
+            Phase::Choosing | Phase::Combat | Phase::FoePhase | Phase::FoeDive | Phase::Versus => {
                 Some(Action::ToMenu)
             }
         }
@@ -976,6 +1145,23 @@ impl Game for Deckbound {
                 };
                 zones.push(creature_zone(state, af));
                 zones.push(hero_zone(state, ah));
+            }
+            Phase::Versus => {
+                // Both sides on the table; the committed move is never rendered (hidden commit).
+                zones.push(creature_zone(state, Some(0)));
+                if let Some(v) = state.versus {
+                    zones.push(force_zone(
+                        &format!("Player 2 ({})'s Force", state.creatures[0].name),
+                        v.b_force,
+                        Accent::Foe,
+                    ));
+                    zones.push(force_zone(
+                        &format!("Player 1 ({})'s Force", state.heroes[0].name),
+                        v.a_force,
+                        Accent::Good,
+                    ));
+                }
+                zones.push(hero_zone(state, Some(0)));
             }
         }
         TableView {
@@ -1103,6 +1289,7 @@ fn scenario_list_zone(menu: Menu) -> ZoneView {
         Menu::Scenarios => "Cooperation",
         Menu::God => "God-tier",
         Menu::Tutorial => "Duels",
+        Menu::Versus => "Versus (hotseat)",
         Menu::Top => "",
     };
     ZoneView {
@@ -1165,6 +1352,8 @@ mod tests {
                 // The gauntlet: a diving hero pulls back; a diving foe is let through.
                 Phase::HeroDive => Action::Halt,
                 Phase::FoeDive => Action::LetThrough,
+                // Hotseat duel: both sides just trade Strikes — Body attrition terminates it.
+                Phase::Versus => Action::Play(Move::Strike),
                 _ => break,
             };
             game.apply(s, &action).unwrap();
@@ -1192,10 +1381,16 @@ mod tests {
     #[test]
     fn every_scenario_terminates() {
         let game = Deckbound;
-        for open in [Action::OpenScenarios, Action::OpenGod, Action::OpenTutorial] {
+        for open in [
+            Action::OpenScenarios,
+            Action::OpenGod,
+            Action::OpenTutorial,
+            Action::OpenVersus,
+        ] {
             let count = match open {
                 Action::OpenScenarios => scenarios::campaign().len(),
                 Action::OpenGod => scenarios::god().len(),
+                Action::OpenVersus => scenarios::versus().len(),
                 _ => scenarios::tutorials().len(),
             };
             for i in 0..count {
@@ -1391,6 +1586,39 @@ mod tests {
         assert!(saw_dive, "the Stalker dove the hero gauntlet");
     }
 
+    /// §3.4 PvP: a hotseat duel collects side A's commit hidden, then side B's reply, then
+    /// resolves the beat — and runs to a decisive outcome.
+    #[test]
+    fn hotseat_duel_hides_the_commit_then_resolves() {
+        let game = Deckbound;
+        let mut s = game.new_game(1, 1);
+        game.apply(&mut s, &Action::OpenVersus).unwrap();
+        game.apply(&mut s, &Action::PickScenario(0)).unwrap();
+        assert_eq!(s.phase, Phase::Versus);
+        assert_eq!(game.current_player(&s), Some(PlayerId(0)));
+
+        // Player 1 commits in secret — the turn passes to Player 2, who has not seen it.
+        game.apply(&mut s, &Action::Play(Move::Strike)).unwrap();
+        assert!(s.versus.unwrap().committed.is_some(), "the commit is held");
+        assert_eq!(game.current_player(&s), Some(PlayerId(1)));
+
+        // Player 2 replies — the beat resolves and the commit is cleared.
+        game.apply(&mut s, &Action::Play(Move::Strike)).unwrap();
+        assert!(
+            s.versus.map(|v| v.committed.is_none()).unwrap_or(true),
+            "the beat resolved"
+        );
+
+        // Trading Strikes is pure Body attrition — the duel reaches a verdict.
+        let mut guard = 0;
+        while game.current_player(&s).is_some() {
+            game.apply(&mut s, &Action::Play(Move::Strike)).unwrap();
+            guard += 1;
+            assert!(guard < 1000, "a duel should terminate");
+        }
+        assert!(game.outcome(&s).is_some(), "someone won (or a draw)");
+    }
+
     /// Item 2: ending a round with un-engaged foes opens the interactive foe phase — each
     /// incoming attack offers Defend / Counter / Eat, and resolving the whole queue returns
     /// to the player's phase (or settles the outcome).
@@ -1400,7 +1628,11 @@ mod tests {
         let mut s = god_state(3, "Goliath");
         // Don't engage anyone — every living foe will attack in the foe phase.
         game.apply(&mut s, &Action::EndRound).unwrap();
-        assert_eq!(s.phase, Phase::FoePhase, "un-engaged foes open the foe phase");
+        assert_eq!(
+            s.phase,
+            Phase::FoePhase,
+            "un-engaged foes open the foe phase"
+        );
         assert!(!s.foe_queue.is_empty(), "there are incoming attacks");
         let acts = game.legal_actions(&s);
         assert!(acts.contains(&Action::TakeHit), "Eat is always available");

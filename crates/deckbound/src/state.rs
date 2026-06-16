@@ -7,6 +7,7 @@
 use engine::{Outcome, Rng};
 
 use crate::actor::Actor;
+use crate::duel::Move;
 use crate::scenarios::Scenario;
 
 /// Which menu page is showing.
@@ -16,6 +17,7 @@ pub enum Menu {
     Scenarios,
     God,
     Tutorial,
+    Versus,
 }
 
 /// Where the game is.
@@ -35,6 +37,41 @@ pub enum Phase {
     /// A creature runner is diving the hero gauntlet (§4): the player picks which front-line
     /// heroes intercept (each pays Tempo = the runner's Speed), then lets it resolve.
     FoeDive,
+    /// A hotseat PvP duel (§3.4 PvP): two human sides commit moves in lockstep — hidden,
+    /// simultaneous — beat by beat until one falls.
+    Versus,
+}
+
+/// A hotseat PvP duel in progress (§3.4). Side A is `heroes[0]` (PlayerId 0), side B is
+/// `creatures[0]` (PlayerId 1); both are human. Commit is **hidden + simultaneous**: side A
+/// commits into `committed` (unrevealed), then side B replies and the beat resolves.
+#[derive(Clone, Copy, Debug)]
+pub struct Versus {
+    pub a_force: u32,
+    pub b_force: u32,
+    pub beat: u32,
+    /// No-connect beats in a row — a stalemate backstop (§1.6).
+    pub stall: u32,
+    /// Side A's hidden move, awaiting side B's reply.
+    pub committed: Option<Move>,
+}
+
+impl Versus {
+    pub fn new() -> Self {
+        Versus {
+            a_force: 0,
+            b_force: 0,
+            beat: 0,
+            stall: 0,
+            committed: None,
+        }
+    }
+}
+
+impl Default for Versus {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// A dive in progress across the gauntlet (§4). For [`Phase::HeroDive`] the runner is a hero
@@ -92,6 +129,8 @@ pub struct State {
     pub foe_queue: Vec<(usize, usize)>,
     /// The gauntlet dive in progress (HeroDive / FoeDive), if any.
     pub dive: Option<Dive>,
+    /// The hotseat PvP duel in progress (Phase::Versus), if any.
+    pub versus: Option<Versus>,
 }
 
 impl State {

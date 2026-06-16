@@ -100,6 +100,15 @@ Catalog(
         ActorCard( name: "Maw",    role: "Brawler",  driver: "brawler",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
         ActorCard( name: "Rage",   role: "Feinter",  driver: "feint",    speed: 2, power: 1, body: 8, weapon: "Claw" ),
         ActorCard( name: "Sable",  role: "Duelist",  driver: "duelist",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        // ---- versus (hotseat PvP) duelists — both sides human (§3.4) ----
+        ActorCard( name: "Kestrel", role: "Bladedancer", driver: "hero", speed: 6, power: 3, precision: 3,
+                   body: 8, toughness: 1, resolve: 4, mind: 4, weapon: "Blade" ),
+        ActorCard( name: "Bo",      role: "Bulwark",     driver: "hero", speed: 3, power: 4, precision: 1,
+                   body: 10, toughness: 2, resolve: 5, mind: 3, weapon: "Maul", traits: ["Shield"] ),
+        ActorCard( name: "Mira",    role: "Tactician",   driver: "hero", speed: 4, power: 3, precision: 2,
+                   body: 9, toughness: 1, resolve: 4, mind: 4, weapon: "Spear" ),
+        ActorCard( name: "Dax",     role: "Berserker",   driver: "hero", speed: 5, power: 4, precision: 2,
+                   body: 8, toughness: 1, resolve: 3, mind: 2, weapon: "Bash" ),
     ],
     campaign: [
         ScenarioCard(
@@ -172,5 +181,22 @@ Catalog(
         ScenarioCard( name: "4. Survive the Brawler",   blurb: "Maw swings every beat (Strike). Evade beats Strike — dodge it and steal his Force. To win you must Strike back, and that's a trade.", heroes: ["Vera"], foes: ["Maw"] ),
         ScenarioCard( name: "5. The Feint",             blurb: "Rage mixes Strike and Anticipate — your first real read. If you call a Strike, Evade it; if you call a lead, Gather. Guess wrong and he lands.", heroes: ["Vera"], foes: ["Rage"] ),
         ScenarioCard( name: "6. The Duelist",           blurb: "Sable plays the whole kit, near-even — unreadable by pattern. The full mind-game.", heroes: ["Vera"], foes: ["Sable"] ),
+    ],
+    versus: [
+        ScenarioCard(
+            name: "Mirror Duel (1v1)",
+            blurb: "Two Bladedancers, identical kits. Pass the device each beat: Player 1 commits hidden, then Player 2. Pure read vs read.",
+            heroes: ["Kestrel"], foes: ["Kestrel"], pvp: true,
+        ),
+        ScenarioCard(
+            name: "Blade vs Bulwark (1v1)",
+            blurb: "Kestrel's speed and reads against Bo's heavy plate and Force. The light fighter must out-think the wall before it lands one big hit.",
+            heroes: ["Kestrel"], foes: ["Bo"], pvp: true,
+        ),
+        ScenarioCard(
+            name: "Champions (1v1)",
+            blurb: "Mira's measured spear against Dax's reckless aggression. A balanced hotseat test of nerve.",
+            heroes: ["Mira"], foes: ["Dax"], pvp: true,
+        ),
     ],
 )

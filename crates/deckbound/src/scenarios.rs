@@ -20,6 +20,8 @@ struct Catalog {
     campaign: Vec<ScenarioCard>,
     god: Vec<ScenarioCard>,
     tutorials: Vec<ScenarioCard>,
+    #[serde(default)]
+    versus: Vec<ScenarioCard>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +85,9 @@ struct ScenarioCard {
     blurb: String,
     heroes: Vec<String>,
     foes: Vec<String>,
+    /// A hotseat PvP duel (two human sides) rather than a PvE fight.
+    #[serde(default)]
+    pvp: bool,
 }
 
 /// A selectable scenario.
@@ -90,6 +95,8 @@ struct ScenarioCard {
 pub struct Scenario {
     pub name: String,
     pub blurb: String,
+    /// A hotseat PvP duel (§3.4) — both sides are human.
+    pub pvp: bool,
     heroes: Vec<String>,
     foes: Vec<String>,
 }
@@ -115,6 +122,10 @@ pub fn tutorials() -> Vec<Scenario> {
     catalog().tutorials.iter().map(scenario_from).collect()
 }
 
+pub fn versus() -> Vec<Scenario> {
+    catalog().versus.iter().map(scenario_from).collect()
+}
+
 fn catalog() -> &'static Catalog {
     static CATALOG: OnceLock<Catalog> = OnceLock::new();
     CATALOG.get_or_init(|| {
@@ -126,6 +137,7 @@ fn scenario_from(card: &ScenarioCard) -> Scenario {
     Scenario {
         name: card.name.clone(),
         blurb: card.blurb.clone(),
+        pvp: card.pvp,
         heroes: card.heroes.clone(),
         foes: card.foes.clone(),
     }
