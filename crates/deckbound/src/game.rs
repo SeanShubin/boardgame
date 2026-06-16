@@ -476,6 +476,10 @@ impl Game for Deckbound {
         state.exiting
     }
 
+    fn is_exit_action(&self, _state: &State, action: &Action) -> bool {
+        matches!(action, Action::Exit)
+    }
+
     fn view(&self, state: &State, _perspective: Option<PlayerId>) -> TableView {
         let mut zones = Vec::new();
         match &state.phase {

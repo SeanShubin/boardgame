@@ -22,6 +22,10 @@ fn main() -> AppExit {
             primary_window: Some(Window {
                 title: "Boardgame - Deckbound".into(),
                 resolution: (1320u32, 860u32).into(),
+                // On the web, track the browser viewport so resizing the window
+                // reflows the table — the parity the desktop window already has.
+                // Ignored natively, where `resolution` sets the initial size.
+                fit_canvas_to_parent: true,
                 ..default()
             }),
             ..default()

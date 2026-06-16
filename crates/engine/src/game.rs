@@ -84,4 +84,12 @@ pub trait Game: Send + Sync + 'static {
     fn exit_requested(&self, _state: &Self::State) -> bool {
         false
     }
+
+    /// Whether `action` is the one that asks the host application to quit. A
+    /// presentation layer that cannot honor a quit — e.g. a browser tab, where
+    /// terminating the app just freezes the canvas — can use this to hide the
+    /// action entirely. Defaults to `false`.
+    fn is_exit_action(&self, _state: &Self::State, _action: &Self::Action) -> bool {
+        false
+    }
 }

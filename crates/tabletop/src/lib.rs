@@ -12,7 +12,10 @@
 //! body of stat / rules lines, and a corner badge — coloured by the card's
 //! [`Accent`](engine::Accent). There is no art, so the space is information.
 
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
+use bevy::ui::{ComputedNode, OverflowAxis, ScrollPosition};
 use engine::{Accent, CardFace, Game, TableView, ZoneView};
 
 /// Drives a single match of `G` on a Bevy app.
@@ -40,7 +43,10 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
         app.insert_resource(GameRes(game))
             .insert_resource(StateRes::<G>(state))
             .insert_resource(NeedsRedraw(true))
+            .insert_resource(Platform::detect())
             .add_systems(Startup, setup_camera)
+            .add_observer(on_scroll_handler)
+            .add_systems(Update, (adjust_zoom, send_scroll_events))
             .add_systems(
                 Update,
                 (
@@ -65,6 +71,26 @@ struct StateRes<G: Game>(G::State);
 /// Set whenever the table needs to be rebuilt.
 #[derive(Resource)]
 struct NeedsRedraw(bool);
+
+/// What the host platform can do for the running app. This is the one place
+/// that distinguishes a native window from a browser tab, so the rest of the
+/// presentation asks in plain terms (e.g. "can we quit?") instead of testing
+/// the target architecture inline.
+#[derive(Resource, Clone, Copy)]
+struct Platform {
+    /// Whether the app can quit itself. A native window can; a browser tab
+    /// cannot — calling `AppExit` there just freezes the canvas — so actions
+    /// that would request a quit are hidden instead of offered.
+    can_quit: bool,
+}
+
+impl Platform {
+    fn detect() -> Self {
+        Self {
+            can_quit: !cfg!(target_arch = "wasm32"),
+        }
+    }
+}
 
 /// Marks the root entity of the current table so it can be torn down on redraw.
 #[derive(Component)]
@@ -115,19 +141,127 @@ fn cancel_on_key<G: Game + Clone>(
     }
 }
 
-/// Close the app when the game requests it (e.g. the player chose "Exit").
+/// Close the app when the game requests it (e.g. the player chose "Exit") and
+/// the platform can honor a quit. On the web the quit-requesting action is
+/// never offered (see `redraw`), so this is a no-op there.
 fn quit_if_requested<G: Game + Clone>(
+    platform: Res<Platform>,
     game: Res<GameRes<G>>,
     state: Res<StateRes<G>>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if game.0.exit_requested(&state.0) {
+    if platform.can_quit && game.0.exit_requested(&state.0) {
         exit.write(AppExit::Success);
+    }
+}
+
+/// Keyboard zoom. Because the whole table is Bevy UI (not world-space sprites),
+/// a camera zoom would do nothing — `UiScale` is the lever that scales it. `=`
+/// / `+` zooms in, `-` zooms out, `0` resets to 1.0. Driving `UiScale` keeps
+/// zoom fully programmatic, so a later system can snap to a region (e.g. an
+/// active duel) and restore the player's zoom when the duel is done.
+fn adjust_zoom(keys: Res<ButtonInput<KeyCode>>, mut ui_scale: ResMut<UiScale>) {
+    const STEP: f32 = 0.1;
+    const MIN: f32 = 0.3;
+    const MAX: f32 = 2.5;
+
+    let mut scale = ui_scale.0;
+    if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
+        scale += STEP;
+    }
+    if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
+        scale -= STEP;
+    }
+    if keys.just_pressed(KeyCode::Digit0) || keys.just_pressed(KeyCode::Numpad0) {
+        scale = 1.0;
+    }
+    let scale = scale.clamp(MIN, MAX);
+    if scale != ui_scale.0 {
+        ui_scale.0 = scale;
+    }
+}
+
+/// One mouse-wheel turn, aimed at the UI node under the cursor. It is an
+/// `EntityEvent` so it bubbles up the hierarchy to the nearest scrollable
+/// ancestor, which consumes it.
+#[derive(EntityEvent, Debug)]
+#[entity_event(propagate, auto_propagate)]
+struct Scroll {
+    entity: Entity,
+    /// Scroll amount in logical pixels.
+    delta: Vec2,
+}
+
+/// Logical pixels to scroll per wheel line (when the wheel reports lines).
+const SCROLL_LINE_HEIGHT: f32 = 21.0;
+
+/// Turn raw wheel input into a [`Scroll`] aimed at whatever node the pointer is
+/// over; the event then bubbles to the scrollable container.
+fn send_scroll_events(
+    mut wheel: MessageReader<MouseWheel>,
+    hover_map: Res<HoverMap>,
+    mut commands: Commands,
+) {
+    for event in wheel.read() {
+        let mut delta = -Vec2::new(event.x, event.y);
+        if event.unit == MouseScrollUnit::Line {
+            delta *= SCROLL_LINE_HEIGHT;
+        }
+        for pointer_map in hover_map.values() {
+            for entity in pointer_map.keys().copied() {
+                commands.trigger(Scroll { entity, delta });
+            }
+        }
+    }
+}
+
+/// Apply a [`Scroll`] to a node if it scrolls on that axis and is not already
+/// at the end; otherwise let it bubble to the parent. Mirrors Bevy's UI scroll
+/// example.
+fn on_scroll_handler(
+    mut scroll: On<Scroll>,
+    mut nodes: Query<(&mut ScrollPosition, &Node, &ComputedNode)>,
+) {
+    let Ok((mut position, node, computed)) = nodes.get_mut(scroll.entity) else {
+        return;
+    };
+
+    let max_offset = (computed.content_size() - computed.size()) * computed.inverse_scale_factor();
+    let delta = &mut scroll.delta;
+
+    if node.overflow.x == OverflowAxis::Scroll && delta.x != 0.0 {
+        let at_end = if delta.x > 0.0 {
+            position.x >= max_offset.x
+        } else {
+            position.x <= 0.0
+        };
+        if !at_end {
+            position.x += delta.x;
+            delta.x = 0.0;
+        }
+    }
+
+    if node.overflow.y == OverflowAxis::Scroll && delta.y != 0.0 {
+        let at_end = if delta.y > 0.0 {
+            position.y >= max_offset.y
+        } else {
+            position.y <= 0.0
+        };
+        if !at_end {
+            position.y += delta.y;
+            delta.y = 0.0;
+        }
+    }
+
+    // Once fully applied, stop bubbling so an ancestor does not also scroll.
+    if *delta == Vec2::ZERO {
+        scroll.propagate(false);
     }
 }
 
 fn redraw<G: Game + Clone>(
     mut commands: Commands,
+    platform: Res<Platform>,
     game: Res<GameRes<G>>,
     state: Res<StateRes<G>>,
     mut redraw: ResMut<NeedsRedraw>,
@@ -143,13 +277,18 @@ fn redraw<G: Game + Clone>(
     }
 
     let view = game.0.view(&state.0, None);
-    let actions = game.0.legal_actions(&state.0);
-    let labels: Vec<String> = actions
+    // Each button carries its index into the full legal-action list, so hiding
+    // some (e.g. Exit on the web) never misaligns clicks with actions.
+    let buttons: Vec<(usize, String)> = game
+        .0
+        .legal_actions(&state.0)
         .iter()
-        .map(|action| game.0.action_label(&state.0, action))
+        .enumerate()
+        .filter(|(_, action)| platform.can_quit || !game.0.is_exit_action(&state.0, action))
+        .map(|(index, action)| (index, game.0.action_label(&state.0, action)))
         .collect();
 
-    build_table(&mut commands, &view, &labels);
+    build_table(&mut commands, &view, &buttons);
 }
 
 // ---- palette ------------------------------------------------------------
@@ -179,7 +318,7 @@ fn accent_color(accent: Accent) -> Color {
     }
 }
 
-fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[String]) {
+fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, String)]) {
     commands
         .spawn((
             TableRoot,
@@ -200,7 +339,9 @@ fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[Strin
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(12.0)),
                     row_gap: Val::Px(8.0),
-                    overflow: Overflow::clip(),
+                    // Scroll instead of clip, so a long action list stays
+                    // reachable when it overflows the panel height.
+                    overflow: Overflow::scroll_y(),
                     ..default()
                 },
                 BackgroundColor(PANEL),
@@ -214,8 +355,8 @@ fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[Strin
                     },
                     TextColor(INK),
                 ));
-                for (index, label) in action_labels.iter().enumerate() {
-                    spawn_action_button(left, index, label);
+                for (index, label) in actions {
+                    spawn_action_button(left, *index, label);
                 }
             });
 
@@ -250,11 +391,13 @@ fn build_table(commands: &mut Commands, view: &TableView, action_labels: &[Strin
                     ));
                 });
 
-                // The zones fill the remaining space.
+                // The zones fill the remaining space, and scroll vertically when
+                // the board is taller than the area (e.g. duels need more room).
                 main.spawn(Node {
                     flex_direction: FlexDirection::Column,
                     row_gap: Val::Px(10.0),
                     flex_grow: 1.0,
+                    overflow: Overflow::scroll_y(),
                     ..default()
                 })
                 .with_children(|zones| {
