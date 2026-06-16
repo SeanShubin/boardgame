@@ -2,8 +2,8 @@
 //!
 //! An Actor is the umbrella (see `docs/games/deckbound/design/entities.md`): a
 //! **Character** is human-driven (improvises); a **Creature** follows a scripted
-//! `Behavior` (a stance policy + a target rule). Both carry the full stat block —
-//! [`Offense`](crate::stats::Offense) and [`Defense`](crate::stats::Defense) — plus
+//! `Behavior` (a **decision deck** of moves + a target rule). Both carry the full stat
+//! block — [`Offense`](crate::stats::Offense) and [`Defense`](crate::stats::Defense) — plus
 //! a weapon and action cards, and round budgets (**tempo** = Speed, **focus** = Mind).
 
 use engine::Rng;
@@ -18,15 +18,28 @@ use crate::stats::{Defense, Offense};
 pub enum Driver {
     /// A Character: the human (or a stand-in) improvises.
     Human,
-    /// A Creature: a scripted instinct.
+    /// A Creature: a scripted instinct (a decision deck).
     Creature(Behavior),
 }
 
-/// A creature's scripted instinct: how it picks a move, and whom it targets.
-#[derive(Clone, Copy, Debug)]
+/// A creature's scripted instinct: a **decision deck** it draws from, and whom it targets.
+/// The deck's composition *is* the creature's mixed strategy — a deck of `[Strike, Strike,
+/// Gather]` strikes two beats in three (§7, `decision-making.md`).
+#[derive(Clone, Debug)]
 pub struct Behavior {
-    pub policy: MovePolicy,
+    pub deck: Vec<Move>,
     pub target_rule: TargetRule,
+}
+
+impl Behavior {
+    /// Draw this beat's move (with replacement — the deck never depletes). `rng` is the
+    /// per-beat keyed RNG, so the draw is order-independent (§1.9).
+    pub fn draw(&self, rng: &mut Rng) -> Move {
+        if self.deck.is_empty() {
+            return Move::Strike;
+        }
+        self.deck[rng.below(self.deck.len())]
+    }
 }
 
 /// Whom a creature goes for.
@@ -38,82 +51,15 @@ pub enum TargetRule {
     LowestBody,
     /// The shakiest nerve (lowest Resolve).
     LeastResolute,
-    /// Runs the gauntlet for the back line.
+    /// Dives for the back line through the gauntlet (§4).
     Runner,
 }
 
-/// How a creature picks its move each beat — its instinct (one-way; a Creature does not
-/// read you back, §7). `rng` supplies the variation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MovePolicy {
-    Dummy,
-    Brute,
-    Turtle,
-    Duelist,
-    Grappler,
-    Aggressor,
-}
-
-impl MovePolicy {
-    pub fn label(self) -> &'static str {
-        match self {
-            MovePolicy::Dummy => "Sandbag",
-            MovePolicy::Brute => "Charger",
-            MovePolicy::Turtle => "Turtle",
-            MovePolicy::Duelist => "Duelist",
-            MovePolicy::Grappler => "Grappler",
-            MovePolicy::Aggressor => "Berserker",
-        }
-    }
-
-    /// The move for this beat. `up`/`down`/`max` are the creature's own Charge state;
-    /// `rng` supplies the variation. (One-way: it does not read the hero, §7.)
-    pub fn pick_move(self, up: u32, down: u32, max: u32, rng: &mut Rng) -> Move {
-        let can_charge = up + down < max;
-        match self {
-            // A sandbag just swings — trivially read and Parried.
-            MovePolicy::Dummy => Move::Strike,
-            // Wind up to a killshot, then swing; recover if its charge was knocked down.
-            MovePolicy::Brute => {
-                if down > 0 {
-                    Move::Recover
-                } else if can_charge {
-                    Move::Charge
-                } else {
-                    Move::Strike
-                }
-            }
-            // Mostly blocks; occasionally dodges.
-            MovePolicy::Turtle => {
-                if rng.below(4) == 0 {
-                    Move::Evade
-                } else {
-                    Move::Parry
-                }
-            }
-            // Throws through guards; charges when it can.
-            MovePolicy::Grappler => {
-                if down > 0 {
-                    Move::Recover
-                } else if can_charge && rng.below(2) == 0 {
-                    Move::Charge
-                } else {
-                    Move::Throw
-                }
-            }
-            // Relentless swings.
-            MovePolicy::Aggressor => Move::Strike,
-            // Mixes the whole kit.
-            MovePolicy::Duelist => match rng.below(5) {
-                0 if can_charge => Move::Charge,
-                0 => Move::Strike,
-                1 => Move::Throw,
-                2 => Move::Parry,
-                3 => Move::Evade,
-                _ => Move::Strike,
-            },
-        }
-    }
+/// Which line an Actor stands in (§4). Public, free to shift between rounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum Line {
+    Front,
+    Back,
 }
 
 /// A combatant.
@@ -123,20 +69,21 @@ pub struct Actor {
     pub role: String,
     pub offense: Offense,
     pub defense: Defense,
-    /// The default strike for Unleash / Overwhelm.
+    /// The base strike profile.
     pub weapon: Card,
     /// Extra action cards (AoE, Rally, Dread, …) playable in the round.
     pub actions: Vec<Card>,
     pub driver: Driver,
-    /// This actor crosses the gauntlet rather than holding a line.
+    /// This actor crosses the gauntlet rather than holding a line (§4).
     pub runner: bool,
-    /// Charge capacity — how many durable Charges this fighter can stack in a Clash.
-    pub charges_max: u32,
+    /// Front or back line (§4 formation).
+    pub line: Line,
+    /// Reaches the enemy back line directly, bypassing the gauntlet (§4).
+    pub ranged: bool,
 
     // round-scoped budgets
     pub tempo: i32,
     pub focus: u32,
-    pub exposed: bool,
     /// Finalized dead. Body reaching 0 is "mortally wounded" — the actor fights on and
     /// lands its committed blows; death is tallied at the round boundary (§1.9), which
     /// sets this. Once set it persists (the actor is out of the fight).
@@ -163,15 +110,7 @@ impl Actor {
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
         self.focus = self.defense.mind;
-        self.exposed = false;
         self.defense.end_round();
-    }
-
-    /// Overextended — Tempo went negative. Go all-in (§3.3): Focus drops to 0, so the
-    /// actor can read no one and every foe free-hits this round.
-    pub fn expose(&mut self) {
-        self.exposed = true;
-        self.focus = 0;
     }
 }
 
@@ -208,21 +147,21 @@ mod tests {
             actions: vec![],
             driver: Driver::Human,
             runner: false,
-            charges_max: 3,
+            line: Line::Front,
+            ranged: false,
             tempo: 0,
             focus: 0,
-            exposed: true,
             fallen: false,
         };
         a.refresh_round();
         assert_eq!(a.tempo, 5);
         assert_eq!(a.focus, 3);
-        assert!(!a.exposed);
     }
 
     #[test]
-    fn dummy_just_swings() {
+    fn a_deck_draws_its_moves() {
         let mut rng = Rng::new(1);
-        assert_eq!(MovePolicy::Dummy.pick_move(0, 0, 3, &mut rng), Move::Strike);
+        let b = Behavior { deck: vec![Move::Strike], target_rule: TargetRule::Front };
+        assert_eq!(b.draw(&mut rng), Move::Strike);
     }
 }

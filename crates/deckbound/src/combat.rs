@@ -338,27 +338,6 @@ mod tests {
         assert!(after < before, "Firestorm should burn multiple husks");
     }
 
-    /// §3.3: an Exposed hero's Focus is 0, so it covers no one and the whole swarm
-    /// free-hits — even if it had Focus to spare before overextending. (The Blur has no
-    /// armor, unlike Kael, so the husks' chip actually lands.)
-    #[test]
-    fn exposed_hero_is_free_hit_by_the_whole_swarm() {
-        let scen = scenarios::god()
-            .into_iter()
-            .find(|s| s.name.contains("Blur"))
-            .unwrap();
-        let mut s = state_from(&scen);
-        s.heroes[0].focus = 99;
-        s.heroes[0].expose();
-        assert_eq!(s.heroes[0].focus, 0, "expose() zeroes Focus");
-        let before = s.heroes[0].defense.body.remaining;
-        creature_phase(&mut s);
-        assert!(
-            s.heroes[0].defense.body.remaining < before,
-            "an exposed hero covers no one — the whole swarm free-hits"
-        );
-    }
-
     /// §1.9/§1.3: a hero whose Body hits 0 mid-round is *mortally wounded*, not removed
     /// — it keeps acting (so it lands its committed blows regardless of duel order) and
     /// only falls at the round-end tally.

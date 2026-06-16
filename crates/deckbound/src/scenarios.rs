@@ -7,8 +7,9 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actor::{Actor, Behavior, Driver, MovePolicy, TargetRule};
+use crate::actor::{Actor, Behavior, Driver, Line, TargetRule};
 use crate::cards::Card;
+use crate::duel::Move;
 use crate::stats::{Aspect, DamageType, Defense, Offense};
 
 #[derive(Debug, Deserialize)]
@@ -55,9 +56,6 @@ struct ActorCard {
     resolve: u32,
     #[serde(default = "one")]
     mind: u32,
-    /// Charge capacity in the Clash — how many durable ×2 Charges this fighter can stack.
-    #[serde(default = "three")]
-    charges: u32,
     weapon: String,
     #[serde(default)]
     actions: Vec<String>,
@@ -65,16 +63,18 @@ struct ActorCard {
     traits: Vec<String>,
     #[serde(default)]
     runner: bool,
+    /// "front" (default) or "back" — §4 formation.
+    #[serde(default)]
+    line: Option<String>,
+    /// Reaches the enemy back line directly (§4).
+    #[serde(default)]
+    ranged: bool,
     #[serde(default)]
     target_rule: Option<TargetRule>,
 }
 
 fn one() -> u32 {
     1
-}
-
-fn three() -> u32 {
-    3
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,15 +139,26 @@ fn find_card(cat: &Catalog, name: &str) -> Card {
         .clone()
 }
 
-fn policy(keyword: &str) -> MovePolicy {
+/// A creature's decision deck, by archetype keyword. The deck *is* the mixed strategy
+/// (§7); these are first-pass tunings — edit freely. Pure 1-move decks are tutorial dummies.
+fn deck_for(keyword: &str) -> Vec<Move> {
+    use Move::*;
     match keyword {
-        "dummy" => MovePolicy::Dummy,
-        "brute" => MovePolicy::Brute,
-        "turtle" => MovePolicy::Turtle,
-        "duelist" => MovePolicy::Duelist,
-        "grappler" => MovePolicy::Grappler,
-        "aggressor" => MovePolicy::Aggressor,
-        other => panic!("unknown move-policy keyword {other:?}"),
+        // Tutorial pures — one lesson each.
+        "post" => vec![Gather],
+        "leader" => vec![Anticipate],
+        "dodger" => vec![Evade],
+        "brawler" | "dummy" | "aggressor-pure" => vec![Strike],
+        "feint" => vec![Strike, Anticipate],
+        // Standard archetypes (a clear lean).
+        "brute" => vec![Gather, Gather, Strike],
+        "aggressor" => vec![Strike, Strike, Anticipate],
+        "hunter" | "grappler" => vec![Anticipate, Anticipate, Strike],
+        "skirmisher" => vec![Evade, Strike, Anticipate],
+        "turtle" => vec![Gather, Evade, Strike],
+        // Elite — near-balanced, hard to read.
+        "duelist" => vec![Strike, Anticipate, Gather, Evade],
+        other => panic!("unknown creature deck keyword {other:?}"),
     }
 }
 
@@ -193,9 +204,14 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         Driver::Human
     } else {
         Driver::Creature(Behavior {
-            policy: policy(&c.driver),
+            deck: deck_for(&c.driver),
             target_rule: c.target_rule.unwrap_or(TargetRule::Front),
         })
+    };
+
+    let line = match c.line.as_deref() {
+        Some("back") => Line::Back,
+        _ => Line::Front,
     };
 
     let mut actor = Actor {
@@ -207,10 +223,10 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
         runner: c.runner,
-        charges_max: c.charges,
+        line,
+        ranged: c.ranged,
         tempo: 0,
         focus: 0,
-        exposed: false,
         fallen: false,
     };
     actor.refresh_round();

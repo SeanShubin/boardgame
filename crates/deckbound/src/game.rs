@@ -98,25 +98,21 @@ pub(crate) fn check_outcome(state: &mut State) {
 }
 
 fn form_duel(state: &mut State, hero: usize, foe: usize) {
-    // Engaging spends Tempo (cost = foe's Speed), pay-after: the engage happens and, if
-    // it drives Tempo negative, you go all-in (§3.3). The foe is now engaged and will not
-    // also free-hit at round end. The Clash itself starts at zero Charges on both sides.
+    // Engaging spends Tempo (cost = foe's Speed), pay-after (§3.1): the engage happens; if it
+    // drives Tempo negative it is simply your last action. The engaged foe spends its one
+    // action defending, so it does not also attack this round. The Clash is **mutual** —
+    // results stick both ways (the hero can kill, the foe can hit back). Force starts at 0.
     let speed = state.creatures[foe].offense.speed.max(1);
-    let h = &mut state.heroes[hero];
-    h.tempo -= speed as i32;
-    if h.tempo < 0 {
-        h.expose();
-    }
+    state.heroes[hero].tempo -= speed as i32;
     state.engaged[foe] = true;
     state.duel = Some(Duel {
         hero,
         foe,
-        hero_up: 0,
-        hero_down: 0,
-        foe_up: 0,
-        foe_down: 0,
+        hero_force: 0,
+        foe_force: 0,
         beat: 0,
         stall: 0,
+        defending: false,
     });
     state.phase = Phase::Combat;
     state.log.push(format!(
@@ -126,91 +122,72 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
 }
 
 impl Deckbound {
-    /// Resolve one beat of the active Clash: the hero plays `hero_move`, the creature
-    /// answers with its instinct, [`duel::resolve`] settles it, and Body/Charges update.
+    /// Resolve one beat of the active Clash: the hero plays `hero_move`, the creature draws
+    /// from its deck, [`duel::resolve`] settles it, and Force/Body update. **Ends-on-strike**:
+    /// a connecting blow ends the duel (then the Body persists into the next).
     fn clash_beat(&self, state: &mut State, hero_move: Move) {
         let Some(duel) = state.duel else { return };
-        let max_h = state.heroes[duel.hero].charges_max;
-        let max_f = state.creatures[duel.foe].charges_max;
 
         let creature_move = {
-            let policy = state.creatures[duel.foe]
-                .behavior()
-                .map(|b| b.policy)
-                .expect("a creature drives the duel");
-            // Per-duel, per-beat keyed RNG so the order the player resolves duels in
-            // cannot change any duel's rolls (§1.9 order-independence).
+            // Per-duel, per-beat keyed RNG so the order the player resolves duels in cannot
+            // change any duel's draws (§1.9 order-independence).
             let key = state.seed
                 ^ (state.round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
                 ^ (duel.hero as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
                 ^ (duel.foe as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
                 ^ (duel.beat as u64).wrapping_mul(0x27D4_EB2F_1656_67C5);
             let mut drng = Rng::new(key);
-            policy.pick_move(duel.foe_up, duel.foe_down, max_f, &mut drng)
+            state.creatures[duel.foe]
+                .behavior()
+                .expect("a creature drives the duel")
+                .draw(&mut drng)
         };
 
         let (h_pow, h_dt, h_pre) = base_strike(&state.heroes[duel.hero]);
         let (c_pow, c_dt, c_pre) = base_strike(&state.creatures[duel.foe]);
         let h_name = state.heroes[duel.hero].name.clone();
         let c_name = state.creatures[duel.foe].name.clone();
-        let a = Side {
-            power: h_pow,
-            dtype: h_dt,
-            precision: h_pre,
-            up: duel.hero_up,
-            down: duel.hero_down,
-            max: max_h,
-            name: &h_name,
-        };
-        let b = Side {
-            power: c_pow,
-            dtype: c_dt,
-            precision: c_pre,
-            up: duel.foe_up,
-            down: duel.foe_down,
-            max: max_f,
-            name: &c_name,
-        };
+        let a = Side { power: h_pow, dtype: h_dt, precision: h_pre, force: duel.hero_force, name: &h_name };
+        let b = Side { power: c_pow, dtype: c_dt, precision: c_pre, force: duel.foe_force, name: &c_name };
         let result = duel::resolve(&a, hero_move, &b, creature_move);
         state.log.push(result.note);
 
-        let h_body = state.heroes[duel.hero].defense.body.remaining;
-        let f_body = state.creatures[duel.foe].defense.body.remaining;
         if let Some(s) = result.on_a {
             combat::apply_strike(&mut state.heroes[duel.hero], s, &c_name, &mut state.log);
         }
+        // In a defensive Clash the foe is reset (survival only) — the hero's hit is voided.
         if let Some(s) = result.on_b {
-            combat::apply_strike(&mut state.creatures[duel.foe], s, &h_name, &mut state.log);
+            if duel.defending {
+                state.log.push(format!("  ({} breaks off, unharmed)", c_name));
+            } else {
+                combat::apply_strike(&mut state.creatures[duel.foe], s, &h_name, &mut state.log);
+            }
         }
-        // Progress = Body actually lost this beat (a connecting hit can be fully absorbed
-        // by armor); the backstop counts beats with no progress.
-        let progressed = state.heroes[duel.hero].defense.body.remaining < h_body
-            || state.creatures[duel.foe].defense.body.remaining < f_body;
-        let stall = if progressed { 0 } else { duel.stall + 1 };
 
         let hero_down = state.heroes[duel.hero].is_down();
         let foe_down = state.creatures[duel.foe].is_down();
-        if hero_down || foe_down {
+        // Ends-on-strike: a connecting blow (or a down) ends the duel.
+        if result.ends || hero_down || foe_down {
             state.duel = None;
             state.phase = Phase::Choosing;
             check_outcome(state);
-        } else if stall >= STALL_CAP {
-            state.duel = None;
-            state.phase = Phase::Choosing;
-            state
-                .log
-                .push("(neither can land a wound — they break off)".into());
         } else {
-            state.duel = Some(Duel {
-                hero: duel.hero,
-                foe: duel.foe,
-                hero_up: result.a.up,
-                hero_down: result.a.down,
-                foe_up: result.b.up,
-                foe_down: result.b.down,
-                beat: duel.beat + 1,
-                stall,
-            });
+            let stall = duel.stall + 1; // no connect this beat
+            if stall >= STALL_CAP {
+                state.duel = None;
+                state.phase = Phase::Choosing;
+                state.log.push("(neither can land a blow — they break off)".into());
+            } else {
+                state.duel = Some(Duel {
+                    hero: duel.hero,
+                    foe: duel.foe,
+                    hero_force: result.a_force,
+                    foe_force: result.b_force,
+                    beat: duel.beat + 1,
+                    stall,
+                    defending: duel.defending,
+                });
+            }
         }
     }
 
@@ -268,7 +245,7 @@ impl Deckbound {
             ),
             (None, Phase::Combat) => match state.duel {
                 Some(d) => format!(
-                    "Clash: {} vs the {} - Strike/Throw, Parry/Evade, Charge/Recover. (Esc: menu)",
+                    "Clash: {} vs the {} - Strike/Anticipate, Gather/Evade. A strike ends it. (Esc: menu)",
                     state.heroes[d.hero].name, state.creatures[d.foe].name
                 ),
                 None => "...".to_string(),
@@ -331,24 +308,13 @@ impl Game for Deckbound {
                 a
             }
             Phase::Combat => {
-                // The standing moves are always available (this is what makes "avoid" and
-                // "land" hold for the whole Clash); the setups gate on Charge state.
-                let mut a = vec![
+                // The kit is always complete — all four moves available every beat.
+                vec![
                     Action::Play(Move::Strike),
-                    Action::Play(Move::Throw),
-                    Action::Play(Move::Parry),
+                    Action::Play(Move::Anticipate),
+                    Action::Play(Move::Gather),
                     Action::Play(Move::Evade),
-                ];
-                if let Some(d) = state.duel {
-                    let max = state.heroes[d.hero].charges_max;
-                    if d.hero_up + d.hero_down < max {
-                        a.push(Action::Play(Move::Charge));
-                    }
-                    if d.hero_down > 0 {
-                        a.push(Action::Play(Move::Recover));
-                    }
-                }
-                a
+                ]
             }
         }
     }
@@ -388,12 +354,10 @@ impl Game for Deckbound {
                     None => format!("{name}: ?"),
                 }
             }
-            Action::Play(Move::Strike) => "Strike - beats Evade; trades with Strike".into(),
-            Action::Play(Move::Throw) => "Throw - beats Parry; loses to Strike/Evade".into(),
-            Action::Play(Move::Parry) => "Parry - negate a Strike".into(),
-            Action::Play(Move::Evade) => "Evade - negate a Throw".into(),
-            Action::Play(Move::Charge) => "Charge - x2 your hits (durable)".into(),
-            Action::Play(Move::Recover) => "Recover - flip your charges back up".into(),
+            Action::Play(Move::Strike) => "Strike - hit where they are (beats Gather)".into(),
+            Action::Play(Move::Anticipate) => "Anticipate - lead them (beats Evade)".into(),
+            Action::Play(Move::Gather) => "Gather - hold & build Force (beats Anticipate)".into(),
+            Action::Play(Move::Evade) => "Evade - dodge & steal (beats Strike)".into(),
         }
     }
 
@@ -454,13 +418,9 @@ impl Game for Deckbound {
                     return Err(GameError::new("that action is not available"));
                 }
                 // Queue the card; its effects resolve in tiers at round end (§1.9 —
-                // attacks before buffs). Tempo is paid now (pay-after).
+                // attacks before buffs). Tempo is paid now (pay-after, §3.1).
                 state.queued_cards.push((*h, *idx));
-                let hero = &mut state.heroes[*h];
-                hero.tempo -= ACTION_COST as i32;
-                if hero.tempo < 0 {
-                    hero.expose();
-                }
+                state.heroes[*h].tempo -= ACTION_COST as i32;
             }
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
             (Phase::Combat, Action::Play(m)) => {
@@ -517,19 +477,9 @@ impl Game for Deckbound {
                 zones.push(creature_zone(state, af));
                 if let Some(d) = state.duel {
                     let foe_name = state.creatures[d.foe].name.clone();
-                    zones.push(charge_zone(
-                        &format!("The {foe_name}'s Charges"),
-                        d.foe_up,
-                        d.foe_down,
-                        Accent::Foe,
-                    ));
+                    zones.push(force_zone(&format!("The {foe_name}'s Force"), d.foe_force, Accent::Foe));
                     let hero_name = state.heroes[d.hero].name.clone();
-                    zones.push(charge_zone(
-                        &format!("{hero_name}'s Charges"),
-                        d.hero_up,
-                        d.hero_down,
-                        Accent::Good,
-                    ));
+                    zones.push(force_zone(&format!("{hero_name}'s Force"), d.hero_force, Accent::Good));
                 }
                 zones.push(hero_zone(state, ah));
             }
@@ -558,9 +508,6 @@ fn actor_card(a: &crate::actor::Actor, show_budgets: bool, accent: Accent) -> Ca
         body.push(format!("tempo {} focus {}", a.tempo, a.focus));
     } else {
         body.push(format!("R{} M{}", d.resolve, d.mind));
-    }
-    if a.exposed {
-        body.push("EXPOSED".into());
     }
     CardView::up(a.name.clone())
         .typed(a.role.clone())
@@ -619,18 +566,16 @@ fn hero_zone(state: &State, active: Option<usize>) -> ZoneView {
     }
 }
 
-/// Render a side's Charges: `up` active (face-up, doubling) and `down` flipped (disabled
-/// by a successful defense, restored by Recover).
-fn charge_zone(label: &str, up: u32, down: u32, accent: Accent) -> ZoneView {
-    let mut cards: Vec<CardView> = (0..up)
-        .map(|_| CardView::up("Charge").accent(accent))
-        .collect();
-    cards.extend((0..down).map(|_| CardView::down()));
+/// Render a side's Force as a stack — each unit doubles the next hit (`×2^force`).
+fn force_zone(label: &str, force: u32, accent: Accent) -> ZoneView {
+    let mult = if force >= 16 { u32::MAX } else { 1u32 << force };
     ZoneView {
-        label: format!("{label} (^{up} v{down})"),
+        label: format!("{label} (×{mult})"),
         layout: Layout::Stack,
         owner: None,
-        cards,
+        cards: (0..force.min(16))
+            .map(|_| CardView::up("Force").accent(accent))
+            .collect(),
     }
 }
 
@@ -697,14 +642,14 @@ mod tests {
         while game.current_player(s).is_some() {
             let action = match s.phase {
                 Phase::Combat => {
-                    // Alternate Strike/Throw by beat so we beat both guards over time
-                    // (a pure turtle parries Strikes but folds to Throws) — keeps duels
-                    // making progress and terminating.
+                    // Alternate Strike/Anticipate by beat: Strike connects vs anything but a
+                    // dodge, Anticipate connects vs a dodge — so a connect (ends-on-strike)
+                    // comes fast against any deck, terminating the duel.
                     let beat = s.duel.map(|d| d.beat).unwrap_or(0);
                     if beat % 2 == 0 {
                         Action::Play(Move::Strike)
                     } else {
-                        Action::Play(Move::Throw)
+                        Action::Play(Move::Anticipate)
                     }
                 }
                 Phase::Choosing => {
@@ -775,18 +720,13 @@ mod tests {
         s
     }
 
-    /// Engage a foe and play the Clash to its conclusion (wind up one Charge, then Strike).
+    /// Engage a foe and play the Clash to its conclusion (alternate Strike/Anticipate).
     fn drive_duel(game: &Deckbound, s: &mut State, hero: usize, foe: usize) {
         game.apply(s, &Action::Engage(hero, foe)).unwrap();
         let mut guard = 0;
         while s.phase == Phase::Combat {
-            // Alternate Strike/Throw by beat (beats both guards over time).
             let beat = s.duel.map(|d| d.beat).unwrap_or(0);
-            let m = if beat % 2 == 0 {
-                Move::Strike
-            } else {
-                Move::Throw
-            };
+            let m = if beat % 2 == 0 { Move::Strike } else { Move::Anticipate };
             game.apply(s, &Action::Play(m)).unwrap();
             guard += 1;
             assert!(guard < 1000, "a duel should terminate");
@@ -832,35 +772,9 @@ mod tests {
         assert_eq!(s.phase, Phase::Combat);
         assert!(s.engaged[0], "the engaged foe won't also free-hit");
         let acts = game.legal_actions(&s);
-        for m in [Move::Strike, Move::Throw, Move::Parry, Move::Evade] {
+        for m in [Move::Strike, Move::Anticipate, Move::Gather, Move::Evade] {
             assert!(acts.contains(&Action::Play(m)), "{m:?} is always available");
         }
-    }
-
-    /// §1 The Clash: Charge is offered until capacity; Recover only once a Charge has been
-    /// flipped face-down.
-    #[test]
-    fn charge_and_recover_gate_on_charge_state() {
-        let game = Deckbound;
-        let mut s = god_state(3, "Goliath");
-        game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
-        let acts = game.legal_actions(&s);
-        assert!(
-            acts.contains(&Action::Play(Move::Charge)),
-            "fresh duel → can Charge"
-        );
-        assert!(
-            !acts.contains(&Action::Play(Move::Recover)),
-            "no down charges → no Recover"
-        );
-        if let Some(d) = s.duel.as_mut() {
-            d.hero_down = 1; // a defended attack flipped a charge down
-        }
-        assert!(
-            game.legal_actions(&s)
-                .contains(&Action::Play(Move::Recover)),
-            "a face-down charge unlocks Recover"
-        );
     }
 
     /// §1.9: action cards are queued and resolve in tiers at round end (attacks before
@@ -884,21 +798,18 @@ mod tests {
         assert!(after < before, "the queued Firestorm resolves at round end");
     }
 
-    /// §3.1/§3.3: pay-after — the action that drives Tempo negative still happens, and
-    /// leaves you Exposed (all-in).
+    /// §3.1: pay-after — the action that drives Tempo negative still happens (it's just your
+    /// last). No Exposed penalty (§3.3 removed).
     #[test]
-    fn pay_after_grants_the_action_then_exposes() {
+    fn pay_after_grants_the_action() {
         let game = Deckbound;
         let mut s = god_state(1, "Goliath");
         s.heroes[0].tempo = 1;
-        s.heroes[0].focus = 10;
         game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
-        assert!(s.heroes[0].exposed, "overdrawing Tempo goes all-in");
-        assert!(
-            s.heroes[0].tempo < 0,
-            "pay-after: the engage still happened"
-        );
+        assert!(s.heroes[0].tempo < 0, "pay-after: the engage still happened");
         assert_eq!(s.phase, Phase::Combat, "the duel formed");
         assert!(s.duel.is_some());
+        // With Tempo negative, the hero can take no further action this round.
+        assert!(!s.hero_can_act(0));
     }
 }

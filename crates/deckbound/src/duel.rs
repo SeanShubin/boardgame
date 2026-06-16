@@ -1,13 +1,13 @@
-//! The Clash — the card-based tactical core (supersedes the stance/Edge duel).
+//! The Clash — the four-card tactical core.
 //!
 //! Each beat both fighters pick one [`Move`]; [`resolve`] settles a single beat: any hit
-//! that lands (typed, routed through [`crate::stats`]), how each side's **Charges** change
-//! (the durable ×2 escalation that replaced Edge), and a note. Pure and deterministic.
+//! that lands (typed, routed through [`crate::stats`]), how each side's **Force** changes
+//! (the single per-side escalation count), whether the duel **ends** (ends-on-strike), and
+//! a note. Pure and deterministic.
 //!
-//! It is built to guarantee three invariants under last-word reads (see
-//! `docs/games/deckbound/spec/README.md`, §1 The Clash):
-//! 1. **Avoid** — a complete, standing defense (Parry answers Strike, Evade answers Throw).
-//! 2. **Land** — a complete offense (an attack lands on every move).
+//! Three invariants under perfect guessing (see `docs/games/deckbound/spec/README.md` §1.0):
+//! 1. **Avoid** — every attack has a defense that negates it (Strike↦Evade, Anticipate↦Gather).
+//! 2. **Land** — every move has an answering attack.
 //! 3. **Not both, free** — landing on a committed Strike means trading a hit.
 
 use crate::stats::DamageType;
@@ -15,70 +15,51 @@ use crate::stats::DamageType;
 /// A move in the Clash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Move {
-    /// Offense. Beaten by Parry; clips Throw; trades with Strike.
+    /// Attack: hit *where they are now*. Beats Gather; stopped by Evade; trades with Strike;
+    /// beats Anticipate.
     Strike,
-    /// Offense. Beaten by Evade and by Strike; beats Parry.
-    Throw,
-    /// Defense. Negates a Strike (and flips that attacker's Charges down).
-    Parry,
-    /// Defense. Negates a Throw (and flips that attacker's Charges down).
+    /// Attack: hit *where they'll be* (lead). Beats Evade; stopped by Gather; loses to Strike.
+    Anticipate,
+    /// Hold your ground (a defense) and build Force (+1). Stops Anticipate; beaten by Strike.
+    Gather,
+    /// Move. Stops Strike (and steals the striker's Force); beaten by Anticipate.
     Evade,
-    /// Setup. Place one active Charge (durable ×2 to your attacks). Exposed.
-    Charge,
-    /// Setup. Flip your face-down Charges back up. Exposed.
-    Recover,
 }
 
 impl Move {
     pub fn name(self) -> &'static str {
         match self {
             Move::Strike => "Strike",
-            Move::Throw => "Throw",
-            Move::Parry => "Parry",
+            Move::Anticipate => "Anticipate",
+            Move::Gather => "Gather",
             Move::Evade => "Evade",
-            Move::Charge => "Charge",
-            Move::Recover => "Recover",
         }
     }
 
-    /// The two standing defenses — always available (this is what makes "avoid" hold for
-    /// the whole duel; defense never depletes).
-    pub const DEFENSES: [Move; 2] = [Move::Parry, Move::Evade];
-    /// The two standing attacks — always available ("land" on demand).
-    pub const ATTACKS: [Move; 2] = [Move::Strike, Move::Throw];
+    /// The four moves, always available (the kit is complete).
+    pub const ALL: [Move; 4] = [Move::Strike, Move::Anticipate, Move::Gather, Move::Evade];
 
     pub fn is_attack(self) -> bool {
-        matches!(self, Move::Strike | Move::Throw)
+        matches!(self, Move::Strike | Move::Anticipate)
     }
 }
 
-/// One side entering a beat: its base attack power + type/precision, its Charge state
-/// (`up` active, `down` flipped, `max` capacity), and a name for narration.
+/// One side entering a beat: base attack power + type/precision, its Force count, and a name.
 #[derive(Clone, Copy, Debug)]
 pub struct Side<'a> {
     pub power: u32,
     pub dtype: DamageType,
     pub precision: u32,
-    pub up: u32,
-    pub down: u32,
-    pub max: u32,
+    pub force: u32,
     pub name: &'a str,
 }
 
-/// A hit that landed: the caller routes `raw` of `dtype` (with `precision`) through the
-/// target's defense.
+/// A hit that landed: the caller routes `raw` of `dtype` (with `precision`) through defense.
 #[derive(Clone, Copy, Debug)]
 pub struct Strike {
     pub raw: u32,
     pub dtype: DamageType,
     pub precision: u32,
-}
-
-/// A side's Charge state after a beat.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Charges {
-    pub up: u32,
-    pub down: u32,
 }
 
 /// The result of one beat of the Clash.
@@ -88,110 +69,79 @@ pub struct Clash {
     pub on_a: Option<Strike>,
     /// A hit landing **on B** (from A), if any.
     pub on_b: Option<Strike>,
-    pub a: Charges,
-    pub b: Charges,
-    /// At least one hit landed this beat (for the stall backstop).
-    pub connected: bool,
+    /// A's Force after the beat.
+    pub a_force: u32,
+    /// B's Force after the beat.
+    pub b_force: u32,
+    /// A strike connected — the duel **ends** (ends-on-strike).
+    pub ends: bool,
     pub note: String,
 }
 
-/// Damage of an attack: `power × 2^up` (each active Charge doubles), saturating.
-fn damage(power: u32, up: u32) -> u32 {
-    let mult = 1u32.checked_shl(up.min(16)).unwrap_or(u32::MAX);
+/// Damage of an attack: `power × 2^force`, saturating.
+fn damage(power: u32, force: u32) -> u32 {
+    let mult = if force >= 31 { u32::MAX } else { 1u32 << force };
     power.saturating_mul(mult)
 }
 
-/// Does `atk` (an attack) connect through `def`? Strike connects unless Parried; Throw
-/// connects unless Evaded or out-struck (Strike clips Throw).
+/// Does `atk` connect through `def`? Strike connects unless Evaded; Anticipate connects only
+/// against an Evade (it leads the move). Non-attacks never connect.
 fn connects(atk: Move, def: Move) -> bool {
     match atk {
-        Move::Strike => def != Move::Parry,
-        Move::Throw => def != Move::Evade && def != Move::Strike,
+        Move::Strike => def != Move::Evade,
+        Move::Anticipate => def == Move::Evade,
         _ => false,
     }
 }
 
-/// Did `their` move successfully *defend* my attack (which flips my Charges face-down)?
-/// Only a matching defense counts — being out-struck (Strike vs Throw) does not.
-fn defended(my_atk: Move, their: Move) -> bool {
-    (my_atk == Move::Strike && their == Move::Parry)
-        || (my_atk == Move::Throw && their == Move::Evade)
-}
-
 /// Resolve one beat: side `a` plays `am`, side `b` plays `bm`.
 pub fn resolve(a: &Side, am: Move, b: &Side, bm: Move) -> Clash {
-    let (mut a_up, mut a_down) = (a.up, a.down);
-    let (mut b_up, mut b_down) = (b.up, b.down);
-
-    // Hits land off the *current* (pre-flip) charges.
+    // Hits land off the current Force.
     let on_b = connects(am, bm).then(|| Strike {
-        raw: damage(a.power, a_up),
+        raw: damage(a.power, a.force),
         dtype: a.dtype,
         precision: a.precision,
     });
     let on_a = connects(bm, am).then(|| Strike {
-        raw: damage(b.power, b_up),
+        raw: damage(b.power, b.force),
         dtype: b.dtype,
         precision: b.precision,
     });
 
-    // A defended attack loses its active Charges to face-down (the comeback).
-    if defended(am, bm) {
-        a_down += a_up;
-        a_up = 0;
+    let mut a_force = a.force;
+    let mut b_force = b.force;
+
+    // The only transfer: a Strike slipped by an Evade hands the striker's Force to the evader.
+    if am == Move::Strike && bm == Move::Evade {
+        b_force = b_force.saturating_add(a_force);
+        a_force = 0;
     }
-    if defended(bm, am) {
-        b_down += b_up;
-        b_up = 0;
+    if bm == Move::Strike && am == Move::Evade {
+        a_force = a_force.saturating_add(b_force);
+        b_force = 0;
     }
 
-    // Setups resolve only if not interrupted by a connecting attack this beat.
-    if on_a.is_none() {
-        match am {
-            Move::Charge if a_up + a_down < a.max => a_up += 1,
-            Move::Recover => {
-                a_up += a_down;
-                a_down = 0;
-            }
-            _ => {}
-        }
+    // Gather builds, unless its player was hit this beat (interrupted).
+    if am == Move::Gather && on_a.is_none() {
+        a_force = a_force.saturating_add(1);
     }
-    if on_b.is_none() {
-        match bm {
-            Move::Charge if b_up + b_down < b.max => b_up += 1,
-            Move::Recover => {
-                b_up += b_down;
-                b_down = 0;
-            }
-            _ => {}
-        }
+    if bm == Move::Gather && on_b.is_none() {
+        b_force = b_force.saturating_add(1);
     }
 
+    let ends = on_a.is_some() || on_b.is_some();
     let note = clash_note(a.name, am, b.name, bm, &on_a, &on_b);
     Clash {
         on_a,
         on_b,
-        a: Charges {
-            up: a_up,
-            down: a_down,
-        },
-        b: Charges {
-            up: b_up,
-            down: b_down,
-        },
-        connected: on_a.is_some() || on_b.is_some(),
+        a_force,
+        b_force,
+        ends,
         note,
     }
 }
 
-fn clash_note(
-    an: &str,
-    am: Move,
-    bn: &str,
-    bm: Move,
-    on_a: &Option<Strike>,
-    on_b: &Option<Strike>,
-) -> String {
+fn clash_note(an: &str, am: Move, bn: &str, bm: Move, on_a: &Option<Strike>, on_b: &Option<Strike>) -> String {
     match (on_a.is_some(), on_b.is_some()) {
         (true, true) => format!("{an} and {bn} trade blows!"),
         (false, true) => format!("{an}'s {} lands on {bn}.", am.name()),
@@ -204,120 +154,76 @@ fn clash_note(
 mod tests {
     use super::*;
 
-    fn side(power: u32, up: u32, down: u32, max: u32) -> Side<'static> {
-        Side {
-            power,
-            dtype: DamageType::Blunt,
-            precision: 0,
-            up,
-            down,
-            max,
-            name: "X",
-        }
+    fn side(power: u32, force: u32) -> Side<'static> {
+        Side { power, dtype: DamageType::Blunt, precision: 0, force, name: "X" }
     }
 
-    /// Invariant 1 — **avoid**: every attack has a defense that negates it (complete
-    /// defense). With Parry/Evade always available (standing, enforced by the engine),
-    /// this gives "never hit, whole duel" under last-word reads.
+    /// Invariant 1 — **avoid**: every attack has a defense that negates it.
     #[test]
     fn defense_answers_every_attack() {
-        let s = side(5, 0, 0, 3);
-        // I see your attack and pick the matching defense → I take nothing.
-        assert!(resolve(&s, Move::Strike, &s, Move::Parry).on_a.is_none());
-        assert!(resolve(&s, Move::Throw, &s, Move::Evade).on_a.is_none());
+        let me = side(5, 0);
+        let you = side(5, 0);
+        // I pick the matching defense → I take nothing (on_a = a hit landing on me).
+        assert!(resolve(&me, Move::Evade, &you, Move::Strike).on_a.is_none());
+        assert!(resolve(&me, Move::Gather, &you, Move::Anticipate).on_a.is_none());
     }
 
-    /// Invariant 2 — **land**: for every move the opponent can make, some attack lands.
+    /// Invariant 2 — **land**: for every move the opponent makes, some attack of mine lands.
     #[test]
     fn offense_answers_every_move() {
-        let me = side(5, 0, 0, 3);
-        let you = side(5, 0, 0, 3);
+        let me = side(5, 0);
+        let you = side(5, 0);
         let lands = |am: Move, bm: Move| resolve(&me, am, &you, bm).on_b.is_some();
-        assert!(lands(Move::Throw, Move::Parry), "Throw beats Parry");
-        assert!(lands(Move::Strike, Move::Evade), "Strike beats Evade");
-        assert!(
-            lands(Move::Strike, Move::Strike),
-            "Strike trades into Strike"
-        );
-        assert!(lands(Move::Strike, Move::Throw), "Strike clips Throw");
-        assert!(lands(Move::Strike, Move::Charge), "Strike hits a charger");
-        assert!(
-            lands(Move::Strike, Move::Recover),
-            "Strike hits a recoverer"
-        );
+        assert!(lands(Move::Strike, Move::Gather), "Strike hits a holder");
+        assert!(lands(Move::Anticipate, Move::Evade), "Anticipate leads a mover");
+        assert!(lands(Move::Strike, Move::Strike), "Strike trades into Strike");
+        assert!(lands(Move::Strike, Move::Anticipate), "Strike beats Anticipate");
     }
 
-    /// Invariant 3 — **not both, free**: against a committed Strike, the *only* landing
-    /// answer is Strike, and Strike-vs-Strike trades — so you cannot land without being hit.
+    /// Invariant 3 — **not both, free**: vs a committed Strike, the only landing answer is
+    /// Strike, and Strike-vs-Strike trades.
     #[test]
     fn landing_on_a_strike_requires_a_trade() {
-        let me = side(5, 0, 0, 3);
-        let you = side(5, 0, 0, 3);
-        // The only A move that lands on a B Strike:
-        for am in [
-            Move::Throw,
-            Move::Parry,
-            Move::Evade,
-            Move::Charge,
-            Move::Recover,
-        ] {
-            assert!(
-                resolve(&me, am, &you, Move::Strike).on_b.is_none(),
-                "{am:?} shouldn't land vs Strike"
-            );
+        let me = side(5, 0);
+        let you = side(5, 0);
+        for am in [Move::Anticipate, Move::Gather, Move::Evade] {
+            assert!(resolve(&me, am, &you, Move::Strike).on_b.is_none(), "{am:?} shouldn't land vs Strike");
         }
         let trade = resolve(&me, Move::Strike, &you, Move::Strike);
-        assert!(
-            trade.on_b.is_some() && trade.on_a.is_some(),
-            "Strike lands but you're also hit"
-        );
+        assert!(trade.on_b.is_some() && trade.on_a.is_some(), "Strike lands but you're also hit");
     }
 
     #[test]
-    fn charges_double_damage_and_persist() {
-        let a = side(3, 2, 0, 3); // 2 active charges → ×4
-        let b = side(3, 0, 0, 3);
-        let r = resolve(&a, Move::Strike, &b, Move::Evade); // Strike beats Evade
+    fn force_doubles_and_builds() {
+        let a = side(3, 2); // ×4
+        let b = side(3, 0);
+        let r = resolve(&a, Move::Strike, &b, Move::Gather); // Strike hits the holder
         assert_eq!(r.on_b.unwrap().raw, 12); // 3 × 2^2
-        assert_eq!(r.a, Charges { up: 2, down: 0 }, "charges persist (durable)");
+        // Gather builds when uninterrupted.
+        let r2 = resolve(&a, Move::Gather, &b, Move::Gather);
+        assert_eq!(r2.a_force, 3, "Gather adds one");
+        assert_eq!(r2.b_force, 1);
     }
 
+    /// The only Force transfer: a Strike slipped by an Evade is stolen.
     #[test]
-    fn a_defended_strike_flips_the_charges_down() {
-        let a = side(3, 2, 0, 3);
-        let b = side(3, 0, 0, 3);
-        let r = resolve(&a, Move::Strike, &b, Move::Parry);
-        assert!(r.on_b.is_none(), "parried — no damage");
-        assert_eq!(
-            r.a,
-            Charges { up: 0, down: 2 },
-            "the parry flipped both charges down"
-        );
+    fn evading_a_strike_steals_its_force() {
+        let striker = side(3, 3);
+        let dodger = side(3, 0);
+        let r = resolve(&striker, Move::Strike, &dodger, Move::Evade);
+        assert!(r.on_a.is_none() && r.on_b.is_none(), "the strike is dodged, nothing lands");
+        assert_eq!(r.a_force, 0, "the striker loses its Force");
+        assert_eq!(r.b_force, 3, "the dodger steals it");
+        assert!(!r.ends, "a dodged strike is a dance beat, not an ender");
     }
 
+    /// Ends-on-strike: a connecting move ends the duel; a non-connecting one continues it.
     #[test]
-    fn charge_builds_and_recover_restores() {
-        let a = side(3, 0, 0, 2);
-        let b = side(3, 0, 0, 2);
-        // Charge unopposed → +1 active.
-        let r = resolve(&a, Move::Charge, &b, Move::Parry);
-        assert_eq!(r.a, Charges { up: 1, down: 0 });
-        // Recover flips down → up.
-        let a2 = side(3, 0, 2, 2);
-        let r2 = resolve(&a2, Move::Recover, &b, Move::Parry);
-        assert_eq!(r2.a, Charges { up: 2, down: 0 });
-    }
-
-    #[test]
-    fn an_attack_interrupts_a_charge() {
-        let a = side(3, 0, 0, 3); // charging
-        let b = side(3, 0, 0, 3);
-        let r = resolve(&a, Move::Charge, &b, Move::Strike); // B strikes the charger
-        assert!(r.on_a.is_some(), "the charger is hit");
-        assert_eq!(
-            r.a,
-            Charges { up: 0, down: 0 },
-            "the charge was interrupted"
-        );
+    fn a_connecting_strike_ends_the_duel() {
+        let a = side(3, 0);
+        let b = side(3, 0);
+        assert!(resolve(&a, Move::Strike, &b, Move::Gather).ends, "a landed strike ends it");
+        assert!(!resolve(&a, Move::Gather, &b, Move::Gather).ends, "two gathers continue");
+        assert!(!resolve(&a, Move::Anticipate, &b, Move::Gather).ends, "a whiffed lead continues");
     }
 }

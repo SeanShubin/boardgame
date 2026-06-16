@@ -28,18 +28,20 @@ pub enum Phase {
     Combat,
 }
 
-/// The active Clash: who's in it, each side's Charge state (`up` active / `down` flipped,
-/// public), the beat counter, and a run of no-connect beats for the stall backstop.
+/// The active Clash: who's in it, each side's **Force** (per-duel, public), the beat
+/// counter, and a run of no-connect beats for the termination backstop. `defending` marks
+/// a Focus-defense (the foe is reset afterward — the hero can survive but not damage it).
 #[derive(Clone, Copy, Debug)]
 pub struct Duel {
     pub hero: usize,
     pub foe: usize,
-    pub hero_up: u32,
-    pub hero_down: u32,
-    pub foe_up: u32,
-    pub foe_down: u32,
+    pub hero_force: u32,
+    pub foe_force: u32,
     pub beat: u32,
     pub stall: u32,
+    /// True when the hero is **defending** a foe-initiated attack (foe reset on end);
+    /// false when the hero **initiated** (mutual, results stick).
+    pub defending: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -80,11 +82,12 @@ impl State {
         self.creatures.iter().filter(|c| !c.is_down()).count()
     }
 
-    /// A hero may still take an offensive engagement this round.
+    /// A hero may still take an action this round (pay-after: act while Tempo ≥ 0; the
+    /// action that drives it negative is the last).
     pub fn hero_can_act(&self, i: usize) -> bool {
         self.heroes
             .get(i)
-            .is_some_and(|h| !h.fallen && !h.exposed && h.tempo >= 0)
+            .is_some_and(|h| !h.fallen && h.tempo >= 0)
     }
 
     /// Clear the per-round plan and size `engaged` to the current foes.
