@@ -22,23 +22,72 @@ pub enum Driver {
     Creature(Behavior),
 }
 
-/// A creature's scripted instinct: a **decision deck** it draws from, and whom it targets.
-/// The deck's composition *is* the creature's mixed strategy — a deck of `[Strike, Strike,
-/// Gather]` strikes two beats in three (§7, `decision-making.md`).
+/// How a creature chooses each beat: a random **deck** (real foes — the deck's composition
+/// *is* its mixed strategy) or a deterministic **script** (tutorial dummies — algorithmic, so
+/// a lesson plays out the same way every time, §7 `decision-making.md`).
+#[derive(Clone, Debug)]
+pub enum Instinct {
+    Deck(Vec<Move>),
+    Script(Script),
+}
+
+/// A deterministic creature algorithm (for tutorials) — built to punish a player who hasn't
+/// learned the lesson and fold to the one who has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Script {
+    /// Always the same move — a pure one-lesson dummy.
+    Always(Move),
+    /// Gather (doubling Force) until Force reaches `until`, then unload a Strike (the
+    /// wind-up killshot you learn to interrupt).
+    ChargeThenStrike { until: u32 },
+    /// Evade until a player's whiffed Strike hands over Force, then Strike it back with their
+    /// own momentum — so Striking a dodger is punished, while Anticipate beats it cleanly.
+    Counter,
+}
+
+impl Script {
+    fn pick(self, force: u32) -> Move {
+        match self {
+            Script::Always(m) => m,
+            Script::ChargeThenStrike { until } => {
+                if force >= until {
+                    Move::Strike
+                } else {
+                    Move::Gather
+                }
+            }
+            Script::Counter => {
+                if force > 0 {
+                    Move::Strike // punish: hit you with the Force you just lost
+                } else {
+                    Move::Evade // bait / dodge; Anticipate beats this
+                }
+            }
+        }
+    }
+}
+
+/// A creature's scripted instinct and whom it targets.
 #[derive(Clone, Debug)]
 pub struct Behavior {
-    pub deck: Vec<Move>,
+    pub instinct: Instinct,
     pub target_rule: TargetRule,
 }
 
 impl Behavior {
-    /// Draw this beat's move (with replacement — the deck never depletes). `rng` is the
-    /// per-beat keyed RNG, so the draw is order-independent (§1.9).
-    pub fn draw(&self, rng: &mut Rng) -> Move {
-        if self.deck.is_empty() {
-            return Move::Strike;
+    /// This beat's move. `force` is the creature's current Force (used by scripts); `rng` is
+    /// the per-beat keyed RNG (used by decks), so draws stay order-independent (§1.9).
+    pub fn pick(&self, force: u32, rng: &mut Rng) -> Move {
+        match &self.instinct {
+            Instinct::Deck(d) => {
+                if d.is_empty() {
+                    Move::Strike
+                } else {
+                    d[rng.below(d.len())]
+                }
+            }
+            Instinct::Script(s) => s.pick(force),
         }
-        self.deck[rng.below(self.deck.len())]
     }
 }
 
@@ -159,9 +208,17 @@ mod tests {
     }
 
     #[test]
-    fn a_deck_draws_its_moves() {
+    fn a_deck_draws_and_a_script_winds_up() {
         let mut rng = Rng::new(1);
-        let b = Behavior { deck: vec![Move::Strike], target_rule: TargetRule::Front };
-        assert_eq!(b.draw(&mut rng), Move::Strike);
+        let deck = Behavior { instinct: Instinct::Deck(vec![Move::Strike]), target_rule: TargetRule::Front };
+        assert_eq!(deck.pick(0, &mut rng), Move::Strike);
+        // The charger gathers until loaded, then strikes.
+        let charger = Behavior {
+            instinct: Instinct::Script(Script::ChargeThenStrike { until: 2 }),
+            target_rule: TargetRule::Front,
+        };
+        assert_eq!(charger.pick(0, &mut rng), Move::Gather);
+        assert_eq!(charger.pick(1, &mut rng), Move::Gather);
+        assert_eq!(charger.pick(2, &mut rng), Move::Strike);
     }
 }

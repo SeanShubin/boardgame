@@ -140,7 +140,7 @@ impl Deckbound {
             state.creatures[duel.foe]
                 .behavior()
                 .expect("a creature drives the duel")
-                .draw(&mut drng)
+                .pick(duel.foe_force, &mut drng)
         };
 
         let (h_pow, h_dt, h_pre) = base_strike(&state.heroes[duel.hero]);
@@ -170,6 +170,16 @@ impl Deckbound {
         if result.ends || hero_down || foe_down {
             state.duel = None;
             state.phase = Phase::Choosing;
+            // Duels resolve immediately (no simultaneous tier to wait for), so finalize a
+            // death the instant it lands — a decisive Win/Defeat shows at once, rather than
+            // forcing the player to End Round first. (A trade kills both in this same beat,
+            // and check_outcome scores the Win first, so a mutual kill is a win.)
+            if hero_down {
+                state.heroes[duel.hero].fallen = true;
+            }
+            if foe_down {
+                state.creatures[duel.foe].fallen = true;
+            }
             check_outcome(state);
         } else {
             let stall = duel.stall + 1; // no connect this beat
@@ -277,9 +287,9 @@ impl Game for Deckbound {
         }
         match &state.phase {
             Phase::Menu(Menu::Top) => vec![
+                Action::OpenTutorial,
                 Action::OpenScenarios,
                 Action::OpenGod,
-                Action::OpenTutorial,
                 Action::Exit,
             ],
             Phase::Menu(m) => {
@@ -585,6 +595,10 @@ fn menu_options_zone() -> ZoneView {
         layout: Layout::Row,
         owner: None,
         cards: vec![
+            CardView::up("Duels")
+                .typed("set")
+                .body(vec!["Start here - learn the Clash.".into()])
+                .accent(Accent::Good),
             CardView::up("Cooperation")
                 .typed("set")
                 .body(vec!["Roles & teamwork.".into()])
@@ -592,10 +606,6 @@ fn menu_options_zone() -> ZoneView {
             CardView::up("God-tier")
                 .typed("set")
                 .body(vec!["One vs many; be strategic.".into()])
-                .accent(Accent::Good),
-            CardView::up("Duels")
-                .typed("set")
-                .body(vec!["Learn one stance at a time.".into()])
                 .accent(Accent::Good),
             CardView::up("Exit")
                 .typed("menu")

@@ -17,7 +17,7 @@ pub mod scenarios;
 pub mod state;
 pub mod stats;
 
-pub use actor::{Actor, Behavior, Driver, Line, TargetRule};
+pub use actor::{Actor, Behavior, Driver, Instinct, Line, Script, TargetRule};
 pub use cards::{Card, Effect, Lifecycle};
 pub use duel::{Move, Side, resolve};
 pub use game::{Action, Deckbound};

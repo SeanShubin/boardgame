@@ -197,21 +197,28 @@ or Bruiser's in-duel instinct; a **Duelist** is the Trickster — the one foe th
 minded. The role decides *stats and which mechanic it punishes*; the decision deck decides
 *how it fights the beat*.
 
-### Tutorial mapping — one lesson per pure deck
+### Tutorials are algorithmic, not random
 
-Each tutorial foe is a **1-move dummy** isolating a single read, in difficulty order:
+Tutorial foes do **not** draw from a random deck — they run a **deterministic script** (an
+`Instinct::Script`, vs the `Instinct::Deck` real foes use). A teaching duel must play out the
+*same way every time*, and the script is tuned to **punish a player who hasn't learned the
+lesson and fold to one who has** — randomness would muddy both. (Real foes stay random decks:
+unpredictability is the point against them.)
 
-| #   | Foe         | Deck                 | Teaches                                                                                    |
-| --- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| 1   | **Post**    | `Gather`             | hit a holder — **Strike beats Gather** (and Anticipate *whiffs*: don't lead a stayer)      |
-| 2   | **Leader**  | `Anticipate`         | punish a lead — **Strike beats Anticipate**, or **Gather** to be safe (never Evade a lead) |
-| 3   | **Dodger**  | `Evade`              | beat a mover — **Anticipate beats Evade** (don't Strike — it dodges and steals)            |
-| 4   | **Brawler** | `Strike`             | survive an aggressor — **Evade beats Strike and steals**; to win you must **trade**        |
-| 5   | **Feint**   | `Strike, Anticipate` | a real read — *now or led?* — the first genuine two-way guess                              |
-| 6   | **Duelist** | balanced 4           | the full mind-game — the synthesis                                                         |
+Each tutorial in difficulty order, with how it bites:
 
-1–4 isolate the four single counters (4 also introduces the **steal** and the **trade**); 5 is
-the first true read; 6 is the synthesis.
+| #   | Foe        | Script                     | Reward (learned it)                   | Punish (didn't)                                         |
+| --- | ---------- | -------------------------- | ------------------------------------- | ------------------------------------------------------- |
+| 1   | **Pell**   | charge → strike (×2 ea)    | Strike the wind-up, or Evade+steal it | the doubled killshot lands (lethal)                     |
+| 2   | **Bron**   | always Anticipate          | Strike him, or Gather (safe)          | **Evade → you're hit** (led)                            |
+| 3   | **Hollow** | counter-puncher            | **Anticipate → clean hit**            | Strike → dodged, your Force stolen & returned next beat |
+| 4   | **Maw**    | always Strike              | Evade → take nothing                  | anything else → hit; to win you must trade              |
+| 5   | **Rage**   | random `Strike/Anticipate` | call it right and punish              | guess wrong → he lands (the first real read)            |
+| 6   | **Sable**  | random, balanced 4         | out-read the mix                      | unreadable by pattern — the synthesis                   |
+
+1–4 are deterministic single-lesson scripts (the tutor *can* hurt you, so the wrong move is
+punished); 5–6 reintroduce randomness, because there the lesson **is** reading an unpredictable
+opponent. Scripts live in `actor::Script`; the keyword→instinct map is `scenarios::instinct_for`.
 
 ### Breadth behavior — principles (pending the round loop)
 

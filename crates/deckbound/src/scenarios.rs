@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actor::{Actor, Behavior, Driver, Line, TargetRule};
+use crate::actor::{Actor, Behavior, Driver, Instinct, Line, Script, TargetRule};
 use crate::cards::Card;
 use crate::duel::Move;
 use crate::stats::{Aspect, DamageType, Defense, Offense};
@@ -139,26 +139,29 @@ fn find_card(cat: &Catalog, name: &str) -> Card {
         .clone()
 }
 
-/// A creature's decision deck, by archetype keyword. The deck *is* the mixed strategy
-/// (§7); these are first-pass tunings — edit freely. Pure 1-move decks are tutorial dummies.
-fn deck_for(keyword: &str) -> Vec<Move> {
+/// A creature's instinct, by keyword. **Tutorial dummies are algorithmic scripts** — they
+/// punish the player for not learning the lesson and fold to the correct move. **Real foes
+/// draw from a random deck** (the deck *is* their mixed strategy, §7). First-pass tunings.
+fn instinct_for(keyword: &str) -> Instinct {
     use Move::*;
     match keyword {
-        // Tutorial pures — one lesson each.
-        "post" => vec![Gather],
-        "leader" => vec![Anticipate],
-        "dodger" => vec![Evade],
-        "brawler" | "dummy" | "aggressor-pure" => vec![Strike],
-        "feint" => vec![Strike, Anticipate],
-        // Standard archetypes (a clear lean).
-        "brute" => vec![Gather, Gather, Strike],
-        "aggressor" => vec![Strike, Strike, Anticipate],
-        "hunter" | "grappler" => vec![Anticipate, Anticipate, Strike],
-        "skirmisher" => vec![Evade, Strike, Anticipate],
-        "turtle" => vec![Gather, Evade, Strike],
-        // Elite — near-balanced, hard to read.
-        "duelist" => vec![Strike, Anticipate, Gather, Evade],
-        other => panic!("unknown creature deck keyword {other:?}"),
+        // --- Tutorial scripts (deterministic; one lesson each) ---
+        // Winds Force up, then unloads — Strike it while it gathers, or Evade the killshot.
+        "charger" => Instinct::Script(Script::ChargeThenStrike { until: 2 }),
+        "leader" => Instinct::Script(Script::Always(Anticipate)), // Strike or Gather it; never Evade
+        "dodger" => Instinct::Script(Script::Always(Evade)),      // Anticipate it; never Strike
+        "counter" => Instinct::Script(Script::Counter),           // Anticipate it; Strike it and it counters
+        "brawler" | "dummy" => Instinct::Script(Script::Always(Strike)), // Evade it; anything else is hit
+        "post" => Instinct::Script(Script::Always(Gather)),
+        // --- Real-foe decks (random lean) ---
+        "feint" => Instinct::Deck(vec![Strike, Anticipate]),
+        "brute" => Instinct::Deck(vec![Gather, Gather, Strike]),
+        "aggressor" => Instinct::Deck(vec![Strike, Strike, Anticipate]),
+        "hunter" | "grappler" => Instinct::Deck(vec![Anticipate, Anticipate, Strike]),
+        "skirmisher" => Instinct::Deck(vec![Evade, Strike, Anticipate]),
+        "turtle" => Instinct::Deck(vec![Gather, Evade, Strike]),
+        "duelist" => Instinct::Deck(vec![Strike, Anticipate, Gather, Evade]),
+        other => panic!("unknown creature instinct keyword {other:?}"),
     }
 }
 
@@ -204,7 +207,7 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         Driver::Human
     } else {
         Driver::Creature(Behavior {
-            deck: deck_for(&c.driver),
+            instinct: instinct_for(&c.driver),
             target_rule: c.target_rule.unwrap_or(TargetRule::Front),
         })
     };

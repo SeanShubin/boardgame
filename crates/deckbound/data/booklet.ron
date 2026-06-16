@@ -85,13 +85,13 @@ Catalog(
                    body: 10, toughness: 5, weapon: "Slam", traits: ["Heavy-Plate"] ),
         ActorCard( name: "Titan",     role: "God-Boss", driver: "duelist", speed: 8, power: 6,
                    body: 20, toughness: 3, resolve: 8, mind: 6, weapon: "Maul", traits: ["Plate"] ),
-        // ---- duel-tutorial dummies (1v1) ----
-        ActorCard( name: "Pell",   role: "Charger",       driver: "brute",     speed: 2, power: 1, body: 8, charges: 4, weapon: "Claw" ),
-        ActorCard( name: "Bron",   role: "Brute",         driver: "brute",     speed: 2, power: 1, body: 10, weapon: "Claw" ),
-        ActorCard( name: "Hollow", role: "Shield-Turtle", driver: "turtle",    speed: 2, power: 1, body: 9, weapon: "Claw" ),
-        ActorCard( name: "Maw",    role: "Grappler",      driver: "grappler",  speed: 2, power: 1, body: 9, weapon: "Claw" ),
-        ActorCard( name: "Rage",   role: "Berserker",     driver: "aggressor", speed: 2, power: 1, body: 9, weapon: "Claw" ),
-        ActorCard( name: "Sable",  role: "Duelist",       driver: "duelist",   speed: 2, power: 1, body: 9, weapon: "Claw" ),
+        // ---- duel-tutorial dummies (1v1) — one pure lesson each (§ decision-making) ----
+        ActorCard( name: "Pell",   role: "Charger",  driver: "charger",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Bron",   role: "Leader",   driver: "leader",   speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Hollow", role: "Counter",  driver: "counter",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Maw",    role: "Brawler",  driver: "brawler",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Rage",   role: "Feinter",  driver: "feint",    speed: 2, power: 1, body: 8, weapon: "Claw" ),
+        ActorCard( name: "Sable",  role: "Duelist",  driver: "duelist",  speed: 2, power: 1, body: 8, weapon: "Claw" ),
     ],
     campaign: [
         ScenarioCard(
@@ -152,11 +152,11 @@ Catalog(
         ),
     ],
     tutorials: [
-        ScenarioCard( name: "1. Interrupt the Charge", blurb: "Pell winds up a killshot with Charge. A Strike interrupts a Charge - hit him before he completes it, or the doubled blow ends you.", heroes: ["Vera"], foes: ["Pell"] ),
-        ScenarioCard( name: "2. Parry the Strike",     blurb: "Bron charges, then Strikes. Parry the Strike to negate it AND flip his charge face-down.", heroes: ["Vera"], foes: ["Bron"] ),
-        ScenarioCard( name: "3. Crack the Guard",      blurb: "Hollow just guards. A Throw beats a Parry - throw to break the turtle's block.", heroes: ["Vera"], foes: ["Hollow"] ),
-        ScenarioCard( name: "4. Beat the Throw",       blurb: "Maw throws through guards. Evade the Throw (or Strike to clip it) - never Parry a thrower.", heroes: ["Vera"], foes: ["Maw"] ),
-        ScenarioCard( name: "5. Don't Trade",          blurb: "Rage swings nonstop. Landing on a committed Strike means trading a hit - Parry to stay clean, then punish.", heroes: ["Vera"], foes: ["Rage"] ),
-        ScenarioCard( name: "6. The Duelist",          blurb: "Sable mixes the whole kit and reads the moment. The full mind-game.", heroes: ["Vera"], foes: ["Sable"] ),
+        ScenarioCard( name: "1. Interrupt the Wind-Up", blurb: "Pell winds up — he Gathers, doubling his Force (×2, ×4 …), then unloads a killshot Strike. Strike him while he gathers (Strike beats Gather) to end it first, or Evade the big swing. Don't Anticipate — a lead whiffs on someone holding still.", heroes: ["Vera"], foes: ["Pell"] ),
+        ScenarioCard( name: "2. Read the Lead",         blurb: "Bron leads every blow (Anticipate). Strike him — Strike beats Anticipate — or Gather to hold your ground. Never Evade a lead: he's aiming where you'll go.", heroes: ["Vera"], foes: ["Bron"] ),
+        ScenarioCard( name: "3. Catch the Dodger",      blurb: "Hollow dodges and counters. Anticipate beats Evade — lead him for a clean hit. Strike him and he slips it, steals your Force, and Strikes back with it next beat — so never Strike a dodger.", heroes: ["Vera"], foes: ["Hollow"] ),
+        ScenarioCard( name: "4. Survive the Brawler",   blurb: "Maw swings every beat (Strike). Evade beats Strike — dodge it and steal his Force. To win you must Strike back, and that's a trade.", heroes: ["Vera"], foes: ["Maw"] ),
+        ScenarioCard( name: "5. The Feint",             blurb: "Rage mixes Strike and Anticipate — your first real read. If you call a Strike, Evade it; if you call a lead, Gather. Guess wrong and he lands.", heroes: ["Vera"], foes: ["Rage"] ),
+        ScenarioCard( name: "6. The Duelist",           blurb: "Sable plays the whole kit, near-even — unreadable by pattern. The full mind-game.", heroes: ["Vera"], foes: ["Sable"] ),
     ],
 )
