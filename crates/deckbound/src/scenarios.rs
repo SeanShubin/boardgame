@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actor::{Actor, Behavior, Driver, StancePolicy, TargetRule};
+use crate::actor::{Actor, Behavior, Driver, MovePolicy, TargetRule};
 use crate::cards::Card;
 use crate::stats::{Aspect, DamageType, Defense, Offense};
 
@@ -55,6 +55,9 @@ struct ActorCard {
     resolve: u32,
     #[serde(default = "one")]
     mind: u32,
+    /// Charge capacity in the Clash — how many durable ×2 Charges this fighter can stack.
+    #[serde(default = "three")]
+    charges: u32,
     weapon: String,
     #[serde(default)]
     actions: Vec<String>,
@@ -68,6 +71,10 @@ struct ActorCard {
 
 fn one() -> u32 {
     1
+}
+
+fn three() -> u32 {
+    3
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,15 +139,15 @@ fn find_card(cat: &Catalog, name: &str) -> Card {
         .clone()
 }
 
-fn policy(keyword: &str) -> StancePolicy {
+fn policy(keyword: &str) -> MovePolicy {
     match keyword {
-        "dummy" => StancePolicy::Dummy,
-        "brute" => StancePolicy::Brute,
-        "turtle" => StancePolicy::Turtle,
-        "duelist" => StancePolicy::Duelist,
-        "grappler" => StancePolicy::Grappler,
-        "aggressor" => StancePolicy::Aggressor,
-        other => panic!("unknown stance-policy keyword {other:?}"),
+        "dummy" => MovePolicy::Dummy,
+        "brute" => MovePolicy::Brute,
+        "turtle" => MovePolicy::Turtle,
+        "duelist" => MovePolicy::Duelist,
+        "grappler" => MovePolicy::Grappler,
+        "aggressor" => MovePolicy::Aggressor,
+        other => panic!("unknown move-policy keyword {other:?}"),
     }
 }
 
@@ -200,6 +207,7 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
         runner: c.runner,
+        charges_max: c.charges,
         tempo: 0,
         focus: 0,
         exposed: false,

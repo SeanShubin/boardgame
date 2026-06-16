@@ -86,6 +86,30 @@ can't be stated as an intuitive picture, it is too abstract to hold at the table
 rework the rule, or the metaphor, until it can. Mechanics serve the metaphor, not the
 other way around.
 
+## 10. Conceptual integrity — every rule re-derivable from its intent
+
+The game must be **reconstructable, not memorised.** A *simple* rule is still bad if it
+is **arbitrary** — its shape has no reason, so it can only be held by rote. A *complex*
+rule is fine if it is **motivated** — its form follows from its intent, so anyone who
+holds the intent can **re-derive** the parts they forget. Prefer a motivated rule over a
+merely short one; arbitrary simplicity is the trap.
+
+The whole design should spring from a **few intents** — these north stars, and each
+mechanic's stated reason — so a reader (player, designer, or AI) who grasps the intents
+can rebuild the mechanics rather than recall them. That property is **conceptual
+integrity**: it is what lets a large game still be held in one head.
+
+This is the general principle of which **#9 (every rule rides on a metaphor) is the
+fiction engine.** A metaphor motivates a rule by tying it to a physical image; a rule
+can also be motivated by its **consequence** (Edge is per-duel because a fight-long
+meter would snowball — re-derivable, but no picture). Either way the test is one
+question: *could someone who forgot this rule rebuild it from why it exists?*
+
+- If a rule can only be stated as a bare fact — no metaphor, no consequence, no intent —
+  it is **arbitrary**. Rework it until it carries its own reason, or cut it.
+- "Simplifying" a rule by **severing it from its reason** is a regression, even if the
+  text got shorter.
+
 ---
 
 **Using this document.** Every other design note should trace back to one or more

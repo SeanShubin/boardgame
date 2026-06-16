@@ -27,6 +27,35 @@ wrong by default*. The old `design/` notes are **frozen exploration** and are
 **not authoritative** — many are stale. When you are unsure, **ask the human; do
 not invent, and do not promote a note or the code to truth.**
 
+### Motivated rules — the bar every rule must clear
+
+A *simple* rule can still be hard to hold if it is **arbitrary** — nothing explains
+its shape, so it can only be memorized. A *complex* rule can be easy to hold if it is
+**motivated**: its form follows from its intent, so anyone who grasps the intent can
+**re-derive** the parts they forgot. **Always prefer a motivated rule over a merely
+short one.** Arbitrary simplicity is a trap; motivated complexity is fine.
+
+The whole-game target is **conceptual integrity**: every rule springs from a few
+intents (the Charter's north stars and each rule's WHY), so a reader — human or AI —
+who holds the intents can *reconstruct* the mechanics instead of memorizing them. This
+is exactly why every Spec rule carries a **WHY** (and **GUARANTEES**): the WHY is the
+rule's motivation — the thing you reconstruct from. A rule you cannot motivate is a
+smell. This principle is **Charter north star #10 (*conceptual integrity*)**; this
+section is how to apply it.
+
+**This is a working directive for AI assistants, not a nicety:**
+
+- When you **write or change** a rule, make it **re-derivable from its intent**, and
+  state that intent (the WHY). If you cannot articulate a WHY, stop — the rule is
+  probably arbitrary, and an unmotivated rule is a defect-in-waiting.
+- When you **answer** a design question, reason **from the intent and reconstruct the
+  rule** rather than reciting it. If a recited rule and the intent disagree, the rule
+  is the suspect (consistent with *the code is a defect report*).
+- **Theme is one engine of motivation:** a rule that falls out of the fiction
+  (diegetic) is re-derivable from the world. Prefer diegetic rules where you can.
+- **Never simplify a rule by severing it from its WHY** — that trades a motivated rule
+  for an arbitrary one. It is a regression even if the text got shorter.
+
 ### What is authoritative (and what is not)
 
 | Question you're answering                                     | Source of truth                      | Authoritative?                          |
@@ -119,7 +148,7 @@ always the human's decision, surfaced explicitly — never smuggled in as a
 
 ### Charter — *the intent*
 
-**`design/philosophy.md`** (the nine north stars). Answers *why*. Changes to it
+**`design/philosophy.md`** (the ten north stars). Answers *why*. Changes to it
 are deliberate design acts, made on purpose and rarely. Every Spec rule should
 trace back to a Charter north star.
 

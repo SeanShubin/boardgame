@@ -10,7 +10,7 @@ use engine::Rng;
 use serde::Deserialize;
 
 use crate::cards::Card;
-use crate::duel::Stance;
+use crate::duel::Move;
 use crate::stats::{Defense, Offense};
 
 /// Who drives an Actor's choices.
@@ -22,10 +22,10 @@ pub enum Driver {
     Creature(Behavior),
 }
 
-/// A creature's scripted instinct: how it picks a stance, and whom it targets.
+/// A creature's scripted instinct: how it picks a move, and whom it targets.
 #[derive(Clone, Copy, Debug)]
 pub struct Behavior {
-    pub policy: StancePolicy,
+    pub policy: MovePolicy,
     pub target_rule: TargetRule,
 }
 
@@ -42,10 +42,10 @@ pub enum TargetRule {
     Runner,
 }
 
-/// How a creature picks its stance each beat — its "deck" of reads, off the public
-/// Edge banks (never the human's hidden pick this beat).
+/// How a creature picks its move each beat — its instinct (one-way; a Creature does not
+/// read you back, §7). `rng` supplies the variation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StancePolicy {
+pub enum MovePolicy {
     Dummy,
     Brute,
     Turtle,
@@ -54,70 +54,64 @@ pub enum StancePolicy {
     Aggressor,
 }
 
-impl StancePolicy {
+impl MovePolicy {
     pub fn label(self) -> &'static str {
         match self {
-            StancePolicy::Dummy => "Sandbag",
-            StancePolicy::Brute => "Brute",
-            StancePolicy::Turtle => "Turtle",
-            StancePolicy::Duelist => "Duelist",
-            StancePolicy::Grappler => "Grappler",
-            StancePolicy::Aggressor => "Berserker",
+            MovePolicy::Dummy => "Sandbag",
+            MovePolicy::Brute => "Charger",
+            MovePolicy::Turtle => "Turtle",
+            MovePolicy::Duelist => "Duelist",
+            MovePolicy::Grappler => "Grappler",
+            MovePolicy::Aggressor => "Berserker",
         }
     }
 
-    /// The stance for this beat. `own` is the creature's Edge, `foe` the hero's
-    /// (both public); `rng` supplies the bluff.
-    pub fn stance(self, own: u32, foe: u32, rng: &mut Rng) -> Stance {
+    /// The move for this beat. `up`/`down`/`max` are the creature's own Charge state;
+    /// `rng` supplies the variation. (One-way: it does not read the hero, §7.)
+    pub fn pick_move(self, up: u32, down: u32, max: u32, rng: &mut Rng) -> Move {
+        let can_charge = up + down < max;
         match self {
-            StancePolicy::Dummy => Stance::Marshal,
-            StancePolicy::Brute => {
-                if own >= 3 {
-                    Stance::Unleash
+            // A sandbag just swings — trivially read and Parried.
+            MovePolicy::Dummy => Move::Strike,
+            // Wind up to a killshot, then swing; recover if its charge was knocked down.
+            MovePolicy::Brute => {
+                if down > 0 {
+                    Move::Recover
+                } else if can_charge {
+                    Move::Charge
                 } else {
-                    Stance::Marshal
+                    Move::Strike
                 }
             }
-            StancePolicy::Turtle => {
-                if rng.below(5) == 0 {
-                    Stance::Marshal
+            // Mostly blocks; occasionally dodges.
+            MovePolicy::Turtle => {
+                if rng.below(4) == 0 {
+                    Move::Evade
                 } else {
-                    Stance::Parry
+                    Move::Parry
                 }
             }
-            StancePolicy::Grappler => {
-                if own < 2 {
-                    Stance::Marshal
+            // Throws through guards; charges when it can.
+            MovePolicy::Grappler => {
+                if down > 0 {
+                    Move::Recover
+                } else if can_charge && rng.below(2) == 0 {
+                    Move::Charge
                 } else {
-                    Stance::Overwhelm
+                    Move::Throw
                 }
             }
-            StancePolicy::Aggressor => {
-                if rng.below(10) < 7 {
-                    Stance::Unleash
-                } else {
-                    Stance::Marshal
-                }
-            }
-            StancePolicy::Duelist => {
-                if foe >= 2 {
-                    match rng.below(4) {
-                        0 => Stance::Marshal,
-                        1 => Stance::Overwhelm,
-                        _ => Stance::Parry,
-                    }
-                } else if own >= 2 {
-                    if rng.below(3) == 0 {
-                        Stance::Overwhelm
-                    } else {
-                        Stance::Unleash
-                    }
-                } else if rng.below(3) == 0 {
-                    Stance::Unleash
-                } else {
-                    Stance::Marshal
-                }
-            }
+            // Relentless swings.
+            MovePolicy::Aggressor => Move::Strike,
+            // Mixes the whole kit.
+            MovePolicy::Duelist => match rng.below(5) {
+                0 if can_charge => Move::Charge,
+                0 => Move::Strike,
+                1 => Move::Throw,
+                2 => Move::Parry,
+                3 => Move::Evade,
+                _ => Move::Strike,
+            },
         }
     }
 }
@@ -136,6 +130,8 @@ pub struct Actor {
     pub driver: Driver,
     /// This actor crosses the gauntlet rather than holding a line.
     pub runner: bool,
+    /// Charge capacity — how many durable Charges this fighter can stack in a Clash.
+    pub charges_max: u32,
 
     // round-scoped budgets
     pub tempo: i32,
@@ -212,6 +208,7 @@ mod tests {
             actions: vec![],
             driver: Driver::Human,
             runner: false,
+            charges_max: 3,
             tempo: 0,
             focus: 0,
             exposed: true,
@@ -224,8 +221,8 @@ mod tests {
     }
 
     #[test]
-    fn dummy_always_marshals() {
+    fn dummy_just_swings() {
         let mut rng = Rng::new(1);
-        assert_eq!(StancePolicy::Dummy.stance(0, 0, &mut rng), Stance::Marshal);
+        assert_eq!(MovePolicy::Dummy.pick_move(0, 0, 3, &mut rng), Move::Strike);
     }
 }

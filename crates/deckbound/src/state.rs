@@ -28,18 +28,18 @@ pub enum Phase {
     Combat,
 }
 
-/// The active duel: who's in it, both Edge banks (public), the beat counter, and a
-/// run of mutual-Marshals for the stall backstop.
+/// The active Clash: who's in it, each side's Charge state (`up` active / `down` flipped,
+/// public), the beat counter, and a run of no-connect beats for the stall backstop.
 #[derive(Clone, Copy, Debug)]
 pub struct Duel {
     pub hero: usize,
     pub foe: usize,
-    pub hero_edge: u32,
-    pub foe_edge: u32,
+    pub hero_up: u32,
+    pub hero_down: u32,
+    pub foe_up: u32,
+    pub foe_down: u32,
     pub beat: u32,
-    pub double_marshals: u32,
-    /// The hero has read this foe (spent Focus) — the non-Unleash stances are unlocked.
-    pub read: bool,
+    pub stall: u32,
 }
 
 #[derive(Clone, Debug)]

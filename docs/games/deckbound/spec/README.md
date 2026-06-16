@@ -25,6 +25,16 @@ intent-vs-mechanics distinction answerable.
 - **GUARANTEES** — the invariants the rule exists to preserve. A change that keeps
   the RULE's letter but breaks a GUARANTEE is a defect even if it "compiles."
 
+The point of the **WHY** is **motivation**: a rule whose form follows from its intent
+is *re-derivable* — a reader who forgets the letter can reconstruct it from the WHY.
+That is this Spec's aim, **conceptual integrity**: every rule springs from a few
+intents, so you *reconstruct* the mechanics rather than memorize them. So **prefer a
+motivated rule — one that carries its own rationale — over a merely short one**, and
+treat a rule you cannot motivate as a smell. This is **Charter north star #10
+(conceptual integrity)**; theme is one engine of motivation (a rule that falls out of
+the fiction is re-derivable from the world), but a rule can equally be motivated by its
+consequence. See also [`SOURCE-OF-TRUTH.md`](../SOURCE-OF-TRUTH.md) — "Motivated rules."
+
 Numbers appear only as *(appendix)* illustrations; the real values are in
 `booklet.ron` and are human-tuned.
 
@@ -39,7 +49,7 @@ authored.
 
 | System                                  | Spec status | Current design source if not yet specced                  |
 | --------------------------------------- | ----------- | --------------------------------------------------------- |
-| **The Duel** (tactical core)            | ✅ worked    | —                                                         |
+| **The Clash** (tactical core)           | ✅ worked    | —                                                         |
 | **Defense model** (cut → bar → pool)    | 🟡 seeded    | `design/stats.md`, `design/form-and-defeat.md`            |
 | **Speed/Tempo + Mind/Focus**            | 🟡 seeded    | `design/speed-and-tempo.md`, `design/mind-and-stances.md` |
 | **Coordination / positioning**          | ⬜ stub      | `design/coordination-and-interruption.md`                 |
@@ -53,14 +63,86 @@ exhaustive · ⬜ stub = headers + intent only, not yet authoritative.
 
 ---
 
-## 1. The Duel — *the tactical core* ✅
+## 1. The Clash — *the tactical core* ✅
 
-The atom of combat: two Actors **predicting each other** across one clash,
-resolved inside one round. The fighting-game **strike / throw / block** mix-up with
-a neutral. Design background:
-[`design/the-duel.md`](../design/the-duel.md).
+The atom of combat: two Actors **predicting each other**, resolved beat by beat
+inside one round. The fighting-game **strike / throw / block** mix-up, played as
+cards. Design background: [`design/the-duel.md`](../design/the-duel.md).
+
+> **History.** This section formerly specced a single-clash **stance/Edge duel**
+> (Marshal · Unleash · Overwhelm · Parry, with a tracked Edge meter). That system is
+> **superseded by §1.0 (The Clash)** below. The superseded subsections (§1.1, §1.2,
+> §1.3, §1.5, and the in-duel read of §1.8) are kept for design history — each carries
+> a banner — because their **WHY/GUARANTEES carry forward** into the Clash. The
+> breadth and resolution-order rules (§1.6 reworded, §1.7, §1.9) and §3 are unchanged.
+
+### 1.0 The Clash — beats, six moves, charges
+
+**RULE.** A duel is **the Clash**: a sequence of **beats**. Each beat both fighters
+**secretly choose one move** and reveal simultaneously; the beat resolves; the Clash
+continues until a fighter's **Body reaches 0** (Body-attrition — there is no "ends on
+the first strike"). The six moves come in two kinds:
+
+- **Standing** *(always available, never deplete)* — **Strike**, **Throw** (offense);
+  **Parry**, **Evade** (defense).
+- **Setups** *(the escalation resource — durable face-up cards that replace the Edge
+  number)* — **Charge** (place one active **Charge**; each active Charge **doubles**
+  your attack damage, ×2 per Charge) and **Recover** (flip your own face-down Charges
+  back up). **Charge capacity** is a per-actor stat (`booklet.ron`); Charge is offered
+  only below capacity, Recover only with a face-down Charge.
+
+**Counter-rules** (the whole table, re-derivable):
+1. **Cycle.** Strike ▸ Evade ▸ Throw ▸ Parry ▸ Strike — each attack beats one defense
+   and loses to the other (Strike beats Evade, loses to Parry; Throw beats Parry, loses
+   to Evade).
+2. **Trade.** Strike vs Strike → **both hit** (the hinge of invariant 3). Strike
+   **clips** Throw (Strike > Throw): the striker lands, the thrower does not.
+3. **Attacks beat setups.** A connecting Strike/Throw hits a Charging or Recovering foe
+   and **interrupts** the setup (it does not resolve that beat).
+4. **Setups resolve if unopposed.** Against anything that does not connect (a defense,
+   or the other setup), Charge adds a Charge and Recover restores flipped Charges.
+5. **A successful defense flips the attacker's active Charges face-down** (disable, not
+   destroy — the comeback); Recover restores them.
+6. **Damage** = `power × 2^(active Charges)`, routed through the armor/toughness pipeline
+   (§2); Body 0 = down.
+
+**WHY.** The standing defenses (Parry/Evade) and standing attacks (Strike/Throw) never
+deplete, so a perfect reader can *always* answer the move in front of them — that is
+what lets the two reachability invariants hold for the **whole** duel, not just one
+beat. Charges-as-cards replace the Edge number with something **visible and durable**,
+and the **×2** makes a completed wind-up genuinely lethal: this is the
+Gandalf-vs-Balrog engine (north star #4) — a weak fighter can steal a duel with perfect
+reads, but the instant a read is wrong the doubled blow lands, and the downside is far
+worse for the weaker side, so over many duels the upset is a *bad bet*. Folding the
+**trade** cell (Strike vs Strike = both hit) into the cycle is precisely what forbids
+landing-for-free against a committed attacker — you cannot buy both invariants at once.
+(north stars #2 computable, #4 asymmetry, #10 re-derivable.)
+
+**GUARANTEES** — the three invariants, under **last-word reads** (the opponent commits
+face-up, then you choose):
+1. **Avoid.** Spending the defensive read, you can pass through the **whole** duel
+   **un-hit** if you choose: every attack has a standing defense that negates it
+   (Strike↦Parry, Throw↦Evade), and the defenses never deplete.
+2. **Land.** Spending offense, you can land a hit by the end if you choose: for every
+   move the opponent can make, some standing attack lands (Throw beats Parry; Strike
+   beats Evade, trades into Strike, clips Throw; either attack hits a setup).
+3. **Not both, free.** You cannot guarantee both at once: against a committed **Strike**
+   the *only* landing answer is Strike, and Strike-vs-Strike **trades** — landing on a
+   striker means taking a hit.
+- **Termination.** Body-attrition ends every duel at Body 0; the engine backstop (§1.6)
+  breaks off a Clash that makes no progress, so no duel runs forever.
+
+**MANUAL.** *Each beat, pick a move: Strike or Throw to attack, Parry or Evade to
+defend, Charge to wind up a doubling blow, Recover to ready a knocked-down charge.
+Strike beats Evade, Throw beats Parry, Strike clips Throw, Strike trades with Strike; a
+successful defense knocks the attacker's charges down.*
 
 ### 1.1 Edge is per-duel, public, all-or-nothing, linear
+
+> **SUPERSEDED by §1.0 (The Clash).** The tracked Edge meter is replaced by **Charges**
+> (durable ×2 cards). The intent below — a *per-duel, public, no-runaway-hoard*
+> escalation resource — carries forward: Charges reset each duel, are face-up, and a
+> defended Charge flips down rather than compounding.
 
 **RULE.** Every duel starts at **0 Edge** for each side. Edge is built and spent
 **inside that duel only** and **does not carry** to any other duel — not even
@@ -86,6 +168,11 @@ either side. Edge is the price of a contested exchange, never a free resource.
 - Both players can always see the stakes; nothing about Edge is hidden.
 
 ### 1.2 The four stances and the triangle
+
+> **SUPERSEDED by §1.0 (The Clash).** The four stances become the **six moves**
+> (Strike/Throw/Parry/Evade + Charge/Recover). The intent below — **no dominant
+> option**, a throw that beats the block so no stance is safe — carries forward as the
+> §1.0 cycle (each attack beats one defense, loses to the other; Throw beats Parry).
 
 **RULE.** Each fighter secretly commits one of **Marshal · Unleash · Overwhelm ·
 Parry**; reveal simultaneously.
@@ -117,6 +204,11 @@ Overwhelm: punch through a guard. Parry: read the strike, negate it, and steal t
 bank.*
 
 ### 1.3 Ends-on-strike
+
+> **SUPERSEDED by §1.0 (The Clash).** Replaced by **Body-attrition**: a Clash runs beat
+> by beat until a Body reaches 0, not until the first strike connects. This is the change
+> the charge→big-hit arc requires (a single hit no longer ends the duel, so winding up a
+> ×2 blow is meaningful). Termination is now guaranteed by Body 0 + the §1.6 backstop.
 
 **RULE.** A 0-Edge Unleash is still a strike. The duel **ends the instant any
 Unleash or Overwhelm connects** (mutual included). The only committed attacks that
@@ -154,6 +246,12 @@ yet decided.)*
 
 ### 1.5 Edge scales the card's primary effect
 
+> **SUPERSEDED by §1.0 (The Clash).** In-duel damage now scales by **Charges**
+> (`power × 2^charges`, multiplicative) rather than Edge (`+1 per Edge`, linear). The
+> separation it protects — the move is the prediction, the charge is the magnitude, the
+> card never telegraphs the move — carries forward. (Breadth/Action cards outside a
+> Clash are unchanged; §1.7/§3.)
+
 **RULE.** Every card has one **primary effect** (its headline). Spending Edge
 scales that effect at a uniform linear rate: **1 Edge = +1 of the primary effect in
 its natural unit**, added on top of the card's base magnitude. The default unit is
@@ -175,18 +273,21 @@ never telegraphs the stance.
 
 ### 1.6 Termination backstop *(engine rule, not public)*
 
-**RULE.** A duel cannot stall under any reasoning play (believing the opponent will
-Marshal makes Unleash your best move). As an **implementation backstop only**:
-after **N consecutive mutual-Marshals** *(appendix: e.g. 10)*, if both duelists are
-human, warn and force an Unleash next exchange; if **any** duelist is AI, raise an
-**error** — a stalling AI is a bug, not a play pattern.
+**RULE.** A Clash cannot stall under any reasoning play (some standing attack always
+lands — invariant 2, §1.0). As an **implementation backstop only**: after **N
+consecutive beats with no Body lost** *(appendix: e.g. 12)* — e.g. two fighters who can
+each fully absorb the other, or a defender facing a non-attacker — the duel **breaks
+off** (both disengage; the foe still counts as engaged, so it does not also free-hit at
+round end). A creature whose instinct drives a winnable Clash to the backstop is a bug.
 
-**WHY.** Protects against non-rational actors (a buggy AI, or humans griefing a
-server), without adding a rule real players ever encounter.
+**WHY.** Body-attrition (§1.3 superseded) means a duel ends on Body 0, not on a single
+strike; the backstop guarantees termination in the corner case where neither side can
+actually wound the other (armor/toughness fully absorbs every connecting hit), without
+adding a rule real players meet.
 
 **GUARANTEES.**
 - The backstop is invisible in normal play and is **not** part of the public rules.
-- An AI that triggers it is reported as defective, never silently tolerated.
+- Every Clash terminates: it ends at Body 0, or breaks off after N no-progress beats.
 
 ### 1.7 Facing a crowd — K duels, two caps
 
@@ -210,6 +311,15 @@ natural counter to a thin Mind (Charter §4: asymmetry by design).
   linearity invariant the god-vs-party budget depends on.
 
 ### 1.8 Duel detection — reading is the contest
+
+> **PARTIALLY SUPERSEDED by §1.0 (The Clash).** The **in-duel read** described below —
+> "Focus unlocks your stance menu; without a read you can only Unleash" — is gone: in
+> the Clash all six moves are **standing**, so there is no Focus gate *inside* a duel.
+> Focus is now purely the **breadth** resource — round-end coverage of foes you did not
+> engage (§3.2). What carries forward unchanged: engaging costs **Tempo** (= the foe's
+> Speed), an engaged foe does not also free-hit, breadth/self actions are unopposed, and
+> a creature does not read you back (its instinct is its move, §7). Read the rest of this
+> section for the breadth model; ignore its stance/Edge specifics.
 
 **RULE.** Engaging a foe (Tempo) puts you in a **clash**, resolved by the stance mix-up
 (§1.2). **Reading it (Focus) unlocks your stance menu:** with a read you have all four

@@ -8,12 +8,13 @@
 use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
 
 use crate::combat::{self, base_strike};
-use crate::duel::{self, Side, Stance};
+use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
 use crate::state::{Duel, Menu, Phase, State};
 
-/// Force an exchange after this many mutual-Marshals (implementation backstop).
-const STALL_CAP: u32 = 10;
+/// Break off a Clash after this many consecutive beats with no Body lost (a termination
+/// backstop — see §1.6, reworded for Body-attrition).
+const STALL_CAP: u32 = 12;
 /// Flat tempo cost to play an action card (tunable).
 const ACTION_COST: u32 = 2;
 
@@ -28,15 +29,14 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// This hero engages this foe (a clash; spends Tempo). Reading (Focus) is paid
-    /// lazily inside the duel to unlock the non-Unleash stances.
+    /// This hero engages this foe (begins a Clash; spends Tempo = the foe's Speed).
     Engage(usize, usize),
     /// This hero plays this action card.
     PlayAction(usize, usize),
     /// End the player phase; creatures act, then the round refreshes.
     EndRound,
-    /// A duel stance.
-    Stance(Stance),
+    /// Play one move in the active Clash.
+    Play(Move),
 }
 
 /// The ruleset. Holds no state of its own.
@@ -97,9 +97,8 @@ pub(crate) fn check_outcome(state: &mut State) {
 
 fn form_duel(state: &mut State, hero: usize, foe: usize) {
     // Engaging spends Tempo (cost = foe's Speed), pay-after: the engage happens and, if
-    // it drives Tempo negative, you go all-in (§3.3). Reading is NOT paid here — it is
-    // paid lazily, the first time the hero uses a non-Unleash stance (§1.8). The foe is
-    // now engaged and will not also free-hit at round end.
+    // it drives Tempo negative, you go all-in (§3.3). The foe is now engaged and will not
+    // also free-hit at round end. The Clash itself starts at zero Charges on both sides.
     let speed = state.creatures[foe].offense.speed.max(1);
     let h = &mut state.heroes[hero];
     h.tempo -= speed as i32;
@@ -110,11 +109,12 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
     state.duel = Some(Duel {
         hero,
         foe,
-        hero_edge: 0,
-        foe_edge: 0,
+        hero_up: 0,
+        hero_down: 0,
+        foe_up: 0,
+        foe_down: 0,
         beat: 0,
-        double_marshals: 0,
-        read: false,
+        stall: 0,
     });
     state.phase = Phase::Combat;
     state.log.push(format!(
@@ -124,11 +124,14 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
 }
 
 impl Deckbound {
-    /// Resolve one beat of the active duel against `hero_stance`.
-    fn beat(&self, state: &mut State, hero_stance: Stance) {
+    /// Resolve one beat of the active Clash: the hero plays `hero_move`, the creature
+    /// answers with its instinct, [`duel::resolve`] settles it, and Body/Charges update.
+    fn clash_beat(&self, state: &mut State, hero_move: Move) {
         let Some(duel) = state.duel else { return };
+        let max_h = state.heroes[duel.hero].charges_max;
+        let max_f = state.creatures[duel.foe].charges_max;
 
-        let creature_stance = {
+        let creature_move = {
             let policy = state.creatures[duel.foe]
                 .behavior()
                 .map(|b| b.policy)
@@ -141,68 +144,68 @@ impl Deckbound {
                 ^ (duel.foe as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
                 ^ (duel.beat as u64).wrapping_mul(0x27D4_EB2F_1656_67C5);
             let mut drng = Rng::new(key);
-            policy.stance(duel.foe_edge, duel.hero_edge, &mut drng)
+            policy.pick_move(duel.foe_up, duel.foe_down, max_f, &mut drng)
         };
-
-        // Stall backstop: after STALL_CAP mutual-Marshals, force the exchange.
-        let mut hero_stance = hero_stance;
-        let mut creature_stance = creature_stance;
-        let mut double_marshals = 0;
-        if hero_stance == Stance::Marshal && creature_stance == Stance::Marshal {
-            double_marshals = duel.double_marshals + 1;
-            if double_marshals >= STALL_CAP {
-                hero_stance = Stance::Unleash;
-                creature_stance = Stance::Unleash;
-                state
-                    .log
-                    .push("(stalemate held too long - forced exchange)".into());
-                double_marshals = 0;
-            }
-        }
 
         let (h_pow, h_dt, h_pre) = base_strike(&state.heroes[duel.hero]);
         let (c_pow, c_dt, c_pre) = base_strike(&state.creatures[duel.foe]);
         let h_name = state.heroes[duel.hero].name.clone();
         let c_name = state.creatures[duel.foe].name.clone();
         let a = Side {
-            edge: duel.hero_edge,
             power: h_pow,
             dtype: h_dt,
             precision: h_pre,
+            up: duel.hero_up,
+            down: duel.hero_down,
+            max: max_h,
             name: &h_name,
         };
         let b = Side {
-            edge: duel.foe_edge,
             power: c_pow,
             dtype: c_dt,
             precision: c_pre,
+            up: duel.foe_up,
+            down: duel.foe_down,
+            max: max_f,
             name: &c_name,
         };
-        let result = duel::resolve(&a, hero_stance, &b, creature_stance);
+        let result = duel::resolve(&a, hero_move, &b, creature_move);
         state.log.push(result.note);
 
+        let h_body = state.heroes[duel.hero].defense.body.remaining;
+        let f_body = state.creatures[duel.foe].defense.body.remaining;
         if let Some(s) = result.on_a {
             combat::apply_strike(&mut state.heroes[duel.hero], s, &c_name, &mut state.log);
         }
         if let Some(s) = result.on_b {
             combat::apply_strike(&mut state.creatures[duel.foe], s, &h_name, &mut state.log);
         }
+        // Progress = Body actually lost this beat (a connecting hit can be fully absorbed
+        // by armor); the backstop counts beats with no progress.
+        let progressed = state.heroes[duel.hero].defense.body.remaining < h_body
+            || state.creatures[duel.foe].defense.body.remaining < f_body;
+        let stall = if progressed { 0 } else { duel.stall + 1 };
 
         let hero_down = state.heroes[duel.hero].is_down();
         let foe_down = state.creatures[duel.foe].is_down();
-        if result.ends || hero_down || foe_down {
+        if hero_down || foe_down {
             state.duel = None;
             state.phase = Phase::Choosing;
             check_outcome(state);
+        } else if stall >= STALL_CAP {
+            state.duel = None;
+            state.phase = Phase::Choosing;
+            state.log.push("(neither can land a wound — they break off)".into());
         } else {
             state.duel = Some(Duel {
                 hero: duel.hero,
                 foe: duel.foe,
-                hero_edge: result.a_edge,
-                foe_edge: result.b_edge,
+                hero_up: result.a.up,
+                hero_down: result.a.down,
+                foe_up: result.b.up,
+                foe_down: result.b.down,
                 beat: duel.beat + 1,
-                double_marshals,
-                read: duel.read,
+                stall,
             });
         }
     }
@@ -250,14 +253,14 @@ impl Deckbound {
             (None, Phase::Menu(Menu::Top)) => "Deckbound - pick a scenario set.".to_string(),
             (None, Phase::Menu(Menu::Scenarios)) => "Cooperation - pick one. (Esc: back)".to_string(),
             (None, Phase::Menu(Menu::God)) => "God-tier - pick one. (Esc: back)".to_string(),
-            (None, Phase::Menu(Menu::Tutorial)) => "Duels - one stance each. (Esc: back)".to_string(),
+            (None, Phase::Menu(Menu::Tutorial)) => "Duels - learn the Clash. (Esc: back)".to_string(),
             (None, Phase::Choosing) => format!(
-                "Round {} - duel (read+strike) or trade a foe, queue a card, or end the round. (Esc: menu)",
+                "Round {} - engage a foe, queue a card, or end the round. (Esc: menu)",
                 state.round
             ),
             (None, Phase::Combat) => match state.duel {
                 Some(d) => format!(
-                    "Duel: {} vs the {} - Unleash, or read to unlock Parry/Marshal/Overwhelm. (Esc: menu)",
+                    "Clash: {} vs the {} - Strike/Throw, Parry/Evade, Charge/Recover. (Esc: menu)",
                     state.heroes[d.hero].name, state.creatures[d.foe].name
                 ),
                 None => "...".to_string(),
@@ -319,14 +322,21 @@ impl Game for Deckbound {
                 a
             }
             Phase::Combat => {
-                // Unleash needs no read; the other three require reading the foe (Focus).
-                let mut a = vec![Action::Stance(Stance::Unleash)];
+                // The standing moves are always available (this is what makes "avoid" and
+                // "land" hold for the whole Clash); the setups gate on Charge state.
+                let mut a = vec![
+                    Action::Play(Move::Strike),
+                    Action::Play(Move::Throw),
+                    Action::Play(Move::Parry),
+                    Action::Play(Move::Evade),
+                ];
                 if let Some(d) = state.duel {
-                    let cost = state.creatures[d.foe].offense.speed.max(1);
-                    if d.read || state.heroes[d.hero].focus >= cost {
-                        a.push(Action::Stance(Stance::Marshal));
-                        a.push(Action::Stance(Stance::Overwhelm));
-                        a.push(Action::Stance(Stance::Parry));
+                    let max = state.heroes[d.hero].charges_max;
+                    if d.hero_up + d.hero_down < max {
+                        a.push(Action::Play(Move::Charge));
+                    }
+                    if d.hero_down > 0 {
+                        a.push(Action::Play(Move::Recover));
                     }
                 }
                 a
@@ -362,10 +372,12 @@ impl Game for Deckbound {
                     None => format!("{name}: ?"),
                 }
             }
-            Action::Stance(Stance::Marshal) => "Marshal - gather Edge".into(),
-            Action::Stance(Stance::Unleash) => "Unleash - strike with all Edge".into(),
-            Action::Stance(Stance::Overwhelm) => "Overwhelm - break a guard".into(),
-            Action::Stance(Stance::Parry) => "Parry - read the strike & steal".into(),
+            Action::Play(Move::Strike) => "Strike - beats Evade; trades with Strike".into(),
+            Action::Play(Move::Throw) => "Throw - beats Parry; loses to Strike/Evade".into(),
+            Action::Play(Move::Parry) => "Parry - negate a Strike".into(),
+            Action::Play(Move::Evade) => "Evade - negate a Throw".into(),
+            Action::Play(Move::Charge) => "Charge - x2 your hits (durable)".into(),
+            Action::Play(Move::Recover) => "Recover - flip your charges back up".into(),
         }
     }
 
@@ -431,27 +443,14 @@ impl Game for Deckbound {
                 }
             }
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
-            (Phase::Combat, Action::Stance(s)) => {
-                let Some(duel) = state.duel else {
+            (Phase::Combat, Action::Play(m)) => {
+                if state.duel.is_none() {
                     return Err(GameError::new("no active duel"));
-                };
-                // Reading unlocks the non-Unleash stances; pay Focus the first time one is
-                // used (§1.8). Unleash is always free (a blind swing).
-                if *s != Stance::Unleash && !duel.read {
-                    let cost = state.creatures[duel.foe].offense.speed.max(1);
-                    if state.heroes[duel.hero].focus < cost {
-                        return Err(GameError::new("not enough focus to read that foe"));
-                    }
-                    state.heroes[duel.hero].focus -= cost;
-                    if let Some(d) = state.duel.as_mut() {
-                        d.read = true;
-                    }
-                    state.log.push(format!(
-                        "{} reads the {}.",
-                        state.heroes[duel.hero].name, state.creatures[duel.foe].name
-                    ));
                 }
-                self.beat(state, *s);
+                if !self.legal_actions(state).contains(action) {
+                    return Err(GameError::new("that move is not available"));
+                }
+                self.clash_beat(state, *m);
             }
             _ => return Err(GameError::new("that action is not legal right now")),
         }
@@ -487,15 +486,27 @@ impl Game for Deckbound {
                 zones.push(hero_zone(state, None));
             }
             Phase::Combat => {
-                let (ah, af, he, fe) = match state.duel {
-                    Some(d) => (Some(d.hero), Some(d.foe), d.hero_edge, d.foe_edge),
-                    None => (None, None, 0, 0),
+                let (ah, af) = match state.duel {
+                    Some(d) => (Some(d.hero), Some(d.foe)),
+                    None => (None, None),
                 };
                 zones.push(creature_zone(state, af));
-                let foe_name = af.map(|i| state.creatures[i].name.as_str()).unwrap_or("foe");
-                zones.push(edge_zone(&format!("The {foe_name}'s Edge"), fe, Accent::Foe));
-                let hero_name = ah.map(|i| state.heroes[i].name.as_str()).unwrap_or("you");
-                zones.push(edge_zone(&format!("{hero_name}'s Edge"), he, Accent::Good));
+                if let Some(d) = state.duel {
+                    let foe_name = state.creatures[d.foe].name.clone();
+                    zones.push(charge_zone(
+                        &format!("The {foe_name}'s Charges"),
+                        d.foe_up,
+                        d.foe_down,
+                        Accent::Foe,
+                    ));
+                    let hero_name = state.heroes[d.hero].name.clone();
+                    zones.push(charge_zone(
+                        &format!("{hero_name}'s Charges"),
+                        d.hero_up,
+                        d.hero_down,
+                        Accent::Good,
+                    ));
+                }
                 zones.push(hero_zone(state, ah));
             }
         }
@@ -580,12 +591,18 @@ fn hero_zone(state: &State, active: Option<usize>) -> ZoneView {
     }
 }
 
-fn edge_zone(label: &str, n: u32, accent: Accent) -> ZoneView {
+/// Render a side's Charges: `up` active (face-up, doubling) and `down` flipped (disabled
+/// by a successful defense, restored by Recover).
+fn charge_zone(label: &str, up: u32, down: u32, accent: Accent) -> ZoneView {
+    let mut cards: Vec<CardView> = (0..up)
+        .map(|_| CardView::up("Charge").accent(accent))
+        .collect();
+    cards.extend((0..down).map(|_| CardView::down()));
     ZoneView {
-        label: format!("{label} ({n})"),
+        label: format!("{label} (^{up} v{down})"),
         layout: Layout::Stack,
         owner: None,
-        cards: (0..n).map(|_| CardView::up("Edge").accent(accent)).collect(),
+        cards,
     }
 }
 
@@ -650,13 +667,14 @@ mod tests {
         while game.current_player(s).is_some() {
             let action = match s.phase {
                 Phase::Combat => {
-                    // Marshal to bank if we can read; otherwise just Unleash.
-                    let acts = game.legal_actions(s);
-                    let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
-                    if e < 2 && acts.contains(&Action::Stance(Stance::Marshal)) {
-                        Action::Stance(Stance::Marshal)
+                    // Alternate Strike/Throw by beat so we beat both guards over time
+                    // (a pure turtle parries Strikes but folds to Throws) — keeps duels
+                    // making progress and terminating.
+                    let beat = s.duel.map(|d| d.beat).unwrap_or(0);
+                    if beat % 2 == 0 {
+                        Action::Play(Move::Strike)
                     } else {
-                        Action::Stance(Stance::Unleash)
+                        Action::Play(Move::Throw)
                     }
                 }
                 Phase::Choosing => {
@@ -727,20 +745,15 @@ mod tests {
         s
     }
 
-    /// Engage a foe and play the duel to its conclusion (Marshal up if we can read,
-    /// then Unleash).
+    /// Engage a foe and play the Clash to its conclusion (wind up one Charge, then Strike).
     fn drive_duel(game: &Deckbound, s: &mut State, hero: usize, foe: usize) {
         game.apply(s, &Action::Engage(hero, foe)).unwrap();
         let mut guard = 0;
         while s.phase == Phase::Combat {
-            let acts = game.legal_actions(s);
-            let e = s.duel.map(|d| d.hero_edge).unwrap_or(0);
-            let stance = if e < 2 && acts.contains(&Action::Stance(Stance::Marshal)) {
-                Stance::Marshal
-            } else {
-                Stance::Unleash
-            };
-            game.apply(s, &Action::Stance(stance)).unwrap();
+            // Alternate Strike/Throw by beat (beats both guards over time).
+            let beat = s.duel.map(|d| d.beat).unwrap_or(0);
+            let m = if beat % 2 == 0 { Move::Strike } else { Move::Throw };
+            game.apply(s, &Action::Play(m)).unwrap();
             guard += 1;
             assert!(guard < 1000, "a duel should terminate");
         }
@@ -775,36 +788,38 @@ mod tests {
         assert_eq!(a.heroes[0].focus, b.heroes[0].focus);
     }
 
-    /// §1.8: engaging without reading (no Focus) leaves Unleash as the only stance.
+    /// §1 The Clash: the four standing moves are always available (this is what makes
+    /// "avoid" and "land" hold for the whole duel — defense never depletes).
     #[test]
-    fn no_read_leaves_only_unleash() {
+    fn combat_always_offers_the_standing_moves() {
         let game = Deckbound;
         let mut s = god_state(3, "Goliath");
-        s.heroes[0].focus = 0; // cannot afford to read anything
         game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
         assert_eq!(s.phase, Phase::Combat);
         assert!(s.engaged[0], "the engaged foe won't also free-hit");
         let acts = game.legal_actions(&s);
-        assert!(acts.contains(&Action::Stance(Stance::Unleash)), "can always Unleash");
-        assert!(!acts.contains(&Action::Stance(Stance::Parry)), "no read → no Parry");
-        assert!(!acts.contains(&Action::Stance(Stance::Marshal)), "no read → no Marshal");
-        assert!(!acts.contains(&Action::Stance(Stance::Overwhelm)), "no read → no Overwhelm");
+        for m in [Move::Strike, Move::Throw, Move::Parry, Move::Evade] {
+            assert!(acts.contains(&Action::Play(m)), "{m:?} is always available");
+        }
     }
 
-    /// §1.8: reading (Focus) unlocks the full stance menu, and the read is paid the
-    /// first time a non-Unleash stance is used.
+    /// §1 The Clash: Charge is offered until capacity; Recover only once a Charge has been
+    /// flipped face-down.
     #[test]
-    fn reading_unlocks_the_full_stance_menu() {
+    fn charge_and_recover_gate_on_charge_state() {
         let game = Deckbound;
         let mut s = god_state(3, "Goliath");
-        game.apply(&mut s, &Action::Engage(0, 0)).unwrap(); // Kael (Mind 6) can read
+        game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
+        let acts = game.legal_actions(&s);
+        assert!(acts.contains(&Action::Play(Move::Charge)), "fresh duel → can Charge");
+        assert!(!acts.contains(&Action::Play(Move::Recover)), "no down charges → no Recover");
+        if let Some(d) = s.duel.as_mut() {
+            d.hero_down = 1; // a defended attack flipped a charge down
+        }
         assert!(
-            game.legal_actions(&s).contains(&Action::Stance(Stance::Parry)),
-            "can afford the read → Parry offered"
+            game.legal_actions(&s).contains(&Action::Play(Move::Recover)),
+            "a face-down charge unlocks Recover"
         );
-        let focus_before = s.heroes[0].focus;
-        game.apply(&mut s, &Action::Stance(Stance::Marshal)).unwrap();
-        assert!(s.heroes[0].focus < focus_before, "using a read-stance pays Focus");
     }
 
     /// §1.9: action cards are queued and resolve in tiers at round end (attacks before
