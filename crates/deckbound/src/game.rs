@@ -35,10 +35,16 @@ pub enum Action {
     Engage(usize, usize),
     /// This hero plays this action card.
     PlayAction(usize, usize),
-    /// End the player phase; creatures act, then the round refreshes.
+    /// End the player phase; the foe phase begins.
     EndRound,
     /// Play one move in the active Clash.
     Play(Move),
+    /// Foe phase: defend the current incoming attack (Focus → survive, foe reset).
+    Defend,
+    /// Foe phase: counterattack the current incoming attack (Tempo → mutual, can kill).
+    Counter,
+    /// Foe phase: take the incoming attack as a free hit (base damage).
+    TakeHit,
 }
 
 /// The ruleset. Holds no state of its own.
@@ -60,6 +66,7 @@ fn menu_state(seed: u64) -> State {
         outcome: None,
         engaged: Vec::new(),
         queued_cards: Vec::new(),
+        foe_queue: Vec::new(),
     }
 }
 
@@ -113,6 +120,7 @@ fn form_duel(state: &mut State, hero: usize, foe: usize) {
         beat: 0,
         stall: 0,
         defending: false,
+        from_foe_phase: false,
     });
     state.phase = Phase::Combat;
     state.log.push(format!(
@@ -182,12 +190,11 @@ impl Deckbound {
         let foe_down = state.creatures[duel.foe].is_down();
         // Ends-on-strike: a connecting blow (or a down) ends the duel.
         if result.ends || hero_down || foe_down {
+            let from_foe = duel.from_foe_phase;
             state.duel = None;
-            state.phase = Phase::Choosing;
-            // Duels resolve immediately (no simultaneous tier to wait for), so finalize a
-            // death the instant it lands — a decisive Win/Defeat shows at once, rather than
-            // forcing the player to End Round first. (A trade kills both in this same beat,
-            // and check_outcome scores the Win first, so a mutual kill is a win.)
+            // Duels resolve immediately (no simultaneous tier), so finalize a death the
+            // instant it lands — a decisive Win/Defeat shows at once. (A trade kills both
+            // this beat; check_outcome scores the Win first, so a mutual kill is a win.)
             if hero_down {
                 state.heroes[duel.hero].fallen = true;
             }
@@ -195,14 +202,43 @@ impl Deckbound {
                 state.creatures[duel.foe].fallen = true;
             }
             check_outcome(state);
+            if state.outcome.is_some() {
+                return;
+            }
+            if from_foe {
+                // This incoming attack is resolved — drop it; continue or finish the foe phase.
+                if !state.foe_queue.is_empty() {
+                    state.foe_queue.remove(0);
+                }
+                if state.foe_queue.is_empty() {
+                    self.finish_round(state);
+                } else {
+                    state.phase = Phase::FoePhase;
+                }
+            } else {
+                state.phase = Phase::Choosing;
+            }
         } else {
             let stall = duel.stall + 1; // no connect this beat
             if stall >= STALL_CAP {
+                let from_foe = duel.from_foe_phase;
                 state.duel = None;
-                state.phase = Phase::Choosing;
                 state
                     .log
                     .push("(neither can land a blow — they break off)".into());
+                if from_foe {
+                    // The incoming attack is spent (broken off); drain it and continue.
+                    if !state.foe_queue.is_empty() {
+                        state.foe_queue.remove(0);
+                    }
+                    if state.foe_queue.is_empty() {
+                        self.finish_round(state);
+                    } else {
+                        state.phase = Phase::FoePhase;
+                    }
+                } else {
+                    state.phase = Phase::Choosing;
+                }
             } else {
                 state.duel = Some(Duel {
                     hero: duel.hero,
@@ -212,19 +248,33 @@ impl Deckbound {
                     beat: duel.beat + 1,
                     stall,
                     defending: duel.defending,
+                    from_foe_phase: duel.from_foe_phase,
                 });
             }
         }
     }
 
     fn end_round(&self, state: &mut State) {
-        combat::resolve_round(state);
+        // Tier 1: queued attack cards (instant).
+        combat::resolve_attack_cards(state);
         if state.outcome.is_some() {
             return;
         }
-        // Death tally (§1.9 — downs finalize at the round boundary, not mid-stream): a
-        // hero mortally wounded this round fought on and landed its committed blows; now
-        // finalize who fell, then check for defeat.
+        // Tier 2: the foe phase — each un-engaged foe attacks, resolved interactively
+        // (Defend / Counter / Eat). If none attacks, close the round now.
+        state.foe_queue = combat::foe_attacks(state);
+        if state.foe_queue.is_empty() {
+            self.finish_round(state);
+        } else {
+            state.log.push("-- the foes strike --".into());
+            state.phase = Phase::FoePhase;
+        }
+    }
+
+    /// Tier 3 + round close: self/ally buff cards, the death tally (foe-phase downs finalize
+    /// here, §1.9), then refresh.
+    fn finish_round(&self, state: &mut State) {
+        combat::resolve_buff_cards(state);
         for a in state.heroes.iter_mut().chain(state.creatures.iter_mut()) {
             if a.is_down() {
                 a.fallen = true;
@@ -241,7 +291,24 @@ impl Deckbound {
         }
         state.round += 1;
         state.reset_round_plan();
+        state.phase = Phase::Choosing;
         state.log.push(format!("-- Round {} --", state.round));
+    }
+
+    /// Open a duel for an incoming foe attack (the foe initiates; the hero defends or
+    /// counters). `defending` resets the foe afterward (survive only); else it's mutual.
+    fn begin_foe_duel(&self, state: &mut State, hero: usize, foe: usize, defending: bool) {
+        state.duel = Some(Duel {
+            hero,
+            foe,
+            hero_force: 0,
+            foe_force: 0,
+            beat: 0,
+            stall: 0,
+            defending,
+            from_foe_phase: true,
+        });
+        state.phase = Phase::Combat;
     }
 
     fn status(&self, state: &State) -> String {
@@ -273,6 +340,14 @@ impl Deckbound {
                 Some(d) => format!(
                     "Clash: {} vs the {} - Strike/Anticipate, Gather/Evade. A strike ends it. (Esc: menu)",
                     state.heroes[d.hero].name, state.creatures[d.foe].name
+                ),
+                None => "...".to_string(),
+            },
+            (None, Phase::FoePhase) => match state.foe_queue.first() {
+                Some(&(f, t)) => format!(
+                    "The {} attacks {} - Defend (Focus), Counter (Tempo), or Take the hit. (Esc: menu)",
+                    state.creatures.get(f).map(|x| x.name.as_str()).unwrap_or("foe"),
+                    state.heroes.get(t).map(|x| x.name.as_str()).unwrap_or("you"),
                 ),
                 None => "...".to_string(),
             },
@@ -342,6 +417,19 @@ impl Game for Deckbound {
                     Action::Play(Move::Evade),
                 ]
             }
+            Phase::FoePhase => {
+                let mut a = Vec::new();
+                if let Some(&(foe, target)) = state.foe_queue.first() {
+                    let cost = state.creatures[foe].offense.speed.max(1);
+                    if state.heroes[target].focus >= cost {
+                        a.push(Action::Defend);
+                    }
+                    a.push(Action::Counter);
+                    a.push(Action::TakeHit);
+                }
+                a.push(Action::ToMenu);
+                a
+            }
         }
     }
 
@@ -384,6 +472,25 @@ impl Game for Deckbound {
             Action::Play(Move::Anticipate) => "Anticipate - lead them (beats Evade)".into(),
             Action::Play(Move::Gather) => "Gather - hold & build Force (beats Anticipate)".into(),
             Action::Play(Move::Evade) => "Evade - dodge & steal (beats Strike)".into(),
+            Action::Defend => {
+                let foe = state
+                    .foe_queue
+                    .first()
+                    .and_then(|&(f, _)| state.creatures.get(f))
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("foe");
+                format!("Defend (Focus) - survive the {foe}, can't kill it")
+            }
+            Action::Counter => {
+                let foe = state
+                    .foe_queue
+                    .first()
+                    .and_then(|&(f, _)| state.creatures.get(f))
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("foe");
+                format!("Counter (Tempo) - duel the {foe}, can kill but risk a hit")
+            }
+            Action::TakeHit => "Take the hit (free; base damage)".into(),
         }
     }
 
@@ -458,6 +565,44 @@ impl Game for Deckbound {
                 }
                 self.clash_beat(state, *m);
             }
+            (Phase::FoePhase, Action::TakeHit) => {
+                let (foe, target) = *state
+                    .foe_queue
+                    .first()
+                    .ok_or_else(|| GameError::new("no incoming attack"))?;
+                combat::free_hit(state, foe, target);
+                if state.heroes[target].is_down() {
+                    state.heroes[target].fallen = true;
+                }
+                check_outcome(state);
+                if state.outcome.is_none() {
+                    state.foe_queue.remove(0);
+                    if state.foe_queue.is_empty() {
+                        self.finish_round(state);
+                    }
+                }
+            }
+            (Phase::FoePhase, Action::Defend) => {
+                let (foe, target) = *state
+                    .foe_queue
+                    .first()
+                    .ok_or_else(|| GameError::new("no incoming attack"))?;
+                let cost = state.creatures[foe].offense.speed.max(1);
+                if state.heroes[target].focus < cost {
+                    return Err(GameError::new("not enough focus to defend"));
+                }
+                state.heroes[target].focus -= cost;
+                self.begin_foe_duel(state, target, foe, true);
+            }
+            (Phase::FoePhase, Action::Counter) => {
+                let (foe, target) = *state
+                    .foe_queue
+                    .first()
+                    .ok_or_else(|| GameError::new("no incoming attack"))?;
+                let cost = state.creatures[foe].offense.speed.max(1);
+                state.heroes[target].tempo -= cost as i32; // pay-after
+                self.begin_foe_duel(state, target, foe, false);
+            }
             _ => return Err(GameError::new("that action is not legal right now")),
         }
         Ok(())
@@ -474,7 +619,7 @@ impl Game for Deckbound {
         match &state.phase {
             Phase::Menu(Menu::Top) => None,
             Phase::Menu(_) => Some(Action::Back),
-            Phase::Choosing | Phase::Combat => Some(Action::ToMenu),
+            Phase::Choosing | Phase::Combat | Phase::FoePhase => Some(Action::ToMenu),
         }
     }
 
@@ -515,6 +660,14 @@ impl Game for Deckbound {
                         Accent::Good,
                     ));
                 }
+                zones.push(hero_zone(state, ah));
+            }
+            Phase::FoePhase => {
+                let (af, ah) = match state.foe_queue.first() {
+                    Some(&(f, t)) => (Some(f), Some(t)),
+                    None => (None, None),
+                };
+                zones.push(creature_zone(state, af));
                 zones.push(hero_zone(state, ah));
             }
         }
@@ -693,6 +846,15 @@ mod tests {
                         .find(|a| matches!(a, Action::Engage(_, _)))
                         .unwrap_or(Action::EndRound)
                 }
+                Phase::FoePhase => {
+                    // Defend if we can afford the Focus; else eat the hit.
+                    let acts = game.legal_actions(s);
+                    if acts.contains(&Action::Defend) {
+                        Action::Defend
+                    } else {
+                        Action::TakeHit
+                    }
+                }
                 _ => break,
             };
             game.apply(s, &action).unwrap();
@@ -852,5 +1014,33 @@ mod tests {
         assert!(s.duel.is_some());
         // With Tempo negative, the hero can take no further action this round.
         assert!(!s.hero_can_act(0));
+    }
+
+    /// Item 2: ending a round with un-engaged foes opens the interactive foe phase — each
+    /// incoming attack offers Defend / Counter / Eat, and resolving the whole queue returns
+    /// to the player's phase (or settles the outcome).
+    #[test]
+    fn foe_phase_resolves_incoming_attacks() {
+        let game = Deckbound;
+        let mut s = god_state(3, "Goliath");
+        // Don't engage anyone — every living foe will attack in the foe phase.
+        game.apply(&mut s, &Action::EndRound).unwrap();
+        assert_eq!(s.phase, Phase::FoePhase, "un-engaged foes open the foe phase");
+        assert!(!s.foe_queue.is_empty(), "there are incoming attacks");
+        let acts = game.legal_actions(&s);
+        assert!(acts.contains(&Action::TakeHit), "Eat is always available");
+        assert!(acts.contains(&Action::Counter), "Counter is available");
+
+        // Eat every incoming hit until the queue drains.
+        let mut guard = 0;
+        while s.phase == Phase::FoePhase {
+            game.apply(&mut s, &Action::TakeHit).unwrap();
+            guard += 1;
+            assert!(guard < 100, "the foe phase should drain");
+        }
+        assert!(
+            s.phase == Phase::Choosing || s.outcome.is_some(),
+            "draining the queue returns to play or settles the fight"
+        );
     }
 }

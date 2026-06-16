@@ -26,6 +26,9 @@ pub enum Phase {
     Choosing,
     /// An interactive duel is running, beat by beat.
     Combat,
+    /// The foe phase: each un-engaged foe attacks; the targeted hero picks Defend / Counter
+    /// / Eat for the attack at the front of `foe_queue`.
+    FoePhase,
 }
 
 /// The active Clash: who's in it, each side's **Force** (per-duel, public), the beat
@@ -42,6 +45,9 @@ pub struct Duel {
     /// True when the hero is **defending** a foe-initiated attack (foe reset on end);
     /// false when the hero **initiated** (mutual, results stick).
     pub defending: bool,
+    /// True when this duel is resolved during the foe phase (so it returns to `FoePhase`
+    /// to finish the queue, not to `Choosing`).
+    pub from_foe_phase: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +67,8 @@ pub struct State {
     pub engaged: Vec<bool>,
     /// Action cards played this round, applied in tiers at round end (§1.9): (hero, idx).
     pub queued_cards: Vec<(usize, usize)>,
+    /// The foe phase work-list: `(foe, target_hero)` attacks still to resolve.
+    pub foe_queue: Vec<(usize, usize)>,
 }
 
 impl State {
@@ -94,5 +102,6 @@ impl State {
     pub fn reset_round_plan(&mut self) {
         self.engaged = vec![false; self.creatures.len()];
         self.queued_cards.clear();
+        self.foe_queue.clear();
     }
 }

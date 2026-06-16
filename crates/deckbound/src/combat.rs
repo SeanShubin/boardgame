@@ -230,31 +230,59 @@ pub fn play_action(state: &mut State, hero: usize, action: usize) -> u32 {
     2 // flat tempo cost for an action (tunable)
 }
 
-/// Resolve the round end in tiers (§1.9). The player's duels and trades already landed
-/// live this round; now apply queued breadth-attack cards, then the uncontested
-/// free-hits from foes nobody read, then self/ally cards (buffs) — attacks before buffs.
-pub fn resolve_round(state: &mut State) {
-    // Tier: the player's remaining attacks (breadth-damage cards).
+/// Round-end tier 1 — the player's queued **attack** cards (breadth damage), then a
+/// decisive-outcome check.
+pub fn resolve_attack_cards(state: &mut State) {
     for (hero, idx) in state.queued_cards.clone() {
         if card_is_attack(state, hero, idx) {
             play_action(state, hero, idx);
         }
     }
     crate::game::check_outcome(state);
-    if state.outcome.is_some() {
-        return;
-    }
-    // Tier: uncontested attacks — every foe the party did not read free-hits. (Defeat
-    // is not finalized here; heroes mortally wounded this tier fall at the round-end
-    // tally — §1.9 down-checks at the boundary.)
-    state.log.push("-- unread foes strike --".into());
-    creature_phase(state);
-    // Tier: self/ally effects (buffs), after the attacks.
+}
+
+/// Round-end tier 3 — self/ally **buff** cards, after the attacks have landed.
+pub fn resolve_buff_cards(state: &mut State) {
     for (hero, idx) in state.queued_cards.clone() {
         if !card_is_attack(state, hero, idx) {
             play_action(state, hero, idx);
         }
     }
+}
+
+/// Tier 2's work-list: each **un-engaged** living creature and the hero it attacks (by its
+/// target rule). The foe phase resolves these interactively (Defend / Counter / Eat).
+pub fn foe_attacks(state: &State) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for ci in 0..state.creatures.len() {
+        if state.creatures[ci].is_down() || state.engaged[ci] {
+            continue;
+        }
+        let rule = state.creatures[ci]
+            .behavior()
+            .map(|b| b.target_rule)
+            .unwrap_or(TargetRule::Front);
+        if let Some(hi) = pick_target(state, rule) {
+            out.push((ci, hi));
+        }
+    }
+    out
+}
+
+/// A foe's uncontested **free hit** (base strike, no Force) on a hero — the "Eat" choice.
+pub fn free_hit(state: &mut State, foe: usize, hero: usize) {
+    let (raw, dtype, precision) = base_strike(&state.creatures[foe]);
+    let cname = state.creatures[foe].name.clone();
+    state.log.push(format!(
+        "{} takes a free hit from the {cname}.",
+        state.heroes[hero].name
+    ));
+    apply_strike(
+        &mut state.heroes[hero],
+        Strike { raw, dtype, precision },
+        &cname,
+        &mut state.log,
+    );
 }
 
 /// A card whose primary effect is `Damage` is an attack (tier 2); anything else is a
@@ -292,6 +320,7 @@ mod tests {
             outcome: None,
             engaged: vec![false; n_foes],
             queued_cards: Vec::new(),
+            foe_queue: Vec::new(),
         }
     }
 
