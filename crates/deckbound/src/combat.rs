@@ -6,7 +6,7 @@
 //! **tempo** caps offense, **focus** caps active defense, and what focus can't cover
 //! **free-hits**. The interactive duel ([`crate::duel`]) is the engagement atom.
 
-use crate::actor::{Actor, TargetRule};
+use crate::actor::{Actor, Line, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
 use crate::state::State;
@@ -50,8 +50,96 @@ fn break_note(b: Break) -> &'static str {
     }
 }
 
-/// Pick a hero index for a creature to attack, per its target rule. Returns a
-/// living hero, or `None` if the party is down.
+// ---- formation & reach (§4) --------------------------------------------------
+
+/// Living **front-line** indices of a side — the gauntlet's guards.
+pub fn front_guards(actors: &[Actor]) -> Vec<usize> {
+    actors
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.is_down() && a.line == Line::Front)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Living **back-line** indices of a side.
+pub fn back_line(actors: &[Actor]) -> Vec<usize> {
+    actors
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.is_down() && a.line == Line::Back)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Can `attacker` reach `defenders[target]` **without** running the gauntlet (§4)? Ranged
+/// bypasses lines entirely; melee reaches the front directly, and the back only once the
+/// front line is cleared.
+pub fn reaches_directly(attacker: &Actor, defenders: &[Actor], target: usize) -> bool {
+    if attacker.ranged {
+        return true;
+    }
+    match defenders[target].line {
+        Line::Front => true,
+        Line::Back => front_guards(defenders).is_empty(),
+    }
+}
+
+/// Is this foe's incoming attack a **dive** — a melee runner going for a back-line hero with
+/// front-line guards still standing (§4)? Such attacks open the interactive gauntlet.
+pub fn is_dive(state: &State, foe: usize, target: usize) -> bool {
+    let a = &state.creatures[foe];
+    a.runner
+        && !a.ranged
+        && state.heroes.get(target).map(|h| h.line) == Some(Line::Back)
+        && !front_guards(&state.heroes).is_empty()
+}
+
+/// Apply a target rule to a candidate set, returning the chosen hero (or `None` if empty).
+fn apply_rule(heroes: &[Actor], cand: &[usize], rule: TargetRule) -> Option<usize> {
+    match rule {
+        TargetRule::Front | TargetRule::Runner => cand.first().copied(),
+        TargetRule::LowestBody => cand
+            .iter()
+            .copied()
+            .min_by_key(|&i| heroes[i].defense.body.remaining),
+        TargetRule::LeastResolute => cand
+            .iter()
+            .copied()
+            .min_by_key(|&i| heroes[i].defense.resolve),
+    }
+}
+
+/// Pick a hero index for a creature to attack, per its target rule and **reach** (§4):
+/// ranged picks any line, a runner dives for the back line, melee strikes the front.
+fn pick_hero_target(state: &State, foe: usize) -> Option<usize> {
+    let a = &state.creatures[foe];
+    let rule = a
+        .behavior()
+        .map(|b| b.target_rule)
+        .unwrap_or(TargetRule::Front);
+    let fronts = front_guards(&state.heroes);
+    let backs = back_line(&state.heroes);
+    let candidates: Vec<usize> = if a.ranged {
+        state
+            .heroes
+            .iter()
+            .enumerate()
+            .filter(|(_, h)| !h.is_down())
+            .map(|(i, _)| i)
+            .collect()
+    } else if a.runner {
+        if backs.is_empty() { fronts } else { backs }
+    } else if fronts.is_empty() {
+        backs
+    } else {
+        fronts
+    };
+    apply_rule(&state.heroes, &candidates, rule)
+}
+
+/// Pick a hero index for a creature to attack, per its target rule, ignoring lines. Returns a
+/// living hero, or `None` if the party is down. Used by the legacy [`creature_phase`].
 fn pick_target(state: &State, rule: TargetRule) -> Option<usize> {
     let living: Vec<usize> = state
         .heroes
@@ -60,15 +148,7 @@ fn pick_target(state: &State, rule: TargetRule) -> Option<usize> {
         .filter(|(_, h)| !h.is_down())
         .map(|(i, _)| i)
         .collect();
-    match rule {
-        TargetRule::Front | TargetRule::Runner => living.first().copied(),
-        TargetRule::LowestBody => living
-            .into_iter()
-            .min_by_key(|&i| state.heroes[i].defense.body.remaining),
-        TargetRule::LeastResolute => living
-            .into_iter()
-            .min_by_key(|&i| state.heroes[i].defense.resolve),
-    }
+    apply_rule(&state.heroes, &living, rule)
 }
 
 /// The creature phase at round end: every living creature acts. A foe the
@@ -258,11 +338,7 @@ pub fn foe_attacks(state: &State) -> Vec<(usize, usize)> {
         if state.creatures[ci].is_down() || state.engaged[ci] {
             continue;
         }
-        let rule = state.creatures[ci]
-            .behavior()
-            .map(|b| b.target_rule)
-            .unwrap_or(TargetRule::Front);
-        if let Some(hi) = pick_target(state, rule) {
+        if let Some(hi) = pick_hero_target(state, ci) {
             out.push((ci, hi));
         }
     }
@@ -321,6 +397,7 @@ mod tests {
             engaged: vec![false; n_foes],
             queued_cards: Vec::new(),
             foe_queue: Vec::new(),
+            dive: None,
         }
     }
 

@@ -12,7 +12,7 @@ use engine::{
 use crate::combat::{self, base_strike};
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
-use crate::state::{Duel, Menu, Phase, State};
+use crate::state::{Dive, Duel, Menu, Phase, State};
 
 /// Break off a Clash after this many consecutive beats with no Body lost (a termination
 /// backstop — see §1.6, reworded for Body-attrition).
@@ -33,6 +33,18 @@ pub enum Action {
     Replay,
     /// This hero engages this foe (begins a Clash; spends Tempo = the foe's Speed).
     Engage(usize, usize),
+    /// This hero dives the enemy gauntlet toward a back-line foe (§4 formation).
+    Dive(usize, usize),
+    /// This hero shifts line (front <-> back) — free, between rounds (§4).
+    Reposition(usize),
+    /// HeroDive: push through the gauntlet (pay the guards' combined Speed, eat their hits).
+    PushThrough,
+    /// HeroDive: halt the dive and pull back (no cost, no engage).
+    Halt,
+    /// FoeDive: this front-line hero intercepts the runner (pays Tempo = the runner's Speed).
+    Intercept(usize),
+    /// FoeDive: stop adding interceptors; let the runner through to the back line.
+    LetThrough,
     /// This hero plays this action card.
     PlayAction(usize, usize),
     /// End the player phase; the foe phase begins.
@@ -67,6 +79,7 @@ fn menu_state(seed: u64) -> State {
         engaged: Vec::new(),
         queued_cards: Vec::new(),
         foe_queue: Vec::new(),
+        dive: None,
     }
 }
 
@@ -206,15 +219,8 @@ impl Deckbound {
                 return;
             }
             if from_foe {
-                // This incoming attack is resolved — drop it; continue or finish the foe phase.
-                if !state.foe_queue.is_empty() {
-                    state.foe_queue.remove(0);
-                }
-                if state.foe_queue.is_empty() {
-                    self.finish_round(state);
-                } else {
-                    state.phase = Phase::FoePhase;
-                }
+                // This incoming attack is resolved — drop it; continue the foe phase.
+                self.next_foe(state);
             } else {
                 state.phase = Phase::Choosing;
             }
@@ -228,14 +234,7 @@ impl Deckbound {
                     .push("(neither can land a blow — they break off)".into());
                 if from_foe {
                     // The incoming attack is spent (broken off); drain it and continue.
-                    if !state.foe_queue.is_empty() {
-                        state.foe_queue.remove(0);
-                    }
-                    if state.foe_queue.is_empty() {
-                        self.finish_round(state);
-                    } else {
-                        state.phase = Phase::FoePhase;
-                    }
+                    self.next_foe(state);
                 } else {
                     state.phase = Phase::Choosing;
                 }
@@ -261,14 +260,46 @@ impl Deckbound {
             return;
         }
         // Tier 2: the foe phase — each un-engaged foe attacks, resolved interactively
-        // (Defend / Counter / Eat). If none attacks, close the round now.
+        // (Defend / Counter / Eat, or the gauntlet for a diving runner). If none attacks,
+        // close the round now.
         state.foe_queue = combat::foe_attacks(state);
         if state.foe_queue.is_empty() {
             self.finish_round(state);
         } else {
             state.log.push("-- the foes strike --".into());
+            self.advance_foe(state);
+        }
+    }
+
+    /// Present the foe-phase attack at the front of the queue: a melee runner with guards
+    /// still up opens the interactive gauntlet ([`Phase::FoeDive`]); anything else is a
+    /// straight incoming attack ([`Phase::FoePhase`]). An empty queue closes the round.
+    fn advance_foe(&self, state: &mut State) {
+        let Some(&(foe, target)) = state.foe_queue.first() else {
+            self.finish_round(state);
+            return;
+        };
+        if combat::is_dive(state, foe, target) {
+            let guards = combat::front_guards(&state.heroes);
+            state.dive = Some(Dive {
+                runner: foe,
+                target,
+                guards,
+                chosen: Vec::new(),
+            });
+            state.phase = Phase::FoeDive;
+        } else {
             state.phase = Phase::FoePhase;
         }
+    }
+
+    /// The current foe-phase attack is resolved: drop it and present the next one.
+    fn next_foe(&self, state: &mut State) {
+        state.dive = None;
+        if !state.foe_queue.is_empty() {
+            state.foe_queue.remove(0);
+        }
+        self.advance_foe(state);
     }
 
     /// Tier 3 + round close: self/ally buff cards, the death tally (foe-phase downs finalize
@@ -311,6 +342,136 @@ impl Deckbound {
         state.phase = Phase::Combat;
     }
 
+    /// HeroDive: push through the gauntlet (§4). Pay the guards' combined Speed as Tempo,
+    /// eat each guard's base hit, and — if still standing — engage the back-line foe.
+    fn hero_push_through(&self, state: &mut State) -> Result<(), GameError> {
+        let dive = state
+            .dive
+            .take()
+            .ok_or_else(|| GameError::new("no dive in progress"))?;
+        let h = dive.runner;
+        let combined: u32 = dive
+            .guards
+            .iter()
+            .map(|&g| state.creatures[g].offense.speed.max(1))
+            .sum();
+        state.heroes[h].tempo -= combined as i32; // pay-after (§3.1)
+        state.log.push(format!(
+            "{} pushes through (drag {combined}).",
+            state.heroes[h].name
+        ));
+        // Each guard gets a swing as the runner crosses.
+        for &g in &dive.guards {
+            if state.creatures[g].is_down() {
+                continue;
+            }
+            let (raw, dtype, precision) = base_strike(&state.creatures[g]);
+            let gname = state.creatures[g].name.clone();
+            combat::apply_strike(
+                &mut state.heroes[h],
+                duel::Strike {
+                    raw,
+                    dtype,
+                    precision,
+                },
+                &gname,
+                &mut state.log,
+            );
+            if state.heroes[h].is_down() {
+                break;
+            }
+        }
+        if state.heroes[h].is_down() {
+            state.heroes[h].fallen = true;
+            check_outcome(state);
+            if state.outcome.is_none() {
+                state.phase = Phase::Choosing;
+            }
+            return Ok(());
+        }
+        // Reached the back line — engage the foe (a normal mutual Clash).
+        if state.creatures.get(dive.target).is_some_and(|c| !c.is_down()) {
+            form_duel(state, h, dive.target);
+        } else {
+            state.phase = Phase::Choosing;
+        }
+        Ok(())
+    }
+
+    /// FoeDive: a front-line hero intercepts the diving runner (§4). The hero pays Tempo =
+    /// the runner's Speed and strikes it; once the interceptors' combined Speed walls the
+    /// runner (≥ its Speed) it is stopped and the attack is spent.
+    fn foe_dive_intercept(&self, state: &mut State, g: usize) -> Result<(), GameError> {
+        let mut dive = state
+            .dive
+            .clone()
+            .ok_or_else(|| GameError::new("no dive in progress"))?;
+        if !dive.guards.contains(&g) || dive.chosen.contains(&g) {
+            return Err(GameError::new("that hero cannot intercept"));
+        }
+        let runner = dive.runner;
+        let runner_speed = state.creatures[runner].offense.speed.max(1);
+        state.heroes[g].tempo -= runner_speed as i32; // pay-after (§3.1)
+        let (raw, dtype, precision) = base_strike(&state.heroes[g]);
+        let hname = state.heroes[g].name.clone();
+        state.log.push(format!(
+            "{hname} cuts in to block the {}.",
+            state.creatures[runner].name
+        ));
+        combat::apply_strike(
+            &mut state.creatures[runner],
+            duel::Strike {
+                raw,
+                dtype,
+                precision,
+            },
+            &hname,
+            &mut state.log,
+        );
+        dive.chosen.push(g);
+        let drag: u32 = dive
+            .chosen
+            .iter()
+            .map(|&i| state.heroes[i].offense.speed.max(1))
+            .sum();
+        if state.creatures[runner].is_down() {
+            state.creatures[runner].fallen = true;
+            check_outcome(state);
+            if state.outcome.is_none() {
+                self.next_foe(state);
+            }
+        } else if drag >= runner_speed {
+            state.log.push(format!(
+                "the line walls off the {} (drag {drag} ≥ {runner_speed}).",
+                state.creatures[runner].name
+            ));
+            self.next_foe(state);
+        } else {
+            state.dive = Some(dive);
+        }
+        Ok(())
+    }
+
+    /// FoeDive: stop intercepting — the runner slips the line and free-hits its back-line
+    /// target (§4).
+    fn foe_dive_let_through(&self, state: &mut State) {
+        let Some(dive) = state.dive.clone() else {
+            return;
+        };
+        state.log.push(format!(
+            "the {} slips the line!",
+            state.creatures[dive.runner].name
+        ));
+        combat::free_hit(state, dive.runner, dive.target);
+        if state.heroes[dive.target].is_down() {
+            state.heroes[dive.target].fallen = true;
+        }
+        check_outcome(state);
+        if state.outcome.is_none() {
+            self.next_foe(state);
+        }
+    }
+
     fn status(&self, state: &State) -> String {
         let log = state
             .log
@@ -333,7 +494,7 @@ impl Deckbound {
                 "Duels - learn the Clash. (Esc: back)".to_string()
             }
             (None, Phase::Choosing) => format!(
-                "Round {} - engage a foe, queue a card, or end the round. (Esc: menu)",
+                "Round {} - engage a foe, dive, reposition, queue a card, or end the round. (Esc: menu)",
                 state.round
             ),
             (None, Phase::Combat) => match state.duel {
@@ -348,6 +509,29 @@ impl Deckbound {
                     "The {} attacks {} - Defend (Focus), Counter (Tempo), or Take the hit. (Esc: menu)",
                     state.creatures.get(f).map(|x| x.name.as_str()).unwrap_or("foe"),
                     state.heroes.get(t).map(|x| x.name.as_str()).unwrap_or("you"),
+                ),
+                None => "...".to_string(),
+            },
+            (None, Phase::HeroDive) => match &state.dive {
+                Some(d) => {
+                    let drag: u32 = d
+                        .guards
+                        .iter()
+                        .map(|&g| state.creatures[g].offense.speed.max(1))
+                        .sum();
+                    format!(
+                        "{} faces the gauntlet ({} guards, drag {drag}) - Push through or Halt. (Esc: halt)",
+                        state.heroes[d.runner].name,
+                        d.guards.len()
+                    )
+                }
+                None => "...".to_string(),
+            },
+            (None, Phase::FoeDive) => match &state.dive {
+                Some(d) => format!(
+                    "The {} dives for {} - pick interceptors, or Let it through. (Esc: menu)",
+                    state.creatures[d.runner].name,
+                    state.heroes.get(d.target).map(|x| x.name.as_str()).unwrap_or("the back line"),
                 ),
                 None => "...".to_string(),
             },
@@ -391,13 +575,25 @@ impl Game for Deckbound {
             }
             Phase::Choosing => {
                 let mut a = Vec::new();
+                // Repositioning is free and available between rounds (§4) — even with no Tempo.
+                for (h, hero) in state.heroes.iter().enumerate() {
+                    if !hero.fallen {
+                        a.push(Action::Reposition(h));
+                    }
+                }
                 for (h, hero) in state.heroes.iter().enumerate() {
                     if !state.hero_can_act(h) {
                         continue;
                     }
                     for (f, foe) in state.creatures.iter().enumerate() {
-                        if !foe.is_down() {
+                        if foe.is_down() {
+                            continue;
+                        }
+                        // Reach (§4): hit it directly, or dive the gauntlet for a guarded back-liner.
+                        if combat::reaches_directly(hero, &state.creatures, f) {
                             a.push(Action::Engage(h, f));
+                        } else {
+                            a.push(Action::Dive(h, f));
                         }
                     }
                     for idx in 0..hero.actions.len() {
@@ -430,6 +626,22 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
+            Phase::HeroDive => {
+                vec![Action::PushThrough, Action::Halt, Action::ToMenu]
+            }
+            Phase::FoeDive => {
+                let mut a = Vec::new();
+                if let Some(d) = &state.dive {
+                    for &g in &d.guards {
+                        if !state.heroes[g].fallen && !d.chosen.contains(&g) {
+                            a.push(Action::Intercept(g));
+                        }
+                    }
+                }
+                a.push(Action::LetThrough);
+                a.push(Action::ToMenu);
+                a
+            }
         }
     }
 
@@ -459,6 +671,48 @@ impl Game for Deckbound {
                     .unwrap_or("?");
                 format!("{hero} engages the {foe}")
             }
+            Action::Dive(h, f) => {
+                let hero = state.heroes.get(*h).map(|x| x.name.as_str()).unwrap_or("?");
+                let foe = state
+                    .creatures
+                    .get(*f)
+                    .map(|x| x.name.as_str())
+                    .unwrap_or("?");
+                format!("{hero} dives the gauntlet for the {foe} (back line)")
+            }
+            Action::Reposition(h) => {
+                let hero = state.heroes.get(*h);
+                let name = hero.map(|x| x.name.as_str()).unwrap_or("?");
+                let to = match hero.map(|x| x.line) {
+                    Some(crate::actor::Line::Front) => "back",
+                    _ => "front",
+                };
+                format!("{name}: shift to the {to} line (free)")
+            }
+            Action::PushThrough => {
+                let drag: u32 = state
+                    .dive
+                    .as_ref()
+                    .map(|d| {
+                        d.guards
+                            .iter()
+                            .map(|&g| state.creatures[g].offense.speed.max(1))
+                            .sum()
+                    })
+                    .unwrap_or(0);
+                format!("Push through (pay {drag} Tempo, eat the guards' hits)")
+            }
+            Action::Halt => "Halt — pull back (no cost)".into(),
+            Action::Intercept(g) => {
+                let hero = state.heroes.get(*g).map(|x| x.name.as_str()).unwrap_or("?");
+                let speed = state
+                    .dive
+                    .as_ref()
+                    .map(|d| state.creatures[d.runner].offense.speed.max(1))
+                    .unwrap_or(0);
+                format!("{hero} intercepts (pay {speed} Tempo, strike the runner)")
+            }
+            Action::LetThrough => "Let it through (it free-hits the back line)".into(),
             Action::PlayAction(h, idx) => {
                 let hero = state.heroes.get(*h);
                 let name = hero.map(|x| x.name.as_str()).unwrap_or("?");
@@ -555,6 +809,50 @@ impl Game for Deckbound {
                 state.queued_cards.push((*h, *idx));
                 state.heroes[*h].tempo -= ACTION_COST as i32;
             }
+            (Phase::Choosing, Action::Reposition(h)) => {
+                let hero = state
+                    .heroes
+                    .get_mut(*h)
+                    .filter(|x| !x.fallen)
+                    .ok_or_else(|| GameError::new("no such hero"))?;
+                hero.line = match hero.line {
+                    crate::actor::Line::Front => crate::actor::Line::Back,
+                    crate::actor::Line::Back => crate::actor::Line::Front,
+                };
+                let line = if hero.line == crate::actor::Line::Front {
+                    "front"
+                } else {
+                    "back"
+                };
+                let name = hero.name.clone();
+                state.log.push(format!("{name} shifts to the {line} line."));
+            }
+            (Phase::Choosing, Action::Dive(h, f)) => {
+                if !self.legal_actions(state).contains(action) {
+                    return Err(GameError::new("that dive is not available"));
+                }
+                let guards = combat::front_guards(&state.creatures);
+                state.dive = Some(Dive {
+                    runner: *h,
+                    target: *f,
+                    guards,
+                    chosen: Vec::new(),
+                });
+                state.phase = Phase::HeroDive;
+                state.log.push(format!(
+                    "{} charges the gauntlet toward the {}.",
+                    state.heroes[*h].name, state.creatures[*f].name
+                ));
+            }
+            (Phase::HeroDive, Action::PushThrough) => self.hero_push_through(state)?,
+            (Phase::HeroDive, Action::Halt) => {
+                if let Some(d) = state.dive.take() {
+                    state.log.push(format!("{} pulls back.", state.heroes[d.runner].name));
+                }
+                state.phase = Phase::Choosing;
+            }
+            (Phase::FoeDive, Action::Intercept(g)) => self.foe_dive_intercept(state, *g)?,
+            (Phase::FoeDive, Action::LetThrough) => self.foe_dive_let_through(state),
             (Phase::Choosing, Action::EndRound) => self.end_round(state),
             (Phase::Combat, Action::Play(m)) => {
                 if state.duel.is_none() {
@@ -576,10 +874,7 @@ impl Game for Deckbound {
                 }
                 check_outcome(state);
                 if state.outcome.is_none() {
-                    state.foe_queue.remove(0);
-                    if state.foe_queue.is_empty() {
-                        self.finish_round(state);
-                    }
+                    self.next_foe(state);
                 }
             }
             (Phase::FoePhase, Action::Defend) => {
@@ -619,7 +914,10 @@ impl Game for Deckbound {
         match &state.phase {
             Phase::Menu(Menu::Top) => None,
             Phase::Menu(_) => Some(Action::Back),
-            Phase::Choosing | Phase::Combat | Phase::FoePhase => Some(Action::ToMenu),
+            Phase::HeroDive => Some(Action::Halt),
+            Phase::Choosing | Phase::Combat | Phase::FoePhase | Phase::FoeDive => {
+                Some(Action::ToMenu)
+            }
         }
     }
 
@@ -665,6 +963,15 @@ impl Game for Deckbound {
             Phase::FoePhase => {
                 let (af, ah) = match state.foe_queue.first() {
                     Some(&(f, t)) => (Some(f), Some(t)),
+                    None => (None, None),
+                };
+                zones.push(creature_zone(state, af));
+                zones.push(hero_zone(state, ah));
+            }
+            Phase::HeroDive | Phase::FoeDive => {
+                let (af, ah) = match &state.dive {
+                    Some(d) if state.phase == Phase::HeroDive => (Some(d.target), Some(d.runner)),
+                    Some(d) => (Some(d.runner), Some(d.target)),
                     None => (None, None),
                 };
                 zones.push(creature_zone(state, af));
@@ -855,6 +1162,9 @@ mod tests {
                         Action::TakeHit
                     }
                 }
+                // The gauntlet: a diving hero pulls back; a diving foe is let through.
+                Phase::HeroDive => Action::Halt,
+                Phase::FoeDive => Action::LetThrough,
                 _ => break,
             };
             game.apply(s, &action).unwrap();
@@ -1014,6 +1324,71 @@ mod tests {
         assert!(s.duel.is_some());
         // With Tempo negative, the hero can take no further action this round.
         assert!(!s.hero_can_act(0));
+    }
+
+    /// §4 reach: a ranged hero reaches a guarded back-line foe directly; a melee hero can
+    /// only get there by diving the gauntlet.
+    #[test]
+    fn ranged_reaches_the_back_line_but_melee_must_dive() {
+        let game = Deckbound;
+        let s = campaign_state(2, "Pierce the Line");
+        let aldric = s.heroes.iter().position(|h| h.name == "Aldric").unwrap();
+        let tamsin = s.heroes.iter().position(|h| h.name == "Tamsin").unwrap();
+        let seer = s.creatures.iter().position(|c| c.name == "Seer").unwrap();
+        assert_eq!(s.creatures[seer].line, crate::actor::Line::Back);
+        let acts = game.legal_actions(&s);
+        assert!(
+            acts.contains(&Action::Engage(tamsin, seer)),
+            "the archer shoots over the wall"
+        );
+        assert!(
+            !acts.contains(&Action::Engage(aldric, seer)),
+            "the knight can't reach the back line directly"
+        );
+        assert!(
+            acts.contains(&Action::Dive(aldric, seer)),
+            "the knight must dive the gauntlet"
+        );
+    }
+
+    /// §4 reposition: shifting line is free and flips front <-> back.
+    #[test]
+    fn reposition_is_free_and_flips_the_line() {
+        let game = Deckbound;
+        let mut s = campaign_state(2, "Pierce the Line");
+        let aldric = s.heroes.iter().position(|h| h.name == "Aldric").unwrap();
+        assert_eq!(s.heroes[aldric].line, crate::actor::Line::Front);
+        let tempo = s.heroes[aldric].tempo;
+        game.apply(&mut s, &Action::Reposition(aldric)).unwrap();
+        assert_eq!(s.heroes[aldric].line, crate::actor::Line::Back);
+        assert_eq!(s.heroes[aldric].tempo, tempo, "repositioning is free");
+    }
+
+    /// §4 gauntlet: a runner foe dives the hero back line; the player can intercept with a
+    /// front-line hero, who strikes the runner as it crosses.
+    #[test]
+    fn a_runner_foe_dives_and_can_be_intercepted() {
+        let game = Deckbound;
+        let mut s = campaign_state(2, "Pierce the Line");
+        game.apply(&mut s, &Action::EndRound).unwrap();
+        let mut saw_dive = false;
+        let mut guard = 0;
+        while matches!(s.phase, Phase::FoePhase | Phase::FoeDive) && s.outcome.is_none() {
+            if s.phase == Phase::FoeDive {
+                saw_dive = true;
+                let intercept = game
+                    .legal_actions(&s)
+                    .into_iter()
+                    .find(|a| matches!(a, Action::Intercept(_)));
+                game.apply(&mut s, &intercept.unwrap_or(Action::LetThrough))
+                    .unwrap();
+            } else {
+                game.apply(&mut s, &Action::TakeHit).unwrap();
+            }
+            guard += 1;
+            assert!(guard < 100, "the foe phase should drain");
+        }
+        assert!(saw_dive, "the Stalker dove the hero gauntlet");
     }
 
     /// Item 2: ending a round with un-engaged foes opens the interactive foe phase — each

@@ -29,6 +29,27 @@ pub enum Phase {
     /// The foe phase: each un-engaged foe attacks; the targeted hero picks Defend / Counter
     /// / Eat for the attack at the front of `foe_queue`.
     FoePhase,
+    /// A hero is diving the enemy gauntlet toward a back-line foe (§4): push through (pay
+    /// the guards' combined Speed as Tempo and eat their hits) or halt.
+    HeroDive,
+    /// A creature runner is diving the hero gauntlet (§4): the player picks which front-line
+    /// heroes intercept (each pays Tempo = the runner's Speed), then lets it resolve.
+    FoeDive,
+}
+
+/// A dive in progress across the gauntlet (§4). For [`Phase::HeroDive`] the runner is a hero
+/// and the guards/target are foes; for [`Phase::FoeDive`] the runner is a creature and the
+/// guards/target are heroes.
+#[derive(Clone, Debug)]
+pub struct Dive {
+    /// The diving actor's index (a hero for HeroDive, a creature for FoeDive).
+    pub runner: usize,
+    /// The back-line target on the far side.
+    pub target: usize,
+    /// Living front-line guards on the far side who may intercept.
+    pub guards: Vec<usize>,
+    /// Guards chosen to intercept so far (FoeDive — the player builds this up).
+    pub chosen: Vec<usize>,
 }
 
 /// The active Clash: who's in it, each side's **Force** (per-duel, public), the beat
@@ -69,6 +90,8 @@ pub struct State {
     pub queued_cards: Vec<(usize, usize)>,
     /// The foe phase work-list: `(foe, target_hero)` attacks still to resolve.
     pub foe_queue: Vec<(usize, usize)>,
+    /// The gauntlet dive in progress (HeroDive / FoeDive), if any.
+    pub dive: Option<Dive>,
 }
 
 impl State {
@@ -103,5 +126,6 @@ impl State {
         self.engaged = vec![false; self.creatures.len()];
         self.queued_cards.clear();
         self.foe_queue.clear();
+        self.dive = None;
     }
 }
