@@ -147,8 +147,20 @@ impl Deckbound {
         let (c_pow, c_dt, c_pre) = base_strike(&state.creatures[duel.foe]);
         let h_name = state.heroes[duel.hero].name.clone();
         let c_name = state.creatures[duel.foe].name.clone();
-        let a = Side { power: h_pow, dtype: h_dt, precision: h_pre, force: duel.hero_force, name: &h_name };
-        let b = Side { power: c_pow, dtype: c_dt, precision: c_pre, force: duel.foe_force, name: &c_name };
+        let a = Side {
+            power: h_pow,
+            dtype: h_dt,
+            precision: h_pre,
+            force: duel.hero_force,
+            name: &h_name,
+        };
+        let b = Side {
+            power: c_pow,
+            dtype: c_dt,
+            precision: c_pre,
+            force: duel.foe_force,
+            name: &c_name,
+        };
         let result = duel::resolve(&a, hero_move, &b, creature_move);
         state.log.push(result.note);
 
@@ -158,7 +170,9 @@ impl Deckbound {
         // In a defensive Clash the foe is reset (survival only) — the hero's hit is voided.
         if let Some(s) = result.on_b {
             if duel.defending {
-                state.log.push(format!("  ({} breaks off, unharmed)", c_name));
+                state
+                    .log
+                    .push(format!("  ({} breaks off, unharmed)", c_name));
             } else {
                 combat::apply_strike(&mut state.creatures[duel.foe], s, &h_name, &mut state.log);
             }
@@ -186,7 +200,9 @@ impl Deckbound {
             if stall >= STALL_CAP {
                 state.duel = None;
                 state.phase = Phase::Choosing;
-                state.log.push("(neither can land a blow — they break off)".into());
+                state
+                    .log
+                    .push("(neither can land a blow — they break off)".into());
             } else {
                 state.duel = Some(Duel {
                     hero: duel.hero,
@@ -487,9 +503,17 @@ impl Game for Deckbound {
                 zones.push(creature_zone(state, af));
                 if let Some(d) = state.duel {
                     let foe_name = state.creatures[d.foe].name.clone();
-                    zones.push(force_zone(&format!("The {foe_name}'s Force"), d.foe_force, Accent::Foe));
+                    zones.push(force_zone(
+                        &format!("The {foe_name}'s Force"),
+                        d.foe_force,
+                        Accent::Foe,
+                    ));
                     let hero_name = state.heroes[d.hero].name.clone();
-                    zones.push(force_zone(&format!("{hero_name}'s Force"), d.hero_force, Accent::Good));
+                    zones.push(force_zone(
+                        &format!("{hero_name}'s Force"),
+                        d.hero_force,
+                        Accent::Good,
+                    ));
                 }
                 zones.push(hero_zone(state, ah));
             }
@@ -736,7 +760,11 @@ mod tests {
         let mut guard = 0;
         while s.phase == Phase::Combat {
             let beat = s.duel.map(|d| d.beat).unwrap_or(0);
-            let m = if beat % 2 == 0 { Move::Strike } else { Move::Anticipate };
+            let m = if beat % 2 == 0 {
+                Move::Strike
+            } else {
+                Move::Anticipate
+            };
             game.apply(s, &Action::Play(m)).unwrap();
             guard += 1;
             assert!(guard < 1000, "a duel should terminate");
@@ -816,7 +844,10 @@ mod tests {
         let mut s = god_state(1, "Goliath");
         s.heroes[0].tempo = 1;
         game.apply(&mut s, &Action::Engage(0, 0)).unwrap();
-        assert!(s.heroes[0].tempo < 0, "pay-after: the engage still happened");
+        assert!(
+            s.heroes[0].tempo < 0,
+            "pay-after: the engage still happened"
+        );
         assert_eq!(s.phase, Phase::Combat, "the duel formed");
         assert!(s.duel.is_some());
         // With Tempo negative, the hero can take no further action this round.

@@ -210,7 +210,10 @@ mod tests {
     #[test]
     fn a_deck_draws_and_a_script_winds_up() {
         let mut rng = Rng::new(1);
-        let deck = Behavior { instinct: Instinct::Deck(vec![Move::Strike]), target_rule: TargetRule::Front };
+        let deck = Behavior {
+            instinct: Instinct::Deck(vec![Move::Strike]),
+            target_rule: TargetRule::Front,
+        };
         assert_eq!(deck.pick(0, &mut rng), Move::Strike);
         // The charger gathers until loaded, then strikes.
         let charger = Behavior {

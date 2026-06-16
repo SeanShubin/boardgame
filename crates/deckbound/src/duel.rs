@@ -141,7 +141,14 @@ pub fn resolve(a: &Side, am: Move, b: &Side, bm: Move) -> Clash {
     }
 }
 
-fn clash_note(an: &str, am: Move, bn: &str, bm: Move, on_a: &Option<Strike>, on_b: &Option<Strike>) -> String {
+fn clash_note(
+    an: &str,
+    am: Move,
+    bn: &str,
+    bm: Move,
+    on_a: &Option<Strike>,
+    on_b: &Option<Strike>,
+) -> String {
     match (on_a.is_some(), on_b.is_some()) {
         (true, true) => format!("{an} and {bn} trade blows!"),
         (false, true) => format!("{an}'s {} lands on {bn}.", am.name()),
@@ -155,7 +162,13 @@ mod tests {
     use super::*;
 
     fn side(power: u32, force: u32) -> Side<'static> {
-        Side { power, dtype: DamageType::Blunt, precision: 0, force, name: "X" }
+        Side {
+            power,
+            dtype: DamageType::Blunt,
+            precision: 0,
+            force,
+            name: "X",
+        }
     }
 
     /// Invariant 1 — **avoid**: every attack has a defense that negates it.
@@ -165,7 +178,11 @@ mod tests {
         let you = side(5, 0);
         // I pick the matching defense → I take nothing (on_a = a hit landing on me).
         assert!(resolve(&me, Move::Evade, &you, Move::Strike).on_a.is_none());
-        assert!(resolve(&me, Move::Gather, &you, Move::Anticipate).on_a.is_none());
+        assert!(
+            resolve(&me, Move::Gather, &you, Move::Anticipate)
+                .on_a
+                .is_none()
+        );
     }
 
     /// Invariant 2 — **land**: for every move the opponent makes, some attack of mine lands.
@@ -175,9 +192,18 @@ mod tests {
         let you = side(5, 0);
         let lands = |am: Move, bm: Move| resolve(&me, am, &you, bm).on_b.is_some();
         assert!(lands(Move::Strike, Move::Gather), "Strike hits a holder");
-        assert!(lands(Move::Anticipate, Move::Evade), "Anticipate leads a mover");
-        assert!(lands(Move::Strike, Move::Strike), "Strike trades into Strike");
-        assert!(lands(Move::Strike, Move::Anticipate), "Strike beats Anticipate");
+        assert!(
+            lands(Move::Anticipate, Move::Evade),
+            "Anticipate leads a mover"
+        );
+        assert!(
+            lands(Move::Strike, Move::Strike),
+            "Strike trades into Strike"
+        );
+        assert!(
+            lands(Move::Strike, Move::Anticipate),
+            "Strike beats Anticipate"
+        );
     }
 
     /// Invariant 3 — **not both, free**: vs a committed Strike, the only landing answer is
@@ -187,10 +213,16 @@ mod tests {
         let me = side(5, 0);
         let you = side(5, 0);
         for am in [Move::Anticipate, Move::Gather, Move::Evade] {
-            assert!(resolve(&me, am, &you, Move::Strike).on_b.is_none(), "{am:?} shouldn't land vs Strike");
+            assert!(
+                resolve(&me, am, &you, Move::Strike).on_b.is_none(),
+                "{am:?} shouldn't land vs Strike"
+            );
         }
         let trade = resolve(&me, Move::Strike, &you, Move::Strike);
-        assert!(trade.on_b.is_some() && trade.on_a.is_some(), "Strike lands but you're also hit");
+        assert!(
+            trade.on_b.is_some() && trade.on_a.is_some(),
+            "Strike lands but you're also hit"
+        );
     }
 
     #[test]
@@ -211,7 +243,10 @@ mod tests {
         let striker = side(3, 3);
         let dodger = side(3, 0);
         let r = resolve(&striker, Move::Strike, &dodger, Move::Evade);
-        assert!(r.on_a.is_none() && r.on_b.is_none(), "the strike is dodged, nothing lands");
+        assert!(
+            r.on_a.is_none() && r.on_b.is_none(),
+            "the strike is dodged, nothing lands"
+        );
         assert_eq!(r.a_force, 0, "the striker loses its Force");
         assert_eq!(r.b_force, 3, "the dodger steals it");
         assert!(!r.ends, "a dodged strike is a dance beat, not an ender");
@@ -222,8 +257,17 @@ mod tests {
     fn a_connecting_strike_ends_the_duel() {
         let a = side(3, 0);
         let b = side(3, 0);
-        assert!(resolve(&a, Move::Strike, &b, Move::Gather).ends, "a landed strike ends it");
-        assert!(!resolve(&a, Move::Gather, &b, Move::Gather).ends, "two gathers continue");
-        assert!(!resolve(&a, Move::Anticipate, &b, Move::Gather).ends, "a whiffed lead continues");
+        assert!(
+            resolve(&a, Move::Strike, &b, Move::Gather).ends,
+            "a landed strike ends it"
+        );
+        assert!(
+            !resolve(&a, Move::Gather, &b, Move::Gather).ends,
+            "two gathers continue"
+        );
+        assert!(
+            !resolve(&a, Move::Anticipate, &b, Move::Gather).ends,
+            "a whiffed lead continues"
+        );
     }
 }

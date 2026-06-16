@@ -150,7 +150,7 @@ fn instinct_for(keyword: &str) -> Instinct {
         "charger" => Instinct::Script(Script::ChargeThenStrike { until: 2 }),
         "leader" => Instinct::Script(Script::Always(Anticipate)), // Strike or Gather it; never Evade
         "dodger" => Instinct::Script(Script::Always(Evade)),      // Anticipate it; never Strike
-        "counter" => Instinct::Script(Script::Counter),           // Anticipate it; Strike it and it counters
+        "counter" => Instinct::Script(Script::Counter), // Anticipate it; Strike it and it counters
         "brawler" | "dummy" => Instinct::Script(Script::Always(Strike)), // Evade it; anything else is hit
         "post" => Instinct::Script(Script::Always(Gather)),
         // --- Real-foe decks (random lean) ---
