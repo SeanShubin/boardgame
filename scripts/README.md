@@ -14,6 +14,7 @@ through to the underlying cargo command.
 | `fmt`        | Format all code in place. `fmt --check` to verify only.           |
 | `lint`       | Clippy across the workspace, warnings treated as errors.          |
 | `verify`     | The pre-push gauntlet: fmt check + clippy + tests + build.        |
+| `push`       | Push, then watch the CI + Pages runs and announce the verdict.    |
 | `pad-tables` | Align all markdown tables in the repo so columns line up.         |
 
 ## Usage
