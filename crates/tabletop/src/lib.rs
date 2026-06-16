@@ -15,7 +15,7 @@
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, OverflowAxis, ScrollPosition};
+use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
 use engine::{Accent, CardFace, Game, TableView, ZoneView};
 
 /// Drives a single match of `G` on a Bevy app.
@@ -44,9 +44,14 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(StateRes::<G>(state))
             .insert_resource(NeedsRedraw(true))
             .insert_resource(Platform::detect())
-            .add_systems(Startup, (setup_camera, install_ui_font))
+            .insert_resource(HelpVisible(false))
+            .add_systems(Startup, (setup_camera, install_ui_font, setup_help))
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
+            // After `cancel_on_key` so that while the overlay is open it sees
+            // `HelpVisible` still set, bows out of rewinding, and lets this
+            // system consume Esc as "close help" instead.
+            .add_systems(Update, toggle_help.after(cancel_on_key::<G>))
             .add_systems(
                 Update,
                 (
@@ -92,9 +97,22 @@ impl Platform {
     }
 }
 
+/// Whether the help overlay is currently shown.
+#[derive(Resource)]
+struct HelpVisible(bool);
+
 /// Marks the root entity of the current table so it can be torn down on redraw.
 #[derive(Component)]
 struct TableRoot;
+
+/// Marks the full-screen help overlay so [`toggle_help`] can show / hide it.
+#[derive(Component)]
+struct HelpOverlay;
+
+/// Marks the always-visible "Press ? for help" hint, hidden while the overlay
+/// itself is open so the two don't both show at once.
+#[derive(Component)]
+struct HelpHint;
 
 /// An action button, carrying its index into the current legal-action list.
 #[derive(Component)]
@@ -146,10 +164,16 @@ fn apply_clicked_action<G: Game + Clone>(
 /// Escape / Backspace rewind one step of a multi-step decision.
 fn cancel_on_key<G: Game + Clone>(
     keys: Res<ButtonInput<KeyCode>>,
+    help: Res<HelpVisible>,
     game: Res<GameRes<G>>,
     mut state: ResMut<StateRes<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
+    // While the help overlay is up, Esc closes it (handled by `toggle_help`)
+    // rather than rewinding a game step.
+    if help.0 {
+        return;
+    }
     if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
         if let Some(action) = game.0.cancel_action(&state.0) {
             if game.0.apply(&mut state.0, &action).is_ok() {
@@ -196,6 +220,32 @@ fn adjust_zoom(keys: Res<ButtonInput<KeyCode>>, mut ui_scale: ResMut<UiScale>) {
     let scale = scale.clamp(MIN, MAX);
     if scale != ui_scale.0 {
         ui_scale.0 = scale;
+    }
+}
+
+/// Show / hide the help overlay. `?` (or `F1`) toggles it; `Esc` only ever
+/// closes it (never opens it, so Esc stays free to rewind a move when no help
+/// is showing). The hint is hidden while the overlay is up to avoid showing
+/// both at once.
+fn toggle_help(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut visible: ResMut<HelpVisible>,
+    mut overlay: Query<&mut Node, (With<HelpOverlay>, Without<HelpHint>)>,
+    mut hint: Query<&mut Node, (With<HelpHint>, Without<HelpOverlay>)>,
+) {
+    let toggle = keys.just_pressed(KeyCode::Slash) || keys.just_pressed(KeyCode::F1);
+    let close = visible.0 && keys.just_pressed(KeyCode::Escape);
+    if !toggle && !close {
+        return;
+    }
+    visible.0 = !close && !visible.0;
+
+    let shown = |on: bool| if on { Display::Flex } else { Display::None };
+    if let Ok(mut node) = overlay.single_mut() {
+        node.display = shown(visible.0);
+    }
+    if let Ok(mut node) = hint.single_mut() {
+        node.display = shown(!visible.0);
     }
 }
 
@@ -324,6 +374,13 @@ const CARD_BORDER: f32 = 2.0;
 const BADGE: Color = Color::srgb(0.14, 0.14, 0.18);
 const TITLE_INK: Color = Color::srgb(0.97, 0.97, 0.98);
 const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
+/// Dim wash drawn behind the help overlay so it reads as a modal layer.
+const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.6);
+/// Backing for the always-visible help hint; the panel colour with some alpha
+/// so it sits lightly over the table.
+const HINT_BG: Color = Color::srgba(0.10, 0.18, 0.15, 0.85);
+/// Muted ink for secondary lines (the overlay's "press … to close" footer).
+const MUTED_INK: Color = Color::srgb(0.66, 0.72, 0.68);
 
 fn accent_color(accent: Accent) -> Color {
     match accent {
@@ -680,6 +737,140 @@ fn spawn_card_face(
                     });
                 });
             }
+        });
+}
+
+/// The controls advertised in the help overlay, as `(keys, description)`. Keep
+/// in sync with the keys handled in `adjust_zoom`, `toggle_help`, and
+/// `cancel_on_key`.
+const CONTROLS: &[(&str, &str)] = &[
+    ("= / +", "Zoom in"),
+    ("\u{2212}", "Zoom out"),
+    ("0", "Reset zoom"),
+    ("Mouse wheel", "Scroll the board / action list"),
+    ("Esc / Backspace", "Cancel \u{2013} go back a step"),
+    ("? / F1", "Toggle this help"),
+];
+
+/// Spawn the discoverability hint and the (initially hidden) help overlay. Both
+/// live outside [`TableRoot`], so a redraw never tears them down, and both carry
+/// a positive [`GlobalZIndex`] so they paint above the freshly-spawned table.
+fn setup_help(mut commands: Commands) {
+    // Always-visible hint, bottom-right — the single affordance that tells a
+    // first-time player help exists at all.
+    commands
+        .spawn((
+            HelpHint,
+            GlobalZIndex(10),
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(12.0),
+                bottom: Val::Px(12.0),
+                padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                ..default()
+            },
+            BackgroundColor(HINT_BG),
+        ))
+        .with_children(|hint| {
+            hint.spawn((
+                Text::new("Press ? for help"),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+        });
+
+    // The overlay: a full-screen scrim centring a controls card. Hidden until
+    // toggled (see `toggle_help`).
+    commands
+        .spawn((
+            HelpOverlay,
+            GlobalZIndex(20),
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(SCRIM),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        min_width: Val::Px(380.0),
+                        padding: UiRect::all(Val::Px(24.0)),
+                        row_gap: Val::Px(14.0),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL),
+                ))
+                .with_children(|panel| {
+                    panel.spawn((
+                        Text::new("Controls"),
+                        TextFont {
+                            font_size: 24.0,
+                            ..default()
+                        },
+                        TextColor(TITLE_INK),
+                    ));
+                    for (keys, desc) in CONTROLS {
+                        spawn_control_row(panel, keys, desc);
+                    }
+                    panel.spawn((
+                        Text::new("Press ?, F1, or Esc to close"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(MUTED_INK),
+                    ));
+                });
+        });
+}
+
+/// One row of the help overlay: a key-cap badge beside its description.
+fn spawn_control_row(parent: &mut ChildSpawnerCommands, keys: &str, desc: &str) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(16.0),
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(150.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(BADGE),
+            ))
+            .with_children(|cap| {
+                cap.spawn((
+                    Text::new(keys.to_string()),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(TITLE_INK),
+                ));
+            });
+            row.spawn((
+                Text::new(desc.to_string()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
         });
 }
 

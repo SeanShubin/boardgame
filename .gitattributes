@@ -1,0 +1,6 @@
+# Shell scripts and git hooks must stay LF-only: with core.autocrlf=true a
+# checkout would otherwise rewrite them to CRLF, and Git for Windows runs hooks
+# through sh, which rejects a CRLF `#!/bin/sh` line with a "bad interpreter"
+# error. Pinning the line endings keeps them runnable on every platform.
+*.sh text eol=lf
+.githooks/** text eol=lf

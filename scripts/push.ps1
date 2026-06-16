@@ -6,6 +6,11 @@ $ErrorActionPreference = "Stop"
 
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    # Gate on the same gauntlet CI runs (format check, clippy, tests, build)
+    # before pushing, so a failure surfaces here instead of after the push.
+    & "$PSScriptRoot/verify.ps1"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     git push
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

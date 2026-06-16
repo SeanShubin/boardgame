@@ -1,0 +1,15 @@
+#!/bin/sh
+# Hard backstop: reject a push whose code is not rustfmt-clean.
+#
+# Formatting is the one CI gate (cargo fmt --all -- --check) that does not
+# affect local compilation, so unformatted code builds, runs, and passes a
+# plain `cargo check` locally — it only fails in CI, after the push. This hook
+# catches it on any `git push`, including raw pushes that bypass
+# scripts/push.{ps1,sh} (which run the full scripts/verify gauntlet first).
+#
+# Enable once per clone: git config core.hooksPath .githooks
+echo "pre-push: cargo fmt --all -- --check"
+if ! cargo fmt --all -- --check; then
+    echo "pre-push: formatting check failed — run scripts/fmt (cargo fmt --all) and retry." >&2
+    exit 1
+fi

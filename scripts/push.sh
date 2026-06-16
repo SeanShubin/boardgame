@@ -5,6 +5,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Gate on the same gauntlet CI runs (format check, clippy, tests, build) before
+# pushing, so a failure surfaces here instead of after the push.
+"$(dirname "$0")/verify.sh"
+
 git push
 
 sha="$(git rev-parse HEAD)"
