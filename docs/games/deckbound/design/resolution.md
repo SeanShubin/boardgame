@@ -1,12 +1,11 @@
 # Deckbound — Resolution Procedure (the round)
 
 > **SUPERSEDED — Clash mechanics.** The tactical core is now the **Clash**
-> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
-> rationale in [the-duel.md](the-duel.md)): a beat-by-beat duel of six moves
-> (**Strike · Throw · Parry · Evade · Charge · Recover**), durable ×2 **Charge**
-> cards instead of momentum banks, run to **Body 0**. The Strike/Scheme/Defense
-> cycle, the momentum bank/forfeit, and "a duel ends on a single strike" below are
-> stale. The **round skeleton** here — form up → declare → reveal simultaneously →
+> ([`spec/README.md` §1](../spec/README.md), rationale in [the-duel.md](the-duel.md)): a
+> four-card duel — **Strike · Anticipate · Gather · Evade** — with a single **Force** count
+> (×2 per Force, stolen only on Strike-into-Evade), run **ends-on-strike**. The
+> Strike/Scheme/Defense cycle and the momentum bank/forfeit below are stale (but
+> **ends-on-strike is current again** — a duel does end on a single connecting strike). The **round skeleton** here — form up → declare → reveal simultaneously →
 > Clash → recover, with the gauntlet/Charge phase and minimal inherent ordering —
 > still holds in spirit; resolution order is canonically specced in §1.9. Read for
 > the procedure's shape; trust the spec for what a clash resolves to.

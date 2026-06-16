@@ -1,11 +1,10 @@
 # Deckbound — The Mind: Stances & Momentum
 
 > **SUPERSEDED — tactical layer.** The canonical tactical core is now the **Clash**
-> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
-> design rationale in [the-duel.md](the-duel.md)): a beat-by-beat duel where each
-> fighter secretly picks one of six moves — **Strike · Throw · Parry · Evade**
-> (standing) plus **Charge · Recover** (setups) — Charges are durable face-up cards
-> that double damage (×2 each), and the duel runs to **Body 0**. Both the
+> ([`spec/README.md` §1](../spec/README.md),
+> design rationale in [the-duel.md](the-duel.md)): a beat-by-beat **four-card** duel —
+> **Strike · Anticipate · Gather · Evade** — with a single **Force** count (×2 per Force,
+> stolen only on Strike-into-Evade), run **ends-on-strike**. Both the
 > Strike / Block / Evade / Scheme cycle *and* the Power / Speed / Precision momentum
 > banks below are superseded (as is the interim Marshal/Unleash/Overwhelm/Parry Edge
 > duel). What carries forward: the **Mind-aspect framing**, **one-way vs two-way

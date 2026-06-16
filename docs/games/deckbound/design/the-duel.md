@@ -1,227 +1,168 @@
 # Deckbound — The Duel (the Clash)
 
-> **Status:** the duel is now **the Clash**, specced canonically in
-> [`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges)
-> — that section is the **source of truth for mechanics**; this note is its
-> **design background** (the WHY behind the shape). The earlier stance/Edge duel
-> (Marshal · Unleash · Overwhelm · Parry over a tracked Edge meter) it once
-> described is **superseded** — see [What this supersedes](#what-this-supersedes).
-> Its intent carried forward intact; only the mechanics changed.
+> **Status:** the duel is **the Clash**, specced canonically in
+> [`spec/README.md` §1.0](../spec/README.md). That section is the **source of truth for
+> mechanics**; this note is its **design background** — the WHY behind the shape. Both the
+> stance/Edge duel and the interim six-move *charge* duel this note once described are
+> **superseded** (see [What this supersedes](#what-this-supersedes)); their intent carried
+> forward, only the mechanics changed.
 
-The tactical heart of combat: two fighters **predicting each other**. A duel is the
-fighting-game **strike / throw / block** mix-up, played as cards — and Deckbound's
-version is the **Clash**: a duel is a **sequence of beats**, each beat both fighters
-secretly pick one move and reveal at once, and the Clash runs **until a Body reaches
-0** (Body-attrition — not "ends on the first strike"). The moves below are the
-moments *within* an exchange, repeated beat by beat, not a fight-long timeline.
+The tactical heart of combat: two fighters **predicting each other**. A duel is a **sequence
+of beats**; each beat both fighters secretly choose one card, reveal at once, and the duel
+**ends the instant one or both are struck**. The cards below are the moments *within* an
+exchange, repeated beat by beat.
 
-## What a duel is — prediction, at any range
+## What a duel is — hidden, simultaneous prediction
 
-A **duel** is a mutual-prediction contest between two actors. It is **not
-melee-specific** — it is *prediction*-specific, at any range.
-
-- A thrown rock against someone dodging *is* a duel: you throw where you think
-  they'll go; they read it. The whole beat-by-beat mind-game is that exchange.
-- It is about **prediction, not symmetric offense.** Reach can be lopsided; the
+- A duel is a **mutual-prediction contest**, at any range — a melee swing, a thrown rock, a
+  spell. It is *prediction*-specific, not melee-specific; reach can be lopsided, the
   prediction stays two-way.
-- **No duel → direct resolution.** Mindless fodder, or a target that cannot
-  respond to you, just takes the hit by magnitude — the one-way vs two-way
-  prediction distinction from
-  [mind-and-stances](mind-and-stances.md#against-instinct-vs-against-a-mind). A
-  creature does not read you back: its instinct *is* its move, so the duel lives on
-  the side that reads.
+- Choices are **hidden and simultaneous** — no one reveals first. Any "see their card, then
+  choose" effect is a special ability layered on later, never the core.
+- **"Perfect read" is a lens, not an action.** With no reveal mechanic, the invariants below
+  are stated under *"suppose I happened to guess right"* — the analytical limit used to check
+  the shape, not a move you can buy.
+- A **creature does not read you back** — its instinct *is* its card
+  ([decision-making](decision-making.md)); the mind-game lives on the side that reads.
 
-## The six moves — two kinds
+## The four cards
 
-Each beat, each fighter secretly commits **one of six moves** and reveals at once.
-They split by temperament into **standing** moves and **setups**.
+One complete kit, always available (no hand to deplete):
 
-**Standing** *(always available, never deplete)* — the four that resolve a beat:
+| Card           | Meaning                               | Beats        | Stopped by |
+| -------------- | ------------------------------------- | ------------ | ---------- |
+| **Strike**     | hit *where they are now*              | Gather       | Evade      |
+| **Anticipate** | hit *where they'll be* (lead them)    | Evade        | Gather     |
+| **Gather**     | *hold your ground* + build Force (+1) | (Anticipate) | Strike     |
+| **Evade**      | *move*                                | (Strike)     | Anticipate |
 
-- **Strike** *(offense)* — a direct blow.
-- **Throw** *(offense)* — a blow aimed *through* a guard.
-- **Parry** *(defense)* — read a Strike and negate it.
-- **Evade** *(defense)* — read a Throw and slip it.
-
-**Setups** *(the escalation resource — durable face-up cards)* — the two that wind
-up rather than resolve:
-
-- **Charge** — place one active **Charge** in the open. Each active Charge
-  **doubles** your attack damage (**×2 per Charge**, so *n* Charges = ×2ⁿ). Charge
-  capacity is a per-actor stat ([booklet](../../../../crates/deckbound/data/booklet.ron)),
-  so Charge is offered only below capacity.
-- **Recover** — flip your own **face-down** Charges back up (offered only when you
-  have one). Charges are *disabled* by a successful defense, not destroyed; Recover
-  re-arms them.
-
-The crucial property: **the standing moves never deplete.** A perfect reader can
-*always* answer the move in front of them, every beat, for the whole duel. That is
-what makes the invariants below hold across the entire Clash, not just one exchange.
+The two attacks read **position**: Strike commits to where they *are*, Anticipate leads to
+where they'll *go*. The two non-attacks are **stay (Gather)** and **move (Evade)** — you stop
+an attack by *matching its read* (hold beats a lead; move beats a now-strike) and eat it on a
+mismatch. That one idea regenerates the whole table.
 
 ## The counter-cycle
 
-Re-derivable as one small table:
+**Anticipate ▸ Evade ▸ Strike ▸ Gather ▸ Anticipate** — each beats the next. Plus:
 
-- **Cycle.** **Strike ▸ Evade ▸ Throw ▸ Parry ▸ Strike** — each attack beats one
-  defense and loses to the other:
-  - **Strike beats Evade** (you can't dodge a direct blow) and **loses to Parry**.
-  - **Throw beats Parry** (the throw goes through a guard) and **loses to Evade**.
-- **Trade.** **Strike vs Strike → both hit.** And **Strike clips Throw** (Strike >
-  Throw): the striker lands, the thrower does not.
-- **Attacks beat setups.** A connecting Strike or Throw **hits and interrupts** a
-  Charging or Recovering foe — the setup does not resolve that beat. Winding up in
-  front of an attacker is punished by the attack itself; no bespoke "interrupt" rule
-  is needed.
-- **Setups resolve if unopposed.** Against anything that does *not* connect (a
-  defense, or the opponent's own setup), Charge places its Charge and Recover
-  re-arms its flipped ones.
-- **The defense flips charges — the comeback.** A *successful* defense (a Parry that
-  catches a Strike, an Evade that slips a Throw) **flips the attacker's active
-  Charges face-down** — disabled, not destroyed. A read wind-up, met by the right
-  guard, is knocked down rather than spent into the void; Recover brings it back.
-- **Damage** = `power × 2^(active Charges)`, routed through the armor/toughness
-  pipeline ([defense model](form-and-defeat.md), spec §2). Body 0 = down.
+- **Strike > Anticipate** when both attack (the immediate blow beats the led one).
+- **Strike vs Strike → trade** (both hit) — the hinge of invariant 3.
+- **Anticipate vs Anticipate → whiff** (two leads at targets who didn't move).
+
+Full table (result shown for the row player):
+
+| you ↓ \ them → | Gather   | Evade             | Strike            | Anticipate |
+| -------------- | -------- | ----------------- | ----------------- | ---------- |
+| **Strike**     | you hit  | your Force → them | trade (both hit)  | you hit    |
+| **Anticipate** | —        | you hit           | you're hit        | —          |
+| **Gather**     | +1 Force | +1 Force          | you're hit        | +1 Force   |
+| **Evade**      | —        | —                 | their Force → you | you're hit |
+
+The *enders* — a strike connects, so the duel is over — are **you hit / you're hit / trade**.
+Every other cell is the **non-connecting dance**, where Force builds and the duel continues.
+
+## Force — escalation made visible
+
+- A single **public count per side** — no hidden meter, no face-down state. Each Force
+  **doubles** the connecting hit: damage = `base × 2^Force`.
+- **Gather** adds +1. The **only** way Force changes hands is **Strike into Evade**: you
+  commit a Strike, they slip it, and your Force **goes to them** — your own momentum turned
+  against you. The re-derivable principle: *only an active dodge of a committed Strike
+  reverses; the passive build (Gather) never steals.*
+- **No cap** (unlimited) — building is bounded in practice by ends-on-strike (the duel ends
+  when a blow lands), not by a ceiling.
+- **Per-duel** — Force resets each duel; only **Body** persists between duels.
+
+## Ends-on-strike — Body across duels
+
+A duel ends the instant a strike connects (any *you hit / you're hit / trade* cell); the
+connecting blow lands for `base × 2^Force`. Force is **built during the non-connecting dance**
+(Gathers, whiffs, dodges) and **spent on the one blow that lands**. **Body persists across
+duels**, so a fight to the death is several short duels of chip and spike — not one long
+beat-count.
+
+Termination is guaranteed in practice: under blind, simultaneous guessing someone eventually
+misreads and a strike connects. An engine-only backstop ([spec §1.6](../spec/README.md))
+breaks off the purely theoretical perfect-mutual-defense case; it is invisible in normal play.
 
 ## The three invariants — the heart of it
 
-Read under **last-word reads** — the opponent commits face-up, then you choose
-(the perfect-read limit). Three things must all hold; the design is the unique shape
-that buys all three at once.
+Under perfect guessing (*"suppose I guessed right every beat"*):
 
-1. **Avoid.** Spending the *defensive* read, you can pass through the **whole** duel
-   **un-hit** if you choose — every attack has a standing defense that negates it
-   (Strike ↦ Parry, Throw ↦ Evade) and the defenses never deplete.
-2. **Land.** Spending the *offensive* read, you can land a hit by the end if you
-   choose — for every move the opponent can make, some standing attack lands (Throw
-   beats Parry; Strike beats Evade, trades into Strike, clips Throw; either attack
-   hits a setup).
-3. **Not both, free.** You **cannot guarantee both at once.** Against a committed
-   **Strike**, the *only* landing answer is Strike — and Strike-vs-Strike **trades**.
-   Landing on a committed attacker means **taking a hit** too.
+1. **Avoid.** You can pass a duel **un-hit** — every attack has a card that negates it
+   (Strike ↦ Evade, Anticipate ↦ Gather).
+2. **Land.** You can force a connecting hit — every move has an answering attack
+   (Gather ↦ Strike, Evade ↦ Anticipate, Strike ↦ Strike-trade).
+3. **Not both, free.** Landing on a committed **Strike** means **trading** a hit. You cannot
+   have invulnerability *and* a free kill.
 
-This is **computable yomi**: defense is *complete* and offense is *complete*, so the
-game is a clean read rather than a guessing game — yet the trade cell forbids a free
-win, so there is **no dominant option**. (The old "always-Parry is safe" hole is
-closed the same way it always was: Throw beats Parry, so a parry-crouch just gets
-thrown — and now the trade also forbids landing for free against a Strike.)
+The deeper truth these encode — and the reason the breadth layer below matters — is
+**survival is free; victory costs exposure**. Pure defense can keep you un-hit forever but
+never *wins* (it deals no damage); to win you must attack, and attacking into resistance risks
+the trade. This is **computable yomi**: defense and offense are both *complete*, so the duel is
+a clean read rather than a guessing game, yet the trade cell forbids any dominant option.
 
-## Charges — escalation made visible
+## Tempo & Focus — the breadth layer
 
-The old duel banked a hidden-ish **Edge** number; the Clash replaces it with
-**Charges** — durable, **face-up**, per-duel cards. The reasons it changed:
+Tempo and Focus never gate *which cards you hold* (the kit is always complete). They gate
+*which duels you are a full participant in* ([spec §3](../spec/README.md)):
 
-- **Visible and durable.** A Charge is a card on the table, not a meter in the head.
-  Both fighters see the wind-up looming and must respect it — yomi over a public
-  quantity, not a hidden one.
-- **Multiplicative, so a completed wind-up is genuinely lethal.** ×2 per Charge
-  means a foe who lands a two-Charge blow hits for **four times** their base. The
-  payoff is what makes charging worth the exposure.
-- **The defended Charge flips, not vanishes — the comeback.** Catch a charged
-  attacker with the right defense and you knock their Charges *down*; they have to
-  spend beats to Recover them. The lead swings without the wind-up being destroyed
-  outright (the same comeback the Parry-steal used to provide).
-- **Per-duel.** Charges reset each duel and never carry between duels — even two
-  duels involving the same Actor. No fight-long hoard, no runaway snowball; facing a
-  crowd is a stack of independent short Clashes, never one accumulating super-bank.
+- **Tempo = the duels you start.** Spend it to **initiate** (cost = the foe's Speed); inside,
+  **results stick** — you can damage or kill.
+- **Focus = the duels started on you.** Spend it to **defend**; you play the full duel, **but
+  the attacker is reset afterward** — you can avoid, survive, and disengage, but **cannot
+  damage the attacker**. Defense is **survival, never victory**.
+- **No Focus → free hit** (you eat the blow, no duel).
+- **Counterattack:** when attacked you may instead spend **Tempo** → a **mutual** clash where
+  results stick both ways and the trade is live. So *every kill — initiated or countered —
+  costs Tempo*: a single capped offense pool.
 
-## Body-attrition — the duel runs to 0
+This is what makes "survival vs victory" real at scale, and it keeps a god **balanceable**:
+kills tie to one pool (Tempo), being swarmed cannot *feed* a counter-reaper, and numbers stay
+a genuine threat (overflow free-hits). **Pay-after** lets even a fighter too slow to afford a
+foe take one action (its last); there is **no Exposed penalty** — the offense/defense balance
+lives entirely in the Speed-vs-Mind split.
 
-A Clash does **not** end on the first strike. It runs **beat by beat until a
-fighter's Body reaches 0**. This is the change the charge → big-hit arc requires: if
-a single hit ended the duel, winding up a doubling blow would be pointless — you'd
-just poke. Because a hit no longer ends it, **charging is meaningful**, the mix-up
-plays out over several beats, and the comeback (flipped Charges) has time to matter.
-
-**Termination is still guaranteed.** Every Clash ends at Body 0; and an engine-only
-backstop ([spec §1.6](../spec/README.md)) breaks off a Clash that makes no progress
-for *N* beats — the corner case where armor/toughness fully absorbs every connecting
-hit so neither side can wound the other. The backstop is invisible in normal play
-and not part of the public rules.
-
-## The shape of a duel
-
-- **Floor.** Two fighters who never charge trade base blows until one falls — short,
-  no mind-game. Escalation is **opt-in**.
-- **Escalation = push-your-luck.** Charge to wind up a doubling blow, but every beat
-  you spend charging is a beat you might be **read and interrupted** (an attack hits
-  a setup) or, once charged, **defended and knocked down** (a successful guard flips
-  your Charges). Greed buys a bigger payoff at more exposure.
-- **The read decides it.** Against a committed move there is always a right answer;
-  the duel is won by *reading which move is coming* and paying the right resource —
-  defense to avoid, offense to land, knowing you cannot have both free.
+A Focus-defense's "can't damage the attacker" needs no new mechanic: *run the duel, then reset
+the attacker*. A defender's own connecting strike simply **ends the exchange safely** (a clean
+disengage) instead of wounding. So on defense your offense becomes a **deny-and-escape** tool —
+Strike a Gathering attacker to break off before their loaded blow lands — and a *trade* is a
+straight loss (you're hit, theirs is rolled back), so you never trade on defense.
 
 ## Gandalf vs Balrog — asymmetry by design
 
-The invariants are what make a **weak fighter able to steal a duel on perfect
-reads** — defense is complete, so a flawless reader can avoid everything and chip
-back. That is the Gandalf-vs-Balrog fantasy (Charter north star #4): the underdog
-*can* win the exchange.
-
-But the **instant a read is wrong, the doubled blow lands** — and the downside is far
-worse for the weaker side (less Body, less Power, less to absorb the ×2). So over
-many duels the upset is a **bad bet**: the asymmetry lets the underdog win *a* duel
-with perfect play, while the math still favors the stronger fighter across the war.
-Folding the **trade** into the cycle (Strike-vs-Strike = both hit) is exactly what
-forbids buying the win for free — you cannot land on a committed striker without
-trading — so neither invariant can be had cheaply.
-
-## Facing a crowd — K Clashes, two caps
-
-A Clash is pairwise, so engaging several foes is **K simultaneous pairwise Clashes**
-(or one breadth-attack, which reads no one and stays unopposed). Two separate
-per-Actor pools gate K (spec §1.7):
-
-- **Speed / Tempo** caps how many you can sustain **offensively** — engaging each
-  costs the target's Speed from your Tempo.
-- **Mind / Focus** caps how many you can **cover** **defensively** — each costs the
-  attacker's Speed from your Focus.
-
-When Speed affords **K** but Focus covers only **J < K**, the **K − J** extra foes
-are **one-way**: you strike them, but can't cover them, so they **free-hit** you.
-
-**A reconciliation note:** in the old duel, Focus gated your *stance menu inside* a
-clash — without a read you could only swing. In the Clash **all six moves are
-standing**, so there is **no Focus gate inside a duel**. Focus is now purely the
-**breadth** resource — round-end coverage of foes you did not engage. What carries
-over unchanged: engaging costs Tempo, an engaged foe doesn't also free-hit, breadth
-and self/ally actions are unopposed, and overextending in any one pool marks you
-**Exposed** table-wide (spec §3.3).
+Because defense is complete, a **weak fighter can steal a duel on perfect reads** — avoid
+everything, wait for an opening, chip back. That is the underdog's chance (Charter north star
+#4). But the instant a read is wrong the doubled blow lands, and the downside is far worse for
+the weaker side; and to actually *win* the underdog must reach for offense and risk the trade,
+where the stronger fighter's bigger Force and Body win the exchange. So the upset is real but a
+**bad bet**: survival is achievable, victory is where the underdog dies.
 
 ## Lineage
 
-The closest solved version is the fighting-game cluster of **mix-up + meter + yomi**:
-the **strike / throw / block** triangle (Strike / Throw / Parry-Evade), a wind-up
-resource you can pop for a big payoff (**Charge**, the ×2), and a hard read that
-knocks the wind-up down (a successful defense flipping Charges). Charges-as-cards are
-the brawler's **breakable charge** made durable and public; Body-attrition is the
-"duel runs until someone drops," not "first touch wins"; *Doom Eternal* contributes
-"play aggressively to fuel yourself."
+The fighting-game cluster of **mix-up + meter + yomi**: a position read (now vs led) over a
+stay/move defense, a wind-up resource you pour into one blow (**Force**, the ×2), and a hard
+read that turns the wind-up against you (the Strike-into-Evade steal). Ends-on-strike is "the
+first clean touch resolves the exchange," with Body carrying the war across many exchanges.
 
 ## What this supersedes
 
-- The stance/Edge duel **Marshal · Unleash · Overwhelm · Parry** over a tracked
-  **Edge** meter → replaced by the **six-move Clash** (Strike · Throw · Parry ·
-  Evade · Charge · Recover) with **Charges** as the escalation resource. The
-  mapping: the offensive triangle (no dominant option, the throw beating the block)
-  → the §1.0 cycle; the Parry-steal comeback → the **defended Charge flips
-  face-down**; per-duel public Edge → per-duel public **Charges**; Edge's linear
-  `+1/Edge` damage → Charges' multiplicative `×2/Charge`; **ends-on-strike** →
-  **Body-attrition**.
-- Still earlier: Strike / Block / Evade / Scheme as the RPS cycle, and the
-  Power/Speed/Precision momentum banks — both already retired by the stance/Edge
-  duel and now by the Clash.
+- **Stance/Edge duel** (Marshal · Unleash · Overwhelm · Parry over a tracked **Edge** meter)
+  → first replaced by a six-move *charge* Clash, now by the **four-card Force Clash**.
+- **Six-move charge Clash** (Strike · Throw · Parry · Evade · Charge · Recover, with
+  face-up/face-down **Charges** and **Body-attrition**) → replaced by **four cards**
+  (Strike · Anticipate · Gather · Evade), a **single unbounded Force count** (steal only on
+  Strike-into-Evade), and a return to **ends-on-strike**. The mapping: Hold + Charge + Recover
+  → one **Gather**; the old around-the-guard **Throw** → **Strike** (hit-now); the old
+  **Strike** (the led blow) → **Anticipate** (hit-future).
+- **Tempo/Focus** rewritten from in-duel/coverage to pure breadth admission with
+  **reset-defense + Tempo-counterattack**; the **Exposed** overextension penalty is removed.
 
 ## Open questions — tuning, not shape
 
-- **Charge capacity and the ×2 curve** — how many Charges a fighter can hold, and
-  whether ×2 is the right base; numbers live in `booklet.ron`.
-- **Counter-damage on a defense.** Does a successful Parry/Evade also *deal* damage
-  (beyond flipping Charges), or only negate + disable? (Was open under the old duel
-  too.)
-- **Throw vs Throw, Charge vs Charge.** Provisional reads — two throws clinch
-  (nothing connects), two charges both resolve. Confirm in play.
-- **Natural duel length.** Tune Body, Power, and Charge payoff so a Clash runs a
-  handful of beats — a real exchange, not a long dance. (Pacing; termination is
-  settled above.)
-</content>
-</invoke>
+- **The ×2 curve.** Is doubling-per-Force the right base, and how high does unbounded Force
+  realistically climb under ends-on-strike? (`booklet.ron`.)
+- **Counter-damage on defense.** Settled: a Focus-defense deals none (survival only); a
+  **Tempo counterattack** is the way to deal damage when attacked.
+- **The round loop.** The concrete sequencing — initiate-phase, foe-attacks, multi-foe
+  defense, the counterattack choice — is **not yet designed**, and it gates the code.

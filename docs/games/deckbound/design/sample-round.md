@@ -3,10 +3,9 @@
 > **SUPERSEDED — clash mechanics.** This worked fight uses the older
 > Strike / Block / Evade / Scheme stances and Speed-first-strike clash. The tactical
 > core is now the **Clash**
-> ([`spec/README.md` §1.0](../spec/README.md#10-the-clash--beats-six-moves-charges),
-> rationale in [the-duel.md](the-duel.md)): a beat-by-beat duel of six moves
-> (**Strike · Throw · Parry · Evade · Charge · Recover**), durable ×2 **Charge**
-> cards, run to **Body 0**. The **scenario design** here — four locks / four keys,
+> ([`spec/README.md` §1](../spec/README.md), rationale in [the-duel.md](the-duel.md)): a
+> four-card duel — **Strike · Anticipate · Gather · Evade** — with a single **Force** count
+> (×2 per Force, stolen only on Strike-into-Evade), run **ends-on-strike**. The **scenario design** here — four locks / four keys,
 > the cascade that makes every hero necessary, typed damage, breadth, fear-vs-resolve,
 > the gauntlet — all carries forward; only the per-clash stance resolution (e.g.
 > "Vera Evades the Ironclad's Strike, banks +Speed") is stale and would re-narrate as

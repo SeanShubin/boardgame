@@ -52,7 +52,7 @@ authored.
 | **The Clash** (tactical core)           | ✅ worked    | —                                                         |
 | **Defense model** (cut → bar → pool)    | 🟡 seeded    | `design/stats.md`, `design/form-and-defeat.md`            |
 | **Speed/Tempo + Mind/Focus**            | 🟡 seeded    | `design/speed-and-tempo.md`, `design/mind-and-stances.md` |
-| **Coordination / positioning**          | ⬜ stub      | `design/coordination-and-interruption.md`                 |
+| **Formation, reach & the gauntlet**     | ✅ worked    | —                                                         |
 | **Zones / exhaustion**                  | ⬜ stub      | `design/zones.md` *(needs post-Duel rewrite)*             |
 | **Aspects / the chord**                 | ⬜ stub      | `design/decks-and-aspects.md`                             |
 | **Agents** (Character vs Creature)      | ⬜ stub      | `design/entities.md`, `design/decision-making.md`         |
@@ -65,77 +65,81 @@ exhaustive · ⬜ stub = headers + intent only, not yet authoritative.
 
 ## 1. The Clash — *the tactical core* ✅
 
-The atom of combat: two Actors **predicting each other**, resolved beat by beat
-inside one round. The fighting-game **strike / throw / block** mix-up, played as
-cards. Design background: [`design/the-duel.md`](../design/the-duel.md).
+The atom of combat: two Actors **predicting each other** across a hidden, simultaneous
+mix-up played with cards. Design background:
+[`design/the-duel.md`](../design/the-duel.md).
 
-> **History.** This section formerly specced a single-clash **stance/Edge duel**
-> (Marshal · Unleash · Overwhelm · Parry, with a tracked Edge meter). That system is
-> **superseded by §1.0 (The Clash)** below. The superseded subsections (§1.1, §1.2,
-> §1.3, §1.5, and the in-duel read of §1.8) are kept for design history — each carries
-> a banner — because their **WHY/GUARANTEES carry forward** into the Clash. The
-> breadth and resolution-order rules (§1.6 reworded, §1.7, §1.9) and §3 are unchanged.
+> **History.** This section formerly specced a stance/Edge duel (Marshal · Unleash ·
+> Overwhelm · Parry, tracked Edge) and then an interim six-move *charge* duel. Both are
+> **superseded by §1.0 (The Clash)** below — the four-card, Force-stealing,
+> **ends-on-strike** duel. The old stance/Edge subsections (§1.1–§1.5, §1.8) are kept for
+> design history behind banners; their WHY/GUARANTEES carry forward. §1.3 (ends-on-strike)
+> is **restored** as current; §1.6 is reworded for it; §3 (Tempo/Focus) is rewritten and
+> §3.3 (Exposed) is removed.
 
-### 1.0 The Clash — beats, six moves, charges
+### 1.0 The Clash — four cards, Force, ends-on-strike
 
-**RULE.** A duel is **the Clash**: a sequence of **beats**. Each beat both fighters
-**secretly choose one move** and reveal simultaneously; the beat resolves; the Clash
-continues until a fighter's **Body reaches 0** (Body-attrition — there is no "ends on
-the first strike"). The six moves come in two kinds:
+**RULE.** A duel is a sequence of **beats**. Each beat both fighters **secretly choose one
+card** and reveal **simultaneously** — no one reveals first; any "see their card before you
+choose" effect is a special ability, never the core. The duel **ends the instant one or both
+are struck**. The kit is four cards, always complete:
 
-- **Standing** *(always available, never deplete)* — **Strike**, **Throw** (offense);
-  **Parry**, **Evade** (defense).
-- **Setups** *(the escalation resource — durable face-up cards that replace the Edge
-  number)* — **Charge** (place one active **Charge**; each active Charge **doubles**
-  your attack damage, ×2 per Charge) and **Recover** (flip your own face-down Charges
-  back up). **Charge capacity** is a per-actor stat (`booklet.ron`); Charge is offered
-  only below capacity, Recover only with a face-down Charge.
+- **Strike** — hit *where they are now*. Beats **Gather**; stopped by **Evade**.
+- **Anticipate** — hit *where they'll be* (lead the target). Beats **Evade**; stopped by
+  **Gather**.
+- **Gather** — *hold your ground* (a defense) **and build Force** (+1). Stops **Anticipate**;
+  beaten by **Strike**.
+- **Evade** — *move*. Stops **Strike**; beaten by **Anticipate**.
 
-**Counter-rules** (the whole table, re-derivable):
-1. **Cycle.** Strike ▸ Evade ▸ Throw ▸ Parry ▸ Strike — each attack beats one defense
-   and loses to the other (Strike beats Evade, loses to Parry; Throw beats Parry, loses
-   to Evade).
-2. **Trade.** Strike vs Strike → **both hit** (the hinge of invariant 3). Strike
-   **clips** Throw (Strike > Throw): the striker lands, the thrower does not.
-3. **Attacks beat setups.** A connecting Strike/Throw hits a Charging or Recovering foe
-   and **interrupts** the setup (it does not resolve that beat).
-4. **Setups resolve if unopposed.** Against anything that does not connect (a defense,
-   or the other setup), Charge adds a Charge and Recover restores flipped Charges.
-5. **A successful defense flips the attacker's active Charges face-down** (disable, not
-   destroy — the comeback); Recover restores them.
-6. **Damage** = `power × 2^(active Charges)`, routed through the armor/toughness pipeline
-   (§2); Body 0 = down.
+**The cycle.** Anticipate ▸ Evade ▸ Strike ▸ Gather ▸ Anticipate (each beats the next), plus
+**Strike > Anticipate** when both attack, **Strike vs Strike → trade** (both hit), and
+**Anticipate vs Anticipate → whiff**.
 
-**WHY.** The standing defenses (Parry/Evade) and standing attacks (Strike/Throw) never
-deplete, so a perfect reader can *always* answer the move in front of them — that is
-what lets the two reachability invariants hold for the **whole** duel, not just one
-beat. Charges-as-cards replace the Edge number with something **visible and durable**,
-and the **×2** makes a completed wind-up genuinely lethal: this is the
-Gandalf-vs-Balrog engine (north star #4) — a weak fighter can steal a duel with perfect
-reads, but the instant a read is wrong the doubled blow lands, and the downside is far
-worse for the weaker side, so over many duels the upset is a *bad bet*. Folding the
-**trade** cell (Strike vs Strike = both hit) into the cycle is precisely what forbids
-landing-for-free against a committed attacker — you cannot buy both invariants at once.
-(north stars #2 computable, #4 asymmetry, #10 re-derivable.)
+**Resolution table** (result shown for the row player):
 
-**GUARANTEES** — the three invariants, under **last-word reads** (the opponent commits
-face-up, then you choose):
-1. **Avoid.** Spending the defensive read, you can pass through the **whole** duel
-   **un-hit** if you choose: every attack has a standing defense that negates it
-   (Strike↦Parry, Throw↦Evade), and the defenses never deplete.
-2. **Land.** Spending offense, you can land a hit by the end if you choose: for every
-   move the opponent can make, some standing attack lands (Throw beats Parry; Strike
-   beats Evade, trades into Strike, clips Throw; either attack hits a setup).
-3. **Not both, free.** You cannot guarantee both at once: against a committed **Strike**
-   the *only* landing answer is Strike, and Strike-vs-Strike **trades** — landing on a
-   striker means taking a hit.
-- **Termination.** Body-attrition ends every duel at Body 0; the engine backstop (§1.6)
-  breaks off a Clash that makes no progress, so no duel runs forever.
+| you ↓ \ them → | **Gather** | **Evade**         | **Strike**        | **Anticipate** |
+| -------------- | ---------- | ----------------- | ----------------- | -------------- |
+| **Strike**     | you hit    | your Force → them | trade (both hit)  | you hit        |
+| **Anticipate** | —          | you hit           | you're hit        | —              |
+| **Gather**     | +1 Force   | +1 Force          | you're hit        | +1 Force       |
+| **Evade**      | —          | —                 | their Force → you | you're hit     |
 
-**MANUAL.** *Each beat, pick a move: Strike or Throw to attack, Parry or Evade to
-defend, Charge to wind up a doubling blow, Recover to ready a knocked-down charge.
-Strike beats Evade, Throw beats Parry, Strike clips Throw, Strike trades with Strike; a
-successful defense knocks the attacker's charges down.*
+*Enders* (a strike connected → the duel ends): **you hit / you're hit / trade**. Everything
+else is the **non-connecting dance** — the duel continues and Force builds.
+
+**Force.** A single count per side (no face-down state). Each Force **doubles** the connecting
+hit: damage = `base × 2^Force`, routed through the armor/toughness pipeline (§2). **Gather**
+adds +1. The **only** way Force changes hands is **Strike into Evade**: you commit a Strike,
+they slip it, and your Force **goes to them** — your own momentum turned against you. Force is
+**per-duel** (it resets each duel); only **Body** persists between duels. There is **no Force
+cap** (unlimited) — building is bounded in practice by ends-on-strike (the duel ends the
+instant a blow connects), not by a ceiling. The kit is **infinite-replay**: every card is
+always available each beat (no finite hand or discard yet).
+
+**WHY.** The kit is always complete, so a perfect guesser can always answer the card in front
+of them — that is what makes the reachability invariants hold for a whole duel.
+Ends-on-strike keeps duels short and makes the build-then-land arc tense: you stack Force in
+the dance, but the opponent controls whether your loaded blow ever connects. The single steal
+vector is re-derivable from one idea — *only an active dodge (Evade) of a committed Strike
+reverses; the passive build (Gather) never steals* — and it is the Gandalf-vs-Balrog engine:
+a weak fighter can heist a loaded Strike, but reaching for the win is where the trade kills
+them (north stars #2 computable, #4 asymmetry, #10 re-derivable).
+
+**GUARANTEES** — under perfect guessing (the analytical lens: *"I happened to guess right"*):
+1. **Avoid.** You can pass a duel **un-hit** — every attack has a defense that negates it
+   (Strike↦Evade, Anticipate↦Gather).
+2. **Land.** You can force a connecting hit — every move has an answering attack
+   (Gather↦Strike, Evade↦Anticipate, Strike↦Strike-trade).
+3. **Not both, free.** Landing on a committed Striker means **trading** a hit. *Survival is
+   free; victory costs exposure.* (Whose hits actually land on whom is set by the breadth
+   layer — §3: offense lands, a Focus-defense is reset.)
+- **Termination.** Ends-on-strike resolves duels in practice (blind guesses → someone
+  eventually misreads → a strike connects); the §1.6 backstop only covers the theoretical
+  perfect-mutual-defense edge.
+
+**MANUAL.** *Each beat pick a card: Strike (hit where they are) or Anticipate (where they'll
+go) to attack; Gather to hold your ground and build Force; Evade to dodge. A connecting strike
+ends the duel; slip a Strike with Evade and you steal their Force.*
 
 ### 1.1 Edge is per-duel, public, all-or-nothing, linear
 
@@ -205,10 +209,12 @@ bank.*
 
 ### 1.3 Ends-on-strike
 
-> **SUPERSEDED by §1.0 (The Clash).** Replaced by **Body-attrition**: a Clash runs beat
-> by beat until a Body reaches 0, not until the first strike connects. This is the change
-> the charge→big-hit arc requires (a single hit no longer ends the duel, so winding up a
-> ×2 blow is meaningful). Termination is now guaranteed by Body 0 + the §1.6 backstop.
+> **RESTORED — current in §1.0.** The interim charge duel tried Body-attrition (run until a
+> Body hits 0); the four-card Clash **reverts to ends-on-strike**: a duel ends the instant a
+> strike connects. Force is built during the non-connecting dance and spent on the one
+> connecting blow (`base × 2^Force`); **Body persists across duels**, so a fight to the death
+> is several short duels, not one long beat-count. The stance/Edge specifics below are
+> superseded, but the *principle* — connection = end — is current.
 
 **RULE.** A 0-Edge Unleash is still a strike. The duel **ends the instant any
 Unleash or Overwhelm connects** (mutual included). The only committed attacks that
@@ -273,23 +279,28 @@ never telegraphs the stance.
 
 ### 1.6 Termination backstop *(engine rule, not public)*
 
-**RULE.** A Clash cannot stall under any reasoning play (some standing attack always
-lands — invariant 2, §1.0). As an **implementation backstop only**: after **N
-consecutive beats with no Body lost** *(appendix: e.g. 12)* — e.g. two fighters who can
-each fully absorb the other, or a defender facing a non-attacker — the duel **breaks
-off** (both disengage; the foe still counts as engaged, so it does not also free-hit at
-round end). A creature whose instinct drives a winnable Clash to the backstop is a bug.
+**RULE.** A duel ends the instant a strike connects (§1.3), and under blind, simultaneous
+guessing one eventually does (someone misreads). As an **implementation backstop only**: if
+**N consecutive beats pass with no strike connecting** *(appendix: e.g. 12)* — the purely
+theoretical perfect-mutual-defense case — the duel **breaks off** (both disengage; the foe
+still counts as engaged, so it does not also free-hit at round end). A creature whose
+instinct drives a winnable duel to the backstop is a bug.
 
-**WHY.** Body-attrition (§1.3 superseded) means a duel ends on Body 0, not on a single
-strike; the backstop guarantees termination in the corner case where neither side can
-actually wound the other (armor/toughness fully absorbs every connecting hit), without
-adding a rule real players meet.
+**WHY.** Ends-on-strike (§1.3) resolves real duels via accumulated misreads; the backstop
+only guards the corner case where both fighters guess perfectly forever — never a pattern a
+real player produces — so it adds no rule anyone meets in play.
 
 **GUARANTEES.**
 - The backstop is invisible in normal play and is **not** part of the public rules.
-- Every Clash terminates: it ends at Body 0, or breaks off after N no-progress beats.
+- Every duel terminates: it ends on a connecting strike, or breaks off after N no-connect beats.
 
 ### 1.7 Facing a crowd — K duels, two caps
+
+> **SUPERSEDED by §3.** The breadth model is now §3.1/§3.2: **Tempo** = the duels you start
+> (results stick), **Focus** = the duels started on you (a Focus-defense is **reset** —
+> survival only, no damage to the attacker), a free-hit if uncovered, and a **Tempo
+> counterattack** as the only way to damage an aggressor. The linear *god ≈ party* intent
+> below carries forward; the Edge/Exposed specifics do not.
 
 **RULE.** Engaging multiple foes is **K simultaneous pairwise duels** (or one
 breadth-attack — see Coordination). Two separate per-Actor pools gate K:
@@ -461,105 +472,150 @@ yet specced. Numbers live in `booklet.ron`.)*
 
 ---
 
-## 3. Speed/Tempo + Mind/Focus — *the two mirrored budgets* 🟡
+## 3. Speed/Tempo + Mind/Focus — *the two breadth budgets* 🟡
 
 Design source: [`design/speed-and-tempo.md`](../design/speed-and-tempo.md).
 
-They **mirror in sizing and cost** but are **different in kind**, which is why their
-overextension rules (§3.3) are asymmetric *on purpose*. **Speed is mobility** — the
-budget for controlling engagement (closing to strike, opening to escape) — and
-mobility is **exhaustible**: spend it all and you are *caught*. **Mind is perception**
-— the budget for reading the clashes you are in — and perception only **caps out**:
-you see what you see, and the rest gets through. Exhausting your legs and the limit of
-your eyes are not the same thing, so they do not behave the same.
+Tempo and Focus are **pure breadth** — they decide *which duels you are a full participant
+in*, never *which cards you hold* (the kit is always complete, §1.0). They **mirror in sizing
+and cost** but differ in **role**: **Tempo** is **initiative** (the duels you *start*),
+**Focus** is **reaction** (the duels *started on you*). Speed sizes Tempo, Mind sizes Focus,
+and dealing with any foe costs **that foe's Speed** on whichever axis. Each is independently
+hard-capped by its stat; there is no coupling between them (§3.3 removed).
 
-### 3.1 Speed is the stat; Tempo is the resource
+### 3.1 Tempo — admission to the duels you start
 
-**RULE.** **Speed** is a fixed stat that never depletes; it sets the size of your
-**Tempo** pool (= Speed, refreshed each round) and is the **price others pay** to
-deal with you on both axes (striking you costs your Speed from their Tempo;
-predicting you costs your Speed from their Focus) — a fast foe costs that Speed whether
-it makes you *chase* it or merely *match it in the exchange*, so a willing clash is no
-cheaper than a chase. You may act while Tempo ≥ 0; pay
-**after** each action; the action that takes you **negative** is your last
-(overextension), and leaves you **Exposed** table-wide. Speed governs **only** this
-economy and the **thresholds** others must clear to deal with you — striking,
-predicting, or catching you each costs your Speed (§1.7) — and it **never** sets
-resolution order. *Speed decides what can happen at all, not what happens first*: who
-wins an exchange is the stance read (§1.2); the order actions resolve in is fixed by
-engagement tier and seat (§1.9).
+**RULE.** **Speed** is a fixed stat; it sizes your **Tempo** pool (= Speed, refreshed each
+round) and is the **price others pay** to engage you. Spend Tempo to **initiate a duel** (cost
+= the foe's Speed): inside you have your full kit and **results stick** — you can damage or
+kill. **Counterattacking** a duel started on you also costs Tempo (§3.2), so **every kill —
+initiated or countered — draws from this one pool**. Pay-**after**: you may take the action
+that drives Tempo **negative** (so even a fighter too slow to afford a foe still gets one
+action); that action is your **last** for the round. Speed sets budgets and thresholds only —
+it **never** sets resolution order (§1.9).
 
-**WHY.** Pay-after-not-before lets a slow fighter always get a base action, makes
-the **negative line, not zero, the wall**, and turns "how many can I act on" into
-one self-capping pool instead of a separate rule.
+**WHY.** A single capped offense pool keeps kill output on one tunable dial — the linchpin of
+the god ≈ party-total budget (a god clears at most Tempo-many foes, never farming extra kills
+off defense). Pay-after guarantees the slow fighter an action and makes the **negative line,
+not zero, the wall**.
 
 **GUARANTEES.**
-- Tempo is always re-derivable from Speed minus visible actions (no token needed).
-- Overextension is a real option at a real, table-wide price.
-- Speed is decoupled from timing: it sizes budgets and sets thresholds, never
-  initiative or who-goes-first.
+- Kill output is capped at one pool (Tempo); offense and defense are separate dials.
+- Tempo is re-derivable from Speed minus visible actions (no token needed).
+- Speed sizes budgets / sets thresholds, never initiative or who-goes-first.
 
-### 3.2 Focus mirrors Tempo
+### 3.2 Focus — admission to the duels started on you
 
-**RULE.** **Focus** is a defensive pool sized to **Mind**, refreshed each round.
-Each prediction (covering one foe's duel) costs the **attacker's Speed** out of
-Focus. Foes your Focus can't cover **free-hit** you; **Toughness** absorbs what
-lands. The unweighted special case — "one slot per attacker, up to Mind" — is every
-foe at Speed 1.
+**RULE.** **Focus** is sized to **Mind** (refreshed each round). Spend Focus to **defend** a
+duel started on you (cost = the attacker's Speed): you play the full duel (§1.0), **but the
+attacker is reset afterward** — you can avoid, survive, and disengage, but you **cannot damage
+the attacker**. Defense is **survival, never victory**. A foe your Focus cannot cover
+**free-hits** you (you eat the blow, no duel; **Toughness** absorbs what lands). When attacked
+you may instead spend **Tempo to counterattack** (§3.1) → a full **mutual** clash where
+results stick both ways and the trade is live.
 
-**WHY.** Mirroring offense and defense pool-for-pool keeps the god-vs-party budget
-linear, and routing attacker-Speed through *Focus* (not Tempo) stops one fast
-fighter from owning both offense and defense.
+**WHY.** Routing defense through its own pool keeps the god ≈ party budget linear; making a
+defense **reset the attacker** means defending never deals damage, so being swarmed cannot
+*feed* you (no free counter-kills) — numbers stay a real threat and a god plays as a
+**pressured duelist**, not a counterattack reaper. Counterattacking costs Tempo, so the
+single-kill-vector property holds.
 
 **GUARANTEES.**
-- Fast attackers are harder to wall than slow ones (inverse telegraph).
+- A Focus-defense deals **no** damage to the attacker (survival only); the only way to win is
+  Tempo (initiate or counterattack).
+- Fast attackers cost more Focus to cover (inverse telegraph); overflow free-hits.
 - "Negate many" is even in total across builds, capped per body.
 
-*(SEEDED — exact drain function numbers are open; `booklet.ron` / appendix.)*
+*(SEEDED — exact cover/drain numbers are open; `booklet.ron` / appendix.)*
 
-### 3.3 Overextension — Exposed, the all-in
+### 3.3 Overextension — *removed*
 
-**RULE.** Acting past your budget — the action that takes your **Tempo negative** — is
-your last this round and marks you **Exposed** — **caught flat-footed**, your mobility
-spent: an **all-in** that drops your **Focus to 0** for the round. You can no longer
-read anyone, so every foe free-hits you (§3.2)
-and any duel you were holding collapses to a magnitude trade. *Over-predicting* (Focus
-negative) needs no separate penalty — its overflow already free-hits you (§3.2).
-Exposed clears at round refresh.
+> **REMOVED.** The old **Exposed / Focus→0** penalty (overextending Tempo zeroed your Focus)
+> is gone. Tempo and Focus are **independent** breadth pools, each hard-capped by its stat,
+> and the offense/defense balance now lives entirely in the **Speed-vs-Mind split** — a
+> high-Speed/low-Mind fighter natively attacks widely but defends poorly, and the reverse —
+> so no coupling penalty is needed. **Pay-after is kept** (§3.1): the action that drives a
+> pool negative still happens and is your last, but it carries **no extra penalty**.
 
-**WHY.** Speed is **mobility**, and mobility is exhaustible (§3): spend it all chasing
-and you cannot flee — you are **caught**, so every foe reaches you with nothing left to
-read them by (Focus 0 is the proxy for *caught and can't see straight*). That restores
-the coupling a single pool gave for free, and routing the cost through Focus makes it
-**self-scaling** — you lose exactly the defense you had, so a thin-Mind brawler loses
-little and a Focus-rich duelist loses much — and **situational** — getting caught amid
-a crowd drops your guard on the whole table at once. **Mind**, being perception not
-mobility, can only **cap out**, never be exhausted into a penalty — which is why
-over-predicting needs no rule of its own; the asymmetry is just the two resources being
-different in kind. One conditional, no arithmetic, reuses the §3.2 free-hit path — no
-new resolution rule.
+### 3.4 The round — orchestration (PvE & PvP)
+
+**RULE.** Combat is a sequence of **rounds**. Two orchestrations share the same duel
+resolver (§1.0), economy (§3.1–3.2), and formation/reach layer (§4); which runs depends on
+whether **both** sides are player-controlled.
+
+**PvE round** — player heroes (multi-action) vs instinct creatures (one-action, §7):
+1. **Formation** *(public, §4)* — front/back visible; heroes may shift freely.
+2. **Player phase** — each hero spends **Tempo** to **engage** reachable foes (cost = the
+   foe's Speed). Each engagement is a **mutual** Clash (results stick: the hero can kill, the
+   foe can hit back, the trade is live). An engaged foe **spends its one action defending**,
+   so it does **not** also attack this round (engaging neutralizes its attack).
+3. **Foe phase** — every **un-engaged** living creature attacks a reachable hero (by its
+   target rule, §7). The attacked hero picks a **defense mode**: **Focus-defend** (Focus →
+   attacker reset, survive only), **counterattack** (Tempo → mutual, can kill, trade live), or
+   **eat the free hit** (base damage, no Force). A foe neither engaged nor covered free-hits.
+4. **Refresh** — downs finalize at the boundary (§1.9); survivors reset Tempo/Focus; **Body
+   persists**; round++.
+
+**PvP round** — both sides player-controlled (multi-action, so no "engage neutralizes"):
+1. **Formation** *(public, §4)* — visible; free shift.
+2. **Targeting** — *simultaneous hidden commit → reveal.* Each actor allocates Tempo to
+   reach-legal engagements. Reveal the engagement graph; mutual engagements (A→B **and** B→A)
+   **merge** into one mutual Clash.
+3. **Defense** — *simultaneous hidden commit → reveal.* Each actor under a one-sided attack
+   picks its mode (Focus-defend / counterattack / eat) per attacker, from remaining
+   Focus/Tempo. **Modes are public on reveal.**
+4. **Combat** — all live duels resolve in **lockstep beats** (each beat: every duelist commits
+   hidden, all reveal together, all resolve; ended duels drop out), to ends-on-strike.
+5. **Refresh** — as PvE.
+
+**WHY.** PvE's asymmetry (multi-action heroes vs one-action creatures) lets the proactive
+player phase **use up** a foe's single action by engaging it — a simple, readable proactive→
+reactive flow. PvP can't: both sides are multi-action (everyone attacks *and* defends) and
+neither may reveal first, so targeting must be **simultaneous**. Splitting **decisions**
+(targeting, defense) from **resolution** (combat) is what makes order irrelevant within every
+phase.
 
 **GUARANTEES.**
-- Overextension is a real, table-wide price (the §3.1 GUARANTEE holds) — never a free
-  extra action.
-- The cost is Focus (reads), never an ordering effect (consistent with §3.1 / §1.9):
-  it bites mixed builds via lost defense and pure-offense builds via the damage they
-  then eat — never free for either.
-- Going all-in is a **choice**: pay-after (§3.1) still grants the base action, so a
-  slow Actor opts into the all-in; it is never forced on a defensive build that
-  declines to overreach.
+- **Order-independent within each phase:** every targeting/defense decision is committed before
+  any duel resolves; duels are independent (no cross-duel effects, §1.9); downs finalize at the
+  boundary — so resolving duels in any order yields the identical end-state.
+- **No turn order:** one whole side then the other (PvE), or both at once (PvP); Speed sizes
+  pools and costs, never initiative (§3.1).
+- **One engine:** both orchestrations call the identical Clash and economy; only the round
+  skeleton differs, justified by one-action creatures vs multi-action players.
 
 ---
 
-## 4. Coordination / positioning ⬜
+## 4. Formation, reach & the gauntlet ✅
 
-*Stub.* Front/back lines as unordered sets; reach as jumps
-(`f↔f 1, f↔b 2, b↔b 3`); Attack vs Hold; the gauntlet (front line spends combined
-Tempo as drag on Runners). Source:
-[`design/coordination-and-interruption.md`](../design/coordination-and-interruption.md).
-**Needs:** ~~the "duel detection" rule~~ — **specced in §1.8 (reading is the
-contest) and §1.9 (resolution order).** Remaining: how positioning/reach feeds
-engagement — which foes you *can* reach to read/strike in the first place.
+**RULE.** Each side holds a **front line** and a **back line** (unordered sets). Formation is
+**public** and **shifts freely between rounds** (front↔back), so it is known *before*
+targeting. Reach gates who you can engage:
+
+- **Melee** reaches **front↔front** directly. To reach an enemy **back-liner**, a
+  **front-line** attacker must **dive** — back-liners cannot dive.
+- **A dive runs the gauntlet of the opposing front line.** Each enemy **guard** (front-liner)
+  may spend **Tempo** to **intercept** the diving **runner**. Per interception the runner
+  chooses: **push through** — take the guard's **base strike** automatically (a free hit,
+  resolved *before* reaching the target) and pay **the guard's Speed** in Tempo to pass; or
+  **halt** — abandon the dive and duel that guard instead. If pushing drives the runner's
+  **Tempo negative** (it lacks the **combined Speed** of the intercepting guards), it is
+  **stopped** — it cannot reach its target this round.
+- **Ranged** (an actor/weapon property, available on **either** line) reaches the enemy back
+  line **directly, bypassing the gauntlet**.
+
+**WHY.** Formation gives the **wall / runner / artillery** triangle: a front line shields the
+squishy back line from **melee** (the gauntlet drags runners) but **never from ranged** — so
+you need your own ranged, or to break through, to answer their back line. Public formation
+keeps targeting a clean read; routing the dive cost through **combined Speed** makes a thick
+wall a real Tempo tax and a fast runner genuinely slippery (Speed-vs-Speed).
+
+**GUARANTEES.**
+- The back line is reachable by **melee only through the front line** (dive + gauntlet), by
+  **ranged always** (bypass).
+- The gauntlet is a **Tempo economy**, not an ordering effect: a runner gets through iff its
+  Tempo ≥ the intercepting guards' combined Speed, eating one base hit per guard pushed.
+- Formation is public and free to shift — positioning is strategy, never a hidden surprise.
 
 ## 5. Zones / exhaustion ⬜
 

@@ -1,5 +1,12 @@
 # Deckbound — Coordination & Interruption
 
+> **PARTIALLY SUPERSEDED — see Spec §3.** The breadth model (who fights whom, who's exposed,
+> who's interrupted) is now [`spec/README.md` §3](../spec/README.md): **Tempo** starts duels,
+> **Focus** defends them (reset — survival only), uncovered foes **free-hit**, and a **Tempo
+> counterattack** is the only way to damage an aggressor. The positioning/targeting intent
+> here carries forward; the interrupt/Exposed specifics do not. The concrete round loop is
+> still to be designed.
+
 A layer above the card duel: not *how* an exchange resolves, but **who fights
 whom**, who is exposed, and who gets interrupted. It is **cardless** — positioning
 and target choice, not card plays.

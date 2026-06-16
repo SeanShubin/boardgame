@@ -129,10 +129,101 @@ predicting you**.
 
 ## The action cycle
 
-The rock-paper-scissors cycle is the **Mind** aspect's stance game — Strike / Block /
-Evade / Scheme, the **momentum** winning stances bank, and the **misjudged stance** that
-forfeits it. It now has its own home: see
-[the Mind: stances & momentum](mind-and-stances.md).
+The tactical RPS is the **four-card Clash** — Strike / Anticipate / Gather / Evade, the
+**Force** a wind-up builds, and ends-on-strike. It has its own home: see
+[the duel (the Clash)](the-duel.md). The decks below are how a non-player **instinct** plays
+that cycle.
+
+## Creature decision decks — the four-card Clash
+
+A creature's decision deck is a **small pile of the four move-cards** (Strike, Anticipate,
+Gather, Evade — see [the-duel](the-duel.md)). Each beat it draws one **with replacement**
+(reshuffles, never depletes), and the draw *is* the choice. **The deck's composition is the
+creature's mixed strategy and its personality**: a deck of `Strike, Strike, Gather` strikes
+two beats in three and holds one. "Few cards" means coarse, **readable** frequencies the
+player can learn and exploit.
+
+### Design rule: readable, not optimal
+
+A creature that played the true game-theoretic optimum (a perfect even mix) would be
+**unreadable** — and unreadable defeats the whole point, which is for the player to *study its
+instinct and out-predict it* (the one-way prediction of the
+[theory-of-mind line](#the-line-theory-of-mind)). So creature decks are **deliberately
+lopsided** — they lean on a move or two, leaving an exploitable hole. The lean is tuned
+**lightly toward** the equilibrium: skewed enough to be read, balanced enough that pure
+pattern-reading can't 100% steamroll it. You gain a clear edge, not immunity.
+
+**Difficulty = deck balance (entropy).** That single dial keeps card counts tiny:
+
+| Tier                 | Deck                        | Feel                                      |
+| -------------------- | --------------------------- | ----------------------------------------- |
+| **Dummy** (tutorial) | 1 move (pure)               | one lesson, fully readable, zero surprise |
+| **Standard**         | 2–3 cards, a clear lean     | a real read — threatening but exploitable |
+| **Elite / boss**     | 4 cards (≈1 each), balanced | hard to read — the full mind-game         |
+
+A boss is harder via **balance plus bigger stats (Body, Power)**, *not* a bigger deck — counts
+stay low at every tier. Every real foe needs **≥1 attack card**, or it can never win; a
+pure-defense deck is a non-threatening dummy.
+
+### Reading the four-card game (the theory the decks lean on)
+
+What "out-predicting it" looks like — the player's counter to each lean:
+
+| If the deck leans…      | …the player answers… | because                                         |
+| ----------------------- | -------------------- | ----------------------------------------------- |
+| **Strike** (hit-now)    | **Evade**            | dodges it *and* steals its Force                |
+| **Anticipate** (lead)   | **Gather**           | holds; the lead whiffs (and you build)          |
+| **Gather** (hold/build) | **Strike**           | hits the stayer; ends it before the loaded blow |
+| **Evade** (move)        | **Anticipate**       | leads the dodge                                 |
+
+Two facts the tuning leans on: **Strike answers both Gather and Anticipate** (the universal
+punish for a non-attacker), and **Evade is the only steal vector**. So a Strike-heavy creature
+is the most punishing to face (you farm its Force) *and* the easiest lesson — while the light
+tuning means even a leaning deck mixes in its off-move often enough to clip a player who only
+ever plays the single counter.
+
+### The archetypes (concrete decks)
+
+| Archetype             | Deck                                | Lean                         | Counter / lesson                                                                       |
+| --------------------- | ----------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| **Brute**             | `Gather, Gather, Strike`            | builds, then a loaded Strike | Strike its Gathers to end early, or **Evade the big Strike to steal the loaded Force** |
+| **Aggressor**         | `Strike, Strike, Anticipate`        | relentless, mostly hit-now   | Evade (dodge + steal); watch the Anticipate                                            |
+| **Hunter**            | `Anticipate, Anticipate, Strike`    | leads, punishes movers       | Gather (the lead whiffs); watch the Strike                                             |
+| **Skirmisher**        | `Evade, Strike, Anticipate`         | slippery, picks its moment   | mixed reads; don't over-Strike (it steals)                                             |
+| **Duelist** *(elite)* | `Strike, Anticipate, Gather, Evade` | balanced, near-equilibrium   | the full mind-game; win on small edges + stats                                         |
+
+These map onto the role roster in [archetypes](archetypes.md): a **Brute** is a Juggernaut's
+or Bruiser's in-duel instinct; a **Duelist** is the Trickster — the one foe that *feels*
+minded. The role decides *stats and which mechanic it punishes*; the decision deck decides
+*how it fights the beat*.
+
+### Tutorial mapping — one lesson per pure deck
+
+Each tutorial foe is a **1-move dummy** isolating a single read, in difficulty order:
+
+| #   | Foe         | Deck                 | Teaches                                                                                    |
+| --- | ----------- | -------------------- | ------------------------------------------------------------------------------------------ |
+| 1   | **Post**    | `Gather`             | hit a holder — **Strike beats Gather** (and Anticipate *whiffs*: don't lead a stayer)      |
+| 2   | **Leader**  | `Anticipate`         | punish a lead — **Strike beats Anticipate**, or **Gather** to be safe (never Evade a lead) |
+| 3   | **Dodger**  | `Evade`              | beat a mover — **Anticipate beats Evade** (don't Strike — it dodges and steals)            |
+| 4   | **Brawler** | `Strike`             | survive an aggressor — **Evade beats Strike and steals**; to win you must **trade**        |
+| 5   | **Feint**   | `Strike, Anticipate` | a real read — *now or led?* — the first genuine two-way guess                              |
+| 6   | **Duelist** | balanced 4           | the full mind-game — the synthesis                                                         |
+
+1–4 isolate the four single counters (4 also introduces the **steal** and the **trade**); 5 is
+the first true read; 6 is the synthesis.
+
+### Breadth behavior — principles (pending the round loop)
+
+Everything above is **in-duel**. A creature's **breadth** choices — whom to attack, and
+whether to spend Tempo to counterattack a duel started on it — depend on the round loop, which
+is **not yet designed**, so these are principles to finalize later:
+
+- **Targeting** keeps the role-based rules ([archetypes](archetypes.md)): the front line,
+  lowest-Body, least-Resolute, or a Runner that bolts for the back line.
+- **Counterattack** is a *typed tendency*, not a per-beat computation: aggressive archetypes
+  (Brute, Aggressor) spend Tempo to counterattack when they have it; defensive or skirmishing
+  ones prefer to Focus-defend (survive) or accept a free hit.
 
 ## Open questions
 

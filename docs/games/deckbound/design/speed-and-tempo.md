@@ -1,5 +1,13 @@
 # Deckbound — Speed & Tempo
 
+> **PARTIALLY SUPERSEDED — see Spec §3.** Speed→Tempo and Mind→Focus survive as the two
+> breadth budgets, but their *roles* are rewritten
+> ([`spec/README.md` §3](../spec/README.md)): **Tempo** = the duels you *start* (results
+> stick), **Focus** = the duels *started on you* (a Focus-defense is **reset** — survival
+> only, no damage to the attacker), a **free hit** if uncovered, and a **Tempo
+> counterattack** to fight back. **Pay-after is kept; the Exposed / Focus→0 penalty is
+> removed.** Read for the stat-vs-resource framing; trust §3 for how the budgets are spent.
+
 Speed is **not turn order** — and **Speed** and **tempo** are not the same thing.
 **Speed** is a **stat** (a fixed rating); **tempo** is the **resource** you get from it:
 each round you have a pool of tempo equal to your Speed, and you spend it to act — to
