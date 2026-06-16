@@ -44,7 +44,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(StateRes::<G>(state))
             .insert_resource(NeedsRedraw(true))
             .insert_resource(Platform::detect())
-            .add_systems(Startup, setup_camera)
+            .add_systems(Startup, (setup_camera, install_ui_font))
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
             .add_systems(
@@ -102,6 +102,24 @@ struct ActionButton(usize);
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
+
+/// Inter (Regular), bundled so displayed text can render the typographic glyphs
+/// games actually use — em dashes, curly quotes, arrows — that Bevy's built-in
+/// `FiraMono-subset` font lacks (they'd otherwise show as tofu boxes).
+/// SIL Open Font License; see `fonts/Inter-LICENSE.txt`.
+const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
+
+/// Replace Bevy's ASCII-only default font with the bundled Inter face. Bevy
+/// registers its default font at `AssetId::default()`, and every
+/// `TextFont { ..default() }` in this crate points there, so overwriting that
+/// one asset reskins all UI text without threading a font handle through each
+/// label. Runs in `Startup`, after `TextPlugin` has inserted the original.
+fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
+    let font = Font::try_from_bytes(UI_FONT.to_vec()).expect("bundled UI font is valid");
+    fonts
+        .insert(AssetId::default(), font)
+        .expect("override the default font");
 }
 
 fn apply_clicked_action<G: Game + Clone>(
