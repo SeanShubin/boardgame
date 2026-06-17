@@ -47,16 +47,21 @@ authored.
 
 ## Coverage
 
-| System                                  | Spec status | Current design source if not yet specced                |
-| --------------------------------------- | ----------- | ------------------------------------------------------- |
-| **The Clash** (tactical core)           | ✅ worked    | —                                                       |
-| **Defense model** (cut → bar → pool)    | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`            |
-| **Speed/Tempo + Mind/Focus**            | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md` |
-| **Formation, reach & the gauntlet**     | ✅ worked    | —                                                       |
-| **Zones / exhaustion**                  | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*            |
-| **Aspects / the chord**                 | ⬜ stub      | `notes/decks-and-aspects.md`                            |
-| **Agents** (Character vs Creature)      | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`         |
-| **Strategic layer** (world/event decks) | ⬜ stub      | `notes/world-and-progression.md`                        |
+| System                                            | Spec status | Current design source if not yet specced                                   |
+| ------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
+| **The Clash** (tactical core)                     | ✅ worked    | —                                                                          |
+| **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`                               |
+| **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                    |
+| **Formation, reach & the gauntlet**               | ✅ worked    | —                                                                          |
+| **Zones / exhaustion**                            | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*                               |
+| **Aspects / the chord**                           | ⬜ stub      | `notes/decks-and-aspects.md`                                               |
+| **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                            |
+| **Strategic layer** (world/event decks)           | ⬜ stub      | `notes/world-and-progression.md`                                           |
+| **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code) |
+| **Run victory / defeat** (across many skirmishes) | ⬜ stub      | — *(undefined — a game is many skirmishes; the run-level win/lose is not)* |
+| **Geography & travel** (the world map + movement) | ⬜ stub      | — *(not yet explored)*                                                     |
+| **Loot** (rewards → new cards/aspects)            | ⬜ stub      | `notes/cards-and-customization.md`                                         |
+| **Progression** (growth between skirmishes)       | ⬜ stub      | `notes/world-and-progression.md`, `notes/archetypes.md`                    |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative.

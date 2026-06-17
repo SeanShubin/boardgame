@@ -18,3 +18,10 @@ The documentation is split by **authority**:
   disagree.
 - **`presentation/` — player-facing material.** The [rules placeholder](presentation/rules/README.md)
   and an [interactive tutorial](presentation/tutorial.html).
+- **[future-possibilities.md](future-possibilities.md) — design backlog.** A living,
+  non-authoritative parking lot for big speculative changes awaiting playtest before any
+  decision. Neither canon nor frozen notes.
+- **[roadmap.md](roadmap.md) — undefined mechanics & planned features.** A living to-do
+  list of what doesn't exist yet (geography, travel, loot, progression, world events,
+  run-level victory/defeat; plus features like a human-emulating AI, an in-game
+  encyclopedia, card-interaction lists, and print-export).
