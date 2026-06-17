@@ -589,8 +589,11 @@ phase.
 ## 4. Formation, reach & the gauntlet ✅
 
 **RULE.** Each side holds a **front line** and a **back line** (unordered sets). Formation is
-**public** and **shifts freely between rounds** (front↔back), so it is known *before*
-targeting. Reach gates who you can engage:
+**public** and **shifts freely between rounds** (front↔back) — a **free action**, so it is
+known *before* targeting. **A side must always keep at least one living Actor in its front
+line:** a configuration with an empty front line is **illegal**, and the interface never
+offers a shift that would produce one (so the last front-liner can never drop to the back).
+Reach gates who you can engage:
 
 - **Melee** reaches **front↔front** directly. To reach an enemy **back-liner**, a
   **front-line** attacker must **dive** — back-liners cannot dive.
@@ -616,6 +619,9 @@ wall a real Tempo tax and a fast runner genuinely slippery (Speed-vs-Speed).
 - The gauntlet is a **Tempo economy**, not an ordering effect: a runner gets through iff its
   Tempo ≥ the intercepting guards' combined Speed, eating one base hit per guard pushed.
 - Formation is public and free to shift — positioning is strategy, never a hidden surprise.
+- **The front line is never empty.** A shift may not move a side's last living front-liner to
+  the back, so an all-back formation is unreachable and reach (which keys off front-line
+  occupancy) stays well-defined. The UI suppresses any reposition that would empty the front.
 
 ## 5. Zones / exhaustion ⬜
 

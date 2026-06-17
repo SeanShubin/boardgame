@@ -72,6 +72,23 @@ pub fn back_line(actors: &[Actor]) -> Vec<usize> {
         .collect()
 }
 
+/// May hero `h` shift line right now (§4)? Repositioning is free, but a side must always keep
+/// **at least one living entity in its front line** — so the last living front-liner may not
+/// drop to the back. Moving *to* the front is always legal; moving *to* the back is legal only
+/// while another living front-liner remains to hold it.
+pub fn can_reposition(actors: &[Actor], h: usize) -> bool {
+    let Some(hero) = actors.get(h) else {
+        return false;
+    };
+    if hero.is_down() {
+        return false;
+    }
+    match hero.line {
+        Line::Back => true,
+        Line::Front => front_guards(actors).iter().any(|&g| g != h),
+    }
+}
+
 /// Can `attacker` reach `defenders[target]` **without** running the gauntlet (§4)? Ranged
 /// bypasses lines entirely; melee reaches the front directly, and the back only once the
 /// front line is cleared.

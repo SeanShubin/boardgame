@@ -706,9 +706,10 @@ impl Game for Deckbound {
             }
             Phase::Choosing => {
                 let mut a = Vec::new();
-                // Repositioning is free and available between rounds (§4) — even with no Tempo.
-                for (h, hero) in state.heroes.iter().enumerate() {
-                    if !hero.fallen {
+                // Repositioning is free and available between rounds (§4) — even with no Tempo —
+                // but never offered when it would leave the front line empty.
+                for h in 0..state.heroes.len() {
+                    if combat::can_reposition(&state.heroes, h) {
                         a.push(Action::Reposition(h));
                     }
                 }
@@ -953,10 +954,14 @@ impl Game for Deckbound {
                 state.heroes[*h].tempo -= ACTION_COST as i32;
             }
             (Phase::Choosing, Action::Reposition(h)) => {
+                if !combat::can_reposition(&state.heroes, *h) {
+                    return Err(GameError::new(
+                        "a side must keep at least one Actor in the front line",
+                    ));
+                }
                 let hero = state
                     .heroes
                     .get_mut(*h)
-                    .filter(|x| !x.fallen)
                     .ok_or_else(|| GameError::new("no such hero"))?;
                 hero.line = match hero.line {
                     crate::actor::Line::Front => crate::actor::Line::Back,
@@ -1546,17 +1551,53 @@ mod tests {
         );
     }
 
-    /// §4 reposition: shifting line is free and flips front <-> back.
+    /// §4 reposition: shifting line is free and flips front <-> back. A back-liner may always
+    /// step up; a front-liner may drop back only while another holds the front.
     #[test]
     fn reposition_is_free_and_flips_the_line() {
         let game = Deckbound;
         let mut s = campaign_state(2, "Pierce the Line");
-        let aldric = s.heroes.iter().position(|h| h.name == "Aldric").unwrap();
-        assert_eq!(s.heroes[aldric].line, crate::actor::Line::Front);
-        let tempo = s.heroes[aldric].tempo;
-        game.apply(&mut s, &Action::Reposition(aldric)).unwrap();
-        assert_eq!(s.heroes[aldric].line, crate::actor::Line::Back);
-        assert_eq!(s.heroes[aldric].tempo, tempo, "repositioning is free");
+        let tamsin = s.heroes.iter().position(|h| h.name == "Tamsin").unwrap();
+        assert_eq!(s.heroes[tamsin].line, crate::actor::Line::Back);
+        let tempo = s.heroes[tamsin].tempo;
+        // Tamsin steps up (back -> front) — always legal.
+        game.apply(&mut s, &Action::Reposition(tamsin)).unwrap();
+        assert_eq!(s.heroes[tamsin].line, crate::actor::Line::Front);
+        assert_eq!(s.heroes[tamsin].tempo, tempo, "repositioning is free");
+    }
+
+    /// §4 invariant: a side must keep at least one living entity in the front line. The UI must
+    /// not offer — and `apply` must reject — a shift that would empty it.
+    #[test]
+    fn cannot_empty_the_front_line() {
+        let game = Deckbound;
+        // Tutorial 1: Vera alone vs Pell. Vera is the only (front) hero.
+        let mut s = game.new_game(1, 1);
+        launch(&game, &mut s, Action::OpenTutorial, 0);
+        assert_eq!(s.heroes[0].line, crate::actor::Line::Front);
+        assert!(
+            !game.legal_actions(&s).contains(&Action::Reposition(0)),
+            "the lone front-liner is never offered a shift to the back"
+        );
+        assert!(
+            game.apply(&mut s, &Action::Reposition(0)).is_err(),
+            "and apply rejects it outright"
+        );
+
+        // Pierce the Line: Aldric (front) + Tamsin (back). Aldric is the only front-liner,
+        // so he cannot drop back — but once Tamsin steps up to hold the line, he can.
+        let mut p = campaign_state(2, "Pierce the Line");
+        let aldric = p.heroes.iter().position(|h| h.name == "Aldric").unwrap();
+        let tamsin = p.heroes.iter().position(|h| h.name == "Tamsin").unwrap();
+        assert!(
+            !game.legal_actions(&p).contains(&Action::Reposition(aldric)),
+            "Aldric alone holds the front — can't vacate it"
+        );
+        game.apply(&mut p, &Action::Reposition(tamsin)).unwrap(); // Tamsin steps up
+        assert!(
+            game.legal_actions(&p).contains(&Action::Reposition(aldric)),
+            "now Tamsin holds the front, so Aldric may drop back"
+        );
     }
 
     /// §4 gauntlet: a runner foe dives the hero back line; the player can intercept with a
