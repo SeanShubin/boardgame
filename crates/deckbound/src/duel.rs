@@ -5,7 +5,7 @@
 //! (the single per-side escalation count), whether the duel **ends** (ends-on-strike), and
 //! a note. Pure and deterministic.
 //!
-//! Three invariants under perfect guessing (see `docs/games/deckbound/spec/README.md` §1.0):
+//! Three invariants under perfect guessing (see `docs/games/deckbound/canon/2-spec/README.md` §1.0):
 //! 1. **Avoid** — every attack has a defense that negates it (Strike↦Evade, Anticipate↦Gather).
 //! 2. **Land** — every move has an answering attack.
 //! 3. **Not both, free** — landing on a committed Strike means trading a hit.
@@ -112,12 +112,13 @@ pub fn resolve(a: &Side, am: Move, b: &Side, bm: Move) -> Clash {
     let mut b_force = b.force;
 
     // The only transfer: a Strike slipped by an Evade hands the striker's Force to the evader.
+    // A clean dodge always buys momentum — the evader gains at least 1, even off a Force-0 Strike.
     if am == Move::Strike && bm == Move::Evade {
-        b_force = b_force.saturating_add(a_force);
+        b_force = b_force.saturating_add(a_force.max(1));
         a_force = 0;
     }
     if bm == Move::Strike && am == Move::Evade {
-        a_force = a_force.saturating_add(b_force);
+        a_force = a_force.saturating_add(b_force.max(1));
         b_force = 0;
     }
 
@@ -250,6 +251,18 @@ mod tests {
         assert_eq!(r.a_force, 0, "the striker loses its Force");
         assert_eq!(r.b_force, 3, "the dodger steals it");
         assert!(!r.ends, "a dodged strike is a dance beat, not an ender");
+    }
+
+    /// The floor: a clean dodge always buys momentum — slipping even a Force-0 Strike grants
+    /// the evader at least 1 Force.
+    #[test]
+    fn evading_a_forceless_strike_still_grants_one() {
+        let striker = side(3, 0);
+        let dodger = side(3, 0);
+        let r = resolve(&striker, Move::Strike, &dodger, Move::Evade);
+        assert_eq!(r.a_force, 0, "the striker had nothing and stays at zero");
+        assert_eq!(r.b_force, 1, "the dodger always gains at least one");
+        assert!(!r.ends);
     }
 
     /// Ends-on-strike: a connecting move ends the duel; a non-connecting one continues it.

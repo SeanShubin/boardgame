@@ -113,7 +113,7 @@ of what they already have.
 The macro game is a **race to gain power and flexibility fast enough to handle the
 [event deck](#the-event-deck)**. The uncomputable, judgment-driven half of the
 game (see
-[philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)) lives
+[philosophy §2](../canon/1-charter.md#2-computable-tactics-uncomputable-strategy)) lives
 here:
 
 - **Survive loss conditions** as they surface.
@@ -150,7 +150,7 @@ budget**:
 The two answers to one swarm are the two faces of the budget: **one god-Speed body, or
 many ordinary bodies**. Balance falls out of the total; the *distribution* is what
 makes solo and co-op feel like different games. (This is the
-[asymmetry pillar](philosophy.md) made quantitative.)
+[asymmetry pillar](../canon/1-charter.md) made quantitative.)
 
 ### God vs party — depth for breadth at equal budget
 

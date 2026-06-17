@@ -1,7 +1,7 @@
 # Deckbound — Coordination & Interruption
 
 > **PARTIALLY SUPERSEDED — see Spec §3.** The breadth model (who fights whom, who's exposed,
-> who's interrupted) is now [`spec/README.md` §3](../spec/README.md): **Tempo** starts duels,
+> who's interrupted) is now [`spec/README.md` §3](../canon/2-spec/README.md): **Tempo** starts duels,
 > **Focus** defends them (reset — survival only), uncovered foes **free-hit**, and a **Tempo
 > counterattack** is the only way to damage an aggressor. The positioning/targeting intent
 > here carries forward; the interrupt/Exposed specifics do not. The concrete round loop is
@@ -179,7 +179,7 @@ mind** predicts several at once and can't be ganked (Mind) — offense-at-scale 
 defense-at-scale on different stats. A thin Mind gets **focus-fired**; a thin Speed
 **can't press a crowd**. Powerscaling stays **uncapped**: stack both (with the **Power**
 to make the blows bite) and one character becomes a **one-man army** — the
-[asymmetry](philosophy.md) pillar, now spread across stats so it isn't a Speed monopoly.
+[asymmetry](../canon/1-charter.md) pillar, now spread across stats so it isn't a Speed monopoly.
 
 ## Running the gauntlet
 

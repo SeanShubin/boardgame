@@ -21,7 +21,7 @@ breath. Combos are what the game is *for*.
 Crucially, aspects combine in **well-defined, order-independent** ways
 ([decks & aspects](decks-and-aspects.md#order-never-matters-between-aspects)) — a combo
 is **computed, not adjudicated ad hoc** — which keeps even rich interactions
-[computable](philosophy.md#2-computable-tactics-uncomputable-strategy).
+[computable](../canon/1-charter.md#2-computable-tactics-uncomputable-strategy).
 
 ## Worked examples
 

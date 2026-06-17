@@ -269,7 +269,7 @@ splits when struck, a thing that *feeds* on a damage type). The intended **shape
 handful per stat — roughly three special cards for each** of Body, Mind, Spirit
 (and Speed, Power, …), so every stat gets its own pocket of surprises. The variety is
 the point — the **core systems stay few and emergent**
-([§6](philosophy.md#6-many-systems-from-few-rules)), with this weird layer on top for
+([§6](../canon/1-charter.md#6-many-systems-from-few-rules)), with this weird layer on top for
 **identity and surprise**. **Incorporeal is one such card; the whole library is deferred
 until the core is solid.**
 

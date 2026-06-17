@@ -2,7 +2,7 @@
 
 > **PARTIALLY SUPERSEDED — see Spec §3.** Speed→Tempo and Mind→Focus survive as the two
 > breadth budgets, but their *roles* are rewritten
-> ([`spec/README.md` §3](../spec/README.md)): **Tempo** = the duels you *start* (results
+> ([`spec/README.md` §3](../canon/2-spec/README.md)): **Tempo** = the duels you *start* (results
 > stick), **Focus** = the duels *started on you* (a Focus-defense is **reset** — survival
 > only, no damage to the attacker), a **free hit** if uncovered, and a **Tempo
 > counterattack** to fight back. **Pay-after is kept; the Exposed / Focus→0 penalty is

@@ -5,7 +5,7 @@
 > docs). These are borrowed wisdom adapted to Deckbound — each notes its source
 > and how it applies here. They *inform* the design; they are not themselves
 > rules. For Deckbound's own non-negotiable north stars, see
-> [philosophy](philosophy.md).
+> [philosophy](../canon/1-charter.md).
 
 ## Meaningful choice
 
@@ -68,7 +68,7 @@
   produce emergent interactions you never hand-authored.
   *(design-philosophy.md)* — **Deckbound:** aspects × zones × the four actions ×
   magnitude is a large space from few parts, and the three deciders share one rule
-  set. (This is [philosophy §6](philosophy.md#6-many-systems-from-few-rules).)
+  set. (This is [philosophy §6](../canon/1-charter.md#6-many-systems-from-few-rules).)
 - **Interconnected systems reward experimentation.** Mechanics interact in ways
   the game doesn't explicitly teach. *(design-philosophy.md,
   emergent-gameplay-and-progression.md)* — **Deckbound:** let aspect combinations

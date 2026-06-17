@@ -100,7 +100,7 @@ the guessing game. (This is also why disabling a creature's Mind makes it
 predictable; see [form-and-defeat](form-and-defeat.md).)
 
 This is what keeps the [tactical exchange
-computable](philosophy.md#2-computable-tactics-uncomputable-strategy): the RPS that
+computable](../canon/1-charter.md#2-computable-tactics-uncomputable-strategy): the RPS that
 must stay solvable is a single aspect, layered over an otherwise deterministic
 composition. The Body side — its stats and deliveries — lives in
 [cards & customization](cards-and-customization.md).

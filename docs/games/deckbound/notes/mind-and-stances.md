@@ -1,7 +1,7 @@
 # Deckbound — The Mind: Stances & Momentum
 
 > **SUPERSEDED — tactical layer.** The canonical tactical core is now the **Clash**
-> ([`spec/README.md` §1](../spec/README.md),
+> ([`spec/README.md` §1](../canon/2-spec/README.md),
 > design rationale in [the-duel.md](the-duel.md)): a beat-by-beat **four-card** duel —
 > **Strike · Anticipate · Gather · Evade** — with a single **Force** count (×2 per Force,
 > stolen only on Strike-into-Evade), run **ends-on-strike**. Both the
@@ -91,7 +91,7 @@ pile. The original instincts fall straight out:
   true bluff war. It baits your Scheme with a Strike and adapts to your habits, so
   *when to cash in* is itself something to predict.
 
-The exchange stays **computable** ([philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy)):
+The exchange stays **computable** ([philosophy §2](../canon/1-charter.md#2-computable-tactics-uncomputable-strategy)):
 bounded stances plus a countable bank.
 
 ## How many you can predict — bandwidth is the Mind focus pool

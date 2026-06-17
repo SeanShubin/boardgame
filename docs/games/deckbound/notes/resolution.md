@@ -1,7 +1,7 @@
 # Deckbound — Resolution Procedure (the round)
 
 > **SUPERSEDED — Clash mechanics.** The tactical core is now the **Clash**
-> ([`spec/README.md` §1](../spec/README.md), rationale in [the-duel.md](the-duel.md)): a
+> ([`spec/README.md` §1](../canon/2-spec/README.md), rationale in [the-duel.md](the-duel.md)): a
 > four-card duel — **Strike · Anticipate · Gather · Evade** — with a single **Force** count
 > (×2 per Force, stolen only on Strike-into-Evade), run **ends-on-strike**. The
 > Strike/Scheme/Defense cycle and the momentum bank/forfeit below are stale (but

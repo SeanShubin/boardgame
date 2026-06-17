@@ -10,6 +10,7 @@ action is a chord of cards drawn one per *aspect* (Body, Mind, Magic, Spirit, â€
 You explore a fantasy world, survive scenario-based conflicts, and grow by acquiring
 new cards and new aspects.
 
-While the rules are worked out, the current thinking lives in the
-[design notes](../design/README.md) â€” start with the
-[philosophy](../design/philosophy.md).
+While the rules are worked out, the canonical mechanics live in the
+[Spec](../../canon/2-spec/README.md) and the intent in the
+[Charter](../../canon/1-charter.md); the older exploratory thinking is in the
+[design notes](../../notes/README.md).

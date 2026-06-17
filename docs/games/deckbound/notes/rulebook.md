@@ -3,7 +3,7 @@
 > **SUPERSEDED — clash mechanics.** This player-facing manual teaches the older
 > Strike / Block / Evade / Scheme stance cycle and the Speed-first-strike / Power
 > magnitude clash. The tactical core is now the **Clash**
-> ([`spec/README.md` §1](../spec/README.md), rationale in [the-duel.md](the-duel.md)): each
+> ([`spec/README.md` §1](../canon/2-spec/README.md), rationale in [the-duel.md](the-duel.md)): each
 > beat both fighters secretly pick one of **four** cards — **Strike · Anticipate · Gather ·
 > Evade** — building a single **Force** count (×2 per Force, stolen only on
 > Strike-into-Evade), run **ends-on-strike**. The wall/gauntlet/reach, health-as-cards, fear-vs-resolve, and free-hit

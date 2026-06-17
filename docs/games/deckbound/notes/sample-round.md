@@ -3,7 +3,7 @@
 > **SUPERSEDED — clash mechanics.** This worked fight uses the older
 > Strike / Block / Evade / Scheme stances and Speed-first-strike clash. The tactical
 > core is now the **Clash**
-> ([`spec/README.md` §1](../spec/README.md), rationale in [the-duel.md](the-duel.md)): a
+> ([`spec/README.md` §1](../canon/2-spec/README.md), rationale in [the-duel.md](the-duel.md)): a
 > four-card duel — **Strike · Anticipate · Gather · Evade** — with a single **Force** count
 > (×2 per Force, stolen only on Strike-into-Evade), run **ends-on-strike**. The **scenario design** here — four locks / four keys,
 > the cascade that makes every hero necessary, typed damage, breadth, fear-vs-resolve,

@@ -5,7 +5,7 @@
 //! resolves the same way: subtract a per-source **cut** (Armor outer, Ward inner),
 //! accumulate into the round's **pile**, then test the **bar** — only the Body
 //! channel has a **pool** (Health cards) behind it; the inner channels **break** on
-//! one crossing. See `docs/games/deckbound/design/form-and-defeat.md`.
+//! one crossing. See `docs/games/deckbound/notes/form-and-defeat.md`.
 
 use std::collections::BTreeMap;
 

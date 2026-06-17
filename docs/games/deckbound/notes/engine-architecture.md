@@ -31,7 +31,7 @@ holds, per keyword, **two things**:
 That dual nature is the join point: the engine runs the handler; the **rulebook
 generator** prints the text. Digital and printed rules therefore **cannot drift** — they
 come from the same definition. (And "can I write a clean one-line manual entry?" is a
-design test for whether a keyword is too fiddly — [philosophy §9](philosophy.md).)
+design test for whether a keyword is too fiddly — [philosophy §9](../canon/1-charter.md).)
 
 Not a scripting DSL — a **fixed vocabulary** the engine knows. Composing known keywords
 onto a new card is data; a genuinely new mechanic is a new handler (a redeploy).

@@ -1,7 +1,7 @@
 # Deckbound — The Duel (the Clash)
 
 > **Status:** the duel is **the Clash**, specced canonically in
-> [`spec/README.md` §1.0](../spec/README.md). That section is the **source of truth for
+> [`spec/README.md` §1.0](../canon/2-spec/README.md). That section is the **source of truth for
 > mechanics**; this note is its **design background** — the WHY behind the shape. Both the
 > stance/Edge duel and the interim six-move *charge* duel this note once described are
 > **superseded** (see [What this supersedes](#what-this-supersedes)); their intent carried
@@ -82,7 +82,7 @@ duels**, so a fight to the death is several short duels of chip and spike — no
 beat-count.
 
 Termination is guaranteed in practice: under blind, simultaneous guessing someone eventually
-misreads and a strike connects. An engine-only backstop ([spec §1.6](../spec/README.md))
+misreads and a strike connects. An engine-only backstop ([spec §1.6](../canon/2-spec/README.md))
 breaks off the purely theoretical perfect-mutual-defense case; it is invisible in normal play.
 
 ## The three invariants — the heart of it
@@ -105,7 +105,7 @@ a clean read rather than a guessing game, yet the trade cell forbids any dominan
 ## Tempo & Focus — the breadth layer
 
 Tempo and Focus never gate *which cards you hold* (the kit is always complete). They gate
-*which duels you are a full participant in* ([spec §3](../spec/README.md)):
+*which duels you are a full participant in* ([spec §3](../canon/2-spec/README.md)):
 
 - **Tempo = the duels you start.** Spend it to **initiate** (cost = the foe's Speed); inside,
   **results stick** — you can damage or kill.

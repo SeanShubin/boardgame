@@ -270,7 +270,7 @@ running count effortless. The cheap version: a **track of spaces 0…Speed** alo
 edge of each stat-block, with a single **marker** that advances as you spend — so *how
 much Speed you've used* shows at a glance and *what's left* is the rest, exactly like a
 score track. It never holds anything you couldn't re-derive from play; it just saves you
-the sum. (This is what the [tutorial](../tutorial.html) draws as a **tempo bar**.)
+the sum. (This is what the [tutorial](../presentation/tutorial.html) draws as a **tempo bar**.)
 
 ## A worked round, card by card *(earlier draft warband)*
 

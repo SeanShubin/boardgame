@@ -23,7 +23,7 @@ numbers** (cards, traits, actors, prebuilt decks, scenarios) live in
 **`booklet.ron`** — the print master, canonical for components and values. The
 **code is not a source of truth** — it is an implementation that may contain
 **defects**, and when it disagrees with the Spec or `booklet.ron`, *the code is
-wrong by default*. The old `design/` notes are **frozen exploration** and are
+wrong by default*. The old `notes/` notes are **frozen exploration** and are
 **not authoritative** — many are stale. When you are unsure, **ask the human; do
 not invent, and do not promote a note or the code to truth.**
 
@@ -58,13 +58,13 @@ section is how to apply it.
 
 ### What is authoritative (and what is not)
 
-| Question you're answering                                     | Source of truth                      | Authoritative?                          |
-| ------------------------------------------------------------- | ------------------------------------ | --------------------------------------- |
-| *Why* is it designed this way? What is the intent?            | **Charter** (`design/philosophy.md`) | ✅ yes — for intent                      |
-| What does a rule / keyword *mean*? How does resolution work?  | **Spec** (`spec/`)                   | ✅ yes — for mechanics                   |
-| What pieces *exist*? Their values, decks, scenarios, numbers? | **`booklet.ron`** (print master)     | ✅ yes — for components & numbers        |
-| What does the running game *currently do*?                    | the code (`crates/deckbound/`)       | ❌ no — implementation; may have defects |
-| Exploratory reasoning, history, alternatives                  | `design/` notes                      | ❌ no — frozen, often stale              |
+| Question you're answering                                     | Source of truth                    | Authoritative?                          |
+| ------------------------------------------------------------- | ---------------------------------- | --------------------------------------- |
+| *Why* is it designed this way? What is the intent?            | **Charter** (`canon/1-charter.md`) | ✅ yes — for intent                      |
+| What does a rule / keyword *mean*? How does resolution work?  | **Spec** (`canon/2-spec/`)         | ✅ yes — for mechanics                   |
+| What pieces *exist*? Their values, decks, scenarios, numbers? | **`booklet.ron`** (print master)   | ✅ yes — for components & numbers        |
+| What does the running game *currently do*?                    | the code (`crates/deckbound/`)     | ❌ no — implementation; may have defects |
+| Exploratory reasoning, history, alternatives                  | `notes/` notes                     | ❌ no — frozen, often stale              |
 
 The Charter, the Spec, and `booklet.ron` are **co-equal** — they don't outrank
 each other, they own **different questions**. The code and the notes are **never**
@@ -80,7 +80,7 @@ Resolve contradictions by **which question is being asked**, then apply the rule
   the Spec first (see change discipline below).
 - **A prose number disagrees with `booklet.ron`** → **`booklet.ron` wins.**
   Numbers written in prose are illustrative only; the print master is real.
-- **A `design/` note disagrees with the Spec or Charter** → **the note is stale.**
+- **A `notes/` note disagrees with the Spec or Charter** → **the note is stale.**
   Trust the Spec / Charter. Flag the note for a "superseded" banner; do not act on
   it.
 - **`booklet.ron` references something the Spec doesn't define** (a keyword,
@@ -133,7 +133,7 @@ always the human's decision, surfaced explicitly — never smuggled in as a
 
 - **Never** edit the Charter or a Spec's WHY/GUARANTEES to make a problem go away.
   Surface the conflict instead.
-- **Never** treat the code or a `design/` note as a source of truth.
+- **Never** treat the code or a `notes/` note as a source of truth.
 - **Never** hand-write rules text onto a card.
 - **Never** change a number and a rule in the same breath without telling the
   human you've done both.
@@ -148,13 +148,13 @@ always the human's decision, surfaced explicitly — never smuggled in as a
 
 ### Charter — *the intent*
 
-**`design/philosophy.md`** (the ten north stars). Answers *why*. Changes to it
+**`canon/1-charter.md`** (the ten north stars). Answers *why*. Changes to it
 are deliberate design acts, made on purpose and rarely. Every Spec rule should
 trace back to a Charter north star.
 
 ### Spec — *the mechanics*
 
-**`spec/`**. The canonical, precise statement of how every system works. Written
+**`canon/2-spec/`**. The canonical, precise statement of how every system works. Written
 as **RULE / WHY / GUARANTEES** so that mechanics and their intent live together
 and cannot drift apart, and so the intent-vs-mechanics classification above is
 always possible. The Spec owns the **vocabulary** (what every keyword means) and
@@ -183,23 +183,23 @@ is authoritative for **nothing**: where it disagrees with the Spec or the print
 master, the **code is the defect**. (Decision recorded by the designer: *Spec is
 intent; code is a defect report.*)
 
-### `design/` notes — *frozen exploration (not authoritative)*
+### `notes/` notes — *frozen exploration (not authoritative)*
 
-The ~35 documents under **`design/`** are the working-out of the design:
+The ~35 documents under **`notes/`** are the working-out of the design:
 reasoning, alternatives, history. They are **not** a source of truth, they were
 never meant to be, and several are now **stale**. They get exactly one kind of
-edit: a "**Superseded by `spec/…`**" banner. Do not act on them over the Spec.
+edit: a "**Superseded by `canon/2-spec/…`**" banner. Do not act on them over the Spec.
 
 ---
 
 ## Reading order
 
 1. **This document** — how truth and behavior work.
-2. **Charter** (`design/philosophy.md`) — the intent.
-3. **Spec** (`spec/`) — the mechanics.
+2. **Charter** (`canon/1-charter.md`) — the intent.
+3. **Spec** (`canon/2-spec/`) — the mechanics.
 4. **`booklet.ron`** — the actual pieces and numbers.
 
-Read `design/` notes only as *background*, and only after the above, knowing they
+Read `notes/` notes only as *background*, and only after the above, knowing they
 are non-authoritative.
 
 ---
@@ -215,7 +215,7 @@ When a system changes:
 3. **Regenerate** any human-readable component sheets from `booklet.ron`.
 4. **Update the code** and check it against the Spec; any gap is a code defect to
    fix.
-5. **Banner the superseded `design/` note(s)** with a pointer to the new Spec
+5. **Banner the superseded `notes/` note(s)** with a pointer to the new Spec
    section. Do **not** rewrite the note to match — it is frozen history.
 
 A change that updates code or data but not the Spec is **incomplete by
@@ -228,14 +228,14 @@ definition.**
 The Spec is **being written** and does not yet cover every system. Until a system
 has a Spec section, treat authority as follows:
 
-- **Tactical core (the Duel):** authoritative design is **`design/the-duel.md`**
+- **Tactical core (the Duel):** authoritative design is **`notes/the-duel.md`**
   plus this Spec's Duel section. The older stance system — **Strike / Block /
   Evade / Scheme** and **banked momentum** — is **superseded** and must not be
   used. Notes still describing it (`rulebook.md`, `keywords.md`,
   `mind-and-stances.md`, and parts of `decision-making.md`,
   `coordination-and-interruption.md`, `combat.md`, `zones.md`) are **stale on this
   point**.
-- **Stats / defense model:** **`design/stats.md`** and **`design/form-and-defeat.md`**
+- **Stats / defense model:** **`notes/stats.md`** and **`notes/form-and-defeat.md`**
   are current (three aspects; cut → bar → pool; one health track).
 - **Everything else:** trust `booklet.ron` for components/numbers and the
   most-recently-reconciled note for shape — but if it predates the Duel switch and

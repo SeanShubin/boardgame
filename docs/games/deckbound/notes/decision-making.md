@@ -31,7 +31,7 @@ than pure arithmetic.
 ## The three decision-makers
 
 A design north star: **Deckbound represents and rewards human intellect**
-(see [philosophy](philosophy.md)). Wherever a *human mind* is being represented —
+(see [philosophy](../canon/1-charter.md)). Wherever a *human mind* is being represented —
 a player, or a computer standing in for one — the choice is made by **actual
 reasoning**, not by drawing from a deck. **Decks are reserved for non-player
 environment creatures.** All three still perform the same physical act in an
@@ -56,7 +56,7 @@ would only be a way to fake what a real mind can simply do. Above all it has a
 and bluffing back; that adaptiveness is exactly why it must **compute live** rather
 than draw a fixed deck. (This stays feasible because the tactical exchange is
 deliberately **constrained to be computable** —
-see [philosophy §2](philosophy.md#2-computable-tactics-uncomputable-strategy).)
+see [philosophy §2](../canon/1-charter.md#2-computable-tactics-uncomputable-strategy).)
 
 This role is **optional and never required by the system**: a computer fills it
 in a digital game, another human fills it at a physical table, and in the default

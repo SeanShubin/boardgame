@@ -30,7 +30,7 @@ entirely new kinds of decks — racing an event deck that keeps raising the stak
 
 ## Design pillars
 
-The canonical north stars live in **[philosophy](philosophy.md)** — read that
+The canonical north stars live in **[philosophy](../canon/1-charter.md)** — read that
 first; it is the charter the rest of these notes must serve. In brief:
 
 1. **Represent and reward human intellect** — minds reason; only nature uses
@@ -107,7 +107,7 @@ first; it is the charter the rest of these notes must serve. In brief:
 
 **Foundations**
 
-- [Philosophy](philosophy.md) — the north stars; read this first.
+- [Philosophy](../canon/1-charter.md) — the north stars; read this first.
 - [Constraints](constraints.md) — no computer required, cards only, every agent
   bound by the same rules.
 - [Entities](entities.md) — the noun taxonomy: **Actor** (the umbrella), and the two
@@ -161,7 +161,7 @@ first; it is the charter the rest of these notes must serve. In brief:
 - [Sample combat (4 vs 5)](sample-round.md) — the current card-level play-by-play:
   all three aspects, the gauntlet, fear vs resolve, momentum and combos, tracked
   through the zones. **Start here.**
-- [Interactive tutorial](../tutorial.html) — the sample combat as a narrated,
+- [Interactive tutorial](../presentation/tutorial.html) — the sample combat as a narrated,
   Back/Next walkthrough (open in a browser; no build); the board illustrates each beat.
 - [Physical representation](physical-representation.md) — the sample combat rendered as
   actual cards and tokens: every card face, its starting zone, and when it moves — a

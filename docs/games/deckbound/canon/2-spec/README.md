@@ -2,11 +2,11 @@
 
 **Canonical for mechanics.** This is the precise statement of how Deckbound's
 systems work. It is a source of truth (see
-[`SOURCE-OF-TRUTH.md`](../SOURCE-OF-TRUTH.md)) — the code conforms to it, not the
+[`0-source-of-truth.md`](../0-source-of-truth.md)) — the code conforms to it, not the
 other way around. It owns **vocabulary and procedures**, not **numbers** (numbers
 live in [`booklet.ron`](../../../../crates/deckbound/data/booklet.ron)).
 
-> **AI assistants:** read [`SOURCE-OF-TRUTH.md`](../SOURCE-OF-TRUTH.md) first. In
+> **AI assistants:** read [`0-source-of-truth.md`](../0-source-of-truth.md) first. In
 > short: edit this Spec to change a *rule*; never to change a *number*. Classify
 > every proposal as a mechanics-fix (case 1), an invariant violation (case 2), or
 > an intent change (case 3) — using each rule's WHY and GUARANTEES.
@@ -33,7 +33,7 @@ motivated rule — one that carries its own rationale — over a merely short on
 treat a rule you cannot motivate as a smell. This is **Charter north star #10
 (conceptual integrity)**; theme is one engine of motivation (a rule that falls out of
 the fiction is re-derivable from the world), but a rule can equally be motivated by its
-consequence. See also [`SOURCE-OF-TRUTH.md`](../SOURCE-OF-TRUTH.md) — "Motivated rules."
+consequence. See also [`0-source-of-truth.md`](../0-source-of-truth.md) — "Motivated rules."
 
 Numbers appear only as *(appendix)* illustrations; the real values are in
 `booklet.ron` and are human-tuned.
@@ -47,16 +47,16 @@ authored.
 
 ## Coverage
 
-| System                                  | Spec status | Current design source if not yet specced                  |
-| --------------------------------------- | ----------- | --------------------------------------------------------- |
-| **The Clash** (tactical core)           | ✅ worked    | —                                                         |
-| **Defense model** (cut → bar → pool)    | 🟡 seeded    | `design/stats.md`, `design/form-and-defeat.md`            |
-| **Speed/Tempo + Mind/Focus**            | 🟡 seeded    | `design/speed-and-tempo.md`, `design/mind-and-stances.md` |
-| **Formation, reach & the gauntlet**     | ✅ worked    | —                                                         |
-| **Zones / exhaustion**                  | ⬜ stub      | `design/zones.md` *(needs post-Duel rewrite)*             |
-| **Aspects / the chord**                 | ⬜ stub      | `design/decks-and-aspects.md`                             |
-| **Agents** (Character vs Creature)      | ⬜ stub      | `design/entities.md`, `design/decision-making.md`         |
-| **Strategic layer** (world/event decks) | ⬜ stub      | `design/world-and-progression.md`                         |
+| System                                  | Spec status | Current design source if not yet specced                |
+| --------------------------------------- | ----------- | ------------------------------------------------------- |
+| **The Clash** (tactical core)           | ✅ worked    | —                                                       |
+| **Defense model** (cut → bar → pool)    | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`            |
+| **Speed/Tempo + Mind/Focus**            | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md` |
+| **Formation, reach & the gauntlet**     | ✅ worked    | —                                                       |
+| **Zones / exhaustion**                  | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*            |
+| **Aspects / the chord**                 | ⬜ stub      | `notes/decks-and-aspects.md`                            |
+| **Agents** (Character vs Creature)      | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`         |
+| **Strategic layer** (world/event decks) | ⬜ stub      | `notes/world-and-progression.md`                        |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative.
@@ -67,7 +67,7 @@ exhaustive · ⬜ stub = headers + intent only, not yet authoritative.
 
 The atom of combat: two Actors **predicting each other** across a hidden, simultaneous
 mix-up played with cards. Design background:
-[`design/the-duel.md`](../design/the-duel.md).
+[`notes/the-duel.md`](../notes/the-duel.md).
 
 > **History.** This section formerly specced a stance/Edge duel (Marshal · Unleash ·
 > Overwhelm · Parry, tracked Edge) and then an interim six-move *charge* duel. Both are
@@ -97,12 +97,12 @@ are struck**. The kit is four cards, always complete:
 
 **Resolution table** (result shown for the row player):
 
-| you ↓ \ them → | **Gather** | **Evade**         | **Strike**        | **Anticipate** |
-| -------------- | ---------- | ----------------- | ----------------- | -------------- |
-| **Strike**     | you hit    | your Force → them | trade (both hit)  | you hit        |
-| **Anticipate** | —          | you hit           | you're hit        | —              |
-| **Gather**     | +1 Force   | +1 Force          | you're hit        | +1 Force       |
-| **Evade**      | —          | —                 | their Force → you | you're hit     |
+| you ↓ \ them → | **Gather** | **Evade**         | **Strike**                | **Anticipate** |
+| -------------- | ---------- | ----------------- | ------------------------- | -------------- |
+| **Strike**     | you hit    | your Force → them | trade (both hit)          | you hit        |
+| **Anticipate** | —          | you hit           | you're hit                | —              |
+| **Gather**     | +1 Force   | +1 Force          | you're hit                | +1 Force       |
+| **Evade**      | —          | —                 | their Force → you (min 1) | you're hit     |
 
 *Enders* (a strike connected → the duel ends): **you hit / you're hit / trade**. Everything
 else is the **non-connecting dance** — the duel continues and Force builds.
@@ -110,7 +110,9 @@ else is the **non-connecting dance** — the duel continues and Force builds.
 **Force.** A single count per side (no face-down state). Each Force **doubles** the connecting
 hit: damage = `base × 2^Force`, routed through the armor/toughness pipeline (§2). **Gather**
 adds +1. The **only** way Force changes hands is **Strike into Evade**: you commit a Strike,
-they slip it, and your Force **goes to them** — your own momentum turned against you. Force is
+they slip it, and your Force **goes to them** — your own momentum turned against you — and the
+evader **always gains at least 1** Force from the slip, even when the Striker had none (a clean
+dodge always buys momentum). Force is
 **per-duel** (it resets each duel); only **Body** persists between duels. There is **no Force
 cap** (unlimited) — building is bounded in practice by ends-on-strike (the duel ends the
 instant a blow connects), not by a ceiling. The kit is **infinite-replay**: every card is
@@ -139,7 +141,7 @@ them (north stars #2 computable, #4 asymmetry, #10 re-derivable).
 
 **MANUAL.** *Each beat pick a card: Strike (hit where they are) or Anticipate (where they'll
 go) to attack; Gather to hold your ground and build Force; Evade to dodge. A connecting strike
-ends the duel; slip a Strike with Evade and you steal their Force.*
+ends the duel; slip a Strike with Evade and you steal their Force (always at least 1).*
 
 ### 1.1 Edge is per-duel, public, all-or-nothing, linear
 
@@ -427,8 +429,8 @@ determinism without manufacturing a contest the design does not need.
 
 ## 2. Defense model — *cut → bar → pool* 🟡
 
-Design source: [`design/form-and-defeat.md`](../design/form-and-defeat.md),
-[`design/stats.md`](../design/stats.md). Seeded below; not yet exhaustive.
+Design source: [`notes/form-and-defeat.md`](../notes/form-and-defeat.md),
+[`notes/stats.md`](../notes/stats.md). Seeded below; not yet exhaustive.
 
 ### 2.1 One maintained meter
 
@@ -474,7 +476,7 @@ yet specced. Numbers live in `booklet.ron`.)*
 
 ## 3. Speed/Tempo + Mind/Focus — *the two breadth budgets* 🟡
 
-Design source: [`design/speed-and-tempo.md`](../design/speed-and-tempo.md).
+Design source: [`notes/speed-and-tempo.md`](../notes/speed-and-tempo.md).
 
 Tempo and Focus are **pure breadth** — they decide *which duels you are a full participant
 in*, never *which cards you hold* (the kit is always complete, §1.0). They **mirror in sizing
@@ -627,7 +629,7 @@ wall a real Tempo tax and a fast runner genuinely slippery (Speed-vs-Speed).
 
 *Stub — and flagged for rewrite.* Form / Potential / Active; face up/down;
 Lasting / Fleeting; **exhaustion = predictability**. Source:
-[`design/zones.md`](../design/zones.md). **Needs:** the post-Duel rewrite — the old
+[`notes/zones.md`](../notes/zones.md). **Needs:** the post-Duel rewrite — the old
 self-returning stances (Block/Evade/Scheme) no longer exist, so predictability-as-
 resource must be re-pinned to the **maneuver/Action cards** you Unleash with. This
 is the biggest known mechanical hole (the orphaned exhaustion economy).
@@ -637,21 +639,21 @@ is the biggest known mechanical hole (the orphaned exhaustion economy).
 *Stub.* A character is a set of never-shuffled decks; an action is one card per
 aspect, combined commutatively; only Mind (the stance) is rock-paper-scissors.
 Card kinds: numberless, modifier (attachment order matters), passive. Source:
-[`design/decks-and-aspects.md`](../design/decks-and-aspects.md).
+[`notes/decks-and-aspects.md`](../notes/decks-and-aspects.md).
 
 ## 7. Agents — Character vs Creature ⬜
 
 *Stub.* The line is **theory of mind**: a Character reasons and predicts you back
 (two-way); a Creature draws from a behavior deck (its instinct = its decision,
 one-way), reshuffles, never exhausts. Source:
-[`design/entities.md`](../design/entities.md),
-[`design/decision-making.md`](../design/decision-making.md).
+[`notes/entities.md`](../notes/entities.md),
+[`notes/decision-making.md`](../notes/decision-making.md).
 
 ## 8. Strategic layer ⬜
 
 *Stub.* World / scenario / enemy / **event** decks; regions; location level-ladders
 with one "cleared" marker; the balance budget (challenge tuned to party *total*);
 god-vs-party equivalence; doom-to-mastery. Source:
-[`design/world-and-progression.md`](../design/world-and-progression.md). **Many
+[`notes/world-and-progression.md`](../notes/world-and-progression.md). **Many
 open structural questions** (map representation, event-deck cadence, multi-actor
 simultaneous resolution).

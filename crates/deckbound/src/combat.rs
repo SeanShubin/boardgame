@@ -2,7 +2,7 @@
 //! free-hits, the gauntlet), and playing action cards (AoE, Rally, …).
 //!
 //! These are the round-loop mechanics from
-//! `docs/games/deckbound/design/speed-and-tempo.md` and `coordination-and-interruption.md`:
+//! `docs/games/deckbound/notes/speed-and-tempo.md` and `coordination-and-interruption.md`:
 //! **tempo** caps offense, **focus** caps active defense, and what focus can't cover
 //! **free-hits**. The interactive duel ([`crate::duel`]) is the engagement atom.
 

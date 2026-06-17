@@ -1,6 +1,6 @@
 //! Combatants — **Actors** — and how non-player ones decide.
 //!
-//! An Actor is the umbrella (see `docs/games/deckbound/design/entities.md`): a
+//! An Actor is the umbrella (see `docs/games/deckbound/notes/entities.md`): a
 //! **Character** is human-driven (improvises); a **Creature** follows a scripted
 //! `Behavior` (a **decision deck** of moves + a target rule). Both carry the full stat
 //! block — [`Offense`](crate::stats::Offense) and [`Defense`](crate::stats::Defense) — plus
