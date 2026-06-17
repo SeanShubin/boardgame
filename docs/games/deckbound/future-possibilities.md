@@ -129,3 +129,85 @@ mainly hurts making many *distinct* foe/hero feels.
    Power / damage type / reach / decks? (Determines how much P2 would really cost co-op.)
 4. Do players experience the **overextension** lesson as a highlight (keep separation) or
    as a feel-bad (maybe combine)?
+
+---
+
+## 2. Commitment-order battle system (replace front/back formation)
+
+- **Status:** Exploring — promising; a candidate to **supersede §4 Formation** (the
+  front-line/back-line + gauntlet system). Raised 2026-06-17.
+- **Scope:** the breadth/positioning layer. Does **not** touch the Clash.
+
+### The idea
+
+Replace spatial lines with a **commitment order**. Roles become *when you commit*, not
+*where you stand* — which is what finally earns the Vanguard/Skirmisher/Reserve names (an
+**information gradient**: commit blind → choose with partial info → choose with full info).
+
+Each round:
+
+1. **Declare Vanguard, in order, secretly** — a face-down stack with **bluff/decoy cards**,
+   so the opponent can't read how many Vanguard you committed or in what order.
+2. **Anyone not Vanguard is Reserve.**
+3. **Pair off the Vanguard by Speed** — the two front lines clash (tough units meeting tough
+   units).
+4. **Unpaired Vanguard, or Vanguard who refuse their pairing (take a free hit), become
+   Skirmishers.**
+5. **Skirmishers choose targets** (they slip past to hit the vulnerable).
+6. **Reserve choose targets** *with knowledge of the Skirmishers' choices.*
+7. All duels are now fixed → **resolve order-independently** (§1.9 property preserved).
+
+So targets are chosen in info order: **Vanguard (blind) → Skirmishers → Reserve (informed).**
+
+### Hard invariant — keep the gradient at the *round* scale
+
+The gradient must never leak reveal-first into the **Clash**. "Later = more info" may only
+mean *more of the already-public, resolved board* — never "I saw the opponent's choice this
+phase before making mine." Keep each phase **cross-side simultaneous** (both sides' Vanguard
+declare at once; both sides' Skirmishers at once; both sides' Reserve at once). Within a side
+your Reserve naturally acts after your Skirmishers — that's the point — but between opponents
+no phase reveals first. The Clash itself stays hidden-simultaneous.
+
+### Q1 resolution — keep Tempo / Focus **split**
+
+This system makes the split *cleaner*, with new crisp meanings:
+
+- **Tempo** = engagements you **initiate** — target-picks spent across
+  Vanguard/Skirmisher/Reserve (offense breadth, ordered along the gradient).
+- **Focus** = incoming targetings you can **answer** as a real (defensive, survive-only)
+  duel; overflow resolves as **free hits** (the "refuse → take a hit" valve generalized).
+
+The decisive argument is information-theoretic: in this design **Tempo is hidden and
+bluffable** (the face-down Vanguard stack) while **Focus is public** (a defensive capacity
+the Reserve's informed choice depends on being known). You cannot merge a hidden stat with a
+public one without incoherence — so **keep them split.** Merge only if you also flatten the
+initiate-vs-answer asymmetry (make every answered duel able to *kill*, not just survive);
+today defensive duels are survive-only, so the asymmetry — and the split — stays.
+
+### Q2 resolution — "extra actions" = engagements from the Tempo pool
+
+Model an extra action as an extra engagement, allocated across the three phases. A grunt has
+one; a god has many, and the gradient is the **value curve**:
+
+- Vanguard action — cheap, blind, but *forces* a Speed-pairing on the enemy.
+- Skirmisher action — mid, partial info, free target choice.
+- Reserve action — premium, full info, but only leftover/exposed targets remain.
+
+A single fast hero can flow through phases (commit one blow blind, then read the board and
+pick more targets later). The "lone god engages the swarm" fantasy falls out of the
+structure, and stays balanced because the god still needs **Focus** to survive everything
+that targets it back — big Tempo *and* big Focus = Kael's current profile. Powerscaling is
+preserved without a new subsystem.
+
+### Open question (under active discussion) — *why be Vanguard? how does Vanguard protect Reserve?*
+
+Reserve has strictly more information, so without a forcing function everyone bluffs an
+empty Vanguard and holds for Reserve. The intended fiction resolves this: **the Vanguard
+protects the Reserve.** Reserve are the high-impact, fragile pieces (support buffers,
+debuffers, ranged glass cannons — *vulnerable but decisive*); Skirmishers are what slips in
+to assassinate them; Vanguard is what stops the Skirmishers. A party that surrenders target
+choice — too few/too fragile Vanguard — lets the opponent freely pick which Reserve to
+assassinate and is annihilated; a party that fields **durable units who can take a hit to
+protect the Reserve** prevails. The mechanical representation of "Vanguard protects Reserve"
+is the part still being designed (see chat: candidate is *pairing occupies enemy attackers*
++ *interposition redirects a Skirmisher's blow onto a durable Vanguard*, paid in Focus).

@@ -52,7 +52,7 @@ authored.
 | **The Clash** (tactical core)                     | ✅ worked    | —                                                                          |
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`                               |
 | **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                    |
-| **Formation, reach & the gauntlet**               | ✅ worked    | —                                                                          |
+| **The battle — roles & commitment order**         | 🟡 seeded    | §4 specced; code still implements the superseded formation (a defect)      |
 | **Zones / exhaustion**                            | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*                               |
 | **Aspects / the chord**                           | ⬜ stub      | `notes/decks-and-aspects.md`                                               |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                            |
@@ -533,6 +533,13 @@ single-kill-vector property holds.
 - Fast attackers cost more Focus to cover (inverse telegraph); overflow free-hits.
 - "Negate many" is even in total across builds, capped per body.
 
+Under the §4 battle system, Focus also pays for **interposition** — stepping a Vanguard in
+front of a Skirmisher to protect a **Reserve** (cost = the Skirmisher's Speed). The
+interposer's **free strike** on a Skirmisher who *shoves past* is a push-through
+**attack-of-opportunity**, not a contradiction of "a self-defense deals no damage": defending
+*yourself* is still survive-only; the free strike is the price the runner pays to bypass a
+blocker.
+
 *(SEEDED — exact cover/drain numbers are open; `booklet.ron` / appendix.)*
 
 ### 3.3 Overextension — *removed*
@@ -545,6 +552,13 @@ single-kill-vector property holds.
 > pool negative still happens and is your last, but it carries **no extra penalty**.
 
 ### 3.4 The round — orchestration (PvE & PvP)
+
+> **SUPERSEDED by §4 (commitment-order battle system).** The round is no longer a
+> player-phase/foe-phase loop over front/back formation; it is the **Vanguard → Skirmisher →
+> Reserve** declaration + three-phase resolution in §4. **Tempo (§3.1) and Focus (§3.2)
+> remain the currencies** (costs = the opponent's Speed, pay-after), and order-independence is
+> preserved *per phase*. The PvE/PvP text below is kept for design history; where it conflicts
+> with §4, §4 wins.
 
 **RULE.** Combat is a sequence of **rounds**. Two orchestrations share the same duel
 resolver (§1.0), economy (§3.1–3.2), and formation/reach layer (§4); which runs depends on
@@ -593,42 +607,176 @@ phase.
 
 ---
 
-## 4. Formation, reach & the gauntlet ✅
+## 4. The battle — roles, commitment order & protection 🟡
 
-**RULE.** Each side holds a **front line** and a **back line** (unordered sets). Formation is
-**public** and **shifts freely between rounds** (front↔back) — a **free action**, so it is
-known *before* targeting. **A side must always keep at least one living Actor in its front
-line:** a configuration with an empty front line is **illegal**, and the interface never
-offers a shift that would produce one (so the last front-liner can never drop to the back).
-Reach gates who you can engage:
+> **History.** This section formerly specced a **front-line / back-line + gauntlet**
+> formation (public lines, melee dive through the wall, ranged bypass, "front line never
+> empty"). It is **superseded** by the **commitment-order** battle system below, in which
+> roles are *when you commit*, not *where you stand*. Two consequences worth stating
+> plainly: (1) the old **"front line never empty"** hard rule is **gone** — fielding no
+> Vanguard is now *legal but strategically self-defeating*, not illegal; (2) the **code
+> still implements the old formation** (front/back lines, reposition, HeroDive/FoeDive
+> gauntlet) and the §3.4 PvE foe-phase, so **the code is now a known defect** to reconcile
+> against this section (per `0-source-of-truth.md`: the code is a defect report). Old text
+> is in git history.
 
-- **Melee** reaches **front↔front** directly. To reach an enemy **back-liner**, a
-  **front-line** attacker must **dive** — back-liners cannot dive.
-- **A dive runs the gauntlet of the opposing front line.** Each enemy **guard** (front-liner)
-  may spend **Tempo** to **intercept** the diving **runner**. Per interception the runner
-  chooses: **push through** — take the guard's **base strike** automatically (a free hit,
-  resolved *before* reaching the target) and pay **the guard's Speed** in Tempo to pass; or
-  **halt** — abandon the dive and duel that guard instead. If pushing drives the runner's
-  **Tempo negative** (it lacks the **combined Speed** of the intercepting guards), it is
-  **stopped** — it cannot reach its target this round.
-- **Ranged** (an actor/weapon property, available on **either** line) reaches the enemy back
-  line **directly, bypassing the gauntlet**.
+**RULE.** A skirmish is a sequence of **rounds**. Each round has a **declaration stage** (four
+hidden commit→reveal cycles that build the engagement graph in *information order*) and a
+**resolution stage** (three phases that mirror the roles). Every cycle is **cross-side
+simultaneous**: both sides commit hidden, then reveal together — so the gradient is "later
+choosers see more *already-revealed* board," never "a side reveals first."
 
-**WHY.** Formation gives the **wall / runner / artillery** triangle: a front line shields the
-squishy back line from **melee** (the gauntlet drags runners) but **never from ranged** — so
-you need your own ranged, or to break through, to answer their back line. Public formation
-keeps targeting a clean read; routing the dive cost through **combined Speed** makes a thick
-wall a real Tempo tax and a fast runner genuinely slippery (Speed-vs-Speed).
+*Declaration — four cycles (each: both sides commit hidden → reveal):*
+
+1. **Vanguard.** Each side commits some Actors to its **Vanguard** as a **face-down, ordered
+   stack salted with decoy cards** (hiding how many and in what order). Everyone uncommitted is
+   **Reserve**. → **Reveal 1:** Vanguard/Reserve split is public; **Speed-pairings** are
+   computed (deterministic, public) — equal-Speed Vanguard pair off; surplus Vanguard with no
+   opposing match are **Skirmishers**.
+2. **Skirmisher orders.** Each side commits, per front-liner: any **refusal** of a pairing
+   (decline it, take a free hit, become a Skirmisher), and for every Skirmisher its **target**
+   plus its **push/halt intent** (whether it will shove past a blocker). → **Reveal 2:** the
+   Skirmisher graph (who raids whom, who's pushing) is public.
+3. **Interposition.** Each defender commits which Vanguard **interpose** against Skirmishers
+   aimed at its Reserve — spend **Focus = the Skirmisher's Speed** to redirect the assault onto
+   that Vanguard; multiple interposers **stack**. → **Reveal 3:** interpositions public. With
+   the push/halt intents from cycle 2, the wall outcome is now determined (halt → fight the
+   Vanguard; push → eat the interposers' **free strikes first**, reach the Reserve only if it
+   survives).
+4. **Reserve targets.** Each side's Reserve commits targets, knowing the Skirmisher graph. →
+   **Reveal 4:** the **full engagement graph is fixed.**
+
+**Targeting matrix.**
+
+| Chooser        | May target                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| **Vanguard**   | enemy **Vanguard** (paired by Speed)                                                         |
+| **Skirmisher** | enemy **Vanguard, Reserve, or Skirmisher** (a Reserve only by beating/pushing interposition) |
+| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** enemy Reserve           |
+
+**In-round protection is the Vanguard's alone.** Because phases resolve in order, *only*
+Vanguard **interposition** (Vanguard phase, earliest) can save a Reserve **this round** — it
+can kill the raider before the Skirmisher phase. **Skirmisher → Skirmisher** (same phase, both
+land) and **Reserve → Skirmisher** (Reserve phase, last) are **attrition**: they deny the
+raider *next* round, they do not shield the target *this* one.
+
+**Resolution — three phases, each order-independent.** Phases run in role order; within a phase
+every Actor acts from the **phase-start state** with downs finalized at a **phase-end tally**
+(the §1.9 round tally, scoped to the phase), so the order duels resolve in never changes a
+phase's outcome:
+
+- **Vanguard phase** — all front-line combat at once: pairings, **interpose free-strikes on
+  pushing Skirmishers**, and halted-Skirmisher duels. Who survives the wall is decided here.
+- **Skirmisher phase** — surviving Skirmishers strike their targets (Reserve assassinations,
+  Vanguard gangs, Skirmisher trades).
+- **Reserve phase** — Reserve act. *A Reserve slain in the Skirmisher phase never reaches this
+  phase* — the assassination **interrupts** it.
+
+Then **refresh** (Tempo/Focus reset; Body persists; round++).
+
+**Reveal timeline — what is hidden until when.**
+
+| Hidden information                                                               | Revealed at       |
+| -------------------------------------------------------------------------------- | ----------------- |
+| Vanguard count & composition (the bluff)                                         | Reveal 1          |
+| Refusals; Skirmisher targets & push/halt intent                                  | Reveal 2          |
+| Interpositions                                                                   | Reveal 3          |
+| Reserve targets                                                                  | Reveal 4          |
+| Each fighter's **Clash card** that beat                                          | per beat, in-duel |
+| *Always public:* stats (Speed/Mind/Body), the **Focus pool**, each Speed-pairing | from the start    |
+
+**Costs.** Every initiated engagement costs **Tempo = the target's Speed** (§3.1); every
+defensive intervention — self-defense or interpose — costs **Focus = the attacker's Speed**
+(§3.2). Pay-after applies. **Tempo is hidden** (the Vanguard stack bluffs your commitment);
+**Focus is public** (the informed cycles depend on defensive state being known).
+
+**WHY.** Roles become a re-derivable **information gradient** — Vanguard commit blind,
+Skirmishers choose with partial knowledge, Reserve with the most — so the names follow from
+intent (north star #10). The structure makes **"Vanguard protects Reserve"** load-bearing: the
+*only* path to the enemy's decisive-but-fragile Reserve is a Skirmisher who beats the wall, and
+Skirmishers exist *only* as committed Vanguard — so **to threaten their back you must expose
+your front**, and to defend your back you must field a wall. The all-Reserve hoard is dominated
+(it can neither produce Skirmishers nor interpose), which is why no "must field a Vanguard"
+rule is needed. The **hidden Vanguard count** makes wall capacity a bluff (matching-pennies on
+commitment). **Order-independence by phase** keeps each phase simple *and* hands you the "kill
+the caster before it fires" interrupt for free (Skirmisher phase precedes Reserve phase). Speed
+reads as **slipperiness** — the tax others pay to engage or stop you — so fast assassins punch
+thin walls and slow casters are cheap to kill.
 
 **GUARANTEES.**
-- The back line is reachable by **melee only through the front line** (dive + gauntlet), by
-  **ranged always** (bypass).
-- The gauntlet is a **Tempo economy**, not an ordering effect: a runner gets through iff its
-  Tempo ≥ the intercepting guards' combined Speed, eating one base hit per guard pushed.
-- Formation is public and free to shift — positioning is strategy, never a hidden surprise.
-- **The front line is never empty.** A shift may not move a side's last living front-liner to
-  the back, so an all-back formation is unreachable and reach (which keys off front-line
-  occupancy) stays well-defined. The UI suppresses any reposition that would empty the front.
+- **Reserve is reachable only through the wall** — never by enemy Reserve, never by paired
+  Vanguard; only by a Skirmisher who halts into or pushes past interposition.
+- **The all-Reserve hoard loses:** no Vanguard → no Skirmishers (can't threaten the enemy
+  Reserve) **and** no interposers (can't protect your own).
+- **Order-independent within each phase** (phase-start state, phase-end tally); phases always
+  run Vanguard → Skirmisher → Reserve.
+- **No reveal-first:** every declaration cycle is **cross-side simultaneous** (both commit, then
+  reveal); hidden information becomes public only at its cycle's **reveal point** (timeline
+  above); the gradient is round-scale (target selection), never beat-scale.
+- **Cannon/wall axis preserved:** Tempo (hidden, offense) and Focus (public, defense) stay
+  split; both costs scale with the **opponent's Speed**.
+
+**MANUAL.** *Secretly commit your Vanguard (with bluffs); the rest are Reserve. Vanguard pair
+off by Speed; the unpaired and the refusers become Skirmishers who hunt the enemy Reserve.
+Block a Skirmisher by interposing a Vanguard (spend Focus = its Speed) — it fights your wall or
+eats a hit shoving past. Reserve strike the enemy's front and aid allies, but can't touch the
+enemy Reserve. Resolve Vanguard, then Skirmishers, then Reserve.*
+
+**Still unspecified (open dials — pin before/with implementation).** The structure (phases,
+targeting, reveal order) is settled; these details are not:
+
+1. **Pairing algorithm & Speed ties** — exactly how Vanguard match (highest-vs-highest down the
+   list?) and how equal-Speed ties resolve (stack order? arbitrary-but-consistent?).
+2. **Refusal fallout** — when a Vanguard refuses its pairing, what happens to its *now-partnerless
+   opponent*? (Does it also free up into a Skirmisher, hold as an idle Vanguard, or get
+   re-paired?) And the exact **free-hit** the refuser eats.
+3. **Vanguard's Tempo cost** — does *committing* a Vanguard cost Tempo (= its pair's Speed), or
+   is the front clash the free baseline and only Skirmisher/Reserve target-picks cost Tempo?
+4. **Push-through surcharge** — is eating the interposers' free strikes the *whole* cost, or does
+   pushing also cost Tempo (= interposers' combined Speed, as the old gauntlet charged)?
+5. **Interposition cap** — may any number of Vanguard stack on one Skirmisher, or is it capped?
+6. **Reserve self-defense** — can a Reserve spend Focus to defend itself (survive-only) when a
+   Skirmisher reaches it un-interposed, or does it simply eat the hit?
+7. **Strike shape: Clash vs single hit** — is a Skirmisher→Vanguard gang or a Reserve→front
+   attack a full **Clash** (beats), or a single ranged/opportunity **strike** the target may
+   Focus-defend or eat? (The old system had ranged = a direct strike.)
+8. **Vanguard stack order** — does the declared order carry any mechanical weight (tie-breaks,
+   reveal sequencing) or is it pure count-obfuscation?
+9. **Reserve "aid allies" kit** — what buffs/heals/debuffs Reserve actually deliver — depends on
+   the still-stub **Aspects / action-card** layer (§5–§6).
+10. **Push/halt timing** — kept as **pre-committed intent** (cycle 2) to hold the cycle count at
+    four; a fully *reactive* push/halt (decide after seeing interposition) would add a 5th
+    reveal cycle. Open whether the extra reactivity is worth the extra cycle.
+11. **Acting across phases** — the cap on one Actor doing several things (a Vanguard that pairs
+    *and* interposes; a multi-action god across cycles) — governed by the Tempo/Focus budgets,
+    but the exact limits are a dial.
+
+### 4.1 Count-adaptivity — the system degrades to the choices that exist
+
+**RULE.** The commitment layer is **count-adaptive**: any phase or choice with a **single legal
+option resolves automatically**, presenting no decision. Roles, the bluff stack, Skirmisher
+targeting, interposition, and Reserve targeting appear only when party size makes more than one
+option legal. Concretely:
+
+- **1 v 1** — each side has one Actor; the only non-degenerate line is to commit it as Vanguard,
+  so the two pair and fight a **single Clash**. No bluff stack, no Skirmisher, no Reserve, no
+  interposition — it is exactly the plain duel (the tutorial case).
+- **Small parties (2–3)** — only the live choices surface: the Vanguard declaration is a real
+  choice once you have ≥2 Actors; **interposition** is offered only when a Skirmisher actually
+  targets one of your Reserve; **Reserve targeting** only when you have a Reserve and a legal
+  target exists.
+- **Larger parties** — the full machinery (hidden counts with decoys, multiple Skirmishers,
+  stacked interposition).
+
+**WHY.** Complexity should scale with the number of bodies. The protection layer only *means*
+something when you have an ally to protect, so it must be invisible until then — keeping 1 v 1
+the clean Clash and ensuring the interface never shows an option that cannot matter at the
+current head-count.
+
+**GUARANTEES.**
+- 1 v 1 reduces to the §1.0 Clash with **zero** added decisions.
+- A choice is presented **iff** it has ≥2 legal options; single-option phases auto-resolve.
+- Adding bodies only *adds* choices; it never changes how the smaller case played.
 
 ## 5. Zones / exhaustion ⬜
 
