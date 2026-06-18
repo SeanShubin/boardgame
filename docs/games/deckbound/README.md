@@ -23,6 +23,12 @@ The documentation is split by **authority**:
   decision. Neither canon nor frozen notes.
 - **[scenario-plan.md](scenario-plan.md) — combat content blueprint.** The authored target for
   the rebuilt combat: cast, tutorials, and scenarios that realize §1/§3/§4.
+- **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
+  being worked out ahead of graduating onto the Spec —
+  [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,
+  clean-slate deck-as-stats characters), [zones-exhaustion-design.md](zones-exhaustion-design.md)
+  (the card zone/exhaustion machinery + resources, i.e. Spec §5), and
+  [reference-scenario.md](reference-scenario.md) (a full-game balance harness, maintained as a test).
 - **[roadmap.md](roadmap.md) — undefined mechanics & planned features.** A living to-do
   list of what doesn't exist yet (geography, travel, loot, progression, world events,
   run-level victory/defeat; plus features like a human-emulating AI, an in-game
