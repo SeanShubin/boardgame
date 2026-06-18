@@ -1,7 +1,6 @@
 //! The booklet: loads cards, traits, actors, and scenarios from `data/booklet.ron` and
 //! builds [`Actor`]s. All numbers live in data so they retune without recompiling the engine.
 
-use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
@@ -9,7 +8,8 @@ use serde::Deserialize;
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
 use crate::cards::Card;
 use crate::duel::Move;
-use crate::stats::{Aspect, DamageType, Defense, Offense};
+use crate::form::{Form, StatCard};
+use crate::stats::{Aspect, DamageType};
 
 #[derive(Debug, Deserialize)]
 struct Catalog {
@@ -291,36 +291,39 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         .find(|a| a.name == name)
         .unwrap_or_else(|| panic!("booklet has no actor named {name:?}"));
 
-    let mut defense = Defense::new(c.body, c.toughness, c.resolve, c.mind);
-    let mut armor: BTreeMap<DamageType, u32> = BTreeMap::new();
-    let mut ward: BTreeMap<DamageType, u32> = BTreeMap::new();
+    // Stats-as-deck (§2.3/§4.3): the actor's stat block is read off its **Form** — a fundamental
+    // card (its base stats) plus attachment cards (its traits). Number-preserving: this derives
+    // exactly the old block. The booklet schema migration (fundamental cards as data) is A.3.
+    let mut form = Form::new(vec![StatCard {
+        name: format!("{} (base)", c.name),
+        power: c.power,
+        precision: c.precision,
+        speed: c.speed,
+        spirit: c.spirit,
+        body: c.body,
+        toughness: c.toughness,
+        resolve: c.resolve,
+        mind: c.mind,
+        ..Default::default()
+    }]);
     for tname in &c.traits {
         let t = cat
             .traits
             .iter()
             .find(|t| &t.name == tname)
             .unwrap_or_else(|| panic!("booklet has no trait named {tname:?}"));
-        for (dt, v) in &t.armor {
-            *armor.entry(*dt).or_insert(0) += v;
-        }
-        for (dt, v) in &t.ward {
-            *ward.entry(*dt).or_insert(0) += v;
-        }
-        defense.resolve += t.resolve;
-        defense.mind += t.mind;
-        if let Some(k) = t.keystone {
-            defense.keystone = k;
-        }
+        form.cards.push(StatCard {
+            name: t.name.clone(),
+            armor: t.armor.clone(),
+            ward: t.ward.clone(),
+            resolve: t.resolve,
+            mind: t.mind,
+            keystone: t.keystone,
+            ..Default::default()
+        });
     }
-    defense.armor = armor;
-    defense.ward = ward;
-
-    let offense = Offense {
-        power: c.power,
-        precision: c.precision,
-        speed: c.speed,
-        spirit: c.spirit,
-    };
+    let offense = form.offense();
+    let defense = form.defense();
 
     let driver = if c.driver == "hero" {
         Driver::Human
