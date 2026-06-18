@@ -1,25 +1,15 @@
 //! Data-driven cards & effects.
 //!
-//! A **Stance** (the duel move) lives in [`crate::duel`]; an **action card** is
-//! *what you Unleash with* — its primary effect, scaled by Edge. Cards are loaded
-//! from `data/booklet.ron`, so numbers retune without recompiling. A card's
-//! magnitude flows through the [`crate::stats`] cut→bar→pool pipeline.
+//! A Clash **Move** lives in [`crate::duel`]; an **Action card** carries effect(s) played in the
+//! round. Each card declares a **zone behavior** ([`ZoneBehavior`], §5.3: Return / Spend / Lasting)
+//! and optional **tags** (charge/combo interaction, §5.4). Cards are loaded from
+//! `data/booklet.ron`, so numbers retune without recompiling; a card's magnitude flows through the
+//! [`crate::stats`] cut→bar→pool pipeline.
 
 use serde::Deserialize;
 
 use crate::stats::DamageType;
-
-/// What happens to a played card after it resolves.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Default)]
-pub enum Lifecycle {
-    /// Stays in Active, working, until removed.
-    Lasting,
-    /// Resolves once, then turned face down (spent).
-    #[default]
-    Fleeting,
-    /// Returns to hand after resolving (defensive/setup).
-    SelfReturn,
-}
+use crate::zones::ZoneBehavior;
 
 /// A single effect a card can carry. Edge scales the **primary** (first) effect's
 /// natural unit (+1 per Edge); see [`Card::primary_damage`].
@@ -57,7 +47,7 @@ pub enum Effect {
     Confuse { focus: u32 },
 }
 
-/// An action card: its primary effect, how many foes it hits, and its lifecycle.
+/// An Action card: its effect(s), how many foes it hits, its §5 zone behavior, and tags.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Card {
     pub name: String,
@@ -72,8 +62,12 @@ pub struct Card {
     /// for now; positioning is approximated.
     #[serde(default = "melee")]
     pub reach: [u32; 2],
+    /// §5.3 — what the card does to itself after it is played (default **Return** to Hand).
     #[serde(default)]
-    pub lifecycle: Lifecycle,
+    pub zone: ZoneBehavior,
+    /// §5.4 — type tags for charge/combo interaction (e.g. `["Charge(fire)"]`). Empty by default.
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// A passive ability (a §4 power detected by name) rather than a played effect card.
     #[serde(default)]
     pub passive: bool,
@@ -141,7 +135,8 @@ mod tests {
             text: String::new(),
             targets: 5,
             reach: [2, 2],
-            lifecycle: Lifecycle::Fleeting,
+            zone: ZoneBehavior::Spend,
+            tags: vec![],
             passive: false,
             effects: vec![Effect::Damage {
                 power: 5,

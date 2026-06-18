@@ -217,10 +217,10 @@ fn apply_clicked_action<G: Game + Clone>(
         // The action list is a pure function of the unchanged state, so the
         // index captured when the button was built is still valid here.
         let actions = game.0.legal_actions(&state.0);
-        if let Some(action) = actions.get(button.0).cloned() {
-            if game.0.apply(&mut state.0, &action).is_ok() {
-                redraw.0 = true;
-            }
+        if let Some(action) = actions.get(button.0).cloned()
+            && game.0.apply(&mut state.0, &action).is_ok()
+        {
+            redraw.0 = true;
         }
     }
 }
@@ -239,12 +239,11 @@ fn cancel_on_key<G: Game + Clone>(
     if help.0 || rules.0 {
         return;
     }
-    if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
-        if let Some(action) = game.0.cancel_action(&state.0) {
-            if game.0.apply(&mut state.0, &action).is_ok() {
-                redraw.0 = true;
-            }
-        }
+    if (keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace))
+        && let Some(action) = game.0.cancel_action(&state.0)
+        && game.0.apply(&mut state.0, &action).is_ok()
+    {
+        redraw.0 = true;
     }
 }
 

@@ -20,7 +20,7 @@ pub mod stats;
 pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
-pub use cards::{Card, Effect, Lifecycle};
+pub use cards::{Card, Effect};
 pub use duel::{Move, Side, resolve};
 pub use form::{Form, StatCard};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
