@@ -23,6 +23,9 @@ The documentation is split by **authority**:
   decision. Neither canon nor frozen notes.
 - **[scenario-plan.md](scenario-plan.md) — combat content blueprint.** The authored target for
   the rebuilt combat: cast, tutorials, and scenarios that realize §1/§3/§4.
+- **[game-flow.md](game-flow.md) — the complete game-flow map.** Every cycle and phase, largest to
+  smallest (**Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, plus the **Clash ⊃ Beat** RPS), each pointing
+  to its authoritative source. Start here to see how the whole game is structured.
 - **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
   being worked out ahead of graduating onto the Spec —
   [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,

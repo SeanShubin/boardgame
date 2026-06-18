@@ -189,8 +189,8 @@ tunable is **Recover/refresh rate vs Spend rate**.
    the exhaustive list and each MANUAL line *is* the §5 graduation work.
 3. **Resources (§7) — designed.** Health / Tempo / Focus = stat-sized **count × value** pools on
    the zone machinery; round-refresh (Tempo/Focus), heal-cards (Health), refresh-engines (god);
-   exhaustion-as-attrition is the PvE lean. *Confirm:* Tempo/Focus fully auto-refresh each round
-   (matches §3). Remaining = numbers (#4).
+   exhaustion-as-attrition is the PvE lean. *Confirmed:* Tempo/Focus fully auto-refresh each
+   **Round** (§3). Remaining = numbers (#4).
 4. **Numbers** — Spend/Recover costs, charge magnitudes, pool sizes — AI-seeded, human-tuned, in
    `booklet.ron`.
 

@@ -238,7 +238,7 @@ over a scenario — a natural future tooling/AI target (roadmap).* The concrete 
 realises this goal is the **reference scenario** — a diagnostic A/B/C/final lattice maintained as a
 test ([`reference-scenario.md`](reference-scenario.md)).
 
-**The day — the action round.** Time advances in **days**. On each day **every character** may,
+**The day — the action cycle.** Time advances in **days**. On each day **every character** may,
 independently:
 
 - **move** one adjacent space (§1),
@@ -248,11 +248,17 @@ independently:
 - attempt **one encounter** (§2).
 
 When **all characters have done what they want**, the party **ends the day together** → draw
-one **"1 day passes"** event → **day++**. So **days = action-rounds**, and the party acts **in
-parallel** within a day — order-independent and co-op, consistent with the no-initiative
-principle (§3.1: Speed sizes budgets, never turn order). A **failed encounter spends that
+one **"1 day passes"** event → **day++**. So **the run-clock ticks one day per action-cycle**, and
+within a day the party acts **in parallel** — order-independent and co-op, consistent with the
+no-initiative principle (§3.1: Speed sizes budgets, never turn order). A **failed encounter spends that
 character's one encounter for the day** (it retreats, §2), so "keep trying" plays out **across
 days** — exactly the time cost the golf score measures.
+
+**Time vocabulary (largest → smallest):** **Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, and within a
+Clash, **Beat**. A *Round* is one Deploy→Vanguard→Skirmisher→Reserve pass (§4); a *Day* holds **one
+Encounter per character**; **Tempo/Focus refresh each Round**, while **Health and every pool reset
+at the Day boundary** (zones-exhaustion §7). *"Turn" is **not** a unit — combat has no turn order
+(§3.1).* The complete cycle/phase map is [`game-flow.md`](game-flow.md).
 
 **Full recovery at day's end.** When the day passes, every surviving member's **Body restores
 to full** (atop §2.1's restore-on-win), so each day's one encounter is fought **fresh**. There
