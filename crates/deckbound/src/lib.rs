@@ -18,6 +18,7 @@ pub mod form;
 pub mod game;
 pub mod reference;
 pub mod scenarios;
+pub mod solver;
 pub mod state;
 pub mod stats;
 pub mod world;
@@ -33,6 +34,7 @@ pub use reference::{ReferenceScenario, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
 pub use scenarios::{Scenario, build_encounter_foes, campaign, god, tutorials, versus};
+pub use solver::auto_resolve;
 pub use state::{Clash, Lane, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
 pub use world::{Coord, Layout, Location, Run};

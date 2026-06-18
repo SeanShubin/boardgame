@@ -9,7 +9,7 @@ use engine::{
     Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
 };
 
-use crate::actor::Range;
+use crate::actor::{Actor, Range};
 use crate::combat;
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
@@ -134,6 +134,35 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
         state.log = vec![scenario.blurb.clone(), "-- Round 1: muster --".into()];
     }
     state.scenario = Some(scenario);
+}
+
+/// Build a battle [`State`] directly from explicit rosters — for **headless auto-resolution** (the
+/// par-solver, §8). `clash` selects the optional RPS module; **off → deterministic** (§4.2), so a
+/// greedy hero policy can play the battle to an `Outcome`. No `Scenario` is attached.
+pub fn battle_state(heroes: Vec<Actor>, creatures: Vec<Actor>, clash: bool, seed: u64) -> State {
+    let nh = heroes.len();
+    let nf = creatures.len();
+    let mut state = menu_state(seed);
+    state.heroes = heroes;
+    state.creatures = creatures;
+    state.round = 1;
+    state.clash_module = clash;
+    state.plan = Round::sized(nh, nf);
+    if clash {
+        state.plan.clash_mode = true;
+        state.clash = Some(Clash {
+            hero: 0,
+            foe: 0,
+            hero_force: 0,
+            foe_force: 0,
+            beat: 0,
+            stall: 0,
+        });
+        state.phase = Phase::Clash;
+    } else {
+        state.phase = Phase::Muster;
+    }
+    state
 }
 
 /// Place a side's Vanguard across the lanes round-robin (the larger side stacks its surplus).
