@@ -16,11 +16,14 @@ pub mod game;
 pub mod scenarios;
 pub mod state;
 pub mod stats;
+pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
 pub use cards::{Card, Effect, Lifecycle};
 pub use duel::{Move, Side, resolve};
+// `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
 pub use scenarios::{Scenario, campaign, god, tutorials, versus};
 pub use state::{Clash, Lane, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
+pub use zones::{Zone, ZoneBehavior};
