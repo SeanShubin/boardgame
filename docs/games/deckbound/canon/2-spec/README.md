@@ -159,6 +159,13 @@ them (north stars #2 computable, #4 asymmetry, #10 re-derivable).
 go) to attack; Gather to hold your ground and build Force; Evade to dodge. A connecting strike
 ends the duel; slip a Strike with Evade and you steal their Force (always at least 1).*
 
+**Glossary.** *(Encyclopedia terms — the in-app rules reference is generated from these `TERM`
+lines, so it can't drift from this Spec.)*
+
+- **TERM.** `The Clash` (Clash module) — An optional 1v1 mix-up that replaces a same-range trade. Each beat both pick a card and reveal at once: Strike, Anticipate, Gather, Evade.
+- **TERM.** `Cards` (Clash module) — Strike beats Gather; Anticipate beats Evade; Gather beats Anticipate; Evade beats Strike. Strike also beats Anticipate; Strike-vs-Strike trades.
+- **TERM.** `Force` (Clash module) — Gather builds +1 Force; each Force doubles your connecting hit. Evading a Strike steals the striker's Force (always at least 1).
+
 ### 1.1 Edge is per-duel, public, all-or-nothing, linear
 
 > **SUPERSEDED by §1.0 (The Clash).** The tracked Edge meter is replaced by **Charges**
@@ -522,6 +529,8 @@ not zero, the wall**.
 - Tempo is re-derivable from Speed minus visible actions (no token needed).
 - Speed sizes budgets / sets thresholds, never initiative or who-goes-first.
 
+- **TERM.** `Tempo` (Resources) — Offense budget (= Speed). Spent to slip a lane and to pick Skirmisher/Reserve targets; the cost is the opponent's Speed.
+
 ### 3.2 Focus — admission to the duels started on you
 
 **RULE.** **Focus** is sized to **Mind** (refreshed each round). Spend Focus to **defend** a
@@ -551,6 +560,8 @@ A Vanguard that **tries to slip but cannot afford it** eats a **free hit** (the 
 it) — an attack-of-opportunity, not a contradiction of "a self-defense deals no damage."
 
 *(SEEDED — exact cover/drain numbers are open; `booklet.ron` / appendix.)*
+
+- **TERM.** `Focus` (Resources) — Defense budget (= Mind). Spent to block slips and to survive incoming hits; the cost is the attacker's Speed. Fast-but-thin slips well; high-Mind holds the wall.
 
 ### 3.3 Overextension — *removed*
 
@@ -747,6 +758,19 @@ costs Tempo, blocking costs Focus, a funded block wins. Resolve the front; survi
 are Skirmishers and may hit anyone; then Reserve fire on the enemy front (never enemy Reserve)
 and aid allies. No Vanguard on either side → open brawl, hit anyone.*
 
+**Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
+
+- **TERM.** `Vanguard` (Roles) — Your committed front line. Vanguard hold lanes (and block slips) or slip past to become Skirmishers. They strike first and shield the Reserve.
+- **TERM.** `Skirmisher` (Roles) — A Vanguard that slipped its lane. Skirmishers may target anyone — the only path to the enemy Reserve. They act after the front resolves.
+- **TERM.** `Reserve` (Roles) — Everyone not in the Vanguard: decisive but fragile (artillery, support). Acts last with the most info; fires on the enemy front and aids allies, but can never target the enemy Reserve.
+- **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (holds the wall, strikes first); Skirmisher beats Reserve (slips in to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
+- **TERM.** `Lanes` (Lanes) — The number of lanes is the smaller side's Vanguard count. Each lane is where opposing Vanguard meet; the larger side stacks its surplus.
+- **TERM.** `Stacking` (Lanes) — Putting more than one Vanguard in a lane to overwhelm its wall — local superiority. The count, and where you stack, is the strategy.
+- **TERM.** `Hold vs Slip` (Lanes) — Each Vanguard holds (fight the lane and block slips) or slips (try to leave and become a Skirmisher). Slipping costs Tempo = the enemy lane's combined Speed.
+- **TERM.** `Block` (Lanes) — A holding Vanguard spends Focus = the slipper's Speed to stop a slip; a funded block wins. Overwhelm the wall's Focus (stack slippers) to push through.
+- **TERM.** `Zero lanes` (Lanes) — If a side fields no Vanguard there is no front: it's exposed (no exploit — you still can't reach their Reserve). If neither fields a front, it's an open brawl — anyone may hit anyone.
+- **TERM.** `Phases` (Round) — Muster (set Vanguard/Reserve) → Assign (place lanes) → Slip (hold/slip) → Vanguard resolves → Skirmishers strike → Reserve acts → refresh. Order-independent within each phase.
+
 **Still unspecified (open dials — pin before/with implementation).** The structure (lanes,
 phases, targeting, reveal order, triangle) is settled; these are not:
 
@@ -840,6 +864,12 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 - Range is **position-determined** (lane / Skirmisher = melee, Reserve = ranged) — never the
   attacker's free pick.
 - Core: **only melee Actors skirmish**; a card may explicitly supersede.
+
+**Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
+
+- **TERM.** `Trade` (Combat) — A same-range engagement: both sides deal their base damage through armor/toughness. In the optional Clash module, the trade is replaced by the four-card mix-up.
+- **TERM.** `Auto-hit` (Combat) — A range mismatch: the attacker lands uncontested (the target can't answer at that range). Armor still blunts it; Focus cannot.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Lanes & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit.
 
 ## 5. Zones / exhaustion ⬜
 

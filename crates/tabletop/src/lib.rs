@@ -472,7 +472,7 @@ fn refresh_rules<G: Game + Clone>(
                     },
                     Text::new(e.category.clone()),
                     TextFont {
-                        font_size: 18.0,
+                        font_size: FONT_HEAD,
                         ..default()
                     },
                     TextColor(BUTTON),
@@ -482,7 +482,7 @@ fn refresh_rules<G: Game + Clone>(
                 RulesEntry,
                 Text::new(e.term.clone()),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(TITLE_INK),
@@ -491,7 +491,7 @@ fn refresh_rules<G: Game + Clone>(
                 RulesEntry,
                 Text::new(e.text.clone()),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FONT_BODY,
                     ..default()
                 },
                 TextColor(MUTED_INK),
@@ -510,7 +510,7 @@ fn refresh_rules<G: Game + Clone>(
                     format!("No entries match \u{201c}{}\u{201d}.", query.0)
                 }),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FONT_BODY,
                     ..default()
                 },
                 TextColor(MUTED_INK),
@@ -559,7 +559,7 @@ fn setup_rules(mut commands: Commands) {
                     panel.spawn((
                         Text::new("Rules reference"),
                         TextFont {
-                            font_size: 24.0,
+                            font_size: FONT_DISPLAY,
                             ..default()
                         },
                         TextColor(TITLE_INK),
@@ -573,7 +573,7 @@ fn setup_rules(mut commands: Commands) {
                         },
                         Text::new("Search: (type to filter · Esc to close)"),
                         TextFont {
-                            font_size: 14.0,
+                            font_size: FONT_BODY,
                             ..default()
                         },
                         TextColor(BUTTON),
@@ -711,6 +711,15 @@ fn redraw<G: Game + Clone>(
 
     build_table(&mut commands, &view, &buttons);
 }
+
+// ---- type scale ---------------------------------------------------------
+// A deliberately small set of font sizes. Every distinct (font, size) pair is its own set of
+// glyphs in the text atlas; keeping the scale tight keeps atlas pressure low so glyphs render
+// reliably on text-heavy screens (many cards / a long log), instead of mis-sizing under load.
+const FONT_DISPLAY: f32 = 24.0; // page titles, prose headings
+const FONT_HEAD: f32 = 18.0; // status line, section headings, prose terms
+const FONT_TITLE: f32 = 15.0; // card titles, zone labels, buttons, badges
+const FONT_BODY: f32 = 13.0; // card body, type lines, prose body, grid cells
 
 // ---- palette ------------------------------------------------------------
 
@@ -1101,7 +1110,7 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                 left.spawn((
                     Text::new("Choose an action"),
                     TextFont {
-                        font_size: 17.0,
+                        font_size: FONT_HEAD,
                         ..default()
                     },
                     TextColor(INK),
@@ -1136,7 +1145,7 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                     panel.spawn((
                         Text::new(view.status.clone()),
                         TextFont {
-                            font_size: 18.0,
+                            font_size: FONT_HEAD,
                             ..default()
                         },
                         TextColor(INK),
@@ -1206,7 +1215,7 @@ fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
                                     },
                                     Text::new(t.clone()),
                                     TextFont {
-                                        font_size: 26.0,
+                                        font_size: FONT_DISPLAY,
                                         ..default()
                                     },
                                     TextColor(TITLE_INK),
@@ -1220,7 +1229,7 @@ fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
                                     },
                                     Text::new(t.clone()),
                                     TextFont {
-                                        font_size: 18.0,
+                                        font_size: FONT_HEAD,
                                         ..default()
                                     },
                                     TextColor(BUTTON),
@@ -1230,7 +1239,7 @@ fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
                                 col.spawn((
                                     Text::new(t.clone()),
                                     TextFont {
-                                        font_size: 15.0,
+                                        font_size: FONT_TITLE,
                                         ..default()
                                     },
                                     TextColor(INK),
@@ -1309,7 +1318,7 @@ fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView, order: &Cell<u
             col.spawn((
                 Text::new(zone.label.clone()),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(INK),
@@ -1390,7 +1399,7 @@ fn spawn_card_group(
                     b.spawn((
                         Text::new(format!("x{count}")),
                         TextFont {
-                            font_size: 16.0,
+                            font_size: FONT_TITLE,
                             ..default()
                         },
                         TextColor(TITLE_INK),
@@ -1535,7 +1544,7 @@ fn spawn_card_face(
             bar.spawn((
                 Text::new(title.to_string()),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(TITLE_INK),
@@ -1556,7 +1565,7 @@ fn spawn_card_face(
                 line.spawn((
                     Text::new(t.to_string()),
                     TextFont {
-                        font_size: 12.0,
+                        font_size: FONT_BODY,
                         ..default()
                     },
                     TextColor(Color::srgb(0.28, 0.28, 0.30)),
@@ -1577,7 +1586,7 @@ fn spawn_card_face(
                 b.spawn((
                     Text::new(line.clone()),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FONT_BODY,
                         ..default()
                     },
                     TextColor(CARD_INK),
@@ -1606,7 +1615,7 @@ fn spawn_card_face(
                     badge.spawn((
                         Text::new(c.to_string()),
                         TextFont {
-                            font_size: 16.0,
+                            font_size: FONT_TITLE,
                             ..default()
                         },
                         TextColor(TITLE_INK),
@@ -1655,7 +1664,7 @@ fn setup_help(mut commands: Commands) {
             hint.spawn((
                 Text::new("? help · R rules"),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FONT_BODY,
                     ..default()
                 },
                 TextColor(INK),
@@ -1696,7 +1705,7 @@ fn setup_help(mut commands: Commands) {
                     panel.spawn((
                         Text::new("Controls"),
                         TextFont {
-                            font_size: 24.0,
+                            font_size: FONT_DISPLAY,
                             ..default()
                         },
                         TextColor(TITLE_INK),
@@ -1707,7 +1716,7 @@ fn setup_help(mut commands: Commands) {
                     panel.spawn((
                         Text::new("Press ?, F1, or Esc to close"),
                         TextFont {
-                            font_size: 13.0,
+                            font_size: FONT_BODY,
                             ..default()
                         },
                         TextColor(MUTED_INK),
@@ -1739,7 +1748,7 @@ fn spawn_control_row(parent: &mut ChildSpawnerCommands, keys: &str, desc: &str) 
                 cap.spawn((
                     Text::new(keys.to_string()),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FONT_TITLE,
                         ..default()
                     },
                     TextColor(TITLE_INK),
@@ -1748,7 +1757,7 @@ fn spawn_control_row(parent: &mut ChildSpawnerCommands, keys: &str, desc: &str) 
             row.spawn((
                 Text::new(desc.to_string()),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(INK),
@@ -1783,7 +1792,7 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
             button.spawn((
                 Text::new(label.to_string()),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(INK),

@@ -755,7 +755,13 @@ impl Deckbound {
         } else {
             prompt
         };
-        format!("{prompt}\n\n{log}")
+        // The log carries combat events; in menus it's just noise (and would echo the prompt),
+        // so menu screens show the prompt alone.
+        if matches!(state.phase, Phase::Menu(_)) {
+            prompt
+        } else {
+            format!("{prompt}\n\n{log}")
+        }
     }
 }
 
@@ -791,14 +797,15 @@ impl Game for Deckbound {
                 Action::OpenEncyclopedia,
                 Action::Exit,
             ],
-            // Rules and a category page share the same left sidebar: one button per
-            // category (jump straight between them), plus Back. The page body is prose.
-            Phase::Menu(Menu::Rules) | Phase::Menu(Menu::Category(_)) => {
+            // Rules top level: a category card per category (bound to OpenCategory) + Back.
+            Phase::Menu(Menu::Rules) => {
                 let mut a: Vec<Action> =
                     (0..categories().len()).map(Action::OpenCategory).collect();
                 a.push(Action::Back);
                 a
             }
+            // A category page is the prose reading pane; only Back (to the category cards).
+            Phase::Menu(Menu::Category(_)) => vec![Action::Back],
             Phase::Menu(m) => {
                 let mut a: Vec<Action> =
                     (0..list_for(*m).len()).map(Action::PickScenario).collect();
@@ -993,12 +1000,8 @@ impl Game for Deckbound {
             (Phase::Menu(Menu::Top), Action::OpenEncyclopedia) => {
                 state.phase = Phase::Menu(Menu::Rules)
             }
-            // From the categories list or while reading one, a category button opens it
-            // (the sidebar lets you jump straight between categories).
-            (
-                Phase::Menu(Menu::Rules) | Phase::Menu(Menu::Category(_)),
-                Action::OpenCategory(i),
-            ) => {
+            // Click a category card → open that category's rules (the prose reading pane).
+            (Phase::Menu(Menu::Rules), Action::OpenCategory(i)) => {
                 if *i >= categories().len() {
                     return Err(GameError::new("no such category"));
                 }
@@ -1215,14 +1218,9 @@ impl Game for Deckbound {
         let mut prose: Vec<engine::ProseLine> = Vec::new();
         match &state.phase {
             Phase::Menu(Menu::Top) => zones.push(menu_zone()),
-            // The encyclopedia is a reading pane (prose), not cards; categories are the
-            // left-panel buttons (a docs sidebar).
-            Phase::Menu(Menu::Rules) => {
-                prose.push(engine::ProseLine::Heading("Rules".into()));
-                prose.push(engine::ProseLine::Body(
-                    "Pick a category on the left to read its rules.".into(),
-                ));
-            }
+            // Categories are just names → clickable cards; the *content* of a category is the
+            // reading pane (prose), since long rules text doesn't belong on a card.
+            Phase::Menu(Menu::Rules) => zones.push(category_zone()),
             Phase::Menu(Menu::Category(i)) => {
                 let cat = categories().into_iter().nth(*i).unwrap_or_default();
                 prose.push(engine::ProseLine::Heading(cat.clone()));
@@ -1361,8 +1359,29 @@ fn wrap(text: &str, width: usize, max: usize) -> Vec<String> {
     lines
 }
 
-/// The top menu: each scenario set is a **clickable card** bound to its open action (indices
-/// 0..3 in `legal_actions` for `Menu(Top)`). Buttons are left only for the non-card meta (Exit).
+/// The encyclopedia's top level: each category is a **clickable card** (just a name) bound to
+/// `OpenCategory(i)` — index `i` in `legal_actions` for `Menu(Rules)` — showing its entry count.
+/// Picking one opens that category's rules as a prose reading pane (the content, not cards).
+fn category_zone() -> ZoneView {
+    ZoneView {
+        label: "Rules — pick a category".into(),
+        layout: Layout::Row,
+        owner: None,
+        cards: categories()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let n = entries_in(c).len();
+                CardView::up(c.clone())
+                    .typed(format!("{n} entries"))
+                    .action(i)
+            })
+            .collect(),
+    }
+}
+
+/// The top menu: each scenario set and Rules is a **clickable card** bound to its open action
+/// (indices 0..4 in `legal_actions` for `Menu(Top)`). Buttons are left only for the meta (Exit).
 fn menu_zone() -> ZoneView {
     let items = [
         ("Duels", "Learn the game, one lesson at a time."),
@@ -1372,6 +1391,7 @@ fn menu_zone() -> ZoneView {
         ),
         ("God-tier", "Solo power fantasy vs the odds."),
         ("Versus", "Hotseat PvP — pass and play."),
+        ("Rules", "The rulebook — browse by category."),
     ];
     ZoneView {
         label: "Deckbound — choose a set".into(),

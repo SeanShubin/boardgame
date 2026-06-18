@@ -61,6 +61,10 @@ pub enum Effect {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Card {
     pub name: String,
+    /// A human rules description, used to generate the encyclopedia's **Powers** entries from
+    /// card data (the card is the source of truth for what it does). Empty for plain weapons.
+    #[serde(default)]
+    pub text: String,
     /// Distinct foes hit (AoE). 1 = single target.
     #[serde(default = "one")]
     pub targets: u32,
@@ -134,6 +138,7 @@ mod tests {
     fn firestorm() -> Card {
         Card {
             name: "Firestorm".into(),
+            text: String::new(),
             targets: 5,
             reach: [2, 2],
             lifecycle: Lifecycle::Fleeting,

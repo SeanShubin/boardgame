@@ -21,16 +21,6 @@ struct Catalog {
     tutorials: Vec<ScenarioCard>,
     #[serde(default)]
     versus: Vec<ScenarioCard>,
-    /// The in-app rules reference (encyclopedia) entries.
-    #[serde(default)]
-    glossary: Vec<GlossaryCard>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GlossaryCard {
-    category: String,
-    term: String,
-    text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,13 +134,105 @@ pub fn versus() -> Vec<Scenario> {
     catalog().versus.iter().map(scenario_from).collect()
 }
 
-/// The in-app rules reference (encyclopedia), as engine `RefEntry`s.
+/// The Spec is the single source of truth for the rules glossary (canon/2-spec/README.md),
+/// embedded at compile time so the encyclopedia can't drift from the canon.
+const SPEC: &str = include_str!("../../../docs/games/deckbound/canon/2-spec/README.md");
+
+/// The category order for the encyclopedia sidebar (rule categories from the Spec, then Powers).
+const CATEGORY_ORDER: &[&str] = &[
+    "Roles",
+    "Lanes",
+    "Combat",
+    "Resources",
+    "Round",
+    "Clash module",
+    "Powers",
+];
+
+/// The in-app rules reference (encyclopedia), generated — never hand-authored — so it cannot
+/// drift from its sources:
+/// - **rule entries** are parsed from the Spec's `**TERM.** \`Name\` (Category) — text` lines
+///   (skipping superseded sections), the same Spec that defines the rules;
+/// - **Powers** are generated from the passive power cards' `text` in `booklet.ron` (the card is
+///   the source of truth for what it does).
+///
+/// Entries are grouped by [`CATEGORY_ORDER`]; order within a category is source order.
 pub fn glossary() -> Vec<engine::RefEntry> {
-    catalog()
-        .glossary
-        .iter()
-        .map(|g| engine::RefEntry::new(g.category.clone(), g.term.clone(), g.text.clone()))
-        .collect()
+    static GLOSSARY: OnceLock<Vec<engine::RefEntry>> = OnceLock::new();
+    GLOSSARY
+        .get_or_init(|| {
+            let mut entries = parse_spec_terms(SPEC);
+            // Powers: one entry per distinct passive power card, from its `text`.
+            for card in catalog()
+                .cards
+                .iter()
+                .filter(|c| c.passive && !c.text.is_empty())
+            {
+                entries.push(engine::RefEntry::new(
+                    "Powers",
+                    card.name.as_str(),
+                    card.text.as_str(),
+                ));
+            }
+            // Group by the sidebar's category order; keep source order within each category.
+            entries.sort_by_key(|e| {
+                CATEGORY_ORDER
+                    .iter()
+                    .position(|c| *c == e.category)
+                    .unwrap_or(CATEGORY_ORDER.len())
+            });
+            entries
+        })
+        .clone()
+}
+
+/// Parse the Spec's `**TERM.**` annotation lines into encyclopedia entries. Each is a single
+/// (optionally bulleted) line of the form `**TERM.** \`Name\` (Category) — readable text`. Lines
+/// inside a **superseded** section (one whose blockquote banner begins `> **SUPERSEDED` /
+/// `> **PARTIALLY SUPERSEDED`) are skipped, so the encyclopedia tracks only the live rules.
+fn parse_spec_terms(spec: &str) -> Vec<engine::RefEntry> {
+    let mut out = Vec::new();
+    let mut superseded = false;
+    for line in spec.lines() {
+        let t = line.trim_start();
+        if t.starts_with("## ") || t.starts_with("### ") {
+            superseded = false; // supersession is per-section; a heading starts fresh
+        }
+        if t.starts_with("> **SUPERSEDED") || t.starts_with("> **PARTIALLY SUPERSEDED") {
+            superseded = true;
+        }
+        // Allow a leading list-bullet so the markers render as a tidy list in the Spec.
+        let body = t
+            .strip_prefix("- ")
+            .or_else(|| t.strip_prefix("* "))
+            .unwrap_or(t);
+        if superseded {
+            continue;
+        }
+        if let Some(rest) = body.strip_prefix("**TERM.**")
+            && let Some(entry) = parse_term_line(rest)
+        {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// Parse the part of a `**TERM.**` line after the marker: `` `Name` (Category) — text ``.
+fn parse_term_line(rest: &str) -> Option<engine::RefEntry> {
+    let rest = rest.trim_start();
+    // `Name` in backticks.
+    let rest = rest.strip_prefix('`')?;
+    let (term, rest) = rest.split_once('`')?;
+    // (Category) immediately after.
+    let rest = rest.trim_start().strip_prefix('(')?;
+    let (category, rest) = rest.split_once(')')?;
+    // Remaining text, minus a leading dash / colon separator.
+    let text = rest.trim_start().trim_start_matches(['—', '-', ':']).trim();
+    if term.trim().is_empty() || category.trim().is_empty() || text.is_empty() {
+        return None;
+    }
+    Some(engine::RefEntry::new(category.trim(), term.trim(), text))
 }
 
 fn catalog() -> &'static Catalog {
@@ -279,64 +361,64 @@ mod tests {
         assert!(glossary().len() >= 10, "the encyclopedia has rules entries");
     }
 
-    /// Anti-drift: every *current* (non-superseded) `MANUAL` line in the Spec must appear
-    /// verbatim in the encyclopedia glossary. If the Spec wording changes, this fails until the
-    /// matching glossary entry is brought back in sync — the digital/printed one-liner can't drift
-    /// from the canon. (The Spec is the source of truth; the glossary is authored to match it.)
+    /// The encyclopedia is fully **generated** (no hand-authored glossary): rule entries come
+    /// from the Spec's `**TERM.**` lines, Powers from the passive cards' `text`. This checks the
+    /// generation actually produced both halves and the curated categories — so a broken Spec
+    /// marker or a power that lost its `text` fails the build instead of silently emptying a page.
     #[test]
-    fn glossary_carries_current_spec_manual_lines() {
-        const SPEC: &str = include_str!("../../../docs/games/deckbound/canon/2-spec/README.md");
+    fn glossary_is_generated_from_spec_and_cards() {
+        let g = glossary();
 
-        // One searchable corpus of every glossary entry's text.
-        let corpus = glossary()
-            .iter()
-            .map(|e| e.text.clone())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // Walk the Spec, tracking whether the current section is superseded, and collect each
-        // current MANUAL block (the marker line through the next blank line), normalized.
-        let lines: Vec<&str> = SPEC.lines().collect();
-        let mut manuals: Vec<String> = Vec::new();
-        let mut superseded = false;
-        let mut i = 0;
-        while i < lines.len() {
-            let t = lines[i].trim_start();
-            if t.starts_with("## ") || t.starts_with("### ") {
-                superseded = false; // supersession is per-section; a heading starts fresh
-            }
-            if t.starts_with("> **SUPERSEDED") || t.starts_with("> **PARTIALLY SUPERSEDED") {
-                superseded = true;
-            }
-            if t.contains("**MANUAL.**") && !superseded {
-                let mut block = String::new();
-                let mut j = i;
-                while j < lines.len() && !lines[j].trim().is_empty() {
-                    block.push(' ');
-                    block.push_str(lines[j]);
-                    j += 1;
-                }
-                let block = block.replace("**MANUAL.**", " ");
-                let norm = block.split_whitespace().collect::<Vec<_>>().join(" ");
-                manuals.push(norm.trim_matches('*').trim().to_string());
-                i = j;
-                continue;
-            }
-            i += 1;
-        }
-
-        assert!(
-            manuals.len() >= 2,
-            "expected at least the current §1.0 and §4 MANUAL lines, found {}",
-            manuals.len()
-        );
-        for m in &manuals {
+        // Every entry has all three fields (no empty term/category/text slips through).
+        for e in &g {
             assert!(
-                corpus.contains(m.as_str()),
-                "a current Spec MANUAL line is not in the glossary verbatim — add/sync a \
-                 GlossaryCard so the encyclopedia can't drift from the Spec:\n  {m}"
+                !e.category.is_empty() && !e.term.is_empty() && !e.text.is_empty(),
+                "incomplete glossary entry: {e:?}"
+            );
+            assert!(
+                CATEGORY_ORDER.contains(&e.category.as_str()),
+                "entry {:?} has a category outside CATEGORY_ORDER",
+                e.term
             );
         }
+
+        let has = |term: &str| g.iter().any(|e| e.term == term);
+        // Rule terms parsed from the Spec, across several sections.
+        for term in ["Vanguard", "Lanes", "Tempo", "Focus", "Trade", "The Clash"] {
+            assert!(
+                has(term),
+                "Spec TERM `{term}` was not parsed into the glossary"
+            );
+        }
+        assert!(
+            has("Phases"),
+            "Spec TERM `Phases` was not parsed into the glossary"
+        );
+        // Powers generated from card data (passive power cards' `text`).
+        for power in ["Phalanx", "Blitz", "Longshot"] {
+            assert!(
+                has(power),
+                "power `{power}` was not generated from card data"
+            );
+        }
+
+        // Pin the counts so a dropped/typo'd TERM line (or a power that lost its text) fails here
+        // instead of silently shrinking a page. Bump these when the Spec/cards intentionally grow.
+        let powers = g.iter().filter(|e| e.category == "Powers").count();
+        assert_eq!(powers, 7, "expected 7 generated Powers entries");
+        assert_eq!(
+            g.len() - powers,
+            18,
+            "expected 18 Spec TERM entries — a marker may have failed to parse"
+        );
+
+        // Entries are grouped by the sidebar's category order (non-decreasing).
+        let rank = |c: &str| CATEGORY_ORDER.iter().position(|x| *x == c).unwrap();
+        assert!(
+            g.windows(2)
+                .all(|w| rank(&w[0].category) <= rank(&w[1].category)),
+            "glossary entries are not grouped by CATEGORY_ORDER"
+        );
     }
 
     #[test]
