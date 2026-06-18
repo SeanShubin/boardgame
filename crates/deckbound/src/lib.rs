@@ -18,6 +18,7 @@ pub mod game;
 pub mod scenarios;
 pub mod state;
 pub mod stats;
+pub mod world;
 pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
@@ -30,4 +31,5 @@ pub use game::{Action, Deckbound};
 pub use scenarios::{Scenario, campaign, god, tutorials, versus};
 pub use state::{Clash, Lane, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
+pub use world::{Coord, Layout, Location, Run};
 pub use zones::{Zone, ZoneBehavior};
