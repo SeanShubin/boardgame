@@ -11,12 +11,20 @@
 //! Cards are drawn collectible-card-game style — a title bar, a type line, a
 //! body of stat / rules lines, and a corner badge — coloured by the card's
 //! [`Accent`](engine::Accent). There is no art, so the space is information.
+//!
+//! Presentation aims for *tactile* cards rather than flat sprites: rounded
+//! corners, drop-shadows, a settle-in "deal" when the board redraws, and a
+//! hover lift (the card scales up, rises, and its shadow deepens under the
+//! pointer). All of it is pure presentation driven from `Interaction` into the
+//! post-layout [`UiTransform`] / [`BoxShadow`], so it stays generic over the
+//! game and never reflows neighbouring nodes. See [`animate_cards`].
 
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
 use engine::{Accent, CardFace, Game, TableView, ZoneView};
+use std::cell::Cell;
 
 /// Drives a single match of `G` on a Bevy app.
 pub struct TabletopPlugin<G: Game> {
@@ -52,6 +60,10 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // `HelpVisible` still set, bows out of rewinding, and lets this
             // system consume Esc as "close help" instead.
             .add_systems(Update, toggle_help.after(cancel_on_key::<G>))
+            // Pure-presentation juice: hover lift + settle-in. These read
+            // `Interaction` and write `UiTransform`/shadow only, so they run
+            // every frame independently of the redraw chain below.
+            .add_systems(Update, (animate_cards, animate_buttons))
             .add_systems(
                 Update,
                 (
@@ -393,6 +405,160 @@ fn accent_color(accent: Accent) -> Color {
     }
 }
 
+// ---- motion & depth (the "juice") --------------------------------------
+//
+// All animation is post-layout: it drives each node's `UiTransform` (a render
+// transform, like a CSS transform) and `BoxShadow`, so a card can swell over
+// its neighbours on hover without pushing them around.
+
+/// Corner rounding so cards read as physical objects, not rectangles.
+const CARD_RADIUS: f32 = 10.0;
+const BUTTON_RADIUS: f32 = 8.0;
+const BADGE_RADIUS: f32 = 6.0;
+const PANEL_RADIUS: f32 = 10.0;
+
+/// How fast a hover blends in / out (higher = snappier), fed to [`approach`].
+const HOVER_RATE: f32 = 16.0;
+
+/// Settle-in ("deal") when a fresh board is drawn.
+const CARD_INTRO: f32 = 0.16; // seconds for one card to land
+const CARD_INTRO_SCALE: f32 = 0.94; // scale it grows from
+const CARD_INTRO_DROP: f32 = 10.0; // px it rises from
+const CARD_STAGGER: f32 = 0.012; // per-card deal delay
+const CARD_STAGGER_MAX: f32 = 0.2; // cap so a big board still snaps in quickly
+
+/// Hover lift for a card.
+const CARD_HOVER_SCALE: f32 = 1.06;
+const CARD_HOVER_LIFT: f32 = 10.0;
+const CARD_SHADOW_ALPHA: f32 = 0.5;
+const CARD_SHADOW_LIFT: f32 = 16.0; // shadow y-offset when fully hovered
+const CARD_SHADOW_BLUR: f32 = 22.0; // shadow blur when fully hovered
+
+/// Button feedback.
+const BTN_HOVER_LIFT: f32 = 2.0;
+const BTN_PRESS_SINK: f32 = 2.0;
+const BUTTON_HOVER: Color = Color::srgb(0.24, 0.50, 0.72);
+const BUTTON_PRESS: Color = Color::srgb(0.12, 0.30, 0.46);
+
+/// Per-card animation state. `age` drives the settle-in and starts *negative*
+/// to encode this card's stagger delay (it sits small and low until `age`
+/// reaches 0, then pops into place). `hover` is the eased 0..1 hover blend.
+#[derive(Component)]
+struct CardAnim {
+    age: f32,
+    hover: f32,
+}
+
+/// Per-button animation state: eased hover and press blends.
+#[derive(Component, Default)]
+struct ButtonAnim {
+    hover: f32,
+    press: f32,
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// Frame-rate-independent ease toward `target` (exponential smoothing).
+fn approach(current: f32, target: f32, dt: f32, rate: f32) -> f32 {
+    let k = 1.0 - (-rate * dt).exp();
+    current + (target - current) * k
+}
+
+fn smoothstep(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Overshoot-and-settle, for a card that "pops" as it lands.
+fn ease_out_back(t: f32) -> f32 {
+    const C1: f32 = 1.70158;
+    const C3: f32 = C1 + 1.0;
+    let x = t - 1.0;
+    1.0 + C3 * x * x * x + C1 * x * x
+}
+
+fn mix_color(a: Color, b: Color, t: f32) -> Color {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    Color::srgba(
+        lerp(a.red, b.red, t),
+        lerp(a.green, b.green, t),
+        lerp(a.blue, b.blue, t),
+        lerp(a.alpha, b.alpha, t),
+    )
+}
+
+/// Give every card a tactile settle-in and a hover lift: it scales up, rises,
+/// and its drop-shadow deepens while the pointer is over it. Reads only
+/// `Interaction` and writes the post-layout `UiTransform` / `BoxShadow`, so
+/// neighbouring cards never reflow.
+fn animate_cards(
+    time: Res<Time>,
+    mut cards: Query<(&Interaction, &mut UiTransform, &mut BoxShadow, &mut CardAnim)>,
+) {
+    // Clamp dt so a hitch (or a long first frame) doesn't snap everything.
+    let dt = time.delta_secs().min(1.0 / 20.0);
+    for (interaction, mut transform, mut shadow, mut anim) in &mut cards {
+        anim.age += dt;
+        let intro = (anim.age / CARD_INTRO).clamp(0.0, 1.0);
+        let settle = ease_out_back(intro);
+
+        let want = if *interaction == Interaction::None {
+            0.0
+        } else {
+            1.0
+        };
+        anim.hover = approach(anim.hover, want, dt, HOVER_RATE);
+        let h = smoothstep(anim.hover);
+
+        transform.scale =
+            Vec2::splat(lerp(CARD_INTRO_SCALE, 1.0, settle) * lerp(1.0, CARD_HOVER_SCALE, h));
+        // UI y grows downward, so a rise is negative.
+        let drop = (1.0 - intro) * CARD_INTRO_DROP;
+        transform.translation = Val2::px(0.0, drop - h * CARD_HOVER_LIFT);
+
+        if let Some(style) = shadow.0.first_mut() {
+            let present = intro * (0.45 + 0.55 * h);
+            style.color = Color::srgba(0.0, 0.0, 0.0, CARD_SHADOW_ALPHA * present);
+            style.x_offset = Val::Px(0.0);
+            style.y_offset = Val::Px(lerp(3.0, CARD_SHADOW_LIFT, h));
+            style.spread_radius = Val::Px(0.0);
+            style.blur_radius = Val::Px(lerp(8.0, CARD_SHADOW_BLUR, h));
+        }
+    }
+}
+
+/// Hover/press feedback for action buttons: a small lift on hover, a sink on
+/// press, and a colour brighten/darken between the two.
+fn animate_buttons(
+    time: Res<Time>,
+    mut buttons: Query<(
+        &Interaction,
+        &mut UiTransform,
+        &mut BackgroundColor,
+        &mut ButtonAnim,
+    )>,
+) {
+    let dt = time.delta_secs().min(1.0 / 20.0);
+    for (interaction, mut transform, mut bg, mut anim) in &mut buttons {
+        let (want_hover, want_press) = match *interaction {
+            Interaction::Pressed => (1.0, 1.0),
+            Interaction::Hovered => (1.0, 0.0),
+            Interaction::None => (0.0, 0.0),
+        };
+        anim.hover = approach(anim.hover, want_hover, dt, HOVER_RATE);
+        anim.press = approach(anim.press, want_press, dt, HOVER_RATE * 1.5);
+        let h = smoothstep(anim.hover);
+        let p = smoothstep(anim.press);
+
+        transform.translation = Val2::px(0.0, p * BTN_PRESS_SINK - h * BTN_HOVER_LIFT);
+        transform.scale = Vec2::splat(1.0 + h * 0.02 - p * 0.03);
+        bg.0 = mix_color(mix_color(BUTTON, BUTTON_HOVER, h), BUTTON_PRESS, p);
+    }
+}
+
 fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, String)]) {
     commands
         .spawn((
@@ -451,6 +617,7 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                     Node {
                         width: Val::Percent(100.0),
                         padding: UiRect::all(Val::Px(10.0)),
+                        border_radius: BorderRadius::all(Val::Px(PANEL_RADIUS)),
                         ..default()
                     },
                     BackgroundColor(PANEL),
@@ -476,15 +643,18 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                     ..default()
                 })
                 .with_children(|zones| {
+                    // A shared counter so cards deal in left-to-right,
+                    // top-to-bottom across the whole board, not per-zone.
+                    let order = Cell::new(0u32);
                     for zone in &view.zones {
-                        spawn_zone(zones, zone);
+                        spawn_zone(zones, zone, &order);
                     }
                 });
             });
         });
 }
 
-fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView) {
+fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView, order: &Cell<u32>) {
     parent
         .spawn(Node {
             flex_direction: FlexDirection::Column,
@@ -518,7 +688,7 @@ fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView) {
                     while j < cards.len() && cards[j] == cards[i] {
                         j += 1;
                     }
-                    spawn_card_group(row, &cards[i].face, j - i);
+                    spawn_card_group(row, &cards[i].face, j - i, order);
                     i = j;
                 }
             });
@@ -529,9 +699,14 @@ const STACK_PEEK: f32 = 24.0;
 
 /// Render `count` identical cards: a single card if one, else an overlapped
 /// stack — the top card fully readable, the rest peeking — with an `xN` badge.
-fn spawn_card_group(parent: &mut ChildSpawnerCommands, face: &CardFace, count: usize) {
+fn spawn_card_group(
+    parent: &mut ChildSpawnerCommands,
+    face: &CardFace,
+    count: usize,
+    order: &Cell<u32>,
+) {
     if count <= 1 {
-        spawn_card(parent, face);
+        spawn_card(parent, face, order);
         return;
     }
     let width = CARD_W + (count as f32 - 1.0) * STACK_PEEK;
@@ -550,7 +725,7 @@ fn spawn_card_group(parent: &mut ChildSpawnerCommands, face: &CardFace, count: u
                         top: Val::Px(0.0),
                         ..default()
                     })
-                    .with_children(|slot| spawn_card(slot, face));
+                    .with_children(|slot| spawn_card(slot, face, order));
             }
             stack
                 .spawn((
@@ -559,9 +734,13 @@ fn spawn_card_group(parent: &mut ChildSpawnerCommands, face: &CardFace, count: u
                         right: Val::Px(4.0),
                         top: Val::Px(4.0),
                         padding: UiRect::axes(Val::Px(7.0), Val::Px(3.0)),
+                        border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
                         ..default()
                     },
                     BackgroundColor(BADGE),
+                    // Float the count above the cards so the hover-lift of the
+                    // top card doesn't cover it.
+                    GlobalZIndex(1),
                 ))
                 .with_children(|b| {
                     b.spawn((
@@ -579,9 +758,9 @@ fn spawn_card_group(parent: &mut ChildSpawnerCommands, face: &CardFace, count: u
 const CARD_W: f32 = 156.0;
 const CARD_H: f32 = 196.0;
 
-fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace) {
+fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace, order: &Cell<u32>) {
     match face {
-        CardFace::Down => spawn_card_back(parent),
+        CardFace::Down => spawn_card_back(parent, order),
         CardFace::Up {
             title,
             type_line,
@@ -595,11 +774,38 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace) {
             body,
             corner.as_deref(),
             *accent,
+            order,
         ),
     }
 }
 
-fn spawn_card_back(parent: &mut ChildSpawnerCommands) {
+/// The animation bundle every card root carries: a (driven) drop-shadow, an
+/// `Interaction` so the focus system reports hover, and the per-card
+/// [`CardAnim`] seeded with this card's stagger delay. Rounded corners live on
+/// the card's `Node` (`BorderRadius` is a `Node` field, not a component). Each
+/// call advances the shared deal counter.
+fn card_anim_bundle(order: &Cell<u32>) -> (BoxShadow, Interaction, CardAnim) {
+    let index = order.get();
+    order.set(index + 1);
+    let delay = (index as f32 * CARD_STAGGER).min(CARD_STAGGER_MAX);
+    (
+        // Placeholder; `animate_cards` overwrites every field each frame.
+        BoxShadow::new(
+            Color::NONE,
+            Val::Px(0.0),
+            Val::Px(3.0),
+            Val::Px(0.0),
+            Val::Px(8.0),
+        ),
+        Interaction::None,
+        CardAnim {
+            age: -delay,
+            hover: 0.0,
+        },
+    )
+}
+
+fn spawn_card_back(parent: &mut ChildSpawnerCommands, order: &Cell<u32>) {
     parent
         .spawn((
             Node {
@@ -607,16 +813,19 @@ fn spawn_card_back(parent: &mut ChildSpawnerCommands) {
                 height: Val::Px(CARD_H),
                 padding: UiRect::all(Val::Px(10.0)),
                 border: UiRect::all(Val::Px(CARD_BORDER)),
+                border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
                 ..default()
             },
             BackgroundColor(CARD_BACK),
             BorderColor::all(CARD_EDGE),
+            card_anim_bundle(order),
         ))
         .with_children(|card| {
             card.spawn((
                 Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
+                    border_radius: BorderRadius::all(Val::Px(CARD_RADIUS - CARD_BORDER - 4.0)),
                     ..default()
                 },
                 BackgroundColor(CARD_BACK_INNER),
@@ -631,6 +840,7 @@ fn spawn_card_face(
     body: &[String],
     corner: Option<&str>,
     accent: Accent,
+    order: &Cell<u32>,
 ) {
     parent
         .spawn((
@@ -640,17 +850,27 @@ fn spawn_card_face(
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::clip(),
                 border: UiRect::all(Val::Px(CARD_BORDER)),
+                border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
                 ..default()
             },
             BackgroundColor(CARD_FACE),
             BorderColor::all(CARD_EDGE),
+            card_anim_bundle(order),
         ))
         .with_children(|card| {
-            // Title bar (accent-coloured).
+            // Title bar (accent-coloured). Its top corners are rounded to sit
+            // inside the card's rounded border (UI clipping is rectangular, so
+            // this opaque bar would otherwise square off the card's top).
             card.spawn((
                 Node {
                     width: Val::Percent(100.0),
                     padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                    border_radius: BorderRadius::px(
+                        CARD_RADIUS - CARD_BORDER,
+                        CARD_RADIUS - CARD_BORDER,
+                        0.0,
+                        0.0,
+                    ),
                     ..default()
                 },
                 BackgroundColor(accent_color(accent)),
@@ -721,6 +941,7 @@ fn spawn_card_face(
                     row.spawn((
                         Node {
                             padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                            border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
                             ..default()
                         },
                         BackgroundColor(BADGE),
@@ -767,6 +988,7 @@ fn setup_help(mut commands: Commands) {
                 right: Val::Px(12.0),
                 bottom: Val::Px(12.0),
                 padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
                 ..default()
             },
             BackgroundColor(HINT_BG),
@@ -807,6 +1029,7 @@ fn setup_help(mut commands: Commands) {
                         min_width: Val::Px(380.0),
                         padding: UiRect::all(Val::Px(24.0)),
                         row_gap: Val::Px(14.0),
+                        border_radius: BorderRadius::all(Val::Px(PANEL_RADIUS)),
                         ..default()
                     },
                     BackgroundColor(PANEL),
@@ -849,6 +1072,7 @@ fn spawn_control_row(parent: &mut ChildSpawnerCommands, keys: &str, desc: &str) 
                 Node {
                     width: Val::Px(150.0),
                     padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                    border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
                     ..default()
                 },
                 BackgroundColor(BADGE),
@@ -879,14 +1103,23 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
         .spawn((
             Button,
             ActionButton(index),
+            ButtonAnim::default(),
             Node {
                 width: Val::Percent(100.0),
                 padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
                 justify_content: JustifyContent::FlexStart,
                 align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
                 ..default()
             },
             BackgroundColor(BUTTON),
+            BoxShadow::new(
+                Color::srgba(0.0, 0.0, 0.0, 0.25),
+                Val::Px(0.0),
+                Val::Px(2.0),
+                Val::Px(0.0),
+                Val::Px(5.0),
+            ),
         ))
         .with_children(|button| {
             button.spawn((
