@@ -1032,11 +1032,29 @@ impl Game for Deckbound {
                 let name = state.s_pool(side)[*i].name.clone();
                 if side == 0 {
                     let mut allies = std::mem::take(&mut state.heroes);
-                    combat::play_card(&card, &name, pow, pre, &mut state.creatures, &mut allies, Some(*i), &mut state.log);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.creatures,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
                     state.heroes = allies;
                 } else {
                     let mut allies = std::mem::take(&mut state.creatures);
-                    combat::play_card(&card, &name, pow, pre, &mut state.heroes, &mut allies, Some(*i), &mut state.log);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.heroes,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
                     state.creatures = allies;
                 }
                 state.s_acted_mut(side)[*i] = true;
@@ -1409,10 +1427,18 @@ mod tests {
         let idx = scenarios::versus().iter().position(|v| v.pvp).unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
         assert_eq!(s.phase, Phase::Muster);
-        assert_eq!(game.current_player(&s), Some(PlayerId(0)), "side A musters first");
+        assert_eq!(
+            game.current_player(&s),
+            Some(PlayerId(0)),
+            "side A musters first"
+        );
         game.apply(&mut s, &Action::Deploy).unwrap();
         assert_eq!(s.phase, Phase::Muster, "still mustering");
-        assert_eq!(game.current_player(&s), Some(PlayerId(1)), "now side B musters");
+        assert_eq!(
+            game.current_player(&s),
+            Some(PlayerId(1)),
+            "now side B musters"
+        );
         game.apply(&mut s, &Action::Deploy).unwrap();
         // Both mustered (no Vanguard) → deploys; play it out to an outcome.
         let _ = autoplay(&game, &mut s);

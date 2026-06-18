@@ -132,28 +132,56 @@ impl State {
 
     // ---- side-generic accessors (side 0 = heroes, 1 = creatures) ----
     pub fn s_pool(&self, side: u8) -> &[Actor] {
-        if side == 0 { &self.heroes } else { &self.creatures }
+        if side == 0 {
+            &self.heroes
+        } else {
+            &self.creatures
+        }
     }
     pub fn s_len(&self, side: u8) -> usize {
         self.s_pool(side).len()
     }
     pub fn s_lane(&self, side: u8) -> &[Option<usize>] {
-        if side == 0 { &self.plan.hero_lane } else { &self.plan.foe_lane }
+        if side == 0 {
+            &self.plan.hero_lane
+        } else {
+            &self.plan.foe_lane
+        }
     }
     pub fn s_lane_mut(&mut self, side: u8) -> &mut Vec<Option<usize>> {
-        if side == 0 { &mut self.plan.hero_lane } else { &mut self.plan.foe_lane }
+        if side == 0 {
+            &mut self.plan.hero_lane
+        } else {
+            &mut self.plan.foe_lane
+        }
     }
     pub fn s_slip_mut(&mut self, side: u8) -> &mut Vec<Option<bool>> {
-        if side == 0 { &mut self.plan.hero_slip } else { &mut self.plan.foe_slip }
+        if side == 0 {
+            &mut self.plan.hero_slip
+        } else {
+            &mut self.plan.foe_slip
+        }
     }
     pub fn s_skirm(&self, side: u8) -> &[bool] {
-        if side == 0 { &self.plan.hero_skirmisher } else { &self.plan.foe_skirmisher }
+        if side == 0 {
+            &self.plan.hero_skirmisher
+        } else {
+            &self.plan.foe_skirmisher
+        }
     }
     pub fn s_acted(&self, side: u8) -> &[bool] {
-        if side == 0 { &self.plan.hero_acted } else { &self.plan.foe_acted }
+        if side == 0 {
+            &self.plan.hero_acted
+        } else {
+            &self.plan.foe_acted
+        }
     }
     pub fn s_acted_mut(&mut self, side: u8) -> &mut Vec<bool> {
-        if side == 0 { &mut self.plan.hero_acted } else { &mut self.plan.foe_acted }
+        if side == 0 {
+            &mut self.plan.hero_acted
+        } else {
+            &mut self.plan.foe_acted
+        }
     }
 }
 
