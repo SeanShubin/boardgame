@@ -11,6 +11,7 @@
 pub mod actor;
 pub mod cards;
 pub mod combat;
+pub mod currency;
 pub mod duel;
 pub mod form;
 pub mod game;
@@ -21,6 +22,7 @@ pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
 pub use cards::{Card, Effect};
+pub use currency::{Coins, Currency, balance};
 pub use duel::{Move, Side, resolve};
 pub use form::{Form, StatCard};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
