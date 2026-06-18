@@ -55,13 +55,24 @@ These are software/artifacts, not rules, so they live outside the Spec.
   what a Character is exists in `notes/entities.md` and `notes/decision-making.md`; the
   actual emulator does not. This is what would make a non-human opponent feel like a real
   duelist instead of a deck.
-- **In-game encyclopedia.** ✅ **Built (v1).** A rules-reference overlay, toggled by **R**
+- **In-game encyclopedia.** ✅ **Built (v2).** A rules-reference overlay, toggled by **R**
   (and listed in the help/controls), available in any phase. Generic: `engine::Game` gained a
   `reference() -> Vec<RefEntry>` method the `tabletop` overlay renders; Deckbound feeds it a
   data-authored **glossary** in `booklet.ron` (roles, lanes, range, resources, the Clash,
-  powers). *Next:* a search box, and generating the glossary from the Spec keyword MANUAL lines
-  so it can't drift (currently the glossary is authored alongside the Spec, not generated from
-  it).
+  powers). The menu hierarchy renders each category as a full-size **prose reading pane**
+  (`engine::ProseLine`), not cramped cards.
+  - ✅ **Search box.** Open the overlay and type — a live, case-insensitive filter over every
+    entry's term/text/category (Backspace edits, Esc closes). Generic over `engine::Game`, so it
+    works for any game's `reference()`.
+  - ✅ **RPS-ish charts.** A new `engine::ProseLine::Grid` (aligned table cells, accent-tinted)
+    renders the **Clash four-card counter-grid** under the *Clash module* category and the
+    **role triangle** under *Roles* — discoverable in place.
+  - ✅ **Anti-drift (verify, not generate).** A test (`glossary_carries_current_spec_manual_lines`)
+    parses the Spec's *current* (non-superseded) `MANUAL` lines and asserts each appears verbatim
+    in the glossary, so the in-game/printed one-liners can't drift from the canon. (Full
+    generation was rejected: the Spec has ~6 MANUAL lines vs ~22 curated entries — generating
+    would gut the content. Verification keeps the rich glossary and still catches drift.)
+  - *Next:* nothing pressing; possibly fuzzy/abbreviation search, and grids for more relationships.
 - **Detailed card lists / interaction reference.** A per-card reference describing how each
   card interacts with the rules. The source-of-truth model already anticipates this as a
   **generated projection** of `booklet.ron` × the Spec's keyword manual lines (a printed

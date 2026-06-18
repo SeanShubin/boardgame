@@ -136,6 +136,20 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
     state.scenario = Some(scenario);
 }
 
+/// Place a side's Vanguard across the lanes round-robin (the larger side stacks its surplus).
+/// Used for any side that doesn't assign its lanes by hand.
+fn auto_assign(state: &mut State, side: u8, vanguard: &[usize], lanes: usize) {
+    for (i, &a) in vanguard.iter().enumerate() {
+        let lane = i % lanes;
+        state.s_lane_mut(side)[a] = Some(lane);
+        if side == 0 {
+            state.plan.lanes[lane].heroes.push(a);
+        } else {
+            state.plan.lanes[lane].foes.push(a);
+        }
+    }
+}
+
 pub(crate) fn check_outcome(state: &mut State) {
     if state.living_creatures() == 0 {
         state.outcome = Some(Outcome::Win(PlayerId(0)));
@@ -190,29 +204,49 @@ impl Deckbound {
             self.begin_skirmish(state);
             return;
         }
-        // Foes auto-assign round-robin (the larger side stacks).
-        for (i, &f) in foe_vg.iter().enumerate() {
-            let lane = i % lanes;
-            state.plan.foe_lane[f] = Some(lane);
-            state.plan.lanes[lane].foes.push(f);
+        // A side assigns its lanes by hand when there's a real choice (≥2 lanes, ≥2 Vanguard) —
+        // count-adaptive (§4.1). Heroes always may; the foe side may only in PvP (PvE foes are
+        // mustered by the AI and auto-assign). Any side without a choice auto-assigns now.
+        let manual = |vg: &[usize]| lanes >= 2 && vg.len() >= 2;
+        let hero_manual = manual(&hero_vg);
+        let foe_manual = state.pvp && manual(&foe_vg);
+
+        if !foe_manual {
+            auto_assign(state, 1, &foe_vg, lanes);
         }
-        // Heroes: if there's a real placement choice (≥2 lanes and ≥2 Vanguard), let the player
-        // assign (count-adaptive, §4.1); otherwise auto round-robin. PvP auto-assigns for now.
-        if !state.pvp && lanes >= 2 && hero_vg.len() >= 2 {
-            state.plan.assign_queue = hero_vg;
+        if !hero_manual {
+            auto_assign(state, 0, &hero_vg, lanes);
+        }
+
+        // Queue the sides that owe a manual assignment (heroes / side A first), then begin.
+        state.plan.assign_pending.clear();
+        if hero_manual {
+            state.plan.assign_pending.push((0, hero_vg));
+        }
+        if foe_manual {
+            state.plan.assign_pending.push((1, foe_vg));
+        }
+        self.start_next_assign(state);
+    }
+
+    /// Begin the next side's manual lane assignment, or — when none remain — open the Slip phase.
+    fn start_next_assign(&self, state: &mut State) {
+        if !state.plan.assign_pending.is_empty() {
+            let (side, queue) = state.plan.assign_pending.remove(0);
+            state.plan.committing = side;
+            state.plan.assign_queue = queue;
             state.phase = Phase::Assign;
+            let whose = if side == 0 { "your" } else { "side B's" };
+            let lanes = state.plan.lanes.len();
             state
                 .log
-                .push(format!("-- {lanes} lanes — assign your Vanguard --"));
+                .push(format!("-- {lanes} lanes — assign {whose} Vanguard --"));
         } else {
-            for (i, &h) in hero_vg.iter().enumerate() {
-                let lane = i % lanes;
-                state.plan.hero_lane[h] = Some(lane);
-                state.plan.lanes[lane].heroes.push(h);
-            }
             state.plan.committing = 0;
             state.phase = Phase::Slip;
-            state.log.push(format!("-- {lanes} lane(s) form --"));
+            state
+                .log
+                .push(format!("-- {} lane(s) form --", state.plan.lanes.len()));
         }
     }
 
@@ -1004,12 +1038,17 @@ impl Game for Deckbound {
                 if *lane >= state.plan.lanes.len() || !state.plan.assign_queue.contains(h) {
                     return Err(GameError::new("that lane assignment is not available"));
                 }
-                state.plan.hero_lane[*h] = Some(*lane);
-                state.plan.lanes[*lane].heroes.push(*h);
+                let side = state.plan.committing;
+                state.s_lane_mut(side)[*h] = Some(*lane);
+                if side == 0 {
+                    state.plan.lanes[*lane].heroes.push(*h);
+                } else {
+                    state.plan.lanes[*lane].foes.push(*h);
+                }
                 state.plan.assign_queue.retain(|&x| x != *h);
+                // This side is done; hand off to the next manual side (PvP) or open Slip.
                 if state.plan.assign_queue.is_empty() {
-                    state.phase = Phase::Slip;
-                    state.log.push("-- lanes set; hold or slip --".into());
+                    self.start_next_assign(state);
                 }
             }
 
@@ -1192,6 +1231,13 @@ impl Game for Deckbound {
                     prose.push(engine::ProseLine::Body(e.text));
                     prose.push(engine::ProseLine::Gap);
                 }
+                // RPS-ish charts, shown in the category they belong to (discoverable in place):
+                // the role triangle under Roles, the Clash counter-grid under the Clash module.
+                match cat.as_str() {
+                    "Roles" => append_triangle_chart(&mut prose),
+                    "Clash module" => append_clash_chart(&mut prose),
+                    _ => {}
+                }
             }
             Phase::Menu(m) => zones.push(scenario_zone(*m)),
             Phase::Clash => {
@@ -1365,6 +1411,60 @@ fn scenario_zone(menu: Menu) -> ZoneView {
             })
             .collect(),
     }
+}
+
+/// The role triangle (Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard) as a small chart.
+fn append_triangle_chart(prose: &mut Vec<engine::ProseLine>) {
+    prose.push(engine::ProseLine::Gap);
+    prose.push(engine::ProseLine::Heading("The triangle".into()));
+    for line in [
+        "Vanguard ▸ beats Skirmisher (holds the wall, strikes first)",
+        "Skirmisher ▸ beats Reserve (slips in to assassinate)",
+        "Reserve ▸ beats Vanguard (fires from safety, untouchable in melee)",
+    ] {
+        prose.push(engine::ProseLine::Body(line.into()));
+    }
+}
+
+/// The Clash four-card counter-grid ("what beats what"): row vs column, from the row's view.
+fn append_clash_chart(prose: &mut Vec<engine::ProseLine>) {
+    let win = |t: &str| engine::GridCell::new(t, Accent::Good);
+    let lose = engine::GridCell::new("lose", Accent::Foe);
+    let trade = engine::GridCell::new("trade", Accent::Warn);
+    let none = engine::GridCell::new("—", Accent::Neutral);
+    let row = |label: &str, cells: Vec<engine::GridCell>| engine::GridRow {
+        label: label.into(),
+        cells,
+    };
+    prose.push(engine::ProseLine::Gap);
+    prose.push(engine::ProseLine::Heading("What beats what".into()));
+    prose.push(engine::ProseLine::Grid(engine::Grid {
+        headers: ["Strike", "Antic.", "Gather", "Evade"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        rows: vec![
+            row(
+                "Strike",
+                vec![trade.clone(), win("win"), win("win"), lose.clone()],
+            ),
+            row(
+                "Anticipate",
+                vec![lose.clone(), none.clone(), lose.clone(), win("win")],
+            ),
+            row(
+                "Gather",
+                vec![lose.clone(), win("win"), none.clone(), none.clone()],
+            ),
+            row(
+                "Evade",
+                vec![win("win"), lose.clone(), none.clone(), none.clone()],
+            ),
+        ],
+    }));
+    prose.push(engine::ProseLine::Body(
+        "Strike vs Strike trades; Evade vs a Strike also steals the striker's Force.".into(),
+    ));
 }
 
 #[cfg(test)]
@@ -1608,6 +1708,70 @@ mod tests {
         // Both mustered (no Vanguard) → deploys; play it out to an outcome.
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
+    }
+
+    /// Hotseat PvP manual stacking: with ≥2 lanes and ≥2 Vanguard, *both* sides place their own
+    /// lanes by hand (the device passes A → B), and either may stack a lane (§4).
+    #[test]
+    fn pvp_manual_lane_assignment_lets_both_sides_stack() {
+        let game = Deckbound;
+        let mut s = game.new_game(3, 1);
+        game.apply(&mut s, &Action::OpenVersus).unwrap();
+        let idx = scenarios::versus()
+            .iter()
+            .position(|v| v.name.starts_with("Mirror"))
+            .unwrap();
+        game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
+
+        // Side A musters two Vanguard, then deploys; the device passes to side B.
+        let a1 = s.heroes.iter().position(|h| h.name == "Anvil").unwrap();
+        let a2 = s.heroes.iter().position(|h| h.name == "Wisp").unwrap();
+        game.apply(&mut s, &Action::SetVanguard(a1)).unwrap();
+        game.apply(&mut s, &Action::SetVanguard(a2)).unwrap();
+        game.apply(&mut s, &Action::Deploy).unwrap();
+        assert_eq!(game.current_player(&s), Some(PlayerId(1)), "side B musters");
+        let b1 = s.creatures.iter().position(|c| c.name == "Anvil").unwrap();
+        let b2 = s.creatures.iter().position(|c| c.name == "Wisp").unwrap();
+        game.apply(&mut s, &Action::SetVanguard(b1)).unwrap();
+        game.apply(&mut s, &Action::SetVanguard(b2)).unwrap();
+        game.apply(&mut s, &Action::Deploy).unwrap();
+
+        // Two lanes, two Vanguard each → side A assigns first (the new PvP behaviour).
+        assert_eq!(s.phase, Phase::Assign);
+        assert_eq!(s.plan.committing, 0, "side A assigns its lanes first");
+
+        let next = |s: &State| match game
+            .legal_actions(s)
+            .into_iter()
+            .find(|a| matches!(a, Action::AssignLane(..)))
+        {
+            Some(Action::AssignLane(h, _)) => h,
+            _ => unreachable!("an assignment should be offered"),
+        };
+        // Side A stacks both into lane 0.
+        let h1 = next(&s);
+        game.apply(&mut s, &Action::AssignLane(h1, 0)).unwrap();
+        let h2 = next(&s);
+        game.apply(&mut s, &Action::AssignLane(h2, 0)).unwrap();
+
+        // The device passes to side B, which assigns by hand too (the refinement).
+        assert_eq!(
+            s.phase,
+            Phase::Assign,
+            "side B still has a placement choice"
+        );
+        assert_eq!(
+            s.plan.committing, 1,
+            "the device passes to side B to assign"
+        );
+        let f1 = next(&s);
+        game.apply(&mut s, &Action::AssignLane(f1, 1)).unwrap();
+        let f2 = next(&s);
+        game.apply(&mut s, &Action::AssignLane(f2, 1)).unwrap();
+
+        assert_eq!(s.phase, Phase::Slip, "both sides assigned → on to Slip");
+        assert_eq!(s.plan.lanes[0].heroes.len(), 2, "side A stacked lane 0");
+        assert_eq!(s.plan.lanes[1].foes.len(), 2, "side B stacked lane 1");
     }
 
     /// A base-mode cooperation scenario runs the lane round to an outcome.

@@ -170,9 +170,11 @@ Catalog(
         // --- Resources ---
         GlossaryCard( category: "Resources", term: "Tempo", text: "Offense budget (= Speed). Spent to slip a lane and to pick Skirmisher/Reserve targets; the cost is the opponent's Speed." ),
         GlossaryCard( category: "Resources", term: "Focus", text: "Defense budget (= Mind). Spent to block slips and to survive incoming hits; the cost is the attacker's Speed. Fast-but-thin slips well; high-Mind holds the wall." ),
-        // --- The round ---
+        // --- The round (the §4 rulebook line, kept verbatim — see anti-drift test) ---
+        GlossaryCard( category: "Round", term: "In one line", text: "Secretly pick how many go to the Vanguard (number cards); the smaller count sets the lanes, everyone else is Reserve. Assign your Vanguard to the lanes — stack to overwhelm, bluff which. Each Vanguard holds (fight + block) or slips past to become a Skirmisher: slipping costs Tempo, blocking costs Focus, a funded block wins. Resolve the front; survivors who slipped are Skirmishers and may hit anyone; then Reserve fire on the enemy front (never enemy Reserve) and aid allies. No Vanguard on either side → open brawl, hit anyone." ),
         GlossaryCard( category: "Round", term: "Phases", text: "Muster (set Vanguard/Reserve) → Assign (place lanes) → Slip (hold/slip) → Vanguard resolves → Skirmishers strike → Reserve acts → refresh. Order-independent within each phase." ),
-        // --- The Clash module ---
+        // --- The Clash module (the §1.0 rulebook line, kept verbatim — see anti-drift test) ---
+        GlossaryCard( category: "Clash module", term: "In one line", text: "Each beat pick a card: Strike (hit where they are) or Anticipate (where they'll go) to attack; Gather to hold your ground and build Force; Evade to dodge. A connecting strike ends the duel; slip a Strike with Evade and you steal their Force (always at least 1)." ),
         GlossaryCard( category: "Clash module", term: "The Clash", text: "An optional 1v1 mix-up that replaces a same-range trade. Each beat both pick a card and reveal at once: Strike, Anticipate, Gather, Evade." ),
         GlossaryCard( category: "Clash module", term: "Cards", text: "Strike beats Gather; Anticipate beats Evade; Gather beats Anticipate; Evade beats Strike. Strike also beats Anticipate; Strike-vs-Strike trades." ),
         GlossaryCard( category: "Clash module", term: "Force", text: "Gather builds +1 Force; each Force doubles your connecting hit. Evading a Strike steals the striker's Force (always at least 1)." ),

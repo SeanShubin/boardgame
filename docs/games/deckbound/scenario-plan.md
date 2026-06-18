@@ -91,9 +91,11 @@ Each is one lesson, algorithmic.
 - ✅ Foe-side **reserve targeting matrix** enforced (heroes' Reserve fire hits the foe front;
   Longshot or an empty front reaches foe Reserves).
 - ✅ **Hotseat PvP lane driver** — both sides human, pass-and-play, hidden commit per phase
-  (Muster → Slip → Skirmish → Reserve, committing side alternates). Versus holds 3v3/2v2 PvP
-  lane battles plus a 1v1 Clash duel. *(First-pass: PvP auto-assigns lanes — manual stacking in
-  PvP is the remaining refinement.)*
+  (Muster → **Assign** → Slip → Skirmish → Reserve, committing side alternates). Versus holds
+  3v3/2v2 PvP lane battles plus a 1v1 Clash duel.
+- ✅ **PvP manual lane stacking** — with ≥2 lanes and ≥2 Vanguard, *each* side now places its own
+  lanes by hand (the device passes A → B for the Assign phase) and may stack a lane, the same
+  count-adaptive choice PvE has. (Was the remaining first-pass refinement.)
 
 ## Implementation notes (what the engine must do)
 

@@ -279,6 +279,66 @@ mod tests {
         assert!(glossary().len() >= 10, "the encyclopedia has rules entries");
     }
 
+    /// Anti-drift: every *current* (non-superseded) `MANUAL` line in the Spec must appear
+    /// verbatim in the encyclopedia glossary. If the Spec wording changes, this fails until the
+    /// matching glossary entry is brought back in sync — the digital/printed one-liner can't drift
+    /// from the canon. (The Spec is the source of truth; the glossary is authored to match it.)
+    #[test]
+    fn glossary_carries_current_spec_manual_lines() {
+        const SPEC: &str = include_str!("../../../docs/games/deckbound/canon/2-spec/README.md");
+
+        // One searchable corpus of every glossary entry's text.
+        let corpus = glossary()
+            .iter()
+            .map(|e| e.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Walk the Spec, tracking whether the current section is superseded, and collect each
+        // current MANUAL block (the marker line through the next blank line), normalized.
+        let lines: Vec<&str> = SPEC.lines().collect();
+        let mut manuals: Vec<String> = Vec::new();
+        let mut superseded = false;
+        let mut i = 0;
+        while i < lines.len() {
+            let t = lines[i].trim_start();
+            if t.starts_with("## ") || t.starts_with("### ") {
+                superseded = false; // supersession is per-section; a heading starts fresh
+            }
+            if t.starts_with("> **SUPERSEDED") || t.starts_with("> **PARTIALLY SUPERSEDED") {
+                superseded = true;
+            }
+            if t.contains("**MANUAL.**") && !superseded {
+                let mut block = String::new();
+                let mut j = i;
+                while j < lines.len() && !lines[j].trim().is_empty() {
+                    block.push(' ');
+                    block.push_str(lines[j]);
+                    j += 1;
+                }
+                let block = block.replace("**MANUAL.**", " ");
+                let norm = block.split_whitespace().collect::<Vec<_>>().join(" ");
+                manuals.push(norm.trim_matches('*').trim().to_string());
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+
+        assert!(
+            manuals.len() >= 2,
+            "expected at least the current §1.0 and §4 MANUAL lines, found {}",
+            manuals.len()
+        );
+        for m in &manuals {
+            assert!(
+                corpus.contains(m.as_str()),
+                "a current Spec MANUAL line is not in the glossary verbatim — add/sync a \
+                 GlossaryCard so the encyclopedia can't drift from the Spec:\n  {m}"
+            );
+        }
+    }
+
     #[test]
     fn every_scenario_builds_a_roster() {
         for s in campaign()

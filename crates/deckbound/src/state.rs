@@ -82,6 +82,9 @@ pub struct Round {
     pub foe_acted: Vec<bool>,
     /// Vanguard awaiting a lane during the Assign phase (the side currently committing).
     pub assign_queue: Vec<usize>,
+    /// Sides that still owe a manual lane assignment, in order — each `(side, its Vanguard)`.
+    /// PvP can queue both sides; drained one at a time into `assign_queue`.
+    pub assign_pending: Vec<(u8, Vec<usize>)>,
     /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always
     /// 0 in PvE.
     pub committing: u8,
@@ -102,6 +105,7 @@ impl Round {
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
             assign_queue: Vec::new(),
+            assign_pending: Vec::new(),
             committing: 0,
             clash_mode: false,
         }

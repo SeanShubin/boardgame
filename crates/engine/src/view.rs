@@ -33,6 +33,47 @@ pub enum ProseLine {
     Body(String),
     /// Vertical breathing room between blocks.
     Gap,
+    /// A small comparison grid — e.g. a "what beats what" RPS chart. A renderer draws it as an
+    /// aligned table of cells (proportional fonts can't align an ASCII grid in flowing text).
+    Grid(Grid),
+}
+
+/// A comparison grid: `headers` are the column labels; each [`GridRow`] is a labelled row of
+/// [`GridCell`]s. Row *i*, column *j* reads "row beats / loses to / ties column".
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Grid {
+    /// Column headers (the corner above the row labels is left blank by the renderer).
+    pub headers: Vec<String>,
+    /// The grid's rows, top to bottom.
+    pub rows: Vec<GridRow>,
+}
+
+/// One labelled row of a [`Grid`].
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct GridRow {
+    /// The row's label, shown in the leftmost column.
+    pub label: String,
+    /// The row's cells, left to right, aligned under [`Grid::headers`].
+    pub cells: Vec<GridCell>,
+}
+
+/// One cell of a [`Grid`]: short text plus a colour hint.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct GridCell {
+    /// The cell's text (e.g. "win", "lose", "trade", "—").
+    pub text: String,
+    /// A colour hint so a renderer can tint outcomes (e.g. [`Accent::Good`] for a win).
+    pub accent: Accent,
+}
+
+impl GridCell {
+    /// A cell with text and an accent.
+    pub fn new(text: impl Into<String>, accent: Accent) -> Self {
+        Self {
+            text: text.into(),
+            accent,
+        }
+    }
 }
 
 /// A single pile of cards as it should appear to the viewer.

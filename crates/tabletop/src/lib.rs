@@ -56,6 +56,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(Platform::detect())
             .insert_resource(HelpVisible(false))
             .insert_resource(RulesVisible(false))
+            .insert_resource(RulesQuery::default())
             .insert_resource(Muted(false))
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
@@ -66,7 +67,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                     setup_camera,
                     install_ui_font,
                     setup_help,
-                    setup_rules::<G>,
+                    setup_rules,
                     setup_sfx,
                 ),
             )
@@ -77,6 +78,14 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // system consume Esc as "close help" instead.
             .add_systems(Update, toggle_help.after(cancel_on_key::<G>))
             .add_systems(Update, toggle_rules.after(cancel_on_key::<G>))
+            // Type-to-search the encyclopedia: capture keys into `RulesQuery`, then
+            // rebuild the filtered entry list when the query (or visibility) changes.
+            .add_systems(
+                Update,
+                (rules_search_input, refresh_rules::<G>)
+                    .chain()
+                    .after(toggle_rules),
+            )
             // Pure-presentation juice: hover lift + settle-in. These read
             // `Interaction` and write `UiTransform`/shadow only, so they run
             // every frame independently of the redraw chain below.
@@ -136,9 +145,25 @@ struct HelpVisible(bool);
 #[derive(Resource)]
 struct RulesVisible(bool);
 
+/// The live search filter typed into the rules overlay (lower-cased as typed).
+#[derive(Resource, Default)]
+struct RulesQuery(String);
+
 /// Marks the rules-reference overlay so [`toggle_rules`] can show / hide it.
 #[derive(Component)]
 struct RulesOverlay;
+
+/// Marks the search-line text in the rules overlay (shows the current query).
+#[derive(Component)]
+struct RulesSearch;
+
+/// Marks the scrollable container that holds the (filtered) rules entries.
+#[derive(Component)]
+struct RulesList;
+
+/// Marks one entry block inside [`RulesList`], so [`refresh_rules`] can clear them on a re-filter.
+#[derive(Component)]
+struct RulesEntry;
 
 /// Marks the root entity of the current table so it can be torn down on redraw.
 #[derive(Component)]
@@ -289,19 +314,23 @@ fn toggle_help(
     }
 }
 
-/// `R` toggles the rules-reference overlay; Esc closes it. Mirrors [`toggle_help`].
+/// `R` opens the rules-reference overlay; `Esc` closes it. While it is open `R` is a normal
+/// search character (only `Esc` closes), so terms containing "r" remain searchable. Opening or
+/// closing resets the search filter.
 fn toggle_rules(
     keys: Res<ButtonInput<KeyCode>>,
     mut visible: ResMut<RulesVisible>,
+    mut query: ResMut<RulesQuery>,
     mut overlay: Query<&mut Node, (With<RulesOverlay>, Without<HelpHint>)>,
     mut hint: Query<&mut Node, (With<HelpHint>, Without<RulesOverlay>)>,
 ) {
-    let toggle = keys.just_pressed(KeyCode::KeyR);
+    let open = !visible.0 && keys.just_pressed(KeyCode::KeyR);
     let close = visible.0 && keys.just_pressed(KeyCode::Escape);
-    if !toggle && !close {
+    if !open && !close {
         return;
     }
-    visible.0 = !close && !visible.0;
+    visible.0 = open;
+    query.0.clear();
 
     let shown = |on: bool| if on { Display::Flex } else { Display::None };
     if let Ok(mut node) = overlay.single_mut() {
@@ -312,13 +341,191 @@ fn toggle_rules(
     }
 }
 
-/// Build the (initially hidden) rules-reference overlay from the game's [`reference`]: a
-/// scrollable panel of entries grouped by category. Lives outside [`TableRoot`] so redraws
+/// While the rules overlay is open, capture typed keys into the search query: letters / digits /
+/// space append, Backspace deletes. Case-insensitive (stored lower-case).
+fn rules_search_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    visible: Res<RulesVisible>,
+    mut query: ResMut<RulesQuery>,
+) {
+    if !visible.0 {
+        return;
+    }
+    for key in keys.get_just_pressed() {
+        if *key == KeyCode::Backspace {
+            query.0.pop();
+        } else if *key == KeyCode::Space {
+            query.0.push(' ');
+        } else if let Some(c) = key_char(*key) {
+            query.0.push(c);
+        }
+    }
+}
+
+/// The lower-case character a letter/digit [`KeyCode`] types, or `None` for non-text keys.
+fn key_char(key: KeyCode) -> Option<char> {
+    use KeyCode::*;
+    let c = match key {
+        KeyA => 'a',
+        KeyB => 'b',
+        KeyC => 'c',
+        KeyD => 'd',
+        KeyE => 'e',
+        KeyF => 'f',
+        KeyG => 'g',
+        KeyH => 'h',
+        KeyI => 'i',
+        KeyJ => 'j',
+        KeyK => 'k',
+        KeyL => 'l',
+        KeyM => 'm',
+        KeyN => 'n',
+        KeyO => 'o',
+        KeyP => 'p',
+        KeyQ => 'q',
+        KeyR => 'r',
+        KeyS => 's',
+        KeyT => 't',
+        KeyU => 'u',
+        KeyV => 'v',
+        KeyW => 'w',
+        KeyX => 'x',
+        KeyY => 'y',
+        KeyZ => 'z',
+        Digit0 => '0',
+        Digit1 => '1',
+        Digit2 => '2',
+        Digit3 => '3',
+        Digit4 => '4',
+        Digit5 => '5',
+        Digit6 => '6',
+        Digit7 => '7',
+        Digit8 => '8',
+        Digit9 => '9',
+        _ => return None,
+    };
+    Some(c)
+}
+
+/// Rebuild the filtered entry list whenever the query (or the overlay's visibility) changes. An
+/// empty query shows everything; otherwise an entry survives if its category, term, or text
+/// contains the query (case-insensitive). Generic over the game — the content is its [`reference`].
+///
+/// [`reference`]: engine::Game::reference
+#[allow(clippy::too_many_arguments)]
+fn refresh_rules<G: Game + Clone>(
+    mut commands: Commands,
+    game: Res<GameRes<G>>,
+    query: Res<RulesQuery>,
+    visible: Res<RulesVisible>,
+    list: Query<Entity, With<RulesList>>,
+    entries_q: Query<Entity, With<RulesEntry>>,
+    mut search: Query<&mut Text, With<RulesSearch>>,
+    mut last: Local<Option<String>>,
+) {
+    // Only rebuild on a real change: the query string while open, or `None` while hidden.
+    let key = visible.0.then(|| query.0.clone());
+    if *last == key {
+        return;
+    }
+    *last = key;
+    if !visible.0 {
+        return;
+    }
+
+    if let Ok(mut text) = search.single_mut() {
+        *text = Text::new(if query.0.is_empty() {
+            "Search: (type to filter · Esc to close)".to_string()
+        } else {
+            format!("Search: {}", query.0)
+        });
+    }
+
+    // Clear the previous entries, then refill with the matches.
+    for e in &entries_q {
+        commands.entity(e).despawn();
+    }
+    let Ok(list) = list.single() else {
+        return;
+    };
+    let q = query.0.to_lowercase();
+    let entries = game.0.reference();
+    let matches = |e: &engine::RefEntry| {
+        q.is_empty()
+            || e.term.to_lowercase().contains(&q)
+            || e.text.to_lowercase().contains(&q)
+            || e.category.to_lowercase().contains(&q)
+    };
+
+    commands.entity(list).with_children(|panel| {
+        let mut category = String::new();
+        let mut any = false;
+        for e in entries.iter().filter(|e| matches(e)) {
+            any = true;
+            if e.category != category {
+                category = e.category.clone();
+                panel.spawn((
+                    RulesEntry,
+                    Node {
+                        margin: UiRect::top(Val::Px(8.0)),
+                        ..default()
+                    },
+                    Text::new(e.category.clone()),
+                    TextFont {
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(BUTTON),
+                ));
+            }
+            panel.spawn((
+                RulesEntry,
+                Text::new(e.term.clone()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(TITLE_INK),
+            ));
+            panel.spawn((
+                RulesEntry,
+                Text::new(e.text.clone()),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(MUTED_INK),
+            ));
+        }
+        if !any {
+            panel.spawn((
+                RulesEntry,
+                Node {
+                    margin: UiRect::top(Val::Px(8.0)),
+                    ..default()
+                },
+                Text::new(if entries.is_empty() {
+                    "This game has no rules reference.".to_string()
+                } else {
+                    format!("No entries match \u{201c}{}\u{201d}.", query.0)
+                }),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(MUTED_INK),
+            ));
+        }
+    });
+}
+
+/// Build the (initially hidden) rules-reference overlay shell: a title, a live **search line**,
+/// and an empty scrollable list. [`refresh_rules`] fills the list (filtered by the search query)
+/// from the game's [`reference`] each time it changes. Lives outside [`TableRoot`] so redraws
 /// never tear it down. Generic over the game — the content is whatever it exposes.
 ///
 /// [`reference`]: engine::Game::reference
-fn setup_rules<G: Game + Clone>(mut commands: Commands, game: Res<GameRes<G>>) {
-    let entries = game.0.reference();
+fn setup_rules(mut commands: Commands) {
     commands
         .spawn((
             RulesOverlay,
@@ -344,7 +551,6 @@ fn setup_rules<G: Game + Clone>(mut commands: Commands, game: Res<GameRes<G>>) {
                         padding: UiRect::all(Val::Px(22.0)),
                         row_gap: Val::Px(8.0),
                         border_radius: BorderRadius::all(Val::Px(PANEL_RADIUS)),
-                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
                     BackgroundColor(PANEL),
@@ -358,61 +564,29 @@ fn setup_rules<G: Game + Clone>(mut commands: Commands, game: Res<GameRes<G>>) {
                         },
                         TextColor(TITLE_INK),
                     ));
-                    let mut category = String::new();
-                    for e in &entries {
-                        if e.category != category {
-                            category = e.category.clone();
-                            panel.spawn((
-                                Node {
-                                    margin: UiRect::top(Val::Px(8.0)),
-                                    ..default()
-                                },
-                                Text::new(e.category.clone()),
-                                TextFont {
-                                    font_size: 18.0,
-                                    ..default()
-                                },
-                                TextColor(BUTTON),
-                            ));
-                        }
-                        panel.spawn((
-                            Text::new(e.term.clone()),
-                            TextFont {
-                                font_size: 15.0,
-                                ..default()
-                            },
-                            TextColor(TITLE_INK),
-                        ));
-                        panel.spawn((
-                            Text::new(e.text.clone()),
-                            TextFont {
-                                font_size: 13.0,
-                                ..default()
-                            },
-                            TextColor(MUTED_INK),
-                        ));
-                    }
-                    if entries.is_empty() {
-                        panel.spawn((
-                            Text::new("This game has no rules reference."),
-                            TextFont {
-                                font_size: 14.0,
-                                ..default()
-                            },
-                            TextColor(MUTED_INK),
-                        ));
-                    }
+                    // The live search line; `refresh_rules` rewrites its text as you type.
                     panel.spawn((
+                        RulesSearch,
                         Node {
-                            margin: UiRect::top(Val::Px(10.0)),
+                            margin: UiRect::vertical(Val::Px(4.0)),
                             ..default()
                         },
-                        Text::new("Press R or Esc to close"),
+                        Text::new("Search: (type to filter · Esc to close)"),
                         TextFont {
-                            font_size: 13.0,
+                            font_size: 14.0,
                             ..default()
                         },
-                        TextColor(MUTED_INK),
+                        TextColor(BUTTON),
+                    ));
+                    // The scrollable, re-filled list of (matching) entries.
+                    panel.spawn((
+                        RulesList,
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(4.0),
+                            overflow: Overflow::scroll_y(),
+                            ..default()
+                        },
                     ));
                 });
         });
@@ -830,8 +1004,13 @@ struct SfxHandles {
 struct Muted(bool);
 
 /// `M` mutes / unmutes all sound effects.
-fn toggle_mute(keys: Res<ButtonInput<KeyCode>>, mut muted: ResMut<Muted>) {
-    if keys.just_pressed(KeyCode::KeyM) {
+fn toggle_mute(
+    keys: Res<ButtonInput<KeyCode>>,
+    rules: Res<RulesVisible>,
+    mut muted: ResMut<Muted>,
+) {
+    // While the rules overlay is open, `M` is a search character, not the mute key.
+    if !rules.0 && keys.just_pressed(KeyCode::KeyM) {
         muted.0 = !muted.0;
     }
 }
@@ -1063,9 +1242,59 @@ fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
                                     ..default()
                                 });
                             }
+                            ProseLine::Grid(grid) => spawn_grid(col, grid),
                         }
                     }
                 });
+        });
+}
+
+/// Width of one [`Grid`] cell (and the row-label column), so columns line up.
+const GRID_CELL_W: f32 = 96.0;
+
+/// Draw a comparison [`Grid`] as an aligned table: a header row (blank corner + column labels),
+/// then one labelled row per [`engine::GridRow`], each cell tinted by its accent.
+fn spawn_grid(parent: &mut ChildSpawnerCommands, grid: &engine::Grid) {
+    let cell = |row: &mut ChildSpawnerCommands, text: &str, color: Color, header: bool| {
+        row.spawn((
+            Node {
+                width: Val::Px(GRID_CELL_W),
+                padding: UiRect::axes(Val::Px(4.0), Val::Px(5.0)),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            Text::new(text.to_string()),
+            TextFont {
+                font_size: if header { 14.0 } else { 13.0 },
+                ..default()
+            },
+            TextColor(color),
+        ));
+    };
+
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            margin: UiRect::top(Val::Px(6.0)),
+            ..default()
+        })
+        .with_children(|table| {
+            // Header row: a blank corner cell, then the column labels.
+            table.spawn(Node::default()).with_children(|row| {
+                cell(row, "", MUTED_INK, true);
+                for h in &grid.headers {
+                    cell(row, h, BUTTON, true);
+                }
+            });
+            // One row per GridRow: the row label, then each outcome cell tinted by accent.
+            for r in &grid.rows {
+                table.spawn(Node::default()).with_children(|row| {
+                    cell(row, &r.label, BUTTON, true);
+                    for c in &r.cells {
+                        cell(row, &c.text, accent_color(c.accent), false);
+                    }
+                });
+            }
         });
 }
 
