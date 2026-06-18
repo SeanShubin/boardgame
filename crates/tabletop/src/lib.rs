@@ -59,7 +59,10 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
-            .add_systems(Startup, (setup_camera, install_ui_font, setup_help, setup_sfx))
+            .add_systems(
+                Startup,
+                (setup_camera, install_ui_font, setup_help, setup_sfx),
+            )
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
             // After `cancel_on_key` so that while the overlay is open it sees
@@ -504,7 +507,12 @@ fn mix_color(a: Color, b: Color, t: f32) -> Color {
 /// neighbouring cards never reflow.
 fn animate_cards(
     time: Res<Time>,
-    mut cards: Query<(&Interaction, &mut UiTransform, &mut BoxShadow, &mut CardAnim)>,
+    mut cards: Query<(
+        &Interaction,
+        &mut UiTransform,
+        &mut BoxShadow,
+        &mut CardAnim,
+    )>,
 ) {
     // Clamp dt so a hitch (or a long first frame) doesn't snap everything.
     let dt = time.delta_secs().min(1.0 / 20.0);
