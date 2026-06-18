@@ -43,6 +43,18 @@ pub enum Effect {
     Recover,
     /// Bank +`amount` Speed (extra tempo this round).
     BankSpeed { amount: u32 },
+    /// Restore `body` Health to the most-wounded ally (a Mend).
+    Mend { body: u32 },
+    /// Grant a melee attack to a defenseless ally for the round (a Ward, §4.2).
+    Ward,
+    /// Grant +`tempo` Tempo to an ally (a Haste).
+    Haste { tempo: u32 },
+    /// Strip `tempo` Tempo from a foe (a Suppress).
+    Suppress { tempo: u32 },
+    /// Cut `speed` Speed from a foe (a Slow — cheaper to block/engage).
+    Slow { speed: u32 },
+    /// Strip `focus` Focus from a foe so it cannot block (a Confuse).
+    Confuse { focus: u32 },
 }
 
 /// An action card: its primary effect, how many foes it hits, and its lifecycle.
@@ -96,6 +108,12 @@ impl Card {
                 Effect::Steel => "steel".into(),
                 Effect::Recover => "recover".into(),
                 Effect::BankSpeed { amount } => format!("+{amount} speed"),
+                Effect::Mend { body } => format!("mend +{body}"),
+                Effect::Ward => "ward (grant melee)".into(),
+                Effect::Haste { tempo } => format!("haste +{tempo}"),
+                Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
+                Effect::Slow { speed } => format!("slow -{speed} speed"),
+                Effect::Confuse { focus } => format!("confuse -{focus} focus"),
             });
         }
         if self.targets > 1 {

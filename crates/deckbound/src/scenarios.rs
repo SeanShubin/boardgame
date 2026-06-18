@@ -1,13 +1,12 @@
-//! The booklet: loads cards, traits, actors, and scenarios from
-//! `data/booklet.ron` and builds [`Actor`]s. All numbers live in data so they
-//! retune without recompiling the engine.
+//! The booklet: loads cards, traits, actors, and scenarios from `data/booklet.ron` and
+//! builds [`Actor`]s. All numbers live in data so they retune without recompiling the engine.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::actor::{Actor, Behavior, Driver, Instinct, Line, Script, TargetRule};
+use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
 use crate::cards::Card;
 use crate::duel::Move;
 use crate::stats::{Aspect, DamageType, Defense, Offense};
@@ -39,11 +38,21 @@ struct TraitCard {
     keystone: Option<Aspect>,
 }
 
+fn one() -> u32 {
+    1
+}
+fn five() -> u32 {
+    5
+}
+fn melee() -> Attack {
+    Attack::Melee
+}
+
 #[derive(Debug, Deserialize)]
 struct ActorCard {
     name: String,
     role: String,
-    /// "hero" (human) or a creature stance-policy keyword (dummy/brute/turtle/…).
+    /// "hero" (human) or a creature instinct keyword (brute / aggressor / charger / …).
     driver: String,
     speed: u32,
     power: u32,
@@ -63,20 +72,14 @@ struct ActorCard {
     actions: Vec<String>,
     #[serde(default)]
     traits: Vec<String>,
-    #[serde(default)]
-    runner: bool,
-    /// "front" (default) or "back" — §4 formation.
-    #[serde(default)]
-    line: Option<String>,
-    /// Reaches the enemy back line directly (§4).
-    #[serde(default)]
-    ranged: bool,
+    /// Attack profile (§4.2): Melee / Ranged / Both / Neither. Defaults to Melee.
+    #[serde(default = "melee")]
+    attack: Attack,
+    /// Creature commitment bias 0..=10 (how many Vanguard it fields, how readily it slips).
+    #[serde(default = "five")]
+    aggression: u32,
     #[serde(default)]
     target_rule: Option<TargetRule>,
-}
-
-fn one() -> u32 {
-    1
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,9 +88,9 @@ struct ScenarioCard {
     blurb: String,
     heroes: Vec<String>,
     foes: Vec<String>,
-    /// A hotseat PvP duel (two human sides) rather than a PvE fight.
+    /// Use the optional four-card Clash module for same-range duels (else deterministic trade).
     #[serde(default)]
-    pvp: bool,
+    clash: bool,
 }
 
 /// A selectable scenario.
@@ -95,8 +98,8 @@ struct ScenarioCard {
 pub struct Scenario {
     pub name: String,
     pub blurb: String,
-    /// A hotseat PvP duel (§3.4) — both sides are human.
-    pub pvp: bool,
+    /// Whether this scenario runs the optional Clash module.
+    pub clash: bool,
     heroes: Vec<String>,
     foes: Vec<String>,
 }
@@ -137,7 +140,7 @@ fn scenario_from(card: &ScenarioCard) -> Scenario {
     Scenario {
         name: card.name.clone(),
         blurb: card.blurb.clone(),
-        pvp: card.pvp,
+        clash: card.clash,
         heroes: card.heroes.clone(),
         foes: card.foes.clone(),
     }
@@ -151,21 +154,18 @@ fn find_card(cat: &Catalog, name: &str) -> Card {
         .clone()
 }
 
-/// A creature's instinct, by keyword. **Tutorial dummies are algorithmic scripts** — they
-/// punish the player for not learning the lesson and fold to the correct move. **Real foes
-/// draw from a random deck** (the deck *is* their mixed strategy, §7). First-pass tunings.
+/// A creature's Clash instinct, by keyword (used only when the Clash module is on). Tutorial
+/// dummies are deterministic scripts; real foes draw from a deck (the deck is their mixed
+/// strategy).
 fn instinct_for(keyword: &str) -> Instinct {
     use Move::*;
     match keyword {
-        // --- Tutorial scripts (deterministic; one lesson each) ---
-        // Winds Force up, then unloads — Strike it while it gathers, or Evade the killshot.
         "charger" => Instinct::Script(Script::ChargeThenStrike { until: 2 }),
-        "leader" => Instinct::Script(Script::Always(Anticipate)), // Strike or Gather it; never Evade
-        "dodger" => Instinct::Script(Script::Always(Evade)),      // Anticipate it; never Strike
-        "counter" => Instinct::Script(Script::Counter), // Anticipate it; Strike it and it counters
-        "brawler" | "dummy" => Instinct::Script(Script::Always(Strike)), // Evade it; anything else is hit
+        "leader" => Instinct::Script(Script::Always(Anticipate)),
+        "dodger" => Instinct::Script(Script::Always(Evade)),
+        "counter" => Instinct::Script(Script::Counter),
+        "brawler" | "dummy" => Instinct::Script(Script::Always(Strike)),
         "post" => Instinct::Script(Script::Always(Gather)),
-        // --- Real-foe decks (random lean) ---
         "feint" => Instinct::Deck(vec![Strike, Anticipate]),
         "brute" => Instinct::Deck(vec![Gather, Gather, Strike]),
         "aggressor" => Instinct::Deck(vec![Strike, Strike, Anticipate]),
@@ -173,7 +173,7 @@ fn instinct_for(keyword: &str) -> Instinct {
         "skirmisher" => Instinct::Deck(vec![Evade, Strike, Anticipate]),
         "turtle" => Instinct::Deck(vec![Gather, Evade, Strike]),
         "duelist" => Instinct::Deck(vec![Strike, Anticipate, Gather, Evade]),
-        other => panic!("unknown creature instinct keyword {other:?}"),
+        _ => Instinct::Deck(vec![Strike, Anticipate]),
     }
 }
 
@@ -219,14 +219,10 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         Driver::Human
     } else {
         Driver::Creature(Behavior {
-            instinct: instinct_for(&c.driver),
+            aggression: c.aggression,
             target_rule: c.target_rule.unwrap_or(TargetRule::Front),
+            instinct: instinct_for(&c.driver),
         })
-    };
-
-    let line = match c.line.as_deref() {
-        Some("back") => Line::Back,
-        _ => Line::Front,
     };
 
     let mut actor = Actor {
@@ -237,9 +233,7 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
         weapon: find_card(cat, &c.weapon),
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
-        runner: c.runner,
-        line,
-        ranged: c.ranged,
+        attack: c.attack,
         tempo: 0,
         focus: 0,
         fallen: false,
@@ -261,7 +255,12 @@ mod tests {
 
     #[test]
     fn every_scenario_builds_a_roster() {
-        for s in campaign().into_iter().chain(god()).chain(tutorials()) {
+        for s in campaign()
+            .into_iter()
+            .chain(god())
+            .chain(tutorials())
+            .chain(versus())
+        {
             let (h, f) = s.roster();
             assert!(!h.is_empty() && !f.is_empty(), "{} empty roster", s.name);
         }

@@ -88,6 +88,11 @@ mix-up played with cards. Design background:
 > is **restored** as current; §1.6 is reworded for it; §3 (Tempo/Focus) is rewritten and
 > §3.3 (Exposed) is removed.
 
+> **The Clash is an optional module.** The canonical floor (§4.2) resolves a same-range
+> engagement as a **simultaneous trade**; the Clash below *replaces* that trade with a four-card
+> mix-up + Force when a scenario enables it. Everything in §3–§4 (lanes, roles, phases,
+> Tempo/Focus) runs identically either way.
+
 ### 1.0 The Clash — four cards, Force, ends-on-strike
 
 **RULE.** A duel is a sequence of **beats**. Each beat both fighters **secretly choose one
@@ -796,11 +801,18 @@ current head-count.
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
 **position-determined**, never chosen: **lane combat and Skirmisher strikes are melee; Reserve
-fire is ranged.** When a strike lands at a given range, the target **answers it with a Clash
-(§1.0) iff it owns an attack of that same range**; otherwise the strike is an **auto-hit** —
-uncontested, no mix-up, no Force built — though it still passes through the target's
-armor/toughness (§2). Armor blunts an auto-hit; **Focus cannot** (Focus contests Clashes and
-blocks slips, not off-range fire).
+fire is ranged.** A strike lands at its range; whether the target can **contest** it depends on
+owning an attack of that same range:
+
+- **Same range (target can contest)** → in the **deterministic base**, a **simultaneous trade**
+  (both deal their base through armor/toughness, §2). When the **optional Clash module** (§1.0)
+  is on, the trade is replaced by the four-card Clash + Force.
+- **Range mismatch (target cannot contest)** → an **auto-hit**: uncontested, no mix-up, no Force,
+  but still through the target's armor/toughness. Armor blunts an auto-hit; **Focus cannot**
+  (Focus contests trades/Clashes and blocks slips, not off-range fire).
+
+The **Clash is a module, not the floor** — the game is fully playable with same-range = trade
+(see `future-possibilities.md` Entry 3: the strategic layer is rich without RPS).
 
 What follows from it:
 

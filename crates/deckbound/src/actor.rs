@@ -1,10 +1,10 @@
-//! Combatants — **Actors** — and how non-player ones decide.
+//! Combatants — **Actors** — their attack profile, and how creatures decide.
 //!
-//! An Actor is the umbrella (see `docs/games/deckbound/notes/entities.md`): a
-//! **Character** is human-driven (improvises); a **Creature** follows a scripted
-//! `Behavior` (a **decision deck** of moves + a target rule). Both carry the full stat
-//! block — [`Offense`](crate::stats::Offense) and [`Defense`](crate::stats::Defense) — plus
-//! a weapon and action cards, and round budgets (**tempo** = Speed, **focus** = Mind).
+//! An Actor is the umbrella (see `docs/games/deckbound/notes/entities.md`): a **Character**
+//! is human-driven; a **Creature** follows a scripted `Behavior`. Both carry the full stat
+//! block — [`Offense`](crate::stats::Offense) / [`Defense`](crate::stats::Defense) — a weapon,
+//! action cards, and round budgets (**tempo** = Speed, **focus** = Mind). Each Actor also has
+//! an **attack profile** (§4.2): the range(s) it can strike and contest at.
 
 use engine::Rng;
 use serde::Deserialize;
@@ -13,35 +13,92 @@ use crate::cards::Card;
 use crate::duel::Move;
 use crate::stats::{Defense, Offense};
 
+/// The range of an engagement (§4.2). Position-determined: lanes and Skirmisher strikes are
+/// melee; Reserve fire is ranged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Range {
+    Melee,
+    Ranged,
+}
+
+/// What range(s) an Actor can attack and contest at (§4.2). A strike at a range the target
+/// cannot answer is an **auto-hit**; a same-range meeting is a trade (or a Clash).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum Attack {
+    Melee,
+    Ranged,
+    Both,
+    Neither,
+}
+
+impl Attack {
+    /// Can this profile act / contest at `range`?
+    pub fn has(self, range: Range) -> bool {
+        matches!(
+            (self, range),
+            (Attack::Both, _) | (Attack::Melee, Range::Melee) | (Attack::Ranged, Range::Ranged)
+        )
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Attack::Melee => "melee",
+            Attack::Ranged => "ranged",
+            Attack::Both => "melee+ranged",
+            Attack::Neither => "support",
+        }
+    }
+}
+
 /// Who drives an Actor's choices.
 #[derive(Clone, Debug)]
 pub enum Driver {
     /// A Character: the human (or a stand-in) improvises.
     Human,
-    /// A Creature: a scripted instinct (a decision deck).
+    /// A Creature: a scripted instinct.
     Creature(Behavior),
 }
 
-/// How a creature chooses each beat: a random **deck** (real foes — the deck's composition
-/// *is* its mixed strategy) or a deterministic **script** (tutorial dummies — algorithmic, so
-/// a lesson plays out the same way every time, §7 `decision-making.md`).
+/// A creature's policy: how eagerly it commits to the Vanguard, whom it targets, and (only
+/// when the Clash module is on) how it plays the four-card mix-up.
+#[derive(Clone, Debug)]
+pub struct Behavior {
+    /// 0..=10 — higher commits more Actors to the Vanguard / slips more readily.
+    pub aggression: u32,
+    pub target_rule: TargetRule,
+    /// Clash instinct — used only when the optional Clash module is enabled.
+    pub instinct: Instinct,
+}
+
+impl Behavior {
+    /// This beat's Clash move (Clash module only). `force` is the creature's current Force.
+    pub fn pick(&self, force: u32, rng: &mut Rng) -> Move {
+        match &self.instinct {
+            Instinct::Deck(d) => {
+                if d.is_empty() {
+                    Move::Strike
+                } else {
+                    d[rng.below(d.len())]
+                }
+            }
+            Instinct::Script(s) => s.pick(force),
+        }
+    }
+}
+
+/// How a creature chooses each Clash beat: a random **deck** or a deterministic **script**
+/// (tutorial dummies). Used only when the Clash module is enabled.
 #[derive(Clone, Debug)]
 pub enum Instinct {
     Deck(Vec<Move>),
     Script(Script),
 }
 
-/// A deterministic creature algorithm (for tutorials) — built to punish a player who hasn't
-/// learned the lesson and fold to the one who has.
+/// A deterministic Clash algorithm (tutorial dummies).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Script {
-    /// Always the same move — a pure one-lesson dummy.
     Always(Move),
-    /// Gather (doubling Force) until Force reaches `until`, then unload a Strike (the
-    /// wind-up killshot you learn to interrupt).
     ChargeThenStrike { until: u32 },
-    /// Evade until a player's whiffed Strike hands over Force, then Strike it back with their
-    /// own momentum — so Striking a dodger is punished, while Anticipate beats it cleanly.
     Counter,
 }
 
@@ -58,35 +115,11 @@ impl Script {
             }
             Script::Counter => {
                 if force > 0 {
-                    Move::Strike // punish: hit you with the Force you just lost
-                } else {
-                    Move::Evade // bait / dodge; Anticipate beats this
-                }
-            }
-        }
-    }
-}
-
-/// A creature's scripted instinct and whom it targets.
-#[derive(Clone, Debug)]
-pub struct Behavior {
-    pub instinct: Instinct,
-    pub target_rule: TargetRule,
-}
-
-impl Behavior {
-    /// This beat's move. `force` is the creature's current Force (used by scripts); `rng` is
-    /// the per-beat keyed RNG (used by decks), so draws stay order-independent (§1.9).
-    pub fn pick(&self, force: u32, rng: &mut Rng) -> Move {
-        match &self.instinct {
-            Instinct::Deck(d) => {
-                if d.is_empty() {
                     Move::Strike
                 } else {
-                    d[rng.below(d.len())]
+                    Move::Evade
                 }
             }
-            Instinct::Script(s) => s.pick(force),
         }
     }
 }
@@ -94,21 +127,12 @@ impl Behavior {
 /// Whom a creature goes for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum TargetRule {
-    /// The front of the line (default).
+    /// The first reachable enemy.
     Front,
     /// The most fragile (fewest Body cards).
     LowestBody,
     /// The shakiest nerve (lowest Resolve).
     LeastResolute,
-    /// Dives for the back line through the gauntlet (§4).
-    Runner,
-}
-
-/// Which line an Actor stands in (§4). Public, free to shift between rounds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-pub enum Line {
-    Front,
-    Back,
 }
 
 /// A combatant.
@@ -118,24 +142,19 @@ pub struct Actor {
     pub role: String,
     pub offense: Offense,
     pub defense: Defense,
-    /// The base strike profile.
+    /// The base strike profile (supplies the damage type).
     pub weapon: Card,
-    /// Extra action cards (AoE, Rally, Dread, …) playable in the round.
+    /// Action/power cards playable in the round (§"cards may supersede the core").
     pub actions: Vec<Card>,
     pub driver: Driver,
-    /// This actor crosses the gauntlet rather than holding a line (§4).
-    pub runner: bool,
-    /// Front or back line (§4 formation).
-    pub line: Line,
-    /// Reaches the enemy back line directly, bypassing the gauntlet (§4).
-    pub ranged: bool,
+    /// Range(s) this Actor can attack and contest at (§4.2).
+    pub attack: Attack,
 
     // round-scoped budgets
     pub tempo: i32,
     pub focus: u32,
-    /// Finalized dead. Body reaching 0 is "mortally wounded" — the actor fights on and
-    /// lands its committed blows; death is tallied at the round boundary (§1.9), which
-    /// sets this. Once set it persists (the actor is out of the fight).
+    /// Finalized dead. Body reaching 0 is "mortally wounded" — death is tallied at the phase
+    /// boundary, which sets this; once set the Actor is out of the fight.
     pub fallen: bool,
 }
 
@@ -155,7 +174,12 @@ impl Actor {
         }
     }
 
-    /// Refresh tempo & focus and clear round-scoped state.
+    /// Does this Actor own an attack at `range` (so it can contest there, §4.2)?
+    pub fn can_contest(&self, range: Range) -> bool {
+        self.attack.has(range)
+    }
+
+    /// Refresh tempo & focus and clear round-scoped defense state.
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
         self.focus = self.defense.mind;
@@ -166,62 +190,20 @@ impl Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cards::{Card, Effect, Lifecycle};
-    use crate::stats::DamageType;
 
-    fn weapon() -> Card {
-        Card {
-            name: "Fist".into(),
-            targets: 1,
-            reach: [1, 1],
-            lifecycle: Lifecycle::Fleeting,
-            effects: vec![Effect::Damage {
-                power: 1,
-                dtype: DamageType::Blunt,
-            }],
-        }
+    #[test]
+    fn attack_profiles_contest_their_range() {
+        assert!(Attack::Melee.has(Range::Melee));
+        assert!(!Attack::Melee.has(Range::Ranged));
+        assert!(Attack::Ranged.has(Range::Ranged));
+        assert!(!Attack::Ranged.has(Range::Melee));
+        assert!(Attack::Both.has(Range::Melee) && Attack::Both.has(Range::Ranged));
+        assert!(!Attack::Neither.has(Range::Melee) && !Attack::Neither.has(Range::Ranged));
     }
 
     #[test]
-    fn refresh_resets_budgets_to_speed_and_mind() {
-        let mut a = Actor {
-            name: "X".into(),
-            role: "Y".into(),
-            offense: Offense {
-                speed: 5,
-                ..Default::default()
-            },
-            defense: Defense::new(8, 1, 4, 3),
-            weapon: weapon(),
-            actions: vec![],
-            driver: Driver::Human,
-            runner: false,
-            line: Line::Front,
-            ranged: false,
-            tempo: 0,
-            focus: 0,
-            fallen: false,
-        };
-        a.refresh_round();
-        assert_eq!(a.tempo, 5);
-        assert_eq!(a.focus, 3);
-    }
-
-    #[test]
-    fn a_deck_draws_and_a_script_winds_up() {
-        let mut rng = Rng::new(1);
-        let deck = Behavior {
-            instinct: Instinct::Deck(vec![Move::Strike]),
-            target_rule: TargetRule::Front,
-        };
-        assert_eq!(deck.pick(0, &mut rng), Move::Strike);
-        // The charger gathers until loaded, then strikes.
-        let charger = Behavior {
-            instinct: Instinct::Script(Script::ChargeThenStrike { until: 2 }),
-            target_rule: TargetRule::Front,
-        };
-        assert_eq!(charger.pick(0, &mut rng), Move::Gather);
-        assert_eq!(charger.pick(1, &mut rng), Move::Gather);
-        assert_eq!(charger.pick(2, &mut rng), Move::Strike);
+    fn script_charges_then_strikes() {
+        assert_eq!(Script::ChargeThenStrike { until: 2 }.pick(0), Move::Gather);
+        assert_eq!(Script::ChargeThenStrike { until: 2 }.pick(2), Move::Strike);
     }
 }

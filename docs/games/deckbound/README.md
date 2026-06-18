@@ -21,6 +21,8 @@ The documentation is split by **authority**:
 - **[future-possibilities.md](future-possibilities.md) — design backlog.** A living,
   non-authoritative parking lot for big speculative changes awaiting playtest before any
   decision. Neither canon nor frozen notes.
+- **[scenario-plan.md](scenario-plan.md) — combat content blueprint.** The authored target for
+  the rebuilt combat: cast, tutorials, and scenarios that realize §1/§3/§4.
 - **[roadmap.md](roadmap.md) — undefined mechanics & planned features.** A living to-do
   list of what doesn't exist yet (geography, travel, loot, progression, world events,
   run-level victory/defeat; plus features like a human-emulating AI, an in-game
