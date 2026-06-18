@@ -1,5 +1,9 @@
 # Deckbound — Combos & Meaningful Interactions
 
+> **DEFERRED — the combo/chord system is parked → `future-possibilities.md` (entry 4).** A
+> single-deck core comes first. **Frozen history.** *(The §5 zone-move interactions — tags, charges
+> — are a separate, current mechanic, not the deferred aspect-chord.)*
+
 The design target: **the meaningful choices are combinations.** A single atomic
 action is rarely the interesting unit; the richness is in **chaining effects into one
 interaction** — predict a strike, dodge it, counter, and recover, all in the same

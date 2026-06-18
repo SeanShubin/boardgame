@@ -236,7 +236,8 @@ has a Spec section, treat authority as follows:
   `coordination-and-interruption.md`, `combat.md`, `zones.md`) are **stale on this
   point**.
 - **Stats / defense model:** **`notes/stats.md`** and **`notes/form-and-defeat.md`**
-  are current (three aspects; cut → bar → pool; one health track).
+  are current (three **channels** — Body / Mind / Spirit; cut → bar → pool; one health track).
+  *(The notes call the channels "aspects"; "aspect" is now reserved for the deferred combo layer.)*
 - **Everything else:** trust `booklet.ron` for components/numbers and the
   most-recently-reconciled note for shape — but if it predates the Duel switch and
   touches the tactical layer, **distrust it** and ask.

@@ -70,12 +70,13 @@ No computer is required to *run* the game; cards and shuffling only; resources a
 represented as cards. A computer is an optional convenience, never a dependency.
 See [constraints](constraints.md).
 
-## 8. Deliberate decks; predictability is a resource
+## 8. Deliberate cards; predictability is a resource
 
-The player's own decks are **never shuffled** — order is intent, not luck — and a
-player's unpredictability is a **managed resource** that erodes as cards exhaust
-and is restored only at a tempo cost. See [zones](zones.md) and
-[decks-and-aspects](decks-and-aspects.md#never-shuffled).
+A player's own cards carry **no luck** — no shuffle, no random draw; what you can do is
+whatever sits **ready**, and the **order you commit is intent**. A player's
+unpredictability is a **managed resource** that **erodes as cards exhaust** (Spend →
+face-down) and is **restored only at a tempo cost** (Recover). The mechanism is **zone
+state**, not deck order — see Spec [§5 (Zones / exhaustion)](2-spec/README.md#5-zones--exhaustion--the-card-state-machine-).
 
 ## 9. Every rule rides on a solid metaphor
 

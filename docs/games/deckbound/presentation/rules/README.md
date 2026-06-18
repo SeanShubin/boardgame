@@ -5,10 +5,9 @@
 > mechanics firm up.
 
 Deckbound is a **cooperative** (solo or group), simulation-style fantasy game made
-entirely of cards: a character is a collection of never-shuffled decks, and every
-action is a chord of cards drawn one per *aspect* (Body, Mind, Magic, Spirit, …).
-You explore a fantasy world, survive scenario-based conflicts, and grow by acquiring
-new cards and new aspects.
+entirely of cards: a character *is* a deck — your cards move through zones (in hand,
+in play, spent) and define both what you are and what you can do. You explore a fantasy
+world, survive scenario-based conflicts, and grow by acquiring new cards.
 
 While the rules are worked out, the canonical mechanics live in the
 [Spec](../../canon/2-spec/README.md) and the intent in the

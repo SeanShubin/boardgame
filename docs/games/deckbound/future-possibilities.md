@@ -254,3 +254,43 @@ the game's depth *depend* on the Clash — it's a module, not a load-bearing wal
   flat base damage.)
 - Default posture: deterministic base as default with the Clash **opt-in** (lean), or Clash on by
   default.
+
+---
+
+## 4. Aspects & the chord — the multi-deck combo system
+
+- **Status:** **Deferred** (parked 2026-06-18). Get a **single-deck core** working fully first;
+  revisit the combo layer after playtest. (Was Spec §6; demoted from a stub to here.)
+- **Scope:** how a character's cards are *organized and composed* — a multi-deck "chord." Does
+  **not** touch the three **defense channels** (Body / Mind / Spirit, §2), which stay; this is only
+  the *deck/composition* system, not the damage channels that happen to share the word "aspect."
+
+### The idea (what was being designed)
+
+A character is a **set of aspect-decks** (dimensions of action — Body, Mind, Spirit, Magic…). A
+play is a **chord**: one card per aspect, combined into a single action. Card kinds: **numberless**,
+**modifier** (attachment order matters), **passive**. Only the tactical aspect (the Clash, §1) is
+rock-paper-scissors; the others compose commutatively. Acquiring a capability adds cards — or a
+whole new aspect/deck. Background: `notes/decks-and-aspects.md`, `notes/combos.md` (frozen).
+
+### Why defer
+
+- The **single-deck core** — Form + attachments + Action cards over the §5 zones, plus §1 Clash,
+  §4 battle, §8 strategic loop — is enough to test the whole game loop and tune difficulty against
+  the reference scenario. The chord/combo system is **depth on top**, not load-bearing for the core.
+- Classic "get one thing working fully before adding a combo system": composition multiplies the
+  balance surface, and we want clean data from the core first.
+
+### What "single core" means without aspects
+
+- **One deck** per character (not a chord of several aspect-decks).
+- **Attachments** still exist (Form = fundamental + attachments; Upgrades attach) and **compose
+  commutatively**; the order-dependent **modifier** card-kind is part of *this* deferred layer.
+- The three **defense channels** (Body / Mind / Spirit, §2) are unaffected.
+
+### Open questions for when it returns
+
+- The exact **chord combination rules** (how physical / tactical / magical cards combine).
+- The full **aspect list**, and how a brand-new aspect/deck is introduced to a character.
+- How chord-combos interact with the §5 zone/exhaustion economy and the §8 currency/Upgrade economy.
+- Whether "aspect" keeps that name (it currently collides with the §2 defense channels).

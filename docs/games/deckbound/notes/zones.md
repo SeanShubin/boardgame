@@ -1,5 +1,9 @@
 # Deckbound — Zones, Exhaustion & Tempo
 
+> **SUPERSEDED by `canon/2-spec` §5 (Zones / exhaustion)** and `zones-exhaustion-design.md`. This
+> note predates the Clash rewrite and is **frozen history** — trust §5 and the design doc where they
+> disagree.
+
 A character's cards move through a small set of **zones**, and that movement is a
 core system. The metaphor is one line:
 

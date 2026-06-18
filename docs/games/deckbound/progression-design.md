@@ -117,9 +117,9 @@ town system (deliberately, to minimise tracked systems).
 ### 3.3 Upgrades
 
 An **Upgrade** is **not a new card type** — it is **any catalog character-card** (a power
-`Card`, a `TraitCard`, a weapon, or a §6 aspect card) **acquired with currency**; "Upgrade" names
+`Card`, a `TraitCard`, or a weapon) **acquired with currency**; "Upgrade" names
 the **role a card plays when bought**. The **Upgrade deck** is just the currency-buyable subset of
-the catalog. A bought card joins your never-shuffled decks and makes the character
+the catalog. A bought card joins your deck (a Form attachment or an Action card, §5) and makes the character
 **permanently stronger**. For now Upgrades may be bought **freely**; a later mechanic may
 **randomise availability**.
 
@@ -287,13 +287,13 @@ banking. From there it **specializes** by spending that currency (depth) or **br
 **The five roles = the five non-generic currencies.** Not a chosen list — they fall out of the
 §4 triangle and its sub-axes:
 
-| Role | Falls out of | Currency | (cast) |
-| ---- | ------------ | -------- | ------ |
-| **Wall** | Vanguard that **holds** — Mind→Focus block, Body tank | **Iron** | Anvil |
-| **Infiltrator** | Vanguard that **slips** — Speed→Tempo, melee assassin | **Silver** | Wisp |
-| **Artillery** | Reserve **ranged damage** | **Brass** | Sear |
-| **Controller** | Reserve that **strips foes** — Tempo/Focus/Speed, Fear | **Bone** | Hex |
-| **Support** | Reserve that **aids allies** — heal/ward/haste/rally | **Salt** | Vow |
+| Role            | Falls out of                                           | Currency   | (cast) |
+| --------------- | ------------------------------------------------------ | ---------- | ------ |
+| **Wall**        | Vanguard that **holds** — Mind→Focus block, Body tank  | **Iron**   | Anvil  |
+| **Infiltrator** | Vanguard that **slips** — Speed→Tempo, melee assassin  | **Silver** | Wisp   |
+| **Artillery**   | Reserve **ranged damage**                              | **Brass**  | Sear   |
+| **Controller**  | Reserve that **strips foes** — Tempo/Focus/Speed, Fear | **Bone**   | Hex    |
+| **Support**     | Reserve that **aids allies** — heal/ward/haste/rally   | **Salt**   | Vow    |
 
 Plus the **generic** currency, **Gold** (role-independent utility) → **6 currencies / 6 threat
 decks** (§4); the Gold deck is the **clean-slate / early** flavor you fight *before* choosing.
@@ -356,15 +356,15 @@ player would otherwise *buy*.
 
 **Strategic-layer cards (this design).**
 
-| Card | What it is | Audit note |
-| ---- | ---------- | ---------- |
-| **Location card** | Face-down map tile; flips face-up on entry (§1). | New; no collision. |
-| **Identity card** | A character's position token on the map (§1). | **Resolved:** not a new card — the character's `ActorCard` *is* the map token. |
-| **Treasure card** | A location's companion, taken on clearing; carries **currency** (§3). | Renamed from "reward card." |
-| **Clear marker** | Per-location high-water mark = deepest level cleared (§2). | Renamed off "counter" (collided with duelist role *Counter* + §3 *counterattack*); matches §8's "cleared marker." |
-| **Encounter card** | Parametric enemy configuration, scaled by level (§4.1). | New; resolves to a set of `ActorCard`s. |
-| **Event card** | The world clock; for now only *"1 day passes"* (§6). | New; no collision. |
-| **Upgrade** | A card bought with currency that strengthens a character (§3.3). | **Resolved:** not a card type — the **role** a bought catalog card plays (see flag 1). |
+| Card               | What it is                                                            | Audit note                                                                                                        |
+| ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Location card**  | Face-down map tile; flips face-up on entry (§1).                      | New; no collision.                                                                                                |
+| **Identity card**  | A character's position token on the map (§1).                         | **Resolved:** not a new card — the character's `ActorCard` *is* the map token.                                    |
+| **Treasure card**  | A location's companion, taken on clearing; carries **currency** (§3). | Renamed from "reward card."                                                                                       |
+| **Clear marker**   | Per-location high-water mark = deepest level cleared (§2).            | Renamed off "counter" (collided with duelist role *Counter* + §3 *counterattack*); matches §8's "cleared marker." |
+| **Encounter card** | Parametric enemy configuration, scaled by level (§4.1).               | New; resolves to a set of `ActorCard`s.                                                                           |
+| **Event card**     | The world clock; for now only *"1 day passes"* (§6).                  | New; no collision.                                                                                                |
+| **Upgrade**        | A card bought with currency that strengthens a character (§3.3).      | **Resolved:** not a card type — the **role** a bought catalog card plays (see flag 1).                            |
 
 Decks (not cards): the **threat deck** (one per currency type, of encounter cards), the **event
 deck** (the clock), and the **Upgrade deck** (the buyable catalog subset).
@@ -377,15 +377,15 @@ own card type.
 actions, traits, attack), `Card` (one struct, **three uses** — weapon, power/action card,
 passive power), `TraitCard` (armor/ward), `ScenarioCard` (a battle setup). Physical Spec
 cards: the **Clash kit** (Strike/Anticipate/Gather/Evade), **number cards 0–9** + **decoy
-cards** (§4 muster/lanes), **Body Health** cards (§2.1), and §6's aspect-deck kinds
-(numberless / modifier / passive).
+cards** (§4 muster/lanes), and **Body Health** cards (§2.1). *(The multi-deck aspect/chord card
+kinds — numberless / modifier / passive — are deferred; `future-possibilities.md` entry 4.)*
 
 **Flags the audit raised.**
 
 1. **"Upgrade" is a role, not a card type — *resolved*.** What you buy to get stronger *is* a
-   character card (a power `Card`, a `TraitCard`, a weapon, a §6 aspect card). So **"Upgrade"
-   is the role a card plays when purchased**, not a fourth card type, and the **Upgrade deck**
-   = the currency-buyable subset of the catalog.
+   character card (a power `Card`, a `TraitCard`, or a weapon). So **"Upgrade" is the role a card
+   plays when purchased**, not a fourth card type, and the **Upgrade deck** = the currency-buyable
+   subset of the catalog.
 2. **The identity card is the `ActorCard` — *resolved*.** The character already *is* an
    `ActorCard`; that same card is its map token. No separate token card.
 3. **Pre-existing overloads (not ours — flagged for hygiene).** **"Ward"** already means three
@@ -398,9 +398,8 @@ cards** (§4 muster/lanes), **Body Health** cards (§2.1), and §6's aspect-deck
 - **Spec Coverage table** rows this will graduate into: *Strategic layer (world/event
   decks)*, *Geography & travel*, *Loot*, *Progression*, *Run victory/defeat* — all ⬜ stub
   today (`canon/2-spec/README.md`).
-- **Big graduation impact — stats-as-deck (§7).** Removing stats from the `ActorCard` rewrites
-  the existing (implemented) §4 actors and the `booklet.ron` schema, and refines §2 (where stats
-  live) and §6 (the deck *is* the character). Well-motivated, but a substantial Spec-first +
-  data + code change — later, not now.
+- **Stats-as-deck — GRADUATED to Spec §2.3 / §4.3.** Stats now live in the deck (Form); the
+  `ActorCard` becomes a bare identity + starting deck. The Spec amendment is done; the `booklet.ron`
+  schema + Rust struct + §4 reader migration is the pending **`/spec-sync §2,§4`** code pass.
 - **Prior thinking:** `notes/world-and-progression.md`, `notes/cards-and-customization.md`,
   `notes/archetypes.md` (frozen, non-authoritative).

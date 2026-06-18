@@ -1,5 +1,10 @@
 # Deckbound — Decks & Aspects
 
+> **DEFERRED — the aspect/chord combo system is parked → `future-possibilities.md` (entry 4).** The
+> current core is a **single deck** (Form + attachments + Action cards over the §5 zones), not a
+> chord of aspect-decks. This note is **frozen history**. *(The three defense channels Body / Mind /
+> Spirit, §2, are unaffected — different "aspect.")*
+
 The core system. Everything a character is and does is expressed as cards in
 decks.
 

@@ -39,11 +39,11 @@ days. That keeps the whole system tractable.
 Facing encodes **state, not secrecy**: **face-up = in play / working / available; face-down =
 spent / dormant.** (See §4 — the core game is open information.)
 
-| Zone | Where / facing | What's there |
-| ---- | -------------- | ------------ |
-| **Hand** — *in your grip* | held | cards ready to play |
-| **Active** — *in play, in effect* | table, **face-up** | everything working: your **Form** (permanent stat cards), **Lasting** stances/auras, and **charges** waiting to trigger |
-| **Down** — *spent / dormant* | table, **face-down** | used cards and cards on "cooldown," waiting to be **Recovered** to Hand |
+| Zone                              | Where / facing       | What's there                                                                                                            |
+| --------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Hand** — *in your grip*         | held                 | cards ready to play                                                                                                     |
+| **Active** — *in play, in effect* | table, **face-up**   | everything working: your **Form** (permanent stat cards), **Lasting** stances/auras, and **charges** waiting to trigger |
+| **Down** — *spent / dormant*      | table, **face-down** | used cards and cards on "cooldown," waiting to be **Recovered** to Hand                                                 |
 
 A card declares its **start zone**: most start in **Hand**; Form and standing stances start in
 **Active**; a charge-up / cooldown ability can start in **Down**, needing to be readied first.
@@ -72,13 +72,13 @@ So *exhaustion touches what you do, never what you are* — preserved as a card 
 The **default** *is* the "simple card": play it, it **returns to Hand**, reusable next turn (the
 Clash kit is the pure case — see §6). Keywords modify that; each is one printable **MANUAL** line:
 
-| Verb | Metaphor (its MANUAL line) | Zone move |
-| ---- | -------------------------- | --------- |
-| *(default)* | a jab you keep throwing | play → **Hand** |
-| **Spend** | used up, winded | play → **Down** (face-down) |
-| **Lasting** | a held stance / aura | play → **Active** (stays until removed) |
+| Verb        | Metaphor (its MANUAL line)              | Zone move                                           |
+| ----------- | --------------------------------------- | --------------------------------------------------- |
+| *(default)* | a jab you keep throwing                 | play → **Hand**                                     |
+| **Spend**   | used up, winded                         | play → **Down** (face-down)                         |
+| **Lasting** | a held stance / aura                    | play → **Active** (stays until removed)             |
 | **Recover** | catch your breath; stand a card back up | **Down → Hand** (the restore; costs a beat / Tempo) |
-| **Disrupt** | stagger them — knock it down | enemy **Active / Hand → Down** |
+| **Disrupt** | stagger them — knock it down            | enemy **Active / Hand → Down**                      |
 
 **Emergent from these four (the #6 payoff):**
 
@@ -145,11 +145,11 @@ in Hand (§1.0's "infinite-replay" = "everything is Recur"); heavier maneuvers a
 A permanent **Form stat sizes a fluctuating Resource pool** — you never spend the stat, you spend
 the pool it sizes (§3.1, *"Speed sizes Tempo"*):
 
-| Stat (Form, permanent) | sizes → | Resource pool (fluctuates) | spent on |
-| ---------------------- | ------- | -------------------------- | -------- |
-| **Toughness / Body** | → | **Health** | taking damage |
-| **Speed** | → | **Tempo** | acting (initiate / slip / target) |
-| **Mind** | → | **Focus** | defending (block / survive) |
+| Stat (Form, permanent) | sizes → | Resource pool (fluctuates) | spent on                          |
+| ---------------------- | ------- | -------------------------- | --------------------------------- |
+| **Toughness / Body**   | →       | **Health**                 | taking damage                     |
+| **Speed**              | →       | **Tempo**                  | acting (initiate / slip / target) |
+| **Mind**               | →       | **Focus**                  | defending (block / survive)       |
 
 Each pool is a **count × value card-pile** in **Active** (face-up = intact / available); spending
 it **moves cards to Down** (face-down = lost / spent), and it returns by the same **Recover** verb
@@ -196,10 +196,11 @@ tunable is **Recover/refresh rate vs Spend rate**.
 
 ## Maps onto
 
-- **Spec Coverage table:** this is **§5 (Zones / exhaustion)**, today ⬜ stub and flagged for the
-  post-Clash rewrite (`canon/2-spec/README.md`). It also touches **§1.0** (the Clash = the
-  all-default case), **§2.1** (health = face-down cards), and **§6** (Aspects — numberless /
-  modifier / passive card kinds; attachments).
+- **Spec Coverage table:** this is **§5 (Zones / exhaustion)**, now 🟡 graduated
+  (`canon/2-spec/README.md`). It also touches **§1.0** (the Clash = the all-default case) and
+  **§2.1** (health = face-down cards). *(The multi-deck **aspect/chord combo** layer is deferred —
+  `future-possibilities.md` entry 4; the single-deck core uses Form + attachments, composed
+  commutatively.)*
 - **Companion design:** [`progression-design.md`](progression-design.md) §7 (deck-as-stats,
   clean-slate characters, Upgrades) — together these two docs define the character + economy layer.
 - **Re-pins north star #8** (predictability-as-resource) from "never-shuffled deck" onto zone

@@ -34,26 +34,26 @@ the optional module is on; otherwise a same-range engagement is a single Trade.
 
 ## Each level — what it is and who owns it
 
-| Level | What happens | Authoritative source |
-| ----- | ------------ | -------------------- |
-| **Run** | the whole scenario; **win = clear the final location** (placeholder golf goal); run victory/defeat undefined | `progression §6`, `reference-scenario.md`; Spec §8 ⬜ |
-| **Day** | each character may **move 1 space**, use a **per-day ability** (deferred), and attempt **one Encounter**; all act in parallel; **full reset at the Day boundary** | `progression §6` |
-| **Encounter** | one fight; a sequence of **Rounds** until clear or retreat; foes drawn from the **threat deck** (a deck recipe scaled by level) | `progression §2 / §4.1` |
-| **Round** | one **Deploy → Vanguard → Skirmisher → Reserve** pass, ending in **Refresh** | **Spec §4** |
-| **Phase** | Muster · Assign · Slip (deploy) · Vanguard · Skirmisher · Reserve · Refresh — order-independent within each | **Spec §4** (TERM *Phases*) |
-| **Trade** | a same-range engagement's deterministic resolution: simultaneous mutual base damage | **Spec §4.2** |
-| **Clash** | the **optional** 1v1 mix-up that replaces a Trade; a sequence of **Beats**; ends-on-strike; builds **Force** | **Spec §1.0** |
-| **Beat** | the single RPS matchup: both pick a card, reveal at once, resolve | **Spec §1.0** |
+| Level         | What happens                                                                                                                                                      | Authoritative source                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Run**       | the whole scenario; **win = clear the final location** (placeholder golf goal); run victory/defeat undefined                                                      | `progression §6`, `reference-scenario.md`; Spec §8 ⬜ |
+| **Day**       | each character may **move 1 space**, use a **per-day ability** (deferred), and attempt **one Encounter**; all act in parallel; **full reset at the Day boundary** | `progression §6`                                     |
+| **Encounter** | one fight; a sequence of **Rounds** until clear or retreat; foes drawn from the **threat deck** (a deck recipe scaled by level)                                   | `progression §2 / §4.1`                              |
+| **Round**     | one **Deploy → Vanguard → Skirmisher → Reserve** pass, ending in **Refresh**                                                                                      | **Spec §4**                                          |
+| **Phase**     | Muster · Assign · Slip (deploy) · Vanguard · Skirmisher · Reserve · Refresh — order-independent within each                                                       | **Spec §4** (TERM *Phases*)                          |
+| **Trade**     | a same-range engagement's deterministic resolution: simultaneous mutual base damage                                                                               | **Spec §4.2**                                        |
+| **Clash**     | the **optional** 1v1 mix-up that replaces a Trade; a sequence of **Beats**; ends-on-strike; builds **Force**                                                      | **Spec §1.0**                                        |
+| **Beat**      | the single RPS matchup: both pick a card, reveal at once, resolve                                                                                                 | **Spec §1.0**                                        |
 
 ## What resets at each boundary
 
-| Boundary | What resets |
-| -------- | ----------- |
-| **Beat** | the duel continues, or **ends on a connecting strike**; **Force** builds during the non-connecting dance (§1.0) |
-| **Round → Refresh** | **Tempo & Focus refill *fully*** (= Speed / Mind); downs finalize; lane state clears (§4) |
-| **Encounter end** | **win →** Health restored (§2.1); **retreat →** state carried to the Day reset |
-| **Day boundary** | **everything**: Health and all Resource pools, all Action cards Recover to their start zones (`zones-exhaustion §7`; `progression §6`) |
-| **Run** | victory / defeat — **undefined** (placeholder: clear the final location in the fewest Days) |
+| Boundary            | What resets                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Beat**            | the duel continues, or **ends on a connecting strike**; **Force** builds during the non-connecting dance (§1.0)                        |
+| **Round → Refresh** | **Tempo & Focus refill *fully*** (= Speed / Mind); downs finalize; lane state clears (§4)                                              |
+| **Encounter end**   | **win →** Health restored (§2.1); **retreat →** state carried to the Day reset                                                         |
+| **Day boundary**    | **everything**: Health and all Resource pools, all Action cards Recover to their start zones (`zones-exhaustion §7`; `progression §6`) |
+| **Run**             | victory / defeat — **undefined** (placeholder: clear the final location in the fewest Days)                                            |
 
 ## Two things that are *not* part of the flow
 

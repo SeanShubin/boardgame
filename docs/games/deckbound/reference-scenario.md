@@ -18,12 +18,12 @@
 Let **P = the progression paths** (currently the **five roles**: Iron / Silver / Brass / Bone /
 Salt — `progression §7`). The scenario is four location *sets*:
 
-| Set | Count | What it is |
-| --- | ----- | ---------- |
-| **A — Start** | 1 | The clean-slate entry. Clearable with **generic (Gold)** capability only — no path chosen yet. |
-| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **mints path-*p* currency** and teaches why *p*'s Upgrades matter (the diegetic tutorial, `progression §4`). |
-| **C — Gate** | **one per path** | A location **designed to be impossible to clear unless path *p* has been built on its B-location.** C[*p*] is the *proof* that path *p* delivers. |
-| **D — Final** | 1 | One location tuned to challenge a party that has cleared **A + all B + all C**. **Near-impossible** unless the party has **covered every path thoroughly *and* plays strategically**. |
+| Set           | Count            | What it is                                                                                                                                                                            |
+| ------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A — Start** | 1                | The clean-slate entry. Clearable with **generic (Gold)** capability only — no path chosen yet.                                                                                        |
+| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **mints path-*p* currency** and teaches why *p*'s Upgrades matter (the diegetic tutorial, `progression §4`).                      |
+| **C — Gate**  | **one per path** | A location **designed to be impossible to clear unless path *p* has been built on its B-location.** C[*p*] is the *proof* that path *p* delivers.                                     |
+| **D — Final** | 1                | One location tuned to challenge a party that has cleared **A + all B + all C**. **Near-impossible** unless the party has **covered every path thoroughly *and* plays strategically**. |
 
 **Goal:** clear **D** in the **minimum number of days** (the golf par, `progression §6`).
 **Meta-goal:** **surface any unbalanced aspect of the game** — because each location is a *probe*

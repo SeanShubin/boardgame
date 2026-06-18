@@ -1,5 +1,9 @@
 # Deckbound — World & Progression
 
+> **SUPERSEDED by `canon/2-spec` §8 (Strategic layer)** and `progression-design.md`. This note is
+> **frozen history** — trust §8 and the design doc (currency economy, encounters, the day-clock,
+> clean-slate progression) where they disagree.
+
 Beyond the player's character, the game itself is run by decks: the world, the
 scenarios, and the enemies are all cards.
 

@@ -53,24 +53,25 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 
 ## Coverage
 
-| System                                            | Spec status | Current design source if not yet specced                                   |
-| ------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
-| **The Clash** (tactical core)                     | ✅ worked    | —                                                                          |
-| **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`                               |
-| **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                    |
-| **The battle — roles & commitment order**         | 🟡 seeded    | §4 specced **and implemented** (lanes, powers, Clash module, hotseat PvP)  |
-| **Zones / exhaustion**                            | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*                               |
-| **Aspects / the chord**                           | ⬜ stub      | `notes/decks-and-aspects.md`                                               |
-| **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                            |
-| **Strategic layer** (world/event decks)           | ⬜ stub      | `notes/world-and-progression.md`                                           |
-| **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code) |
-| **Run victory / defeat** (across many skirmishes) | ⬜ stub      | — *(undefined — a game is many skirmishes; the run-level win/lose is not)* |
-| **Geography & travel** (the world map + movement) | ⬜ stub      | — *(not yet explored)*                                                     |
-| **Loot** (rewards → new cards/aspects)            | ⬜ stub      | `notes/cards-and-customization.md`                                         |
-| **Progression** (growth between skirmishes)       | ⬜ stub      | `notes/world-and-progression.md`, `notes/archetypes.md`                    |
+| System                                            | Spec status | Current design source if not yet specced                                                                                                               |
+| ------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **The Clash** (tactical core)                     | ✅ worked    | —                                                                                                                                                      |
+| **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
+| **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                                                                                                |
+| **The battle — roles & commitment order**         | 🟡 seeded    | §4 specced **and implemented** (lanes, powers, Clash, hotseat PvP); **§4.3 actors-are-decks** specced (actor-stat→deck migration pending `/spec-sync`) |
+| **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
+| **Aspects / the chord**                           | ⏸ deferred  | parked → `future-possibilities.md` (entry 4) — single-deck core first                                                                                  |
+| **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
+| **Strategic layer** (world/event decks)           | 🟡 seeded    | **§8** (world · clock · currency · encounters · progression) — `progression-design.md`                                                                 |
+| **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
+| **Run victory / defeat** (across many skirmishes) | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                 |
+| **Geography & travel** (the world map + movement) | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                |
+| **Loot** (rewards → new cards / Upgrades)         | 🟡 seeded    | **§8.3** — treasure cards · 6 currencies · co-location spend · Upgrades — `progression-design.md`                                                      |
+| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — clean-slate · 5 roles ↔ 5 currencies · depth/breadth; power = stats-as-deck §2.3/§4.3 (migration pending) — `progression-design.md`         |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
-exhaustive · ⬜ stub = headers + intent only, not yet authoritative.
+exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
+`future-possibilities.md`.
 
 ---
 
@@ -405,9 +406,10 @@ engagement** (= descending tempo at stake), in three tiers:
 
 Thus **attacks resolve before buffs**: a self-effect cannot negate a blow already
 incoming this exchange; it takes hold from the next exchange on. Within a tier order
-is immaterial **except** for conflicting modifiers on one target (§6); those resolve
-in a **fixed seat order** — Speed plays no part in timing (§3.1) — so resolution is
-fully deterministic.
+is immaterial: in the single-deck core all modifiers (attachments) compose **commutatively** (§5),
+so nothing is order-dependent. *(The order-dependent **modifier** card-kind is deferred —
+`future-possibilities.md`; were it to return, its on-target conflicts would resolve in a **fixed
+seat order**, Speed playing no part in timing, §3.1.)* Resolution is fully deterministic.
 
 Within a tier, **resolution order is immaterial by construction**, not by luck. Three
 things make it so: each duel's rolls come from a **per-duel keyed RNG** (independent of
@@ -432,8 +434,8 @@ determinism without manufacturing a contest the design does not need.
   tie.
 - Defense is anticipatory, not reactive: a buff played into an incoming attack does
   not save you from it (human-confirmed intent).
-- Speed never affects resolution order: every effect is order-independent except §6
-  modifier-stacking, which uses the fixed seat key.
+- Speed never affects resolution order: every effect is order-independent (modifiers compose
+  commutatively, §5; the deferred order-dependent modifier would use a fixed seat key, not Speed).
 - Intra-tier resolution is order-independent by construction (keyed RNG + commutative
   damage + boundary down-checks): an Actor in K duels takes the **sum** of the blows,
   its fall decided by the total at the boundary, and — per §1.3 — it still lands every
@@ -454,6 +456,10 @@ determinism without manufacturing a contest the design does not need.
 
 Design source: [`notes/form-and-defeat.md`](../notes/form-and-defeat.md),
 [`notes/stats.md`](../notes/stats.md). Seeded below; not yet exhaustive.
+
+> **Naming.** The three defensive dimensions — **Body · Mind · Spirit** — are the **channels**.
+> The word *aspect* is **reserved** for the deferred deck-chord combo layer (§6) and is **not** used
+> for these. *(The frozen `notes/` still call the channels "aspects" — read that as "channels".)*
 
 ### 2.1 One maintained meter
 
@@ -494,6 +500,26 @@ fall out for free (choosing a damage type chooses which channel you attack).
 
 *(SEEDED — the damage formula, scaling, and Resolve/Mind break thresholds are not
 yet specced. Numbers live in `booklet.ron`.)*
+
+### 2.3 Stats live in the deck — *stats-as-deck*
+
+**RULE.** A character has **no stats on its identity card** — it is a **bare Actor** (a name and a
+map token, §8.1). **Every stat is read off its deck**, from the **Form** zone (§5.2): a
+**fundamental card** sets the base, **attachment** cards modify each dimension. So §2.1's "passive
+stats read off the table" — **Armor, Ward, Toughness, Resolve, Mind-capacity**, and likewise
+**Speed, Power, Mind** — are **Form-derived**, never authored fields. The **Body Health pool** is the
+**count × value** Form pool, and the **Tempo / Focus** pools are sized by the Form's Speed / Mind
+(§5.5).
+
+**WHY.** "The deck *is* the character" (#8) made literal: it removes a redundant authored stat-block,
+so *getting stronger = adding cards* (the Upgrade economy, §8.3), and **§2.1's "read it off the
+table" now extends from defense to every stat**. Clean slate = a bare Actor with a minimal Form;
+specialization = accreted attachments (§8.5).
+
+**GUARANTEES.**
+- No stat exists except as a Form card on the table — nothing is authored on the Actor.
+- The §3 / §4 economy is unchanged in behavior; only the **source** of a stat moved (card → deck).
+- A bought Upgrade is a Form attachment (or an Action card, §5) — power grows by cards.
 
 ---
 
@@ -785,8 +811,8 @@ phases, targeting, reveal order, triangle) is settled; these are not:
 5. **Failed-slip free hit** — exact magnitude of the hit eaten when a slip is unaffordable.
 6. **Zero-lane asymmetric details** — the unopposed Vanguard "advance as Skirmishers": do they
    pay Tempo, and in which phase do they strike?
-7. **Reserve "aid allies" kit** — the buffs/heals/debuffs Reserve deliver — depends on the
-   still-stub **Aspects / action-card** layer (§5–§6).
+7. **Reserve "aid allies" kit** — the buffs/heals/debuffs Reserve deliver — Action cards over the
+   §5 zone layer (the aspect/combo layer is deferred — `future-possibilities.md`).
 8. **Acting across phases** — caps on one Actor doing several things (a holder blocking several
    slippers; a multi-action god across phases) — governed by Tempo/Focus, exact limits a dial.
 
@@ -850,7 +876,7 @@ What follows from it:
   opponent and cannot answer. (Emergent positioning, not a banned move.)
 - **Neither** = pure support (heal / buff / area-control): it makes no attacks and is **always
   auto-hit** when reached — the most decisive-yet-fragile Reserve piece, wholly dependent on the
-  wall. Its kit depends on the still-stub Aspects / action-card layer (§5–§6).
+  wall. Its kit is Action cards over the §5 zone layer.
 
 **WHY.** Range turns the **role triangle** from intent into mechanics: *Skirmisher ▸ Reserve* and
 *Reserve ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
@@ -871,21 +897,161 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 - **TERM.** `Auto-hit` (Combat) — A range mismatch: the attacker lands uncontested (the target can't answer at that range). Armor still blunts it; Focus cannot.
 - **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Lanes & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit.
 
-## 5. Zones / exhaustion ⬜
+### 4.3 Actors are decks — *stats-as-deck & the schema*
 
-*Stub — and flagged for rewrite.* Form / Potential / Active; face up/down;
-Lasting / Fleeting; **exhaustion = predictability**. Source:
-[`notes/zones.md`](../notes/zones.md). **Needs:** the post-Duel rewrite — the old
-self-returning stances (Block/Evade/Scheme) no longer exist, so predictability-as-
-resource must be re-pinned to the **maneuver/Action cards** you Unleash with. This
-is the biggest known mechanical hole (the orphaned exhaustion economy).
+**RULE.** An **Actor is a deck**, not a stat-block. In `booklet.ron` the actor entry is a **bare
+identity** — `name`, `role`, `driver`, and **attack type** (§4.2) — plus a **starting deck**, and
+**carries no stat fields**. Its numbers are **read off the deck's Form cards** (§2.3 / §5.2): a
+**fundamental card** (base stats, incl. Health = count × value, §5.5) and **attachment** cards. The
+§3 / §4 economy reads stats from the deck exactly as before (Speed sizes Tempo, Mind sizes Focus) —
+only the *source* moved from the card to the deck.
 
-## 6. Aspects / the chord ⬜
+**Schema migration (the `/spec-sync §2,§4` code pass).**
+- `ActorCard`: **drop** `speed / power / precision / body / toughness / resolve / mind / weapon /
+  traits`; **keep** `name / role / driver / attack`; **add** a starting `deck`.
+- Catalog gains a **fundamental/Form card** (sets base stats + Health count × value) and **attachment**
+  cards (each modifies one dimension) — `Card` / `TraitCard`-family entries that carry stat
+  contributions.
+- The `booklet.ron` data + the Rust `ActorCard` struct + the §4 reader change land **together** in
+  the code pass; this Spec amendment is what they conform to. Until then, the running code (stat-bearing
+  actors) is a **defect to fix** (code-is-a-defect-report), not the truth.
 
-*Stub.* A character is a set of never-shuffled decks; an action is one card per
-aspect, combined commutatively; only Mind (the stance) is rock-paper-scissors.
-Card kinds: numberless, modifier (attachment order matters), passive. Source:
-[`notes/decks-and-aspects.md`](../notes/decks-and-aspects.md).
+**WHY.** One representation — the deck — for what a character *is* and *does*; the authored stat-block
+was a redundant parallel that drift could split from the cards (§2.1, #10). It also makes the Upgrade
+economy (§8) mechanically real: buying a card literally raises a stat.
+
+**GUARANTEES.**
+- An Actor's numbers are always recomputable from its deck — no hidden stat-block.
+- The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
+- A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
+
+## 5. Zones / exhaustion — *the card state-machine* 🟡
+
+The post-Clash rewrite of the orphaned exhaustion economy. Full design background:
+`zones-exhaustion-design.md`. **Exhaustion replaces cooldowns:** cards-only (#7) forbids a hidden
+timer, so using a card **moves it to a visible spent zone** until restored — which is exactly #8's
+*"unpredictability erodes as cards exhaust, restored at a tempo cost."* Everything here is
+**intra-encounter** (full reset at the Day boundary; strategic layer / `progression-design.md`).
+
+> **Realizes north star #8 via zones.** #8's predictability-as-resource carries over intact (no
+> luck; a managed, eroding resource restored at a tempo cost), but its *mechanism* moves from a
+> never-shuffled **deck order** to **zone state**. The Charter's #8 still says "decks… order is
+> intent"; updating that line is a deliberate Charter act left to the designer — **flagged, not
+> done here.**
+
+### 5.1 Three zones — Hand · Active · Down
+
+**RULE.** Every card is in one of three zones, and **facing encodes state, not secrecy**
+(face-up = in play / available; face-down = spent / dormant):
+- **Hand** — held; cards ready to play.
+- **Active** — face-up on the table; everything in effect (Form, Lasting stances, charges).
+- **Down** — face-down on the table; spent/dormant cards, recovered to Hand.
+Each card declares a **start zone** (most start in Hand; Form and standing stances start Active; a
+charge-up / cooldown card can start Down).
+
+**WHY.** Cards-only (#7) forbids hidden timers; zones make each card's status a physical, public
+fact. Three is the minimum that distinguishes *held* / *working* / *spent*.
+
+**GUARANTEES.**
+- No hidden state — a card's availability is always visible as its zone + facing.
+- The core game is **open information**; facing is *state*, never concealment (hidden info is opt-in
+  — the Clash card-pick, §1.0, and optional PvP commit-reveal).
+
+### 5.2 Form vs Action — what you are vs what you do
+
+**RULE.** Cards in Active split by behavior:
+- **Form** — your fundamental card + attachments (your stats, §5.5). **Permanent: never Spends,
+  immune to Disrupt** — it cannot be knocked Down. Stats may be *temporarily reduced* by **Lasting
+  debuffs** in Active (Slow, Sunder, Confuse), but the Form card never leaves.
+- **Action** — maneuvers, governed by the verbs (§5.3).
+
+**WHY.** *Exhaustion touches what you do, never what you are* — so stats stay stable and
+recomputable (§2.1) even as the action economy churns. "Form" is a card **property**, not a fourth
+zone (it lives in Active).
+
+**GUARANTEES.**
+- A stat never exhausts; only a removable Lasting debuff can modify its value, and removing it
+  restores the stat exactly (no maintained meter — §2.1).
+
+### 5.3 The verbs — default-return + Spend · Lasting · Recover · Disrupt
+
+**RULE.** The **default** is: play a card, it **returns to Hand** (reusable next turn). Keywords
+modify that:
+- **Spend** — play → **Down** (a one-shot until Recovered).
+- **Lasting** — play → **Active** (stays working until removed / Disrupted / consumed).
+- **Recover** — move a card **Down → Hand** (the restore; costs a beat / Tempo).
+- **Disrupt** — an attacker effect: move a target's **Active / Hand → Down** (force-exhaust).
+Emergent: **cooldown** = Spend + a gated Recover; **combo** = a card that Recovers a specific card;
+**engine** = a Lasting card that Recovers each Round; **disruption** = Disrupt.
+
+**WHY.** A tiny verb set (#6) generates cooldowns / combos / engines with no bespoke per-card logic,
+and each card's zone behavior prints as one line (#9/#10). The Clash kit (§1.0) is the simplest
+case: four **default-return** cards ("no finite hand yet" = "everything is default-return").
+
+**GUARANTEES.**
+- Every card's lifecycle is {default | Spend | Lasting}, optionally acted on by {Recover | Disrupt};
+  no other transitions exist.
+- Adding cards never adds zone rules — new behavior composes existing verbs + tags (§5.4).
+
+**MANUAL.** *Most cards return to your hand after use. A Spend card goes face-down until you Recover
+it (Recover costs a beat). A Lasting card stays in play until removed. Disrupt knocks an enemy card
+face-down.*
+
+### 5.4 Tags — bounded cross-card interaction
+
+**RULE.** Cards reference one another **by tag / type, never by name** (the damage types Fire /
+Sharp / Blunt are the seed). A card's effect may **consume** tagged cards in Active by moving them
+per the verbs. *(Worked example — fire charge-up: two `Charge(fire)` sit Lasting in Active; a Fire
+card consumes them — damage ×2×2, Charges → Hand, Fire → Down. All zone-moves; the cost is the
+setup Rounds.)*
+
+**WHY.** Tags let cards combo while staying data-only and bounded — a name-reference is brittle and
+unbounded; a small tag vocabulary is re-derivable (#6/#10).
+
+**GUARANTEES.**
+- Combos are {tag match} × {verb zone-move} — no bespoke combo code.
+- Burst is paid for: charges cost the Rounds spent setting them up, not nothing.
+
+### 5.5 Resources — Health · Tempo · Focus 🟡
+
+**RULE.** A permanent **Form stat sizes a fluctuating pool** — you spend the pool, never the stat
+(§3.1): **Toughness/Body → Health**, **Speed → Tempo**, **Mind → Focus**. Each pool is a
+**count × value** card-pile in Active; spending moves cards to **Down**; they return by **Recover**.
+- **Round refresh** *(Tempo / Focus)* — at Round end all spent Tempo/Focus flip up (re-derived each
+  Round, §2.1) — per-Round budgets, not cross-Round attrition.
+- **Heal cards** *(Health)* — Recover Health within a fight.
+- **Refresh engines** — a Lasting card that Recovers Tempo/Focus mid-Round (how a god exceeds base
+  breadth).
+**Health is the one pool that persists within a fight** (the maintained meter, §2.1); everything
+fully resets at the Day boundary.
+
+**WHY.** One machinery governs actions *and* resources. In co-op PvE (instinct foes don't read you,
+§7) the limiter is action-economy / attrition; the predictability-telegraph half of #8 bites in PvP
+/ vs Characters. Master tunable: Recover/refresh rate vs Spend rate.
+
+**GUARANTEES.**
+- §2.1's "one maintained meter" holds — only Health persists; Tempo/Focus re-derive each Round.
+- Pools are recomputable from cards on the table (count × value − spent).
+
+*(SEEDED — **stats-as-deck** is now specced (§2.3 / §4.3). Until the `/spec-sync` code pass migrates
+the schema, "Form stat" still resolves via the actor-card stat in the running code. Numbers — pool
+sizes, Spend/Recover costs, charge magnitudes — live in `booklet.ron`, human-tuned.)*
+
+**Open dials.** (1) **Attachment composition** — in the single-deck core, attachments **compose
+commutatively**; the order-dependent **modifier** variant is part of the deferred aspect/combo layer
+(§6 → `future-possibilities.md`). (2) **`TERM` glossary vocabulary + encyclopedia + glossary test** —
+land together in the **`/spec-sync §5`** code pass. (3) **Numbers** — `booklet.ron`.
+
+## 6. Aspects / the chord — *deferred*
+
+**Deferred to `future-possibilities.md` (entry 4).** The multi-deck **chord/combo** system (a
+character as a set of aspect-decks; a play as one card per aspect, combined) is **parked** until the
+**single-deck core** is working fully and tuned against the reference scenario. The core character
+model is **one deck** — Form (fundamental + attachments) + Action cards over the §5 zones — not a
+chord of aspect-decks.
+
+*(Terminology note: the three **defense channels** Body / Mind / Spirit (§2) are unaffected — they
+are damage types / thresholds, not the deferred deck-chord, despite the shared word "aspect.")*
 
 ## 7. Agents — Character vs Creature ⬜
 
@@ -895,11 +1061,107 @@ one-way), reshuffles, never exhausts. Source:
 [`notes/entities.md`](../notes/entities.md),
 [`notes/decision-making.md`](../notes/decision-making.md).
 
-## 8. Strategic layer ⬜
+## 8. Strategic layer — *the run* 🟡
 
-*Stub.* World / scenario / enemy / **event** decks; regions; location level-ladders
-with one "cleared" marker; the balance budget (challenge tuned to party *total*);
-god-vs-party equivalence; doom-to-mastery. Source:
-[`notes/world-and-progression.md`](../notes/world-and-progression.md). **Many
-open structural questions** (map representation, event-deck cadence, multi-actor
-simultaneous resolution).
+The game outside a single fight: the world map, the clock, the currency economy, encounters, and
+progression. Full design background: `progression-design.md` (and `reference-scenario.md`, the
+balance harness). **Run-level victory is provisional** (a test goal — §8.2); **run-level defeat is
+deliberately undefined** — deferred until the mechanics are tested against the reference scenario,
+so difficulty is tuned from data, not guessed. Numbers throughout are `booklet.ron`, human-tuned;
+the character/Upgrade *power* mechanism is **stats-as-deck** (§2.3 / §4.3 / §5.5) — specced; its
+code/data migration is the pending `/spec-sync` pass.
+
+### 8.1 The world — locations, movement, fog
+
+**RULE.** The world is **face-down location cards** in a scenario-authored layout — a **grid**, an
+**offset-hex** field (alternate rows shifted half a card), or a mix. A character's **identity card**
+(its Actor) marks where it is. Entering a location **flips it face-up** (revealing its name → its
+**Currency type** → the **threat deck** it draws from, §8.4) but does **not** start a fight.
+Movement is **one adjacent space per Day** (§8.2). *(Travel cost / risk beyond this is deferred.)*
+
+**WHY.** Cards-only (#7); a face-down map makes scouting a push-your-luck act (#2) and is the engine
+of doom-to-mastery (#5 — you learn a place by going there); a pawn on a map is a clean metaphor (#9).
+
+**GUARANTEES.**
+- Entering reveals information only; combat is always opt-in (§8.4).
+- Position is a single card on the table — no hidden coordinates.
+
+### 8.2 The clock & the run goal
+
+**RULE.** Time advances in **Days**, driven by the **event deck** (for now only *"1 day passes"*
+cards — a placeholder for real world events). Each Day, **every character** may **move one space**,
+use a **per-day ability** *(deferred)*, and attempt **one Encounter** (§8.4); all act **in parallel**
+(order-independent; no turn order, §1.9 / §3.1). At the **Day boundary** everything **fully resets**
+(Health, all pools, Action cards Recover; §5.5). **Run victory (provisional):** clear the scenario's
+**objective / final location**; the run is **scored in Days** (golf par — fewer is better). **Run
+defeat: undefined** — deferred until tested against the reference scenario.
+
+**WHY.** A single scalar (Days-to-clear) is the balance instrument — it stresses routing, encounter
+difficulty, the economy, and the depth/breadth fork at once (#2 strategy; balance-by-scenario #4).
+Deferring defeat until we *measure* avoids guessing difficulty before we have data.
+
+**GUARANTEES.**
+- The only thing a run spends (for now) is **Days**; nothing yet kills a party (full daily reset →
+  no cross-Day attrition).
+- No turn order at the strategic layer — characters act in parallel within a Day.
+
+### 8.3 Currency & loot
+
+**RULE.** Clearing a location yields its **treasure card**, carrying typed **Currency**: one per
+combat role — **Iron · Silver · Brass · Bone · Salt** — plus a generic **Gold** (utility): **six in
+all**. Clearing **level N earns levels 1..N**; a per-location **clear marker** records the high-water
+mark (re-clear only deeper). **Currency is recomputable, never a tracked meter** (§2.1):
+`balance(C) = (C on reachable treasure cards) − (C spent on owned Upgrades)`. **Spending is
+co-location** — you may spend Currency you can physically reach (carried, or stashed at a shared
+treasury). Currency buys **Upgrades** (power mechanism: §5.5 Form attachments / stats-as-deck).
+
+**WHY.** Per-role Currency makes pursuing one a *strategy* (#4 asymmetry; #2 opportunity cost);
+recompute-from-the-table keeps §2.1's "one maintained meter" intact; co-location turns sharing into
+**logistics, not bookkeeping** (#6 / #7), with a stash as the metaphor (#9).
+
+**GUARANTEES.**
+- No currency meter is maintained — it is read off treasure cards minus owned Upgrades.
+- A location's whole progress is one number (its clear marker).
+
+### 8.4 Encounters — the parametric deck-recipe
+
+**RULE.** Combat at a location is **opt-in at a chosen level**. On first engagement a single
+**encounter card** is drawn from the location's **threat deck** (one deck **per Currency type** —
+six) and then **fixed**: it is the location's **persistent, learnable threat** (retrying faces the
+*same* fight). The encounter card is a **parametric deck-recipe** evaluated at the attempted level —
+a roster and **thematic** stat-scaling (which stats scale signals the counter to bring). The **level
+is one dial scaling reward and threat together**.
+
+**WHY.** Each threat deck is a **diegetic tutorial** — you meet type-C threats, earn C-Currency, and
+buy C-Upgrades that answer them (#1 reward intellect; #6 emergence). A fixed, learnable threat means
+failure teaches (#1); one dial keeps the risk/reward choice honest and re-derivable (#2 / #10).
+
+**GUARANTEES.**
+- Reveal gives the **type** (threat deck), never the exact card before you commit a fight.
+- A failed clear costs a Day and the threat persists; you advance only by beating it at the depth
+  you want.
+
+### 8.5 Progression & roles
+
+**RULE.** A character starts **clean-slate** (generic cards only); its **first level-1 clear commits
+a direction** — the role-Currency it banks. From there it **specializes** (depth: pour one Currency)
+or **branches** (breadth: cover several). The **five roles ↔ five Currencies** are the §4 triangle's
+splits: **Wall/Iron · Infiltrator/Silver · Artillery/Brass · Controller/Bone · Support/Salt** (plus
+generic **Gold**). Party size sets the spectrum: many bodies → specialists; few → multi-role; one →
+a **god** spanning all five. *Character power = bought Upgrades* (mechanism: stats-as-deck,
+§2.3 / §4.3 / §5.5).
+
+**WHY.** Characters are deliberately unbalanced; coverage and challenge come from the **team and the
+scenario** (#4). Depth-vs-breadth is the uncomputable strategic fork (#2), fractally at map and build
+scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4).
+
+**GUARANTEES.**
+- The five roles / Currencies are the §4 role triangle's two splits — not an arbitrary list.
+- A solo god ≈ a full party in total power (the budget difficulty is tuned against).
+
+*(SEEDED — §8 is the strategic layer's first graduation. The **character / Upgrade power mechanism**
+is **stats-as-deck** (§2.3 / §4.3 / §5.5) — specced; its code/data migration is the pending
+`/spec-sync` pass. **Travel risk**, **per-day abilities**, **world events**, and **run-level defeat**
+are deferred (the last until reference-scenario testing). Numbers
+are `booklet.ron`, human-tuned. `TERM` glossary lines + encyclopedia land with the `/spec-sync §8`
+code pass.)*
