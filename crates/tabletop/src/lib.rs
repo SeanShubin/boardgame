@@ -55,6 +55,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(NeedsRedraw(true))
             .insert_resource(Platform::detect())
             .insert_resource(HelpVisible(false))
+            .insert_resource(Muted(false))
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
@@ -69,8 +70,8 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // `Interaction` and write `UiTransform`/shadow only, so they run
             // every frame independently of the redraw chain below.
             .add_systems(Update, (animate_cards, animate_buttons))
-            // Sound: a click on action, a soft tick on card hover.
-            .add_systems(Update, (play_button_sfx, play_card_hover_sfx))
+            // Sound: a click on action, a soft tick on card hover; `M` mutes.
+            .add_systems(Update, (play_button_sfx, play_card_hover_sfx, toggle_mute))
             .add_systems(
                 Update,
                 (
@@ -660,6 +661,17 @@ struct SfxHandles {
     hover: Handle<Sfx>,
 }
 
+/// Whether sound is muted. Toggled with `M`; advertised in the help overlay.
+#[derive(Resource)]
+struct Muted(bool);
+
+/// `M` mutes / unmutes all sound effects.
+fn toggle_mute(keys: Res<ButtonInput<KeyCode>>, mut muted: ResMut<Muted>) {
+    if keys.just_pressed(KeyCode::KeyM) {
+        muted.0 = !muted.0;
+    }
+}
+
 fn setup_sfx(mut commands: Commands, mut assets: ResMut<Assets<Sfx>>) {
     let click = assets.add(Sfx {
         freq: 523.25,
@@ -682,8 +694,12 @@ fn setup_sfx(mut commands: Commands, mut assets: ResMut<Assets<Sfx>>) {
 fn play_button_sfx(
     mut commands: Commands,
     sfx: Option<Res<SfxHandles>>,
+    muted: Res<Muted>,
     buttons: Query<&Interaction, (Changed<Interaction>, With<ActionButton>)>,
 ) {
+    if muted.0 {
+        return;
+    }
     let Some(sfx) = sfx else { return };
     for interaction in &buttons {
         if *interaction == Interaction::Pressed {
@@ -696,8 +712,12 @@ fn play_button_sfx(
 fn play_card_hover_sfx(
     mut commands: Commands,
     sfx: Option<Res<SfxHandles>>,
+    muted: Res<Muted>,
     cards: Query<&Interaction, (Changed<Interaction>, With<CardAnim>)>,
 ) {
+    if muted.0 {
+        return;
+    }
     let Some(sfx) = sfx else { return };
     for interaction in &cards {
         if *interaction == Interaction::Hovered {
@@ -1114,13 +1134,14 @@ fn spawn_card_face(
 }
 
 /// The controls advertised in the help overlay, as `(keys, description)`. Keep
-/// in sync with the keys handled in `adjust_zoom`, `toggle_help`, and
-/// `cancel_on_key`.
+/// in sync with the keys handled in `adjust_zoom`, `toggle_help`,
+/// `cancel_on_key`, and `toggle_mute`.
 const CONTROLS: &[(&str, &str)] = &[
     ("= / +", "Zoom in"),
     ("\u{2212}", "Zoom out"),
     ("0", "Reset zoom"),
     ("Mouse wheel", "Scroll the board / action list"),
+    ("M", "Mute / unmute sound"),
     ("Esc / Backspace", "Cancel \u{2013} go back a step"),
     ("? / F1", "Toggle this help"),
 ];
