@@ -67,6 +67,7 @@ fn menu_state(seed: u64) -> State {
         seed,
         outcome: None,
         clash_module: false,
+        pvp: false,
     }
 }
 
@@ -90,6 +91,7 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
     state.outcome = None;
     state.clash = None;
     state.clash_module = scenario.clash;
+    state.pvp = scenario.pvp;
     state.plan = Round::sized(nh, nf);
     if scenario.clash {
         // 1v1 Clash-module duel: skip the lane machinery, run the four-card mix-up.
@@ -130,15 +132,22 @@ impl Deckbound {
         let hero_vg: Vec<usize> = (0..state.heroes.len())
             .filter(|&h| state.plan.hero_lane[h].is_some() && !state.heroes[h].fallen)
             .collect();
-        let foe_vg: Vec<usize> = (0..state.creatures.len())
-            .filter(|&f| {
-                !state.creatures[f].is_down()
-                    && state.creatures[f]
-                        .behavior()
-                        .map(|b| b.aggression >= 5)
-                        .unwrap_or(false)
-            })
-            .collect();
+        // PvP: side B mustered by hand (foe_lane); PvE: creatures muster by AI (aggression ≥ 5).
+        let foe_vg: Vec<usize> = if state.pvp {
+            (0..state.creatures.len())
+                .filter(|&f| state.plan.foe_lane[f].is_some() && !state.creatures[f].is_down())
+                .collect()
+        } else {
+            (0..state.creatures.len())
+                .filter(|&f| {
+                    !state.creatures[f].is_down()
+                        && state.creatures[f]
+                            .behavior()
+                            .map(|b| b.aggression >= 5)
+                            .unwrap_or(false)
+                })
+                .collect()
+        };
         for f in 0..state.creatures.len() {
             state.plan.foe_lane[f] = None;
         }
@@ -165,8 +174,8 @@ impl Deckbound {
             state.plan.lanes[lane].foes.push(f);
         }
         // Heroes: if there's a real placement choice (≥2 lanes and ≥2 Vanguard), let the player
-        // assign (count-adaptive, §4.1); otherwise auto round-robin.
-        if lanes >= 2 && hero_vg.len() >= 2 {
+        // assign (count-adaptive, §4.1); otherwise auto round-robin. PvP auto-assigns for now.
+        if !state.pvp && lanes >= 2 && hero_vg.len() >= 2 {
             state.plan.assign_queue = hero_vg;
             state.phase = Phase::Assign;
             state
@@ -178,6 +187,7 @@ impl Deckbound {
                 state.plan.hero_lane[h] = Some(lane);
                 state.plan.lanes[lane].heroes.push(h);
             }
+            state.plan.committing = 0;
             state.phase = Phase::Slip;
             state.log.push(format!("-- {lanes} lane(s) form --"));
         }
@@ -185,14 +195,18 @@ impl Deckbound {
 
     /// Resolve the Vanguard phase: lane trades (melee, §4.2) and slips (Tempo vs Focus).
     fn resolve_front(&self, state: &mut State) {
-        // Creature slip decisions: aggressive infiltrators (aggression ≥ 7) slip.
+        // Creature slip decisions: PvP reads the human's choice; PvE has infiltrators (≥7) slip.
         let foe_slip: Vec<bool> = (0..state.creatures.len())
             .map(|f| {
-                state.plan.foe_lane[f].is_some()
-                    && state.creatures[f]
-                        .behavior()
-                        .map(|b| b.aggression >= 7)
-                        .unwrap_or(false)
+                if state.pvp {
+                    state.plan.foe_lane[f].is_some() && state.plan.foe_slip[f] == Some(true)
+                } else {
+                    state.plan.foe_lane[f].is_some()
+                        && state.creatures[f]
+                            .behavior()
+                            .map(|b| b.aggression >= 7)
+                            .unwrap_or(false)
+                }
             })
             .collect();
 
@@ -336,30 +350,45 @@ impl Deckbound {
     }
 
     fn begin_skirmish(&self, state: &mut State) {
-        for h in 0..state.heroes.len() {
-            state.plan.hero_acted[h] = false;
-        }
+        state.plan.committing = 0;
+        state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
+        state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
         state.phase = Phase::Skirmish;
-        // If no hero skirmisher can act, resolve immediately.
-        if self.pending_skirmishers(state).is_empty() {
-            self.resolve_skirmish(state);
+        if self.pending_targets(state, 0, false).is_empty() {
+            self.skirmish_done(state);
         }
     }
 
-    fn pending_skirmishers(&self, state: &State) -> Vec<usize> {
-        (0..state.heroes.len())
-            .filter(|&h| {
-                state.plan.hero_skirmisher[h]
-                    && !state.heroes[h].fallen
-                    && !state.heroes[h].is_down()
-                    && !state.plan.hero_acted[h]
+    /// Actors of `side` that must still act this target phase. `reserve = false` → Skirmishers
+    /// (slipped a lane); `reserve = true` → Reserves (not in a lane, not a Skirmisher).
+    fn pending_targets(&self, state: &State, side: u8, reserve: bool) -> Vec<usize> {
+        (0..state.s_len(side))
+            .filter(|&i| {
+                let a = &state.s_pool(side)[i];
+                let role_ok = if reserve {
+                    state.s_lane(side)[i].is_none() && !state.s_skirm(side)[i]
+                } else {
+                    state.s_skirm(side)[i]
+                };
+                role_ok && !a.fallen && !a.is_down() && !state.s_acted(side)[i]
             })
             .collect()
     }
 
-    /// Resolve the Skirmisher phase: hero skirmishers already struck via `apply_target`; now the
-    /// creature skirmishers strike (melee, §4.2). Then advance to the Reserve phase.
-    fn resolve_skirmish(&self, state: &mut State) {
+    /// The committing side's Skirmishers are done. PvP: hand to side B, then advance; PvE: run
+    /// the creature-AI Skirmishers, then the Reserve phase.
+    fn skirmish_done(&self, state: &mut State) {
+        if state.pvp {
+            if state.plan.committing == 0 {
+                state.plan.committing = 1;
+                if self.pending_targets(state, 1, false).is_empty() {
+                    self.skirmish_done(state);
+                }
+            } else {
+                self.begin_reserve(state);
+            }
+            return;
+        }
         for f in 0..state.creatures.len() {
             let attacks = state.plan.foe_skirmisher[f] && !state.creatures[f].is_down();
             if !attacks {
@@ -379,29 +408,29 @@ impl Deckbound {
     }
 
     fn begin_reserve(&self, state: &mut State) {
-        for h in 0..state.heroes.len() {
-            state.plan.hero_acted[h] = false;
-        }
+        state.plan.committing = 0;
+        state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
+        state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
         state.phase = Phase::Reserve;
-        if self.pending_reserves(state).is_empty() {
-            self.resolve_reserve(state);
+        if self.pending_targets(state, 0, true).is_empty() {
+            self.reserve_done(state);
         }
     }
 
-    fn pending_reserves(&self, state: &State) -> Vec<usize> {
-        (0..state.heroes.len())
-            .filter(|&h| {
-                state.plan.hero_lane[h].is_none()
-                    && !state.plan.hero_skirmisher[h]
-                    && !state.heroes[h].fallen
-                    && !state.heroes[h].is_down()
-                    && !state.plan.hero_acted[h]
-            })
-            .collect()
-    }
-
-    /// Resolve the Reserve phase: creature reserves fire (ranged), then refresh into next round.
-    fn resolve_reserve(&self, state: &mut State) {
+    /// The committing side's Reserves are done. PvP: hand to side B, then next round; PvE: run
+    /// the creature-AI Reserves (ranged fire), then refresh.
+    fn reserve_done(&self, state: &mut State) {
+        if state.pvp {
+            if state.plan.committing == 0 {
+                state.plan.committing = 1;
+                if self.pending_targets(state, 1, true).is_empty() {
+                    self.reserve_done(state);
+                }
+            } else {
+                self.next_round(state);
+            }
+            return;
+        }
         for f in 0..state.creatures.len() {
             let reserve = state.plan.foe_lane[f].is_none() && !state.plan.foe_skirmisher[f];
             let fires = reserve
@@ -498,20 +527,21 @@ impl Deckbound {
         }
     }
 
-    /// Is creature `f` currently a Reserve (not in a lane, not a Skirmisher)?
-    fn foe_is_reserve(&self, state: &State, f: usize) -> bool {
-        state.plan.foe_lane[f].is_none() && !state.plan.foe_skirmisher[f]
+    /// Is actor `i` of `side` currently a Reserve (not in a lane, not a Skirmisher)?
+    fn is_reserve(&self, state: &State, side: u8, i: usize) -> bool {
+        state.s_lane(side)[i].is_none() && !state.s_skirm(side)[i]
     }
 
-    /// The foes a Reserve hero may target (§4 matrix): the enemy front (Vanguard + Skirmishers).
-    /// **Longshot** (or an empty front) extends the reach to enemy Reserves.
-    fn reserve_targets(&self, state: &State, h: usize) -> Vec<usize> {
-        let front: Vec<usize> = combat::living(&state.creatures)
+    /// The enemies a Reserve of `side` may target (§4 matrix): the enemy front (Vanguard +
+    /// Skirmishers). **Longshot** (or an empty front) extends the reach to enemy Reserves.
+    fn reserve_targets(&self, state: &State, side: u8, actor: usize) -> Vec<usize> {
+        let other = 1 - side;
+        let front: Vec<usize> = combat::living(state.s_pool(other))
             .into_iter()
-            .filter(|&f| !self.foe_is_reserve(state, f))
+            .filter(|&t| !self.is_reserve(state, other, t))
             .collect();
-        if state.heroes[h].has("Longshot") || front.is_empty() {
-            combat::living(&state.creatures)
+        if state.s_pool(side)[actor].has("Longshot") || front.is_empty() {
+            combat::living(state.s_pool(other))
         } else {
             front
         }
@@ -648,6 +678,18 @@ impl Deckbound {
                 None => "...".to_string(),
             },
         };
+        // Hotseat: announce whose turn it is (pass-and-play); never reveal the other side's
+        // committed choices — they aren't rendered until resolution.
+        let prompt = if state.pvp
+            && state.outcome.is_none()
+            && matches!(
+                state.phase,
+                Phase::Muster | Phase::Assign | Phase::Slip | Phase::Skirmish | Phase::Reserve
+            ) {
+            format!("[Player {}] {prompt}", state.plan.committing + 1)
+        } else {
+            prompt
+        };
         format!("{prompt}\n\n{log}")
     }
 }
@@ -662,10 +704,13 @@ impl Game for Deckbound {
 
     fn current_player(&self, state: &State) -> Option<PlayerId> {
         if state.outcome.is_some() {
-            None
-        } else {
-            Some(PlayerId(0))
+            return None;
         }
+        // In a hotseat PvP round, the committing side is the current player (pass-and-play).
+        if state.pvp {
+            return Some(PlayerId(state.plan.committing as usize));
+        }
+        Some(PlayerId(0))
     }
 
     fn legal_actions(&self, state: &State) -> Vec<Action> {
@@ -687,15 +732,16 @@ impl Game for Deckbound {
                 a
             }
             Phase::Muster => {
+                let side = state.plan.committing;
                 let mut a = Vec::new();
-                for h in 0..state.heroes.len() {
-                    if state.heroes[h].fallen {
+                for i in 0..state.s_len(side) {
+                    if state.s_pool(side)[i].fallen {
                         continue;
                     }
-                    if state.plan.hero_lane[h].is_some() {
-                        a.push(Action::SetReserve(h));
+                    if state.s_lane(side)[i].is_some() {
+                        a.push(Action::SetReserve(i));
                     } else {
-                        a.push(Action::SetVanguard(h));
+                        a.push(Action::SetVanguard(i));
                     }
                 }
                 a.push(Action::Deploy);
@@ -713,13 +759,19 @@ impl Game for Deckbound {
                 a
             }
             Phase::Slip => {
+                let side = state.plan.committing;
                 let mut a = Vec::new();
-                for h in 0..state.heroes.len() {
-                    if state.plan.hero_lane[h].is_some() && !state.heroes[h].is_down() {
-                        if state.plan.hero_slip[h] == Some(true) {
-                            a.push(Action::Hold(h));
+                for i in 0..state.s_len(side) {
+                    if state.s_lane(side)[i].is_some() && !state.s_pool(side)[i].is_down() {
+                        let slipping = if side == 0 {
+                            state.plan.hero_slip[i] == Some(true)
                         } else {
-                            a.push(Action::Slip(h));
+                            state.plan.foe_slip[i] == Some(true)
+                        };
+                        if slipping {
+                            a.push(Action::Hold(i));
+                        } else {
+                            a.push(Action::Slip(i));
                         }
                     }
                 }
@@ -728,32 +780,33 @@ impl Game for Deckbound {
                 a
             }
             Phase::Skirmish => {
+                let side = state.plan.committing;
+                let other = 1 - side;
                 let mut a = Vec::new();
-                let pending = self.pending_skirmishers(state);
-                if let Some(&h) = pending.first() {
-                    for f in combat::living(&state.creatures) {
-                        a.push(Action::Target(h, f));
+                if let Some(&i) = self.pending_targets(state, side, false).first() {
+                    for t in combat::living(state.s_pool(other)) {
+                        a.push(Action::Target(i, t));
                     }
-                    a.push(Action::Pass(h));
+                    a.push(Action::Pass(i));
                 }
                 a.push(Action::ToMenu);
                 a
             }
             Phase::Reserve => {
+                let side = state.plan.committing;
                 let mut a = Vec::new();
-                let pending = self.pending_reserves(state);
-                if let Some(&h) = pending.first() {
-                    if state.heroes[h].can_contest(Range::Ranged) {
-                        for f in self.reserve_targets(state, h) {
-                            a.push(Action::Target(h, f));
+                if let Some(&i) = self.pending_targets(state, side, true).first() {
+                    if state.s_pool(side)[i].can_contest(Range::Ranged) {
+                        for t in self.reserve_targets(state, side, i) {
+                            a.push(Action::Target(i, t));
                         }
                     }
-                    for idx in 0..state.heroes[h].actions.len() {
-                        if !state.heroes[h].actions[idx].passive {
-                            a.push(Action::PlayCard(h, idx));
+                    for idx in 0..state.s_pool(side)[i].actions.len() {
+                        if !state.s_pool(side)[i].actions[idx].passive {
+                            a.push(Action::PlayCard(i, idx));
                         }
                     }
-                    a.push(Action::Pass(h));
+                    a.push(Action::Pass(i));
                 }
                 a.push(Action::ToMenu);
                 a
@@ -769,16 +822,19 @@ impl Game for Deckbound {
     }
 
     fn action_label(&self, state: &State, action: &Action) -> String {
+        // Names resolve against the committing side (heroes in PvE / side A); the foe-name helper
+        // against the other side. In PvE committing is always 0, so these are heroes/creatures.
+        let side = state.plan.committing;
         let hname = |h: usize| {
             state
-                .heroes
+                .s_pool(side)
                 .get(h)
                 .map(|x| x.name.clone())
                 .unwrap_or_else(|| "?".into())
         };
         let fname = |f: usize| {
             state
-                .creatures
+                .s_pool(1 - side)
                 .get(f)
                 .map(|x| x.name.clone())
                 .unwrap_or_else(|| "?".into())
@@ -808,7 +864,7 @@ impl Game for Deckbound {
             Action::ResolveFront => "Resolve the front".into(),
             Action::Target(a, f) => format!("{} → strike the {}", hname(*a), fname(*f)),
             Action::PlayCard(h, idx) => {
-                let c = state.heroes.get(*h).and_then(|x| x.actions.get(*idx));
+                let c = state.s_pool(side).get(*h).and_then(|x| x.actions.get(*idx));
                 match c {
                     Some(c) => format!("{}: {} ({})", hname(*h), c.name, c.summary()),
                     None => format!("{}: ?", hname(*h)),
@@ -867,13 +923,22 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
-            (Phase::Muster, Action::SetVanguard(h)) => {
-                state.plan.hero_lane[*h] = Some(0);
+            (Phase::Muster, Action::SetVanguard(i)) => {
+                let side = state.plan.committing;
+                state.s_lane_mut(side)[*i] = Some(0);
             }
-            (Phase::Muster, Action::SetReserve(h)) => {
-                state.plan.hero_lane[*h] = None;
+            (Phase::Muster, Action::SetReserve(i)) => {
+                let side = state.plan.committing;
+                state.s_lane_mut(side)[*i] = None;
             }
-            (Phase::Muster, Action::Deploy) => self.deploy(state),
+            (Phase::Muster, Action::Deploy) => {
+                if state.pvp && state.plan.committing == 0 {
+                    state.plan.committing = 1;
+                    state.log.push("-- side B: muster --".into());
+                } else {
+                    self.deploy(state);
+                }
+            }
 
             (Phase::Assign, Action::AssignLane(h, lane)) => {
                 if *lane >= state.plan.lanes.len() || !state.plan.assign_queue.contains(h) {
@@ -888,79 +953,105 @@ impl Game for Deckbound {
                 }
             }
 
-            (Phase::Slip, Action::Hold(h)) => state.plan.hero_slip[*h] = Some(false),
-            (Phase::Slip, Action::Slip(h)) => state.plan.hero_slip[*h] = Some(true),
-            (Phase::Slip, Action::ResolveFront) => self.resolve_front(state),
+            (Phase::Slip, Action::Hold(i)) => {
+                let side = state.plan.committing;
+                state.s_slip_mut(side)[*i] = Some(false);
+            }
+            (Phase::Slip, Action::Slip(i)) => {
+                let side = state.plan.committing;
+                state.s_slip_mut(side)[*i] = Some(true);
+            }
+            (Phase::Slip, Action::ResolveFront) => {
+                if state.pvp && state.plan.committing == 0 {
+                    state.plan.committing = 1;
+                    state.log.push("-- side B: hold or slip --".into());
+                } else {
+                    self.resolve_front(state);
+                }
+            }
 
-            (Phase::Skirmish, Action::Target(h, f)) => {
-                // Backstab: a Skirmisher hits a foe Reserve harder.
-                let backstab = state.heroes[*h].has("Backstab") && self.foe_is_reserve(state, *f);
+            (Phase::Skirmish, Action::Target(i, t)) => {
+                let side = state.plan.committing;
+                let other = 1 - side;
+                // Backstab: a Skirmisher hits an enemy Reserve harder.
+                let backstab =
+                    state.s_pool(side)[*i].has("Backstab") && self.is_reserve(state, other, *t);
                 if backstab {
-                    state.heroes[*h].offense.power += 3;
+                    if side == 0 {
+                        state.heroes[*i].offense.power += 3;
+                    } else {
+                        state.creatures[*i].offense.power += 3;
+                    }
                 }
-                self.strike(state, true, *h, *f, Range::Melee);
+                self.strike(state, side == 0, *i, *t, Range::Melee);
                 if backstab {
-                    state.heroes[*h].offense.power -= 3;
+                    if side == 0 {
+                        state.heroes[*i].offense.power -= 3;
+                    } else {
+                        state.creatures[*i].offense.power -= 3;
+                    }
                 }
-                state.plan.hero_acted[*h] = true;
+                state.s_acted_mut(side)[*i] = true;
                 combat::tally(&mut state.heroes);
                 combat::tally(&mut state.creatures);
                 check_outcome(state);
-                if state.outcome.is_none() && self.pending_skirmishers(state).is_empty() {
-                    self.resolve_skirmish(state);
+                if state.outcome.is_none() && self.pending_targets(state, side, false).is_empty() {
+                    self.skirmish_done(state);
                 }
             }
-            (Phase::Skirmish, Action::Pass(h)) => {
-                state.plan.hero_acted[*h] = true;
-                if self.pending_skirmishers(state).is_empty() {
-                    self.resolve_skirmish(state);
+            (Phase::Skirmish, Action::Pass(i)) => {
+                let side = state.plan.committing;
+                state.s_acted_mut(side)[*i] = true;
+                if self.pending_targets(state, side, false).is_empty() {
+                    self.skirmish_done(state);
                 }
             }
-            (Phase::Reserve, Action::Target(h, f)) => {
-                self.strike(state, true, *h, *f, Range::Ranged);
-                state.plan.hero_acted[*h] = true;
+            (Phase::Reserve, Action::Target(i, t)) => {
+                let side = state.plan.committing;
+                self.strike(state, side == 0, *i, *t, Range::Ranged);
+                state.s_acted_mut(side)[*i] = true;
                 combat::tally(&mut state.heroes);
                 combat::tally(&mut state.creatures);
                 check_outcome(state);
-                if state.outcome.is_none() && self.pending_reserves(state).is_empty() {
-                    self.resolve_reserve(state);
+                if state.outcome.is_none() && self.pending_targets(state, side, true).is_empty() {
+                    self.reserve_done(state);
                 }
             }
-            (Phase::Reserve, Action::PlayCard(h, idx)) => {
-                let card = state.heroes[*h]
+            (Phase::Reserve, Action::PlayCard(i, idx)) => {
+                let side = state.plan.committing;
+                let card = state.s_pool(side)[*i]
                     .actions
                     .get(*idx)
                     .cloned()
                     .ok_or_else(|| GameError::new("no such card"))?;
-                let (pow, pre) = (
-                    state.heroes[*h].offense.power,
-                    state.heroes[*h].offense.precision,
-                );
-                let name = state.heroes[*h].name.clone();
-                let mut heroes = std::mem::take(&mut state.heroes);
-                combat::play_card(
-                    &card,
-                    &name,
-                    pow,
-                    pre,
-                    &mut state.creatures,
-                    &mut heroes,
-                    Some(*h),
-                    &mut state.log,
-                );
-                state.heroes = heroes;
-                state.plan.hero_acted[*h] = true;
+                if card.passive {
+                    return Err(GameError::new("that is a passive ability"));
+                }
+                let pow = state.s_pool(side)[*i].offense.power;
+                let pre = state.s_pool(side)[*i].offense.precision;
+                let name = state.s_pool(side)[*i].name.clone();
+                if side == 0 {
+                    let mut allies = std::mem::take(&mut state.heroes);
+                    combat::play_card(&card, &name, pow, pre, &mut state.creatures, &mut allies, Some(*i), &mut state.log);
+                    state.heroes = allies;
+                } else {
+                    let mut allies = std::mem::take(&mut state.creatures);
+                    combat::play_card(&card, &name, pow, pre, &mut state.heroes, &mut allies, Some(*i), &mut state.log);
+                    state.creatures = allies;
+                }
+                state.s_acted_mut(side)[*i] = true;
                 combat::tally(&mut state.heroes);
                 combat::tally(&mut state.creatures);
                 check_outcome(state);
-                if state.outcome.is_none() && self.pending_reserves(state).is_empty() {
-                    self.resolve_reserve(state);
+                if state.outcome.is_none() && self.pending_targets(state, side, true).is_empty() {
+                    self.reserve_done(state);
                 }
             }
-            (Phase::Reserve, Action::Pass(h)) => {
-                state.plan.hero_acted[*h] = true;
-                if self.pending_reserves(state).is_empty() {
-                    self.resolve_reserve(state);
+            (Phase::Reserve, Action::Pass(i)) => {
+                let side = state.plan.committing;
+                state.s_acted_mut(side)[*i] = true;
+                if self.pending_targets(state, side, true).is_empty() {
+                    self.reserve_done(state);
                 }
             }
 
@@ -1306,6 +1397,26 @@ mod tests {
         game.apply(&mut s, &Action::AssignLane(h2, 0)).unwrap();
         assert_eq!(s.phase, Phase::Slip);
         assert_eq!(s.plan.lanes[0].heroes.len(), 2, "both stacked into lane 0");
+    }
+
+    /// Hotseat PvP: each phase is committed by side A, then side B (current_player alternates),
+    /// before it resolves — pass-and-play hidden commit (§3.4).
+    #[test]
+    fn pvp_alternates_sides_per_phase() {
+        let game = Deckbound;
+        let mut s = game.new_game(1, 1);
+        game.apply(&mut s, &Action::OpenVersus).unwrap();
+        let idx = scenarios::versus().iter().position(|v| v.pvp).unwrap();
+        game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
+        assert_eq!(s.phase, Phase::Muster);
+        assert_eq!(game.current_player(&s), Some(PlayerId(0)), "side A musters first");
+        game.apply(&mut s, &Action::Deploy).unwrap();
+        assert_eq!(s.phase, Phase::Muster, "still mustering");
+        assert_eq!(game.current_player(&s), Some(PlayerId(1)), "now side B musters");
+        game.apply(&mut s, &Action::Deploy).unwrap();
+        // Both mustered (no Vanguard) → deploys; play it out to an outcome.
+        let _ = autoplay(&game, &mut s);
+        assert!(s.outcome.is_some());
     }
 
     /// A base-mode cooperation scenario runs the lane round to an outcome.

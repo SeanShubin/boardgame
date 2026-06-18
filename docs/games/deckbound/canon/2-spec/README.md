@@ -58,7 +58,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **The Clash** (tactical core)                     | ✅ worked    | —                                                                          |
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`                               |
 | **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                    |
-| **The battle — roles & commitment order**         | 🟡 seeded    | §4 specced; code still implements the superseded formation (a defect)      |
+| **The battle — roles & commitment order**         | 🟡 seeded    | §4 specced **and implemented** (lanes, powers, Clash module, hotseat PvP)  |
 | **Zones / exhaustion**                            | ⬜ stub      | `notes/zones.md` *(needs post-Duel rewrite)*                               |
 | **Aspects / the chord**                           | ⬜ stub      | `notes/decks-and-aspects.md`                                               |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                            |
@@ -624,11 +624,11 @@ phase.
 > Speed, interposition to protect Reserve). Both are replaced by the **lane-based commitment
 > order** below — same *concept* (roles by when you commit; Vanguard protects Reserve), new
 > *mechanics* (you assign Vanguard to **lanes** and may **stack** them; protection is holding
-> a lane, not a later interpose). Two carry-over notes: (1) there is **no "front line never
-> empty" rule** — fielding no Vanguard is legal (and, vs a fielded foe, self-defeating); (2)
-> the **code still implements the original front/back formation + PvE foe-phase**, so **the
-> code is a known defect** to reconcile against this section (per `0-source-of-truth.md`: the
-> code is a defect report). Old text is in git history.
+> a lane, not a later interpose). Carry-over note: there is **no "front line never empty"
+> rule** — fielding no Vanguard is legal (and, vs a fielded foe, self-defeating). The **code
+> now implements this section** (the lane round in base mode, the optional 1v1 Clash module,
+> the seven powers as passives, and hotseat PvP); manual lane assignment in PvP and a couple
+> of cost dials remain first-pass. Old text is in git history.
 
 **RULE.** Roles are **Vanguard** (committed to the front) and **Reserve** (everyone else);
 **Skirmishers** are made mid-round — a Vanguard that **slips** its lane. The spine is a

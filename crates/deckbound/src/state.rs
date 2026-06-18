@@ -66,15 +66,21 @@ pub struct Round {
     pub hero_lane: Vec<Option<usize>>,
     /// Per creature: same.
     pub foe_lane: Vec<Option<usize>>,
-    /// Per hero Vanguard: `Some(true)` = slip, `Some(false)` = hold, `None` = not yet decided.
+    /// Per Vanguard: `Some(true)` = slip, `Some(false)` = hold, `None` = not yet decided.
     pub hero_slip: Vec<Option<bool>>,
+    /// Creature slip choices (PvP — set by the human side B; PvE computes from AI).
+    pub foe_slip: Vec<Option<bool>>,
     /// Heroes / creatures who became Skirmishers this round (slipped a lane and survived).
     pub hero_skirmisher: Vec<bool>,
     pub foe_skirmisher: Vec<bool>,
-    /// Heroes who have already acted in the current target phase (Skirmish / Reserve).
+    /// Actors who have already acted in the current target phase (Skirmish / Reserve).
     pub hero_acted: Vec<bool>,
-    /// Vanguard heroes still awaiting a lane during the Assign phase.
+    pub foe_acted: Vec<bool>,
+    /// Vanguard awaiting a lane during the Assign phase (the side currently committing).
     pub assign_queue: Vec<usize>,
+    /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always
+    /// 0 in PvE.
+    pub committing: u8,
     /// True once the deterministic-base trade is replaced by the interactive Clash module.
     pub clash_mode: bool,
 }
@@ -86,10 +92,13 @@ impl Round {
             hero_lane: vec![None; heroes],
             foe_lane: vec![None; foes],
             hero_slip: vec![None; heroes],
+            foe_slip: vec![None; foes],
             hero_skirmisher: vec![false; heroes],
             foe_skirmisher: vec![false; foes],
             hero_acted: vec![false; heroes],
+            foe_acted: vec![false; foes],
             assign_queue: Vec::new(),
+            committing: 0,
             clash_mode: false,
         }
     }
@@ -111,6 +120,41 @@ pub struct State {
     pub outcome: Option<Outcome>,
     /// True when this scenario uses the optional Clash module for same-range duels.
     pub clash_module: bool,
+    /// True when this is a hotseat PvP scenario (both sides human, §3.4).
+    pub pvp: bool,
+}
+
+impl State {
+    /// The pool of the side currently committing (PvP) / always heroes in PvE.
+    pub fn committing_is_foe(&self) -> bool {
+        self.plan.committing == 1
+    }
+
+    // ---- side-generic accessors (side 0 = heroes, 1 = creatures) ----
+    pub fn s_pool(&self, side: u8) -> &[Actor] {
+        if side == 0 { &self.heroes } else { &self.creatures }
+    }
+    pub fn s_len(&self, side: u8) -> usize {
+        self.s_pool(side).len()
+    }
+    pub fn s_lane(&self, side: u8) -> &[Option<usize>] {
+        if side == 0 { &self.plan.hero_lane } else { &self.plan.foe_lane }
+    }
+    pub fn s_lane_mut(&mut self, side: u8) -> &mut Vec<Option<usize>> {
+        if side == 0 { &mut self.plan.hero_lane } else { &mut self.plan.foe_lane }
+    }
+    pub fn s_slip_mut(&mut self, side: u8) -> &mut Vec<Option<bool>> {
+        if side == 0 { &mut self.plan.hero_slip } else { &mut self.plan.foe_slip }
+    }
+    pub fn s_skirm(&self, side: u8) -> &[bool] {
+        if side == 0 { &self.plan.hero_skirmisher } else { &self.plan.foe_skirmisher }
+    }
+    pub fn s_acted(&self, side: u8) -> &[bool] {
+        if side == 0 { &self.plan.hero_acted } else { &self.plan.foe_acted }
+    }
+    pub fn s_acted_mut(&mut self, side: u8) -> &mut Vec<bool> {
+        if side == 0 { &mut self.plan.hero_acted } else { &mut self.plan.foe_acted }
+    }
 }
 
 impl State {

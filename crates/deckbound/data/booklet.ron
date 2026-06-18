@@ -144,8 +144,10 @@ Catalog(
         ScenarioCard( name: "C6. The Duelist", blurb: "(Clash module) Sable plays the whole kit. The full mind-game.", heroes: ["Vael"], foes: ["Sable"], clash: true ),
     ],
     versus: [
-        // First pass: 1v1 Clash duels (the hotseat PvP driver is a separate TODO).
-        ScenarioCard( name: "Duel: Mirror", blurb: "Two duelists, identical kits.", heroes: ["Vael"], foes: ["Sable"], clash: true ),
-        ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
+        // Hotseat PvP lane battles — both sides human, pass-and-play, hidden commit per phase.
+        ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Muster, assign, slip, target — pass the device each phase; neither side sees the other's commit until it resolves.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
+        ScenarioCard( name: "Skirmish Line (2v2)", blurb: "A melee fighter and an archer a side — wall or slip, fire or guard.", heroes: ["Recruit", "Archer"], foes: ["Recruit", "Archer"], pvp: true ),
+        // A 1v1 Clash duel vs the AI, for the optional mix-up module.
+        ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up (Clash module).", heroes: ["Vael"], foes: ["Pell"], clash: true ),
     ],
 )

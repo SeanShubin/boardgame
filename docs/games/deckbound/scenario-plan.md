@@ -90,7 +90,10 @@ Each is one lesson, algorithmic.
   Barrage/Dread/Cleave/Sunder/Bank.
 - ✅ Foe-side **reserve targeting matrix** enforced (heroes' Reserve fire hits the foe front;
   Longshot or an empty front reaches foe Reserves).
-- ⬜ **Hotseat PvP lane driver** — TODO. Versus currently holds 1v1 Clash duels as a placeholder.
+- ✅ **Hotseat PvP lane driver** — both sides human, pass-and-play, hidden commit per phase
+  (Muster → Slip → Skirmish → Reserve, committing side alternates). Versus holds 3v3/2v2 PvP
+  lane battles plus a 1v1 Clash duel. *(First-pass: PvP auto-assigns lanes — manual stacking in
+  PvP is the remaining refinement.)*
 
 ## Implementation notes (what the engine must do)
 

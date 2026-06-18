@@ -91,6 +91,9 @@ struct ScenarioCard {
     /// Use the optional four-card Clash module for same-range duels (else deterministic trade).
     #[serde(default)]
     clash: bool,
+    /// A hotseat PvP scenario — both sides are human (§3.4).
+    #[serde(default)]
+    pvp: bool,
 }
 
 /// A selectable scenario.
@@ -100,6 +103,8 @@ pub struct Scenario {
     pub blurb: String,
     /// Whether this scenario runs the optional Clash module.
     pub clash: bool,
+    /// Whether this scenario is a hotseat PvP battle (both sides human).
+    pub pvp: bool,
     heroes: Vec<String>,
     foes: Vec<String>,
 }
@@ -141,6 +146,7 @@ fn scenario_from(card: &ScenarioCard) -> Scenario {
         name: card.name.clone(),
         blurb: card.blurb.clone(),
         clash: card.clash,
+        pvp: card.pvp,
         heroes: card.heroes.clone(),
         foes: card.foes.clone(),
     }
