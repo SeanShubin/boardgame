@@ -1,0 +1,24 @@
+#!/bin/sh
+# Auto-format staged Rust code before each commit, so commits go in rustfmt-clean
+# and the pre-push backstop (cargo fmt --all -- --check) never trips.
+#
+# Commits stay manual: this only touches *.rs files you have already staged,
+# formats them in place, and re-stages the result. It does not commit for you.
+#
+# Edition is passed explicitly because we invoke rustfmt directly (not via
+# `cargo fmt`, which would reformat the whole workspace), and the workspace is
+# edition 2024.
+#
+# Caveat: a partially staged file (some hunks staged, some not) gets fully
+# re-staged after formatting, pulling in its unstaged hunks too. If you stage
+# whole files, this never bites.
+#
+# Enable once per clone: git config core.hooksPath .githooks
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+[ -z "$files" ] && exit 0
+
+echo "pre-commit: rustfmt on staged Rust files"
+echo "$files" | xargs rustfmt --edition 2024
+echo "$files" | xargs git add
