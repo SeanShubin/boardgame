@@ -21,6 +21,16 @@ struct Catalog {
     tutorials: Vec<ScenarioCard>,
     #[serde(default)]
     versus: Vec<ScenarioCard>,
+    /// The in-app rules reference (encyclopedia) entries.
+    #[serde(default)]
+    glossary: Vec<GlossaryCard>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlossaryCard {
+    category: String,
+    term: String,
+    text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,6 +142,15 @@ pub fn tutorials() -> Vec<Scenario> {
 
 pub fn versus() -> Vec<Scenario> {
     catalog().versus.iter().map(scenario_from).collect()
+}
+
+/// The in-app rules reference (encyclopedia), as engine `RefEntry`s.
+pub fn glossary() -> Vec<engine::RefEntry> {
+    catalog()
+        .glossary
+        .iter()
+        .map(|g| engine::RefEntry::new(g.category.clone(), g.term.clone(), g.text.clone()))
+        .collect()
 }
 
 fn catalog() -> &'static Catalog {
@@ -257,6 +276,7 @@ mod tests {
         assert!(!campaign().is_empty());
         assert!(!god().is_empty());
         assert!(tutorials().len() >= 4);
+        assert!(glossary().len() >= 10, "the encyclopedia has rules entries");
     }
 
     #[test]

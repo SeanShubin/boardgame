@@ -24,7 +24,7 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
-use engine::{Accent, CardFace, CardView, Game, TableView, ZoneView};
+use engine::{Accent, CardFace, CardView, Game, ProseLine, TableView, ZoneView};
 use std::cell::Cell;
 use std::time::Duration;
 
@@ -55,13 +55,20 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(NeedsRedraw(true))
             .insert_resource(Platform::detect())
             .insert_resource(HelpVisible(false))
+            .insert_resource(RulesVisible(false))
             .insert_resource(Muted(false))
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
             .add_systems(
                 Startup,
-                (setup_camera, install_ui_font, setup_help, setup_sfx),
+                (
+                    setup_camera,
+                    install_ui_font,
+                    setup_help,
+                    setup_rules::<G>,
+                    setup_sfx,
+                ),
             )
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
@@ -69,6 +76,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // `HelpVisible` still set, bows out of rewinding, and lets this
             // system consume Esc as "close help" instead.
             .add_systems(Update, toggle_help.after(cancel_on_key::<G>))
+            .add_systems(Update, toggle_rules.after(cancel_on_key::<G>))
             // Pure-presentation juice: hover lift + settle-in. These read
             // `Interaction` and write `UiTransform`/shadow only, so they run
             // every frame independently of the redraw chain below.
@@ -123,6 +131,14 @@ impl Platform {
 /// Whether the help overlay is currently shown.
 #[derive(Resource)]
 struct HelpVisible(bool);
+
+/// Whether the rules-reference (encyclopedia) overlay is currently shown.
+#[derive(Resource)]
+struct RulesVisible(bool);
+
+/// Marks the rules-reference overlay so [`toggle_rules`] can show / hide it.
+#[derive(Component)]
+struct RulesOverlay;
 
 /// Marks the root entity of the current table so it can be torn down on redraw.
 #[derive(Component)]
@@ -188,13 +204,14 @@ fn apply_clicked_action<G: Game + Clone>(
 fn cancel_on_key<G: Game + Clone>(
     keys: Res<ButtonInput<KeyCode>>,
     help: Res<HelpVisible>,
+    rules: Res<RulesVisible>,
     game: Res<GameRes<G>>,
     mut state: ResMut<StateRes<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
-    // While the help overlay is up, Esc closes it (handled by `toggle_help`)
+    // While an overlay is up, Esc closes it (handled by `toggle_help` / `toggle_rules`)
     // rather than rewinding a game step.
-    if help.0 {
+    if help.0 || rules.0 {
         return;
     }
     if keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace) {
@@ -270,6 +287,135 @@ fn toggle_help(
     if let Ok(mut node) = hint.single_mut() {
         node.display = shown(!visible.0);
     }
+}
+
+/// `R` toggles the rules-reference overlay; Esc closes it. Mirrors [`toggle_help`].
+fn toggle_rules(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut visible: ResMut<RulesVisible>,
+    mut overlay: Query<&mut Node, (With<RulesOverlay>, Without<HelpHint>)>,
+    mut hint: Query<&mut Node, (With<HelpHint>, Without<RulesOverlay>)>,
+) {
+    let toggle = keys.just_pressed(KeyCode::KeyR);
+    let close = visible.0 && keys.just_pressed(KeyCode::Escape);
+    if !toggle && !close {
+        return;
+    }
+    visible.0 = !close && !visible.0;
+
+    let shown = |on: bool| if on { Display::Flex } else { Display::None };
+    if let Ok(mut node) = overlay.single_mut() {
+        node.display = shown(visible.0);
+    }
+    if let Ok(mut node) = hint.single_mut() {
+        node.display = shown(!visible.0);
+    }
+}
+
+/// Build the (initially hidden) rules-reference overlay from the game's [`reference`]: a
+/// scrollable panel of entries grouped by category. Lives outside [`TableRoot`] so redraws
+/// never tear it down. Generic over the game — the content is whatever it exposes.
+///
+/// [`reference`]: engine::Game::reference
+fn setup_rules<G: Game + Clone>(mut commands: Commands, game: Res<GameRes<G>>) {
+    let entries = game.0.reference();
+    commands
+        .spawn((
+            RulesOverlay,
+            GlobalZIndex(20),
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(SCRIM),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        width: Val::Px(680.0),
+                        max_height: Val::Percent(84.0),
+                        padding: UiRect::all(Val::Px(22.0)),
+                        row_gap: Val::Px(8.0),
+                        border_radius: BorderRadius::all(Val::Px(PANEL_RADIUS)),
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL),
+                ))
+                .with_children(|panel| {
+                    panel.spawn((
+                        Text::new("Rules reference"),
+                        TextFont {
+                            font_size: 24.0,
+                            ..default()
+                        },
+                        TextColor(TITLE_INK),
+                    ));
+                    let mut category = String::new();
+                    for e in &entries {
+                        if e.category != category {
+                            category = e.category.clone();
+                            panel.spawn((
+                                Node {
+                                    margin: UiRect::top(Val::Px(8.0)),
+                                    ..default()
+                                },
+                                Text::new(e.category.clone()),
+                                TextFont {
+                                    font_size: 18.0,
+                                    ..default()
+                                },
+                                TextColor(BUTTON),
+                            ));
+                        }
+                        panel.spawn((
+                            Text::new(e.term.clone()),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(TITLE_INK),
+                        ));
+                        panel.spawn((
+                            Text::new(e.text.clone()),
+                            TextFont {
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(MUTED_INK),
+                        ));
+                    }
+                    if entries.is_empty() {
+                        panel.spawn((
+                            Text::new("This game has no rules reference."),
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(MUTED_INK),
+                        ));
+                    }
+                    panel.spawn((
+                        Node {
+                            margin: UiRect::top(Val::Px(10.0)),
+                            ..default()
+                        },
+                        Text::new("Press R or Esc to close"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(MUTED_INK),
+                    ));
+                });
+        });
 }
 
 /// One mouse-wheel turn, aimed at the UI node under the cursor. It is an
@@ -818,24 +964,108 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                     ));
                 });
 
-                // The zones fill the remaining space, and scroll vertically when
-                // the board is taller than the area (e.g. duels need more room).
-                main.spawn(Node {
+                // Prose content (a rules page) takes over the play area as a reading pane;
+                // otherwise the card zones fill the remaining space (and scroll when taller
+                // than the area, e.g. duels).
+                if !view.prose.is_empty() {
+                    spawn_prose_pane(main, &view.prose);
+                } else {
+                    main.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(10.0),
+                        flex_grow: 1.0,
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    })
+                    .with_children(|zones| {
+                        // A shared counter so cards deal in left-to-right,
+                        // top-to-bottom across the whole board, not per-zone.
+                        let order = Cell::new(0u32);
+                        for zone in &view.zones {
+                            spawn_zone(zones, zone, &order);
+                        }
+                    });
+                }
+            });
+        });
+}
+
+/// Render prose as a centred, scrollable reading pane: headings, bold terms, and wrapping
+/// body paragraphs. This is the readable home for rules / briefings (not fixed-size cards).
+fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
+    parent
+        .spawn(Node {
+            flex_grow: 1.0,
+            width: Val::Percent(100.0),
+            overflow: Overflow::scroll_y(),
+            justify_content: JustifyContent::Center,
+            ..default()
+        })
+        .with_children(|outer| {
+            outer
+                .spawn(Node {
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(10.0),
-                    flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
+                    width: Val::Percent(100.0),
+                    max_width: Val::Px(760.0),
+                    row_gap: Val::Px(4.0),
+                    padding: UiRect::all(Val::Px(8.0)),
                     ..default()
                 })
-                .with_children(|zones| {
-                    // A shared counter so cards deal in left-to-right,
-                    // top-to-bottom across the whole board, not per-zone.
-                    let order = Cell::new(0u32);
-                    for zone in &view.zones {
-                        spawn_zone(zones, zone, &order);
+                .with_children(|col| {
+                    for line in prose {
+                        match line {
+                            ProseLine::Heading(t) => {
+                                col.spawn((
+                                    Node {
+                                        margin: UiRect::new(
+                                            Val::ZERO,
+                                            Val::ZERO,
+                                            Val::Px(14.0),
+                                            Val::Px(4.0),
+                                        ),
+                                        ..default()
+                                    },
+                                    Text::new(t.clone()),
+                                    TextFont {
+                                        font_size: 26.0,
+                                        ..default()
+                                    },
+                                    TextColor(TITLE_INK),
+                                ));
+                            }
+                            ProseLine::Term(t) => {
+                                col.spawn((
+                                    Node {
+                                        margin: UiRect::top(Val::Px(10.0)),
+                                        ..default()
+                                    },
+                                    Text::new(t.clone()),
+                                    TextFont {
+                                        font_size: 18.0,
+                                        ..default()
+                                    },
+                                    TextColor(BUTTON),
+                                ));
+                            }
+                            ProseLine::Body(t) => {
+                                col.spawn((
+                                    Text::new(t.clone()),
+                                    TextFont {
+                                        font_size: 15.0,
+                                        ..default()
+                                    },
+                                    TextColor(INK),
+                                ));
+                            }
+                            ProseLine::Gap => {
+                                col.spawn(Node {
+                                    height: Val::Px(6.0),
+                                    ..default()
+                                });
+                            }
+                        }
                     }
                 });
-            });
         });
 }
 
@@ -1169,6 +1399,7 @@ const CONTROLS: &[(&str, &str)] = &[
     ("M", "Mute / unmute sound"),
     ("Esc / Backspace", "Cancel \u{2013} go back a step"),
     ("? / F1", "Toggle this help"),
+    ("R", "Toggle the rules reference"),
 ];
 
 /// Spawn the discoverability hint and the (initially hidden) help overlay. Both
@@ -1193,7 +1424,7 @@ fn setup_help(mut commands: Commands) {
         ))
         .with_children(|hint| {
             hint.spawn((
-                Text::new("Press ? for help"),
+                Text::new("? help · R rules"),
                 TextFont {
                     font_size: 14.0,
                     ..default()

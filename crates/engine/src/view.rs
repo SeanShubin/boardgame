@@ -9,13 +9,30 @@
 use crate::player::PlayerId;
 
 /// Everything a presentation layer needs to draw the table once.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TableView {
     /// A short, human-readable description of the current situation, e.g.
     /// "Player 0's turn" or "Game over — Player 1 wins!".
     pub status: String,
     /// The piles on the table, in the order they should be presented.
     pub zones: Vec<ZoneView>,
+    /// Optional **prose** content (a rules page, a briefing, a log). When non-empty, a renderer
+    /// should present it as a formatted, scrollable **reading pane** in place of the card board —
+    /// long text belongs in flowing prose, not in fixed-size cards.
+    pub prose: Vec<ProseLine>,
+}
+
+/// One line of a prose reading pane, with a role a renderer can style.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProseLine {
+    /// A section heading.
+    Heading(String),
+    /// A bold sub-heading / keyword (e.g. a glossary term).
+    Term(String),
+    /// A body paragraph (wraps to the pane width).
+    Body(String),
+    /// Vertical breathing room between blocks.
+    Gap,
 }
 
 /// A single pile of cards as it should appear to the viewer.

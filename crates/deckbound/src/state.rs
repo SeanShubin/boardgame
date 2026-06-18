@@ -19,6 +19,10 @@ pub enum Menu {
     God,
     Tutorial,
     Versus,
+    /// The encyclopedia's category list (the top of the rules hierarchy).
+    Rules,
+    /// The entries within one rules category (by its index in `categories()`).
+    Category(usize),
 }
 
 /// Where the round is.

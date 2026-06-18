@@ -25,6 +25,10 @@ pub enum Action {
     OpenGod,
     OpenTutorial,
     OpenVersus,
+    /// Open the rules encyclopedia (its category list).
+    OpenEncyclopedia,
+    /// Open one rules category (by index in `categories()`).
+    OpenCategory(usize),
     PickScenario(usize),
     Exit,
     ToMenu,
@@ -77,8 +81,27 @@ fn list_for(menu: Menu) -> Vec<Scenario> {
         Menu::God => scenarios::god(),
         Menu::Tutorial => scenarios::tutorials(),
         Menu::Versus => scenarios::versus(),
-        Menu::Top => Vec::new(),
+        Menu::Top | Menu::Rules | Menu::Category(_) => Vec::new(),
     }
+}
+
+/// The encyclopedia's categories, in first-seen order (the top of the hierarchy).
+fn categories() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for e in scenarios::glossary() {
+        if !out.contains(&e.category) {
+            out.push(e.category);
+        }
+    }
+    out
+}
+
+/// The rules entries within one category.
+fn entries_in(category: &str) -> Vec<engine::RefEntry> {
+    scenarios::glossary()
+        .into_iter()
+        .filter(|e| e.category == category)
+        .collect()
 }
 
 fn load_scenario(state: &mut State, scenario: Scenario) {
@@ -657,6 +680,14 @@ impl Deckbound {
             (Some(Outcome::Win(PlayerId(0))), _) => "Victory! Replay, or Main menu.".to_string(),
             (Some(_), _) => "Defeat. Replay, or Main menu.".to_string(),
             (None, Phase::Menu(Menu::Top)) => "Deckbound — pick a scenario set.".to_string(),
+            (None, Phase::Menu(Menu::Rules)) => "Rules — pick a category. (Esc: back)".to_string(),
+            (None, Phase::Menu(Menu::Category(i))) => format!(
+                "{} — rules. (Esc: back)",
+                categories()
+                    .get(*i)
+                    .cloned()
+                    .unwrap_or_else(|| "Rules".into())
+            ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
             (None, Phase::Muster) => format!(
                 "Round {} — muster: set Vanguard / Reserve, then Deploy. (Esc: menu)",
@@ -723,8 +754,17 @@ impl Game for Deckbound {
                 Action::OpenCooperation,
                 Action::OpenGod,
                 Action::OpenVersus,
+                Action::OpenEncyclopedia,
                 Action::Exit,
             ],
+            // Rules and a category page share the same left sidebar: one button per
+            // category (jump straight between them), plus Back. The page body is prose.
+            Phase::Menu(Menu::Rules) | Phase::Menu(Menu::Category(_)) => {
+                let mut a: Vec<Action> =
+                    (0..categories().len()).map(Action::OpenCategory).collect();
+                a.push(Action::Back);
+                a
+            }
             Phase::Menu(m) => {
                 let mut a: Vec<Action> =
                     (0..list_for(*m).len()).map(Action::PickScenario).collect();
@@ -844,6 +884,8 @@ impl Game for Deckbound {
             Action::OpenGod => "God-tier".into(),
             Action::OpenTutorial => "Duels".into(),
             Action::OpenVersus => "Versus (hotseat)".into(),
+            Action::OpenEncyclopedia => "Rules".into(),
+            Action::OpenCategory(i) => categories().get(*i).cloned().unwrap_or_else(|| "?".into()),
             Action::Exit => "Exit".into(),
             Action::ToMenu => "Main menu".into(),
             Action::Back => "< Back".into(),
@@ -914,12 +956,30 @@ impl Game for Deckbound {
                 state.phase = Phase::Menu(Menu::Tutorial)
             }
             (Phase::Menu(Menu::Top), Action::OpenVersus) => state.phase = Phase::Menu(Menu::Versus),
+            (Phase::Menu(Menu::Top), Action::OpenEncyclopedia) => {
+                state.phase = Phase::Menu(Menu::Rules)
+            }
+            // From the categories list or while reading one, a category button opens it
+            // (the sidebar lets you jump straight between categories).
+            (
+                Phase::Menu(Menu::Rules) | Phase::Menu(Menu::Category(_)),
+                Action::OpenCategory(i),
+            ) => {
+                if *i >= categories().len() {
+                    return Err(GameError::new("no such category"));
+                }
+                state.phase = Phase::Menu(Menu::Category(*i));
+            }
             (Phase::Menu(m), Action::PickScenario(i)) if *m != Menu::Top => {
                 let s = list_for(*m)
                     .into_iter()
                     .nth(*i)
                     .ok_or_else(|| GameError::new("no such scenario"))?;
                 load_scenario(state, s);
+            }
+            // Back climbs the hierarchy: an entry list → categories → top.
+            (Phase::Menu(Menu::Category(_)), Action::Back) => {
+                state.phase = Phase::Menu(Menu::Rules)
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
@@ -1107,10 +1167,32 @@ impl Game for Deckbound {
         matches!(action, Action::Exit)
     }
 
+    fn reference(&self) -> Vec<engine::RefEntry> {
+        scenarios::glossary()
+    }
+
     fn view(&self, state: &State, _perspective: Option<PlayerId>) -> TableView {
         let mut zones = Vec::new();
+        let mut prose: Vec<engine::ProseLine> = Vec::new();
         match &state.phase {
             Phase::Menu(Menu::Top) => zones.push(menu_zone()),
+            // The encyclopedia is a reading pane (prose), not cards; categories are the
+            // left-panel buttons (a docs sidebar).
+            Phase::Menu(Menu::Rules) => {
+                prose.push(engine::ProseLine::Heading("Rules".into()));
+                prose.push(engine::ProseLine::Body(
+                    "Pick a category on the left to read its rules.".into(),
+                ));
+            }
+            Phase::Menu(Menu::Category(i)) => {
+                let cat = categories().into_iter().nth(*i).unwrap_or_default();
+                prose.push(engine::ProseLine::Heading(cat.clone()));
+                for e in entries_in(&cat) {
+                    prose.push(engine::ProseLine::Term(e.term));
+                    prose.push(engine::ProseLine::Body(e.text));
+                    prose.push(engine::ProseLine::Gap);
+                }
+            }
             Phase::Menu(m) => zones.push(scenario_zone(*m)),
             Phase::Clash => {
                 if let Some(c) = state.clash {
@@ -1126,6 +1208,7 @@ impl Game for Deckbound {
         TableView {
             status: self.status(state),
             zones,
+            prose,
         }
     }
 }
@@ -1332,6 +1415,36 @@ mod tests {
     #[test]
     fn new_game_starts_in_menu() {
         assert_eq!(Deckbound.new_game(1, 1).phase, Phase::Menu(Menu::Top));
+    }
+
+    /// The in-app encyclopedia exposes the rules reference (Game::reference).
+    #[test]
+    fn reference_exposes_the_rules() {
+        let r = Deckbound.reference();
+        assert!(r.len() >= 10, "the encyclopedia has entries");
+        assert!(r.iter().any(|e| e.term == "Vanguard"));
+        assert!(r.iter().any(|e| e.category == "Clash module"));
+    }
+
+    /// The encyclopedia is reachable as an action and navigable category → entries → back.
+    #[test]
+    fn encyclopedia_hierarchy_navigates() {
+        let game = Deckbound;
+        let mut s = game.new_game(1, 1);
+        // "Rules" is offered as an action (a left-panel button) on the top menu.
+        assert!(game.legal_actions(&s).contains(&Action::OpenEncyclopedia));
+        game.apply(&mut s, &Action::OpenEncyclopedia).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Rules));
+        // The category list offers one open-action per category.
+        let cats = super::categories().len();
+        assert!(cats >= 4 && game.legal_actions(&s).contains(&Action::OpenCategory(0)));
+        game.apply(&mut s, &Action::OpenCategory(0)).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Category(0)));
+        // Back climbs the hierarchy: entries → categories → top.
+        game.apply(&mut s, &Action::Back).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Rules));
+        game.apply(&mut s, &Action::Back).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Top));
     }
 
     fn duel_state() -> State {

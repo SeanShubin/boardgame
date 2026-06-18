@@ -150,4 +150,35 @@ Catalog(
         // A 1v1 Clash duel vs the AI, for the optional mix-up module.
         ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
     ],
+    // In-app rules reference (the encyclopedia). Sourced from canon/2-spec/README.md §1/§3/§4.
+    glossary: [
+        // --- Roles (the triangle) ---
+        GlossaryCard( category: "Roles", term: "Vanguard", text: "Your committed front line. Vanguard hold lanes (and block slips) or slip past to become Skirmishers. They strike first and shield the Reserve." ),
+        GlossaryCard( category: "Roles", term: "Skirmisher", text: "A Vanguard that slipped its lane. Skirmishers may target anyone — the only path to the enemy Reserve. They act after the front resolves." ),
+        GlossaryCard( category: "Roles", term: "Reserve", text: "Everyone not in the Vanguard: decisive but fragile (artillery, support). Acts last with the most info; fires on the enemy front and aids allies, but can never target the enemy Reserve." ),
+        GlossaryCard( category: "Roles", term: "The triangle", text: "Vanguard beats Skirmisher (holds the wall, strikes first); Skirmisher beats Reserve (slips in to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee)." ),
+        // --- Lanes & the front ---
+        GlossaryCard( category: "Lanes", term: "Lanes", text: "The number of lanes is the smaller side's Vanguard count. Each lane is where opposing Vanguard meet; the larger side stacks its surplus." ),
+        GlossaryCard( category: "Lanes", term: "Stacking", text: "Putting more than one Vanguard in a lane to overwhelm its wall — local superiority. The count, and where you stack, is the strategy." ),
+        GlossaryCard( category: "Lanes", term: "Hold vs Slip", text: "Each Vanguard holds (fight the lane and block slips) or slips (try to leave and become a Skirmisher). Slipping costs Tempo = the enemy lane's combined Speed." ),
+        GlossaryCard( category: "Lanes", term: "Block", text: "A holding Vanguard spends Focus = the slipper's Speed to stop a slip; a funded block wins. Overwhelm the wall's Focus (stack slippers) to push through." ),
+        GlossaryCard( category: "Lanes", term: "Zero lanes", text: "If a side fields no Vanguard there is no front: it's exposed (no exploit — you still can't reach their Reserve). If neither fields a front, it's an open brawl — anyone may hit anyone." ),
+        // --- Range & resolution (§4.2) ---
+        GlossaryCard( category: "Combat", term: "Trade", text: "A same-range engagement: both sides deal their base damage through armor/toughness. In the optional Clash module, the trade is replaced by the four-card mix-up." ),
+        GlossaryCard( category: "Combat", term: "Auto-hit", text: "A range mismatch: the attacker lands uncontested (the target can't answer at that range). Armor still blunts it; Focus cannot." ),
+        GlossaryCard( category: "Combat", term: "Attack type", text: "Each Actor is Melee, Ranged, Both, or Neither. Lanes & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit." ),
+        // --- Resources ---
+        GlossaryCard( category: "Resources", term: "Tempo", text: "Offense budget (= Speed). Spent to slip a lane and to pick Skirmisher/Reserve targets; the cost is the opponent's Speed." ),
+        GlossaryCard( category: "Resources", term: "Focus", text: "Defense budget (= Mind). Spent to block slips and to survive incoming hits; the cost is the attacker's Speed. Fast-but-thin slips well; high-Mind holds the wall." ),
+        // --- The round ---
+        GlossaryCard( category: "Round", term: "Phases", text: "Muster (set Vanguard/Reserve) → Assign (place lanes) → Slip (hold/slip) → Vanguard resolves → Skirmishers strike → Reserve acts → refresh. Order-independent within each phase." ),
+        // --- The Clash module ---
+        GlossaryCard( category: "Clash module", term: "The Clash", text: "An optional 1v1 mix-up that replaces a same-range trade. Each beat both pick a card and reveal at once: Strike, Anticipate, Gather, Evade." ),
+        GlossaryCard( category: "Clash module", term: "Cards", text: "Strike beats Gather; Anticipate beats Evade; Gather beats Anticipate; Evade beats Strike. Strike also beats Anticipate; Strike-vs-Strike trades." ),
+        GlossaryCard( category: "Clash module", term: "Force", text: "Gather builds +1 Force; each Force doubles your connecting hit. Evading a Strike steals the striker's Force (always at least 1)." ),
+        // --- Powers (passive abilities) ---
+        GlossaryCard( category: "Powers", term: "Wall powers", text: "Phalanx (a stacked lane combines its Focus to block); Bodyguard/Taunt (a guardian lends Focus to other lanes)." ),
+        GlossaryCard( category: "Powers", term: "Infiltrator powers", text: "Blitz (the slip is free); Shadowstep (ignore one blocker); Backstab (bonus damage vs an enemy Reserve)." ),
+        GlossaryCard( category: "Powers", term: "Support & range", text: "Ward (grant a melee guard to a melee-less ally); Mend/Haste/Rally; Confuse/Slow/Suppress (strip a foe's Focus/Speed/Tempo); Longshot (Reserve may reach enemy Reserves)." ),
+    ],
 )

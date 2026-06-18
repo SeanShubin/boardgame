@@ -175,7 +175,11 @@ impl Game for TreasureDive {
             None => format!("Player {}'s turn — Dive or Surface?", state.current),
         };
 
-        TableView { status, zones }
+        TableView {
+            status,
+            zones,
+            ..Default::default()
+        }
     }
 }
 

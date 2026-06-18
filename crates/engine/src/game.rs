@@ -14,6 +14,30 @@ pub enum Outcome {
     Tie(Vec<PlayerId>),
 }
 
+/// One entry in a game's in-app rules reference (the encyclopedia): a `term` and its rules
+/// `text`, grouped under a `category`. A presentation layer can surface these in an overlay so
+/// the rules are discoverable in context, without knowing any specific game.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefEntry {
+    pub category: String,
+    pub term: String,
+    pub text: String,
+}
+
+impl RefEntry {
+    pub fn new(
+        category: impl Into<String>,
+        term: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            category: category.into(),
+            term: term.into(),
+            text: text.into(),
+        }
+    }
+}
+
 /// An attempt to apply an illegal or impossible action.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GameError(pub String);
@@ -91,5 +115,12 @@ pub trait Game: Send + Sync + 'static {
     /// action entirely. Defaults to `false`.
     fn is_exit_action(&self, _state: &Self::State, _action: &Self::Action) -> bool {
         false
+    }
+
+    /// A browsable rules reference (the in-app encyclopedia): keyword / procedure entries the
+    /// presentation layer can surface in an overlay so rules are discoverable in context.
+    /// Defaults to empty (a game with no reference simply shows none).
+    fn reference(&self) -> Vec<RefEntry> {
+        Vec::new()
     }
 }

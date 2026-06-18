@@ -55,9 +55,13 @@ These are software/artifacts, not rules, so they live outside the Spec.
   what a Character is exists in `notes/entities.md` and `notes/decision-making.md`; the
   actual emulator does not. This is what would make a non-human opponent feel like a real
   duelist instead of a deck.
-- **In-game encyclopedia.** In-app rules lookup — search the Spec keywords/procedures and
-  read them in context while playing. (Pairs with the keyword **MANUAL** lines the Spec
-  already authors for exactly this "digital and printed rules can't drift" reason.)
+- **In-game encyclopedia.** ✅ **Built (v1).** A rules-reference overlay, toggled by **R**
+  (and listed in the help/controls), available in any phase. Generic: `engine::Game` gained a
+  `reference() -> Vec<RefEntry>` method the `tabletop` overlay renders; Deckbound feeds it a
+  data-authored **glossary** in `booklet.ron` (roles, lanes, range, resources, the Clash,
+  powers). *Next:* a search box, and generating the glossary from the Spec keyword MANUAL lines
+  so it can't drift (currently the glossary is authored alongside the Spec, not generated from
+  it).
 - **Detailed card lists / interaction reference.** A per-card reference describing how each
   card interacts with the rules. The source-of-truth model already anticipates this as a
   **generated projection** of `booklet.ron` × the Spec's keyword manual lines (a printed
