@@ -38,9 +38,6 @@ struct TraitCard {
     keystone: Option<Aspect>,
 }
 
-fn one() -> u32 {
-    1
-}
 fn five() -> u32 {
     5
 }
@@ -54,22 +51,12 @@ struct ActorCard {
     role: String,
     /// "hero" (human) or a creature instinct keyword (brute / aggressor / charger / …).
     driver: String,
-    speed: u32,
-    power: u32,
-    #[serde(default)]
-    precision: u32,
-    #[serde(default)]
-    spirit: u32,
-    body: u32,
-    #[serde(default = "one")]
-    toughness: u32,
-    #[serde(default)]
-    resolve: u32,
-    #[serde(default = "one")]
-    mind: u32,
+    /// The fundamental Form card (stats-as-deck, §2.3/§4.3): the actor's base stat block.
+    base: StatCard,
     weapon: String,
     #[serde(default)]
     actions: Vec<String>,
+    /// Attachment Form cards (armor / ward / …) — references into the trait library.
     #[serde(default)]
     traits: Vec<String>,
     /// Attack profile (§4.2): Melee / Ranged / Both / Neither. Defaults to Melee.
@@ -294,18 +281,11 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
     // Stats-as-deck (§2.3/§4.3): the actor's stat block is read off its **Form** — a fundamental
     // card (its base stats) plus attachment cards (its traits). Number-preserving: this derives
     // exactly the old block. The booklet schema migration (fundamental cards as data) is A.3.
-    let mut form = Form::new(vec![StatCard {
-        name: format!("{} (base)", c.name),
-        power: c.power,
-        precision: c.precision,
-        speed: c.speed,
-        spirit: c.spirit,
-        body: c.body,
-        toughness: c.toughness,
-        resolve: c.resolve,
-        mind: c.mind,
-        ..Default::default()
-    }]);
+    let mut fundamental = c.base.clone();
+    if fundamental.name.is_empty() {
+        fundamental.name = format!("{} (base)", c.name);
+    }
+    let mut form = Form::new(vec![fundamental]);
     for tname in &c.traits {
         let t = cat
             .traits
