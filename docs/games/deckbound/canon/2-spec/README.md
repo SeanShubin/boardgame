@@ -43,6 +43,12 @@ prints in the rulebook / on hover. The engine pairs each keyword's handler with
 this line so digital and printed rules can't drift; the Spec is where that line is
 authored.
 
+**Cards may supersede the core.** Every rule here is a **default**. A card may
+**explicitly override** a specific core rule — and it says so on its face, naming the
+rule it bends. This keeps the core small and learnable while letting variety live on the
+cards (e.g. the core says only melee Actors skirmish, §4.2; a card can grant a ranged
+Skirmisher). A card never *silently* contradicts the core; an unstated conflict is a defect.
+
 ---
 
 ## Coverage
@@ -533,12 +539,11 @@ single-kill-vector property holds.
 - Fast attackers cost more Focus to cover (inverse telegraph); overflow free-hits.
 - "Negate many" is even in total across builds, capped per body.
 
-Under the §4 battle system, Focus also pays for **interposition** — stepping a Vanguard in
-front of a Skirmisher to protect a **Reserve** (cost = the Skirmisher's Speed). The
-interposer's **free strike** on a Skirmisher who *shoves past* is a push-through
-**attack-of-opportunity**, not a contradiction of "a self-defense deals no damage": defending
-*yourself* is still survive-only; the free strike is the price the runner pays to bypass a
-blocker.
+Under the §4 battle system, Focus also pays for **blocking** — a Vanguard holding its lane spends
+Focus = the slipper's Speed to stop a Vanguard trying to slip past (a funded block wins). This is
+how the wall protects the Reserve: deny the slip, and no Skirmisher is created to reach the back.
+A Vanguard that **tries to slip but cannot afford it** eats a **free hit** (the holder strikes
+it) — an attack-of-opportunity, not a contradiction of "a self-defense deals no damage."
 
 *(SEEDED — exact cover/drain numbers are open; `booklet.ron` / appendix.)*
 
@@ -607,166 +612,175 @@ phase.
 
 ---
 
-## 4. The battle — roles, commitment order & protection 🟡
+## 4. The battle — roles, lanes & commitment order 🟡
 
-> **History.** This section formerly specced a **front-line / back-line + gauntlet**
-> formation (public lines, melee dive through the wall, ranged bypass, "front line never
-> empty"). It is **superseded** by the **commitment-order** battle system below, in which
-> roles are *when you commit*, not *where you stand*. Two consequences worth stating
-> plainly: (1) the old **"front line never empty"** hard rule is **gone** — fielding no
-> Vanguard is now *legal but strategically self-defeating*, not illegal; (2) the **code
-> still implements the old formation** (front/back lines, reposition, HeroDive/FoeDive
-> gauntlet) and the §3.4 PvE foe-phase, so **the code is now a known defect** to reconcile
-> against this section (per `0-source-of-truth.md`: the code is a defect report). Old text
-> is in git history.
+> **History.** This section has been through two superseded forms: a **front-line / back-line
+> + gauntlet** formation, then a **speed-pairing** commitment order (Vanguard matched by
+> Speed, interposition to protect Reserve). Both are replaced by the **lane-based commitment
+> order** below — same *concept* (roles by when you commit; Vanguard protects Reserve), new
+> *mechanics* (you assign Vanguard to **lanes** and may **stack** them; protection is holding
+> a lane, not a later interpose). Two carry-over notes: (1) there is **no "front line never
+> empty" rule** — fielding no Vanguard is legal (and, vs a fielded foe, self-defeating); (2)
+> the **code still implements the original front/back formation + PvE foe-phase**, so **the
+> code is a known defect** to reconcile against this section (per `0-source-of-truth.md`: the
+> code is a defect report). Old text is in git history.
 
-**RULE.** A skirmish is a sequence of **rounds**. Each round has a **declaration stage** (four
-hidden commit→reveal cycles that build the engagement graph in *information order*) and a
-**resolution stage** (three phases that mirror the roles). Every cycle is **cross-side
-simultaneous**: both sides commit hidden, then reveal together — so the gradient is "later
-choosers see more *already-revealed* board," never "a side reveals first."
+**RULE.** Roles are **Vanguard** (committed to the front) and **Reserve** (everyone else);
+**Skirmishers** are made mid-round — a Vanguard that **slips** its lane. The spine is a
+counter-triangle: **Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard** — the Vanguard holds the line
+and strikes first (stopping Skirmishers); a Skirmisher slips the wall to reach the otherwise
+untouchable Reserve; the Reserve fires on the exposed front from safety.
 
-*Declaration — four cycles (each: both sides commit hidden → reveal):*
+A round **interleaves declaration and resolution in information order.** Every declaration is
+**cross-side simultaneous** (both commit hidden, reveal together — never reveal-first); each
+later choice acts on the *already-resolved, public* board, which is what makes the gradient:
 
-1. **Vanguard.** Each side commits some Actors to its **Vanguard** as a **face-down, ordered
-   stack salted with decoy cards** (hiding how many and in what order). Everyone uncommitted is
-   **Reserve**. → **Reveal 1:** Vanguard/Reserve split is public; **Speed-pairings** are
-   computed (deterministic, public) — equal-Speed Vanguard pair off; surplus Vanguard with no
-   opposing match are **Skirmishers**.
-2. **Skirmisher orders.** Each side commits, per front-liner: any **refusal** of a pairing
-   (decline it, take a free hit, become a Skirmisher), and for every Skirmisher its **target**
-   plus its **push/halt intent** (whether it will shove past a blocker). → **Reveal 2:** the
-   Skirmisher graph (who raids whom, who's pushing) is public.
-3. **Interposition.** Each defender commits which Vanguard **interpose** against Skirmishers
-   aimed at its Reserve — spend **Focus = the Skirmisher's Speed** to redirect the assault onto
-   that Vanguard; multiple interposers **stack**. → **Reveal 3:** interpositions public. With
-   the push/halt intents from cycle 2, the wall outcome is now determined (halt → fight the
-   Vanguard; push → eat the interposers' **free strikes first**, reach the Reserve only if it
-   survives).
-4. **Reserve targets.** Each side's Reserve commits targets, knowing the Skirmisher graph. →
-   **Reveal 4:** the **full engagement graph is fixed.**
+1. **Vanguard count.** Both sides secretly pick how many Actors to commit to the Vanguard
+   (`0`..party) → reveal (physically: face-down **number cards 0–9**). **Lanes = the smaller
+   of the two counts.** Everyone not committed is **Reserve**.
+2. **Lane assignment.** Both sides secretly assign their Vanguard across the lanes — **≥1 per
+   lane**; the side that committed more **stacks** its surplus into chosen lanes (local
+   superiority). **Decoy cards hide which** lanes are overstacked → reveal.
+3. **Hold or slip.** In each lane every Vanguard secretly chooses **hold** (stand, fight the
+   lane, and **block** slippers) or **slip** (try to leave → become a Skirmisher) → reveal.
+   Slipping costs **Tempo = the lane's combined enemy Speed**; a holder blocks with **Focus =
+   the slipper's Speed**, and a **funded block wins** (defense beats a slip). **Stack** your
+   slippers to exhaust the holders' Focus so the overflow gets through; attempt a slip you
+   can't afford and you take a **free hit** and stay.
+4. **Resolve the Vanguard phase** — lane clashes and free hits (downs at the phase tally).
+   Slippers who **survive become Skirmishers**.
+5. **Skirmisher targets.** Surviving Skirmishers secretly target **anyone** → reveal. **Resolve
+   the Skirmisher phase.**
+6. **Reserve targets.** Surviving Reserve secretly target **anyone except enemy Reserve** →
+   reveal. **Resolve the Reserve phase.**
+7. **Refresh** — Tempo/Focus reset; Body persists; round++.
+
+Each phase is **order-independent** (act from phase-start state, downs finalized at a phase-end
+tally — the §1.9 tally, scoped to the phase). The gradient is automatic: Skirmishers choose
+after the Vanguard phase has resolved, Reserve after the Skirmisher phase — so a Reserve slain
+in the Skirmisher phase is simply gone before it can choose (assassination **interrupts** for
+free).
 
 **Targeting matrix.**
 
-| Chooser        | May target                                                                                   |
-| -------------- | -------------------------------------------------------------------------------------------- |
-| **Vanguard**   | enemy **Vanguard** (paired by Speed)                                                         |
-| **Skirmisher** | enemy **Vanguard, Reserve, or Skirmisher** (a Reserve only by beating/pushing interposition) |
-| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** enemy Reserve           |
+| Chooser        | May target                                                                         |
+| -------------- | ---------------------------------------------------------------------------------- |
+| **Vanguard**   | the enemy Vanguard **sharing its lane**                                            |
+| **Skirmisher** | **anyone** (it slipped the wall)                                                   |
+| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** enemy Reserve |
 
-**In-round protection is the Vanguard's alone.** Because phases resolve in order, *only*
-Vanguard **interposition** (Vanguard phase, earliest) can save a Reserve **this round** — it
-can kill the raider before the Skirmisher phase. **Skirmisher → Skirmisher** (same phase, both
-land) and **Reserve → Skirmisher** (Reserve phase, last) are **attrition**: they deny the
-raider *next* round, they do not shield the target *this* one.
+**Zero lanes — a side fields no Vanguard.** Lanes = the smaller count, so committing 0 Vanguard
+makes 0 lanes. Two cases, kept distinct so a wall can never be *bypassed*:
 
-**Resolution — three phases, each order-independent.** Phases run in role order; within a phase
-every Actor acts from the **phase-start state** with downs finalized at a **phase-end tally**
-(the §1.9 round tally, scoped to the phase), so the order duels resolve in never changes a
-phase's outcome:
+- **One side at 0, the other fielded a front** — the 0-side presented no wall: it has no
+  Vanguard, hence **no Skirmishers** (it cannot reach the enemy Reserve), while the enemy's
+  Vanguard, with no lane to hold, **advance as Skirmishers** and raid the 0-side's Reserve
+  freely. Declaring 0 only **exposes** you — it never unlocks the enemy Reserve. No exploit.
+- **Both at 0** (e.g. two militia mobs — "no one wants to get close") — no front exists
+  anywhere, so the privilege "**Reserve is safe from enemy Reserve**", which is *paid for by
+  fielding a front*, **lifts**: it is an **open brawl** — no melee lanes, and **everyone may
+  target anyone**.
 
-- **Vanguard phase** — all front-line combat at once: pairings, **interpose free-strikes on
-  pushing Skirmishers**, and halted-Skirmisher duels. Who survives the wall is decided here.
-- **Skirmisher phase** — surviving Skirmishers strike their targets (Reserve assassinations,
-  Vanguard gangs, Skirmisher trades).
-- **Reserve phase** — Reserve act. *A Reserve slain in the Skirmisher phase never reaches this
-  phase* — the assassination **interrupts** it.
-
-Then **refresh** (Tempo/Focus reset; Body persists; round++).
+**In-round protection is the wall's alone.** Because phases resolve in order, only **holding a
+lane** (blocking a slip, in the Vanguard phase) can save a Reserve **this round** — it stops the
+raider before it becomes a Skirmisher. A **Skirmisher → Skirmisher** trade (same phase, both
+land) and a **Reserve → Skirmisher** shot (later phase) are **attrition**: they deny the raider
+*next* round, they do not shield the target *this* one.
 
 **Reveal timeline — what is hidden until when.**
 
-| Hidden information                                                               | Revealed at       |
-| -------------------------------------------------------------------------------- | ----------------- |
-| Vanguard count & composition (the bluff)                                         | Reveal 1          |
-| Refusals; Skirmisher targets & push/halt intent                                  | Reveal 2          |
-| Interpositions                                                                   | Reveal 3          |
-| Reserve targets                                                                  | Reveal 4          |
-| Each fighter's **Clash card** that beat                                          | per beat, in-duel |
-| *Always public:* stats (Speed/Mind/Body), the **Focus pool**, each Speed-pairing | from the start    |
+| Hidden information                                              | Revealed at       |
+| --------------------------------------------------------------- | ----------------- |
+| Vanguard **count** (the bluff)                                  | step 1            |
+| **Lane assignment** (which lanes are overstacked)               | step 2            |
+| **Hold/slip** choices (and blocks)                              | step 3            |
+| **Skirmisher targets**                                          | step 5            |
+| **Reserve targets**                                             | step 6            |
+| Each fighter's **Clash card** that beat                         | per beat, in-duel |
+| *Always public:* stats (Speed/Mind/Body) and the **Focus pool** | from the start    |
 
-**Costs.** Every initiated engagement costs **Tempo = the target's Speed** (§3.1); every
-defensive intervention — self-defense or interpose — costs **Focus = the attacker's Speed**
-(§3.2). Pay-after applies. **Tempo is hidden** (the Vanguard stack bluffs your commitment);
-**Focus is public** (the informed cycles depend on defensive state being known).
+**Costs.** **Tempo = offense** — slipping a lane, or a Skirmisher/Reserve target-pick — cost =
+the opponent's Speed. **Focus = defense** — blocking a slip, or surviving an incoming hit —
+cost = the attacker's Speed. Pay-after applies. **Tempo is hidden** (counts and assignments are
+bluffed); **Focus is public** (the later, informed choices depend on defensive state being
+known). This is the cannon/wall axis: fast-but-thin-Mind slips well and holds poorly;
+high-Mind-but-slow holds the lane but cannot slip.
 
-**WHY.** Roles become a re-derivable **information gradient** — Vanguard commit blind,
-Skirmishers choose with partial knowledge, Reserve with the most — so the names follow from
-intent (north star #10). The structure makes **"Vanguard protects Reserve"** load-bearing: the
-*only* path to the enemy's decisive-but-fragile Reserve is a Skirmisher who beats the wall, and
-Skirmishers exist *only* as committed Vanguard — so **to threaten their back you must expose
-your front**, and to defend your back you must field a wall. The all-Reserve hoard is dominated
-(it can neither produce Skirmishers nor interpose), which is why no "must field a Vanguard"
-rule is needed. The **hidden Vanguard count** makes wall capacity a bluff (matching-pennies on
-commitment). **Order-independence by phase** keeps each phase simple *and* hands you the "kill
-the caster before it fires" interrupt for free (Skirmisher phase precedes Reserve phase). Speed
-reads as **slipperiness** — the tax others pay to engage or stop you — so fast assassins punch
-thin walls and slow casters are cheap to kill.
+**WHY.** The **role triangle** gives every role a distinct value *and* a predator: Vanguard
+holds-and-strikes-first (beats Skirmishers), Skirmishers slip the wall (the only path to the
+enemy Reserve), Reserve fires from safety and is untouchable by Vanguard. **Lanes** add what
+speed-pairing lacked — **chosen matchups** and **force concentration** (stack a lane to push
+Skirmishers through). Protection is **one upstream layer** — *hold the lane* — not a second
+interpose step: cleaner, but it means losing a lane *is* the assassination. **"Vanguard protects
+Reserve"** stays load-bearing (the only route to the enemy Reserve is a Skirmisher who slipped a
+lane), so **to threaten their back you must expose your front** and the all-Reserve hoard is
+self-defeating — no "must field a Vanguard" rule needed. **0 lanes = mutual refusal of melee →
+open brawl**, which is the only time Reserve loses its safety. The **hidden count + decoy lane
+assignment** make wall depth and concentration a bluff (matching-pennies). The info gradient is
+just "**act after the prior phase resolves**", which also hands you the "kill the caster before
+it fires" interrupt for free. Speed reads as **slipperiness** — the tax to slip you or stop you.
 
 **GUARANTEES.**
-- **Reserve is reachable only through the wall** — never by enemy Reserve, never by paired
-  Vanguard; only by a Skirmisher who halts into or pushes past interposition.
-- **The all-Reserve hoard loses:** no Vanguard → no Skirmishers (can't threaten the enemy
-  Reserve) **and** no interposers (can't protect your own).
-- **Order-independent within each phase** (phase-start state, phase-end tally); phases always
-  run Vanguard → Skirmisher → Reserve.
-- **No reveal-first:** every declaration cycle is **cross-side simultaneous** (both commit, then
-  reveal); hidden information becomes public only at its cycle's **reveal point** (timeline
-  above); the gradient is round-scale (target selection), never beat-scale.
-- **Cannon/wall axis preserved:** Tempo (hidden, offense) and Focus (public, defense) stay
-  split; both costs scale with the **opponent's Speed**.
+- **The role triangle holds:** Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard.
+- **Reserve is reachable only through the wall** — never by enemy Reserve, never by a lane-bound
+  Vanguard; only by a Skirmisher (a Vanguard that slipped a lane) — *except* the 0-lane open
+  brawl.
+- **No wall-bypass:** declaring 0 Vanguard never reaches the enemy Reserve (it only exposes
+  you); open brawl requires **mutual** 0.
+- **Order-independent within each phase** (phase-start state, phase-end tally); phases run
+  Vanguard → Skirmisher → Reserve.
+- **No reveal-first:** every declaration is **cross-side simultaneous**; hidden info becomes
+  public only at its step's reveal (timeline above); the gradient is round-scale, never
+  beat-scale.
+- **Cannon/wall axis preserved:** Tempo (hidden, offense — slip/target) and Focus (public,
+  defense — block/survive) stay split; both costs scale with the **opponent's Speed**.
 
-**MANUAL.** *Secretly commit your Vanguard (with bluffs); the rest are Reserve. Vanguard pair
-off by Speed; the unpaired and the refusers become Skirmishers who hunt the enemy Reserve.
-Block a Skirmisher by interposing a Vanguard (spend Focus = its Speed) — it fights your wall or
-eats a hit shoving past. Reserve strike the enemy's front and aid allies, but can't touch the
-enemy Reserve. Resolve Vanguard, then Skirmishers, then Reserve.*
+**MANUAL.** *Secretly pick how many go to the Vanguard (number cards); the smaller count sets
+the lanes, everyone else is Reserve. Assign your Vanguard to the lanes — stack to overwhelm,
+bluff which. Each Vanguard holds (fight + block) or slips past to become a Skirmisher: slipping
+costs Tempo, blocking costs Focus, a funded block wins. Resolve the front; survivors who slipped
+are Skirmishers and may hit anyone; then Reserve fire on the enemy front (never enemy Reserve)
+and aid allies. No Vanguard on either side → open brawl, hit anyone.*
 
-**Still unspecified (open dials — pin before/with implementation).** The structure (phases,
-targeting, reveal order) is settled; these details are not:
+**Still unspecified (open dials — pin before/with implementation).** The structure (lanes,
+phases, targeting, reveal order, triangle) is settled; these are not:
 
-1. **Pairing algorithm & Speed ties** — exactly how Vanguard match (highest-vs-highest down the
-   list?) and how equal-Speed ties resolve (stack order? arbitrary-but-consistent?).
-2. **Refusal fallout** — when a Vanguard refuses its pairing, what happens to its *now-partnerless
-   opponent*? (Does it also free up into a Skirmisher, hold as an idle Vanguard, or get
-   re-paired?) And the exact **free-hit** the refuser eats.
-3. **Vanguard's Tempo cost** — does *committing* a Vanguard cost Tempo (= its pair's Speed), or
-   is the front clash the free baseline and only Skirmisher/Reserve target-picks cost Tempo?
-4. **Push-through surcharge** — is eating the interposers' free strikes the *whole* cost, or does
-   pushing also cost Tempo (= interposers' combined Speed, as the old gauntlet charged)?
-5. **Interposition cap** — may any number of Vanguard stack on one Skirmisher, or is it capped?
-6. **Reserve self-defense** — can a Reserve spend Focus to defend itself (survive-only) when a
-   Skirmisher reaches it un-interposed, or does it simply eat the hit?
-7. **Strike shape: Clash vs single hit** — is a Skirmisher→Vanguard gang or a Reserve→front
-   attack a full **Clash** (beats), or a single ranged/opportunity **strike** the target may
-   Focus-defend or eat? (The old system had ranged = a direct strike.)
-8. **Vanguard stack order** — does the declared order carry any mechanical weight (tie-breaks,
-   reveal sequencing) or is it pure count-obfuscation?
-9. **Reserve "aid allies" kit** — what buffs/heals/debuffs Reserve actually deliver — depends on
-   the still-stub **Aspects / action-card** layer (§5–§6).
-10. **Push/halt timing** — kept as **pre-committed intent** (cycle 2) to hold the cycle count at
-    four; a fully *reactive* push/halt (decide after seeing interposition) would add a 5th
-    reveal cycle. Open whether the extra reactivity is worth the extra cycle.
-11. **Acting across phases** — the cap on one Actor doing several things (a Vanguard that pairs
-    *and* interposes; a multi-action god across cycles) — governed by the Tempo/Focus budgets,
-    but the exact limits are a dial.
+1. **Slip/block resolution numbers** — the tie rule is set (**a funded block wins**), but the
+   exact cost coefficients and how a *stacked* lane's combined Speed prices a slip need pinning.
+2. **Stacking caps** — is lane-stacking unbounded? Is there a cap on slippers per lane, or on how
+   many slips one holder's Focus can block?
+3. **Smaller side's assignment** — it is forced to 1-per-lane but still chooses *which* fighter
+   faces *which* lane (matchup choice) — confirm and state.
+4. **Vanguard's Tempo cost** — does committing/holding a Vanguard cost Tempo, or only slips and
+   Skirmisher/Reserve target-picks?
+5. **Failed-slip free hit** — exact magnitude of the hit eaten when a slip is unaffordable.
+6. **Zero-lane asymmetric details** — the unopposed Vanguard "advance as Skirmishers": do they
+   pay Tempo, and in which phase do they strike?
+7. **Reserve "aid allies" kit** — the buffs/heals/debuffs Reserve deliver — depends on the
+   still-stub **Aspects / action-card** layer (§5–§6).
+8. **Acting across phases** — caps on one Actor doing several things (a holder blocking several
+   slippers; a multi-action god across phases) — governed by Tempo/Focus, exact limits a dial.
+
+*(Two former dials are now resolved by §4.2 Range & attack type: "Reserve self-defense" =
+whether the Reserve carries a melee attack; "strike shape" = a Clash when attacker and target
+share the range, an auto-hit when they don't.)*
 
 ### 4.1 Count-adaptivity — the system degrades to the choices that exist
 
-**RULE.** The commitment layer is **count-adaptive**: any phase or choice with a **single legal
-option resolves automatically**, presenting no decision. Roles, the bluff stack, Skirmisher
-targeting, interposition, and Reserve targeting appear only when party size makes more than one
-option legal. Concretely:
+**RULE.** The commitment layer is **count-adaptive**: any choice with a **single legal option
+resolves automatically**, presenting no decision. The count bluff, lane assignment, hold/slip,
+and Skirmisher/Reserve targeting appear only when party size makes more than one option legal.
+Concretely:
 
 - **1 v 1** — each side has one Actor; the only non-degenerate line is to commit it as Vanguard,
-  so the two pair and fight a **single Clash**. No bluff stack, no Skirmisher, no Reserve, no
-  interposition — it is exactly the plain duel (the tutorial case).
-- **Small parties (2–3)** — only the live choices surface: the Vanguard declaration is a real
-  choice once you have ≥2 Actors; **interposition** is offered only when a Skirmisher actually
-  targets one of your Reserve; **Reserve targeting** only when you have a Reserve and a legal
-  target exists.
-- **Larger parties** — the full machinery (hidden counts with decoys, multiple Skirmishers,
-  stacked interposition).
+  so the two share the one lane and fight a **single Clash**. No count bluff, no lane-assignment
+  choice, no meaningful slip (slipping just delays the same fight), no Reserve, no Skirmisher —
+  it is exactly the plain duel (the tutorial case).
+- **Small parties (2–3)** — only live choices surface: lane assignment becomes a real choice once
+  you have surplus Vanguard to stack; **hold/slip** only where both options are affordable;
+  **Reserve targeting** only when you have a surviving Reserve and a legal target.
+- **Larger parties** — the full machinery (bluffed counts, decoy lane assignments, multiple
+  slippers, stacked lanes).
 
 **WHY.** Complexity should scale with the number of bodies. The protection layer only *means*
 something when you have an ally to protect, so it must be invisible until then — keeping 1 v 1
@@ -777,6 +791,43 @@ current head-count.
 - 1 v 1 reduces to the §1.0 Clash with **zero** added decisions.
 - A choice is presented **iff** it has ≥2 legal options; single-option phases auto-resolve.
 - Adding bodies only *adds* choices; it never changes how the smaller case played.
+
+### 4.2 Range & attack type — melee, ranged, both, or neither
+
+**RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
+**position-determined**, never chosen: **lane combat and Skirmisher strikes are melee; Reserve
+fire is ranged.** When a strike lands at a given range, the target **answers it with a Clash
+(§1.0) iff it owns an attack of that same range**; otherwise the strike is an **auto-hit** —
+uncontested, no mix-up, no Force built — though it still passes through the target's
+armor/toughness (§2). Armor blunts an auto-hit; **Focus cannot** (Focus contests Clashes and
+blocks slips, not off-range fire).
+
+What follows from it:
+
+- **Skirmishers are melee** (they come from melee lanes), so the **only core route to an enemy
+  Reserve is a melee assassin.** Ranged Actors do **not** skirmish in the core. *(A card may
+  explicitly supersede this — e.g. grant a ranged Skirmisher; see "Cards may supersede the
+  core.")*
+- **Reserve self-defense = whether it carries melee.** A Reserve with a melee attack **Clashes**
+  an assassin (fends it off); a pure caster (no melee) is **auto-hit** (assassinated).
+- A **melee-less Vanguard in a lane is legal but a very bad idea** — it is auto-hit by its lane
+  opponent and cannot answer. (Emergent positioning, not a banned move.)
+- **Neither** = pure support (heal / buff / area-control): it makes no attacks and is **always
+  auto-hit** when reached — the most decisive-yet-fragile Reserve piece, wholly dependent on the
+  wall. Its kit depends on the still-stub Aspects / action-card layer (§5–§6).
+
+**WHY.** Range turns the **role triangle** from intent into mechanics: *Skirmisher ▸ Reserve* and
+*Reserve ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
+fire vs no-ranged tank → auto-hits), while same-range meetings are Clashes. It also opens clean
+power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids, and pure-support
+"neither" kits — each re-derivable from "do you have the attack for this range?".
+
+**GUARANTEES.**
+- A strike is a **Clash** iff attacker and target **share the range**; otherwise an **auto-hit**
+  (armor-gated, no Force, no Focus contest).
+- Range is **position-determined** (lane / Skirmisher = melee, Reserve = ranged) — never the
+  attacker's free pick.
+- Core: **only melee Actors skirmish**; a card may explicitly supersede.
 
 ## 5. Zones / exhaustion ⬜
 

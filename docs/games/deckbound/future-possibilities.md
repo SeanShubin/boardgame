@@ -134,8 +134,10 @@ mainly hurts making many *distinct* foe/hero feels.
 
 ## 2. Commitment-order battle system (replace front/back formation)
 
-- **Status:** Exploring — promising; a candidate to **supersede §4 Formation** (the
-  front-line/back-line + gauntlet system). Raised 2026-06-17.
+- **Status:** **Graduated to canon (§4)** on 2026-06-17, then **refined to the lane model** —
+  see `canon/2-spec/README.md` §4 for the authoritative version. The text below is the
+  *exploration that led there* (the speed-pairing form with interposition); it is kept as
+  history, **not** as a live proposal. Where it differs from §4, §4 wins.
 - **Scope:** the breadth/positioning layer. Does **not** touch the Clash.
 
 ### The idea
@@ -211,3 +213,44 @@ assassinate and is annihilated; a party that fields **durable units who can take
 protect the Reserve** prevails. The mechanical representation of "Vanguard protects Reserve"
 is the part still being designed (see chat: candidate is *pairing occupies enemy attackers*
 + *interposition redirects a Skirmisher's blow onto a durable Vanguard*, paid in Focus).
+
+---
+
+## 3. Deterministic base mode + the Clash as an optional module
+
+- **Status:** Strong lean (likely architecture). Raised 2026-06-17.
+- **Scope:** how a same-range engagement resolves, and the Clash's (§1.0) relationship to the
+  rest of the game.
+
+### The idea
+
+Make the **canonical floor deterministic** — *no Clash*. A **same-range** engagement resolves as
+a **trade** (both deal their base through armor/toughness, §2); a **range mismatch** is the
+**auto-hit** already in §4.2. The **Clash (§1.0) becomes an optional tactical module** layered
+onto same-range engagements for groups who want the per-beat mix-up and Force.
+
+### Why
+
+- **Depth without RPS is proven.** The strategic layer stands alone: hidden lane allocation
+  (**Colonel Blotto**), the Tempo/Focus economy, the protect-the-specialist **coordination
+  graph**, and **card combos** — and the **role triangle is itself a strategic RPS** resolved by
+  *commitment*, not a coin-flip. The Clash adds tactical texture and the "lucky read," not the
+  core depth.
+- **Determinism makes card-exceptions predictable.** With a board that is **computable at every
+  phase boundary**, an extreme-but-named, *local* card exception composes cleanly. This is the
+  safest substrate for "wild cards that break core rules in crazy ways."
+- **Accessibility + option.** A clean deterministic base game, with the Clash as opt-in depth.
+
+### The invariant to keep regardless
+
+Even if the Clash stays mandatory: **the strategic layer must be rich without RPS.** Never let
+the game's depth *depend* on the Clash — it's a module, not a load-bearing wall.
+
+### Open
+
+- Same-range base resolution: pure simultaneous **trade**, or higher **effective Power** wins, or
+  a Speed tiebreak? (Trade is simplest and keeps "offense is lethal.")
+- Does **Force/escalation** exist in base mode, or is it Clash-only? (Likely Clash-only; base =
+  flat base damage.)
+- Default posture: deterministic base as default with the Clash **opt-in** (lean), or Clash on by
+  default.
