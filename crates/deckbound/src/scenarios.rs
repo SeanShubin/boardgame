@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
 use crate::cards::Card;
 use crate::duel::Move;
+use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
 use crate::stats::{Aspect, DamageType};
 
@@ -272,15 +273,25 @@ fn instinct_for(keyword: &str) -> Instinct {
 }
 
 fn build_actor(cat: &Catalog, name: &str) -> Actor {
+    build_actor_with(cat, name, None, None)
+}
+
+/// Build an Actor from the catalog, optionally grafting an `extra` Form card (e.g. an encounter's
+/// per-level scaling, §8.4) and overriding the instinct keyword (e.g. an encounter's strategy).
+fn build_actor_with(
+    cat: &Catalog,
+    name: &str,
+    extra: Option<&StatCard>,
+    driver_kw: Option<&str>,
+) -> Actor {
     let c = cat
         .actors
         .iter()
         .find(|a| a.name == name)
         .unwrap_or_else(|| panic!("booklet has no actor named {name:?}"));
 
-    // Stats-as-deck (§2.3/§4.3): the actor's stat block is read off its **Form** — a fundamental
-    // card (its base stats) plus attachment cards (its traits). Number-preserving: this derives
-    // exactly the old block. The booklet schema migration (fundamental cards as data) is A.3.
+    // Stats-as-deck (§2.3/§4.3): the stat block is read off the **Form** — a fundamental card plus
+    // attachments (traits), plus any `extra` attachment (encounter per-level scaling, §8.4).
     let mut fundamental = c.base.clone();
     if fundamental.name.is_empty() {
         fundamental.name = format!("{} (base)", c.name);
@@ -302,16 +313,22 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
             ..Default::default()
         });
     }
+    if let Some(extra) = extra {
+        form.cards.push(extra.clone());
+    }
     let offense = form.offense();
     let defense = form.defense();
 
-    let driver = if c.driver == "hero" {
+    let driver_kw = driver_kw
+        .filter(|s| !s.is_empty())
+        .unwrap_or(c.driver.as_str());
+    let driver = if driver_kw == "hero" {
         Driver::Human
     } else {
         Driver::Creature(Behavior {
             aggression: c.aggression,
             target_rule: c.target_rule.unwrap_or(TargetRule::Front),
-            instinct: instinct_for(&c.driver),
+            instinct: instinct_for(driver_kw),
         })
     };
 
@@ -330,6 +347,22 @@ fn build_actor(cat: &Catalog, name: &str) -> Actor {
     };
     actor.refresh_round();
     actor
+}
+
+/// Build the foe roster for an encounter at `level` (§8.4): each creature in the recipe's roster
+/// gets the encounter's per-level **scaling** grafted onto its Form and the encounter's
+/// **strategy** as its instinct. This is the encounter → combat bridge.
+pub fn build_encounter_foes(enc: &EncounterCard, level: u32) -> Vec<Actor> {
+    let cat = catalog();
+    let scaling = enc.scaling_at(level);
+    let strategy = (!enc.strategy.is_empty()).then_some(enc.strategy.as_str());
+    let mut foes = Vec::new();
+    for (name, count) in enc.roster(level) {
+        for _ in 0..count {
+            foes.push(build_actor_with(cat, &name, Some(&scaling), strategy));
+        }
+    }
+    foes
 }
 
 #[cfg(test)]
@@ -415,5 +448,46 @@ mod tests {
             let (h, f) = s.roster();
             assert!(!h.is_empty() && !f.is_empty(), "{} empty roster", s.name);
         }
+    }
+
+    #[test]
+    fn encounter_foes_scale_with_level() {
+        use crate::currency::Currency;
+        use crate::encounter::{EncounterCard, RosterEntry};
+        let enc = EncounterCard {
+            name: "Test pack".into(),
+            currency: Currency::Iron,
+            strategy: "brute".into(),
+            foes: vec![
+                RosterEntry {
+                    creature: "Husk".into(),
+                    from_level: 1,
+                    base: 1,
+                    growth: 0,
+                },
+                RosterEntry {
+                    creature: "Brute".into(),
+                    from_level: 2,
+                    base: 1,
+                    growth: 0,
+                },
+            ],
+            scaling: StatCard {
+                body: 3,
+                ..Default::default()
+            },
+        };
+        // L1: only Husk; its body = base 2 + scaling 3×1 = 5.
+        let l1 = build_encounter_foes(&enc, 1);
+        assert_eq!(l1.len(), 1);
+        assert_eq!(l1[0].name, "Husk");
+        assert_eq!(l1[0].defense.body.max, 5);
+        // L2: Husk + Brute; Husk body = 2 + 3×2 = 8.
+        let l2 = build_encounter_foes(&enc, 2);
+        assert_eq!(l2.len(), 2);
+        let husk = l2.iter().find(|a| a.name == "Husk").unwrap();
+        assert_eq!(husk.defense.body.max, 8);
+        // The encounter's strategy overrode the instinct: foes are creatures, not humans.
+        assert!(l2.iter().all(|a| !a.is_human()));
     }
 }

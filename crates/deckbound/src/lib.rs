@@ -13,8 +13,10 @@ pub mod cards;
 pub mod combat;
 pub mod currency;
 pub mod duel;
+pub mod encounter;
 pub mod form;
 pub mod game;
+pub mod reference;
 pub mod scenarios;
 pub mod state;
 pub mod stats;
@@ -25,10 +27,12 @@ pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, Target
 pub use cards::{Card, Effect};
 pub use currency::{Coins, Currency, balance};
 pub use duel::{Move, Side, resolve};
+pub use encounter::{EncounterCard, RosterEntry};
 pub use form::{Form, StatCard};
+pub use reference::{ReferenceScenario, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
-pub use scenarios::{Scenario, campaign, god, tutorials, versus};
+pub use scenarios::{Scenario, build_encounter_foes, campaign, god, tutorials, versus};
 pub use state::{Clash, Lane, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
 pub use world::{Coord, Layout, Location, Run};
