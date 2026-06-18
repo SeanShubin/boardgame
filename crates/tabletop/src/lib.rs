@@ -24,7 +24,7 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
-use engine::{Accent, CardFace, Game, TableView, ZoneView};
+use engine::{Accent, CardFace, CardView, Game, TableView, ZoneView};
 use std::cell::Cell;
 use std::time::Duration;
 
@@ -368,14 +368,24 @@ fn redraw<G: Game + Clone>(
     }
 
     let view = game.0.view(&state.0, None);
+    // Actions already bound to a clickable card are not also shown as buttons (no choice
+    // appears twice — the card *is* the control).
+    let bound: std::collections::HashSet<usize> = view
+        .zones
+        .iter()
+        .flat_map(|z| z.cards.iter().filter_map(|c| c.action))
+        .collect();
     // Each button carries its index into the full legal-action list, so hiding
-    // some (e.g. Exit on the web) never misaligns clicks with actions.
+    // some (e.g. Exit on the web, or actions bound to cards) never misaligns clicks.
     let buttons: Vec<(usize, String)> = game
         .0
         .legal_actions(&state.0)
         .iter()
         .enumerate()
-        .filter(|(_, action)| platform.can_quit || !game.0.is_exit_action(&state.0, action))
+        .filter(|(index, action)| {
+            !bound.contains(index)
+                && (platform.can_quit || !game.0.is_exit_action(&state.0, action))
+        })
         .map(|(index, action)| (index, game.0.action_label(&state.0, action)))
         .collect();
 
@@ -863,7 +873,7 @@ fn spawn_zone(parent: &mut ChildSpawnerCommands, zone: &ZoneView, order: &Cell<u
                     while j < cards.len() && cards[j] == cards[i] {
                         j += 1;
                     }
-                    spawn_card_group(row, &cards[i].face, j - i, order);
+                    spawn_card_group(row, &cards[i], j - i, order);
                     i = j;
                 }
             });
@@ -876,12 +886,12 @@ const STACK_PEEK: f32 = 24.0;
 /// stack — the top card fully readable, the rest peeking — with an `xN` badge.
 fn spawn_card_group(
     parent: &mut ChildSpawnerCommands,
-    face: &CardFace,
+    card: &CardView,
     count: usize,
     order: &Cell<u32>,
 ) {
     if count <= 1 {
-        spawn_card(parent, face, order);
+        spawn_card(parent, card, order);
         return;
     }
     let width = CARD_W + (count as f32 - 1.0) * STACK_PEEK;
@@ -900,7 +910,7 @@ fn spawn_card_group(
                         top: Val::Px(0.0),
                         ..default()
                     })
-                    .with_children(|slot| spawn_card(slot, face, order));
+                    .with_children(|slot| spawn_card(slot, card, order));
             }
             stack
                 .spawn((
@@ -933,9 +943,9 @@ fn spawn_card_group(
 const CARD_W: f32 = 156.0;
 const CARD_H: f32 = 196.0;
 
-fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace, order: &Cell<u32>) {
-    match face {
-        CardFace::Down => spawn_card_back(parent, order),
+fn spawn_card(parent: &mut ChildSpawnerCommands, card: &CardView, order: &Cell<u32>) {
+    match &card.face {
+        CardFace::Down => spawn_card_back(parent, card.action, order),
         CardFace::Up {
             title,
             type_line,
@@ -949,6 +959,7 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, face: &CardFace, order: &Cell<u
             body,
             corner.as_deref(),
             *accent,
+            card.action,
             order,
         ),
     }
@@ -980,34 +991,37 @@ fn card_anim_bundle(order: &Cell<u32>) -> (BoxShadow, Interaction, CardAnim) {
     )
 }
 
-fn spawn_card_back(parent: &mut ChildSpawnerCommands, order: &Cell<u32>) {
-    parent
-        .spawn((
+fn spawn_card_back(parent: &mut ChildSpawnerCommands, action: Option<usize>, order: &Cell<u32>) {
+    let mut card_cmd = parent.spawn((
+        Node {
+            width: Val::Px(CARD_W),
+            height: Val::Px(CARD_H),
+            padding: UiRect::all(Val::Px(10.0)),
+            border: UiRect::all(Val::Px(CARD_BORDER)),
+            border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
+            ..default()
+        },
+        BackgroundColor(CARD_BACK),
+        BorderColor::all(CARD_EDGE),
+        card_anim_bundle(order),
+    ));
+    if let Some(idx) = action {
+        card_cmd.insert((Button, ActionButton(idx)));
+    }
+    card_cmd.with_children(|card| {
+        card.spawn((
             Node {
-                width: Val::Px(CARD_W),
-                height: Val::Px(CARD_H),
-                padding: UiRect::all(Val::Px(10.0)),
-                border: UiRect::all(Val::Px(CARD_BORDER)),
-                border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                border_radius: BorderRadius::all(Val::Px(CARD_RADIUS - CARD_BORDER - 4.0)),
                 ..default()
             },
-            BackgroundColor(CARD_BACK),
-            BorderColor::all(CARD_EDGE),
-            card_anim_bundle(order),
-        ))
-        .with_children(|card| {
-            card.spawn((
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    border_radius: BorderRadius::all(Val::Px(CARD_RADIUS - CARD_BORDER - 4.0)),
-                    ..default()
-                },
-                BackgroundColor(CARD_BACK_INNER),
-            ));
-        });
+            BackgroundColor(CARD_BACK_INNER),
+        ));
+    });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_card_face(
     parent: &mut ChildSpawnerCommands,
     title: &str,
@@ -1015,130 +1029,133 @@ fn spawn_card_face(
     body: &[String],
     corner: Option<&str>,
     accent: Accent,
+    action: Option<usize>,
     order: &Cell<u32>,
 ) {
-    parent
-        .spawn((
+    let mut card_cmd = parent.spawn((
+        Node {
+            width: Val::Px(CARD_W),
+            height: Val::Px(CARD_H),
+            flex_direction: FlexDirection::Column,
+            // No `overflow: clip` here: the clip rect is built from the
+            // node's *unscaled* layout size, so on the hover-scale it would
+            // crop the children (most visibly the title bar at the top
+            // edge) to the original rectangle while the card frame grows.
+            // Corner rounding comes from `border_radius`, not the clip, so
+            // dropping it costs nothing for these fixed-size cards.
+            border: UiRect::all(Val::Px(CARD_BORDER)),
+            border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
+            ..default()
+        },
+        BackgroundColor(CARD_FACE),
+        BorderColor::all(CARD_EDGE),
+        card_anim_bundle(order),
+    ));
+    if let Some(idx) = action {
+        card_cmd.insert((Button, ActionButton(idx)));
+    }
+    card_cmd.with_children(|card| {
+        // Title bar (accent-coloured). Its top corners are rounded to sit
+        // inside the card's rounded border (UI clipping is rectangular, so
+        // this opaque bar would otherwise square off the card's top).
+        card.spawn((
             Node {
-                width: Val::Px(CARD_W),
-                height: Val::Px(CARD_H),
-                flex_direction: FlexDirection::Column,
-                // No `overflow: clip` here: the clip rect is built from the
-                // node's *unscaled* layout size, so on the hover-scale it would
-                // crop the children (most visibly the title bar at the top
-                // edge) to the original rectangle while the card frame grows.
-                // Corner rounding comes from `border_radius`, not the clip, so
-                // dropping it costs nothing for these fixed-size cards.
-                border: UiRect::all(Val::Px(CARD_BORDER)),
-                border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                border_radius: BorderRadius::px(
+                    CARD_RADIUS - CARD_BORDER,
+                    CARD_RADIUS - CARD_BORDER,
+                    0.0,
+                    0.0,
+                ),
                 ..default()
             },
-            BackgroundColor(CARD_FACE),
-            BorderColor::all(CARD_EDGE),
-            card_anim_bundle(order),
+            BackgroundColor(accent_color(accent)),
         ))
-        .with_children(|card| {
-            // Title bar (accent-coloured). Its top corners are rounded to sit
-            // inside the card's rounded border (UI clipping is rectangular, so
-            // this opaque bar would otherwise square off the card's top).
+        .with_children(|bar| {
+            bar.spawn((
+                Text::new(title.to_string()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(TITLE_INK),
+            ));
+        });
+
+        // Type line.
+        if let Some(t) = type_line {
             card.spawn((
                 Node {
                     width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                    border_radius: BorderRadius::px(
-                        CARD_RADIUS - CARD_BORDER,
-                        CARD_RADIUS - CARD_BORDER,
-                        0.0,
-                        0.0,
-                    ),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
                     ..default()
                 },
-                BackgroundColor(accent_color(accent)),
+                BackgroundColor(Color::srgb(0.86, 0.84, 0.74)),
             ))
-            .with_children(|bar| {
-                bar.spawn((
-                    Text::new(title.to_string()),
+            .with_children(|line| {
+                line.spawn((
+                    Text::new(t.to_string()),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: 12.0,
                         ..default()
                     },
-                    TextColor(TITLE_INK),
+                    TextColor(Color::srgb(0.28, 0.28, 0.30)),
                 ));
             });
+        }
 
-            // Type line.
-            if let Some(t) = type_line {
-                card.spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+        // Body — stat / rules lines.
+        card.spawn(Node {
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(8.0)),
+            row_gap: Val::Px(3.0),
+            flex_grow: 1.0,
+            ..default()
+        })
+        .with_children(|b| {
+            for line in body {
+                b.spawn((
+                    Text::new(line.clone()),
+                    TextFont {
+                        font_size: 13.0,
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.86, 0.84, 0.74)),
-                ))
-                .with_children(|line| {
-                    line.spawn((
-                        Text::new(t.to_string()),
-                        TextFont {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.28, 0.28, 0.30)),
-                    ));
-                });
-            }
-
-            // Body — stat / rules lines.
-            card.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(8.0)),
-                row_gap: Val::Px(3.0),
-                flex_grow: 1.0,
-                ..default()
-            })
-            .with_children(|b| {
-                for line in body {
-                    b.spawn((
-                        Text::new(line.clone()),
-                        TextFont {
-                            font_size: 13.0,
-                            ..default()
-                        },
-                        TextColor(CARD_INK),
-                    ));
-                }
-            });
-
-            // Corner badge (the power/toughness spot).
-            if let Some(c) = corner {
-                card.spawn(Node {
-                    width: Val::Percent(100.0),
-                    justify_content: JustifyContent::FlexEnd,
-                    padding: UiRect::all(Val::Px(6.0)),
-                    ..default()
-                })
-                .with_children(|row| {
-                    row.spawn((
-                        Node {
-                            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                            border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
-                            ..default()
-                        },
-                        BackgroundColor(BADGE),
-                    ))
-                    .with_children(|badge| {
-                        badge.spawn((
-                            Text::new(c.to_string()),
-                            TextFont {
-                                font_size: 16.0,
-                                ..default()
-                            },
-                            TextColor(TITLE_INK),
-                        ));
-                    });
-                });
+                    TextColor(CARD_INK),
+                ));
             }
         });
+
+        // Corner badge (the power/toughness spot).
+        if let Some(c) = corner {
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                justify_content: JustifyContent::FlexEnd,
+                padding: UiRect::all(Val::Px(6.0)),
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn((
+                    Node {
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                        border_radius: BorderRadius::all(Val::Px(BADGE_RADIUS)),
+                        ..default()
+                    },
+                    BackgroundColor(BADGE),
+                ))
+                .with_children(|badge| {
+                    badge.spawn((
+                        Text::new(c.to_string()),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(TITLE_INK),
+                    ));
+                });
+            });
+        }
+    });
 }
 
 /// The controls advertised in the help overlay, as `(keys, description)`. Keep

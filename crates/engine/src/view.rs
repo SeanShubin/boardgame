@@ -66,6 +66,11 @@ pub enum Accent {
 pub struct CardView {
     /// Whether the card's face is visible, and what it shows.
     pub face: CardFace,
+    /// If set, this card is **clickable** and selecting it performs the legal action at this
+    /// index (into the same `legal_actions` list the renderer draws buttons from). A renderer
+    /// should render such a card as interactive and **omit** that action from any button list,
+    /// so a choice never appears as both a card and a button.
+    pub action: Option<usize>,
 }
 
 /// The visible side of a card.
@@ -104,6 +109,7 @@ impl CardView {
                 corner: None,
                 accent: Accent::Neutral,
             },
+            action: None,
         }
     }
 
@@ -116,7 +122,15 @@ impl CardView {
     pub fn down() -> Self {
         Self {
             face: CardFace::Down,
+            action: None,
         }
+    }
+
+    /// Bind this card to the legal action at `index`, making it clickable (and removing that
+    /// action from the button list). Chainable with the other builders.
+    pub fn action(mut self, index: usize) -> Self {
+        self.action = Some(index);
+        self
     }
 
     /// Set the type line (no-op on a face-down card).

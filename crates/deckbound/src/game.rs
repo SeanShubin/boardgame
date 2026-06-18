@@ -1206,28 +1206,71 @@ fn creature_zone(state: &State, focus: Option<usize>) -> ZoneView {
     }
 }
 
+/// Wrap `text` to `width`-ish columns over at most `max` lines (a tiny word-wrap for card
+/// bodies; the last line is ellipsized if the text doesn't fit).
+fn wrap(text: &str, width: usize, max: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if !line.is_empty() && line.len() + 1 + word.len() > width {
+            lines.push(std::mem::take(&mut line));
+            if lines.len() == max {
+                break;
+            }
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if lines.len() < max && !line.is_empty() {
+        lines.push(line);
+    }
+    if max > 0 && lines.len() == max {
+        lines.last_mut().unwrap().push('…');
+    }
+    lines
+}
+
+/// The top menu: each scenario set is a **clickable card** bound to its open action (indices
+/// 0..3 in `legal_actions` for `Menu(Top)`). Buttons are left only for the non-card meta (Exit).
 fn menu_zone() -> ZoneView {
+    let items = [
+        ("Duels", "Learn the game, one lesson at a time."),
+        (
+            "Cooperation",
+            "Party scenarios — specialists who cover each other.",
+        ),
+        ("God-tier", "Solo power fantasy vs the odds."),
+        ("Versus", "Hotseat PvP — pass and play."),
+    ];
     ZoneView {
-        label: "Deckbound".into(),
+        label: "Deckbound — choose a set".into(),
         layout: Layout::Row,
         owner: None,
-        cards: vec![
-            CardView::up("Duels").body(vec!["Learn the game.".into()]),
-            CardView::up("Cooperation").body(vec!["Party scenarios.".into()]),
-            CardView::up("God-tier").body(vec!["Solo power fantasy.".into()]),
-            CardView::up("Versus").body(vec!["Hotseat.".into()]),
-        ],
+        cards: items
+            .iter()
+            .enumerate()
+            .map(|(i, (t, d))| CardView::up(*t).body(wrap(d, 22, 4)).action(i))
+            .collect(),
     }
 }
 
+/// A scenario list: each scenario is a **clickable card** (bound to `PickScenario(i)`) carrying
+/// its blurb. The only button is **Back**.
 fn scenario_zone(menu: Menu) -> ZoneView {
     ZoneView {
-        label: "Scenarios".into(),
+        label: "Pick a scenario".into(),
         layout: Layout::Row,
         owner: None,
         cards: list_for(menu)
             .iter()
-            .map(|s| CardView::up(s.name.clone()))
+            .enumerate()
+            .map(|(i, s)| {
+                CardView::up(s.name.clone())
+                    .body(wrap(&s.blurb, 22, 7))
+                    .action(i)
+            })
             .collect(),
     }
 }
