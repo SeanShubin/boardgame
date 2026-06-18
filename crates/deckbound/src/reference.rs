@@ -41,8 +41,9 @@ pub struct ReferenceScenario {
     final_index: usize,
 }
 
-/// A placeholder encounter for a location (combat resolution is deferred; this is well-formed data).
-fn make_encounter(name: &str, currency: Currency) -> EncounterCard {
+/// An encounter for a location: `count` Husks of the matching `currency`'s threat, fixed-size (no
+/// level scaling here — the level dial drives reward; this `count` sets the combat-difficulty band).
+fn make_encounter(name: &str, currency: Currency, count: u32) -> EncounterCard {
     EncounterCard {
         name: name.into(),
         currency,
@@ -50,13 +51,10 @@ fn make_encounter(name: &str, currency: Currency) -> EncounterCard {
         foes: vec![RosterEntry {
             creature: "Husk".into(),
             from_level: 1,
-            base: 1,
-            growth: 1,
+            base: count,
+            growth: 0,
         }],
-        scaling: StatCard {
-            body: 2,
-            ..Default::default()
-        },
+        scaling: StatCard::default(),
     }
 }
 
@@ -77,7 +75,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: 1,
     });
-    encounters.push(make_encounter("A", Currency::Gold));
+    encounters.push(make_encounter("A", Currency::Gold, 1)); // trivial: a bare Novice clears it
     demands.push(Demand::Free);
 
     // B[p] — builds path p (clearable clean-slate).
@@ -90,7 +88,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
             currency: p,
             max_level: level,
         });
-        encounters.push(make_encounter(&format!("B[{}]", p.label()), p));
+        encounters.push(make_encounter(&format!("B[{}]", p.label()), p, 1)); // builder: bare clears
         demands.push(Demand::Free);
     }
 
@@ -104,7 +102,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
             currency: p,
             max_level: level,
         });
-        encounters.push(make_encounter(&format!("C[{}]", p.label()), p));
+        encounters.push(make_encounter(&format!("C[{}]", p.label()), p, 2)); // gate: bare loses, 1 Upgrade wins
         demands.push(Demand::Counter(p, level as i64)); // B[p] at max yields exactly `level`
     }
 
@@ -116,7 +114,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: level,
     });
-    encounters.push(make_encounter("Final", Currency::Gold));
+    encounters.push(make_encounter("Final", Currency::Gold, 10)); // boss: needs the full party
     demands.push(Demand::AllPaths(2 * level as i64));
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);
@@ -241,6 +239,52 @@ pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
     v
 }
 
+/// Combat-real difficulty bands (§8.4), via the auto-resolver (Clash off): a bare clean-slate party
+/// loses each gate, an appropriately-equipped party wins, and the final needs the full roster.
+/// (Currency *affordability* — that p-Upgrades require clearing B[p] — is the analytical check
+/// above; this confirms the *difficulty* sits in the right band.)
+pub fn check_combat_bands(s: &ReferenceScenario, seed: u64) -> Vec<String> {
+    use crate::scenarios::{build_character, build_encounter_foes, upgrades_for};
+    use crate::solver::auto_resolve;
+
+    let mut v = Vec::new();
+    let novice = || build_character("Novice", &[]);
+    // A character "invested in path p" owns that currency's Upgrades (what clearing B[p] buys).
+    let specialist = |p: Currency| build_character("Novice", &upgrades_for(p));
+
+    // C[p]: a bare party should lose; a p-equipped specialist should win.
+    for (i, &p) in s.paths.iter().enumerate() {
+        let enc = &s.encounters[s.c_index[i]];
+        if auto_resolve(vec![novice()], build_encounter_foes(enc, 1), seed) != Some(false) {
+            v.push(format!(
+                "C[{}] too easy — a bare party should lose",
+                p.label()
+            ));
+        }
+        if auto_resolve(vec![specialist(p)], build_encounter_foes(enc, 1), seed) != Some(true) {
+            v.push(format!(
+                "C[{}] too hard — a {}-equipped party should win",
+                p.label(),
+                p.label()
+            ));
+        }
+    }
+
+    // Final: a full party (one specialist per path) wins; a party missing one path does not.
+    let full: Vec<_> = s.paths.iter().map(|&p| specialist(p)).collect();
+    let enc = &s.encounters[s.final_index];
+    if auto_resolve(full.clone(), build_encounter_foes(enc, 1), seed) != Some(true) {
+        v.push("Final too hard — a full party should win".into());
+    }
+    if full.len() > 1 {
+        let short = full[1..].to_vec();
+        if auto_resolve(short, build_encounter_foes(enc, 1), seed) == Some(true) {
+            v.push("Final too easy — a party missing a path should not win".into());
+        }
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +298,14 @@ mod tests {
             Currency::Bone,
             Currency::Salt,
         ]
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_combat_bands() {
+        let s = reference_scenario(&five_roles());
+        let v = check_combat_bands(&s, 1);
+        println!("combat band violations ({}): {v:#?}", v.len());
     }
 
     #[test]
@@ -281,5 +333,14 @@ mod tests {
             violations.iter().any(|m| m.contains("coverage leak")),
             "evaluator failed to detect the broken gate: {violations:?}"
         );
+    }
+
+    #[test]
+    fn reference_combat_bands_hold() {
+        // The gates hold under REAL combat (Clash off, auto-resolved): a bare party loses each
+        // C[p], a path-invested specialist wins it, and the final needs the full roster.
+        let s = reference_scenario(&five_roles());
+        let v = check_combat_bands(&s, 1);
+        assert!(v.is_empty(), "combat band violations: {v:?}");
     }
 }

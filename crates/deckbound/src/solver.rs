@@ -89,6 +89,41 @@ mod tests {
     use super::*;
     use crate::scenarios::campaign;
 
+    /// Diagnostic (run on demand): print win/lose for a clean-slate vs upgraded character against
+    /// scaling foe counts, to calibrate encounter difficulty. `cargo test probe_power -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_power() {
+        use crate::currency::Currency;
+        use crate::encounter::{EncounterCard, RosterEntry};
+        use crate::form::StatCard;
+        use crate::scenarios::{build_character, build_encounter_foes};
+
+        let enc = |creature: &str, count: u32| EncounterCard {
+            name: "probe".into(),
+            currency: Currency::Iron,
+            strategy: "aggressor".into(),
+            foes: vec![RosterEntry {
+                creature: creature.into(),
+                from_level: 1,
+                base: count,
+                growth: 0,
+            }],
+            scaling: StatCard::default(),
+        };
+        for k in 1..=8 {
+            let foes = build_encounter_foes(&enc("Husk", k), 1);
+            let bare = vec![build_character("Novice", &[])];
+            let two = vec![build_character(
+                "Novice",
+                &["Bulwark".into(), "Edge".into()],
+            )];
+            let b = auto_resolve(bare, foes.clone(), 1);
+            let u = auto_resolve(two, foes, 1);
+            println!("Husk x{k}: bare={b:?}  upgraded(Bulwark+Edge)={u:?}");
+        }
+    }
+
     #[test]
     fn auto_resolve_terminates_on_every_campaign_scenario() {
         // The greedy policy, Clash off, must drive every real scenario to a decisive result —

@@ -30,7 +30,7 @@ pub use currency::{Coins, Currency, balance};
 pub use duel::{Move, Side, resolve};
 pub use encounter::{EncounterCard, RosterEntry};
 pub use form::{Form, StatCard};
-pub use reference::{ReferenceScenario, check_invariants, reference_scenario};
+pub use reference::{ReferenceScenario, check_combat_bands, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
 pub use scenarios::{

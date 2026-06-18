@@ -61,14 +61,14 @@ Catalog(
         UpgradeCard( name: "Munitions", price: (currency: Brass,  amount: 3), grant: (power: 3) ),
         UpgradeCard( name: "Hex",       price: (currency: Bone,   amount: 3), grant: (power: 3, resolve: 2) ),
         UpgradeCard( name: "Curse",     price: (currency: Bone,   amount: 3), grant: (power: 2, mind: 2) ),
-        UpgradeCard( name: "Vigor",     price: (currency: Salt,   amount: 3), grant: (body: 3, resolve: 2, mind: 2) ),
-        UpgradeCard( name: "Grace",     price: (currency: Salt,   amount: 3), grant: (body: 2, resolve: 2) ),
+        UpgradeCard( name: "Vigor",     price: (currency: Salt,   amount: 3), grant: (body: 3, power: 1, resolve: 2, mind: 2) ),
+        UpgradeCard( name: "Grace",     price: (currency: Salt,   amount: 3), grant: (body: 2, power: 1, resolve: 2) ),
         UpgradeCard( name: "Training",  price: (currency: Gold,   amount: 2), grant: (power: 1, body: 1, speed: 1) ),
     ],
     actors: [
         // Novice — the clean-slate character (§8.5): weak base, gains power only by buying Upgrades.
         ActorCard( name: "Novice", role: "Clean-slate", driver: "hero", attack: Melee, weapon: "Fist",
-                   base: (speed: 3, power: 1, body: 3, toughness: 1, resolve: 1, mind: 1) ),
+                   base: (speed: 3, power: 1, body: 5, toughness: 1, resolve: 1, mind: 1) ),
         // An Actor is a bare identity + a starting deck (stats-as-deck, §2.3/§4.3): `base` is the
         // fundamental Form card (its stat block); `traits` are attachment Form cards; `actions` are
         // its Action cards; `weapon` supplies the strike's damage type.
