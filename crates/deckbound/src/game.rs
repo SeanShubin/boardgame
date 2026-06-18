@@ -5,7 +5,9 @@
 //! or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All numbers
 //! live in `data/booklet.ron`.
 
-use engine::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView};
+use engine::{
+    Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
+};
 
 use crate::actor::Range;
 use crate::combat;
@@ -167,7 +169,9 @@ impl Deckbound {
         if lanes >= 2 && hero_vg.len() >= 2 {
             state.plan.assign_queue = hero_vg;
             state.phase = Phase::Assign;
-            state.log.push(format!("-- {lanes} lanes — assign your Vanguard --"));
+            state
+                .log
+                .push(format!("-- {lanes} lanes — assign your Vanguard --"));
         } else {
             for (i, &h) in hero_vg.iter().enumerate() {
                 let lane = i % lanes;
@@ -216,17 +220,34 @@ impl Deckbound {
                 .copied()
                 .filter(|&h| state.plan.hero_slip[h] == Some(true))
                 .collect();
-            let foe_holders: Vec<usize> = lane.foes.iter().copied().filter(|&f| !foe_slip[f]).collect();
-            let foe_slippers: Vec<usize> = lane.foes.iter().copied().filter(|&f| foe_slip[f]).collect();
+            let foe_holders: Vec<usize> = lane
+                .foes
+                .iter()
+                .copied()
+                .filter(|&f| !foe_slip[f])
+                .collect();
+            let foe_slippers: Vec<usize> =
+                lane.foes.iter().copied().filter(|&f| foe_slip[f]).collect();
 
             // Holders trade (melee). Snapshot first for order-independence.
-            let hero_snaps: Vec<_> = hero_holders.iter().map(|&h| combat::snapshot(&state.heroes[h])).collect();
-            let foe_snaps: Vec<_> = foe_holders.iter().map(|&f| combat::snapshot(&state.creatures[f])).collect();
+            let hero_snaps: Vec<_> = hero_holders
+                .iter()
+                .map(|&h| combat::snapshot(&state.heroes[h]))
+                .collect();
+            let foe_snaps: Vec<_> = foe_holders
+                .iter()
+                .map(|&f| combat::snapshot(&state.creatures[f]))
+                .collect();
             if let Some(&h0) = hero_holders.first() {
                 for (i, &f) in foe_holders.iter().enumerate() {
                     if state.creatures[f].can_contest(Range::Melee) {
                         let name = state.creatures[f].name.clone();
-                        combat::apply_strike(&mut state.heroes[h0], foe_snaps[i], &name, &mut state.log);
+                        combat::apply_strike(
+                            &mut state.heroes[h0],
+                            foe_snaps[i],
+                            &name,
+                            &mut state.log,
+                        );
                     }
                 }
             }
@@ -234,7 +255,12 @@ impl Deckbound {
                 for (i, &h) in hero_holders.iter().enumerate() {
                     if state.heroes[h].can_contest(Range::Melee) {
                         let name = state.heroes[h].name.clone();
-                        combat::apply_strike(&mut state.creatures[f0], hero_snaps[i], &name, &mut state.log);
+                        combat::apply_strike(
+                            &mut state.creatures[f0],
+                            hero_snaps[i],
+                            &name,
+                            &mut state.log,
+                        );
                     }
                 }
             }
@@ -242,10 +268,22 @@ impl Deckbound {
             // Block pools: Phalanx combines holders' Focus, else the best single holder; a
             // guardian (Bodyguard / Taunt) in another lane adds its Focus here.
             let foe_block = block_pool(&state.creatures, &foe_holders);
-            let foe_best = foe_holders.iter().map(|&f| state.creatures[f].focus).max().unwrap_or(0);
-            let guard_bonus: u32 = hero_guardians.iter().filter(|(l, _)| *l != li).map(|(_, f)| f).sum();
+            let foe_best = foe_holders
+                .iter()
+                .map(|&f| state.creatures[f].focus)
+                .max()
+                .unwrap_or(0);
+            let guard_bonus: u32 = hero_guardians
+                .iter()
+                .filter(|(l, _)| *l != li)
+                .map(|(_, f)| f)
+                .sum();
             let hero_block = block_pool(&state.heroes, &hero_holders) + guard_bonus;
-            let foe_lane_speed: u32 = lane.foes.iter().map(|&f| state.creatures[f].offense.speed.max(1)).sum();
+            let foe_lane_speed: u32 = lane
+                .foes
+                .iter()
+                .map(|&f| state.creatures[f].offense.speed.max(1))
+                .sum();
 
             for &h in &hero_slippers {
                 let spd = state.heroes[h].offense.speed.max(1);
@@ -264,10 +302,14 @@ impl Deckbound {
                         let name = state.creatures[f0].name.clone();
                         combat::apply_strike(&mut state.heroes[h], snap, &name, &mut state.log);
                     }
-                    state.log.push(format!("{} is blocked in the lane.", state.heroes[h].name));
+                    state
+                        .log
+                        .push(format!("{} is blocked in the lane.", state.heroes[h].name));
                 } else if !state.heroes[h].is_down() {
                     state.plan.hero_skirmisher[h] = true;
-                    state.log.push(format!("{} slips the line!", state.heroes[h].name));
+                    state
+                        .log
+                        .push(format!("{} slips the line!", state.heroes[h].name));
                 }
             }
             for &f in &foe_slippers {
@@ -362,8 +404,9 @@ impl Deckbound {
     fn resolve_reserve(&self, state: &mut State) {
         for f in 0..state.creatures.len() {
             let reserve = state.plan.foe_lane[f].is_none() && !state.plan.foe_skirmisher[f];
-            let fires =
-                reserve && !state.creatures[f].is_down() && state.creatures[f].can_contest(Range::Ranged);
+            let fires = reserve
+                && !state.creatures[f].is_down()
+                && state.creatures[f].can_contest(Range::Ranged);
             if !fires {
                 continue;
             }
@@ -395,23 +438,45 @@ impl Deckbound {
         state.round += 1;
         state.plan = Round::sized(state.heroes.len(), state.creatures.len());
         state.phase = Phase::Muster;
-        state.log.push(format!("-- Round {}: muster --", state.round));
+        state
+            .log
+            .push(format!("-- Round {}: muster --", state.round));
     }
 
     /// One actor strikes a target at `range` — a trade if the target can contest, else an
     /// auto-hit (§4.2). `hero_attacker` selects which pool the attacker is in.
-    fn strike(&self, state: &mut State, hero_attacker: bool, attacker: usize, target: usize, range: Range) {
+    fn strike(
+        &self,
+        state: &mut State,
+        hero_attacker: bool,
+        attacker: usize,
+        target: usize,
+        range: Range,
+    ) {
         let (atk_snap, atk_name, atk_can) = if hero_attacker {
-            (combat::snapshot(&state.heroes[attacker]), state.heroes[attacker].name.clone(), state.heroes[attacker].can_contest(range))
+            (
+                combat::snapshot(&state.heroes[attacker]),
+                state.heroes[attacker].name.clone(),
+                state.heroes[attacker].can_contest(range),
+            )
         } else {
-            (combat::snapshot(&state.creatures[attacker]), state.creatures[attacker].name.clone(), state.creatures[attacker].can_contest(range))
+            (
+                combat::snapshot(&state.creatures[attacker]),
+                state.creatures[attacker].name.clone(),
+                state.creatures[attacker].can_contest(range),
+            )
         };
         if !atk_can {
             return; // can't attack at this range
         }
         // attacker -> target
         if hero_attacker {
-            combat::apply_strike(&mut state.creatures[target], atk_snap, &atk_name, &mut state.log);
+            combat::apply_strike(
+                &mut state.creatures[target],
+                atk_snap,
+                &atk_name,
+                &mut state.log,
+            );
             // trade back if the target can contest
             if state.creatures[target].can_contest(range) && !state.creatures[target].is_down() {
                 let back = combat::snapshot(&state.creatures[target]);
@@ -419,7 +484,12 @@ impl Deckbound {
                 combat::apply_strike(&mut state.heroes[attacker], back, &name, &mut state.log);
             }
         } else {
-            combat::apply_strike(&mut state.heroes[target], atk_snap, &atk_name, &mut state.log);
+            combat::apply_strike(
+                &mut state.heroes[target],
+                atk_snap,
+                &atk_name,
+                &mut state.log,
+            );
             if state.heroes[target].can_contest(range) && !state.heroes[target].is_down() {
                 let back = combat::snapshot(&state.heroes[target]);
                 let name = state.heroes[target].name.clone();
@@ -474,8 +544,20 @@ impl Deckbound {
         let (cp, cd, cpre) = combat::base_strike(&state.creatures[c.foe]);
         let hn = state.heroes[c.hero].name.clone();
         let cn = state.creatures[c.foe].name.clone();
-        let a = Side { power: hp, dtype: hd, precision: hpre, force: c.hero_force, name: &hn };
-        let b = Side { power: cp, dtype: cd, precision: cpre, force: c.foe_force, name: &cn };
+        let a = Side {
+            power: hp,
+            dtype: hd,
+            precision: hpre,
+            force: c.hero_force,
+            name: &hn,
+        };
+        let b = Side {
+            power: cp,
+            dtype: cd,
+            precision: cpre,
+            force: c.foe_force,
+            name: &cn,
+        };
         let r = duel::resolve(&a, hero_move, &b, creature_move);
         state.log.push(r.note);
         if let Some(s) = r.on_a {
@@ -497,12 +579,26 @@ impl Deckbound {
             check_outcome(state);
             if state.outcome.is_none() {
                 // a duel that merely connected (no down) just restarts a fresh exchange
-                state.clash = Some(Clash { hero: c.hero, foe: c.foe, hero_force: 0, foe_force: 0, beat: 0, stall: 0 });
+                state.clash = Some(Clash {
+                    hero: c.hero,
+                    foe: c.foe,
+                    hero_force: 0,
+                    foe_force: 0,
+                    beat: 0,
+                    stall: 0,
+                });
             }
         } else {
             let stall = c.stall + 1;
             if stall >= STALL_CAP {
-                state.clash = Some(Clash { hero: c.hero, foe: c.foe, hero_force: 0, foe_force: 0, beat: 0, stall: 0 });
+                state.clash = Some(Clash {
+                    hero: c.hero,
+                    foe: c.foe,
+                    hero_force: 0,
+                    foe_force: 0,
+                    beat: 0,
+                    stall: 0,
+                });
                 state.log.push("(they break and reset)".into());
             } else {
                 state.clash = Some(Clash {
@@ -518,19 +614,37 @@ impl Deckbound {
     }
 
     fn status(&self, state: &State) -> String {
-        let log = state.log.iter().rev().take(12).rev().cloned().collect::<Vec<_>>().join("\n");
+        let log = state
+            .log
+            .iter()
+            .rev()
+            .take(12)
+            .rev()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
         let prompt = match (&state.outcome, &state.phase) {
             (Some(Outcome::Win(PlayerId(0))), _) => "Victory! Replay, or Main menu.".to_string(),
             (Some(_), _) => "Defeat. Replay, or Main menu.".to_string(),
             (None, Phase::Menu(Menu::Top)) => "Deckbound — pick a scenario set.".to_string(),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
-            (None, Phase::Muster) => format!("Round {} — muster: set Vanguard / Reserve, then Deploy. (Esc: menu)", state.round),
-            (None, Phase::Assign) => "Assign your Vanguard to lanes — stack to overwhelm. (Esc: menu)".to_string(),
-            (None, Phase::Slip) => "Front: each Vanguard holds or slips, then Resolve. (Esc: menu)".to_string(),
+            (None, Phase::Muster) => format!(
+                "Round {} — muster: set Vanguard / Reserve, then Deploy. (Esc: menu)",
+                state.round
+            ),
+            (None, Phase::Assign) => {
+                "Assign your Vanguard to lanes — stack to overwhelm. (Esc: menu)".to_string()
+            }
+            (None, Phase::Slip) => {
+                "Front: each Vanguard holds or slips, then Resolve. (Esc: menu)".to_string()
+            }
             (None, Phase::Skirmish) => "Skirmishers pick targets. (Esc: menu)".to_string(),
             (None, Phase::Reserve) => "Reserve: fire or aid. (Esc: menu)".to_string(),
             (None, Phase::Clash) => match state.clash {
-                Some(c) => format!("Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)", state.heroes[c.hero].name, state.creatures[c.foe].name),
+                Some(c) => format!(
+                    "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
+                    state.heroes[c.hero].name, state.creatures[c.foe].name
+                ),
                 None => "...".to_string(),
             },
         };
@@ -567,7 +681,8 @@ impl Game for Deckbound {
                 Action::Exit,
             ],
             Phase::Menu(m) => {
-                let mut a: Vec<Action> = (0..list_for(*m).len()).map(Action::PickScenario).collect();
+                let mut a: Vec<Action> =
+                    (0..list_for(*m).len()).map(Action::PickScenario).collect();
                 a.push(Action::Back);
                 a
             }
@@ -654,8 +769,20 @@ impl Game for Deckbound {
     }
 
     fn action_label(&self, state: &State, action: &Action) -> String {
-        let hname = |h: usize| state.heroes.get(h).map(|x| x.name.clone()).unwrap_or_else(|| "?".into());
-        let fname = |f: usize| state.creatures.get(f).map(|x| x.name.clone()).unwrap_or_else(|| "?".into());
+        let hname = |h: usize| {
+            state
+                .heroes
+                .get(h)
+                .map(|x| x.name.clone())
+                .unwrap_or_else(|| "?".into())
+        };
+        let fname = |f: usize| {
+            state
+                .creatures
+                .get(f)
+                .map(|x| x.name.clone())
+                .unwrap_or_else(|| "?".into())
+        };
         match action {
             Action::OpenCooperation => "Cooperation".into(),
             Action::OpenGod => "God-tier".into(),
@@ -666,7 +793,10 @@ impl Game for Deckbound {
             Action::Back => "< Back".into(),
             Action::Replay => "Replay this scenario".into(),
             Action::PickScenario(i) => match &state.phase {
-                Phase::Menu(m) => list_for(*m).get(*i).map(|s| s.name.clone()).unwrap_or_else(|| "?".into()),
+                Phase::Menu(m) => list_for(*m)
+                    .get(*i)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "?".into()),
                 _ => "?".into(),
             },
             Action::SetVanguard(h) => format!("{}: → Vanguard", hname(*h)),
@@ -720,12 +850,19 @@ impl Game for Deckbound {
             return Err(GameError::new("the fight is over"));
         }
         match (&state.phase, action) {
-            (Phase::Menu(Menu::Top), Action::OpenCooperation) => state.phase = Phase::Menu(Menu::Cooperation),
+            (Phase::Menu(Menu::Top), Action::OpenCooperation) => {
+                state.phase = Phase::Menu(Menu::Cooperation)
+            }
             (Phase::Menu(Menu::Top), Action::OpenGod) => state.phase = Phase::Menu(Menu::God),
-            (Phase::Menu(Menu::Top), Action::OpenTutorial) => state.phase = Phase::Menu(Menu::Tutorial),
+            (Phase::Menu(Menu::Top), Action::OpenTutorial) => {
+                state.phase = Phase::Menu(Menu::Tutorial)
+            }
             (Phase::Menu(Menu::Top), Action::OpenVersus) => state.phase = Phase::Menu(Menu::Versus),
             (Phase::Menu(m), Action::PickScenario(i)) if *m != Menu::Top => {
-                let s = list_for(*m).into_iter().nth(*i).ok_or_else(|| GameError::new("no such scenario"))?;
+                let s = list_for(*m)
+                    .into_iter()
+                    .nth(*i)
+                    .ok_or_else(|| GameError::new("no such scenario"))?;
                 load_scenario(state, s);
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
@@ -790,11 +927,27 @@ impl Game for Deckbound {
                 }
             }
             (Phase::Reserve, Action::PlayCard(h, idx)) => {
-                let card = state.heroes[*h].actions.get(*idx).cloned().ok_or_else(|| GameError::new("no such card"))?;
-                let (pow, pre) = (state.heroes[*h].offense.power, state.heroes[*h].offense.precision);
+                let card = state.heroes[*h]
+                    .actions
+                    .get(*idx)
+                    .cloned()
+                    .ok_or_else(|| GameError::new("no such card"))?;
+                let (pow, pre) = (
+                    state.heroes[*h].offense.power,
+                    state.heroes[*h].offense.precision,
+                );
                 let name = state.heroes[*h].name.clone();
                 let mut heroes = std::mem::take(&mut state.heroes);
-                combat::play_card(&card, &name, pow, pre, &mut state.creatures, &mut heroes, Some(*h), &mut state.log);
+                combat::play_card(
+                    &card,
+                    &name,
+                    pow,
+                    pre,
+                    &mut state.creatures,
+                    &mut heroes,
+                    Some(*h),
+                    &mut state.log,
+                );
                 state.heroes = heroes;
                 state.plan.hero_acted[*h] = true;
                 combat::tally(&mut state.heroes);
@@ -890,7 +1043,12 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
     CardView::up(format!("{} — {}", a.name, a.role))
         .body(vec![
             format!("HP [{}]", pips(d.body.remaining, d.body.max)),
-            format!("Spd {} Pow {} {}", a.offense.speed, a.offense.power, a.attack.label()),
+            format!(
+                "Spd {} Pow {} {}",
+                a.offense.speed,
+                a.offense.power,
+                a.attack.label()
+            ),
             format!("Tempo {} Focus {}", a.tempo, a.focus),
         ])
         .accent(accent)
@@ -906,7 +1064,11 @@ fn hero_zone(state: &State, focus: Option<usize>) -> ZoneView {
             .iter()
             .enumerate()
             .map(|(i, h)| {
-                let accent = if Some(i) == focus { Accent::Good } else { Accent::Ally };
+                let accent = if Some(i) == focus {
+                    Accent::Good
+                } else {
+                    Accent::Ally
+                };
                 actor_card(h, accent)
             })
             .collect(),
@@ -924,7 +1086,11 @@ fn creature_zone(state: &State, focus: Option<usize>) -> ZoneView {
             .enumerate()
             .filter(|(_, c)| !c.fallen)
             .map(|(i, c)| {
-                let accent = if Some(i) == focus { Accent::Foe } else { Accent::Neutral };
+                let accent = if Some(i) == focus {
+                    Accent::Foe
+                } else {
+                    Accent::Neutral
+                };
                 actor_card(c, accent)
             })
             .collect(),
@@ -950,7 +1116,10 @@ fn scenario_zone(menu: Menu) -> ZoneView {
         label: "Scenarios".into(),
         layout: Layout::Row,
         owner: None,
-        cards: list_for(menu).iter().map(|s| CardView::up(s.name.clone())).collect(),
+        cards: list_for(menu)
+            .iter()
+            .map(|s| CardView::up(s.name.clone()))
+            .collect(),
     }
 }
 
@@ -971,7 +1140,11 @@ mod tests {
             let action = match s.phase {
                 Phase::Clash => {
                     let beat = s.clash.map(|c| c.beat).unwrap_or(0);
-                    if beat % 2 == 0 { Action::Play(Move::Strike) } else { Action::Play(Move::Anticipate) }
+                    if beat % 2 == 0 {
+                        Action::Play(Move::Strike)
+                    } else {
+                        Action::Play(Move::Anticipate)
+                    }
                 }
                 Phase::Muster => Action::Deploy,
                 Phase::Assign => acts
@@ -1021,8 +1194,14 @@ mod tests {
         let h0 = s.heroes[0].defense.body.remaining;
         let f0 = s.creatures[0].defense.body.remaining;
         game.strike(&mut s, true, 0, 0, Range::Ranged);
-        assert!(s.creatures[0].defense.body.remaining < f0, "the foe is auto-hit");
-        assert_eq!(s.heroes[0].defense.body.remaining, h0, "no trade-back on a mismatch");
+        assert!(
+            s.creatures[0].defense.body.remaining < f0,
+            "the foe is auto-hit"
+        );
+        assert_eq!(
+            s.heroes[0].defense.body.remaining, h0,
+            "no trade-back on a mismatch"
+        );
 
         // Same range: both contest → a trade, both take damage.
         let mut s2 = duel_state();
@@ -1063,12 +1242,25 @@ mod tests {
         let vow = s.heroes.iter().position(|h| h.name == "Vow").unwrap();
         let sear = s.heroes.iter().position(|h| h.name == "Sear").unwrap();
         assert_eq!(s.heroes[sear].attack, crate::actor::Attack::Ranged);
-        let idx = s.heroes[vow].actions.iter().position(|c| c.name == "Ward").unwrap();
+        let idx = s.heroes[vow]
+            .actions
+            .iter()
+            .position(|c| c.name == "Ward")
+            .unwrap();
         let card = s.heroes[vow].actions[idx].clone();
         let (pow, pre) = (s.heroes[vow].offense.power, s.heroes[vow].offense.precision);
         let name = s.heroes[vow].name.clone();
         let mut heroes = std::mem::take(&mut s.heroes);
-        combat::play_card(&card, &name, pow, pre, &mut s.creatures, &mut heroes, Some(vow), &mut s.log);
+        combat::play_card(
+            &card,
+            &name,
+            pow,
+            pre,
+            &mut s.creatures,
+            &mut heroes,
+            Some(vow),
+            &mut s.log,
+        );
         s.heroes = heroes;
         assert_eq!(
             s.heroes[sear].attack,
@@ -1084,16 +1276,27 @@ mod tests {
         let game = Deckbound;
         let mut s = game.new_game(2, 1);
         game.apply(&mut s, &Action::OpenTutorial).unwrap();
-        let idx = scenarios::tutorials().iter().position(|t| t.name.starts_with("3.")).unwrap();
+        let idx = scenarios::tutorials()
+            .iter()
+            .position(|t| t.name.starts_with("3."))
+            .unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
         let anvil = s.heroes.iter().position(|h| h.name == "Anvil").unwrap();
         let wisp = s.heroes.iter().position(|h| h.name == "Wisp").unwrap();
         game.apply(&mut s, &Action::SetVanguard(anvil)).unwrap();
         game.apply(&mut s, &Action::SetVanguard(wisp)).unwrap();
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(s.phase, Phase::Assign, "two lanes, two vanguard → a placement choice");
+        assert_eq!(
+            s.phase,
+            Phase::Assign,
+            "two lanes, two vanguard → a placement choice"
+        );
         // Stack both into lane 0.
-        let next = |s: &State| match game.legal_actions(s).into_iter().find(|a| matches!(a, Action::AssignLane(..))) {
+        let next = |s: &State| match game
+            .legal_actions(s)
+            .into_iter()
+            .find(|a| matches!(a, Action::AssignLane(..)))
+        {
             Some(Action::AssignLane(h, _)) => h,
             _ => unreachable!(),
         };
@@ -1120,7 +1323,12 @@ mod tests {
     #[test]
     fn every_scenario_terminates() {
         let game = Deckbound;
-        for open in [Action::OpenCooperation, Action::OpenGod, Action::OpenTutorial, Action::OpenVersus] {
+        for open in [
+            Action::OpenCooperation,
+            Action::OpenGod,
+            Action::OpenTutorial,
+            Action::OpenVersus,
+        ] {
             let count = match open {
                 Action::OpenCooperation => scenarios::campaign().len(),
                 Action::OpenGod => scenarios::god().len(),

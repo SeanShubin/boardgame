@@ -67,6 +67,22 @@ These are software/artifacts, not rules, so they live outside the Spec.
   company needs for **custom physical cards** (likely CSV/JSON + art/layout fields). Same
   generation seam as the card lists; it's the "send it to the printer today" output the
   print-master is meant to feed.
+- **Card presentation polish (look & feel).** The bar for representing physical cards
+  digitally — the `tabletop` crate should make cards feel like tactile objects, not flat
+  sprites: hover-tilt toward the cursor, lift + drop-shadow, a satisfying "thunk" on play,
+  and a particle/sound/animation triad on every meaningful state change (flip, deal,
+  damage, defeat). Juice over expensive art — easing curves, screen-shake, and audio carry
+  most of the feel and map cleanly onto Bevy systems.
+  - **Standards to aspire to:** **Marvel Snap** (the modern ceiling for flashy reveals,
+    foils, and animated/parallax cards), **Hearthstone** (the fundamentals of *physical*
+    card feel — weight, tilt, shadow, thunk, a board you can poke), **Legends of Runeterra**
+    (animated card art + reactive board theater), and **Balatro** (the achievable-in-code
+    target: exaggerated springy motion + screen-shake + sound make a minimal art style feel
+    incredibly juicy — its juice is curves and audio, not art budget).
+  - Ties into the **cards-only** pillar in `notes/physical-representation.md`: every
+    card-state change is meaningful, so every one deserves a felt animation. Generic and
+    over `Game` — keep it in `tabletop`, never reference a specific game (see
+    `.claude/CLAUDE.md` architecture rules).
 
 ## C. See also
 
