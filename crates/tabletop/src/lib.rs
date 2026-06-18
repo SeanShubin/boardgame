@@ -19,12 +19,14 @@
 //! post-layout [`UiTransform`] / [`BoxShadow`], so it stays generic over the
 //! game and never reflows neighbouring nodes. See [`animate_cards`].
 
+use bevy::audio::{AddAudioSource, Decodable, Source};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
 use engine::{Accent, CardFace, Game, TableView, ZoneView};
 use std::cell::Cell;
+use std::time::Duration;
 
 /// Drives a single match of `G` on a Bevy app.
 pub struct TabletopPlugin<G: Game> {
@@ -53,7 +55,10 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(NeedsRedraw(true))
             .insert_resource(Platform::detect())
             .insert_resource(HelpVisible(false))
-            .add_systems(Startup, (setup_camera, install_ui_font, setup_help))
+            // Register the procedural sound-effect source (synthesised in code,
+            // so there are no audio asset files to ship — see `Sfx`).
+            .add_audio_source::<Sfx>()
+            .add_systems(Startup, (setup_camera, install_ui_font, setup_help, setup_sfx))
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
             // After `cancel_on_key` so that while the overlay is open it sees
@@ -64,6 +69,8 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // `Interaction` and write `UiTransform`/shadow only, so they run
             // every frame independently of the redraw chain below.
             .add_systems(Update, (animate_cards, animate_buttons))
+            // Sound: a click on action, a soft tick on card hover.
+            .add_systems(Update, (play_button_sfx, play_card_hover_sfx))
             .add_systems(
                 Update,
                 (
@@ -556,6 +563,146 @@ fn animate_buttons(
         transform.translation = Val2::px(0.0, p * BTN_PRESS_SINK - h * BTN_HOVER_LIFT);
         transform.scale = Vec2::splat(1.0 + h * 0.02 - p * 0.03);
         bg.0 = mix_color(mix_color(BUTTON, BUTTON_HOVER, h), BUTTON_PRESS, p);
+    }
+}
+
+// ---- sound (synthesised in code, no asset files) -----------------------
+//
+// Each effect is a short enveloped tone generated on the fly rather than a
+// shipped audio file. This keeps the crate asset-free and makes sound behave
+// the same natively and on the wasm/web build — the browser only needs a user
+// gesture before any audio plays, and every effect here is triggered by a
+// click or hover, so the first interaction unlocks the audio context.
+
+/// Sample rate for synthesised effects.
+const SFX_RATE: u32 = 44_100;
+
+/// A short synthesised tone — fast attack, exponential decay — that plays as a
+/// soft UI "blip". Implementing [`Source`] lets Bevy's audio backend stream it
+/// straight to the device with no decoding step.
+struct Blip {
+    freq: f32,
+    amp: f32,
+    decay: f32,
+    attack: u32,
+    len: u32,
+    pos: u32,
+}
+
+impl Iterator for Blip {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        if self.pos >= self.len {
+            return None;
+        }
+        let t = self.pos as f32 / SFX_RATE as f32;
+        // Linear attack into an exponential decay — a click, not a pop.
+        let env = if self.pos < self.attack {
+            self.pos as f32 / self.attack as f32
+        } else {
+            let since = (self.pos - self.attack) as f32 / SFX_RATE as f32;
+            (-self.decay * since).exp()
+        };
+        self.pos += 1;
+        Some((std::f32::consts::TAU * self.freq * t).sin() * self.amp * env)
+    }
+}
+
+impl Source for Blip {
+    fn current_frame_len(&self) -> Option<usize> {
+        Some((self.len - self.pos) as usize)
+    }
+
+    fn channels(&self) -> u16 {
+        1
+    }
+
+    fn sample_rate(&self) -> u32 {
+        SFX_RATE
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        Some(Duration::from_secs_f32(self.len as f32 / SFX_RATE as f32))
+    }
+}
+
+/// A synthesised sound-effect asset: the parameters of one [`Blip`].
+#[derive(Asset, TypePath, Clone, Copy)]
+struct Sfx {
+    freq: f32,
+    amp: f32,
+    decay: f32,
+    ms: u32,
+    attack_ms: u32,
+}
+
+impl Decodable for Sfx {
+    type DecoderItem = f32;
+    type Decoder = Blip;
+
+    fn decoder(&self) -> Blip {
+        Blip {
+            freq: self.freq,
+            amp: self.amp,
+            decay: self.decay,
+            attack: (SFX_RATE * self.attack_ms / 1000).max(1),
+            len: SFX_RATE * self.ms / 1000,
+            pos: 0,
+        }
+    }
+}
+
+/// Handles to the synthesised effects, built once at startup.
+#[derive(Resource)]
+struct SfxHandles {
+    click: Handle<Sfx>,
+    hover: Handle<Sfx>,
+}
+
+fn setup_sfx(mut commands: Commands, mut assets: ResMut<Assets<Sfx>>) {
+    let click = assets.add(Sfx {
+        freq: 523.25,
+        amp: 0.16,
+        decay: 38.0,
+        ms: 90,
+        attack_ms: 2,
+    });
+    let hover = assets.add(Sfx {
+        freq: 880.0,
+        amp: 0.05,
+        decay: 70.0,
+        ms: 45,
+        attack_ms: 1,
+    });
+    commands.insert_resource(SfxHandles { click, hover });
+}
+
+/// Play a click when an action button is pressed.
+fn play_button_sfx(
+    mut commands: Commands,
+    sfx: Option<Res<SfxHandles>>,
+    buttons: Query<&Interaction, (Changed<Interaction>, With<ActionButton>)>,
+) {
+    let Some(sfx) = sfx else { return };
+    for interaction in &buttons {
+        if *interaction == Interaction::Pressed {
+            commands.spawn((AudioPlayer(sfx.click.clone()), PlaybackSettings::DESPAWN));
+        }
+    }
+}
+
+/// Play a soft tick the moment the pointer moves onto a card.
+fn play_card_hover_sfx(
+    mut commands: Commands,
+    sfx: Option<Res<SfxHandles>>,
+    cards: Query<&Interaction, (Changed<Interaction>, With<CardAnim>)>,
+) {
+    let Some(sfx) = sfx else { return };
+    for interaction in &cards {
+        if *interaction == Interaction::Hovered {
+            commands.spawn((AudioPlayer(sfx.hover.clone()), PlaybackSettings::DESPAWN));
+        }
     }
 }
 
