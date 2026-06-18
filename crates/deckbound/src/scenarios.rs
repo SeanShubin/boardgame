@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
 use crate::cards::Card;
+use crate::currency::{Coins, Currency};
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
@@ -22,6 +23,17 @@ struct Catalog {
     tutorials: Vec<ScenarioCard>,
     #[serde(default)]
     versus: Vec<ScenarioCard>,
+    #[serde(default)]
+    upgrades: Vec<UpgradeCard>,
+}
+
+/// A purchasable Upgrade (§8.3): a `price` in one currency, and a `grant` (Form attachment, the
+/// stat boosts it adds when bought).
+#[derive(Debug, Deserialize)]
+struct UpgradeCard {
+    name: String,
+    price: Coins,
+    grant: StatCard,
 }
 
 #[derive(Debug, Deserialize)]
@@ -273,15 +285,15 @@ fn instinct_for(keyword: &str) -> Instinct {
 }
 
 fn build_actor(cat: &Catalog, name: &str) -> Actor {
-    build_actor_with(cat, name, None, None)
+    build_actor_with(cat, name, &[], None)
 }
 
-/// Build an Actor from the catalog, optionally grafting an `extra` Form card (e.g. an encounter's
-/// per-level scaling, §8.4) and overriding the instinct keyword (e.g. an encounter's strategy).
+/// Build an Actor from the catalog, grafting any `extras` Form cards (e.g. an encounter's per-level
+/// scaling, §8.4, or bought Upgrades, §8.3) and optionally overriding the instinct keyword.
 fn build_actor_with(
     cat: &Catalog,
     name: &str,
-    extra: Option<&StatCard>,
+    extras: &[StatCard],
     driver_kw: Option<&str>,
 ) -> Actor {
     let c = cat
@@ -313,7 +325,7 @@ fn build_actor_with(
             ..Default::default()
         });
     }
-    if let Some(extra) = extra {
+    for extra in extras {
         form.cards.push(extra.clone());
     }
     let offense = form.offense();
@@ -359,10 +371,49 @@ pub fn build_encounter_foes(enc: &EncounterCard, level: u32) -> Vec<Actor> {
     let mut foes = Vec::new();
     for (name, count) in enc.roster(level) {
         for _ in 0..count {
-            foes.push(build_actor_with(cat, &name, Some(&scaling), strategy));
+            foes.push(build_actor_with(
+                cat,
+                &name,
+                std::slice::from_ref(&scaling),
+                strategy,
+            ));
         }
     }
     foes
+}
+
+fn upgrade<'a>(cat: &'a Catalog, name: &str) -> &'a UpgradeCard {
+    cat.upgrades
+        .iter()
+        .find(|u| u.name == name)
+        .unwrap_or_else(|| panic!("booklet has no upgrade named {name:?}"))
+}
+
+/// Build a clean-slate character (§8.5): the `base` identity plus its bought `upgrades`, each
+/// grafted onto the Form as an attachment (stats-as-deck, §8.3). The character's strength is
+/// entirely a function of the Upgrades it has bought.
+pub fn build_character(base: &str, upgrades: &[String]) -> Actor {
+    let cat = catalog();
+    let grants: Vec<StatCard> = upgrades
+        .iter()
+        .map(|u| upgrade(cat, u).grant.clone())
+        .collect();
+    build_actor_with(cat, base, &grants, None)
+}
+
+/// The price of an Upgrade (§8.3).
+pub fn upgrade_price(name: &str) -> Coins {
+    upgrade(catalog(), name).price
+}
+
+/// The Upgrade names purchasable with a given currency (one role's shop).
+pub fn upgrades_for(currency: Currency) -> Vec<String> {
+    catalog()
+        .upgrades
+        .iter()
+        .filter(|u| u.price.currency == currency)
+        .map(|u| u.name.clone())
+        .collect()
 }
 
 #[cfg(test)]
@@ -489,5 +540,15 @@ mod tests {
         assert_eq!(husk.defense.body.max, 8);
         // The encounter's strategy overrode the instinct: foes are creatures, not humans.
         assert!(l2.iter().all(|a| !a.is_human()));
+    }
+
+    #[test]
+    fn upgrades_strengthen_a_clean_slate_character() {
+        let bare = build_character("Novice", &[]);
+        let upgraded = build_character("Novice", &["Bulwark".into()]);
+        // Bulwark grants +4 body — the character is tougher only because it bought the Upgrade.
+        assert!(upgraded.defense.body.max > bare.defense.body.max);
+        assert_eq!(upgrade_price("Bulwark").currency, Currency::Iron);
+        assert!(upgrades_for(Currency::Iron).contains(&"Bulwark".to_string()));
     }
 }

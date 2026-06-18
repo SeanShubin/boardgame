@@ -33,7 +33,10 @@ pub use form::{Form, StatCard};
 pub use reference::{ReferenceScenario, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
-pub use scenarios::{Scenario, build_encounter_foes, campaign, god, tutorials, versus};
+pub use scenarios::{
+    Scenario, build_character, build_encounter_foes, campaign, god, tutorials, upgrade_price,
+    upgrades_for, versus,
+};
 pub use solver::auto_resolve;
 pub use state::{Clash, Lane, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
