@@ -78,6 +78,20 @@ Each is one lesson, algorithmic.
   blocking to avoid being overwhelmed.
 - **Versus:** hotseat lane battles (the §4 commitment system, two human sides).
 
+## Implementation status (this build)
+
+- ✅ Engine on the §4 lane system (Muster → **Assign** → Slip → Vanguard → Skirmish → Reserve),
+  same-range trade + range auto-hit (§4.2), optional 1v1 Clash module, count-adaptive.
+- ✅ **Manual lane assignment** (stacking) — offered when ≥2 lanes and ≥2 Vanguard.
+- ✅ **All seven powers wired as passive abilities** (detected by card name): Phalanx (combined
+  block), Bodyguard/Taunt (guardian lends Focus to other lanes), Blitz (free slip), Shadowstep
+  (ignore one blocker), Backstab (bonus vs a foe Reserve), Longshot (Reserve may target foe
+  Reserves). Plus the played effects: Ward/Mend/Haste/Rally/Steel/Confuse/Slow/Suppress/
+  Barrage/Dread/Cleave/Sunder/Bank.
+- ✅ Foe-side **reserve targeting matrix** enforced (heroes' Reserve fire hits the foe front;
+  Longshot or an empty front reaches foe Reserves).
+- ⬜ **Hotseat PvP lane driver** — TODO. Versus currently holds 1v1 Clash duels as a placeholder.
+
 ## Implementation notes (what the engine must do)
 
 - Actor gains an **attack profile** (melee/ranged/both/neither) and a declared **role

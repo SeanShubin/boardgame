@@ -27,6 +27,8 @@ pub enum Phase {
     Menu(Menu),
     /// Assign each hero to the Vanguard or the Reserve, then deploy.
     Muster,
+    /// Place each Vanguard hero into a specific lane (stacking is the choice, §4).
+    Assign,
     /// Each Vanguard hero chooses to hold its lane or slip past (→ Skirmisher).
     Slip,
     /// Skirmishers pick targets.
@@ -71,6 +73,8 @@ pub struct Round {
     pub foe_skirmisher: Vec<bool>,
     /// Heroes who have already acted in the current target phase (Skirmish / Reserve).
     pub hero_acted: Vec<bool>,
+    /// Vanguard heroes still awaiting a lane during the Assign phase.
+    pub assign_queue: Vec<usize>,
     /// True once the deterministic-base trade is replaced by the interactive Clash module.
     pub clash_mode: bool,
 }
@@ -85,6 +89,7 @@ impl Round {
             hero_skirmisher: vec![false; heroes],
             foe_skirmisher: vec![false; foes],
             hero_acted: vec![false; heroes],
+            assign_queue: Vec::new(),
             clash_mode: false,
         }
     }

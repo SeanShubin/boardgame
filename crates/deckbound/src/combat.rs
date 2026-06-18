@@ -139,15 +139,18 @@ pub fn play_card(
                 }
             }
             Effect::Ward => {
-                // Grant a melee attack to an ally for the round (lets a caster self-defend, §4.2).
-                if let Some(t) = allies
+                // Grant a melee guard to a melee-less ally so it can self-defend (§4.2).
+                use crate::actor::Attack;
+                if let Some((_, t)) = allies
                     .iter_mut()
                     .enumerate()
                     .filter(|(i, a)| !a.is_down() && Some(*i) != self_idx)
-                    .map(|(_, a)| a)
-                    .find(|a| a.attack == crate::actor::Attack::Neither)
+                    .find(|(_, a)| matches!(a.attack, Attack::Ranged | Attack::Neither))
                 {
-                    t.attack = crate::actor::Attack::Melee;
+                    t.attack = match t.attack {
+                        Attack::Ranged => Attack::Both,
+                        _ => Attack::Melee,
+                    };
                     log.push(format!("  wards {} (gains a melee guard).", t.name));
                 }
             }

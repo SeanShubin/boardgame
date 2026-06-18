@@ -70,6 +70,10 @@ pub struct Card {
     pub reach: [u32; 2],
     #[serde(default)]
     pub lifecycle: Lifecycle,
+    /// A passive ability (a §4 power detected by name) rather than a played effect card.
+    #[serde(default)]
+    pub passive: bool,
+    #[serde(default)]
     pub effects: Vec<Effect>,
 }
 
@@ -133,6 +137,7 @@ mod tests {
             targets: 5,
             reach: [2, 2],
             lifecycle: Lifecycle::Fleeting,
+            passive: false,
             effects: vec![Effect::Damage {
                 power: 5,
                 dtype: DamageType::Heat,

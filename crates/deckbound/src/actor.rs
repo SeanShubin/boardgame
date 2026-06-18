@@ -179,6 +179,11 @@ impl Actor {
         self.attack.has(range)
     }
 
+    /// Does this Actor carry the named power card (a passive ability, §4 powers)?
+    pub fn has(&self, card: &str) -> bool {
+        self.actions.iter().any(|c| c.name == card)
+    }
+
     /// Refresh tempo & focus and clear round-scoped defense state.
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
