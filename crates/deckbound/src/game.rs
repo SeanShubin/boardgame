@@ -1267,7 +1267,16 @@ fn scenario_zone(menu: Menu) -> ZoneView {
             .iter()
             .enumerate()
             .map(|(i, s)| {
+                // The combat-mode tell, driven from the same flag the engine switches on.
+                let mode = if s.clash {
+                    "Clash duel · RPS"
+                } else if s.pvp {
+                    "Lane battle · PvP"
+                } else {
+                    "Lane battle"
+                };
                 CardView::up(s.name.clone())
+                    .typed(mode)
                     .body(wrap(&s.blurb, 22, 7))
                     .action(i)
             })

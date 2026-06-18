@@ -136,18 +136,18 @@ Catalog(
         ScenarioCard( name: "4. Lanes & Concentration", blurb: "Commit Vanguard and stack a lane to overwhelm the wall. An even spread loses the stacked lane.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "5. Slip & Wall", blurb: "Slip past a thin wall to become a Skirmisher (Tempo), or hold to block (Focus). Overwhelm Focus to get through.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Wall its lane or the Raider assassinates it.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
-        ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "(Clash module) Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
-        ScenarioCard( name: "C2. Read the Lead", blurb: "(Clash module) Bron leads every blow (Anticipate). Strike or Gather; never Evade.", heroes: ["Vael"], foes: ["Bron"], clash: true ),
-        ScenarioCard( name: "C3. Catch the Dodger", blurb: "(Clash module) Hollow dodges and counters. Anticipate beats Evade; never Strike a dodger.", heroes: ["Vael"], foes: ["Hollow"], clash: true ),
-        ScenarioCard( name: "C4. Survive the Brawler", blurb: "(Clash module) Maw swings every beat. Evade beats Strike, then trade to win.", heroes: ["Vael"], foes: ["Maw"], clash: true ),
-        ScenarioCard( name: "C5. The Feint", blurb: "(Clash module) Rage mixes Strike and Anticipate — your first real read.", heroes: ["Vael"], foes: ["Rage"], clash: true ),
-        ScenarioCard( name: "C6. The Duelist", blurb: "(Clash module) Sable plays the whole kit. The full mind-game.", heroes: ["Vael"], foes: ["Sable"], clash: true ),
+        ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
+        ScenarioCard( name: "C2. Read the Lead", blurb: "Bron leads every blow (Anticipate). Strike or Gather; never Evade.", heroes: ["Vael"], foes: ["Bron"], clash: true ),
+        ScenarioCard( name: "C3. Catch the Dodger", blurb: "Hollow dodges and counters. Anticipate beats Evade; never Strike a dodger.", heroes: ["Vael"], foes: ["Hollow"], clash: true ),
+        ScenarioCard( name: "C4. Survive the Brawler", blurb: "Maw swings every beat. Evade beats Strike, then trade to win.", heroes: ["Vael"], foes: ["Maw"], clash: true ),
+        ScenarioCard( name: "C5. The Feint", blurb: "Rage mixes Strike and Anticipate — your first real read.", heroes: ["Vael"], foes: ["Rage"], clash: true ),
+        ScenarioCard( name: "C6. The Duelist", blurb: "Sable plays the whole kit. The full mind-game.", heroes: ["Vael"], foes: ["Sable"], clash: true ),
     ],
     versus: [
         // Hotseat PvP lane battles — both sides human, pass-and-play, hidden commit per phase.
         ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Muster, assign, slip, target — pass the device each phase; neither side sees the other's commit until it resolves.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
         ScenarioCard( name: "Skirmish Line (2v2)", blurb: "A melee fighter and an archer a side — wall or slip, fire or guard.", heroes: ["Recruit", "Archer"], foes: ["Recruit", "Archer"], pvp: true ),
         // A 1v1 Clash duel vs the AI, for the optional mix-up module.
-        ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up (Clash module).", heroes: ["Vael"], foes: ["Pell"], clash: true ),
+        ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
     ],
 )
