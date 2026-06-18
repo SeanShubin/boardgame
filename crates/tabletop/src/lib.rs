@@ -995,7 +995,12 @@ fn spawn_card_face(
                 width: Val::Px(CARD_W),
                 height: Val::Px(CARD_H),
                 flex_direction: FlexDirection::Column,
-                overflow: Overflow::clip(),
+                // No `overflow: clip` here: the clip rect is built from the
+                // node's *unscaled* layout size, so on the hover-scale it would
+                // crop the children (most visibly the title bar at the top
+                // edge) to the original rectangle while the card frame grows.
+                // Corner rounding comes from `border_radius`, not the clip, so
+                // dropping it costs nothing for these fixed-size cards.
                 border: UiRect::all(Val::Px(CARD_BORDER)),
                 border_radius: BorderRadius::all(Val::Px(CARD_RADIUS)),
                 ..default()
