@@ -105,6 +105,14 @@ pub trait Game: Send + Sync + 'static {
         None
     }
 
+    /// A coarse **nesting depth** for the current context — e.g. a menu (0) sits under a world map
+    /// (1) sits under a battle on it (2). A presentation layer's "back / forward a level" undoes (or
+    /// redoes) actions until this value changes, so one keystroke crosses a whole nested context
+    /// instead of stepping through it. Defaults to 0 (a flat game with no nesting).
+    fn nav_level(&self, _state: &Self::State) -> u32 {
+        0
+    }
+
     /// The **guide's recommended** next action — an on-script suggestion a presentation layer can
     /// highlight (and detect deviation from). `None` = no guidance. Defaults to `None`.
     fn suggest(&self, _state: &Self::State) -> Option<Self::Action> {

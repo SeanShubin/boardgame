@@ -3,7 +3,7 @@
 //!
 //! An `engine::Game` that **embeds** the combat game ([`battle_state`]) and folds its result back
 //! into the run. A `suggest()` **guide** walks the reference scenario's scripted path
-//! (A → B[p] → C[p] → final), so the UI can highlight the next on-script move and detect deviation.
+//! (A → B[p] → C[p] → final), so the UI can highlight the next on-script move.
 //!
 //! Tokens are general (each holds ≥1 member): this scenario uses **one token = the whole party**
 //! (move/fight together); a future scenario can use one token per member (split up) with no rewrite.
@@ -84,6 +84,9 @@ pub enum CampAction {
     EndDay,
     /// A combat action, delegated to the embedded battle.
     Battle(game::Action),
+    /// Deliberately give up the current battle (forfeit): the token has acted, no clear. Distinct
+    /// from undoing the `Enter` (which reverses the fight as if it never happened).
+    Retreat,
 }
 
 /// The campaign ruleset (holds no state).
@@ -244,11 +247,14 @@ impl Game for Campaign {
             let Some(battle) = &s.battle else {
                 return Vec::new();
             };
-            return Deckbound
+            let mut a: Vec<CampAction> = Deckbound
                 .legal_actions(battle)
                 .into_iter()
                 .map(CampAction::Battle)
                 .collect();
+            // A deliberate forfeit, alongside the combat choices.
+            a.push(CampAction::Retreat);
+            return a;
         }
         let mut a = Vec::new();
         let t = 0;
@@ -287,6 +293,7 @@ impl Game for Campaign {
             CampAction::Buy(m, up) => format!("{}: buy {up}", s.party[*m].name),
             CampAction::EndDay => "End the day".into(),
             CampAction::Battle(b) => Deckbound.action_label(s.battle.as_ref().unwrap(), b),
+            CampAction::Retreat => "Retreat (forfeit this fight)".into(),
         }
     }
 
@@ -335,6 +342,13 @@ impl Game for Campaign {
                 }
                 Ok(())
             }
+            CampAction::Retreat => {
+                if s.phase != CampPhase::Battle {
+                    return Err(GameError::new("not in a battle"));
+                }
+                self.resolve_battle(s, false);
+                Ok(())
+            }
         }
     }
 
@@ -348,6 +362,13 @@ impl Game for Campaign {
 
     fn is_suggested(&self, s: &CampaignState, a: &CampAction) -> bool {
         self.guide(s).as_ref() == Some(a)
+    }
+
+    fn nav_level(&self, s: &CampaignState) -> u32 {
+        match s.phase {
+            CampPhase::World => 0,
+            CampPhase::Battle => 1,
+        }
     }
 
     fn view(&self, s: &CampaignState, perspective: Option<PlayerId>) -> TableView {
@@ -505,5 +526,50 @@ mod tests {
             &s.log[s.log.len().saturating_sub(6)..]
         );
         println!("reference run par (guided): {} days", s.run.day + 1);
+    }
+
+    #[test]
+    fn retreat_forfeits_the_battle_without_clearing() {
+        // Retreat is the deliberate, consequential exit (token has acted, no clear) — distinct from
+        // undoing the Enter. Start a fight, then retreat, and check the fold-back.
+        let game = Campaign;
+        let mut s = reference_campaign();
+        let enter = game
+            .legal_actions(&s)
+            .into_iter()
+            .find(|a| matches!(a, CampAction::Enter(..)))
+            .or_else(|| {
+                // Not standing on an enterable tile — move onto one first.
+                let mv = game
+                    .legal_actions(&s)
+                    .into_iter()
+                    .find(|a| matches!(a, CampAction::Move(..)))
+                    .expect("a move is available");
+                game.apply(&mut s, &mv).unwrap();
+                game.legal_actions(&s)
+                    .into_iter()
+                    .find(|a| matches!(a, CampAction::Enter(..)))
+            })
+            .expect("a battle can be entered");
+        let CampAction::Enter(_, loc) = enter else {
+            unreachable!()
+        };
+        game.apply(&mut s, &enter).unwrap();
+        assert_eq!(s.phase, CampPhase::Battle);
+        let cleared_before = s.run.cleared[loc];
+
+        // Retreat is offered alongside the combat actions, and folds the battle back as a forfeit.
+        assert!(game.legal_actions(&s).contains(&CampAction::Retreat));
+        game.apply(&mut s, &CampAction::Retreat).unwrap();
+        assert_eq!(s.phase, CampPhase::World);
+        assert!(s.battle.is_none());
+        assert_eq!(
+            s.run.cleared[loc], cleared_before,
+            "a retreat clears nothing"
+        );
+        assert!(
+            s.tokens[0].acted,
+            "a retreat spends the token's action for the day"
+        );
     }
 }

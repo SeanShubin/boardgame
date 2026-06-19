@@ -3,10 +3,11 @@
 //! [`TabletopPlugin`] is generic over the game. It holds the game's rules, runs
 //! a fresh match, renders the game's [`TableView`](engine::TableView), and
 //! offers the current player's legal actions as buttons. Clicking a button
-//! applies that action and the table redraws; Escape (or Backspace) applies the
-//! game's [`cancel_action`](engine::Game::cancel_action) to rewind a multi-step
-//! choice. Because the plugin only ever talks to the [`engine::Game`] trait, it
-//! never needs to know which game it is showing.
+//! applies that action and the table redraws. History is one time axis: Escape
+//! (or the Back button) steps back a whole level, Forward redoes it, and `Z` /
+//! `Y` step one action — all non-destructive (see [`history_controls`]). Because
+//! the plugin only ever talks to the [`engine::Game`] trait, it never needs to
+//! know which game it is showing.
 //!
 //! Cards are drawn collectible-card-game style — a title bar, a type line, a
 //! body of stat / rules lines, and a corner badge — coloured by the card's
@@ -74,11 +75,10 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             )
             .add_observer(on_scroll_handler)
             .add_systems(Update, (adjust_zoom, send_scroll_events))
-            // After `cancel_on_key` so that while the overlay is open it sees
-            // `HelpVisible` still set, bows out of rewinding, and lets this
-            // system consume Esc as "close help" instead.
-            .add_systems(Update, toggle_help.after(cancel_on_key::<G>))
-            .add_systems(Update, toggle_rules.after(cancel_on_key::<G>))
+            // After `history_controls` so that while an overlay is open that system sees the overlay
+            // flag set, bows out of Esc, and lets these consume Esc as "close the overlay" instead.
+            .add_systems(Update, toggle_help.after(history_controls::<G>))
+            .add_systems(Update, toggle_rules.after(history_controls::<G>))
             // Type-to-search the encyclopedia: capture keys into `RulesQuery`, then
             // rebuild the filtered entry list when the query (or visibility) changes.
             .add_systems(
@@ -97,7 +97,6 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                 Update,
                 (
                     apply_clicked_action::<G>,
-                    cancel_on_key::<G>,
                     history_controls::<G>,
                     save_load::<G>,
                     quit_if_requested::<G>,
@@ -120,23 +119,25 @@ struct StateRes<G: Game>(G::State);
 #[derive(Resource)]
 struct NeedsRedraw(bool);
 
-/// The session's history, two ways:
+/// The session's history as a single time axis — the past, plus an undone future for redo.
 ///
-/// - `actions` is the **event source** — the canonical, replayable record. With the seed, it
-///   reconstructs any state (every game is a deterministic fold of actions), and it's what
-///   [`save_load`] serializes to a text file.
-/// - `states` is a **snapshot cache** parallel to `actions`, so undo is O(1) (pop, don't replay).
-///   Each `states[i]` is the state *before* `actions[i]`.
+/// - `actions` is the **event source**: the canonical, replayable record. With the seed it
+///   reconstructs any state (every game is a deterministic fold of actions over the seed), and it's
+///   what [`save_load`] serializes. `states[i]` is a snapshot of the state *before* `actions[i]`, a
+///   parallel cache so stepping back is O(1) (pop, don't replay).
+/// - `redo` is the **future** you've undone into: each entry is `(state-after, action)`, top of the
+///   stack = the next thing a redo re-applies. Taking any *new* action clears it (you've branched).
 ///
-/// `deviation` marks the index to restore for "rewind to the guide" — the first action that went
-/// off the guide's suggestion (`None` when on-script or unguided).
+/// "Back / forward a level" is just undo / redo repeated until [`Game::nav_level`] crosses a
+/// boundary — same axis, coarser grain. Nothing is ever lost until you branch, which is what makes
+/// backing out of a battle and jumping right back in safe.
 #[derive(Resource)]
 struct History<G: Game> {
     seed: u64,
     players: usize,
     states: Vec<G::State>,
     actions: Vec<G::Action>,
-    deviation: Option<usize>,
+    redo: Vec<(G::State, G::Action)>,
 }
 
 impl<G: Game + Clone> History<G> {
@@ -146,44 +147,32 @@ impl<G: Game + Clone> History<G> {
             players,
             states: Vec::new(),
             actions: Vec::new(),
-            deviation: None,
+            redo: Vec::new(),
         }
     }
 
-    /// Record an applied step: the pre-action `prev` state and the `action` that advanced it.
+    /// Record a newly applied step (pre-action `prev` + the `action`). A new action branches the
+    /// timeline, so the undone future is discarded.
     fn push(&mut self, prev: G::State, action: G::Action) {
         self.states.push(prev);
         self.actions.push(action);
+        self.redo.clear();
     }
 
-    /// Track the guide deviation for the step just [`push`](Self::push)ed: clear it while on-script,
-    /// else mark this as the first off-script step. Only called when a guide is actually active.
-    fn mark_deviation(&mut self, on_script: bool) {
-        let idx = self.actions.len().saturating_sub(1);
-        if on_script {
-            self.deviation = None;
-        } else if self.deviation.is_none() {
-            self.deviation = Some(idx);
-        }
-    }
-
-    /// Undo one step: drop the last action and return the state it advanced from.
-    fn undo(&mut self) -> Option<G::State> {
+    /// Step back one action. `current` is the live (post-action) state, kept so it can be redone.
+    fn undo(&mut self, current: G::State) -> Option<G::State> {
         let prev = self.states.pop()?;
-        self.actions.pop();
-        if self.deviation.is_some_and(|d| d >= self.states.len()) {
-            self.deviation = None;
-        }
+        let action = self.actions.pop()?;
+        self.redo.push((current, action));
         Some(prev)
     }
 
-    /// Rewind to just before the last off-guide step, dropping everything since.
-    fn rewind_to_deviation(&mut self) -> Option<G::State> {
-        let d = self.deviation.take()?;
-        let prev = self.states.get(d)?.clone();
-        self.states.truncate(d);
-        self.actions.truncate(d);
-        Some(prev)
+    /// Step forward one action. `current` is the live (pre-action) state, recorded back as the past.
+    fn redo(&mut self, current: G::State) -> Option<G::State> {
+        let (after, action) = self.redo.pop()?;
+        self.states.push(current);
+        self.actions.push(action);
+        Some(after)
     }
 }
 
@@ -252,13 +241,13 @@ struct HelpHint;
 #[derive(Component)]
 struct ActionButton(usize);
 
-/// The **Back** button: undo the last step (history, not a game action).
+/// The **Back** button: step back a whole level (undo to the previous nesting boundary).
 #[derive(Component)]
 struct BackButton;
 
-/// The **rewind-to-guide** button: jump back to just before the last deviation from the guide.
+/// The **Forward** button: step forward a whole level (redo to the next nesting boundary).
 #[derive(Component)]
-struct RewindButton;
+struct ForwardButton;
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
@@ -297,75 +286,119 @@ fn apply_clicked_action<G: Game + Clone>(
         // index captured when the button was built is still valid here.
         let actions = game.0.legal_actions(&state.0);
         if let Some(action) = actions.get(button.0).cloned() {
-            // Deviation only means something when a guide is offering a suggestion (the campaign);
-            // outside that, every move is "free" and shouldn't mark a rewind point.
-            let guiding = game.0.suggest(&state.0).is_some();
-            let on_script = guiding && game.0.is_suggested(&state.0, &action);
             let snapshot = state.0.clone();
             if game.0.apply(&mut state.0, &action).is_ok() {
                 history.push(snapshot, action);
-                if guiding {
-                    history.mark_deviation(on_script);
-                }
                 redraw.0 = true;
             }
         }
     }
 }
 
-/// Undo (the **Back** button or `Z`) steps back one move; the **rewind-to-guide** button jumps back
-/// to just before the last deviation from the guide. (`R` is taken by the rules overlay, so the
-/// deviation rewind is button-only.)
+/// Step back one action along the history (returns whether anything changed).
+fn step_back<G: Game + Clone>(state: &mut G::State, history: &mut History<G>) -> bool {
+    match history.undo(state.clone()) {
+        Some(prev) => {
+            *state = prev;
+            true
+        }
+        None => false,
+    }
+}
+
+/// Step forward one action (redo).
+fn step_forward<G: Game + Clone>(state: &mut G::State, history: &mut History<G>) -> bool {
+    match history.redo(state.clone()) {
+        Some(after) => {
+            *state = after;
+            true
+        }
+        None => false,
+    }
+}
+
+/// Back a whole level: undo until [`Game::nav_level`] drops below where we started, so one keystroke
+/// exits a battle. At the top level (0) there is nothing to drop below, so it's a single step.
+/// Everything undone lands on the redo stack, so it's recoverable.
+fn back_a_level<G: Game + Clone>(game: &G, state: &mut G::State, history: &mut History<G>) -> bool {
+    let start = game.nav_level(state);
+    if !step_back(state, history) {
+        return false;
+    }
+    if start > 0 {
+        while game.nav_level(state) >= start && step_back(state, history) {}
+    }
+    true
+}
+
+/// Forward a whole level: replay the chunk you backed out of, so you land *right where you were*
+/// (re-enter a battle and redo every move in it), not merely at its entrance. Redoes until the redo
+/// stack runs out, or — having gone deeper — a step would return to the start level (that overshoot
+/// is rolled back).
+fn forward_a_level<G: Game + Clone>(
+    game: &G,
+    state: &mut G::State,
+    history: &mut History<G>,
+) -> bool {
+    let start = game.nav_level(state);
+    if !step_forward(state, history) {
+        return false;
+    }
+    let mut deepened = game.nav_level(state) > start;
+    while step_forward(state, history) {
+        let level = game.nav_level(state);
+        if level > start {
+            deepened = true;
+        } else if deepened {
+            // We came back up to the start level after a deeper excursion — undo that step and stop.
+            step_back(state, history);
+            break;
+        }
+    }
+    true
+}
+
+/// The history controls, all on one time axis:
+/// - **Back a level** (Esc / the Back button) and **Forward a level** (the Forward button) cross a
+///   whole nesting boundary at once.
+/// - **`Z` / Backspace** step back one action; **`Y`** steps one forward — the fine-grained tools.
+///
+/// Redo makes it non-destructive: back out of a battle and jump right back in, nothing lost (until a
+/// *new* action branches the timeline).
 #[allow(clippy::too_many_arguments)]
 fn history_controls<G: Game + Clone>(
     keys: Res<ButtonInput<KeyCode>>,
     help: Res<HelpVisible>,
     rules: Res<RulesVisible>,
+    game: Res<GameRes<G>>,
     back_buttons: Query<&Interaction, (Changed<Interaction>, With<BackButton>)>,
-    rewind_buttons: Query<&Interaction, (Changed<Interaction>, With<RewindButton>)>,
+    forward_buttons: Query<&Interaction, (Changed<Interaction>, With<ForwardButton>)>,
     mut state: ResMut<StateRes<G>>,
     mut history: ResMut<History<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
     let overlay = help.0 || rules.0;
-    let back = (!overlay && keys.just_pressed(KeyCode::KeyZ))
-        || back_buttons.iter().any(|i| *i == Interaction::Pressed);
-    if back && let Some(prev) = history.undo() {
-        state.0 = prev;
-        redraw.0 = true;
-    }
-    if rewind_buttons.iter().any(|i| *i == Interaction::Pressed)
-        && let Some(prev) = history.rewind_to_deviation()
-    {
-        state.0 = prev;
-        redraw.0 = true;
-    }
-}
+    let back_pressed = back_buttons.iter().any(|i| *i == Interaction::Pressed);
+    let forward_pressed = forward_buttons.iter().any(|i| *i == Interaction::Pressed);
+    let mut changed = false;
 
-/// Escape / Backspace rewind one step of a multi-step decision.
-fn cancel_on_key<G: Game + Clone>(
-    keys: Res<ButtonInput<KeyCode>>,
-    help: Res<HelpVisible>,
-    rules: Res<RulesVisible>,
-    game: Res<GameRes<G>>,
-    mut state: ResMut<StateRes<G>>,
-    mut history: ResMut<History<G>>,
-    mut redraw: ResMut<NeedsRedraw>,
-) {
-    // While an overlay is up, Esc closes it (handled by `toggle_help` / `toggle_rules`)
-    // rather than rewinding a game step.
-    if help.0 || rules.0 {
-        return;
+    // Coarse: a whole level (Esc and the Back / Forward buttons).
+    if (!overlay && keys.just_pressed(KeyCode::Escape)) || back_pressed {
+        changed |= back_a_level(&game.0, &mut state.0, &mut history);
     }
-    if (keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace))
-        && let Some(action) = game.0.cancel_action(&state.0)
-    {
-        // Record the cancel as a step too, so Back / undo can step over it like any other action.
-        let snapshot = state.0.clone();
-        if game.0.apply(&mut state.0, &action).is_ok() {
-            history.push(snapshot, action);
-            redraw.0 = true;
-        }
+    if forward_pressed {
+        changed |= forward_a_level(&game.0, &mut state.0, &mut history);
+    }
+    // Fine: one step (keyboard only).
+    if !overlay && (keys.just_pressed(KeyCode::KeyZ) || keys.just_pressed(KeyCode::Backspace)) {
+        changed |= step_back(&mut state.0, &mut history);
+    }
+    if !overlay && keys.just_pressed(KeyCode::KeyY) {
+        changed |= step_forward(&mut state.0, &mut history);
+    }
+
+    if changed {
+        redraw.0 = true;
     }
 }
 
@@ -485,7 +518,7 @@ fn adjust_zoom(keys: Res<ButtonInput<KeyCode>>, mut ui_scale: ResMut<UiScale>) {
 }
 
 /// Show / hide the help overlay. `?` (or `F1`) toggles it; `Esc` only ever
-/// closes it (never opens it, so Esc stays free to rewind a move when no help
+/// closes it (never opens it, so Esc stays free to back a level when no help
 /// is showing). The hint is hidden while the overlay is up to avoid showing
 /// both at once.
 fn toggle_help(
@@ -914,15 +947,15 @@ fn redraw<G: Game + Clone>(
 
     let controls = TableControls {
         can_back: !history.states.is_empty(),
-        can_rewind: history.deviation.is_some(),
+        can_forward: !history.redo.is_empty(),
     };
     build_table(&mut commands, &view, &buttons, controls);
 }
 
-/// What history controls to surface this redraw (the Back / rewind-to-guide buttons).
+/// What history controls to surface this redraw (the Back / Forward buttons).
 struct TableControls {
     can_back: bool,
-    can_rewind: bool,
+    can_forward: bool,
 }
 
 // ---- type scale ---------------------------------------------------------
@@ -949,7 +982,7 @@ const CARD_BORDER: f32 = 2.0;
 const BADGE: Color = Color::srgb(0.14, 0.14, 0.18);
 const TITLE_INK: Color = Color::srgb(0.97, 0.97, 0.98);
 const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
-/// Meta-control buttons (Back / rewind) — muted, so they read apart from the game's action buttons.
+/// Meta-control buttons (Back / Forward) — muted, so they read apart from the game's action buttons.
 const CONTROL_BUTTON: Color = Color::srgb(0.16, 0.22, 0.26);
 /// Dim wash drawn behind the help overlay so it reads as a modal layer.
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.6);
@@ -1328,13 +1361,13 @@ fn build_table(
                 BackgroundColor(PANEL),
             ))
             .with_children(|left| {
-                // History controls sit above the choices: Back undoes a step, and (in a guided run
-                // that's been deviated from) a rewind jumps back to the guide's path.
+                // History controls sit above the choices: Back / Forward move a whole level along
+                // the timeline (out of a battle and right back in), non-destructively.
                 if controls.can_back {
                     spawn_control_button(left, BackButton, "\u{25C0} Back");
                 }
-                if controls.can_rewind {
-                    spawn_control_button(left, RewindButton, "\u{23EE} Rewind to the guide");
+                if controls.can_forward {
+                    spawn_control_button(left, ForwardButton, "Forward \u{25B6}");
                 }
                 left.spawn((
                     Text::new("Choose an action"),
@@ -1960,15 +1993,20 @@ fn spawn_card_face(
 
 /// The controls advertised in the help overlay, as `(keys, description)`. Keep
 /// in sync with the keys handled in `adjust_zoom`, `toggle_help`,
-/// `cancel_on_key`, `history_controls`, `save_load`, and `toggle_mute`.
+/// `history_controls`, `save_load`, and `toggle_mute`.
 const CONTROLS: &[(&str, &str)] = &[
     ("= / +", "Zoom in"),
     ("\u{2212}", "Zoom out"),
     ("0", "Reset zoom"),
     ("Mouse wheel", "Scroll the board / action list"),
     ("M", "Mute / unmute sound"),
-    ("Esc / Backspace", "Cancel \u{2013} go back a step"),
-    ("Z / Back", "Undo the last step"),
+    (
+        "Esc / \u{25C0} Back",
+        "Back a level (out of a battle / menu)",
+    ),
+    ("\u{25B6} Forward", "Forward a level (jump back in)"),
+    ("Z / Backspace", "Undo one step"),
+    ("Y", "Redo one step"),
     ("F5 / F9", "Save / load the run"),
     ("? / F1", "Toggle this help"),
     ("R", "Toggle the rules reference"),
@@ -2134,7 +2172,7 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
         });
 }
 
-/// A meta-control button (Back / rewind) — styled apart from the game's action buttons (muted, no
+/// A meta-control button (Back / Forward) — styled apart from the game's action buttons (muted, no
 /// drop-shadow) so it reads as "navigate history", not "make a move". `marker` is the component the
 /// history system watches (e.g. [`BackButton`]).
 fn spawn_control_button(parent: &mut ChildSpawnerCommands, marker: impl Bundle, label: &str) {
@@ -2163,4 +2201,109 @@ fn spawn_control_button(parent: &mut ChildSpawnerCommands, marker: impl Bundle, 
                 TextColor(MUTED_INK),
             ));
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use engine::{GameError, Outcome, PlayerId};
+
+    /// A toy game whose state is a stack of nesting levels and whose action pushes the next level,
+    /// so `nav_level` is the top of the stack — enough to drive back / forward a level directly.
+    #[derive(Clone)]
+    struct Levels;
+
+    impl Game for Levels {
+        type State = Vec<u32>;
+        type Action = u32;
+        fn new_game(&self, _seed: u64, _players: usize) -> Vec<u32> {
+            vec![0]
+        }
+        fn current_player(&self, _: &Vec<u32>) -> Option<PlayerId> {
+            Some(PlayerId(0))
+        }
+        fn legal_actions(&self, _: &Vec<u32>) -> Vec<u32> {
+            Vec::new()
+        }
+        fn action_label(&self, _: &Vec<u32>, _: &u32) -> String {
+            String::new()
+        }
+        fn apply(&self, s: &mut Vec<u32>, a: &u32) -> Result<(), GameError> {
+            s.push(*a);
+            Ok(())
+        }
+        fn outcome(&self, _: &Vec<u32>) -> Option<Outcome> {
+            None
+        }
+        fn view(&self, _: &Vec<u32>, _: Option<PlayerId>) -> TableView {
+            TableView {
+                status: String::new(),
+                zones: Vec::new(),
+                prose: Vec::new(),
+                map: None,
+            }
+        }
+        fn nav_level(&self, s: &Vec<u32>) -> u32 {
+            *s.last().unwrap_or(&0)
+        }
+    }
+
+    /// Apply `a` and record it, the way `apply_clicked_action` does.
+    fn record(s: &mut Vec<u32>, h: &mut History<Levels>, a: u32) {
+        let snap = s.clone();
+        s.push(a);
+        h.push(snap, a);
+    }
+
+    #[test]
+    fn back_a_level_exits_and_forward_returns_to_where_you_were() {
+        let game = Levels;
+        let mut h = History::<Levels>::new(0, 1);
+        let mut s = game.new_game(0, 1); // [0] — menu, level 0
+        record(&mut s, &mut h, 1); // enter the world (level 1)
+        record(&mut s, &mut h, 1); // a world step
+        record(&mut s, &mut h, 2); // enter a battle (level 2)
+        record(&mut s, &mut h, 2); // combat
+        record(&mut s, &mut h, 2); // combat
+        let deep = s.clone();
+        assert_eq!(game.nav_level(&s), 2);
+
+        // Back a level exits the whole battle to the world in one go.
+        assert!(back_a_level(&game, &mut s, &mut h));
+        assert_eq!(game.nav_level(&s), 1);
+        assert_eq!(s, vec![0, 1, 1]);
+
+        // Forward a level replays the battle, landing right back where we were.
+        assert!(forward_a_level(&game, &mut s, &mut h));
+        assert_eq!(s, deep);
+    }
+
+    #[test]
+    fn back_a_level_at_the_top_is_a_single_step() {
+        let game = Levels;
+        let mut h = History::<Levels>::new(0, 1);
+        let mut s = game.new_game(0, 1); // [0]
+        record(&mut s, &mut h, 0); // same-level (menu) navigation
+        record(&mut s, &mut h, 0);
+        assert!(back_a_level(&game, &mut s, &mut h));
+        assert_eq!(
+            s,
+            vec![0, 0],
+            "at level 0, back is just one step (no level to exit)"
+        );
+    }
+
+    #[test]
+    fn a_new_action_clears_the_redo_future() {
+        let game = Levels;
+        let mut h = History::<Levels>::new(0, 1);
+        let mut s = game.new_game(0, 1);
+        record(&mut s, &mut h, 1);
+        record(&mut s, &mut h, 2);
+        assert!(step_back(&mut s, &mut h));
+        assert!(!h.redo.is_empty(), "the undone step is redoable");
+        record(&mut s, &mut h, 5); // a new action branches the timeline
+        assert!(h.redo.is_empty(), "branching clears the redo future");
+        assert!(!step_forward(&mut s, &mut h), "nothing left to redo");
+    }
 }

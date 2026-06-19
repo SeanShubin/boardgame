@@ -10,7 +10,7 @@ use engine::{
 };
 
 use crate::actor::{Actor, Range};
-use crate::campaign::{Campaign, reference_campaign};
+use crate::campaign::{CampPhase, Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
@@ -1317,6 +1317,21 @@ impl Game for Deckbound {
             Phase::Menu(Menu::Top) => None,
             Phase::Menu(_) => Some(Action::Back),
             _ => Some(Action::ToMenu),
+        }
+    }
+
+    fn nav_level(&self, state: &State) -> u32 {
+        // The renderer's "back / forward a level" undoes / redoes to these boundaries: menu (0) <
+        // a combat scenario or the campaign world (1) < a battle inside the campaign (2).
+        if let Some(camp) = &state.campaign {
+            return match camp.phase {
+                CampPhase::World => 1,
+                CampPhase::Battle => 2,
+            };
+        }
+        match state.phase {
+            Phase::Menu(_) => 0,
+            _ => 1,
         }
     }
 
