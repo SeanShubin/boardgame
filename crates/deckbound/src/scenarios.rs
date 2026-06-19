@@ -1,6 +1,7 @@
 //! The booklet: loads cards, traits, actors, and scenarios from `data/booklet.ron` and
 //! builds [`Actor`]s. All numbers live in data so they retune without recompiling the engine.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
@@ -25,6 +26,13 @@ struct Catalog {
     versus: Vec<ScenarioCard>,
     #[serde(default)]
     upgrades: Vec<UpgradeCard>,
+    /// Flavor for the enum content that has no data row of its own (§8.3 currencies): the prose is
+    /// keyed by the `Currency` itself, so code references only the key and the text stays in data.
+    #[serde(default)]
+    currency_flavor: HashMap<Currency, String>,
+    /// Flavor for the §4 combat roles, keyed by the role string actors carry (`role: "Wall"`).
+    #[serde(default)]
+    role_flavor: HashMap<String, String>,
 }
 
 /// A purchasable Upgrade (§8.3): a `price` in one currency, and a `grant` (Form attachment, the
@@ -34,11 +42,15 @@ struct UpgradeCard {
     name: String,
     price: Coins,
     grant: StatCard,
+    #[serde(default)]
+    flavor: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct TraitCard {
     name: String,
+    #[serde(default)]
+    flavor: String,
     #[serde(default)]
     armor: Vec<(DamageType, u32)>,
     #[serde(default)]
@@ -62,6 +74,8 @@ fn melee() -> Attack {
 struct ActorCard {
     name: String,
     role: String,
+    #[serde(default)]
+    flavor: String,
     /// "hero" (human) or a creature instinct keyword (brute / aggressor / charger / …).
     driver: String,
     /// The fundamental Form card (stats-as-deck, §2.3/§4.3): the actor's base stat block.
@@ -86,6 +100,8 @@ struct ActorCard {
 struct ScenarioCard {
     name: String,
     blurb: String,
+    #[serde(default)]
+    flavor: String,
     heroes: Vec<String>,
     foes: Vec<String>,
     /// Use the optional four-card Clash module for same-range duels (else deterministic trade).
@@ -101,6 +117,8 @@ struct ScenarioCard {
 pub struct Scenario {
     pub name: String,
     pub blurb: String,
+    /// Evocative in-world flavor (prose), distinct from the tactical `blurb`.
+    pub flavor: String,
     /// Whether this scenario runs the optional Clash module.
     pub clash: bool,
     /// Whether this scenario is a hotseat PvP battle (both sides human).
@@ -246,6 +264,7 @@ fn scenario_from(card: &ScenarioCard) -> Scenario {
     Scenario {
         name: card.name.clone(),
         blurb: card.blurb.clone(),
+        flavor: card.flavor.clone(),
         clash: card.clash,
         pvp: card.pvp,
         heroes: card.heroes.clone(),
@@ -414,6 +433,68 @@ pub fn upgrades_for(currency: Currency) -> Vec<String> {
         .filter(|u| u.price.currency == currency)
         .map(|u| u.name.clone())
         .collect()
+}
+
+// --- Flavor lookups (§8.3 style) ---------------------------------------------------------------
+// All flavor prose lives in `data/booklet.ron`; these read it by key. Card-like content carries a
+// per-row `flavor` field; the enum content (currencies, roles) is keyed in the `*_flavor` maps.
+
+/// In-world flavor for a currency, looked up from data. Empty if none authored.
+pub fn currency_flavor(currency: Currency) -> &'static str {
+    catalog()
+        .currency_flavor
+        .get(&currency)
+        .map(String::as_str)
+        .unwrap_or_default()
+}
+
+/// In-world flavor for a §4 combat role (keyed by the role string actors carry). Empty if none.
+pub fn role_flavor(role: &str) -> &'static str {
+    catalog()
+        .role_flavor
+        .get(role)
+        .map(String::as_str)
+        .unwrap_or_default()
+}
+
+/// In-world flavor for a named card / weapon. Empty if none authored.
+pub fn card_flavor(name: &str) -> &'static str {
+    catalog()
+        .cards
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.flavor.as_str())
+        .unwrap_or_default()
+}
+
+/// In-world flavor for a named trait. Empty if none authored.
+pub fn trait_flavor(name: &str) -> &'static str {
+    catalog()
+        .traits
+        .iter()
+        .find(|t| t.name == name)
+        .map(|t| t.flavor.as_str())
+        .unwrap_or_default()
+}
+
+/// In-world flavor for a named Upgrade. Empty if none authored.
+pub fn upgrade_flavor(name: &str) -> &'static str {
+    catalog()
+        .upgrades
+        .iter()
+        .find(|u| u.name == name)
+        .map(|u| u.flavor.as_str())
+        .unwrap_or_default()
+}
+
+/// In-world flavor for a named actor. Empty if none authored.
+pub fn actor_flavor(name: &str) -> &'static str {
+    catalog()
+        .actors
+        .iter()
+        .find(|a| a.name == name)
+        .map(|a| a.flavor.as_str())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

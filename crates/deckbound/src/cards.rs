@@ -55,6 +55,10 @@ pub struct Card {
     /// card data (the card is the source of truth for what it does). Empty for plain weapons.
     #[serde(default)]
     pub text: String,
+    /// Evocative in-world flavor — prose, not rules (the `text` field carries the mechanics).
+    /// Lives entirely in `data/booklet.ron`; never authored in code.
+    #[serde(default)]
+    pub flavor: String,
     /// Distinct foes hit (AoE). 1 = single target.
     #[serde(default = "one")]
     pub targets: u32,
@@ -133,6 +137,7 @@ mod tests {
         Card {
             name: "Firestorm".into(),
             text: String::new(),
+            flavor: String::new(),
             targets: 5,
             reach: [2, 2],
             zone: ZoneBehavior::Spend,
