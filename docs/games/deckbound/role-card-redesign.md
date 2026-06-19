@@ -97,18 +97,33 @@ Two things fall out:
   *measurable* balance target (candidate **BI-3**, §7) — exactly what the per-turn cap exists to make
   tunable.
 
-### 3.3 Sets — depth without build-space blow-up (constraint 3)
+### 3.3 Sets — bigger rewards, free for the planner (constraint 3)
 
-- **"25 effects, >25 cards" is the computability-preserving framing.** A set must be **atomic in the
-  build** — unlocked and owned as *one* of the 25 binary effects — so the build space stays
-  25-dimensional regardless of physical card count.
-- **The multi-card complexity is combat-*runtime* state, not build state.** A level-5 set's several
-  cards track in-battle stages/charges via the §5 zone machine (facing = state); that state **resets
-  each battle** (§0.1 "no carried combat state"), so it never enters the campaign's carried build.
-  Sets buy *tactical* depth on the cheap, paid inside the combat oracle, not the campaign search.
-- **The guardrail (see §5):** a set is never *partially* owned, and its components must not combine
-  *multiplicatively* with the other 24 effects — that would reintroduce the build-space explosion
-  §0.1 forbids. Internal richness, yes; cross-effect multiplication, no.
+**The principle: the build-space dimension is the number of *atomic rewards*, not the card count.** A
+reward is *deterministic and atomic* — clearing (role Y, level X) yields a *fixed* bundle of `Z`
+cards; you don't choose what's in it. So the campaign planner's state is **`(progress grid,
+assignment)`** — *which `(role, level)` clears you've made* + *which character holds each reward-set*
+— and **neither term depends on `Z`.** Ten cards in a reward or one, it's still "Y-X cleared, assigned
+to C": one progress increment, one assignment. **`Z` is free for the planner** ("25 effects, *>*25
+cards", generalised to heterogeneous bundles).
+
+- **A reward-set may be heterogeneous** — role-effect cards (played; combat-runtime), **stat** cards
+  (additive into the build's block — §5.5, commutative), and **passive** modifiers (self-contained
+  upgrades to that set's effect). The *mix* is a balance dial, **not** a compute cost.
+- **The only real cost of large `Z` is the *combat oracle*** — more cards to play means a richer
+  per-battle search — and it is **bounded and combat-internal** (resets each fight, §0.1). So **`Z` is
+  free for the campaign planner, paid by the combat oracle**: the practical limit on reward size comes
+  from keeping *per-battle* complexity reasonable (the set-complexity curve, §3.4 / §6), never from a
+  campaign-side blow-up. A 20-card reward wouldn't explode par; it'd just make each fight heavy.
+
+**Three guardrails keep `Z` free (see §5):**
+1. **Atomic in acquisition** — you get the *whole fixed set*; no *drafting* a sub-selection (a choice
+   within the reward would branch the build space).
+2. **Atomic in assignment** — the *whole set* goes to one character; no splitting across the party
+   (the generalisation of the pair-splitting "no", §6 — splitting makes the assignment space grow
+   with `Z`).
+3. **Self-contained** — a set's cards do not *multiplicatively combine* with other sets' cards.
+   Internal richness, yes; cross-reward multiplication, no.
 
 ### 3.4 Scaling cards & the card taxonomy (new-effect ↔ modifier) — *candidate*
 
