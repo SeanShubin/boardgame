@@ -249,17 +249,21 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
   **"stat-mule"** decoupling (all stats on one body, all effects on others), severing the role ↔
   survivability coupling and adding balance surface; it also doubles the assignment space.
 
-### Still open
+### Settled since (2026-06-19)
+
+- **Per-role cap = per round** (D1, §8). **Positional coherence = positional cards require their
+  position**, for now (D2, §8). **Gold** → a generic **Stat layer** bundled with every reward, *not* a
+  currency or a sixth role (§8.5 draft).
+- **Per-level power is monotone** (a §8.3 GUARANTEE: deeper = at least as powerful, #5).
+  **Complexity is a *lever*, not the intent** — a level expresses its higher power by a bigger number
+  *or* a richer effect, the designer's call.
+
+### Still open (content / balance dials, not rules)
 
 - **Scaling vs independent (per track, §3.4):** the **new-effect ↔ modifier ratio** — the
   variety↔escalation dial. Set it with the §6 dimensionality/clustering analysis, not by gut.
-- **Per-level complexity curve:** how fast do sets grow (level 1 simple → level 5 a set)? The
-  tactical-depth dial and the combat-oracle-cost dial at once.
-- **Positional coherence:** is "one body, one position blocks Wall+Infiltrator same turn" an explicit
-  rule or purely emergent from positioning? (Prefer emergent, §3.2.)
-- **What happens to Gold-as-role?** With the generic *currency* gone, is there still a generic
-  *track* (the stat cards), and does the "5 roles + generic" count (Spec §8.5) restate as "5 role
-  tracks + 1 generic stat track"?
+- **How each level cashes out its power** — number vs richer effect (also the combat-oracle-cost dial,
+  §3.3). Power is fixed by the Spec; *how* it's spent is a `booklet.ron` call.
 
 ---
 
@@ -288,16 +292,15 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
 > over Phases 1–4). **Scope: campaign-first** (the combat *scenarios* keep their pre-built kits for
 > now). Sign off (and resolve the two decisions below) → I commit it to the canonical Spec.
 
-### Two decisions this forces (proposed defaults — confirm or override)
+### Two decisions — resolved (2026-06-19)
 
-- **D1 — the per-role cap's "turn" unit → *per round* (proposed).** A character may play **one role
-  card of each role per lane round** (§4). *(Alternative: per phase — finer, but the round is the
-  natural unit and where cards are played.)*
-- **D2 — positional coherence → *positional cards require their position* (proposed).** Wall /
+- **D1 — the per-role cap's "turn" unit = *per round*.** ✅ A character may play **one role card of
+  each role per lane round** (§4).
+- **D2 — positional coherence = *positional cards require their position*** (for now). ✅ Wall /
   Infiltrator / Artillery cards are playable only from the matching §4 position (Vanguard /
-  Skirmisher / Reserve); Support / Controller cards are position-agnostic. This caps the god
-  *emergently* (one body, one position). *(Alternatives: an explicit "god nerf" rule, or no
-  coherence — which over-powers the god.)*
+  Skirmisher / Reserve); Support / Controller cards are position-agnostic — capping the god
+  *emergently* (one body, one position). *Flagged for later exploration* (alternatives: an explicit
+  cap, or no coherence) → [future-possibilities](future-possibilities.md) when revisited.
 
 ### §8.3 → **Rewards & role cards** (replaces "Currency & loot")
 
@@ -321,6 +324,10 @@ clears + assignment.
   each*, a function of clears + assignment, not order/route; assignment is **permanent** (no sell-back).
 - **One physical copy per reward**; every card prints its `(role, level)` provenance, so scarcity and
   atomic assignment are legible / self-enforcing (§3.5).
+- **Power is monotone in level** — within a track, a deeper reward is *at least as powerful* as a
+  shallower one (the doom-to-mastery curve, #5). **Complexity is an optional lever for expressing that
+  power, never the intent**: a higher level may be a bigger number *or* a richer (multi-card) effect —
+  the designer's `booklet.ron` call, not a requirement.
 
 ### §8.5 → **Progression & roles** (revised)
 
@@ -374,7 +381,9 @@ dominates on raw card throughput (the budget #4 / candidate **BI-3** the solver 
 ### Deferred to content / balance (not Spec rules)
 
 - The **new-effect ↔ modifier ratio** per track (§3.4) — a `booklet.ron` authoring + §6-measured dial.
-- The **per-level set-complexity curve** (§3.3) — the combat-oracle-cost dial.
+- **How** each level expresses its (Spec-guaranteed) higher power — a bigger number vs a richer
+  multi-card effect. *Power is the intent (a §8.3 GUARANTEE); complexity is just one lever for it, and
+  also the combat-oracle-cost dial (§3.3).*
 
 ### Migration status (what graduation makes "pending")
 
