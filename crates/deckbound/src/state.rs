@@ -24,6 +24,10 @@ pub enum Menu {
     Rules,
     /// The entries within one rules category (by its index in `categories()`).
     Category(usize),
+    /// The card catalog: every card, browsable by section.
+    Catalog,
+    /// One card's detail page (by its index in `card_catalog()`).
+    CardDetail(usize),
 }
 
 /// Where the round is.

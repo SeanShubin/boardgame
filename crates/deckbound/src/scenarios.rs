@@ -6,13 +6,16 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
+use engine::{Accent, CardView, ProseLine};
+
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
-use crate::cards::Card;
+use crate::cards::{Card, Effect};
 use crate::currency::{Coins, Currency};
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
 use crate::stats::{Aspect, DamageType};
+use crate::zones::ZoneBehavior;
 
 #[derive(Debug, Deserialize)]
 struct Catalog {
@@ -497,6 +500,481 @@ pub fn actor_flavor(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
+// --- Card catalog -------------------------------------------------------------------------------
+// Every printable card in the game, as a browsable visual + a rules-grounded description.
+// Generated from `booklet.ron` (like the glossary), so it can't drift from the cards themselves.
+
+/// One entry in the in-app **card catalog**: a printable card visual ([`CardView`]) plus a detailed,
+/// rules-grounded description ([`ProseLine`]s) shown when the card is opened.
+#[derive(Clone)]
+pub struct CatalogEntry {
+    /// The section this card belongs to: Actions / Weapons / Powers / Form / Upgrades / Characters.
+    pub kind: &'static str,
+    pub name: String,
+    /// What the card looks like printed.
+    pub view: CardView,
+    /// How the card works and interacts with the rules.
+    pub detail: Vec<ProseLine>,
+}
+
+/// Every printable card, grouped by kind — the source for the catalog browser. Cached.
+pub fn card_catalog() -> Vec<CatalogEntry> {
+    static CATALOG: OnceLock<Vec<CatalogEntry>> = OnceLock::new();
+    CATALOG.get_or_init(build_catalog).clone()
+}
+
+fn build_catalog() -> Vec<CatalogEntry> {
+    let cat = catalog();
+    // Weapons are the `cards` an actor wields; the rest of the non-passive cards are Actions.
+    let weapons: std::collections::HashSet<&str> =
+        cat.actors.iter().map(|a| a.weapon.as_str()).collect();
+    let mut out = Vec::new();
+    for c in cat
+        .cards
+        .iter()
+        .filter(|c| !c.passive && !weapons.contains(c.name.as_str()))
+    {
+        out.push(action_entry(c));
+    }
+    for c in cat
+        .cards
+        .iter()
+        .filter(|c| !c.passive && weapons.contains(c.name.as_str()))
+    {
+        out.push(weapon_entry(c));
+    }
+    for c in cat.cards.iter().filter(|c| c.passive) {
+        out.push(power_entry(c));
+    }
+    for t in &cat.traits {
+        out.push(trait_entry(t));
+    }
+    for u in &cat.upgrades {
+        out.push(upgrade_entry(u));
+    }
+    for a in &cat.actors {
+        out.push(actor_entry(a));
+    }
+    out
+}
+
+/// A tiny word-wrap for card bodies (proportional font, so this is a rough budget). Ellipsizes if
+/// the text doesn't fit in `max` lines.
+fn wrap(text: &str, width: usize, max: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    let mut truncated = false;
+    for word in text.split_whitespace() {
+        if !line.is_empty() && line.len() + 1 + word.len() > width {
+            lines.push(std::mem::take(&mut line));
+            if lines.len() == max {
+                truncated = true;
+                break;
+            }
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !truncated && !line.is_empty() {
+        lines.push(line);
+    }
+    if truncated && let Some(last) = lines.last_mut() {
+        last.push('…');
+    }
+    lines
+}
+
+fn reach_label(reach: [u32; 2]) -> String {
+    match reach {
+        [1, 1] => "Reach: melee".into(),
+        [a, _] if a >= 2 => "Reach: ranged".into(),
+        [a, b] => format!("Reach: {a}\u{2013}{b}"),
+    }
+}
+
+fn reach_sentence(reach: [u32; 2]) -> String {
+    match reach {
+        [1, 1] => "Played at melee range (the front / a Skirmisher).".into(),
+        [a, _] if a >= 2 => "Played at range — a Reserve firing on the enemy front (§4).".into(),
+        [a, b] => format!("Reach {a}\u{2013}{b} jumps."),
+    }
+}
+
+fn zone_behavior_label(z: ZoneBehavior) -> &'static str {
+    match z {
+        ZoneBehavior::Return => "After: returns to Hand",
+        ZoneBehavior::Spend => "After: spent (Down)",
+        ZoneBehavior::Lasting => "After: stays in play",
+    }
+}
+
+fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
+    match z {
+        ZoneBehavior::Return => {
+            "Zone \u{2014} Return (default): after it resolves the card goes back to your Hand, \
+             reusable next round."
+        }
+        ZoneBehavior::Spend => {
+            "Zone \u{2014} Spend: the card goes face-down (Down) after use; only a Recover stands it \
+             back up. That gap is its cooldown (\u{00A7}5.3)."
+        }
+        ZoneBehavior::Lasting => {
+            "Zone \u{2014} Lasting: the card stays in play (Active) as a stance or aura until it is \
+             removed, Disrupted, or consumed (\u{00A7}5.3)."
+        }
+    }
+}
+
+/// A rules sentence for one card effect.
+fn effect_rule(e: &Effect) -> String {
+    match e {
+        Effect::Damage { power, dtype } => format!(
+            "Deals {} damage (base {power}). It is reduced by the target's {} Armor, then absorbed \
+             by its Body pool (cut \u{2192} bar \u{2192} pool, \u{00A7}2); Edge scales this.",
+            dtype.label(),
+            dtype.label()
+        ),
+        Effect::Stagger => "On a landed hit, the target loses its action this round.".into(),
+        Effect::Sunder { armor } => {
+            format!(
+                "Shears {armor} Armor off the target's plate (a Sunder), so later hits bite deeper."
+            )
+        }
+        Effect::Disarm => "Rips a card from the target's Hand (knocks it Down).".into(),
+        Effect::Shove => "Breaks the target out of its lane (a Shove).".into(),
+        Effect::Rally { resolve } => {
+            format!(
+                "Raises allies' Resolve by {resolve} (a Rally) \u{2014} a Lasting effect in the party zone."
+            )
+        }
+        Effect::Steel => "Clears accumulated Fear and steadies the nerve (a Steel).".into(),
+        Effect::Recover => {
+            "Turns a face-down card back up \u{2014} Down \u{2192} Hand (a Recover, \u{00A7}5.3)."
+                .into()
+        }
+        Effect::BankSpeed { amount } => format!("Banks +{amount} Speed as extra Tempo this round."),
+        Effect::Mend { body } => format!("Restores {body} Body to the most-wounded ally (a Mend)."),
+        Effect::Ward => {
+            "Grants a melee attack to a defenceless ally for the round (a Ward, \u{00A7}4.2), so a \
+             ranged / support actor can self-defend."
+                .into()
+        }
+        Effect::Haste { tempo } => format!("Grants +{tempo} Tempo to an ally (a Haste)."),
+        Effect::Suppress { tempo } => format!("Strips {tempo} Tempo from a foe (a Suppress)."),
+        Effect::Slow { speed } => {
+            format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")
+        }
+        Effect::Confuse { focus } => {
+            format!("Strips {focus} Focus from a foe so it cannot block (a Confuse).")
+        }
+    }
+}
+
+fn flavor_tail(detail: &mut Vec<ProseLine>, flavor: &str) {
+    if !flavor.is_empty() {
+        detail.push(ProseLine::Gap);
+        detail.push(ProseLine::Body(flavor.to_string()));
+    }
+}
+
+fn action_entry(c: &Card) -> CatalogEntry {
+    let mut body = Vec::new();
+    let summary = c.summary();
+    if !summary.is_empty() {
+        body.push(summary);
+    }
+    if c.targets > 1 {
+        body.push(format!("AoE \u{00D7}{}", c.targets));
+    }
+    body.push(reach_label(c.reach));
+    body.push(zone_behavior_label(c.zone).into());
+    let view = CardView::up(c.name.clone())
+        .typed("Action")
+        .body(body)
+        .accent(Accent::Ally);
+
+    let mut detail = vec![
+        ProseLine::Heading(c.name.clone()),
+        ProseLine::Term("Action card".into()),
+    ];
+    for e in &c.effects {
+        detail.push(ProseLine::Body(effect_rule(e)));
+    }
+    if c.targets > 1 {
+        detail.push(ProseLine::Body(format!(
+            "Area effect: resolves against up to {} distinct foes (\u{00A7}4 AoE).",
+            c.targets
+        )));
+    }
+    detail.push(ProseLine::Body(reach_sentence(c.reach)));
+    detail.push(ProseLine::Body(zone_behavior_rule(c.zone).into()));
+    if !c.tags.is_empty() {
+        detail.push(ProseLine::Body(format!(
+            "Tags: {} \u{2014} charge / combo interaction (\u{00A7}5.4).",
+            c.tags.join(", ")
+        )));
+    }
+    flavor_tail(&mut detail, card_flavor(&c.name));
+    CatalogEntry {
+        kind: "Actions",
+        name: c.name.clone(),
+        view,
+        detail,
+    }
+}
+
+fn weapon_entry(c: &Card) -> CatalogEntry {
+    let (power, dtype) = c.primary_damage().unwrap_or((0, DamageType::Blunt));
+    let body = vec![
+        format!("{} damage", dtype.label()),
+        if power > 0 {
+            format!("+{power} Power")
+        } else {
+            "base weapon".into()
+        },
+    ];
+    let view = CardView::up(c.name.clone())
+        .typed("Weapon")
+        .body(body)
+        .accent(Accent::Neutral);
+
+    let mut detail = vec![
+        ProseLine::Heading(c.name.clone()),
+        ProseLine::Term("Weapon".into()),
+        ProseLine::Body(format!(
+            "Supplies the {} damage type to its wielder's strike; its Power ({power}) adds to the \
+             strike's magnitude (\u{00A7}4.2).",
+            dtype.label()
+        )),
+        ProseLine::Body(format!(
+            "Against a target, {} Armor reduces each hit before the Body pool absorbs the rest.",
+            dtype.label()
+        )),
+    ];
+    flavor_tail(&mut detail, card_flavor(&c.name));
+    CatalogEntry {
+        kind: "Weapons",
+        name: c.name.clone(),
+        view,
+        detail,
+    }
+}
+
+fn power_entry(c: &Card) -> CatalogEntry {
+    let view = CardView::up(c.name.clone())
+        .typed("Power")
+        .body(wrap(&c.text, 24, 6))
+        .accent(Accent::Good);
+
+    let mut detail = vec![
+        ProseLine::Heading(c.name.clone()),
+        ProseLine::Term("Power (passive)".into()),
+        ProseLine::Body(c.text.clone()),
+        ProseLine::Body(
+            "A \u{00A7}4 power \u{2014} always on, detected by name; it shapes the lane round rather \
+             than being played as a card."
+                .into(),
+        ),
+    ];
+    flavor_tail(&mut detail, card_flavor(&c.name));
+    CatalogEntry {
+        kind: "Powers",
+        name: c.name.clone(),
+        view,
+        detail,
+    }
+}
+
+fn trait_entry(t: &TraitCard) -> CatalogEntry {
+    let mut body = Vec::new();
+    for (dt, v) in &t.armor {
+        body.push(format!("Armor {} {v}", dt.label()));
+    }
+    for (dt, v) in &t.ward {
+        body.push(format!("Ward {} {v}", dt.label()));
+    }
+    if t.resolve > 0 {
+        body.push(format!("+{} Resolve", t.resolve));
+    }
+    if t.mind > 0 {
+        body.push(format!("+{} Mind", t.mind));
+    }
+    let view = CardView::up(t.name.clone())
+        .typed("Form \u{00B7} attachment")
+        .body(body)
+        .accent(Accent::Warn);
+
+    let mut detail = vec![
+        ProseLine::Heading(t.name.clone()),
+        ProseLine::Term("Form attachment (stats-as-deck, \u{00A7}2.3)".into()),
+        ProseLine::Body(
+            "An attachment card added to an actor's Form (in the Active zone). Its stats sum into \
+             the Form's block \u{2014} Armor and Ward merge per damage type (\u{00A7}4.3)."
+                .into(),
+        ),
+    ];
+    for (dt, v) in &t.armor {
+        detail.push(ProseLine::Body(format!(
+            "Armor {} {v}: reduces each incoming {} hit by {v} before the Body pool.",
+            dt.label(),
+            dt.label()
+        )));
+    }
+    for (dt, v) in &t.ward {
+        detail.push(ProseLine::Body(format!(
+            "Ward {} {v}: blunts {} by {v} \u{2014} the defence Armor can't provide (\u{00A7}4.2).",
+            dt.label(),
+            dt.label()
+        )));
+    }
+    flavor_tail(&mut detail, trait_flavor(&t.name));
+    CatalogEntry {
+        kind: "Form",
+        name: t.name.clone(),
+        view,
+        detail,
+    }
+}
+
+/// The non-zero stat boosts of a `StatCard`, as `"+4 Body"`-style strings.
+fn stat_grants(s: &StatCard) -> Vec<String> {
+    let mut v = Vec::new();
+    for (n, label) in [
+        (s.power, "Power"),
+        (s.precision, "Precision"),
+        (s.speed, "Speed"),
+        (s.spirit, "Spirit"),
+        (s.body, "Body"),
+        (s.toughness, "Tough"),
+        (s.resolve, "Resolve"),
+        (s.mind, "Mind"),
+    ] {
+        if n > 0 {
+            v.push(format!("+{n} {label}"));
+        }
+    }
+    for (dt, n) in &s.armor {
+        v.push(format!("+{n} {} Armor", dt.label()));
+    }
+    for (dt, n) in &s.ward {
+        v.push(format!("+{n} {} Ward", dt.label()));
+    }
+    v
+}
+
+fn upgrade_entry(u: &UpgradeCard) -> CatalogEntry {
+    let price = format!("{} {}", u.price.amount, u.price.currency.label());
+    let grants = stat_grants(&u.grant);
+    let mut body = vec![format!("Cost: {price}")];
+    body.extend(grants.clone());
+    let view = CardView::up(u.name.clone())
+        .typed("Upgrade")
+        .body(body)
+        .corner(price.clone())
+        .accent(Accent::Good);
+
+    let path = match u.price.currency.role() {
+        Some(r) => format!(" \u{2014} the {r} path"),
+        None => " \u{2014} the generic path".into(),
+    };
+    let mut detail = vec![
+        ProseLine::Heading(u.name.clone()),
+        ProseLine::Term("Upgrade (\u{00A7}8.3)".into()),
+        ProseLine::Body(format!(
+            "Bought for {price}{path}. Attaches to a character's Form as a permanent card, so its \
+             stats sum into the block (stats-as-deck)."
+        )),
+        ProseLine::Body(format!("Grants: {}.", grants.join(", "))),
+    ];
+    flavor_tail(&mut detail, upgrade_flavor(&u.name));
+    CatalogEntry {
+        kind: "Upgrades",
+        name: u.name.clone(),
+        view,
+        detail,
+    }
+}
+
+fn actor_entry(a: &ActorCard) -> CatalogEntry {
+    let is_hero = a.driver == "hero";
+    let actor = build_actor(catalog(), &a.name);
+    let off = &actor.offense;
+    let def = &actor.defense;
+    let body = vec![
+        format!("Spd {} \u{00B7} Pow {}", off.speed, off.power),
+        format!("Body {} \u{00B7} Tgh {}", def.body.max, def.body.toughness),
+        format!("Res {} \u{00B7} Mind {}", def.resolve, def.mind),
+    ];
+    let view = CardView::up(a.name.clone())
+        .typed(format!(
+            "{} \u{00B7} {}",
+            if is_hero { "Hero" } else { "Creature" },
+            a.role
+        ))
+        .body(body)
+        .corner(def.body.max.to_string())
+        .accent(if is_hero { Accent::Ally } else { Accent::Foe });
+
+    let mut detail = vec![
+        ProseLine::Heading(a.name.clone()),
+        ProseLine::Term(format!(
+            "{} \u{2014} {}",
+            if is_hero { "Character" } else { "Creature" },
+            a.role
+        )),
+        ProseLine::Body(
+            "An actor is a bare identity plus a starting deck (stats-as-deck, \u{00A7}2.3): a \
+             fundamental Form card (its base stats), attachment cards, Action cards, and a weapon."
+                .into(),
+        ),
+        ProseLine::Body(format!(
+            "Stats \u{2014} Speed {}, Power {}, Precision {}; Body pool {} (toughness {}), \
+             Resolve {}, Mind {}.",
+            off.speed,
+            off.power,
+            off.precision,
+            def.body.max,
+            def.body.toughness,
+            def.resolve,
+            def.mind
+        )),
+    ];
+    if !def.armor.is_empty() {
+        let armor = def
+            .armor
+            .iter()
+            .map(|(dt, v)| format!("{} {v}", dt.label()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        detail.push(ProseLine::Body(format!("Armor: {armor}.")));
+    }
+    if !a.traits.is_empty() {
+        detail.push(ProseLine::Body(format!(
+            "Form attachments: {}.",
+            a.traits.join(", ")
+        )));
+    }
+    if !a.actions.is_empty() {
+        detail.push(ProseLine::Body(format!(
+            "Action cards: {}.",
+            a.actions.join(", ")
+        )));
+    }
+    detail.push(ProseLine::Body(format!(
+        "Weapon: {} (supplies the strike's damage type).",
+        a.weapon
+    )));
+    flavor_tail(&mut detail, actor_flavor(&a.name));
+    CatalogEntry {
+        kind: "Characters",
+        name: a.name.clone(),
+        view,
+        detail,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +985,49 @@ mod tests {
         assert!(!god().is_empty());
         assert!(tutorials().len() >= 4);
         assert!(glossary().len() >= 10, "the encyclopedia has rules entries");
+    }
+
+    /// The card catalog is generated from the booklet: every section is present, and every entry
+    /// has a printable visual titled with its name plus a non-empty rules description.
+    #[test]
+    fn card_catalog_is_generated_with_visual_and_detail() {
+        let cat = card_catalog();
+        assert!(cat.len() >= 30, "the catalog has cards (got {})", cat.len());
+
+        let kinds: std::collections::HashSet<&str> = cat.iter().map(|e| e.kind).collect();
+        for section in [
+            "Actions",
+            "Weapons",
+            "Powers",
+            "Form",
+            "Upgrades",
+            "Characters",
+        ] {
+            assert!(
+                kinds.contains(section),
+                "catalog missing the {section} section"
+            );
+        }
+        // Entries are grouped by section (each kind is one contiguous block, for the grid).
+        let mut seen: Vec<&str> = Vec::new();
+        for e in &cat {
+            if seen.last() != Some(&e.kind) {
+                assert!(
+                    !seen.contains(&e.kind),
+                    "section {} is split across the catalog",
+                    e.kind
+                );
+                seen.push(e.kind);
+            }
+        }
+        for e in &cat {
+            assert!(!e.name.is_empty());
+            assert!(!e.detail.is_empty(), "{} has no rules detail", e.name);
+            match &e.view.face {
+                engine::CardFace::Up { title, .. } => assert_eq!(title, &e.name),
+                engine::CardFace::Down => panic!("{} is face-down in the catalog", e.name),
+            }
+        }
     }
 
     /// The encyclopedia is fully **generated** (no hand-authored glossary): rule entries come

@@ -36,8 +36,8 @@ pub use reference::{ReferenceScenario, check_combat_bands, check_invariants, ref
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
 pub use scenarios::{
-    Scenario, build_character, build_encounter_foes, campaign, god, tutorials, upgrade_price,
-    upgrades_for, versus,
+    CatalogEntry, Scenario, build_character, build_encounter_foes, campaign, card_catalog, god,
+    tutorials, upgrade_price, upgrades_for, versus,
 };
 pub use solver::auto_resolve;
 pub use state::{Clash, Lane, Menu, Phase, Round, State};

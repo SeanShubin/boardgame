@@ -30,11 +30,15 @@ pub enum Action {
     OpenCampaign,
     /// Open the rules encyclopedia (its category list).
     OpenEncyclopedia,
+    /// Open the card catalog.
+    OpenCatalog,
     /// Take the campaign's *n*-th legal action (an index into [`Campaign::legal_actions`], so the
     /// whole campaign rides through this enum while it stays `Copy`).
     CampaignMove(usize),
     /// Open one rules category (by index in `categories()`).
     OpenCategory(usize),
+    /// Open one card's detail page (by index in `card_catalog()`).
+    OpenCard(usize),
     PickScenario(usize),
     Exit,
     ToMenu,
@@ -103,7 +107,9 @@ fn list_for(menu: Menu) -> Vec<Scenario> {
         Menu::God => scenarios::god(),
         Menu::Tutorial => scenarios::tutorials(),
         Menu::Versus => scenarios::versus(),
-        Menu::Top | Menu::Rules | Menu::Category(_) => Vec::new(),
+        Menu::Top | Menu::Rules | Menu::Category(_) | Menu::Catalog | Menu::CardDetail(_) => {
+            Vec::new()
+        }
     }
 }
 
@@ -777,6 +783,16 @@ impl Deckbound {
                     .cloned()
                     .unwrap_or_else(|| "Rules".into())
             ),
+            (None, Phase::Menu(Menu::Catalog)) => {
+                "Card catalog — click a card for its rules. (Esc: back)".to_string()
+            }
+            (None, Phase::Menu(Menu::CardDetail(i))) => format!(
+                "{} — how it works. (Esc: back)",
+                scenarios::card_catalog()
+                    .get(*i)
+                    .map(|e| e.name.clone())
+                    .unwrap_or_else(|| "Card".into())
+            ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
             (None, Phase::Muster) => format!(
                 "Round {} — muster: set Vanguard / Reserve, then Deploy. (Esc: menu)",
@@ -861,6 +877,7 @@ impl Game for Deckbound {
                 Action::OpenGod,
                 Action::OpenVersus,
                 Action::OpenCampaign,
+                Action::OpenCatalog,
                 Action::OpenEncyclopedia,
                 Action::Exit,
             ],
@@ -873,6 +890,16 @@ impl Game for Deckbound {
             }
             // A category page is the prose reading pane; only Back (to the category cards).
             Phase::Menu(Menu::Category(_)) => vec![Action::Back],
+            // The catalog: one clickable card per catalog entry (bound to OpenCard) + Back.
+            Phase::Menu(Menu::Catalog) => {
+                let mut a: Vec<Action> = (0..scenarios::card_catalog().len())
+                    .map(Action::OpenCard)
+                    .collect();
+                a.push(Action::Back);
+                a
+            }
+            // A card detail page shows the card + its rules; only Back (to the catalog).
+            Phase::Menu(Menu::CardDetail(_)) => vec![Action::Back],
             Phase::Menu(m) => {
                 let mut a: Vec<Action> =
                     (0..list_for(*m).len()).map(Action::PickScenario).collect();
@@ -1008,6 +1035,11 @@ impl Game for Deckbound {
             Action::CampaignMove(_) => String::new(),
             Action::OpenEncyclopedia => "Rules".into(),
             Action::OpenCategory(i) => categories().get(*i).cloned().unwrap_or_else(|| "?".into()),
+            Action::OpenCatalog => "Cards".into(),
+            Action::OpenCard(i) => scenarios::card_catalog()
+                .get(*i)
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| "?".into()),
             Action::Exit => "Exit".into(),
             Action::ToMenu => "Main menu".into(),
             Action::Back => "< Back".into(),
@@ -1098,12 +1130,22 @@ impl Game for Deckbound {
             (Phase::Menu(Menu::Top), Action::OpenEncyclopedia) => {
                 state.phase = Phase::Menu(Menu::Rules)
             }
+            (Phase::Menu(Menu::Top), Action::OpenCatalog) => {
+                state.phase = Phase::Menu(Menu::Catalog)
+            }
             // Click a category card → open that category's rules (the prose reading pane).
             (Phase::Menu(Menu::Rules), Action::OpenCategory(i)) => {
                 if *i >= categories().len() {
                     return Err(GameError::new("no such category"));
                 }
                 state.phase = Phase::Menu(Menu::Category(*i));
+            }
+            // Click a catalog card → open that card's detail page.
+            (Phase::Menu(Menu::Catalog), Action::OpenCard(i)) => {
+                if *i >= scenarios::card_catalog().len() {
+                    return Err(GameError::new("no such card"));
+                }
+                state.phase = Phase::Menu(Menu::CardDetail(*i));
             }
             (Phase::Menu(m), Action::PickScenario(i)) if *m != Menu::Top => {
                 let s = list_for(*m)
@@ -1115,6 +1157,10 @@ impl Game for Deckbound {
             // Back climbs the hierarchy: an entry list → categories → top.
             (Phase::Menu(Menu::Category(_)), Action::Back) => {
                 state.phase = Phase::Menu(Menu::Rules)
+            }
+            // A card detail → back to the catalog grid.
+            (Phase::Menu(Menu::CardDetail(_)), Action::Back) => {
+                state.phase = Phase::Menu(Menu::Catalog)
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
@@ -1385,6 +1431,38 @@ impl Game for Deckbound {
                     _ => {}
                 }
             }
+            // The catalog: every card, grouped into a section per kind (clickable to open detail).
+            Phase::Menu(Menu::Catalog) => {
+                let entries = scenarios::card_catalog();
+                let mut i = 0;
+                while i < entries.len() {
+                    let kind = entries[i].kind;
+                    let mut cards = Vec::new();
+                    while i < entries.len() && entries[i].kind == kind {
+                        cards.push(entries[i].view.clone().action(i));
+                        i += 1;
+                    }
+                    zones.push(ZoneView {
+                        label: kind.to_string(),
+                        layout: Layout::Row,
+                        owner: None,
+                        cards,
+                    });
+                }
+            }
+            // A card's detail: the printed card itself, plus its rules description as a reading pane.
+            Phase::Menu(Menu::CardDetail(idx)) => {
+                let entries = scenarios::card_catalog();
+                if let Some(e) = entries.get(*idx) {
+                    zones.push(ZoneView {
+                        label: e.kind.to_string(),
+                        layout: Layout::Row,
+                        owner: None,
+                        cards: vec![e.view.clone()],
+                    });
+                    prose = e.detail.clone();
+                }
+            }
             Phase::Menu(m) => zones.push(scenario_zone(*m)),
             Phase::Clash => {
                 if let Some(c) = state.clash {
@@ -1545,6 +1623,7 @@ fn menu_zone() -> ZoneView {
             "Campaign",
             "The world-map reference run — travel, fight, grow, win.",
         ),
+        ("Cards", "Browse every card and how it works."),
         ("Rules", "The rulebook — browse by category."),
     ];
     ZoneView {
@@ -1803,6 +1882,40 @@ mod tests {
             replay.campaign.as_ref().unwrap().outcome,
             Some(Outcome::Win(PlayerId(0)))
         ));
+    }
+
+    /// The card catalog is reachable from the menu, cards open to a detail page showing both the
+    /// card and its rules, and Back climbs detail → catalog → top.
+    #[test]
+    fn card_catalog_navigates() {
+        let game = Deckbound;
+        let mut s = game.new_game(1, 1);
+        assert!(game.legal_actions(&s).contains(&Action::OpenCatalog));
+        game.apply(&mut s, &Action::OpenCatalog).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Catalog));
+
+        // The catalog is a grid of clickable cards (one open-action each).
+        assert!(game.legal_actions(&s).contains(&Action::OpenCard(0)));
+        let grid = game.view(&s, None);
+        assert!(
+            grid.zones
+                .iter()
+                .any(|z| z.cards.iter().any(|c| c.action.is_some())),
+            "the catalog shows clickable cards"
+        );
+
+        // Opening a card shows the card *and* a prose rules description.
+        game.apply(&mut s, &Action::OpenCard(0)).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::CardDetail(0)));
+        let detail = game.view(&s, None);
+        assert!(!detail.zones.is_empty(), "the detail shows the card");
+        assert!(!detail.prose.is_empty(), "the detail shows the rules");
+
+        // Back climbs the hierarchy.
+        game.apply(&mut s, &Action::Back).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Catalog));
+        game.apply(&mut s, &Action::Back).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Top));
     }
 
     fn duel_state() -> State {

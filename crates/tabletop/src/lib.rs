@@ -1347,29 +1347,33 @@ fn build_table(
                     ));
                 });
 
-                // Prose content (a rules page) takes over the play area as a reading pane;
-                // otherwise the card zones fill the remaining space (and scroll when taller
-                // than the area, e.g. duels).
+                // The play area: a world map, or the card zones, or a prose reading pane — or, on a
+                // card-detail page, the card zones *and* the prose together (the card on top, its
+                // rules below). When both are present the cards take their natural height and the
+                // prose fills the rest; with cards alone they fill and scroll (e.g. duels).
                 if let Some(map) = &view.map {
                     spawn_map(main, map);
-                } else if !view.prose.is_empty() {
-                    spawn_prose_pane(main, &view.prose);
                 } else {
-                    main.spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(10.0),
-                        flex_grow: 1.0,
-                        overflow: Overflow::scroll_y(),
-                        ..default()
-                    })
-                    .with_children(|zones| {
-                        // A shared counter so cards deal in left-to-right,
-                        // top-to-bottom across the whole board, not per-zone.
-                        let order = Cell::new(0u32);
-                        for zone in &view.zones {
-                            spawn_zone(zones, zone, &order);
-                        }
-                    });
+                    if !view.zones.is_empty() {
+                        main.spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(10.0),
+                            flex_grow: if view.prose.is_empty() { 1.0 } else { 0.0 },
+                            overflow: Overflow::scroll_y(),
+                            ..default()
+                        })
+                        .with_children(|zones| {
+                            // A shared counter so cards deal in left-to-right,
+                            // top-to-bottom across the whole board, not per-zone.
+                            let order = Cell::new(0u32);
+                            for zone in &view.zones {
+                                spawn_zone(zones, zone, &order);
+                            }
+                        });
+                    }
+                    if !view.prose.is_empty() {
+                        spawn_prose_pane(main, &view.prose);
+                    }
                 }
             });
         });
