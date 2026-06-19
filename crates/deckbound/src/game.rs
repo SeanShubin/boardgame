@@ -20,7 +20,7 @@ use crate::state::{Clash, Lane, Menu, Phase, Round, State};
 const STALL_CAP: u32 = 12;
 
 /// One step a player can take.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Action {
     OpenCooperation,
     OpenGod,
@@ -1730,6 +1730,49 @@ mod tests {
         game.apply(&mut s, &Action::ToMenu).unwrap();
         assert!(s.campaign.is_none());
         assert_eq!(s.phase, Phase::Menu(Menu::Top));
+    }
+
+    /// Event-sourcing invariant (the basis of the renderer's save/load + undo): an action log,
+    /// serialized through RON and back, replays from a fresh game to the *identical* result.
+    #[test]
+    fn action_log_round_trips_through_ron() {
+        let game = Deckbound;
+        // Record the guided campaign run as a flat action log (what the UI persists).
+        let mut s = game.new_game(1, 1);
+        let mut log: Vec<Action> = vec![Action::OpenCampaign];
+        game.apply(&mut s, &Action::OpenCampaign).unwrap();
+        for _ in 0..10_000 {
+            if s.campaign
+                .as_ref()
+                .and_then(|c| c.outcome.clone())
+                .is_some()
+            {
+                break;
+            }
+            let a = game.suggest(&s).expect("the guide always has a next move");
+            log.push(a);
+            game.apply(&mut s, &a).unwrap();
+        }
+        let original_days = s.campaign.as_ref().unwrap().run.day;
+
+        // Round-trip the log through the save-file format, then replay from new_game.
+        let text = ron::ser::to_string(&log).expect("the action log serializes");
+        let restored: Vec<Action> = ron::from_str(&text).expect("and deserializes");
+        assert_eq!(restored, log, "RON round-trips the action log exactly");
+        let mut replay = game.new_game(1, 1);
+        for a in &restored {
+            game.apply(&mut replay, a)
+                .expect("every logged action replays");
+        }
+        assert_eq!(
+            replay.campaign.as_ref().unwrap().run.day,
+            original_days,
+            "replaying the log reconstructs the same state"
+        );
+        assert!(matches!(
+            replay.campaign.as_ref().unwrap().outcome,
+            Some(Outcome::Win(PlayerId(0)))
+        ));
     }
 
     fn duel_state() -> State {

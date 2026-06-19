@@ -72,7 +72,7 @@ pub struct CampaignState {
 }
 
 /// One step a player can take in the campaign.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CampAction {
     /// Move token `t` to adjacent location `loc` (flips it face-up).
     Move(usize, usize),

@@ -2313,6 +2313,9 @@ dependencies = [
 [[package]]
 name = "engine"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "equivalent"
@@ -4602,6 +4605,8 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "engine",
+ "ron 0.8.1",
+ "serde",
 ]
 
 [[package]]

@@ -66,8 +66,11 @@ impl std::error::Error for GameError {}
 pub trait Game: Send + Sync + 'static {
     /// The full state of a game in progress.
     type State: Clone + Send + Sync + 'static;
-    /// A single decision a player can make.
-    type Action: Clone + Send + Sync + 'static;
+    /// A single decision a player can make. Serializable because the stream of actions (plus the
+    /// seed) is the canonical, replayable record of a match — what a presentation layer persists for
+    /// save/load, undo, and deterministic bug-repro. State is never serialized; it is reconstructed
+    /// by replaying actions from [`new_game`](Game::new_game).
+    type Action: Clone + Send + Sync + 'static + serde::Serialize + serde::de::DeserializeOwned;
 
     /// Sets up a fresh game for `players` seats, seeding all randomness from
     /// `seed`.

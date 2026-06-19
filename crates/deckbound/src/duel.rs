@@ -13,7 +13,7 @@
 use crate::stats::DamageType;
 
 /// A move in the Clash.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Move {
     /// Attack: hit *where they are now*. Beats Gather; stopped by Evade; trades with Strike;
     /// beats Anticipate.

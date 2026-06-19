@@ -6,3 +6,6 @@ edition.workspace = true
 [dependencies]
 engine = { workspace = true }
 bevy = { workspace = true }
+# Save / load the action log (event-sourced session record) as a text file.
+serde = { workspace = true }
+ron = { workspace = true }

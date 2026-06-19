@@ -58,7 +58,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(RulesVisible(false))
             .insert_resource(RulesQuery::default())
             .insert_resource(Muted(false))
-            .insert_resource(History::<G>::default())
+            .insert_resource(History::<G>::new(self.seed, self.players))
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
@@ -98,7 +98,8 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                 (
                     apply_clicked_action::<G>,
                     cancel_on_key::<G>,
-                    rewind_on_key::<G>,
+                    history_controls::<G>,
+                    save_load::<G>,
                     quit_if_requested::<G>,
                     redraw::<G>,
                 )
@@ -119,20 +120,70 @@ struct StateRes<G: Game>(G::State);
 #[derive(Resource)]
 struct NeedsRedraw(bool);
 
-/// A stack of prior states for **multi-step rewind**: `Z` undoes one step; `R` rewinds to just
-/// before the last **deviation** from the guide's suggestion (`deviation` = the index to restore).
+/// The session's history, two ways:
+///
+/// - `actions` is the **event source** — the canonical, replayable record. With the seed, it
+///   reconstructs any state (every game is a deterministic fold of actions), and it's what
+///   [`save_load`] serializes to a text file.
+/// - `states` is a **snapshot cache** parallel to `actions`, so undo is O(1) (pop, don't replay).
+///   Each `states[i]` is the state *before* `actions[i]`.
+///
+/// `deviation` marks the index to restore for "rewind to the guide" — the first action that went
+/// off the guide's suggestion (`None` when on-script or unguided).
 #[derive(Resource)]
 struct History<G: Game> {
+    seed: u64,
+    players: usize,
     states: Vec<G::State>,
+    actions: Vec<G::Action>,
     deviation: Option<usize>,
 }
 
-impl<G: Game> Default for History<G> {
-    fn default() -> Self {
+impl<G: Game + Clone> History<G> {
+    fn new(seed: u64, players: usize) -> Self {
         Self {
+            seed,
+            players,
             states: Vec::new(),
+            actions: Vec::new(),
             deviation: None,
         }
+    }
+
+    /// Record an applied step: the pre-action `prev` state and the `action` that advanced it.
+    fn push(&mut self, prev: G::State, action: G::Action) {
+        self.states.push(prev);
+        self.actions.push(action);
+    }
+
+    /// Track the guide deviation for the step just [`push`](Self::push)ed: clear it while on-script,
+    /// else mark this as the first off-script step. Only called when a guide is actually active.
+    fn mark_deviation(&mut self, on_script: bool) {
+        let idx = self.actions.len().saturating_sub(1);
+        if on_script {
+            self.deviation = None;
+        } else if self.deviation.is_none() {
+            self.deviation = Some(idx);
+        }
+    }
+
+    /// Undo one step: drop the last action and return the state it advanced from.
+    fn undo(&mut self) -> Option<G::State> {
+        let prev = self.states.pop()?;
+        self.actions.pop();
+        if self.deviation.is_some_and(|d| d >= self.states.len()) {
+            self.deviation = None;
+        }
+        Some(prev)
+    }
+
+    /// Rewind to just before the last off-guide step, dropping everything since.
+    fn rewind_to_deviation(&mut self) -> Option<G::State> {
+        let d = self.deviation.take()?;
+        let prev = self.states.get(d)?.clone();
+        self.states.truncate(d);
+        self.actions.truncate(d);
+        Some(prev)
     }
 }
 
@@ -201,6 +252,14 @@ struct HelpHint;
 #[derive(Component)]
 struct ActionButton(usize);
 
+/// The **Back** button: undo the last step (history, not a game action).
+#[derive(Component)]
+struct BackButton;
+
+/// The **rewind-to-guide** button: jump back to just before the last deviation from the guide.
+#[derive(Component)]
+struct RewindButton;
+
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
@@ -238,52 +297,47 @@ fn apply_clicked_action<G: Game + Clone>(
         // index captured when the button was built is still valid here.
         let actions = game.0.legal_actions(&state.0);
         if let Some(action) = actions.get(button.0).cloned() {
-            // Snapshot the pre-action state for rewind, and note if this is a deviation from the
-            // guide (the first off-script action marks the point `R` rewinds to).
-            let on_script = game.0.is_suggested(&state.0, &action);
+            // Deviation only means something when a guide is offering a suggestion (the campaign);
+            // outside that, every move is "free" and shouldn't mark a rewind point.
+            let guiding = game.0.suggest(&state.0).is_some();
+            let on_script = guiding && game.0.is_suggested(&state.0, &action);
             let snapshot = state.0.clone();
             if game.0.apply(&mut state.0, &action).is_ok() {
-                if on_script {
-                    history.deviation = None;
-                } else if history.deviation.is_none() {
-                    history.deviation = Some(history.states.len());
+                history.push(snapshot, action);
+                if guiding {
+                    history.mark_deviation(on_script);
                 }
-                history.states.push(snapshot);
                 redraw.0 = true;
             }
         }
     }
 }
 
-/// `Z` undoes one step; `R` rewinds to just before the last deviation from the guide's script.
-fn rewind_on_key<G: Game + Clone>(
+/// Undo (the **Back** button or `Z`) steps back one move; the **rewind-to-guide** button jumps back
+/// to just before the last deviation from the guide. (`R` is taken by the rules overlay, so the
+/// deviation rewind is button-only.)
+#[allow(clippy::too_many_arguments)]
+fn history_controls<G: Game + Clone>(
     keys: Res<ButtonInput<KeyCode>>,
     help: Res<HelpVisible>,
     rules: Res<RulesVisible>,
+    back_buttons: Query<&Interaction, (Changed<Interaction>, With<BackButton>)>,
+    rewind_buttons: Query<&Interaction, (Changed<Interaction>, With<RewindButton>)>,
     mut state: ResMut<StateRes<G>>,
     mut history: ResMut<History<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
-    if help.0 || rules.0 {
-        return;
-    }
-    if keys.just_pressed(KeyCode::KeyZ)
-        && let Some(prev) = history.states.pop()
-    {
+    let overlay = help.0 || rules.0;
+    let back = (!overlay && keys.just_pressed(KeyCode::KeyZ))
+        || back_buttons.iter().any(|i| *i == Interaction::Pressed);
+    if back && let Some(prev) = history.undo() {
         state.0 = prev;
-        if history.deviation.is_some_and(|d| d >= history.states.len()) {
-            history.deviation = None;
-        }
         redraw.0 = true;
     }
-    if keys.just_pressed(KeyCode::KeyR)
-        && let Some(d) = history.deviation
+    if rewind_buttons.iter().any(|i| *i == Interaction::Pressed)
+        && let Some(prev) = history.rewind_to_deviation()
     {
-        if d < history.states.len() {
-            state.0 = history.states[d].clone();
-            history.states.truncate(d);
-        }
-        history.deviation = None;
+        state.0 = prev;
         redraw.0 = true;
     }
 }
@@ -295,6 +349,7 @@ fn cancel_on_key<G: Game + Clone>(
     rules: Res<RulesVisible>,
     game: Res<GameRes<G>>,
     mut state: ResMut<StateRes<G>>,
+    mut history: ResMut<History<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
     // While an overlay is up, Esc closes it (handled by `toggle_help` / `toggle_rules`)
@@ -304,8 +359,87 @@ fn cancel_on_key<G: Game + Clone>(
     }
     if (keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Backspace))
         && let Some(action) = game.0.cancel_action(&state.0)
-        && game.0.apply(&mut state.0, &action).is_ok()
     {
+        // Record the cancel as a step too, so Back / undo can step over it like any other action.
+        let snapshot = state.0.clone();
+        if game.0.apply(&mut state.0, &action).is_ok() {
+            history.push(snapshot, action);
+            redraw.0 = true;
+        }
+    }
+}
+
+/// The serialized session record: the seed and seat count plus the full action stream. Replaying
+/// these actions from `new_game(seed, players)` reconstructs the exact state — so this small text
+/// file is a complete save, and equally a shareable, deterministic bug-repro.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Saved<A> {
+    seed: u64,
+    players: usize,
+    actions: Vec<A>,
+}
+
+/// Where the action log is written / read. Relative to the working directory.
+const SAVE_PATH: &str = "save.ron";
+
+/// `F5` saves the action log to [`SAVE_PATH`]; `F9` loads it and replays to reconstruct the state.
+/// Persistence is event-sourced: only the actions (+ seed) are stored, never the state.
+fn save_load<G: Game + Clone>(
+    keys: Res<ButtonInput<KeyCode>>,
+    help: Res<HelpVisible>,
+    rules: Res<RulesVisible>,
+    game: Res<GameRes<G>>,
+    mut state: ResMut<StateRes<G>>,
+    mut history: ResMut<History<G>>,
+    mut redraw: ResMut<NeedsRedraw>,
+) {
+    if help.0 || rules.0 {
+        return;
+    }
+    if keys.just_pressed(KeyCode::F5) {
+        let saved = Saved {
+            seed: history.seed,
+            players: history.players,
+            actions: history.actions.clone(),
+        };
+        match ron::ser::to_string_pretty(&saved, ron::ser::PrettyConfig::default()) {
+            Ok(text) => match std::fs::write(SAVE_PATH, text) {
+                Ok(()) => info!("saved {} actions to {SAVE_PATH}", history.actions.len()),
+                Err(e) => warn!("could not write {SAVE_PATH}: {e}"),
+            },
+            Err(e) => warn!("could not serialize the save: {e}"),
+        }
+    }
+    if keys.just_pressed(KeyCode::F9) {
+        let text = match std::fs::read_to_string(SAVE_PATH) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("could not read {SAVE_PATH}: {e}");
+                return;
+            }
+        };
+        let saved: Saved<G::Action> = match ron::from_str(&text) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("{SAVE_PATH} is not a valid save: {e}");
+                return;
+            }
+        };
+        // Replay from a fresh game, rebuilding both the action log and the snapshot cache. A step
+        // that no longer applies (e.g. the rules changed since the save) stops the replay there.
+        let mut replayed = game.0.new_game(saved.seed, saved.players);
+        let mut hist = History::<G>::new(saved.seed, saved.players);
+        for action in saved.actions {
+            let snapshot = replayed.clone();
+            if game.0.apply(&mut replayed, &action).is_err() {
+                warn!("save replay stopped at a step that no longer applies");
+                break;
+            }
+            hist.push(snapshot, action);
+        }
+        info!("loaded {} actions from {SAVE_PATH}", hist.actions.len());
+        state.0 = replayed;
+        *history = hist;
         redraw.0 = true;
     }
 }
@@ -737,6 +871,7 @@ fn redraw<G: Game + Clone>(
     platform: Res<Platform>,
     game: Res<GameRes<G>>,
     state: Res<StateRes<G>>,
+    history: Res<History<G>>,
     mut redraw: ResMut<NeedsRedraw>,
     roots: Query<Entity, With<TableRoot>>,
 ) {
@@ -771,7 +906,17 @@ fn redraw<G: Game + Clone>(
         .map(|(index, action)| (index, game.0.action_label(&state.0, action)))
         .collect();
 
-    build_table(&mut commands, &view, &buttons);
+    let controls = TableControls {
+        can_back: !history.states.is_empty(),
+        can_rewind: history.deviation.is_some(),
+    };
+    build_table(&mut commands, &view, &buttons, controls);
+}
+
+/// What history controls to surface this redraw (the Back / rewind-to-guide buttons).
+struct TableControls {
+    can_back: bool,
+    can_rewind: bool,
 }
 
 // ---- type scale ---------------------------------------------------------
@@ -798,6 +943,8 @@ const CARD_BORDER: f32 = 2.0;
 const BADGE: Color = Color::srgb(0.14, 0.14, 0.18);
 const TITLE_INK: Color = Color::srgb(0.97, 0.97, 0.98);
 const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
+/// Meta-control buttons (Back / rewind) — muted, so they read apart from the game's action buttons.
+const CONTROL_BUTTON: Color = Color::srgb(0.16, 0.22, 0.26);
 /// Dim wash drawn behind the help overlay so it reads as a modal layer.
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.6);
 /// Backing for the always-visible help hint; the panel colour with some alpha
@@ -1141,7 +1288,12 @@ fn play_card_hover_sfx(
     }
 }
 
-fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, String)]) {
+fn build_table(
+    commands: &mut Commands,
+    view: &TableView,
+    actions: &[(usize, String)],
+    controls: TableControls,
+) {
     commands
         .spawn((
             TableRoot,
@@ -1170,6 +1322,14 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                 BackgroundColor(PANEL),
             ))
             .with_children(|left| {
+                // History controls sit above the choices: Back undoes a step, and (in a guided run
+                // that's been deviated from) a rewind jumps back to the guide's path.
+                if controls.can_back {
+                    spawn_control_button(left, BackButton, "\u{25C0} Back");
+                }
+                if controls.can_rewind {
+                    spawn_control_button(left, RewindButton, "\u{23EE} Rewind to the guide");
+                }
                 left.spawn((
                     Text::new("Choose an action"),
                     TextFont {
@@ -1794,7 +1954,7 @@ fn spawn_card_face(
 
 /// The controls advertised in the help overlay, as `(keys, description)`. Keep
 /// in sync with the keys handled in `adjust_zoom`, `toggle_help`,
-/// `cancel_on_key`, and `toggle_mute`.
+/// `cancel_on_key`, `history_controls`, `save_load`, and `toggle_mute`.
 const CONTROLS: &[(&str, &str)] = &[
     ("= / +", "Zoom in"),
     ("\u{2212}", "Zoom out"),
@@ -1802,6 +1962,8 @@ const CONTROLS: &[(&str, &str)] = &[
     ("Mouse wheel", "Scroll the board / action list"),
     ("M", "Mute / unmute sound"),
     ("Esc / Backspace", "Cancel \u{2013} go back a step"),
+    ("Z / Back", "Undo the last step"),
+    ("F5 / F9", "Save / load the run"),
     ("? / F1", "Toggle this help"),
     ("R", "Toggle the rules reference"),
 ];
@@ -1962,6 +2124,37 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &
                     ..default()
                 },
                 TextColor(INK),
+            ));
+        });
+}
+
+/// A meta-control button (Back / rewind) — styled apart from the game's action buttons (muted, no
+/// drop-shadow) so it reads as "navigate history", not "make a move". `marker` is the component the
+/// history system watches (e.g. [`BackButton`]).
+fn spawn_control_button(parent: &mut ChildSpawnerCommands, marker: impl Bundle, label: &str) {
+    parent
+        .spawn((
+            marker,
+            Button,
+            ButtonAnim::default(),
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                justify_content: JustifyContent::FlexStart,
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
+                ..default()
+            },
+            BackgroundColor(CONTROL_BUTTON),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(MUTED_INK),
             ));
         });
 }
