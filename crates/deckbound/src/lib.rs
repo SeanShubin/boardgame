@@ -9,6 +9,7 @@
 //! `tabletop` plugin renders it. All numbers live in `data/booklet.ron`.
 
 pub mod actor;
+pub mod campaign;
 pub mod cards;
 pub mod combat;
 pub mod currency;
@@ -25,6 +26,7 @@ pub mod world;
 pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
+pub use campaign::{CampAction, Campaign, CampaignState, reference_campaign};
 pub use cards::{Card, Effect};
 pub use currency::{Coins, Currency, balance};
 pub use duel::{Move, Side, resolve};

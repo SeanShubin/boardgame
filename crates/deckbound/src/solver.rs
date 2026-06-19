@@ -34,8 +34,9 @@ pub fn auto_resolve(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64) -> Option<b
 }
 
 /// A moderately-greedy hero policy: commit melee to the Vanguard, hold and fight, strike the front,
-/// or play a power if there's nothing to hit. Picks one action; called repeatedly.
-fn greedy(state: &State, actions: &[Action]) -> Action {
+/// or play a power if there's nothing to hit. Picks one action; called repeatedly. Public so the
+/// campaign can suggest a combat move to the player.
+pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
         // Put melee-capable heroes in the Vanguard; ranged/support stay Reserve; then Deploy.
