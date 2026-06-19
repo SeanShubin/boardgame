@@ -346,6 +346,10 @@ impl Game for Campaign {
         self.guide(s)
     }
 
+    fn is_suggested(&self, s: &CampaignState, a: &CampAction) -> bool {
+        self.guide(s).as_ref() == Some(a)
+    }
+
     fn view(&self, s: &CampaignState, perspective: Option<PlayerId>) -> TableView {
         // In a battle, show the embedded combat view.
         if let (CampPhase::Battle, Some(battle)) = (s.phase, &s.battle) {

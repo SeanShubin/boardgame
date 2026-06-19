@@ -24,7 +24,7 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
-use engine::{Accent, CardFace, CardView, Game, ProseLine, TableView, ZoneView};
+use engine::{Accent, CardFace, CardView, Game, MapView, ProseLine, TableView, ZoneView};
 use std::cell::Cell;
 use std::time::Duration;
 
@@ -58,6 +58,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(RulesVisible(false))
             .insert_resource(RulesQuery::default())
             .insert_resource(Muted(false))
+            .insert_resource(History::<G>::default())
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
@@ -97,6 +98,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                 (
                     apply_clicked_action::<G>,
                     cancel_on_key::<G>,
+                    rewind_on_key::<G>,
                     quit_if_requested::<G>,
                     redraw::<G>,
                 )
@@ -116,6 +118,23 @@ struct StateRes<G: Game>(G::State);
 /// Set whenever the table needs to be rebuilt.
 #[derive(Resource)]
 struct NeedsRedraw(bool);
+
+/// A stack of prior states for **multi-step rewind**: `Z` undoes one step; `R` rewinds to just
+/// before the last **deviation** from the guide's suggestion (`deviation` = the index to restore).
+#[derive(Resource)]
+struct History<G: Game> {
+    states: Vec<G::State>,
+    deviation: Option<usize>,
+}
+
+impl<G: Game> Default for History<G> {
+    fn default() -> Self {
+        Self {
+            states: Vec::new(),
+            deviation: None,
+        }
+    }
+}
 
 /// What the host platform can do for the running app. This is the one place
 /// that distinguishes a native window from a browser tab, so the rest of the
@@ -208,6 +227,7 @@ fn apply_clicked_action<G: Game + Clone>(
     buttons: Query<(&Interaction, &ActionButton), Changed<Interaction>>,
     game: Res<GameRes<G>>,
     mut state: ResMut<StateRes<G>>,
+    mut history: ResMut<History<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
     for (interaction, button) in &buttons {
@@ -217,11 +237,54 @@ fn apply_clicked_action<G: Game + Clone>(
         // The action list is a pure function of the unchanged state, so the
         // index captured when the button was built is still valid here.
         let actions = game.0.legal_actions(&state.0);
-        if let Some(action) = actions.get(button.0).cloned()
-            && game.0.apply(&mut state.0, &action).is_ok()
-        {
-            redraw.0 = true;
+        if let Some(action) = actions.get(button.0).cloned() {
+            // Snapshot the pre-action state for rewind, and note if this is a deviation from the
+            // guide (the first off-script action marks the point `R` rewinds to).
+            let on_script = game.0.is_suggested(&state.0, &action);
+            let snapshot = state.0.clone();
+            if game.0.apply(&mut state.0, &action).is_ok() {
+                if on_script {
+                    history.deviation = None;
+                } else if history.deviation.is_none() {
+                    history.deviation = Some(history.states.len());
+                }
+                history.states.push(snapshot);
+                redraw.0 = true;
+            }
         }
+    }
+}
+
+/// `Z` undoes one step; `R` rewinds to just before the last deviation from the guide's script.
+fn rewind_on_key<G: Game + Clone>(
+    keys: Res<ButtonInput<KeyCode>>,
+    help: Res<HelpVisible>,
+    rules: Res<RulesVisible>,
+    mut state: ResMut<StateRes<G>>,
+    mut history: ResMut<History<G>>,
+    mut redraw: ResMut<NeedsRedraw>,
+) {
+    if help.0 || rules.0 {
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyZ)
+        && let Some(prev) = history.states.pop()
+    {
+        state.0 = prev;
+        if history.deviation.is_some_and(|d| d >= history.states.len()) {
+            history.deviation = None;
+        }
+        redraw.0 = true;
+    }
+    if keys.just_pressed(KeyCode::KeyR)
+        && let Some(d) = history.deviation
+    {
+        if d < history.states.len() {
+            state.0 = history.states[d].clone();
+            history.states.truncate(d);
+        }
+        history.deviation = None;
+        redraw.0 = true;
     }
 }
 
@@ -1155,7 +1218,9 @@ fn build_table(commands: &mut Commands, view: &TableView, actions: &[(usize, Str
                 // Prose content (a rules page) takes over the play area as a reading pane;
                 // otherwise the card zones fill the remaining space (and scroll when taller
                 // than the area, e.g. duels).
-                if !view.prose.is_empty() {
+                if let Some(map) = &view.map {
+                    spawn_map(main, map);
+                } else if !view.prose.is_empty() {
                     spawn_prose_pane(main, &view.prose);
                 } else {
                     main.spawn(Node {
@@ -1301,6 +1366,107 @@ fn spawn_grid(parent: &mut ChildSpawnerCommands, grid: &engine::Grid) {
                     cell(row, &r.label, BUTTON, true);
                     for c in &r.cells {
                         cell(row, &c.text, accent_color(c.accent), false);
+                    }
+                });
+            }
+        });
+}
+
+/// Render a [`MapView`] as a tiled world board: tiles positioned by their grid coordinates, tinted
+/// by an accent strip (teal = the guide's suggested move, green = cleared, blue = the party is
+/// here), clickable to move/enter, with token labels on their tile.
+fn spawn_map(parent: &mut ChildSpawnerCommands, map: &MapView) {
+    const TILE: f32 = 124.0;
+    const GAP: f32 = 10.0;
+    parent
+        .spawn(Node {
+            position_type: PositionType::Relative,
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            overflow: Overflow::scroll_y(),
+            ..default()
+        })
+        .with_children(|board| {
+            for tile in &map.tiles {
+                let xoff = if map.hex && tile.row.rem_euclid(2) == 1 {
+                    (TILE + GAP) / 2.0
+                } else {
+                    0.0
+                };
+                let x = tile.col as f32 * (TILE + GAP) + xoff;
+                let y = tile.row as f32 * (TILE + GAP);
+                let face_up = tile.label.is_some();
+                let mut tile_node = board.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(x),
+                        top: Val::Px(y),
+                        width: Val::Px(TILE),
+                        height: Val::Px(TILE),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        row_gap: Val::Px(4.0),
+                        border_radius: BorderRadius::all(Val::Px(8.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundColor(if face_up { PANEL } else { CARD_BACK }),
+                ));
+                if let Some(idx) = tile.action {
+                    tile_node.insert((Button, ActionButton(idx)));
+                }
+                tile_node.with_children(|t| {
+                    // Accent strip — the guide highlight / clear status / party-here.
+                    t.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(6.0),
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(accent_color(tile.accent)),
+                    ));
+                    match &tile.label {
+                        Some(label) => {
+                            t.spawn((
+                                Text::new(label.clone()),
+                                TextFont {
+                                    font_size: FONT_TITLE,
+                                    ..default()
+                                },
+                                TextColor(INK),
+                            ));
+                            if let Some(sub) = &tile.sub {
+                                t.spawn((
+                                    Text::new(sub.clone()),
+                                    TextFont {
+                                        font_size: FONT_BODY,
+                                        ..default()
+                                    },
+                                    TextColor(MUTED_INK),
+                                ));
+                            }
+                        }
+                        None => {
+                            t.spawn((
+                                Text::new("· · ·"),
+                                TextFont {
+                                    font_size: FONT_HEAD,
+                                    ..default()
+                                },
+                                TextColor(MUTED_INK),
+                            ));
+                        }
+                    }
+                    for tok in &tile.tokens {
+                        t.spawn((
+                            Text::new(format!("◆ {tok}")),
+                            TextFont {
+                                font_size: FONT_BODY,
+                                ..default()
+                            },
+                            TextColor(INK),
+                        ));
                     }
                 });
             }

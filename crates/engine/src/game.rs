@@ -108,6 +108,13 @@ pub trait Game: Send + Sync + 'static {
         None
     }
 
+    /// Whether `action` is the guide's suggested action from `state` — so a presentation layer can
+    /// flag a **deviation** (taking a different action) without requiring `Action: PartialEq` on the
+    /// trait. The game, which knows how to compare its own actions, owns this. Defaults to `false`.
+    fn is_suggested(&self, _state: &Self::State, _action: &Self::Action) -> bool {
+        false
+    }
+
     /// Whether the game is asking the host application to quit (e.g. the player
     /// chose "Exit" from a menu). A presentation layer can poll this and close
     /// the window. Defaults to `false`.
