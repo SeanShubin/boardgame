@@ -102,6 +102,12 @@ pub trait Game: Send + Sync + 'static {
         None
     }
 
+    /// The **guide's recommended** next action — an on-script suggestion a presentation layer can
+    /// highlight (and detect deviation from). `None` = no guidance. Defaults to `None`.
+    fn suggest(&self, _state: &Self::State) -> Option<Self::Action> {
+        None
+    }
+
     /// Whether the game is asking the host application to quit (e.g. the player
     /// chose "Exit" from a menu). A presentation layer can poll this and close
     /// the window. Defaults to `false`.

@@ -20,6 +20,37 @@ pub struct TableView {
     /// should present it as a formatted, scrollable **reading pane** in place of the card board —
     /// long text belongs in flowing prose, not in fixed-size cards.
     pub prose: Vec<ProseLine>,
+    /// Optional **spatial map** (a world board of tiles, with movable tokens). When set, a renderer
+    /// draws it as a tiled grid in place of the card board — for a strategic/overworld layer.
+    pub map: Option<MapView>,
+}
+
+/// A spatial map a renderer can draw as a tiled board (a world of locations, §8). Tiles sit at grid
+/// coordinates; a renderer that can't draw boards may fall back to listing the tiles as cards.
+#[derive(Clone, Debug, Default)]
+pub struct MapView {
+    /// `true` = offset-hex field (6 neighbours); `false` = square grid (4 neighbours).
+    pub hex: bool,
+    /// The tiles, in any order (positioned by their coordinates).
+    pub tiles: Vec<MapTile>,
+}
+
+/// One tile of a [`MapView`].
+#[derive(Clone, Debug, Default)]
+pub struct MapTile {
+    /// Grid column / row.
+    pub col: i32,
+    pub row: i32,
+    /// What the tile shows face-up; `None` means face-down (undiscovered — fog).
+    pub label: Option<String>,
+    /// An optional second line (e.g. currency type / clear status).
+    pub sub: Option<String>,
+    /// Colour hint — e.g. [`Accent::Suggested`] for the guide's next move, [`Accent::Good`] cleared.
+    pub accent: Accent,
+    /// If set, clicking the tile performs the legal action at this index (move / enter).
+    pub action: Option<usize>,
+    /// Token labels standing on this tile (party pieces); empty if none.
+    pub tokens: Vec<String>,
 }
 
 /// One line of a prose reading pane, with a role a renderer can style.
@@ -117,6 +148,8 @@ pub enum Accent {
     Good,
     /// The current focus of a decision.
     Selected,
+    /// A guide's **recommended** choice — the on-script next action (campaign guidance, §8).
+    Suggested,
 }
 
 /// A single card as it should appear to the viewer.

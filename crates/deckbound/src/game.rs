@@ -1282,6 +1282,7 @@ impl Game for Deckbound {
             status: self.status(state),
             zones,
             prose,
+            map: None,
         }
     }
 }

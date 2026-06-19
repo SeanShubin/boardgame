@@ -751,6 +751,7 @@ fn accent_color(accent: Accent) -> Color {
         Accent::Warn => Color::srgb(0.72, 0.48, 0.14),
         Accent::Good => Color::srgb(0.22, 0.52, 0.32),
         Accent::Selected => Color::srgb(0.66, 0.56, 0.16),
+        Accent::Suggested => Color::srgb(0.30, 0.70, 0.62), // a guide's recommended pick — teal glow
     }
 }
 
