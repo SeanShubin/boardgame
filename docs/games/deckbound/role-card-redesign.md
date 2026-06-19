@@ -110,6 +110,37 @@ Two things fall out:
   *multiplicatively* with the other 24 effects — that would reintroduce the build-space explosion
   §0.1 forbids. Internal richness, yes; cross-effect multiplication, no.
 
+### 3.4 Scaling cards & the card taxonomy (new-effect ↔ modifier) — *candidate*
+
+A track's five levels needn't be five independent effects; a level can **escalate** an earlier one —
+*L1 firebolt · L2 +damage · L3 +extra target · L4 overcharge (spend a turn for a bigger hit).* This
+adds a coherent power-fantasy, but risks **diminishing card variety** (the designer's stated worry).
+
+**Card taxonomy** (resolves the collision with constraint 2 — see below):
+- **Base** — *played*; the track's core effect(s).
+- **Modifier** — *passive*; owned → auto-applies to its base (the "scaling" cards). **Rides free**,
+  not counted by the per-turn cap. *(Maps onto today's passive-power vs played-action split.)*
+- **Mode** — *played*; an alternative / charged version (overcharge), mutually exclusive with the
+  base that turn.
+
+**The collision, and why the taxonomy fixes it.** If a base *and* its modifier were both *played*
+cards of the same role, constraint 2 ("one role card per role per turn") would forbid playing both —
+the chain couldn't fire. Making modifiers **passive** dissolves it: the per-turn cap counts **Base +
+Mode** plays; modifiers ride along.
+
+**The dial.** *New-effect vs modifier* is the **variety ↔ escalation** knob, tunable per track. "Variety"
+splits two ways: modifiers cut *effect* variety but can add *decision* variety (when to overcharge,
+how to sequence). **The collapse is measurable** — a modifier-heavy design shows up as low strategic
+dimensionality / few clusters in the §6 toolkit, so the ratio is set with *evidence*, not gut.
+
+**The tradeoff (not strictly better or worse).** A scaling chain **keeps a track's cards together**
+(a +damage modifier is dead without its base), so you assign the *whole chain* to one character.
+- *Cost:* less of constraint 1's "who gets this card" allocation freedom, and less effect variety.
+- *Gain:* coherence + escalation fantasy, **and more computable** — you assign ~5 chains, not ~25
+  loose cards, shrinking the assignment space (§5).
+
+Hold this as a **per-track option**, not a global commitment.
+
 ---
 
 ## 4. Why this serves the design philosophy
@@ -140,26 +171,46 @@ Two things fall out:
 
 **Bottom line:** the redesign is computability-safe **provided** (a) card→character assignment is
 permanent (or tightly bounded), and (b) sets are atomic and non-multiplicative. Both are §6 decisions.
+Two later decisions *reduce* the build space rather than grow it: **eliminating currency** (§6) drops
+the balance-recompute state, and **scaling chains** (§3.4) keep a track's cards together (assign ~5
+chains, not ~25 loose cards).
 
 ---
 
-## 6. Open decisions
+## 6. Decisions
+
+### Settled (designer, 2026-06-19)
+
+- **What "a role" means → the role cards assigned to it.** A character *is* its assigned role cards;
+  "role" is emergent, not a label. A god = a character holding cards across all five tracks. With
+  **permanent** assignment, roles only *accrete* (gain, never lose) — monotone and §0.1-safe.
+- **Stats → a bundled `(role card, generic card)` pair.** Each level-clear yields a **pair**: a
+  *role* card (identity / effect — the option layer) and a *generic* card (stats — the survivability
+  layer the glass cannons need). This **eliminates the generic *currency***: Gold stops being a
+  currency and becomes the paired stat-card track.
+- **Economy → eliminate the middle man.** Direct unlock (clear level → reward pair); no
+  earn-currency-then-buy step. *Simpler and more computable* (no currency-balance state).
+  **Honest caveat (carry into playtest):** removing currency also removes the decisions it created —
+  *which* to acquire, budgeting/saving, and §8.3 co-location "sharing as logistics." Opportunity cost
+  **shifts** from "which to buy" to "who carries it" + "when to play it." Confirm the new decisions
+  are *as rich* (the §6 variety analysis can check for flattening).
+
+### Still open
 
 - **Reassignment:** is a card's owner **permanent**, or can the party redistribute? (Permanent →
   monotone, computability-safe; reassignable → a swap, needs an explicit bound — §5.) *Strong default:
-  permanent, possibly with a costly, rare "re-deal."*
-- **Stats vs effects:** role cards are *playable effects* — where does **stat growth** (Body, Power)
-  come from? Do held role cards grant passive stats too, or is there a separate stat track? (The
-  glass cannons need survivability from *somewhere*.)
-- **Economy fate:** does this **replace** the §8.3 currency-buy step (clear → unlock directly), or
-  does currency still gate which role cards you may take? Big structural call.
-- **What "a role" means now:** is a character's role(s) simply *the role cards assigned to it*? (A
-  god = a character holding cards across all 5 roles.) How does first-clear "commit a direction"
-  (§8.5) translate?
-- **Per-level complexity curve:** how fast do sets grow (level 1 simple → level 5 a set)? This is the
+  permanent, possibly with a costly, rare "re-deal."* **(The computability hinge.)**
+- **Pair splitting:** can the `(role, generic)` pair be **split** across characters (effect to one,
+  stat to another → *more* allocation decisions), or is it bundled to one?
+- **Scaling vs independent (per track, §3.4):** the **new-effect ↔ modifier ratio** — the
+  variety↔escalation dial. Set it with the §6 dimensionality/clustering analysis, not by gut.
+- **Per-level complexity curve:** how fast do sets grow (level 1 simple → level 5 a set)? The
   tactical-depth dial and the combat-oracle-cost dial at once.
 - **Positional coherence:** is "one body, one position blocks Wall+Infiltrator same turn" an explicit
   rule or purely emergent from positioning? (Prefer emergent, §3.2.)
+- **What happens to Gold-as-role?** With the generic *currency* gone, is there still a generic
+  *track* (the stat cards), and does the "5 roles + generic" count (Spec §8.5) restate as "5 role
+  tracks + 1 generic stat track"?
 
 ---
 
