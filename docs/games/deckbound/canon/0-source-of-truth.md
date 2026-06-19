@@ -111,6 +111,31 @@ your seeding role), but you never decide them, never silently re-tune them to ma
 a rule change "work," and never edit the Spec to chase a number. Number = human.
 Rule = Spec. Keep them apart.
 
+### Division of labour — with the solver
+
+The deterministic core (Spec §0) lets a **par solver / balance harness** measure balance
+objectively. This **refines "AI proposes, human disposes"** — but only along one axis, and
+**only once the instrument exists and the objective is agreed.**
+
+- **The principle:** the **human owns the objective and the taste**; the **AI owns the
+  optimisation against it.** Once an objective is *computable and agreed* (the par solver + the
+  balance invariants), tuning numbers *to* it is **optimisation, not judgment** — so the AI may do
+  it and **propose the tuned configuration for ratification.** Authoring the objective, and any
+  number that encodes taste the objective can't capture, stays human. *(Until the solver exists,
+  "Number = human" stands as above.)*
+- **The one-line test:** *is it checkable against a stated, computable objective?* If yes → the AI
+  may own it (measure, tune-to-objective, flag, implement). If it **defines** the objective, judges
+  **fun / feel / model-faithfulness**, or changes **what the game is** → human (and an intent change
+  is always case 3 below).
+- **The hard caveat:** the solver runs on the **core**, so it is objective about *structural balance*
+  and **blind to fun, feel, theme, and the experience of the luck / hidden-info layers.** "Passes
+  every check" is **never** the final word — the human ratifies for fun and faithfulness. An
+  incomplete objective yields a confidently *balanced-but-soulless* result; catching that is the
+  human's un-delegable vigilance.
+
+Full enumeration (what the AI handles vs what needs the human) lives in
+[`../computability-and-balance.md`](../computability-and-balance.md) §11.
+
 ### Classify every change you propose — intent vs. mechanics
 
 The human specifically wants to know, for any suggestion: **was the intention

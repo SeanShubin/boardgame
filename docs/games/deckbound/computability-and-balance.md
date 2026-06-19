@@ -340,6 +340,70 @@ Build the instrument before its consumers.
 
 ---
 
+## 11. Division of labour — human and AI, with the solver
+
+The instrument changes who does what. The binding short form is in
+[`0-source-of-truth.md`](canon/0-source-of-truth.md) ("Division of labour — with the solver"); this is
+the detailed version.
+
+**The principle.** *You (human) own the **objective** and the **taste**; I (AI) own the
+**optimisation** against it.* This **refines** the canon's "AI seeds numbers, human tunes": once an
+objective is **computable and agreed** (the par solver + the balance invariants), tuning *to* it is
+optimisation, not judgment — so it becomes AI-ownable, *proposed for ratification*. What stays yours
+is everything the objective can't see.
+
+**The net catches *broken*, not *unfun*.** The instrument runs on the **deterministic core**, so it
+is objective about **structural balance** — dominance, dead / dominated options, redundancy,
+strategy-space collapse, unbeatable or trivial gates, role non-separation, budget breaks — and
+**blind** to fun, feel, pacing, theme, ergonomics, and the *experience* of the luck / hidden-info
+layers it strips away. "Balanced in isolation" (neutral EV / no dominant exploit) is a **floor** a
+luck layer must clear, not the point — a coin-flip clears it and is miserable.
+
+**What AI is empowered to handle (given the tools):**
+
+- **Build and run the instrument** — solver, sensitivity analysis, clustering / manifold exploration,
+  the budget test.
+- **Detect and flag structural pathologies** — dominant strategies (closure check), dead / dominated
+  options, redundant or substitutable cards, dimensionality collapse, unbeatable / free gates, roles
+  that don't separate, computability-budget breaks.
+- **Tune numbers to the stated objective + invariants** — propose `booklet.ron` configurations that
+  hit the par targets, BI-1, diversity, and the no-dominator check, *for ratification* (it's
+  optimisation now, not taste).
+- **Generate candidates and surface structure** — draft cards / mechanics for keep-or-cut; cluster the
+  strategy space into archetypes and hand them over for labelling.
+- **Implement, test, verify, keep the canon coherent** — code, the spec-sync discipline, regenerated
+  projections.
+- **Certify the instrument's internals** — e.g. bound the combat policy `P`'s error vs the exact search.
+
+**What still needs the human (the tools are blind to these):**
+
+- **Author the objective and the taste** — what "balanced / interesting / fun / good" *means*; the
+  balance invariants; the interesting-vs-boring labels; the Charter north stars. The solver enforces;
+  you author.
+- **Judge fun and feel** — decision density, tension, drama, pacing, the doom-to-mastery curve,
+  ergonomics — mostly subjective, and mostly in the *played* (luck / hidden-info) game the core never
+  sees.
+- **Design the luck layers as *experience*** — inventing a luck mechanic that is *fun* (and judging its
+  drama) is a creative act; "neutral and non-dominant" is a bar it must clear, not its purpose.
+- **Judge model faithfulness — when to trust the instrument** — does core-balance transfer to the
+  played game? is `P` human-like? does the featurisation capture what matters? are these the right
+  invariants? (The guard against "balanced for a bot.")
+- **Decide what exists, and any intent change** — what's in / out, theme, identity, any Charter or
+  Spec-WHY change (the canon already reserves intent to the human).
+- **Ratify** the AI's tuned configs and flagged findings — the final taste pass, especially the fun
+  check the solver can't make.
+
+**The one-line test.** *Is it checkable against a stated, computable objective?* If yes → AI can own
+it (measure, tune, flag, implement). If it **defines** the objective, judges **fun / feel /
+faithfulness**, or changes **what the game is** → human.
+
+**The duty you can't delegate.** Because AI optimises *confidently* to whatever objective it is given,
+an **incomplete objective yields a confidently balanced-but-soulless result.** So the human's residual
+role includes **vigilance** — noticing when "passes every check" still isn't the game you want. The net
+frees you from playtesting to find what's **broken**; not from playing to feel what's **alive**.
+
+---
+
 **See also:** [Charter](canon/1-charter.md) (#2, #4, #11) · the
 [Spec](canon/2-spec/README.md) · [reference-scenario](reference-scenario.md) (the par
 target) · [future-possibilities](future-possibilities.md) (the deferred combo layer, and why).
