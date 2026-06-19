@@ -177,6 +177,28 @@ Refinements that keep this honest:
 because **you** supply the labels — the bot only measures. The closure check is what makes
 it *sufficient* rather than merely well-shaped.
 
+**Exploratory analysis toolkit — which question → which method.** The solver emits a huge,
+*noise-free* strategy dataset; analyse it to **summarise the computed structure for human judgment**,
+not to *infer hidden causes* (the game is white-box — you can compute why a build wins). The
+structure that matters is **interactions and thresholds**, so prefer methods that model those over
+linear-correlation methods:
+
+| Question (the "I don't know what I'm looking for") | Method |
+| --- | --- |
+| How many real strategic axes / what's the shape? | PCA / SVD (linear first pass) → **UMAP / t-SNE** for the nonlinear manifold |
+| What are the archetypes? | Clustering (HDBSCAN / hierarchical) · **Archetype Analysis** (the literal "pure corners") |
+| Which cards are redundant / substitutes? | Co-occurrence & substitution across *winning* builds |
+| Which `booklet.ron` numbers move balance? | **Global sensitivity analysis** (Sobol / Morris) |
+| What drives par? | Gradient-boosted trees + **SHAP** (captures interactions / thresholds) |
+| Dominant line? interesting on par? | The cluster-then-label loop + the **closure check** above — the solver, not a statistic |
+
+*Caveat on factor analysis.* Classical **EFA is a poor fit** here: it models linear, Gaussian,
+*noisy* indicators of latent traits, but this data is **deterministic** (no error variance → Heywood /
+degenerate; PCA dominates EFA), **threshold-y and interaction-driven** (linear correlation is blind to
+the gating / combo structure that matters most), and **white-box** (compute the latents, don't infer
+them). One apt use: PCA / FA on the **card × stat *design* matrix** (continuous) to check that the
+card set spans the intended axes — i.e. that the roles actually separate (a check on BI-1's premise).
+
 **The concrete targets live in a registry.** The specific, checkable balance properties the tuned
 numbers must satisfy — each an instance of "interesting beats boring" or "interesting on par" — are
 catalogued in [balance-invariants.md](balance-invariants.md). When the solver lands, each becomes an
