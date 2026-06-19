@@ -277,3 +277,109 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
 **See also:** [computability-and-balance.md](computability-and-balance.md) · [Spec
 §0 / §8](canon/2-spec/README.md) · [balance-invariants.md](balance-invariants.md) ·
 [progression-design.md](progression-design.md) (the economy this would re-type).
+
+---
+
+## 8. Proposed Spec graduation — Phase 0 (DRAFT for review)
+
+> **Not yet canon.** This is the proposed text to graduate into the [Spec](canon/2-spec/README.md)
+> (§8.3 / §8.5 / §5 / §4), in RULE / WHY / GUARANTEES form so it's drop-in ready. **Code stays put** —
+> on graduation those sections become `🟡 seeded · migration pending` (the code is then a defect to fix
+> over Phases 1–4). **Scope: campaign-first** (the combat *scenarios* keep their pre-built kits for
+> now). Sign off (and resolve the two decisions below) → I commit it to the canonical Spec.
+
+### Two decisions this forces (proposed defaults — confirm or override)
+
+- **D1 — the per-role cap's "turn" unit → *per round* (proposed).** A character may play **one role
+  card of each role per lane round** (§4). *(Alternative: per phase — finer, but the round is the
+  natural unit and where cards are played.)*
+- **D2 — positional coherence → *positional cards require their position* (proposed).** Wall /
+  Infiltrator / Artillery cards are playable only from the matching §4 position (Vanguard /
+  Skirmisher / Reserve); Support / Controller cards are position-agnostic. This caps the god
+  *emergently* (one body, one position). *(Alternatives: an explicit "god nerf" rule, or no
+  coherence — which over-powers the god.)*
+
+### §8.3 → **Rewards & role cards** (replaces "Currency & loot")
+
+**RULE.** Clearing **level X of role-track Y** unlocks the **reward** for `(Y, X)`: a fixed, **atomic
+set** of cards — role-effect card(s), a bundled generic **Stat** card, and any passive **Modifier** —
+**one physical copy each** (scarce). The **party assigns the whole set, permanently, to one
+character.** 5 tracks × 5 levels = **25 rewards**. **No currency:** clearing *is* the unlock (clear
+level N ⇒ levels 1..N of that track).
+
+**WHY.** One-copy scarcity (no stacking) + atomic permanent assignment make *"who carries this"* a
+weighty choice (#2 opportunity cost; #4 team balance); the shared pool is a **party-size-independent
+power budget** (#4: god ≈ party-total). Direct unlock drops the currency middleman — the depth/breadth
+choice lives in **routing** — and keeps the build a §0.1 *no-path-dependent-budget* function of
+clears + assignment.
+
+**GUARANTEES.**
+- Total reward power = a function of **levels cleared**, shared and distributed — party-size-independent.
+- A reward is **atomic** — acquired and assigned as one unit, never sub-drafted or split — so the
+  build-space dimension is the **count of rewards, not cards** (§0.1).
+- **No currency, no path-dependent budget** (§0.1): the build is *which rewards are owned and who holds
+  each*, a function of clears + assignment, not order/route; assignment is **permanent** (no sell-back).
+- **One physical copy per reward**; every card prints its `(role, level)` provenance, so scarcity and
+  atomic assignment are legible / self-enforcing (§3.5).
+
+### §8.5 → **Progression & roles** (revised)
+
+**RULE.** A character **is its assigned role cards** — "role" is *emergent*, not a label, and roles
+only **accrete** (permanent). The five **role tracks** are the §4 triangle's **`3 + 2`**
+(Wall / Infiltrator / Artillery + Controller / Support); a generic **Stat layer** is **bundled into
+every reward** (the old generic *currency*, Gold, is gone — it is now a stat-card pairing, not a
+currency). Party size sets the spectrum: many bodies → specialists (one track each); few → multi-track;
+one → a **god** spanning all five.
+
+**WHY.** Characters are deliberately unbalanced; coverage comes from the **team and scenario** (#4).
+Role-as-assigned-cards makes "god ≈ party" concrete (the *same* pool, distributed); the per-role play
+cap (§4) is what equalises their throughput. Depth-vs-breadth stays the uncomputable strategic fork
+(#2).
+
+**GUARANTEES.**
+- A character's roles = its assigned role-card tracks; **accretes** (monotone, §0.1).
+- **Stats are bundled with role rewards** — the survivability to *use* a role grows *with* the role; no
+  free-floating generic stat pool (no "stat-mule").
+- Five role tracks (the `3 + 2`); the generic is a **stat layer**, not a currency.
+
+### §5 → **the role-card taxonomy** (addition)
+
+**RULE.** A role card is exactly one of: **Base** — played from Hand, the track's core effect (normal
+§5.3 zone behaviour); **Modifier** — *passive*, lives in Active, auto-applies to its Base (the scaling
+card), never separately played; **Mode** — *played*, an alternative / charged Base (e.g. spend a turn
+for a bigger effect), mutually exclusive with the Base that round; **Stat** — a Form attachment
+(§2.3 stats-as-deck), contributes stats, not played.
+
+**WHY.** The taxonomy makes scaling cards coexist with the §4 per-role cap (Modifiers ride free;
+Base + Mode count). It maps onto the existing passive-power vs played-action split.
+
+**GUARANTEES.** A set's cards are **self-contained** — Modifiers/Stats apply *within* their set; **no
+cross-reward multiplicative combo** (§0.1).
+
+### §4 → **the role-card play rule** (addition)
+
+**RULE.** A character may play **at most one role card of each role per round** (so it may play several
+if they are *different* roles). **[D2]** A **positional** role card (Wall / Infiltrator / Artillery) is
+playable only from the matching §4 position; **effect** cards (Support / Controller) are
+position-agnostic.
+
+**WHY.** The per-role cap is the **god-vs-party lever** (#4 god ≈ party): a god holds every track but,
+being one body in one position, plays ~one positional + the two effect cards per round, while a
+5-specialist party plays ~5 across five bodies — a **throughput tradeoff, not dominance**. Positional
+coherence reins the god in **emergently** (#9 — one body, one position).
+
+**GUARANTEES.** Per-role-per-round cap; a positional card requires its position. Neither party size
+dominates on raw card throughput (the budget #4 / candidate **BI-3** the solver verifies).
+
+### Deferred to content / balance (not Spec rules)
+
+- The **new-effect ↔ modifier ratio** per track (§3.4) — a `booklet.ron` authoring + §6-measured dial.
+- The **per-level set-complexity curve** (§3.3) — the combat-oracle-cost dial.
+
+### Migration status (what graduation makes "pending")
+
+On graduation, §8.3 / §8.5 / §5 / §4 are `🟡 seeded · migration pending`. The code is then a defect to
+fix in: **(1)** drop the currency economy + add the role-card data model & permanent atomic assignment;
+**(2)** the per-role-per-round cap + positional metadata in combat; **(3)** author the 25 sets;
+**(4)** rebuild `reference.rs`. (Per the [§10 runbook](computability-and-balance.md) discipline, code
+follows Spec, not the reverse.)
