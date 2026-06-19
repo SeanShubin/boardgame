@@ -163,6 +163,11 @@ Refinements that keep this honest:
 because **you** supply the labels — the bot only measures. The closure check is what makes
 it *sufficient* rather than merely well-shaped.
 
+**The concrete targets live in a registry.** The specific, checkable balance properties the tuned
+numbers must satisfy — each an instance of "interesting beats boring" or "interesting on par" — are
+catalogued in [balance-invariants.md](balance-invariants.md). When the solver lands, each becomes an
+assertion it runs (§4), so a retune that breaks one fails the build.
+
 ---
 
 ## 7. What is allowed to break the rules (quarantined modes)

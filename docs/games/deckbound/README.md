@@ -32,6 +32,10 @@ The documentation is split by **authority**:
   review checklist), and how that computability is used to balance the game objectively. Read it
   before adding anything that touches randomness, foe behaviour, carried state, build growth, or
   the day clock.
+- **[balance-invariants.md](balance-invariants.md) — the balance-target registry.** A living list of
+  the checkable balance properties the tuned numbers must satisfy (e.g. *a one-of-each-role party
+  beats every same-size single-role party*), each an instance of "interesting beats boring." Verified
+  by the harness / par solver; a satisfied invariant is a regression guard.
 - **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
   being worked out ahead of graduating onto the Spec —
   [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,
