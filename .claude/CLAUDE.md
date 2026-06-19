@@ -8,7 +8,7 @@ for the full layout and design.
 - `crates/engine` — pure framework. The `Game` trait, `Zone`, seeded `Rng`, and
   `TableView`. **No Bevy dependency** — keep it that way so games stay
   unit-testable.
-- `crates/<game>` — one pure crate per game (e.g. `treasure-dive`), implementing
+- `crates/<game>` — one pure crate per game (e.g. `deckbound`), implementing
   `engine::Game`. No Bevy; all randomness flows from the seed.
 - `crates/tabletop` — the only Bevy crate that renders games. Generic over
   `Game`; never reference a specific game here.

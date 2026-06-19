@@ -35,11 +35,11 @@ jobs:
         run: cargo fmt --all -- --check
 
       # The pure logic crates are quick and have no system dependencies.
-      - name: Clippy (engine, treasure-dive)
-        run: cargo clippy -p engine -p treasure-dive -- -D warnings
+      - name: Clippy (engine, deckbound)
+        run: cargo clippy -p engine -p deckbound -- -D warnings
 
-      - name: Test (engine, treasure-dive)
-        run: cargo test -p engine -p treasure-dive
+      - name: Test (engine, deckbound)
+        run: cargo test -p engine -p deckbound
 
   build:
     name: Build (${{ matrix.os }})

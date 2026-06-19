@@ -10,6 +10,7 @@ use engine::{
 };
 
 use crate::actor::{Actor, Range};
+use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
@@ -25,8 +26,13 @@ pub enum Action {
     OpenGod,
     OpenTutorial,
     OpenVersus,
+    /// Open the world-map reference Campaign (§8).
+    OpenCampaign,
     /// Open the rules encyclopedia (its category list).
     OpenEncyclopedia,
+    /// Take the campaign's *n*-th legal action (an index into [`Campaign::legal_actions`], so the
+    /// whole campaign rides through this enum while it stays `Copy`).
+    CampaignMove(usize),
     /// Open one rules category (by index in `categories()`).
     OpenCategory(usize),
     PickScenario(usize),
@@ -72,8 +78,13 @@ fn menu_state(seed: u64) -> State {
         outcome: None,
         clash_module: false,
         pvp: false,
+        campaign: None,
     }
 }
+
+/// The campaign ruleset, delegated to while [`State::campaign`] is `Some`. A unit struct, so this
+/// is just a namespace for its `Game` methods.
+const CAMPAIGN: Campaign = Campaign;
 
 fn list_for(menu: Menu) -> Vec<Scenario> {
     match menu {
@@ -803,6 +814,9 @@ impl Game for Deckbound {
     }
 
     fn current_player(&self, state: &State) -> Option<PlayerId> {
+        if let Some(camp) = &state.campaign {
+            return CAMPAIGN.current_player(camp);
+        }
         if state.outcome.is_some() {
             return None;
         }
@@ -814,6 +828,14 @@ impl Game for Deckbound {
     }
 
     fn legal_actions(&self, state: &State) -> Vec<Action> {
+        // In the campaign, expose its moves as indices into its own action list, plus an escape
+        // back to the main menu (always available, including after the run is won/lost).
+        if let Some(camp) = &state.campaign {
+            let n = CAMPAIGN.legal_actions(camp).len();
+            let mut a: Vec<Action> = (0..n).map(Action::CampaignMove).collect();
+            a.push(Action::ToMenu);
+            return a;
+        }
         if state.outcome.is_some() {
             return vec![Action::Replay, Action::ToMenu];
         }
@@ -823,6 +845,7 @@ impl Game for Deckbound {
                 Action::OpenCooperation,
                 Action::OpenGod,
                 Action::OpenVersus,
+                Action::OpenCampaign,
                 Action::OpenEncyclopedia,
                 Action::Exit,
             ],
@@ -932,6 +955,18 @@ impl Game for Deckbound {
     }
 
     fn action_label(&self, state: &State, action: &Action) -> String {
+        if let Some(camp) = &state.campaign {
+            if let Action::CampaignMove(i) = action {
+                let acts = CAMPAIGN.legal_actions(camp);
+                return acts
+                    .get(*i)
+                    .map(|ca| CAMPAIGN.action_label(camp, ca))
+                    .unwrap_or_default();
+            }
+            if matches!(action, Action::ToMenu) {
+                return "Leave the campaign".into();
+            }
+        }
         // Names resolve against the committing side (heroes in PvE / side A); the foe-name helper
         // against the other side. In PvE committing is always 0, so these are heroes/creatures.
         let side = state.plan.committing;
@@ -954,6 +989,8 @@ impl Game for Deckbound {
             Action::OpenGod => "God-tier".into(),
             Action::OpenTutorial => "Duels".into(),
             Action::OpenVersus => "Versus (hotseat)".into(),
+            Action::OpenCampaign => "Campaign".into(),
+            Action::CampaignMove(_) => String::new(),
             Action::OpenEncyclopedia => "Rules".into(),
             Action::OpenCategory(i) => categories().get(*i).cloned().unwrap_or_else(|| "?".into()),
             Action::Exit => "Exit".into(),
@@ -1012,6 +1049,20 @@ impl Game for Deckbound {
                 }
                 return Ok(());
             }
+            // Delegate a campaign move to the campaign game (resolve its index against its own
+            // action list — the same list `legal_actions` numbered).
+            Action::CampaignMove(i) => {
+                let camp = state
+                    .campaign
+                    .as_mut()
+                    .ok_or_else(|| GameError::new("not in a campaign"))?;
+                let acts = CAMPAIGN.legal_actions(camp);
+                let ca = acts
+                    .get(*i)
+                    .cloned()
+                    .ok_or_else(|| GameError::new("no such campaign move"))?;
+                return CAMPAIGN.apply(camp, &ca);
+            }
             _ => {}
         }
         if state.outcome.is_some() {
@@ -1026,6 +1077,9 @@ impl Game for Deckbound {
                 state.phase = Phase::Menu(Menu::Tutorial)
             }
             (Phase::Menu(Menu::Top), Action::OpenVersus) => state.phase = Phase::Menu(Menu::Versus),
+            (Phase::Menu(Menu::Top), Action::OpenCampaign) => {
+                state.campaign = Some(Box::new(reference_campaign()));
+            }
             (Phase::Menu(Menu::Top), Action::OpenEncyclopedia) => {
                 state.phase = Phase::Menu(Menu::Rules)
             }
@@ -1216,10 +1270,42 @@ impl Game for Deckbound {
     }
 
     fn outcome(&self, state: &State) -> Option<Outcome> {
+        // The campaign is a sub-activity, not the app's terminal outcome — winning the run shows a
+        // victory and offers "Leave the campaign", rather than ending the whole session.
+        if state.campaign.is_some() {
+            return None;
+        }
         state.outcome.clone()
     }
 
+    fn suggest(&self, state: &State) -> Option<Action> {
+        let camp = state.campaign.as_ref()?;
+        let want = CAMPAIGN.suggest(camp)?;
+        let pos = CAMPAIGN
+            .legal_actions(camp)
+            .iter()
+            .position(|a| *a == want)?;
+        Some(Action::CampaignMove(pos))
+    }
+
+    fn is_suggested(&self, state: &State, action: &Action) -> bool {
+        let Some(camp) = &state.campaign else {
+            return false;
+        };
+        let Action::CampaignMove(i) = action else {
+            return false;
+        };
+        let Some(want) = CAMPAIGN.suggest(camp) else {
+            return false;
+        };
+        CAMPAIGN.legal_actions(camp).get(*i) == Some(&want)
+    }
+
     fn cancel_action(&self, state: &State) -> Option<Action> {
+        // Esc leaves the campaign (back to the menu where it was launched).
+        if state.campaign.is_some() {
+            return Some(Action::ToMenu);
+        }
         if state.outcome.is_some() {
             return None;
         }
@@ -1242,7 +1328,10 @@ impl Game for Deckbound {
         scenarios::glossary()
     }
 
-    fn view(&self, state: &State, _perspective: Option<PlayerId>) -> TableView {
+    fn view(&self, state: &State, perspective: Option<PlayerId>) -> TableView {
+        if let Some(camp) = &state.campaign {
+            return CAMPAIGN.view(camp, perspective);
+        }
         let mut zones = Vec::new();
         let mut prose: Vec<engine::ProseLine> = Vec::new();
         match &state.phase {
@@ -1413,6 +1502,7 @@ fn category_zone() -> ZoneView {
 /// The top menu: each scenario set and Rules is a **clickable card** bound to its open action
 /// (indices 0..4 in `legal_actions` for `Menu(Top)`). Buttons are left only for the meta (Exit).
 fn menu_zone() -> ZoneView {
+    // Order must match `legal_actions` for `Menu::Top`: each card binds to action index `i`.
     let items = [
         ("Duels", "Learn the game, one lesson at a time."),
         (
@@ -1421,6 +1511,10 @@ fn menu_zone() -> ZoneView {
         ),
         ("God-tier", "Solo power fantasy vs the odds."),
         ("Versus", "Hotseat PvP — pass and play."),
+        (
+            "Campaign",
+            "The world-map reference run — travel, fight, grow, win.",
+        ),
         ("Rules", "The rulebook — browse by category."),
     ];
     ZoneView {
@@ -1594,6 +1688,47 @@ mod tests {
         game.apply(&mut s, &Action::Back).unwrap();
         assert_eq!(s.phase, Phase::Menu(Menu::Rules));
         game.apply(&mut s, &Action::Back).unwrap();
+        assert_eq!(s.phase, Phase::Menu(Menu::Top));
+    }
+
+    /// The Campaign is reachable as a top-menu card, and the guide drives it to victory entirely
+    /// through `Deckbound`'s wrapped actions (`OpenCampaign` → `CampaignMove`s) — i.e. the merge
+    /// preserves the standalone campaign's win.
+    #[test]
+    fn campaign_is_playable_from_the_menu() {
+        let game = Deckbound;
+        let mut s = game.new_game(1, 1);
+        assert!(game.legal_actions(&s).contains(&Action::OpenCampaign));
+        game.apply(&mut s, &Action::OpenCampaign).unwrap();
+        assert!(s.campaign.is_some(), "the campaign sub-state is live");
+        // outcome() stays None in campaign mode (a sub-activity, not the session's end).
+        assert!(game.outcome(&s).is_none());
+
+        for _ in 0..10_000 {
+            // Win shows as the campaign's own outcome; the menu stays reachable via ToMenu.
+            if s.campaign
+                .as_ref()
+                .and_then(|c| c.outcome.clone())
+                .is_some()
+            {
+                break;
+            }
+            let suggested = game.suggest(&s).expect("the guide always has a next move");
+            assert!(game.is_suggested(&s, &suggested), "suggest() round-trips");
+            game.apply(&mut s, &suggested).unwrap();
+        }
+        let won = matches!(
+            s.campaign.as_ref().and_then(|c| c.outcome.clone()),
+            Some(Outcome::Win(PlayerId(0)))
+        );
+        assert!(
+            won,
+            "the guide wins the reference run through the merged menu"
+        );
+
+        // Leaving returns to the top menu, campaign cleared.
+        game.apply(&mut s, &Action::ToMenu).unwrap();
+        assert!(s.campaign.is_none());
         assert_eq!(s.phase, Phase::Menu(Menu::Top));
     }
 

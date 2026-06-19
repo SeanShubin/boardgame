@@ -36,7 +36,7 @@ line that chooses which game to run.
 
 5. **Test it.** Game logic is pure, so test it directly — determinism from a
    fixed seed, legal/illegal actions, scoring, and the end condition. See
-   [`crates/treasure-dive/src/game.rs`](../../crates/treasure-dive/src/game.rs)
+   [`crates/deckbound/src/game.rs`](../../crates/deckbound/src/game.rs)
    for examples.
 
 6. **Run it.** Point the launcher at your game in
@@ -52,5 +52,5 @@ line that chooses which game to run.
 
 ## Reference implementation
 
-`crates/treasure-dive` is the smallest complete example — read it end to end
-when starting a new game.
+`crates/deckbound` is the worked example — read its `game.rs` end to end when
+starting a new game.

@@ -1,7 +1,0 @@
-[package]
-name = "treasure-dive"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-engine = { workspace = true }

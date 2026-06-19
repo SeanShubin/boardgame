@@ -11,10 +11,8 @@ Framework documentation shared across all games lives in
 
 ## The games
 
-- **[Treasure Dive](treasure-dive/README.md)** — a small, original push-your-luck
-  card game. Implemented and playable.
-- **[Deckbound](deckbound/README.md)** — a simulation-style, hidden-information
-  fantasy card game. Early design; not yet playable.
+- **[Deckbound](deckbound/README.md)** — a cooperative, hidden-information card-combat
+  game with a world-map campaign.
 
 ## Adding a game's docs
 

@@ -8,10 +8,8 @@ game's folder; documentation that applies to all games is kept separate.
 Each game has a common root under [`games/`](games/) holding its player **rules**
 and **design** notes.
 
-- [Treasure Dive](games/treasure-dive/README.md) — a small push-your-luck card
-  game *(implemented)*.
-- [Deckbound](games/deckbound/README.md) — a simulation-style fantasy card game
-  *(early design — not yet playable)*.
+- [Deckbound](games/deckbound/README.md) — a cooperative card-combat game with a
+  world-map campaign.
 
 ## Technical (all games)
 

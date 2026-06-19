@@ -1,9 +1,9 @@
 //! The launcher binary.
 //!
-//! It wires a chosen game into the generic [`tabletop`] renderer and runs it.
-//! To play a different game, swap the game passed to
-//! [`TabletopPlugin::new`] — any type implementing `engine::Game` works
-//! (e.g. `treasure_dive::TreasureDive`).
+//! It wires [`Deckbound`] into the generic [`tabletop`] renderer and runs it. The game opens on its
+//! menu, where every mode — Duels / Cooperation / God-tier / Versus, the world-map **Campaign**, and
+//! the rules encyclopedia — is one card. Any type implementing `engine::Game` could be swapped in
+//! here.
 
 use bevy::prelude::*;
 use deckbound::Deckbound;
@@ -17,9 +17,6 @@ const SEED: u64 = 1;
 const PLAYERS: usize = 1;
 
 fn main() -> AppExit {
-    // The default launch is the **Deckbound combat menu** (Cooperation / God / Tutorials / Versus +
-    // the rules encyclopedia). To play the world-map reference Campaign instead, run the `campaign`
-    // binary: `cargo run -p boardgame --bin campaign`.
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {

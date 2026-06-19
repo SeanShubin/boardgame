@@ -10,5 +10,4 @@ path = "src/main.rs"
 [dependencies]
 bevy = { workspace = true }
 tabletop = { workspace = true }
-treasure-dive = { workspace = true }
 deckbound = { workspace = true }

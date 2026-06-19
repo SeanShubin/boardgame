@@ -8,8 +8,8 @@ cd "$(dirname "$0")/.."
 echo "==> Checking formatting"
 cargo fmt --all -- --check
 
-echo "==> Clippy (engine, treasure-dive)"
-cargo clippy -p engine -p treasure-dive -- -D warnings
+echo "==> Clippy (engine, deckbound)"
+cargo clippy -p engine -p deckbound -- -D warnings
 
 echo "==> Tests"
 cargo test --workspace

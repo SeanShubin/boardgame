@@ -11,7 +11,7 @@ only, for now.)
 | Crate                  | Kind | What it is                                                                                                                                                          |
 | ---------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crates/engine`        | lib  | The framework: the `Game` trait, card-game building blocks (`Zone`, seeded `Rng`), and `TableView` — a renderer-agnostic snapshot of the table. No Bevy dependency. |
-| `crates/treasure-dive` | lib  | The first game: *Treasure Dive*, an original push-your-luck card game. Pure logic, fully unit-tested.                                                               |
+| `crates/deckbound`     | lib  | The game: *Deckbound*, a cooperative card-combat game with a world-map campaign. Pure logic, fully unit-tested.                                                     |
 | `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into buttons.                                                                             |
 | `crates/boardgame`     | bin  | The launcher. Wires one game into the renderer and runs it.                                                                                                         |
 
@@ -36,8 +36,7 @@ with a PowerShell and a bash version.
 All documentation lives in [`docs/`](docs/), grouped by game:
 
 - **[Games](docs/games/)** — everything specific to one game, with `rules/` and
-  `design/` side by side: [Treasure Dive](docs/games/treasure-dive/README.md) and
-  [Deckbound](docs/games/deckbound/README.md) *(early design)*.
+  `design/` side by side: [Deckbound](docs/games/deckbound/README.md).
 - **[Technical](docs/technical/)** — framework docs shared across all games: the
   [architecture](docs/technical/architecture.md) and how to
   [add a game](docs/technical/adding-a-game.md).

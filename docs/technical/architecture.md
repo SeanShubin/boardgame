@@ -9,7 +9,7 @@ renderer; the renderer never knows which game it is showing.
 | Crate                  | Kind | What it is                                                                                                                                                                                                  |
 | ---------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crates/engine`        | lib  | The framework. Defines the [`Game`](#the-game-trait) trait, reusable card-game building blocks (`Zone`, seeded `Rng`), and `TableView` — a renderer-agnostic snapshot of the table. **No Bevy dependency.** |
-| `crates/treasure-dive` | lib  | The first game. Pure logic, fully unit-tested. Depends only on `engine`.                                                                                                                                    |
+| `crates/deckbound`     | lib  | The game: *Deckbound*. Pure logic, fully unit-tested. Depends only on `engine`.                                                                                                                             |
 | `crates/tabletop`      | lib  | A Bevy plugin that renders any `engine::Game` and turns its legal actions into clickable buttons. The only crate that depends on Bevy and on a game's *shape* (not its rules).                              |
 | `crates/boardgame`     | bin  | The launcher. Wires one game into the `tabletop` renderer and runs it.                                                                                                                                      |
 
@@ -47,7 +47,7 @@ seam that lets one renderer display every game.
         engine::Game  (rules, pure)
           ^        \
           |         \  view() -> TableView
-  treasure-dive      \
+     deckbound       \
           |           v
         tabletop  (Bevy: draws TableView, sends legal_actions back as buttons)
           |

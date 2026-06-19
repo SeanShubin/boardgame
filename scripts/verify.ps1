@@ -10,8 +10,8 @@ try {
     cargo fmt --all -- --check
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Write-Host "==> Clippy (engine, treasure-dive)"
-    cargo clippy -p engine -p treasure-dive -- -D warnings
+    Write-Host "==> Clippy (engine, deckbound)"
+    cargo clippy -p engine -p deckbound -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Write-Host "==> Tests"
