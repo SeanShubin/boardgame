@@ -10,6 +10,10 @@
 > This is a **design-intent** document. It traces to the Charter; it is not the Spec. When
 > a system here gets a Spec section, its invariants should graduate into that section's
 > **GUARANTEES** (the Spec owns mechanical invariants). See §8.
+>
+> **▶ Resuming the build?** Par tuning is **deferred until the mechanics are vetted** (the
+> designer's call). When you return to build the measurement tools, tune the cards, or design the
+> combat algorithms, **start at [§10 — Resuming: the deferred build plan](#10-resuming--the-deferred-build-plan)**: it is the runbook (order of work, locked decisions, the questions to ask first, code/doc entry points, and the definition of done).
 
 ---
 
@@ -211,7 +215,8 @@ single-agent and deterministic.
 - **Into code.** The par solver / balance harness is a **future build** — a new Rust crate or
   an `examples/` program reusing `deckbound::solver` and the campaign's legal-action API,
   **never an ad-hoc script** (per the repo guardrail). When it lands, add the §4 budget test
-  to CI and make the guide honest by comparing it to the computed par.
+  to CI and make the guide honest by comparing it to the computed par. **The full runbook for this
+  deferred build is [§10](#10-resuming--the-deferred-build-plan).**
 
 ---
 
@@ -221,6 +226,95 @@ single-agent and deterministic.
 > near-stateless between battles, monotone in builds, and bounded?* If not — is it confined
 > to an optional mode, or explicitly bounded? If you can't answer yes, you are spending the
 > computability budget. Spend it on purpose, and write it down here.
+
+---
+
+## 10. Resuming — the deferred build plan
+
+**Status: deferred.** Par tuning waits until the designer has **vetted the mechanics** (a while).
+When the human says *"build the measurement tools / tune the cards / design the algorithms,"* this
+is the runbook. Read it, read the §10.4 context, then ask the §10.3 questions **before** writing
+code.
+
+### 10.1 The three workstreams, in dependency order
+
+Build the instrument before its consumers.
+
+1. **Measurement — the par solver (MVP first).** A **new Rust crate or `examples/` program** (never
+   an ad-hoc script — repo guardrail) over `deckbound::solver` and the campaign's `Game` API. Combat
+   oracle = the existing `solver::auto_resolve` (greedy, Clash off). Planner = Dijkstra / A* over
+   campaign states `(positions, cleared-set, builds, Day)` (Spec §0.1), minimising Days, calling the
+   oracle at each `Enter`, with dominance pruning on monotone builds. **Output:** par + a witness
+   path + the near-par solution set. First payoff: does the **guide** equal par?
+2. **Algorithms — strengthen the combat oracle (the "near-optimal substitute", §5).** Add a slow
+   **exact** per-battle search (the hero's decision tree vs the fixed foes — single-agent,
+   memoizable per `(build, encounter)`) as ground truth; then a **fast, certified** near-optimal
+   policy, error-bounded against the exact search on a sample. Fix this as the canonical resolver
+   `P`; every par is **"par under `P`."**
+3. **Tuning — the balance loop (§6).** With trustworthy par: express each strategy as a solver
+   **constraint**, then tune `booklet.ron` numbers so *interesting* strategies tie near par, *boring*
+   ones are strictly worse, and the **closure check** passes (no unnamed dominator). Verify the
+   [balance-invariants](balance-invariants.md) registry (BI-1, …). Add the **`(par, robustness)`**
+   axis (the near-par basin).
+4. **Lock it in.** Wire the solver as the **budget regression test** (§4): the reference scenario
+   solves within its state / time budget, or the build fails. Reconcile the guide to computed par.
+
+### 10.2 Locked decisions — do not re-litigate
+
+- The **computable core + separability** is canon: **Spec §0**, **Charter #11**.
+- **Par is policy-relative** (§5) — always stamp "par under `P`".
+- **Balance method** = interesting > boring + the **closure check** + `(par, robustness)`; the human
+  labels, the solver measures (§6).
+- **Build invariants** (monotone / additive / order-independent; no carried *combat* state — the
+  build is the carried state) are GUARANTEES (Spec §0.1).
+- **Numbers are AI-seeded, human-tuned** in `booklet.ron`; never tune a number in the same breath as
+  a rule (`0-source-of-truth.md`).
+- The **reference scenario is the harness** (`reference-scenario.md`); the guide win (~19 Days) is the
+  current par *upper bound*.
+
+### 10.3 Open questions — ask these (batched) at kickoff
+
+- **Par objective:** min Days only, or lexicographic — Days, then fewest upgrades / closest-to-guide?
+  This defines the "most straightforward solution" tie-break.
+- **Packaging:** a `par-solver` crate, or `examples/par.rs` in `deckbound`? Name it.
+- **State key & pruning:** the canonical key for `(positions, cleared, builds, Day)` and the
+  dominance rules (earlier / superset build dominates).
+- **Strategy constraints:** the language for expressing a named strategy as a search restriction (§6).
+- **Tolerances:** `ε` for "on par"; the robustness / near-par-basin metric.
+- **Budget thresholds:** the `N` states / `T` seconds for the §4 CI test.
+- **Policy rollout:** greedy MVP first, then the certified fast policy; the certification sample size.
+
+### 10.4 Entry points (where the context lives)
+
+**Code (`crates/deckbound/src/`):**
+- `solver.rs` — `auto_resolve`, `greedy`: the oracle substrate (Clash-off, deterministic).
+- `campaign.rs` — `CampaignState`, `Campaign::{legal_actions, apply, suggest, view}` (the planner
+  API), `reference_campaign` (the start state), test `the_guide_wins_the_reference_run` (par baseline).
+- `reference.rs` — `check_invariants`, `check_combat_bands`, `reference_scenario` (the harness + gates).
+- `game.rs` — `battle_state` (headless battle for the oracle), `nav_level`/`session_key` (state shape).
+- `data/booklet.ron` — the numbers to tune (Step 3 only).
+
+**Docs (`docs/games/deckbound/`):** this doc (the discipline) · **Spec §0** (the binding contract) ·
+`balance-invariants.md` (the targets) · `reference-scenario.md` (the harness) · Charter **#2 / #4 / #11**
+(intent) · `progression-design.md` (the economy / build space the planner searches).
+
+### 10.5 Definition of done
+
+- Par solver computes **par + witness + near-par diversity** for the reference scenario, within the §4
+  budget, **wired as a CI test**.
+- The combat policy `P` is **fixed and certified** (error-bounded vs the exact search).
+- The **balance loop** runs green: interesting tie near par; boring strictly worse; closure check
+  passes; **BI-1** (and any further registry invariants) verified.
+- The **guide is reconciled** to computed par.
+
+### 10.6 Constraints that protect future-you
+
+- **Build against the `engine::Game` trait + the campaign API + `booklet.ron` data — not hardcoded
+  rules.** The designer is revising mechanics now; a tool that reaches the game only through the trait
+  and the data survives those revisions (rules change behind the trait; numbers change in data).
+- **Do not tune numbers until the designer says the mechanics are vetted.** The measurement tools and
+  the algorithms (Steps 1–2) are mechanics-agnostic and *may* be built earlier on request; **Step 3
+  (tuning) waits for the explicit go.**
 
 ---
 
