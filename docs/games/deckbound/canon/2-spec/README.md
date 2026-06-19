@@ -1033,18 +1033,23 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 ### 4.4 Role-card play — one per role per round 🟡 *(migration pending)*
 
 **RULE.** A character may play **at most one role card of each role per round** — so it may play
-several role cards in a round, as long as they are **different roles**. A **positional** role card
-(Wall / Infiltrator / Artillery) is playable only from the matching §4 position (Vanguard / Skirmisher /
-Reserve); an **effect** role card (Support / Controller) is **position-agnostic**.
+several role cards in a round, as long as they are **different roles**. A role card is **played in the
+phase where its character acts**: a holding Vanguard plays its **Wall** card in the Vanguard step, a
+Skirmisher its **Infiltrator** card in Skirmish, a Reserve its **Artillery** card in Reserve; an
+**effect** role card (Support / Controller) is **position-agnostic** and plays in whatever phase that
+character acts. So a **positional** role card is playable only from the matching §4 position.
 
 **WHY.** The per-role cap is the **god-vs-party lever** (#4: god ≈ party). A god holds every track, but
 — one body in one position — it plays roughly *one positional + the two effect* cards per round, while a
 five-specialist party plays *~five* across five bodies: a **throughput tradeoff, not dominance** (the
 god trades throughput + resilience for best-of-pool flexibility). Positional coherence reins the god in
 **emergently** — one body cannot occupy three positions (#9, a rule that falls out of the fiction).
+Playing each card **in its acting phase** keeps the §4 information gradient intact (a Wall card commits
+before Skirmishers choose; an Artillery card resolves last with full info) rather than flattening it.
 
 **GUARANTEES.**
-- One role card of each role, per character, per round; a positional card requires its position.
+- One role card of each role, per character, per round; a positional card requires its position, played
+  in that position's phase (so the §4 gradient holds — never a single flattened play step).
 - No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-3**, which the
   par solver verifies).
 
@@ -1255,9 +1260,10 @@ Deferring defeat until we *measure* avoids guessing difficulty before we have da
 **RULE.** Clearing **level X of role-track Y** unlocks the **reward** for `(Y, X)`: a fixed, **atomic
 set** of cards — role-effect card(s), a bundled generic **Stat** card, and any passive **Modifier**
 (§5.6) — **one physical copy each** (scarce). The **party assigns the whole set, permanently, to one
-character.** Five tracks × five levels = **25 rewards**. **No currency** — clearing *is* the unlock
-(clear level N of a track ⇒ its levels 1..N). Each card prints its `(role, level)` **provenance**, so a
-set is identifiable and stays together.
+character — at unlock** (the clear that earns it surfaces the choice; there is no holding pool). Five
+tracks × five levels = **25 rewards**. **No currency** — clearing *is* the unlock (clear level N of a
+track ⇒ its levels 1..N). Each card prints its `(role, level)` **provenance**, so a set is identifiable
+and stays together.
 
 > **Replaced (2026-06-19) — the currency economy.** §8.3 was *Currency & loot*: clearing earned typed
 > **Currency** (Iron/Silver/Brass/Bone/Salt + generic Gold) that bought stat **Upgrades**, balance

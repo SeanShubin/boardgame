@@ -450,14 +450,15 @@ struct Member {
 }
 // CampaignState changes:
 //   owned rewards   = derived from run.cleared (a location of track Y cleared to level N ⇒ (Y, 1..N))
-//   unassigned pool = owned − (Σ members.rewards)
 //   a member's Actor = build_character(base, member.rewards)   // §9.4
+//   SD2: a newly-unlocked reward is assigned AT UNLOCK (no holding pool) — the Enter that clears
+//        a level surfaces an Assign decision for each new reward.
 ```
 
 - **Remove:** `Member.path` + `Member.upgrades`, `earned/spent/affordable/next_upgrade`,
   `CampAction::Buy`, all `Coins`/`balance` spend logic, `world::treasure` as currency.
-- **Add:** `CampAction::Assign(RewardId, member_idx)` — assign an unlocked-unassigned reward to a
-  member (permanent). *(The guide assigns optimally; §9.5 SD2.)*
+- **Add:** `CampAction::Assign(RewardId, member_idx)` — assign a **just-unlocked** reward to a member
+  (permanent), offered when a clear unlocks it (§9.5 SD2). *(The guide assigns optimally.)*
 
 ### 9.4 Combat (Phase 2 — additive to the existing engine)
 
@@ -472,26 +473,32 @@ fn build_character(base, rewards) -> Actor {
 }
 ```
 
+- **Play model (SD1 = Option 2 — distributed):** `PlayCard` legality extends to the **Slip**
+  (Vanguard) and **Skirmish** phases (Reserve already has it). A character plays its role cards in the
+  phase where it acts — positional cards gated by that phase = position; effect cards anywhere it acts.
+  This **preserves the §4 information gradient**.
 - **Per-role-per-round cap (§4.4):** `Round` gains, per member, `roles_played: set<Track>` (reset each
   round). A role card is playable only if its `role` is not already in that member's `roles_played`.
 - **Positional coherence (§4.4):** a positional role card (role ∈ {Wall, Infiltrator, Artillery}) is
   playable only when the member's current position matches (Vanguard / Skirmisher / Reserve); effect
-  cards (Support / Controller) are position-agnostic.
+  cards (Support / Controller) are position-agnostic. *(Falls out of the play model above.)*
 
-### 9.5 Sub-decisions the schema forces (your calls — recommendations baked in)
+### 9.5 Sub-decisions — all settled (2026-06-19)
 
-- **SD1 — the card-play model (the meaty one).** Positional gating needs a place to play cards.
-  - *Option 1 (recommended): one card-play step, position-gated.* Keep a single play step per round
-    (generalising today's Reserve `PlayCard`); a member may play role cards its **current position**
-    allows + effect cards, capped one-per-role. **Least engine churn.**
-  - *Option 2: card-play distributed per phase* — Wall cards resolve in the Vanguard step, Infiltrator
-    in Skirmish, Artillery in Reserve. **More diegetic, more combat-engine change.**
-- **SD2 — assignment timing.** *Recommended:* an **unassigned pool**; assign anytime via `Assign`
-  (not forced at unlock) — more flexibility, guide assigns optimally.
-- **SD3 — base identity.** *Recommended:* keep a **clean-slate `Novice` base** (bare stats); all power
-  from rewards (§8.5).
-- **SD4 — the `Currency` enum.** *Recommended:* **keep it as `Track`** (the role colour/id), delete
-  only the spend logic — minimises churn and preserves the role↔colour provenance (§3.5).
+- **SD1 — card-play model = Option 2 (distributed; *cards ride the existing phases*).** ✅ A role card
+  is played in the phase where its character **acts** — a holding Vanguard plays its **Wall** card in
+  the Vanguard step, a Skirmisher its **Infiltrator** card in Skirmish, a Reserve its **Artillery**
+  card in Reserve; **effect** cards (Support/Controller) play in whatever phase that character acts.
+  Each character acts in one phase per round, so the per-role cap + positional gating fall out for
+  free, **and the §4 information gradient is preserved** (the deciding factor over a single flattened
+  step). *Churn:* extend `PlayCard` legality to the Slip & Skirmish phases (Reserve already has it).
+  → graduated to **Spec §4.4**.
+- **SD2 — assignment timing = Option A (*assign at unlock*).** ✅ On clearing track Y to level N, the
+  newly-unlocked rewards `(Y, 1..N)` are assigned to characters **then**, permanently — the
+  "who-gets-it" decision at the reward moment. **No unassigned pool.** → graduated to **Spec §8.3**.
+- **SD3 — base identity = clean-slate `Novice`.** ✅ Bare stats; all power from rewards (§8.5).
+- **SD4 — `Currency` enum = keep as `Track`.** ✅ The role colour/id survives; only the spend logic is
+  deleted (preserves the role↔colour provenance, §3.5).
 
 ### 9.6 What this does NOT touch
 
