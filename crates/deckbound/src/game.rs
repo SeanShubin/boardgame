@@ -170,8 +170,12 @@ pub fn battle_state(heroes: Vec<Actor>, creatures: Vec<Actor>, clash: bool, seed
             stall: 0,
         });
         state.phase = Phase::Clash;
+        // Replace the menu log seeded by `menu_state` — else the battle opens showing the stale
+        // "choose a scenario set" line until combat events push it off.
+        state.log = vec!["-- the duel begins --".into()];
     } else {
         state.phase = Phase::Muster;
+        state.log = vec!["-- Round 1: muster --".into()];
     }
     state
 }
