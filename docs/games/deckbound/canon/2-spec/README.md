@@ -96,7 +96,9 @@ method are in [`computability-and-balance.md`](../../computability-and-balance.m
 **deterministic** (no rule consumes randomness), **perfect-information** (nothing hidden),
 **single-agent** in PvE (creatures run a fixed, non-adaptive policy — an environment, not an
 opponent that searches back), and **bounded** (a Day cap, finitely many reachable builds,
-terminating combat). In that mode a run is a finite planning problem with a computable optimum.
+terminating combat). A run is therefore a finite planning problem with a computable optimum, whose
+state is **`(positions, cleared-set, builds, Day)`** — and the **builds** are the campaign's *only*
+carried state: combat is stateless, but **progression** is not.
 
 **WHY.** A computable core is the **balance instrument**: it lets us *prove* a scenario is
 beatable, *compute* its par, and *check* that no single line dominates (#11). It is how we **keep**
@@ -108,10 +110,17 @@ Lose computability and balance becomes unverifiable.
   no RNG, bit-identical every run.
 - Creatures never **adapt to the player's specific plan** (fixed instinct / policy); PvE stays
   single-agent. *(Two human sides is the Versus mode, §3.4 — outside the core.)*
-- A battle carries **no state between fights**: each is rebuilt from `(build, place)`; the only
-  thing that flows across fights is the economy (§8.3). Combat is therefore a **memoizable oracle**.
+- A battle carries **no _combat_ state between fights** — each is rebuilt from `(build, place)`, so
+  no wounds or buffs persist; combat is therefore a **memoizable oracle** over the finite set of
+  reachable builds. The campaign's carried state is the **build** (progression, §8.5) plus the
+  economy that funds it (§8.3) — *not* combat history.
 - Builds grow **monotonically** — permanent, additive, order-independent attachments (§5.2 / §2.3);
-  no removal, swap, or multiplicative combo in the core, so the reachable build set stays small.
+  no removal, swap, or multiplicative combo in the core. **This is what keeps progression
+  computable:** characters evolve along *many trajectories*, but order-independence collapses them
+  onto a *small set of build states* (and monotonicity makes dominance pruning valid — an earlier
+  or superset build dominates), so trajectory-diversity does **not** become state-explosion. Break
+  this (respec, order-dependent or multiplicative upgrades) and the build turns path-dependent and
+  the search explodes.
 - The run is **bounded and terminating** — Days are capped, branching is finite, combat has its
   termination backstop (§1.6).
 

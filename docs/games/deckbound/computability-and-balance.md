@@ -51,11 +51,21 @@ These are the facts that make par feasible. Each is also an invariant to protect
   strategy" means an **optimal plan** (the action sequence that wins in fewest days), not a
   game-theoretic equilibrium. This is why it is categorically easier than chess: chess is
   `∃ my move ∀ your move …` (minimax); this is `∃ a sequence of my moves` (a graph search).
-- **Battles are near-stateless functions of `(build, place)`.** Each `Enter` rebuilds fresh
-  actors from `base + upgrades`, days reset the tokens, and a win clears the location in one
-  fight. So no damage is carried between battles — the only thing that flows is the
-  **economy** (clears → currency → upgrades → a stronger build). Combat outcome is therefore
-  a **memoizable oracle** `clears(build, place) → win/lose (+ margin)`.
+- **Battles are stateless in *combat*; the campaign's carried state is the *build*.** Each `Enter`
+  rebuilds fresh actors from `base + upgrades`, days reset the tokens, and a win clears the location
+  in one fight — so **no wounds or buffs persist**, and combat outcome is a **memoizable oracle**
+  `clears(build, place) → win/lose (+ margin)`. But the build *does* persist: **progression** is
+  the campaign's carried state (clears → currency → upgrades → a stronger build). Combat
+  statelessness ≠ campaign statelessness.
+- **Progression's trajectory-diversity collapses onto a small state set — *if* builds stay
+  monotone.** Characters evolve along many *trajectories* (who specialises when, in what order), but
+  because upgrades are permanent, additive, and **order-independent** (§5.5), those trajectories
+  collapse onto the same build *states* — par searches **states `(positions, cleared, builds, day)`,
+  not histories** — and monotonicity makes **dominance pruning** valid (an earlier or superset build
+  dominates). So the diversity is free *to the search*; it's where the *interesting* strategy variety
+  lives, not a cost. **This is contingent on the §3 build invariants** — respec, order-dependent, or
+  multiplicative upgrades make the build path-dependent and the search explodes. Progression is the
+  dimension that spends the computability budget; guard it.
 - **The campaign is a routing + build optimisation.** Given the oracle, the campaign reduces
   to: clear locations (each gated by needing the right build) to earn currency to buy
   upgrades to unlock harder locations, minimising days, subject to one move and one fight per
