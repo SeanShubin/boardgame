@@ -1,10 +1,10 @@
-# Deckbound — Role-Card Redesign (proposal under exploration)
+# Deckbound — Role-Card Redesign (tracking doc)
 
-> **Status: speculative — under active exploration, NOT canon.** A proposal to restructure role
-> identity around a small, **scarce, shared pool of role cards** unlocked by clearing levels. This
-> doc tracks the idea, its consequences, and the open decisions. Nothing here binds until it
-> graduates to the Charter / Spec via the [source-of-truth](canon/0-source-of-truth.md) protocol.
-> Before adoption it **must clear the computability invariants** (Spec §0) — see §5.
+> **Status: design GRADUATED to canon (2026-06-19); code migration NOT started.** The model — role
+> identity as a scarce, shared, level-gated pool of role cards — is now binding **Spec §8.3 / §8.5 /
+> §5.6 / §4.4** (the live authority). This doc keeps the full rationale, the consequences, and the
+> migration plan; §8 records what graduated, §9 is the **engine-schema proposal** (Phase 1–2 design,
+> no code yet). The Spec sections are `🟡 migration pending` — the currency/Upgrade economy still runs.
 
 ---
 
@@ -393,3 +393,109 @@ fix in: **(1)** drop the currency economy + add the role-card data model & perma
 **(2)** the per-role-per-round cap + positional metadata in combat; **(3)** author the 25 sets;
 **(4)** rebuild `reference.rs`. (Per the [§10 runbook](computability-and-balance.md) discipline, code
 follows Spec, not the reverse.)
+
+---
+
+## 9. Engine schema — Phase 1–2 design proposal (NO code yet)
+
+> The data model + combat mechanics the migration needs, pinned *before* content or code. Pseudo-Rust;
+> structures only. The **two content dials don't appear here** — the engine supports the full taxonomy
+> regardless of how a track mixes new-effects vs modifiers, so the dials are a *content* call (§9.1).
+
+### 9.1 The two content dials (your stance — does **not** block the schema)
+
+- **Dial A — new-effect ↔ modifier ratio (per track).** *Recommended stance: lean **new-effect** to
+  protect variety; use Modifiers as occasional escalation, not the default.* (The §6 dimensionality
+  analysis will later measure whether variety held.)
+- **Dial B — how a level cashes out its (Spec-guaranteed) higher power.** *Recommended: a free
+  per-card mix of "bigger number" vs "richer effect" — designer's call when authoring.*
+
+Both are `booklet.ron` authoring decisions made per reward in Phase 3, not schema; recording the
+*stance* now just steers authoring.
+
+### 9.2 Booklet schema — the reward content (Phase 3 shape)
+
+```ron
+// 25 entries (5 tracks × 5 levels). A reward is an atomic set of cards.
+rewards: [
+  Reward( track: Brass, level: 1, cards: [
+    Card( kind: Base, name: "Firebolt", positional: true, effects: [Damage(power: 3, dtype: Heat)] ),
+  ]),
+  Reward( track: Brass, level: 2, cards: [                       // a Modifier-style escalation
+    Card( kind: Modifier, name: "Hotter", modifies: "Firebolt", bonus: (power: 2) ),
+  ]),
+  Reward( track: Salt, level: 1, cards: [                        // a heterogeneous set
+    Card( kind: Base, name: "Mend", positional: false, effects: [Mend(body: 3)] ),
+    Card( kind: Stat, grant: (body: 2) ),
+  ]),
+  // …
+]
+```
+
+- A **`Reward`** = `(track, level, cards: Vec<Card>)`; the card's **role is the reward's track**
+  (implicit). 25 rewards.
+- A card's `kind` ∈ {`Base`, `Modifier`, `Mode`, `Stat`} (§5.6); `positional` applies to `Base`/`Mode`
+  only; a `Modifier` names the Base it `modifies` and auto-applies when both are owned.
+
+### 9.3 Campaign data model (Phase 1 — replaces the currency economy)
+
+```rust
+type Track = Currency;            // the role-colour enum SURVIVES as the track id; spend semantics dropped
+struct RewardId { track: Track, level: u32 }
+
+struct Member {
+    name: String,
+    base: String,                 // clean-slate base identity (e.g. "Novice")
+    rewards: Vec<RewardId>,       // assigned — PERMANENT, only accretes (§0.1)
+}
+// CampaignState changes:
+//   owned rewards   = derived from run.cleared (a location of track Y cleared to level N ⇒ (Y, 1..N))
+//   unassigned pool = owned − (Σ members.rewards)
+//   a member's Actor = build_character(base, member.rewards)   // §9.4
+```
+
+- **Remove:** `Member.path` + `Member.upgrades`, `earned/spent/affordable/next_upgrade`,
+  `CampAction::Buy`, all `Coins`/`balance` spend logic, `world::treasure` as currency.
+- **Add:** `CampAction::Assign(RewardId, member_idx)` — assign an unlocked-unassigned reward to a
+  member (permanent). *(The guide assigns optimally; §9.5 SD2.)*
+
+### 9.4 Combat (Phase 2 — additive to the existing engine)
+
+```rust
+// Card gains three fields:
+struct Card { /* … existing … */ role: Option<Track>, kind: RoleKind, positional: bool }
+
+fn build_character(base, rewards) -> Actor {
+    // Form  = base + Σ (Stat cards)         → stats-as-deck (§2.3)
+    // actions = Σ (Base + Mode cards)       → playable kit
+    // Modifiers fold into their Base's effect (passive)
+}
+```
+
+- **Per-role-per-round cap (§4.4):** `Round` gains, per member, `roles_played: set<Track>` (reset each
+  round). A role card is playable only if its `role` is not already in that member's `roles_played`.
+- **Positional coherence (§4.4):** a positional role card (role ∈ {Wall, Infiltrator, Artillery}) is
+  playable only when the member's current position matches (Vanguard / Skirmisher / Reserve); effect
+  cards (Support / Controller) are position-agnostic.
+
+### 9.5 Sub-decisions the schema forces (your calls — recommendations baked in)
+
+- **SD1 — the card-play model (the meaty one).** Positional gating needs a place to play cards.
+  - *Option 1 (recommended): one card-play step, position-gated.* Keep a single play step per round
+    (generalising today's Reserve `PlayCard`); a member may play role cards its **current position**
+    allows + effect cards, capped one-per-role. **Least engine churn.**
+  - *Option 2: card-play distributed per phase* — Wall cards resolve in the Vanguard step, Infiltrator
+    in Skirmish, Artillery in Reserve. **More diegetic, more combat-engine change.**
+- **SD2 — assignment timing.** *Recommended:* an **unassigned pool**; assign anytime via `Assign`
+  (not forced at unlock) — more flexibility, guide assigns optimally.
+- **SD3 — base identity.** *Recommended:* keep a **clean-slate `Novice` base** (bare stats); all power
+  from rewards (§8.5).
+- **SD4 — the `Currency` enum.** *Recommended:* **keep it as `Track`** (the role colour/id), delete
+  only the spend logic — minimises churn and preserves the role↔colour provenance (§3.5).
+
+### 9.6 What this does NOT touch
+
+The combat **core** (lanes, the Clash §1, targeting, resolution §1.9) is unchanged — only the
+card-play gating + the per-round cap are added. The world / clock / encounter loop (§8.1 / §8.2 / §8.4)
+is unchanged — clearing still unlocks; it just yields role cards, not currency. The **scenarios**
+(Cooperation / God / Tutorials / Versus) keep their pre-built kits (campaign-first scope).
