@@ -299,8 +299,10 @@ whole new aspect/deck. Background: `notes/decks-and-aspects.md`, `notes/combos.m
 
 ## 5. Role-card redesign — a scarce, shared, level-gated pool
 
-- **Status:** **Under active exploration** (raised 2026-06-19). Full analysis in its own tracking
-  doc: **[`role-card-redesign.md`](role-card-redesign.md).**
+- **Status:** **Graduated to canon as intent (2026-06-19)** — now Spec §8.3 / §8.5 / §5.6 / §4.4
+  (`🟡 migration pending`); the code migration (Phases 1–4) has not started. Full design + plan:
+  **[`role-card-redesign.md`](role-card-redesign.md).** *(This entry is kept as history; the live
+  authority is the Spec.)*
 - **Scope:** how role identity and progression rewards are structured — re-types rewards from stat
   Upgrades (§8.3) into a **25-card role pool** (5 roles × 5 levels). Touches §8.3 / §8.5 / §5; must
   clear the Spec §0 computability invariants.

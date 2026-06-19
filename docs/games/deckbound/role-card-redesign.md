@@ -284,13 +284,14 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
 
 ---
 
-## 8. Proposed Spec graduation — Phase 0 (DRAFT for review)
+## 8. Spec graduation — Phase 0 **✅ DONE (2026-06-19)**
 
-> **Not yet canon.** This is the proposed text to graduate into the [Spec](canon/2-spec/README.md)
-> (§8.3 / §8.5 / §5 / §4), in RULE / WHY / GUARANTEES form so it's drop-in ready. **Code stays put** —
-> on graduation those sections become `🟡 seeded · migration pending` (the code is then a defect to fix
-> over Phases 1–4). **Scope: campaign-first** (the combat *scenarios* keep their pre-built kits for
-> now). Sign off (and resolve the two decisions below) → I commit it to the canonical Spec.
+> **Graduated to canon.** The text below now lives in the [Spec](canon/2-spec/README.md): **§8.3**
+> (Rewards & role cards), **§8.5** (Progression & roles), **§5.6** (taxonomy), **§4.4** (play rule),
+> with §8.4 / the coverage table updated and the currency economy bannered "Replaced". Those sections
+> are `🟡 migration pending` — **code unchanged** (the currency/Upgrade economy still runs; it is now a
+> defect to fix). **Scope: campaign-first** (combat *scenarios* keep their pre-built kits for now). The
+> draft is kept below as the record of what graduated. **Next: Phases 1–4 (code), on request.**
 
 ### Two decisions — resolved (2026-06-19)
 

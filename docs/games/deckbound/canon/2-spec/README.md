@@ -63,12 +63,12 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
 | **Aspects / the chord**                           | ⏸ deferred  | parked → `future-possibilities.md` (entry 4) — single-deck core first                                                                                  |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
-| **Strategic layer** (world/event decks)           | 🟡 seeded    | **§8** (world · clock · currency · encounters · progression) — `progression-design.md`                                                                 |
+| **Strategic layer** (world/event decks)           | 🟡 seeded    | **§8** (world · clock · role-card rewards · encounters · progression) — `progression-design.md`                                                        |
 | **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
 | **Run victory / defeat** (across many skirmishes) | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                 |
 | **Geography & travel** (the world map + movement) | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                |
-| **Loot** (rewards → new cards / Upgrades)         | 🟡 seeded    | **§8.3** — treasure cards · 6 currencies · co-location spend · Upgrades — `progression-design.md`                                                      |
-| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — clean-slate · 5 roles ↔ 5 currencies · depth/breadth; power = stats-as-deck §2.3/§4.3 (migration pending) — `progression-design.md`         |
+| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; **no currency** (role-card redesign, *migration pending*) — `role-card-redesign.md`         |
+| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*migration pending*) — `role-card-redesign.md`         |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
@@ -1030,6 +1030,27 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
+### 4.4 Role-card play — one per role per round 🟡 *(migration pending)*
+
+**RULE.** A character may play **at most one role card of each role per round** — so it may play
+several role cards in a round, as long as they are **different roles**. A **positional** role card
+(Wall / Infiltrator / Artillery) is playable only from the matching §4 position (Vanguard / Skirmisher /
+Reserve); an **effect** role card (Support / Controller) is **position-agnostic**.
+
+**WHY.** The per-role cap is the **god-vs-party lever** (#4: god ≈ party). A god holds every track, but
+— one body in one position — it plays roughly *one positional + the two effect* cards per round, while a
+five-specialist party plays *~five* across five bodies: a **throughput tradeoff, not dominance** (the
+god trades throughput + resilience for best-of-pool flexibility). Positional coherence reins the god in
+**emergently** — one body cannot occupy three positions (#9, a rule that falls out of the fiction).
+
+**GUARANTEES.**
+- One role card of each role, per character, per round; a positional card requires its position.
+- No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-3**, which the
+  par solver verifies).
+
+*(Positional coherence is the **current** rule — the designer may revisit it later — `future-possibilities.md`.
+Code/data + `TERM` lines land with the role-card migration: `role-card-redesign.md` §8, Phase 2.)*
+
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
 The post-Clash rewrite of the orphaned exhaustion economy. Full design background:
@@ -1147,6 +1168,24 @@ commutatively**; the order-dependent **modifier** variant is part of the deferre
 (§6 → `future-possibilities.md`). (2) **`TERM` glossary vocabulary + encyclopedia + glossary test** —
 land together in the **`/spec-sync §5`** code pass. (3) **Numbers** — `booklet.ron`.
 
+### 5.6 Role-card taxonomy — Base · Modifier · Mode · Stat 🟡 *(migration pending)*
+
+**RULE.** A **role card** (§8.3) is exactly one of four kinds:
+- **Base** — *played* from Hand; the track's core effect (normal §5.3 zone behaviour).
+- **Modifier** — *passive*, lives in **Active** (§5.1); auto-applies to its Base (the scaling card),
+  **never separately played** — so a base and its upgrade coexist under the §4.4 per-role cap.
+- **Mode** — *played*; an alternative / charged Base (e.g. spend a round for a bigger effect),
+  **mutually exclusive with the Base that round**.
+- **Stat** — a **Form attachment** (§2.3 / §5.2): contributes to the stat block, **not played**.
+
+**WHY.** The split lets richer high-level rewards (#5 power-up, §8.3) coexist with the **one-card-per-
+role-per-round** cap (§4.4): Modifiers and Stats ride free; only **Base + Mode** plays count. It reuses
+the existing **passive-power vs played-action** distinction (§5.2), so it is not new machinery.
+
+**GUARANTEES.** A reward's cards are **self-contained** — its Modifiers / Stats apply *within* the set;
+**no cross-reward multiplicative combo** (§0.1). *(Code/data + `TERM` lines land with the role-card
+migration — `role-card-redesign.md` §8, Phase 2.)*
+
 ## 6. Aspects / the chord — *deferred*
 
 **Deferred to `future-possibilities.md` (entry 4).** The multi-deck **chord/combo** system (a
@@ -1168,13 +1207,14 @@ one-way), reshuffles, never exhausts. Source:
 
 ## 8. Strategic layer — *the run* 🟡
 
-The game outside a single fight: the world map, the clock, the currency economy, encounters, and
-progression. Full design background: `progression-design.md` (and `reference-scenario.md`, the
-balance harness). **Run-level victory is provisional** (a test goal — §8.2); **run-level defeat is
-deliberately undefined** — deferred until the mechanics are tested against the reference scenario,
-so difficulty is tuned from data, not guessed. Numbers throughout are `booklet.ron`, human-tuned;
-the character/Upgrade *power* mechanism is **stats-as-deck** (§2.3 / §4.3 / §5.5) — specced; its
-code/data migration is the pending `/spec-sync` pass.
+The game outside a single fight: the world map, the clock, **role-card rewards**, encounters, and
+progression. Full design background: `progression-design.md` and **`role-card-redesign.md`** (the
+reward model now governing §8.3 / §8.5, with §4.4 / §5.6); `reference-scenario.md` is the balance
+harness. **Run-level victory is provisional** (a test goal — §8.2); **run-level defeat is deliberately
+undefined** — deferred until the mechanics are tested against the reference scenario, so difficulty is
+tuned from data, not guessed. Numbers throughout are `booklet.ron`, human-tuned. **Two migrations are
+pending in code:** the **role-card redesign** (the currency/Upgrade economy still runs — see
+`role-card-redesign.md` §8) and **stats-as-deck** (§2.3 / §4.3 / §5.5).
 
 ### 8.1 The world — locations, movement, fog
 
@@ -1210,42 +1250,51 @@ Deferring defeat until we *measure* avoids guessing difficulty before we have da
   no cross-Day attrition).
 - No turn order at the strategic layer — characters act in parallel within a Day.
 
-### 8.3 Currency & loot
+### 8.3 Rewards & role cards 🟡 *(migration pending)*
 
-**RULE.** Clearing a location yields its **treasure card**, carrying typed **Currency**: one per
-combat role — **Iron · Silver · Brass · Bone · Salt** — plus a generic **Gold** (utility): **six in
-all**. Clearing **level N earns levels 1..N**; a per-location **clear marker** records the high-water
-mark (re-clear only deeper). **Currency is recomputable, never a tracked meter** (§2.1):
-`balance(C) = (C earned on cleared treasure cards) − (C spent on owned Upgrades)`, **party-wide** —
-any earned Currency may be spent (no location / carry restriction). Currency buys **Upgrades** (power
-mechanism: §5.5 Form attachments / stats-as-deck).
+**RULE.** Clearing **level X of role-track Y** unlocks the **reward** for `(Y, X)`: a fixed, **atomic
+set** of cards — role-effect card(s), a bundled generic **Stat** card, and any passive **Modifier**
+(§5.6) — **one physical copy each** (scarce). The **party assigns the whole set, permanently, to one
+character.** Five tracks × five levels = **25 rewards**. **No currency** — clearing *is* the unlock
+(clear level N of a track ⇒ its levels 1..N). Each card prints its `(role, level)` **provenance**, so a
+set is identifiable and stays together.
 
-> **Removed (2026-06-19) — co-location.** Spending used to be **co-location** — you could only spend
-> Currency you could physically reach (carried, or stashed at a shared treasury). Cut: it was
-> bookkeeping the designer judged not worth its weight, and the code never implemented it (treasure
-> was always a global pool). The balance is now simply party-wide earned − spent.
+> **Replaced (2026-06-19) — the currency economy.** §8.3 was *Currency & loot*: clearing earned typed
+> **Currency** (Iron/Silver/Brass/Bone/Salt + generic Gold) that bought stat **Upgrades**, balance
+> recomputed `earned − spent`. The redesign drops the currency *middleman* — clearing unlocks a
+> role-card reward **directly** (the depth/breadth fork lives in routing). The five currencies survive
+> only as **track colours/identities**; generic **Gold** becomes the bundled **Stat layer**, not a
+> currency. (The *co-location* spend rule was already cut as bookkeeping.) Full design + migration plan:
+> [`role-card-redesign.md`](../../role-card-redesign.md).
 
-**WHY.** Per-role Currency makes pursuing one a *strategy* (#4 asymmetry; #2 opportunity cost);
-recompute-from-the-table keeps §2.1's "one maintained meter" intact (#6). Spending is **party-wide**
-so the party shares one pool with no carry/stash tracking — less to hold at the table.
+**WHY.** One-copy scarcity (no stacking) + atomic permanent assignment make *"who carries this"* a
+weighty choice (#2 opportunity cost; #4 team balance); the shared pool is a **party-size-independent
+power budget** (#4: god ≈ party-total). Direct unlock keeps the build a §0.1 *no-path-dependent-budget*
+function of clears + assignment, with the strategic fork in **routing** (§8.1–8.2).
 
 **GUARANTEES.**
-- No currency meter is maintained — it is read off treasure cards minus owned Upgrades, party-wide.
-- A location's whole progress is one number (its clear marker).
-- **No path-dependent budget** (§0.1): the balance is `earned − spent`, a function of *what* is
-  cleared and bought, never the order or route — Upgrades are permanent (no sell-back).
+- Total reward power = a function of **levels cleared**, shared and distributed — party-size-independent.
+- A reward is **atomic** — acquired and assigned as one unit, never sub-drafted or split — so the
+  build-space dimension is the **count of rewards, not cards** (§0.1).
+- **No path-dependent budget** (§0.1): the build is *which rewards are owned and who holds each*;
+  assignment is **permanent** (no sell-back, no oscillation).
+- **Power is monotone in level** — within a track a deeper reward is *at least as powerful* as a
+  shallower one (the doom-to-mastery curve, #5); complexity is an *optional lever* for that power,
+  never the intent.
+- One physical copy per reward; each card prints its `(role, level)` provenance, so scarcity and
+  atomic assignment are legible / self-enforcing.
 
 ### 8.4 Encounters — the parametric deck-recipe
 
 **RULE.** Combat at a location is **opt-in at a chosen level**. On first engagement a single
-**encounter card** is drawn from the location's **threat deck** (one deck **per Currency type** —
-six) and then **fixed**: it is the location's **persistent, learnable threat** (retrying faces the
+**encounter card** is drawn from the location's **threat deck** (one deck **per role track** — five)
+and then **fixed**: it is the location's **persistent, learnable threat** (retrying faces the
 *same* fight). The encounter card is a **parametric deck-recipe** evaluated at the attempted level —
 a roster and **thematic** stat-scaling (which stats scale signals the counter to bring). The **level
 is one dial scaling reward and threat together**.
 
-**WHY.** Each threat deck is a **diegetic tutorial** — you meet type-C threats, earn C-Currency, and
-buy C-Upgrades that answer them (#1 reward intellect; #6 emergence). A fixed, learnable threat means
+**WHY.** Each threat deck is a **diegetic tutorial** — you meet track-C threats and unlock the **track-C
+role cards** that answer them (#1 reward intellect; #6 emergence). A fixed, learnable threat means
 failure teaches (#1); one dial keeps the risk/reward choice honest and re-derivable (#2 / #10).
 
 **GUARANTEES.**
@@ -1253,19 +1302,23 @@ failure teaches (#1); one dial keeps the risk/reward choice honest and re-deriva
 - A failed clear costs a Day and the threat persists; you advance only by beating it at the depth
   you want.
 
-### 8.5 Progression & roles
+### 8.5 Progression & roles 🟡 *(migration pending)*
 
-**RULE.** A character starts **clean-slate** (generic cards only); its **first level-1 clear commits
-a direction** — the role-Currency it banks. From there it **specializes** (depth: pour one Currency)
-or **branches** (breadth: cover several). The **five roles ↔ five Currencies** are the §4 triangle's
-splits: **Wall/Iron · Infiltrator/Silver · Artillery/Brass · Controller/Bone · Support/Salt** (plus
-generic **Gold**). Party size sets the spectrum: many bodies → specialists; few → multi-role; one →
-a **god** spanning all five. *Character power = bought Upgrades* (mechanism: stats-as-deck,
-§2.3 / §4.3 / §5.5).
+**RULE.** A character **is its assigned role cards** — "role" is *emergent*, not a label, and roles
+only **accrete** (assignment is permanent, §8.3). The five **role tracks** are the §4 triangle's
+**`3 + 2`** — **Wall · Infiltrator · Artillery · Controller · Support** — each with the track
+colour/identity it banks (the former currency colours **Iron · Silver · Brass · Bone · Salt**). A
+generic **Stat layer** is **bundled into every reward** (the old generic currency, **Gold**, is gone —
+now a stat-card pairing, not a currency or a sixth role). A character's **first clear commits a
+direction**; from there it **specializes** (depth: pour one track) or **branches** (breadth: cover
+several). Party size sets the spectrum: many bodies → specialists (one track each); few → multi-track;
+one → a **god** spanning all five.
 
 **WHY.** Characters are deliberately unbalanced; coverage and challenge come from the **team and the
 scenario** (#4). Depth-vs-breadth is the uncomputable strategic fork (#2), fractally at map and build
-scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4).
+scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4). Role-as-assigned-cards
+makes "god ≈ party" *concrete* — the **same** shared pool, distributed — and the per-role play cap
+(§4.4) is what equalizes their throughput.
 
 **Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
 so the count is re-derivable, not arbitrary (#10):
@@ -1286,11 +1339,16 @@ against #6 / the small core).
 - The five roles are **`3 + 2`**: the §4 triangle's three positions (Vanguard / Skirmisher / Reserve =
   Wall / Infiltrator / Artillery) plus the two effect directions (augment = Support, degrade =
   Controller) — *minimal-complete on both axes*, not an arbitrary list.
+- A character's roles = its assigned role-card tracks; they **accrete** (monotone, §0.1).
+- **Stats are bundled with role rewards** — the survivability to *use* a role grows *with* the role;
+  there is no free-floating generic stat pool (no "stat-mule").
+- Five role tracks (the `3 + 2`); the generic is a **Stat layer**, not a currency.
 - A solo god ≈ a full party in total power (the budget difficulty is tuned against).
 
-*(SEEDED — §8 is the strategic layer's first graduation. The **character / Upgrade power mechanism**
-is **stats-as-deck** (§2.3 / §4.3 / §5.5) — specced; its code/data migration is the pending
-`/spec-sync` pass. **Travel risk**, **per-day abilities**, **world events**, and **run-level defeat**
-are deferred (the last until reference-scenario testing). Numbers
-are `booklet.ron`, human-tuned. `TERM` glossary lines + encyclopedia land with the `/spec-sync §8`
-code pass.)*
+*(SEEDED — §8 is the strategic layer's first graduation. The **role-card redesign** (this §8.3 / §8.5
+plus §4.4 / §5.6) is graduated as *intent* but **not yet in code** — the currency/Upgrade economy still
+runs; the migration is Phases 1–4 in [`role-card-redesign.md`](../../role-card-redesign.md) §8. The
+**stats-as-deck** power mechanism (§2.3 / §4.3 / §5.5) is also a pending `/spec-sync`. **Travel risk**,
+**per-day abilities**, **world events**, and **run-level defeat** are deferred (the last until
+reference-scenario testing). Numbers are `booklet.ron`, human-tuned. `TERM` glossary lines + encyclopedia
+land with the `/spec-sync §8` code pass.)*
