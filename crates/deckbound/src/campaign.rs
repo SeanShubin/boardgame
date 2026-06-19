@@ -364,13 +364,6 @@ impl Game for Campaign {
         self.guide(s).as_ref() == Some(a)
     }
 
-    fn nav_level(&self, s: &CampaignState) -> u32 {
-        match s.phase {
-            CampPhase::World => 0,
-            CampPhase::Battle => 1,
-        }
-    }
-
     fn view(&self, s: &CampaignState, perspective: Option<PlayerId>) -> TableView {
         // In a battle, show the embedded combat view.
         if let (CampPhase::Battle, Some(battle)) = (s.phase, &s.battle) {

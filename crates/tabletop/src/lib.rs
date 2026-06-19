@@ -3,11 +3,11 @@
 //! [`TabletopPlugin`] is generic over the game. It holds the game's rules, runs
 //! a fresh match, renders the game's [`TableView`](engine::TableView), and
 //! offers the current player's legal actions as buttons. Clicking a button
-//! applies that action and the table redraws. History is one time axis: Escape
-//! (or the Back button) steps back a whole level, Forward redoes it, and `Z` /
-//! `Y` step one action — all non-destructive (see [`history_controls`]). Because
-//! the plugin only ever talks to the [`engine::Game`] trait, it never needs to
-//! know which game it is showing.
+//! applies that action and the table redraws. Each scenario is a sticky
+//! [session](Game::session_key) with its own local undo: Back / Forward (or `Z` /
+//! `Y`) undo and redo moves within it, while Esc leaves to the menu and keeps your
+//! place (see [`history_controls`] and [`commit`]). Because the plugin only ever
+//! talks to the [`engine::Game`] trait, it never needs to know which game it is.
 //!
 //! Cards are drawn collectible-card-game style — a title bar, a type line, a
 //! body of stat / rules lines, and a corner badge — coloured by the card's
@@ -51,6 +51,7 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
     fn build(&self, app: &mut App) {
         let game = self.game.clone();
         let state = game.new_game(self.seed, self.players);
+        let active = game.session_key(&state);
         app.insert_resource(GameRes(game))
             .insert_resource(StateRes::<G>(state))
             .insert_resource(NeedsRedraw(true))
@@ -59,7 +60,8 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             .insert_resource(RulesVisible(false))
             .insert_resource(RulesQuery::default())
             .insert_resource(Muted(false))
-            .insert_resource(History::<G>::new(self.seed, self.players))
+            .insert_resource(History::<G>::default())
+            .insert_resource(Sessions::<G>::new(active))
             // Register the procedural sound-effect source (synthesised in code,
             // so there are no audio asset files to ship — see `Sfx`).
             .add_audio_source::<Sfx>()
@@ -98,7 +100,6 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
                 (
                     apply_clicked_action::<G>,
                     history_controls::<G>,
-                    save_load::<G>,
                     quit_if_requested::<G>,
                     redraw::<G>,
                 )
@@ -119,61 +120,109 @@ struct StateRes<G: Game>(G::State);
 #[derive(Resource)]
 struct NeedsRedraw(bool);
 
-/// The session's history as a single time axis — the past, plus an undone future for redo.
-///
-/// - `actions` is the **event source**: the canonical, replayable record. With the seed it
-///   reconstructs any state (every game is a deterministic fold of actions over the seed), and it's
-///   what [`save_load`] serializes. `states[i]` is a snapshot of the state *before* `actions[i]`, a
-///   parallel cache so stepping back is O(1) (pop, don't replay).
-/// - `redo` is the **future** you've undone into: each entry is `(state-after, action)`, top of the
-///   stack = the next thing a redo re-applies. Taking any *new* action clears it (you've branched).
-///
-/// "Back / forward a level" is just undo / redo repeated until [`Game::nav_level`] crosses a
-/// boundary — same axis, coarser grain. Nothing is ever lost until you branch, which is what makes
-/// backing out of a battle and jumping right back in safe.
+/// One scenario's **local** undo history, as snapshots: `past` to step back into, `future` to redo.
+/// Each session ([`Game::session_key`]) has its own, so undo stays inside the current scenario and
+/// never escapes to the menu. A new move branches the timeline (clears `future`).
 #[derive(Resource)]
 struct History<G: Game> {
-    seed: u64,
-    players: usize,
-    states: Vec<G::State>,
-    actions: Vec<G::Action>,
-    redo: Vec<(G::State, G::Action)>,
+    past: Vec<G::State>,
+    future: Vec<G::State>,
+}
+
+// Derive would demand `G: Default`; the history is empty regardless of `G`.
+impl<G: Game> Default for History<G> {
+    fn default() -> Self {
+        Self {
+            past: Vec::new(),
+            future: Vec::new(),
+        }
+    }
 }
 
 impl<G: Game + Clone> History<G> {
-    fn new(seed: u64, players: usize) -> Self {
-        Self {
-            seed,
-            players,
-            states: Vec::new(),
-            actions: Vec::new(),
-            redo: Vec::new(),
-        }
+    /// Record a move from `prev`; a new move discards any undone future.
+    fn record(&mut self, prev: G::State) {
+        self.past.push(prev);
+        self.future.clear();
     }
 
-    /// Record a newly applied step (pre-action `prev` + the `action`). A new action branches the
-    /// timeline, so the undone future is discarded.
-    fn push(&mut self, prev: G::State, action: G::Action) {
-        self.states.push(prev);
-        self.actions.push(action);
-        self.redo.clear();
-    }
-
-    /// Step back one action. `current` is the live (post-action) state, kept so it can be redone.
+    /// Step back one move; `current` is kept so it can be redone.
     fn undo(&mut self, current: G::State) -> Option<G::State> {
-        let prev = self.states.pop()?;
-        let action = self.actions.pop()?;
-        self.redo.push((current, action));
+        let prev = self.past.pop()?;
+        self.future.push(current);
         Some(prev)
     }
 
-    /// Step forward one action. `current` is the live (pre-action) state, recorded back as the past.
+    /// Step forward one move; `current` is recorded back as the past.
     fn redo(&mut self, current: G::State) -> Option<G::State> {
-        let (after, action) = self.redo.pop()?;
-        self.states.push(current);
-        self.actions.push(action);
-        Some(after)
+        let next = self.future.pop()?;
+        self.past.push(current);
+        Some(next)
     }
+}
+
+/// A scenario put aside while another is on screen — its state and its local [`History`], so
+/// returning to it resumes exactly where it was left ("sticky").
+struct SavedSession<G: Game> {
+    state: G::State,
+    history: History<G>,
+}
+
+/// The set of sticky sessions: the one on screen (`active`) plus every other scenario `saved` by
+/// key. Switching scenarios saves the one being left and restores the one being entered.
+#[derive(Resource)]
+struct Sessions<G: Game> {
+    active: u64,
+    saved: std::collections::HashMap<u64, SavedSession<G>>,
+}
+
+impl<G: Game> Sessions<G> {
+    fn new(active: u64) -> Self {
+        Self {
+            active,
+            saved: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// Apply `action`, then either record it for local undo (an in-scenario move) or — if it crossed
+/// into a different [`Game::session_key`] — switch sessions: stash the one we left at the state it
+/// was left in, and restore the one we entered if we've seen it before. Returns whether `state`
+/// changed.
+fn commit<G: Game + Clone>(
+    game: &G,
+    state: &mut G::State,
+    history: &mut History<G>,
+    sessions: &mut Sessions<G>,
+    action: G::Action,
+) -> bool {
+    let pre = state.clone();
+    if game.apply(state, &action).is_err() {
+        return false;
+    }
+    let key = game.session_key(state);
+    if key == sessions.active {
+        // An in-scenario move — undoable within this session.
+        history.record(pre);
+    } else {
+        // A scenario switch. The switch itself is not undoable; each side keeps its own history.
+        let leaving = std::mem::take(history);
+        sessions.saved.insert(
+            sessions.active,
+            SavedSession {
+                state: pre,
+                history: leaving,
+            },
+        );
+        sessions.active = key;
+        if let Some(resumed) = sessions.saved.remove(&key) {
+            // Sticky: drop the freshly-built state and resume where we left this scenario.
+            *state = resumed.state;
+            *history = resumed.history;
+        }
+        // Otherwise it's a brand-new scenario: keep the built state, history starts empty.
+    }
+    true
 }
 
 /// What the host platform can do for the running app. This is the one place
@@ -241,11 +290,11 @@ struct HelpHint;
 #[derive(Component)]
 struct ActionButton(usize);
 
-/// The **Back** button: step back a whole level (undo to the previous nesting boundary).
+/// The **Back** button: undo one move within the current scenario.
 #[derive(Component)]
 struct BackButton;
 
-/// The **Forward** button: step forward a whole level (redo to the next nesting boundary).
+/// The **Forward** button: redo one move within the current scenario.
 #[derive(Component)]
 struct ForwardButton;
 
@@ -276,6 +325,7 @@ fn apply_clicked_action<G: Game + Clone>(
     game: Res<GameRes<G>>,
     mut state: ResMut<StateRes<G>>,
     mut history: ResMut<History<G>>,
+    mut sessions: ResMut<Sessions<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
     for (interaction, button) in &buttons {
@@ -285,12 +335,10 @@ fn apply_clicked_action<G: Game + Clone>(
         // The action list is a pure function of the unchanged state, so the
         // index captured when the button was built is still valid here.
         let actions = game.0.legal_actions(&state.0);
-        if let Some(action) = actions.get(button.0).cloned() {
-            let snapshot = state.0.clone();
-            if game.0.apply(&mut state.0, &action).is_ok() {
-                history.push(snapshot, action);
-                redraw.0 = true;
-            }
+        if let Some(action) = actions.get(button.0).cloned()
+            && commit(&game.0, &mut state.0, &mut history, &mut sessions, action)
+        {
+            redraw.0 = true;
         }
     }
 }
@@ -317,54 +365,11 @@ fn step_forward<G: Game + Clone>(state: &mut G::State, history: &mut History<G>)
     }
 }
 
-/// Back a whole level: undo until [`Game::nav_level`] drops below where we started, so one keystroke
-/// exits a battle. At the top level (0) there is nothing to drop below, so it's a single step.
-/// Everything undone lands on the redo stack, so it's recoverable.
-fn back_a_level<G: Game + Clone>(game: &G, state: &mut G::State, history: &mut History<G>) -> bool {
-    let start = game.nav_level(state);
-    if !step_back(state, history) {
-        return false;
-    }
-    if start > 0 {
-        while game.nav_level(state) >= start && step_back(state, history) {}
-    }
-    true
-}
-
-/// Forward a whole level: replay the chunk you backed out of, so you land *right where you were*
-/// (re-enter a battle and redo every move in it), not merely at its entrance. Redoes until the redo
-/// stack runs out, or — having gone deeper — a step would return to the start level (that overshoot
-/// is rolled back).
-fn forward_a_level<G: Game + Clone>(
-    game: &G,
-    state: &mut G::State,
-    history: &mut History<G>,
-) -> bool {
-    let start = game.nav_level(state);
-    if !step_forward(state, history) {
-        return false;
-    }
-    let mut deepened = game.nav_level(state) > start;
-    while step_forward(state, history) {
-        let level = game.nav_level(state);
-        if level > start {
-            deepened = true;
-        } else if deepened {
-            // We came back up to the start level after a deeper excursion — undo that step and stop.
-            step_back(state, history);
-            break;
-        }
-    }
-    true
-}
-
-/// The history controls, all on one time axis:
-/// - **Back a level** (Esc / the Back button) and **Forward a level** (the Forward button) cross a
-///   whole nesting boundary at once.
-/// - **`Z` / Backspace** step back one action; **`Y`** steps one forward — the fine-grained tools.
-///
-/// Redo makes it non-destructive: back out of a battle and jump right back in, nothing lost (until a
-/// *new* action branches the timeline).
+/// The history controls, scoped to the current scenario:
+/// - **Esc** leaves the scenario (back to the menu, or back a menu page) — a sticky switch, so the
+///   scenario resumes where you left it. It applies the game's [`cancel_action`](Game::cancel_action).
+/// - **Back / Forward** (the buttons, or `Z` / Backspace and `Y`) undo / redo one move *within* the
+///   scenario. Undo can't escape it, and a new move branches the timeline.
 #[allow(clippy::too_many_arguments)]
 fn history_controls<G: Game + Clone>(
     keys: Res<ButtonInput<KeyCode>>,
@@ -375,6 +380,7 @@ fn history_controls<G: Game + Clone>(
     forward_buttons: Query<&Interaction, (Changed<Interaction>, With<ForwardButton>)>,
     mut state: ResMut<StateRes<G>>,
     mut history: ResMut<History<G>>,
+    mut sessions: ResMut<Sessions<G>>,
     mut redraw: ResMut<NeedsRedraw>,
 ) {
     let overlay = help.0 || rules.0;
@@ -382,97 +388,24 @@ fn history_controls<G: Game + Clone>(
     let forward_pressed = forward_buttons.iter().any(|i| *i == Interaction::Pressed);
     let mut changed = false;
 
-    // Coarse: a whole level (Esc and the Back / Forward buttons).
-    if (!overlay && keys.just_pressed(KeyCode::Escape)) || back_pressed {
-        changed |= back_a_level(&game.0, &mut state.0, &mut history);
+    // Esc: leave the scenario / back a menu page (a sticky session switch when it crosses out).
+    if !overlay
+        && keys.just_pressed(KeyCode::Escape)
+        && let Some(action) = game.0.cancel_action(&state.0)
+    {
+        changed |= commit(&game.0, &mut state.0, &mut history, &mut sessions, action);
     }
-    if forward_pressed {
-        changed |= forward_a_level(&game.0, &mut state.0, &mut history);
-    }
-    // Fine: one step (keyboard only).
-    if !overlay && (keys.just_pressed(KeyCode::KeyZ) || keys.just_pressed(KeyCode::Backspace)) {
+    // Back / Forward: undo / redo one move within the scenario.
+    if back_pressed
+        || (!overlay && (keys.just_pressed(KeyCode::KeyZ) || keys.just_pressed(KeyCode::Backspace)))
+    {
         changed |= step_back(&mut state.0, &mut history);
     }
-    if !overlay && keys.just_pressed(KeyCode::KeyY) {
+    if forward_pressed || (!overlay && keys.just_pressed(KeyCode::KeyY)) {
         changed |= step_forward(&mut state.0, &mut history);
     }
 
     if changed {
-        redraw.0 = true;
-    }
-}
-
-/// The serialized session record: the seed and seat count plus the full action stream. Replaying
-/// these actions from `new_game(seed, players)` reconstructs the exact state — so this small text
-/// file is a complete save, and equally a shareable, deterministic bug-repro.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Saved<A> {
-    seed: u64,
-    players: usize,
-    actions: Vec<A>,
-}
-
-/// Where the action log is written / read. Relative to the working directory.
-const SAVE_PATH: &str = "save.ron";
-
-/// `F5` saves the action log to [`SAVE_PATH`]; `F9` loads it and replays to reconstruct the state.
-/// Persistence is event-sourced: only the actions (+ seed) are stored, never the state.
-fn save_load<G: Game + Clone>(
-    keys: Res<ButtonInput<KeyCode>>,
-    help: Res<HelpVisible>,
-    rules: Res<RulesVisible>,
-    game: Res<GameRes<G>>,
-    mut state: ResMut<StateRes<G>>,
-    mut history: ResMut<History<G>>,
-    mut redraw: ResMut<NeedsRedraw>,
-) {
-    if help.0 || rules.0 {
-        return;
-    }
-    if keys.just_pressed(KeyCode::F5) {
-        let saved = Saved {
-            seed: history.seed,
-            players: history.players,
-            actions: history.actions.clone(),
-        };
-        match ron::ser::to_string_pretty(&saved, ron::ser::PrettyConfig::default()) {
-            Ok(text) => match std::fs::write(SAVE_PATH, text) {
-                Ok(()) => info!("saved {} actions to {SAVE_PATH}", history.actions.len()),
-                Err(e) => warn!("could not write {SAVE_PATH}: {e}"),
-            },
-            Err(e) => warn!("could not serialize the save: {e}"),
-        }
-    }
-    if keys.just_pressed(KeyCode::F9) {
-        let text = match std::fs::read_to_string(SAVE_PATH) {
-            Ok(t) => t,
-            Err(e) => {
-                warn!("could not read {SAVE_PATH}: {e}");
-                return;
-            }
-        };
-        let saved: Saved<G::Action> = match ron::from_str(&text) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("{SAVE_PATH} is not a valid save: {e}");
-                return;
-            }
-        };
-        // Replay from a fresh game, rebuilding both the action log and the snapshot cache. A step
-        // that no longer applies (e.g. the rules changed since the save) stops the replay there.
-        let mut replayed = game.0.new_game(saved.seed, saved.players);
-        let mut hist = History::<G>::new(saved.seed, saved.players);
-        for action in saved.actions {
-            let snapshot = replayed.clone();
-            if game.0.apply(&mut replayed, &action).is_err() {
-                warn!("save replay stopped at a step that no longer applies");
-                break;
-            }
-            hist.push(snapshot, action);
-        }
-        info!("loaded {} actions from {SAVE_PATH}", hist.actions.len());
-        state.0 = replayed;
-        *history = hist;
         redraw.0 = true;
     }
 }
@@ -946,8 +879,8 @@ fn redraw<G: Game + Clone>(
         .collect();
 
     let controls = TableControls {
-        can_back: !history.states.is_empty(),
-        can_forward: !history.redo.is_empty(),
+        can_back: !history.past.is_empty(),
+        can_forward: !history.future.is_empty(),
     };
     build_table(&mut commands, &view, &buttons, controls);
 }
@@ -1361,8 +1294,8 @@ fn build_table(
                 BackgroundColor(PANEL),
             ))
             .with_children(|left| {
-                // History controls sit above the choices: Back / Forward move a whole level along
-                // the timeline (out of a battle and right back in), non-destructively.
+                // History controls sit above the choices: Back / Forward undo / redo one move
+                // within this scenario (Esc leaves it, keeping your place).
                 if controls.can_back {
                     spawn_control_button(left, BackButton, "\u{25C0} Back");
                 }
@@ -1993,21 +1926,19 @@ fn spawn_card_face(
 
 /// The controls advertised in the help overlay, as `(keys, description)`. Keep
 /// in sync with the keys handled in `adjust_zoom`, `toggle_help`,
-/// `history_controls`, `save_load`, and `toggle_mute`.
+/// `history_controls`, and `toggle_mute`.
 const CONTROLS: &[(&str, &str)] = &[
     ("= / +", "Zoom in"),
     ("\u{2212}", "Zoom out"),
     ("0", "Reset zoom"),
     ("Mouse wheel", "Scroll the board / action list"),
     ("M", "Mute / unmute sound"),
+    ("Esc", "Leave the scenario (your place is kept)"),
     (
-        "Esc / \u{25C0} Back",
-        "Back a level (out of a battle / menu)",
+        "Z / Backspace / \u{25C0} Back",
+        "Undo a move in this scenario",
     ),
-    ("\u{25B6} Forward", "Forward a level (jump back in)"),
-    ("Z / Backspace", "Undo one step"),
-    ("Y", "Redo one step"),
-    ("F5 / F9", "Save / load the run"),
+    ("Y / \u{25B6} Forward", "Redo a move"),
     ("? / F1", "Toggle this help"),
     ("R", "Toggle the rules reference"),
 ];
@@ -2208,34 +2139,43 @@ mod tests {
     use super::*;
     use engine::{GameError, Outcome, PlayerId};
 
-    /// A toy game whose state is a stack of nesting levels and whose action pushes the next level,
-    /// so `nav_level` is the top of the stack — enough to drive back / forward a level directly.
+    /// A toy game whose state is `(session_key, counter)`. `Switch(k)` moves to session `k` (its
+    /// counter resets); `Bump` is an in-session move. Enough to drive sessions + local undo.
     #[derive(Clone)]
-    struct Levels;
+    struct Mock;
 
-    impl Game for Levels {
-        type State = Vec<u32>;
-        type Action = u32;
-        fn new_game(&self, _seed: u64, _players: usize) -> Vec<u32> {
-            vec![0]
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+    enum Act {
+        Switch(u64),
+        Bump,
+    }
+
+    impl Game for Mock {
+        type State = (u64, u32);
+        type Action = Act;
+        fn new_game(&self, _seed: u64, _players: usize) -> (u64, u32) {
+            (0, 0)
         }
-        fn current_player(&self, _: &Vec<u32>) -> Option<PlayerId> {
+        fn current_player(&self, _: &(u64, u32)) -> Option<PlayerId> {
             Some(PlayerId(0))
         }
-        fn legal_actions(&self, _: &Vec<u32>) -> Vec<u32> {
+        fn legal_actions(&self, _: &(u64, u32)) -> Vec<Act> {
             Vec::new()
         }
-        fn action_label(&self, _: &Vec<u32>, _: &u32) -> String {
+        fn action_label(&self, _: &(u64, u32), _: &Act) -> String {
             String::new()
         }
-        fn apply(&self, s: &mut Vec<u32>, a: &u32) -> Result<(), GameError> {
-            s.push(*a);
+        fn apply(&self, s: &mut (u64, u32), a: &Act) -> Result<(), GameError> {
+            match a {
+                Act::Switch(k) => *s = (*k, 0),
+                Act::Bump => s.1 += 1,
+            }
             Ok(())
         }
-        fn outcome(&self, _: &Vec<u32>) -> Option<Outcome> {
+        fn outcome(&self, _: &(u64, u32)) -> Option<Outcome> {
             None
         }
-        fn view(&self, _: &Vec<u32>, _: Option<PlayerId>) -> TableView {
+        fn view(&self, _: &(u64, u32), _: Option<PlayerId>) -> TableView {
             TableView {
                 status: String::new(),
                 zones: Vec::new(),
@@ -2243,67 +2183,97 @@ mod tests {
                 map: None,
             }
         }
-        fn nav_level(&self, s: &Vec<u32>) -> u32 {
-            *s.last().unwrap_or(&0)
+        fn session_key(&self, s: &(u64, u32)) -> u64 {
+            s.0
         }
     }
 
-    /// Apply `a` and record it, the way `apply_clicked_action` does.
-    fn record(s: &mut Vec<u32>, h: &mut History<Levels>, a: u32) {
-        let snap = s.clone();
-        s.push(a);
-        h.push(snap, a);
-    }
-
     #[test]
-    fn back_a_level_exits_and_forward_returns_to_where_you_were() {
-        let game = Levels;
-        let mut h = History::<Levels>::new(0, 1);
-        let mut s = game.new_game(0, 1); // [0] — menu, level 0
-        record(&mut s, &mut h, 1); // enter the world (level 1)
-        record(&mut s, &mut h, 1); // a world step
-        record(&mut s, &mut h, 2); // enter a battle (level 2)
-        record(&mut s, &mut h, 2); // combat
-        record(&mut s, &mut h, 2); // combat
-        let deep = s.clone();
-        assert_eq!(game.nav_level(&s), 2);
+    fn switching_scenarios_is_sticky() {
+        let game = Mock;
+        let mut state = game.new_game(0, 1); // session 0
+        let mut history = History::<Mock>::default();
+        let mut sessions = Sessions::<Mock>::new(0);
 
-        // Back a level exits the whole battle to the world in one go.
-        assert!(back_a_level(&game, &mut s, &mut h));
-        assert_eq!(game.nav_level(&s), 1);
-        assert_eq!(s, vec![0, 1, 1]);
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump);
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump);
+        assert_eq!(state, (0, 2));
 
-        // Forward a level replays the battle, landing right back where we were.
-        assert!(forward_a_level(&game, &mut s, &mut h));
-        assert_eq!(s, deep);
-    }
+        // Switch to session 1 — a fresh, empty history.
+        commit(
+            &game,
+            &mut state,
+            &mut history,
+            &mut sessions,
+            Act::Switch(1),
+        );
+        assert_eq!(state, (1, 0));
+        assert!(history.past.is_empty());
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump); // (1, 1)
 
-    #[test]
-    fn back_a_level_at_the_top_is_a_single_step() {
-        let game = Levels;
-        let mut h = History::<Levels>::new(0, 1);
-        let mut s = game.new_game(0, 1); // [0]
-        record(&mut s, &mut h, 0); // same-level (menu) navigation
-        record(&mut s, &mut h, 0);
-        assert!(back_a_level(&game, &mut s, &mut h));
+        // Back to session 0 — resumes exactly where we left it, history and all.
+        commit(
+            &game,
+            &mut state,
+            &mut history,
+            &mut sessions,
+            Act::Switch(0),
+        );
         assert_eq!(
-            s,
-            vec![0, 0],
-            "at level 0, back is just one step (no level to exit)"
+            state,
+            (0, 2),
+            "session 0 resumes where it was left (sticky)"
+        );
+        assert_eq!(
+            history.past.len(),
+            2,
+            "and its local history comes back too"
         );
     }
 
     #[test]
-    fn a_new_action_clears_the_redo_future() {
-        let game = Levels;
-        let mut h = History::<Levels>::new(0, 1);
-        let mut s = game.new_game(0, 1);
-        record(&mut s, &mut h, 1);
-        record(&mut s, &mut h, 2);
-        assert!(step_back(&mut s, &mut h));
-        assert!(!h.redo.is_empty(), "the undone step is redoable");
-        record(&mut s, &mut h, 5); // a new action branches the timeline
-        assert!(h.redo.is_empty(), "branching clears the redo future");
-        assert!(!step_forward(&mut s, &mut h), "nothing left to redo");
+    fn undo_is_local_and_cannot_escape_the_scenario() {
+        let game = Mock;
+        let mut state = game.new_game(0, 1);
+        let mut history = History::<Mock>::default();
+        let mut sessions = Sessions::<Mock>::new(0);
+
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump); // (0,1)
+        commit(
+            &game,
+            &mut state,
+            &mut history,
+            &mut sessions,
+            Act::Switch(1),
+        ); // -> session 1
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump); // (1,1)
+
+        // Undo steps back inside session 1 only…
+        assert!(step_back(&mut state, &mut history));
+        assert_eq!(state, (1, 0));
+        // …and cannot cross the switch back into session 0.
+        assert!(
+            !step_back(&mut state, &mut history),
+            "undo can't leave the scenario"
+        );
+        assert_eq!(state, (1, 0));
+    }
+
+    #[test]
+    fn a_new_move_clears_the_redo_future() {
+        let game = Mock;
+        let mut state = game.new_game(0, 1);
+        let mut history = History::<Mock>::default();
+        let mut sessions = Sessions::<Mock>::new(0);
+
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump); // (0,1)
+        assert!(step_back(&mut state, &mut history)); // back to (0,0)
+        assert!(!history.future.is_empty(), "the undone move is redoable");
+        commit(&game, &mut state, &mut history, &mut sessions, Act::Bump); // a new move branches
+        assert!(
+            history.future.is_empty(),
+            "branching clears the redo future"
+        );
+        assert!(!step_forward(&mut state, &mut history), "nothing to redo");
     }
 }

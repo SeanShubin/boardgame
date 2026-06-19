@@ -10,7 +10,7 @@ use engine::{
 };
 
 use crate::actor::{Actor, Range};
-use crate::campaign::{CampPhase, Campaign, reference_campaign};
+use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
@@ -85,6 +85,17 @@ fn menu_state(seed: u64) -> State {
 /// The campaign ruleset, delegated to while [`State::campaign`] is `Some`. A unit struct, so this
 /// is just a namespace for its `Game` methods.
 const CAMPAIGN: Campaign = Campaign;
+
+/// A stable session key for a combat scenario, derived from its name (FNV-1a). The high bit is set
+/// so it can never collide with the reserved menu (0) / campaign (1) keys.
+fn scenario_key(name: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in name.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h | (1 << 63)
+}
 
 fn list_for(menu: Menu) -> Vec<Scenario> {
     match menu {
@@ -1320,18 +1331,18 @@ impl Game for Deckbound {
         }
     }
 
-    fn nav_level(&self, state: &State) -> u32 {
-        // The renderer's "back / forward a level" undoes / redoes to these boundaries: menu (0) <
-        // a combat scenario or the campaign world (1) < a battle inside the campaign (2).
-        if let Some(camp) = &state.campaign {
-            return match camp.phase {
-                CampPhase::World => 1,
-                CampPhase::Battle => 2,
-            };
+    fn session_key(&self, state: &State) -> u64 {
+        // Each scenario / the campaign is its own sticky session with local undo; the menu is the
+        // shared hub. A combat scenario is keyed by its name so re-picking it resumes the same one,
+        // and the campaign (world *and* its battles) is one session.
+        const MENU: u64 = 0;
+        const CAMPAIGN: u64 = 1;
+        if state.campaign.is_some() {
+            return CAMPAIGN;
         }
-        match state.phase {
-            Phase::Menu(_) => 0,
-            _ => 1,
+        match &state.scenario {
+            Some(s) => scenario_key(&s.name),
+            None => MENU,
         }
     }
 

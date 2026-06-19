@@ -105,11 +105,13 @@ pub trait Game: Send + Sync + 'static {
         None
     }
 
-    /// A coarse **nesting depth** for the current context — e.g. a menu (0) sits under a world map
-    /// (1) sits under a battle on it (2). A presentation layer's "back / forward a level" undoes (or
-    /// redoes) actions until this value changes, so one keystroke crosses a whole nested context
-    /// instead of stepping through it. Defaults to 0 (a flat game with no nesting).
-    fn nav_level(&self, _state: &Self::State) -> u32 {
+    /// A stable identifier for the **scenario / context** this state belongs to (a menu, a specific
+    /// battle, a campaign). A presentation layer keeps a *separate, local* undo history per key and
+    /// remembers each session's state, so leaving a scenario and coming back resumes it where you
+    /// left off ("sticky"), and undo never crosses out of the current one. Navigation between
+    /// sessions (picking a scenario, returning to a menu) is the key changing. Defaults to 0 — a
+    /// flat game is a single sticky session.
+    fn session_key(&self, _state: &Self::State) -> u64 {
         0
     }
 

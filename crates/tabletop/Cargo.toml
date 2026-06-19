@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 engine = { workspace = true }
 bevy = { workspace = true }
-# Save / load the action log (event-sourced session record) as a text file.
+
+[dev-dependencies]
+# The test mock game needs a serializable Action (Game::Action: Serialize).
 serde = { workspace = true }
-ron = { workspace = true }
