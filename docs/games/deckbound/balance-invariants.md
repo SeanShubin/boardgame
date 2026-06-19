@@ -49,6 +49,39 @@ that it dominates monotony; parity *among* diverse strategies is the separate §
 
 ---
 
+## BI-2 — Solo viability is ordered, and inverse to synergy ⬜
+
+**Invariant.** The single-role ("mono") parties are ranked by outcome in a fixed **solo-friendliness
+order** — **Wall ≥ Artillery ≥ Infiltrator ≥ Controller ≥ Support** — and the one-of-each-role party
+beats every one of them. Formally, on the reference scenario, in the `(clears?, −Days)` ordering:
+`outcome(mono-Wall) ≥ outcome(mono-Artillery) ≥ outcome(mono-Infiltrator) ≥ outcome(mono-Controller)
+≥ outcome(mono-Support)`, and `outcome(all-distinct) >` each. This is the **ordered sharpening of
+BI-1** (which only asserts the last clause).
+
+**Why.** The operational form of Charter **#4** (roles unbalanced *by design*; balance is in the
+team). Solo viability tracks **how much of a role's kit fires without allies**: Wall is self-contained
+(hold + sustain), the glass cannons (Artillery, then Infiltrator — whose slip-keyed kit is almost
+entirely *relational*) work alone but fragile, and the effect roles produce *modifiers* with no base
+of their own — Support is **power-0 / attack Neither**, pure amplification. Crucially this order is
+**inverse to synergy**: the role weakest alone (Support) is the strongest *multiplier*, which is
+precisely *why* a team exceeds its parts (Spec §8.5's `3 + 2`). Pinning the order keeps each role's
+identity — "doomed alone, devastating combined" for Support/Controller — intact under tuning, and is
+the role-level engine of the depth/breadth fork (#2).
+
+**Check.** **Pending the par solver** — it is an ordering over six parties (five mono + the diverse
+one) on the reference scenario. Today: directionally consistent with
+[`reference.rs::check_combat_bands`](../../../crates/deckbound/src/reference.rs) (the objective needs
+the full roster; a clean-slate "bare" character loses its gate). The **inverse-synergy** half — that
+Support contributes the *most* as a team complement and Wall the *least* — is measurable as **marginal
+team contribution** once the solver exists; until then it is the stated rationale, not a hard check.
+
+**Scope & notes.** The **relative order** is the designer's stated gradient and the firm claim; the
+**margins** are tuned, not fixed, so adjacent ties are allowed (`≥`, not `>`). Only monotonicity and
+the endpoints are asserted (Wall = best mono, Support = worst mono, diverse beats all). **Subsumes
+BI-1.** Anchored to the reference scenario; generalises to any coverage-demanding scenario.
+
+---
+
 ## Adding an invariant
 
 Copy the BI-1 shape: **Invariant** (precise enough to check), **Why** (the Charter north star /

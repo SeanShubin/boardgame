@@ -1255,8 +1255,25 @@ a **god** spanning all five. *Character power = bought Upgrades* (mechanism: sta
 scenario** (#4). Depth-vs-breadth is the uncomputable strategic fork (#2), fractally at map and build
 scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4).
 
+**Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
+so the count is re-derivable, not arbitrary (#10):
+- **Three positional roles = the §4 counter-triangle's vertices:** **Wall = Vanguard** (hold),
+  **Infiltrator = Skirmisher** (slip past the wall), **Artillery = Reserve** (fire from safety).
+  Three is the *minimal* counter-cycle — RPS needs exactly three.
+- **Two effect roles = the complete duality of state-bending:** **Support** *augments* your side (`+`:
+  heal / ward / haste), **Controller** *degrades* theirs (`−`: slow / confuse / fear). Two is the
+  whole of that duality.
+
+So **5 = a complete engagement cycle (3) + a complete effect pair (2).** **Four** would break one —
+drop a position and the triangle is no longer a counter-cycle, or drop an effect and the `+/−` pair is
+lopsided. **Six** would need a new orthogonal axis (there isn't an obvious one beyond *where you fight*
+and *how you bend state*) or an over-granular *split* of an existing role (refinement, not a new role —
+against #6 / the small core).
+
 **GUARANTEES.**
-- The five roles / Currencies are the §4 role triangle's two splits — not an arbitrary list.
+- The five roles are **`3 + 2`**: the §4 triangle's three positions (Vanguard / Skirmisher / Reserve =
+  Wall / Infiltrator / Artillery) plus the two effect directions (augment = Support, degrade =
+  Controller) — *minimal-complete on both axes*, not an arbitrary list.
 - A solo god ≈ a full party in total power (the budget difficulty is tuned against).
 
 *(SEEDED — §8 is the strategic layer's first graduation. The **character / Upgrade power mechanism**
