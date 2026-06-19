@@ -156,6 +156,33 @@ dimensionality / few clusters in the §6 toolkit, so the ratio is set with *evid
 
 Hold this as a **per-track option**, not a global commitment.
 
+### 3.5 Physical representation — cards print their provenance (and that *enforces* the rules)
+
+Atomic sets mean each card must print **which set it came from** — and that turns three abstract
+guardrails into self-enforcing physical facts (#7 cards-only, #9 rules ride on the card). Each card
+shows, in corner real-estate card games already use:
+
+1. **Set provenance — `(role, level)`** (a role colour/icon — the five currency colours — plus a level
+   numeral, e.g. *Artillery · III*): which reward it came from.
+2. **Intra-set index — `n / M`** (only when a reward is multi-card): so a set reads as *complete* and
+   stays *together*.
+3. **Card type** — Base / Modifier / Mode / **Stat** (§3.4): how to use it, no lookup.
+
+*(The existing `CardView` already has the slots — `type_line` carries "Artillery · III · Modifier", the
+corner badge the index — so the catalog renderer needs no new structure.)*
+
+**Why it's a feature, not a cost.** Every card in a set prints its provenance **including the stat
+cards** — a *+2 Body* card from the Artillery-3 reward reads *Artillery · III · Stat*, its **provenance
+is the set even though its effect is generic.** So:
+- **Atomic assignment** and the **no-split / no-stat-mule** decision (§6) become *self-enforcing at the
+  table* — you can't quietly siphon every stat card onto one unkillable body, because each is stamped
+  with the role-set it travels with. The "stats stay coupled to role identity" rule lives on the card,
+  not a tracking sheet.
+- **One-copy scarcity is legible** — exactly one card is stamped *Artillery · III*.
+
+The one genuine constraint: a card is **bound to its provenance** (no repurposing it as a free generic)
+— but that is already the design (scarce, set-bound), so it costs nothing new.
+
 ---
 
 ## 4. Why this serves the design philosophy
