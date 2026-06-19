@@ -114,13 +114,18 @@ Lose computability and balance becomes unverifiable.
   no wounds or buffs persist; combat is therefore a **memoizable oracle** over the finite set of
   reachable builds. The campaign's carried state is the **build** (progression, §8.5) plus the
   economy that funds it (§8.3) — *not* combat history.
-- Builds grow **monotonically** — permanent, additive, order-independent attachments (§5.2 / §2.3);
-  no removal, swap, or multiplicative combo in the core. **This is what keeps progression
-  computable:** characters evolve along *many trajectories*, but order-independence collapses them
-  onto a *small set of build states* (and monotonicity makes dominance pruning valid — an earlier
-  or superset build dominates), so trajectory-diversity does **not** become state-explosion. Break
-  this (respec, order-dependent or multiplicative upgrades) and the build turns path-dependent and
-  the search explodes.
+- **No path-dependent budget.** The build's resource / ownership state must be a function of *what*
+  you have, never *how you got it*. Owned assets only **accrue** (monotone), **combine additively and
+  order-independently** (§5.2 / §2.3 — commutative Form), and **no operation refunds a spent
+  resource** (no sell-back, no consume-then-recover). **This is what keeps progression computable:**
+  characters evolve along *many trajectories*, but order-independence collapses them onto a *small set
+  of build states*, and monotonicity makes dominance pruning valid (an earlier or superset build
+  dominates) — so trajectory-diversity does **not** become state-explosion. **The killer is a
+  path-dependent budget, not movement:** freely *rearranging already-owned, monotone assets* (e.g.
+  reassigning a card between characters) keeps the build Markovian and is fine; it is **resource
+  refund / oscillation, order-dependent stacking, or multiplicative combos** that make the budget
+  history-dependent and explode the search. *(This is the precise form of the old "no removal/swap"
+  shorthand — sharpened 2026-06-19.)*
 - The run is **bounded and terminating** — Days are capped, branching is finite, combat has its
   termination backstop (§1.6).
 

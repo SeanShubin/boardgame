@@ -193,9 +193,9 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
   **The substantive decision survives:** depth-vs-breadth (which roles to invest in) lives in
   **routing** — which levels you clear — and currency was only the middleman expressing it; "whether
   to spend" was a *dominated* (fake) decision anyway. **The one real thing removed** is §8.3
-  **co-location / "sharing as logistics"** (earn here, spend there, pool across the party). So the
-  playtest question is narrow: *was co-location pulling its weight as fun, or was it bookkeeping?* If
-  the latter, removing it is pure gain.
+  **co-location / "sharing as logistics"** (earn here, spend there, pool across the party) — and the
+  **designer judges that a win** (it was bookkeeping / more to track, not fun; *decided 2026-06-19*).
+  So currency removal is **pure gain**, not a tradeoff.
 - **Reassignment → permanent (for gameplay, not computability).** *Correction (2026-06-19):* free
   reassignment does **not** break §0.1 (§5) — the assignment is Markovian, and freely re-choosable, it
   would just stop being carried state. Permanent is chosen because it makes **"who gets this scarce

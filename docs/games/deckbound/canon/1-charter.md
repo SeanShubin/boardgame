@@ -149,8 +149,10 @@ that breaks one belongs in an optional mode (Clash, Versus) or must be explicitl
 - **Battles stay near-stateless functions of `(build, place)`** — no carried wounds or
   buffs; or, if any, kept small, discrete, and bounded, so combat remains a memoizable
   oracle.
-- **Builds stay monotone, additive, order-independent** — permanent attachments, no
-  swap / removal or multiplicative combos, so the reachable build space stays small.
+- **Builds stay monotone, additive, order-independent — no path-dependent budget** — owned assets
+  only accrue and combine commutatively, with **no resource refund** (sell-back / oscillation) or
+  multiplicative combo. (Rearranging *owned* assets is fine; a history-dependent *budget* is what
+  explodes the search — see Spec §0.1.)
 - **Bounded horizon and modest branching** — a day cap, few legal actions per state,
   terminating combat.
 
