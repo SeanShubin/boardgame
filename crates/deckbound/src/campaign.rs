@@ -475,7 +475,9 @@ pub fn reference_campaign() -> CampaignState {
     let party: Vec<Member> = paths
         .iter()
         .map(|&p| Member {
-            name: format!("{} Recruit", p.label()),
+            // Name a recruit by the combat role its path funds (Wall / Infiltrator / …), not the
+            // currency, so the party reads as roles; fall back to the currency for the generic Gold.
+            name: format!("{} Recruit", p.role().unwrap_or(p.label())),
             base: "Novice".into(),
             path: p,
             upgrades: Vec::new(),
