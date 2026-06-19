@@ -26,6 +26,12 @@ The documentation is split by **authority**:
 - **[game-flow.md](game-flow.md) — the complete game-flow map.** Every cycle and phase, largest to
   smallest (**Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, plus the **Clash ⊃ Beat** RPS), each pointing
   to its authoritative source. Start here to see how the whole game is structured.
+- **[computability-and-balance.md](computability-and-balance.md) — the determinism discipline.**
+  Elaborates **Charter #11**: why the canonical mode (Clash off, decks open) is deterministic and
+  single-agent so **par is computable**, the invariants future mechanics must not break (with a
+  review checklist), and how that computability is used to balance the game objectively. Read it
+  before adding anything that touches randomness, foe behaviour, carried state, build growth, or
+  the day clock.
 - **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
   being worked out ahead of graduating onto the Spec —
   [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,

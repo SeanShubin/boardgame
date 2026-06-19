@@ -37,6 +37,12 @@ exhaustion, routing), where it should *not* be solvable.
 - If the overall campaign is collapsing into one solvable optimization — that's
   also a smell. Add a real risk/reward or opportunity-cost fork.
 
+**Relation to #11.** "Not reducible to a clean computation" is the *player's*
+experience, created by the Clash and the world's hidden information. Beneath them sits a
+**deterministic skeleton that _is_ computable on purpose** — the designer's instrument for
+proving the game is beatable and for *checking* that the strategic layer has not collapsed
+into one dominant line. The two are consistent: see [#11](#11-computable-by-construction--so-the-other-promises-can-be-proven).
+
 ## 3. Hidden information, simultaneous reveal
 
 Every contest is a hidden, simultaneous commitment resolved at once — a game of
@@ -111,9 +117,59 @@ question: *could someone who forgot this rule rebuild it from why it exists?*
 - "Simplifying" a rule by **severing it from its reason** is a regression, even if the
   text got shorter.
 
+## 11. Computable by construction — so the other promises can be proven
+
+There is a **canonical analysis mode** — the optional Clash module **off**, creature
+draw decks and locations **open** — in which the whole game is **deterministic,
+perfect-information, single-agent, and bounded**. (Single-agent because the creatures are
+a *fixed* environment, not an adversary searching against your plan.) In that mode the
+campaign is a finite planning problem, so **par is computable**: the fewest days to win,
+and whether a given build clears a given place, can be *computed*, not guessed.
+
+This mode is the **designer's instrument and a correctness floor**, not the player's
+default. The played game keeps the Clash's hidden, simultaneous exchange (#2, #3) and the
+world's fog and push-your-luck (#5) on top, so the player's strategy stays **judgment under
+uncertainty**. The determinism underneath is what lets us *prove* the game is beatable and
+*measure* whether the design's promises hold.
+
+**It is the instrument that enforces #2 and #4.** #2 warns that the campaign must not
+collapse into one solvable line; #4 promises balance by scenario, not by roster. A
+computable par lets us **check both objectively**: that *many* interesting strategies tie
+near par, and that **no** unnamed strategy dominates them. So computability does not fight
+#2 — it is how we keep #2's promise.
+
+**Therefore the canonical mode must stay computable.** Guard these invariants; a mechanic
+that breaks one belongs in an optional mode (Clash, Versus) or must be explicitly bounded:
+
+- **No live randomness or hidden information** in the canonical mode — confine it to the
+  Clash, or make it open.
+- **Foes are a fixed environment, not an adaptive adversary** — scripted / stat-driven,
+  never searching against the player's specific plan (that is the jump to two-player
+  minimax, the chess cliff).
+- **Battles stay near-stateless functions of `(build, place)`** — no carried wounds or
+  buffs; or, if any, kept small, discrete, and bounded, so combat remains a memoizable
+  oracle.
+- **Builds stay monotone, additive, order-independent** — permanent attachments, no
+  swap / removal or multiplicative combos, so the reachable build space stays small.
+- **Bounded horizon and modest branching** — a day cap, few legal actions per state,
+  terminating combat.
+
+The discipline is concrete: the par solver is to be wired as a **regression test** — if a
+change makes the reference scenario stop solving within its state / time budget, that change
+has broken this north star and fails the build. "Feasibly computable" is an *enforced
+budget*, not a hope.
+
+The full reasoning — the structural facts that make it computable, the design-review
+checklist, par's policy-relativity, and the objective balancing method (interesting beats
+boring, plus the closure check that no unnamed strategy dominates) — lives in
+[computability-and-balance](../computability-and-balance.md). **Read it before adding a
+mechanic that touches randomness, foe behaviour, carried state, build growth, or the day
+clock.**
+
 ---
 
 **Using this document.** Every other design note should trace back to one or more
 of these north stars. If a proposed mechanic doesn't serve any of them — or
-actively fights one (e.g. making tactics uncomputable, or balancing characters
-against each other) — that is the signal to stop and reconsider, here, on purpose.
+actively fights one (e.g. making tactics uncomputable, making the **canonical mode**
+uncomputable (#11), or balancing characters against each other) — that is the signal to
+stop and reconsider, here, on purpose.
