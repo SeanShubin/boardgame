@@ -506,3 +506,77 @@ The combat **core** (lanes, the Clash §1, targeting, resolution §1.9) is uncha
 card-play gating + the per-round cap are added. The world / clock / encounter loop (§8.1 / §8.2 / §8.4)
 is unchanged — clearing still unlocks; it just yields role cards, not currency. The **scenarios**
 (Cooperation / God / Tutorials / Versus) keep their pre-built kits (campaign-first scope).
+
+---
+
+## 10. The 25 sets — first-draft content (AI-seeded, human to tune)
+
+> **Design intent.** Each role reads as a **distinct identity**; each level is *more powerful* than
+> the last (a level-1→5 investor is a **god at that role**); a **Stat card** is bundled into every
+> reward so survivability scales with the role (the fragile cannon survives firing). Grounded in
+> **today's kit** (existing cards reorganised across the grid by power) + a few new escalations. The
+> **god ≈ party** budget holds: all 25 cards whether on one body or five. Numbers are **seeds** — tune
+> in playtest. Effects in *italics* are **new** (flagged for the Phase-2 engine work, §10.6).
+>
+> Notation: `L# — <Kind> Name : effect | Stat(+…)`. Most rewards are **2 cards** (the role card + its
+> Stat card); capstones may be more.
+
+### Wall — *the immovable line* (Vanguard · holds lanes, protects the backline)
+- **L1** — Base **Brace** : *Guard — hold harder this round (+block vs slips)* | Stat(+2 body, +1 tough)
+- **L2** — Passive **Phalanx** : holders' Focus combines (existing) | Stat(+2 body, +1 tough)
+- **L3** — Passive **Bodyguard** : lend Focus to other lanes (existing) | Stat(+3 body)
+- **L4** — Base·Lasting **Rally** : +Resolve to all allies (existing) | Stat(+2 body, +1 tough)
+- **L5** — Mode **Last Stand** (capstone, 2 cards) : *this round you cannot fall* + Taunt all + Steel the party | Stat(+4 body, +2 tough)
+
+### Infiltrator — *the unseen blade* (Skirmisher · slips walls, deletes the backline)
+- **L1** — Base **Slip Strike** : a mobile melee Damage | Stat(+2 speed)
+- **L2** — Passive **Blitz** : first slip each round is free (existing) | Stat(+1 speed, +1 power)
+- **L3** — Passive **Shadowstep** : ignore one blocker when slipping (existing) | Stat(+2 speed)
+- **L4** — Passive **Backstab** : bonus damage vs enemy Reserve (existing) | Stat(+2 power)
+- **L5** — Base **Assassinate** (capstone) : heavy Damage, *lethal to a Reserve target* | Stat(+2 power, +1 speed)
+
+### Artillery — *the long reach* (Reserve · ranged burst & AoE)
+- **L1** — Base **Bolt** : ranged single-target Damage | Stat(+2 power)
+- **L2** — Base **Volley** : ranged AoE — Damage `targets:3` (existing) | Stat(+1 power, +1 precision)
+- **L3** — Base **Suppress** : strip enemy Tempo (existing) | Stat(+2 power)
+- **L4** — Passive **Longshot** : reach the enemy Reserve (existing) | Stat(+1 power, +1 precision)
+- **L5** — Mode **Bombardment** (capstone) : heavy AoE — Damage `targets:5`, high power | Stat(+2 power)
+
+### Controller — *the unmaker* (effect `−` · strips, slows, fears)
+- **L1** — Base **Slow** : cut a foe's Speed (existing) | Stat(+2 spirit)
+- **L2** — Base **Dread** : Fear damage (existing) | Stat(+1 spirit, +1 mind)
+- **L3** — Base **Confuse** : strip a foe's Focus, can't block (existing) | Stat(+2 mind)
+- **L4** — Modifier **Curse** : *your debuffs hit +1 extra foe (and bite deeper)* | Stat(+1 spirit, +1 mind)
+- **L5** — Mode **Unmake** (capstone) : the enemy front loses its action + takes Fear — Stagger + Dread `targets:3` | Stat(+2 spirit)
+
+### Support — *the hand that holds the line* (effect `+` · heals, wards, hastes)
+- **L1** — Base **Mend** : heal the most-wounded ally (existing) | Stat(+2 resolve, +1 body)
+- **L2** — Base·Lasting **Ward** : grant a melee guard to a defenceless ally (existing) | Stat(+2 resolve)
+- **L3** — Base **Haste** : +Tempo to an ally (existing) | Stat(+1 mind, +1 body)
+- **L4** — Base **Steel** : clear Fear / steady the party (existing) | Stat(+2 resolve)
+- **L5** — Mode **Sanctuary** (capstone) : heal + ward + haste **all** allies — Mend + Ward + Haste `targets:all` | Stat(+2 body, +1 resolve)
+
+### 10.6 New engine work this content implies (for Phase 2)
+
+Most levels reuse **existing effects** (Damage / Suppress / Slow / Confuse / Dread / Mend / Ward /
+Haste / Steel / Rally) and **existing passives** (Phalanx / Bodyguard / Taunt / Blitz / Shadowstep /
+Backstab / Longshot) — just redistributed and re-statted. Genuinely **new** pieces to build:
+- **`Guard`** — a defensive "hold harder" effect (Wall L1).
+- **"cannot fall" this round** + the **Mode** mechanic generally (Wall L5 / Artillery L5 / Support L5 /
+  Controller L5) — a played, mutually-exclusive-with-Base "charged" card.
+- **`lethal-to-Reserve`** on a Damage card (Infiltrator L5).
+- **Modifier** application — a passive that upgrades a named Base (Controller's **Curse**; the §3.4
+  scaling option). *(This draft uses Modifiers sparingly — only Curse — per the "lean new-effect"
+  dial stance, §9.1.)*
+- **`targets:all` / party-wide** targeting for buffs (Support L5).
+
+### 10.7 Sanity check against the brief
+- **Roles unique?** Wall = protect/hold; Infiltrator = mobile assassination; Artillery = ranged
+  burst/AoE; Controller = debuff the enemy; Support = sustain the ally. Five disjoint jobs (the §8.5
+  `3+2`).
+- **Level = god at the role?** Each track climbs from a single modest action (L1) to a battle-swinging
+  capstone (L5), and the Stat cards stack (a full Wall ≈ +13 body / +5 tough over the Novice base → a
+  fortress; a full Artillery ≈ +8 power → a siege engine).
+- **Breadth = god over a specialist?** A 5-track god holds all 25 — hold, slip-kill, bombard, unmake,
+  and sustain — vs a specialist's one job; capped per round by position (§4.4) but able to answer
+  anything. A single level-5 specialist is one of those five.
