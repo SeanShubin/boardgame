@@ -885,12 +885,18 @@ fn redraw<G: Game + Clone>(
     }
 
     let view = game.0.view(&state.0, None);
-    // Actions already bound to a clickable card are not also shown as buttons (no choice
-    // appears twice — the card *is* the control).
+    // Actions already bound to a clickable control on the board are not also shown as buttons (no
+    // choice appears twice — the card / map tile *is* the control). Covers both card zones and the
+    // world map, so e.g. the campaign's Move/Enter live on the tiles, not duplicated in the panel.
     let bound: std::collections::HashSet<usize> = view
         .zones
         .iter()
         .flat_map(|z| z.cards.iter().filter_map(|c| c.action))
+        .chain(
+            view.map
+                .iter()
+                .flat_map(|m| m.tiles.iter().filter_map(|t| t.action)),
+        )
         .collect();
     // Each button carries its index into the full legal-action list, so hiding
     // some (e.g. Exit on the web, or actions bound to cards) never misaligns clicks.

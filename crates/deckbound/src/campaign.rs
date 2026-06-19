@@ -419,8 +419,20 @@ impl Game for Campaign {
             .iter()
             .map(|&c| format!("{} {}", balance(c, &earned(s), &spent(s)), c.label()))
             .collect();
+        // Surface the run's state and its latest event in the caption (the map has no log pane):
+        // a clear victory banner when won, otherwise the day/economy line plus the last log entry
+        // (e.g. "Cleared the Iron Mire.") so travelling and fighting give feedback.
+        let day_line = format!("Day {} — {}", s.run.day + 1, bal.join(" · "));
+        let status = match (&s.outcome, s.log.last()) {
+            (Some(_), _) => format!(
+                "Victory! The run is won in {} days.\n{day_line}",
+                s.run.day + 1
+            ),
+            (None, Some(last)) => format!("{day_line}\n{last}"),
+            (None, None) => day_line,
+        };
         TableView {
-            status: format!("Day {} — {}", s.run.day + 1, bal.join(" · ")),
+            status,
             zones: Vec::new(),
             prose: Vec::new(),
             map: Some(MapView { hex: false, tiles }),
