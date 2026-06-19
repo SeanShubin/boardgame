@@ -1216,17 +1216,24 @@ Deferring defeat until we *measure* avoids guessing difficulty before we have da
 combat role — **Iron · Silver · Brass · Bone · Salt** — plus a generic **Gold** (utility): **six in
 all**. Clearing **level N earns levels 1..N**; a per-location **clear marker** records the high-water
 mark (re-clear only deeper). **Currency is recomputable, never a tracked meter** (§2.1):
-`balance(C) = (C on reachable treasure cards) − (C spent on owned Upgrades)`. **Spending is
-co-location** — you may spend Currency you can physically reach (carried, or stashed at a shared
-treasury). Currency buys **Upgrades** (power mechanism: §5.5 Form attachments / stats-as-deck).
+`balance(C) = (C earned on cleared treasure cards) − (C spent on owned Upgrades)`, **party-wide** —
+any earned Currency may be spent (no location / carry restriction). Currency buys **Upgrades** (power
+mechanism: §5.5 Form attachments / stats-as-deck).
+
+> **Removed (2026-06-19) — co-location.** Spending used to be **co-location** — you could only spend
+> Currency you could physically reach (carried, or stashed at a shared treasury). Cut: it was
+> bookkeeping the designer judged not worth its weight, and the code never implemented it (treasure
+> was always a global pool). The balance is now simply party-wide earned − spent.
 
 **WHY.** Per-role Currency makes pursuing one a *strategy* (#4 asymmetry; #2 opportunity cost);
-recompute-from-the-table keeps §2.1's "one maintained meter" intact; co-location turns sharing into
-**logistics, not bookkeeping** (#6 / #7), with a stash as the metaphor (#9).
+recompute-from-the-table keeps §2.1's "one maintained meter" intact (#6). Spending is **party-wide**
+so the party shares one pool with no carry/stash tracking — less to hold at the table.
 
 **GUARANTEES.**
-- No currency meter is maintained — it is read off treasure cards minus owned Upgrades.
+- No currency meter is maintained — it is read off treasure cards minus owned Upgrades, party-wide.
 - A location's whole progress is one number (its clear marker).
+- **No path-dependent budget** (§0.1): the balance is `earned − spent`, a function of *what* is
+  cleared and bought, never the order or route — Upgrades are permanent (no sell-back).
 
 ### 8.4 Encounters — the parametric deck-recipe
 
