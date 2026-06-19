@@ -67,8 +67,8 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
 | **Run victory / defeat** (across many skirmishes) | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                 |
 | **Geography & travel** (the world map + movement) | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                |
-| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; **no currency** (role-card redesign, *migration pending*) — `role-card-redesign.md`         |
-| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*migration pending*) — `role-card-redesign.md`         |
+| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; **no currency** (role-card redesign, *in code 2026-06-19*) — `role-card-redesign.md`         |
+| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*in code 2026-06-19*) — `role-card-redesign.md`         |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
@@ -1030,7 +1030,7 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
-### 4.4 Role-card play — one per role per round 🟡 *(migration pending)*
+### 4.4 Role-card play — one per role per round 🟡 *(in code 2026-06-19)*
 
 **RULE.** A character may play **at most one role card of each role per round** — so it may play
 several role cards in a round, as long as they are **different roles**. A role card is **played in the
@@ -1173,14 +1173,18 @@ commutatively**; the order-dependent **modifier** variant is part of the deferre
 (§6 → `future-possibilities.md`). (2) **`TERM` glossary vocabulary + encyclopedia + glossary test** —
 land together in the **`/spec-sync §5`** code pass. (3) **Numbers** — `booklet.ron`.
 
-### 5.6 Role-card taxonomy — Base · Modifier · Mode · Stat 🟡 *(migration pending)*
+### 5.6 Role-card taxonomy — Base · Modifier · Mode · Stat 🟡 *(in code 2026-06-19)*
 
 **RULE.** A **role card** (§8.3) is exactly one of four kinds:
 - **Base** — *played* from Hand; the track's core effect (normal §5.3 zone behaviour).
 - **Modifier** — *passive*, lives in **Active** (§5.1); auto-applies to its Base (the scaling card),
   **never separately played** — so a base and its upgrade coexist under the §4.4 per-role cap.
 - **Mode** — *played*; an alternative / charged Base (e.g. spend a round for a bigger effect),
-  **mutually exclusive with the Base that round**.
+  **mutually exclusive with the Base that round**. **[M1, 2026-06-19] Defined but deferred:** the
+  first content (`role-card-redesign.md` §10) builds the L5 capstones as **`Spend`-zone Bases**
+  instead — the existing §5.3 zone machine already gives the "big, once-per-fight" cooldown a Mode was
+  meant to impose, with no new mechanic. The Mode kind stays in the taxonomy for the richer
+  "spend-a-round-to-charge" tactical layer when playtest calls for it (→ `future-possibilities.md`).
 - **Stat** — a **Form attachment** (§2.3 / §5.2): contributes to the stat block, **not played**.
 
 **WHY.** The split lets richer high-level rewards (#5 power-up, §8.3) coexist with the **one-card-per-
@@ -1190,6 +1194,21 @@ the existing **passive-power vs played-action** distinction (§5.2), so it is no
 **GUARANTEES.** A reward's cards are **self-contained** — its Modifiers / Stats apply *within* the set;
 **no cross-reward multiplicative combo** (§0.1). *(Code/data + `TERM` lines land with the role-card
 migration — `role-card-redesign.md` §8, Phase 2.)*
+
+**Confirmed migration mechanics (2026-06-19).** The §10 first-draft content needs six small additions,
+resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
+- **M1 — Mode → `Spend` Base** (above): capstones are once-per-fight Spend Bases; the Mode kind is deferred.
+- **M2 — `Guard`** (Wall L1 *Brace*): a played effect that adds **+Focus to the holder this round** — a
+  defensive boost to the wall's block vs slips (§4.2 Focus). Seed +3.
+- **M3 — "cannot fall" this round** (Wall L5 *Last Stand*): while active, damage that would down the
+  holder leaves it at **1 Body** instead — it cannot be downed for the round.
+- **M4 — execute** (Infiltrator L5 *Assassinate*): a Damage card that, on hitting an enemy **Reserve**,
+  **downs** that foe regardless of remaining Body.
+- **M5 — `Curse` Modifier** (Controller L4): a passive that makes the owner's debuff cards
+  (Slow / Confuse / Dread) each hit **+1 additional foe** — the one instance of the Modifier mechanic
+  in the draft (lean-new-effect dial, §9.1).
+- **M6 — `targets: all`** (Support L5 *Sanctuary*): a buff effect (Mend / Ward / Haste) may target
+  **all allies** — a party-wide target mode.
 
 ## 6. Aspects / the chord — *deferred*
 
@@ -1217,9 +1236,11 @@ progression. Full design background: `progression-design.md` and **`role-card-re
 reward model now governing §8.3 / §8.5, with §4.4 / §5.6); `reference-scenario.md` is the balance
 harness. **Run-level victory is provisional** (a test goal — §8.2); **run-level defeat is deliberately
 undefined** — deferred until the mechanics are tested against the reference scenario, so difficulty is
-tuned from data, not guessed. Numbers throughout are `booklet.ron`, human-tuned. **Two migrations are
-pending in code:** the **role-card redesign** (the currency/Upgrade economy still runs — see
-`role-card-redesign.md` §8) and **stats-as-deck** (§2.3 / §4.3 / §5.5).
+tuned from data, not guessed. Numbers throughout are `booklet.ron`, human-tuned. The **role-card
+redesign is now in code** (2026-06-19): no currency / Upgrades — clearing `(track, level)` unlocks an
+atomic reward assigned at unlock; combat enforces the §4.4 cap + positional gating; the 25 sets live in
+`booklet.ron` (see `role-card-redesign.md` §8–§10). One migration remains pending: **stats-as-deck**
+(§2.3 / §4.3 / §5.5).
 
 ### 8.1 The world — locations, movement, fog
 
@@ -1255,7 +1276,7 @@ Deferring defeat until we *measure* avoids guessing difficulty before we have da
   no cross-Day attrition).
 - No turn order at the strategic layer — characters act in parallel within a Day.
 
-### 8.3 Rewards & role cards 🟡 *(migration pending)*
+### 8.3 Rewards & role cards 🟡 *(in code 2026-06-19)*
 
 **RULE.** Clearing **level X of role-track Y** unlocks the **reward** for `(Y, X)`: a fixed, **atomic
 set** of cards — role-effect card(s), a bundled generic **Stat** card, and any passive **Modifier**
@@ -1308,7 +1329,7 @@ failure teaches (#1); one dial keeps the risk/reward choice honest and re-deriva
 - A failed clear costs a Day and the threat persists; you advance only by beating it at the depth
   you want.
 
-### 8.5 Progression & roles 🟡 *(migration pending)*
+### 8.5 Progression & roles 🟡 *(in code 2026-06-19)*
 
 **RULE.** A character **is its assigned role cards** — "role" is *emergent*, not a label, and roles
 only **accrete** (assignment is permanent, §8.3). The five **role tracks** are the §4 triangle's
@@ -1352,9 +1373,10 @@ against #6 / the small core).
 - A solo god ≈ a full party in total power (the budget difficulty is tuned against).
 
 *(SEEDED — §8 is the strategic layer's first graduation. The **role-card redesign** (this §8.3 / §8.5
-plus §4.4 / §5.6) is graduated as *intent* but **not yet in code** — the currency/Upgrade economy still
-runs; the migration is Phases 1–4 in [`role-card-redesign.md`](../../role-card-redesign.md) §8. The
-**stats-as-deck** power mechanism (§2.3 / §4.3 / §5.5) is also a pending `/spec-sync`. **Travel risk**,
+plus §4.4 / §5.6) is now **in code** (2026-06-19): no currency/Upgrades; clearing unlocks an atomic
+reward assigned at unlock; combat enforces the §4.4 cap + positional gating; the 25 sets are authored in
+`booklet.ron` (Phases 1–4 of [`role-card-redesign.md`](../../role-card-redesign.md) §8). The
+**stats-as-deck** power mechanism (§2.3 / §4.3 / §5.5) is still a pending `/spec-sync`. **Travel risk**,
 **per-day abilities**, **world events**, and **run-level defeat** are deferred (the last until
 reference-scenario testing). Numbers are `booklet.ron`, human-tuned. `TERM` glossary lines + encyclopedia
 land with the `/spec-sync §8` code pass.)*

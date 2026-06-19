@@ -53,21 +53,99 @@ Catalog(
         TraitCard( name: "Shield",      armor: [(Blunt, 1)], flavor: "A door you carry. Most blows are an opinion; this is the answer." ),
         TraitCard( name: "Ward-charm",  ward: [(Fear, 2)], flavor: "Salt, sigil, and a knot of someone's prayer — it blunts the fears that armor can't touch." ),
     ],
-    // Upgrades (§8.3): bought with currency, attached to a character's Form (stats-as-deck). `price`
-    // = (currency, amount); `grant` = stat boosts. The reference scenario tunes these vs the C[p] /
-    // final encounters so each path is necessary-and-sufficient. NUMBERS ARE SEEDS — human-tuned.
-    upgrades: [
-        UpgradeCard( name: "Bulwark",   price: (currency: Iron,   amount: 3), grant: (body: 4, toughness: 1, mind: 2), flavor: "Another course of stone on a wall already too stubborn to fall." ),
-        UpgradeCard( name: "Ironhide",  price: (currency: Iron,   amount: 3), grant: (body: 3, toughness: 1), flavor: "Skin tanned to the temper of a shield. Blows land; they simply stop mattering." ),
-        UpgradeCard( name: "Edge",      price: (currency: Silver, amount: 3), grant: (speed: 3, power: 3), flavor: "Hone speed and stroke to one bright line — the difference between a wound and a kill." ),
-        UpgradeCard( name: "Shadow",    price: (currency: Silver, amount: 3), grant: (speed: 2, power: 2), flavor: "Learn to stand where the eye has already passed." ),
-        UpgradeCard( name: "Volley",    price: (currency: Brass,  amount: 3), grant: (power: 4, precision: 2), flavor: "More shot, better aimed. The sky learns to fall on command." ),
-        UpgradeCard( name: "Munitions", price: (currency: Brass,  amount: 3), grant: (power: 3), flavor: "Heavier powder, deeper crates — bring enough and range becomes a sentence." ),
-        UpgradeCard( name: "Hex",       price: (currency: Bone,   amount: 3), grant: (power: 3, resolve: 2), flavor: "Wrap the strike in dread, so it bites the nerve as well as the body." ),
-        UpgradeCard( name: "Curse",     price: (currency: Bone,   amount: 3), grant: (power: 2, mind: 2), flavor: "A whisper that follows the foe home and unmakes the courage it finds there." ),
-        UpgradeCard( name: "Vigor",     price: (currency: Salt,   amount: 3), grant: (body: 3, power: 1, resolve: 2, mind: 2), flavor: "The deep, salted reserve that gets a body up after it has every right to stay down." ),
-        UpgradeCard( name: "Grace",     price: (currency: Salt,   amount: 3), grant: (body: 2, power: 1, resolve: 2), flavor: "Move through harm as through a doorway — present, untouched, already gone." ),
-        UpgradeCard( name: "Training",  price: (currency: Gold,   amount: 2), grant: (power: 1, body: 1, speed: 1), flavor: "No gift, no curse, no birthright. Only the hours, paid in full." ),
+    // Role-card rewards (§8.3): the 25-set pool — 5 tracks × 5 levels (role-card-redesign.md §10).
+    // Clearing (track, level) unlocks this atomic set: its role `cards` (Base / Modifier / Mode) plus
+    // a bundled `stat` Form attachment (stats-as-deck). One physical copy each (scarce). NUMBERS ARE
+    // SEEDS — human-tuned by playtest. `role` keys the §4.4 per-role cap; `positional: true` (Wall /
+    // Infiltrator / Artillery) means the card is playable only from its §4 position.
+    rewards: [
+        // ---- Wall (Iron) — the immovable line: hold lanes, protect the backline ----
+        Reward( track: Iron, level: 1, stat: (body: 2, toughness: 1),
+                flavor: "Set your feet. The line begins where you decide it does.",
+                cards: [ Card( name: "Brace", role: Some(Iron), kind: Base, positional: true, effects: [Guard(focus: 3)] ) ] ),
+        Reward( track: Iron, level: 2, stat: (body: 2, toughness: 1),
+                flavor: "Shields locked, the wall thinks with a single mind.",
+                cards: [ Card( name: "Phalanx", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "A stacked lane combines all its holders' Focus into one wall, so several defenders block slips together." ) ] ),
+        Reward( track: Iron, level: 3, stat: (body: 3),
+                flavor: "Stands in someone else's lane and dares the blow to find them.",
+                cards: [ Card( name: "Bodyguard", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "A guardian lends its Focus to other lanes' walls, blocking slips beyond its own lane." ) ] ),
+        Reward( track: Iron, level: 4, stat: (body: 2, toughness: 1),
+                flavor: "A word that puts the spine back into a wavering line.",
+                cards: [ Card( name: "Rally", role: Some(Iron), kind: Base, positional: true, zone: Lasting, effects: [Rally(resolve: 4)] ) ] ),
+        Reward( track: Iron, level: 5, stat: (body: 4, toughness: 2),
+                flavor: "Here, and no further. Not while I am standing — and I am not going down.",
+                cards: [
+                    Card( name: "Last Stand", role: Some(Iron), kind: Base, positional: true, zone: Spend, effects: [Lifeline, Steel] ),
+                    Card( name: "Taunt", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Draws fire: a guardian whose Focus helps hold the other lanes against slips." ),
+                ] ),
+
+        // ---- Infiltrator (Silver) — the unseen blade: slip walls, delete the backline ----
+        Reward( track: Silver, level: 1, stat: (speed: 2),
+                flavor: "You won't see her cross the room. You'll notice who is no longer in it.",
+                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
+        Reward( track: Silver, level: 2, stat: (speed: 1, power: 1),
+                flavor: "The first step is always free; take it before they're set.",
+                cards: [ Card( name: "Blitz", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "The first slip each round is free — it costs no Tempo." ) ] ),
+        Reward( track: Silver, level: 3, stat: (speed: 2),
+                flavor: "Through the one gap the wall forgot it had.",
+                cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Slip past one extra blocker: ignore the wall's best single Focus when slipping." ) ] ),
+        Reward( track: Silver, level: 4, stat: (power: 2),
+                flavor: "The reserve never hears the one that finds them.",
+                cards: [ Card( name: "Backstab", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve." ) ] ),
+        Reward( track: Silver, level: 5, stat: (power: 2, speed: 1),
+                flavor: "One name, crossed off. The rest of the field never mattered.",
+                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6, dtype: Sharp)], text: "A killing strike: when this Skirmisher hits an enemy Reserve, that foe is downed outright (M4)." ) ] ),
+
+        // ---- Artillery (Brass) — the long reach: ranged burst & AoE ----
+        Reward( track: Brass, level: 1, stat: (power: 2),
+                flavor: "Death that arrives ahead of the sound of it.",
+                cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
+        Reward( track: Brass, level: 2, stat: (power: 1, precision: 1),
+                flavor: "The sky, rationed evenly across the whole front rank.",
+                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, targets: 3, reach: (2, 2), effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
+        Reward( track: Brass, level: 3, stat: (power: 2),
+                flavor: "Pin them flat and let them spend the round flinching.",
+                cards: [ Card( name: "Suppress", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Suppress(tempo: 3)] ) ] ),
+        Reward( track: Brass, level: 4, stat: (power: 1, precision: 1),
+                flavor: "Far enough back to be safe — from everything but this.",
+                cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Reserve's ranged fire reach the enemy Reserve — the sanctioned sniper exception." ) ] ),
+        Reward( track: Brass, level: 5, stat: (power: 2),
+                flavor: "It does not ask which armor. It asks how much of the field you would like erased.",
+                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, zone: Spend, targets: 5, reach: (2, 2), effects: [Damage(power: 5, dtype: Sharp)] ) ] ),
+
+        // ---- Controller (Bone) — the unmaker: strip, slow, fear ----
+        Reward( track: Bone, level: 1, stat: (spirit: 2),
+                flavor: "Make every step cost what a sprint should.",
+                cards: [ Card( name: "Slow", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2)] ) ] ),
+        Reward( track: Bone, level: 2, stat: (spirit: 1, mind: 1),
+                flavor: "A sound the body hears before the mind does.",
+                cards: [ Card( name: "Dread", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
+        Reward( track: Bone, level: 3, stat: (mind: 2),
+                flavor: "Scramble the one moment they needed to think.",
+                cards: [ Card( name: "Confuse", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Confuse(focus: 3)] ) ] ),
+        Reward( track: Bone, level: 4, stat: (spirit: 1, mind: 1),
+                flavor: "A whisper that follows the foe home and unmakes the courage it finds there.",
+                cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (M5)." ) ] ),
+        Reward( track: Bone, level: 5, stat: (spirit: 2),
+                flavor: "She speaks, and the enemy front simply forgets how to be brave.",
+                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
+
+        // ---- Support (Salt) — the hand that holds the line: heal, ward, haste ----
+        Reward( track: Salt, level: 1, stat: (resolve: 2, body: 1),
+                flavor: "Close the worst of it, and send them back in.",
+                cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(body: 3)] ) ] ),
+        Reward( track: Salt, level: 2, stat: (resolve: 2),
+                flavor: "Press a blade into the hand of the one who swore never to carry one.",
+                cards: [ Card( name: "Ward", role: Some(Salt), kind: Base, zone: Lasting, effects: [Ward] ) ] ),
+        Reward( track: Salt, level: 3, stat: (mind: 1, body: 1),
+                flavor: "Borrow against the next breath; move twice on this one.",
+                cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 3)] ) ] ),
+        Reward( track: Salt, level: 4, stat: (resolve: 2),
+                flavor: "Swallow the fear whole, before it has the chance to spread.",
+                cards: [ Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel] ) ] ),
+        Reward( track: Salt, level: 5, stat: (body: 2, resolve: 1),
+                flavor: "For one held breath, the whole line is untouchable, rested, and whole.",
+                cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Mend(body: 3), Ward, Haste(tempo: 3)] ) ] ),
     ],
     actors: [
         // Novice — the clean-slate character (§8.5): weak base, gains power only by buying Upgrades.

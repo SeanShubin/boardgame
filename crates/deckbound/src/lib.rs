@@ -27,8 +27,8 @@ pub mod zones;
 
 pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, TargetRule};
 pub use campaign::{CampAction, Campaign, CampaignState, reference_campaign};
-pub use cards::{Card, Effect};
-pub use currency::{Coins, Currency, balance};
+pub use cards::{Card, Effect, RoleKind};
+pub use currency::{Currency, Track};
 pub use duel::{Move, Side, resolve};
 pub use encounter::{EncounterCard, RosterEntry};
 pub use form::{Form, StatCard};
@@ -36,8 +36,8 @@ pub use reference::{ReferenceScenario, check_combat_bands, check_invariants, ref
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
 pub use scenarios::{
-    CatalogEntry, Scenario, build_character, build_encounter_foes, campaign, card_catalog, god,
-    tutorials, upgrade_price, upgrades_for, versus,
+    CatalogEntry, RewardId, Scenario, build_character, build_encounter_foes, campaign,
+    card_catalog, god, rewards_for, tutorials, versus,
 };
 pub use solver::auto_resolve;
 pub use state::{Clash, Lane, Menu, Phase, Round, State};

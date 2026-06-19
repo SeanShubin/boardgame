@@ -21,7 +21,7 @@ Salt — `progression §7`). The scenario is four location *sets*:
 | Set           | Count            | What it is                                                                                                                                                                            |
 | ------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A — Start** | 1                | The clean-slate entry. Clearable with **generic (Gold)** capability only — no path chosen yet.                                                                                        |
-| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **mints path-*p* currency** and teaches why *p*'s Upgrades matter (the diegetic tutorial, `progression §4`).                      |
+| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **unlocks track-*p*'s role-card rewards** (§8.3) and teaches why *p* matters (the diegetic tutorial, `progression §4`).                      |
 | **C — Gate**  | **one per path** | A location **designed to be impossible to clear unless path *p* has been built on its B-location.** C[*p*] is the *proof* that path *p* delivers.                                     |
 | **D — Final** | 1                | One location tuned to challenge a party that has cleared **A + all B + all C**. **Near-impossible** unless the party has **covered every path thoroughly *and* plays strategically**. |
 
@@ -35,7 +35,7 @@ Each location asserts something; its failure detects a specific imbalance.
 
 1. **A is clearable from a clean slate** (generic only).
    *Fails if:* onboarding is too hard, or the generic baseline is mis-sized.
-2. **B[*p*] is clearable by investing path *p*** (and mints *p*-currency).
+2. **B[*p*] is clearable by investing path *p*** (and unlocks track-*p* rewards).
    *Fails if:* a path can't actually build power, or builds trivially.
 3. **C[*p*] is clearable *iff* B[*p*] was cleared** — a **two-sided** invariant:
    - **clearable *with* path *p*** → path *p* delivers enough power.
@@ -65,24 +65,23 @@ The lattice is built so the systems can only all pass together if they're mutual
 - **Par** turns the whole run into **one scalar** (days), so economy, routing, encounter
   difficulty, resource pacing, and the depth/breadth fork all register on a single dial.
 
-## Maintained as a test — what that needs
+## Maintained as a test — implemented
 
-To keep this as a **regression test**, the invariants above become **assertions** re-checked
-whenever the Spec or `booklet.ron` changes. That needs two things that **don't exist yet**:
+The lattice and its invariants are now a **live regression test** ([`reference.rs`](../../../crates/deckbound/src/reference.rs)):
 
-- **A run-scenario schema.** `booklet.ron` today only has **single-combat** `ScenarioCard`s
-  (heroes vs foes). This fixture is a **full run** — a location map (sets A/B/C/D), threat decks,
-  currencies, and the clear-lattice — which needs a new authored object. *(Graduation item with
-  geography/booklet; see `progression-design.md` "Maps onto".)*
-- **An evaluator.** "Clearable *iff*…" and "par" require either an **analytical check** (each
-  encounter's parametric difficulty vs the maximum buildable path-power) or a **solver / AI
-  playthrough** (which also computes par — the "par is computable by search" idea, `progression
-  §6`, and the **human-emulating AI** roadmap item). Per the repo guardrail, this is a **Rust test
-  / solver crate**, not an ad-hoc script — proposed, for the human to greenlight.
+- **The run-scenario fixture** is built in code (`reference_scenario`): the A/B/C/Final map over the
+  world grid, per-location encounters, and the demand lattice. (It is built directly, not yet from a
+  `booklet.ron` run-scenario schema — that authored object is still a future convenience.)
+- **The evaluator** runs two ways: an **analytical** gating check (`check_invariants`) over
+  **role-track reward coverage** — A/B free, C[*p*] clearable **iff** track *p* is covered, Final
+  **iff** all tracks covered — and a **combat-real** band check (`check_combat_bands`) that
+  auto-resolves a bare party (loses each C), a track-*p* specialist built from `rewards_for(p)` (wins
+  C[*p*]), and the full party vs a short one at the Final. Both are asserted in the test suite.
 
-Until the evaluator exists, this doc is the **authored spec of the fixture and its invariants**;
-the moment the run-scenario schema lands, the invariants can be encoded as a failing-is-meaningful
-test.
+*Re-expressed for the role-card model (2026-06-19):* the old currency-balance demands
+(`Counter`/`AllPaths`) became **coverage** demands (`NeedTrack`/`AllTracks`) — a party covers track *p*
+by holding any of its rewards. A full combat-resolving / par-search evaluator (the human-emulating AI
+roadmap item) can still replace the band check later without changing the lattice.
 
 ## Maps onto
 

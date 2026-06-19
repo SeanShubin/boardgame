@@ -79,11 +79,16 @@ pub fn living(pool: &[Actor]) -> Vec<usize> {
         .collect()
 }
 
-/// Finalize deaths at a phase boundary: a downed Actor becomes `fallen`.
+/// Finalize deaths at a phase boundary: a downed Actor becomes `fallen` — unless it has a
+/// Lifeline this round (M3 *Last Stand*), which leaves it standing at 1 Body instead.
 pub fn tally(pool: &mut [Actor]) {
     for a in pool.iter_mut() {
         if a.is_down() {
-            a.fallen = true;
+            if a.cannot_fall {
+                a.defense.body.remaining = a.defense.body.remaining.max(1);
+            } else {
+                a.fallen = true;
+            }
         }
     }
 }
@@ -103,12 +108,15 @@ pub fn play_card(
     log: &mut Vec<String>,
 ) {
     log.push(format!("{actor_name} plays {}.", card.name));
+    // How many foes / allies an effect touches (§4 AoE); ≥1. A Curse modifier (M5) and Sanctuary
+    // (M6) raise this via the card's `targets` at build time.
+    let n = (card.targets as usize).max(1);
     for effect in &card.effects {
         match *effect {
             Effect::Damage { power, dtype } => {
                 let raw = actor_power + power;
                 let alive: Vec<usize> = living(foes);
-                for ti in alive.into_iter().take(card.targets as usize) {
+                for ti in alive.into_iter().take(n) {
                     apply_strike(
                         &mut foes[ti],
                         Strike {
@@ -121,6 +129,21 @@ pub fn play_card(
                     );
                 }
             }
+            Effect::Guard { focus } => {
+                // M2 — a defensive boost to this holder's block vs slips this round.
+                if let Some(i) = self_idx {
+                    allies[i].focus += focus;
+                    log.push(format!("  braces (+{focus} Focus)."));
+                }
+            }
+            Effect::Lifeline => {
+                // M3 — this round the holder cannot fall (damage leaves it at 1 Body); resolved
+                // in `tally` at the phase boundary.
+                if let Some(i) = self_idx {
+                    allies[i].cannot_fall = true;
+                    log.push("  steels for a last stand — it cannot fall this round.".into());
+                }
+            }
             Effect::Rally { resolve } => {
                 for a in allies.iter_mut().filter(|a| !a.is_down()) {
                     a.defense.resolve += resolve;
@@ -128,52 +151,57 @@ pub fn play_card(
                 log.push(format!("  +{resolve} Resolve to allies."));
             }
             Effect::Mend { body } => {
-                if let Some(t) = allies
-                    .iter_mut()
-                    .filter(|a| !a.is_down())
-                    .min_by_key(|a| a.defense.body.remaining)
-                {
-                    let max = t.defense.body.max;
-                    t.defense.body.remaining = (t.defense.body.remaining + body).min(max);
-                    log.push(format!("  mends {} (+{body} Body).", t.name));
+                // Heal the `n` most-wounded allies (M6 Sanctuary heals all).
+                let mut order: Vec<usize> = living(allies);
+                order.sort_by_key(|&i| allies[i].defense.body.remaining);
+                for ai in order.into_iter().take(n) {
+                    let max = allies[ai].defense.body.max;
+                    let r = &mut allies[ai].defense.body.remaining;
+                    *r = (*r + body).min(max);
+                    log.push(format!("  mends {} (+{body} Body).", allies[ai].name));
                 }
             }
             Effect::Ward => {
-                // Grant a melee guard to a melee-less ally so it can self-defend (§4.2).
+                // Grant a melee guard to `n` melee-less allies so they can self-defend (§4.2).
                 use crate::actor::Attack;
-                if let Some((_, t)) = allies
-                    .iter_mut()
-                    .enumerate()
-                    .filter(|(i, a)| !a.is_down() && Some(*i) != self_idx)
-                    .find(|(_, a)| matches!(a.attack, Attack::Ranged | Attack::Neither))
-                {
-                    t.attack = match t.attack {
-                        Attack::Ranged => Attack::Both,
-                        _ => Attack::Melee,
-                    };
-                    log.push(format!("  wards {} (gains a melee guard).", t.name));
+                let mut granted = 0;
+                for (i, t) in allies.iter_mut().enumerate() {
+                    if granted >= n {
+                        break;
+                    }
+                    if t.is_down() || Some(i) == self_idx {
+                        continue;
+                    }
+                    if matches!(t.attack, Attack::Ranged | Attack::Neither) {
+                        t.attack = match t.attack {
+                            Attack::Ranged => Attack::Both,
+                            _ => Attack::Melee,
+                        };
+                        log.push(format!("  wards {} (gains a melee guard).", t.name));
+                        granted += 1;
+                    }
                 }
             }
             Effect::Haste { tempo } => {
-                if let Some(t) = allies.iter_mut().find(|a| !a.is_down()) {
+                for t in allies.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.tempo += tempo as i32;
                     log.push(format!("  +{tempo} Tempo to {}.", t.name));
                 }
             }
             Effect::Suppress { tempo } => {
-                if let Some(t) = foes.iter_mut().find(|a| !a.is_down()) {
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.tempo -= tempo as i32;
                     log.push(format!("  suppresses {} (-{tempo} Tempo).", t.name));
                 }
             }
             Effect::Slow { speed } => {
-                if let Some(t) = foes.iter_mut().find(|a| !a.is_down()) {
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.offense.speed = t.offense.speed.saturating_sub(speed);
                     log.push(format!("  slows {} (-{speed} Speed).", t.name));
                 }
             }
             Effect::Confuse { focus } => {
-                if let Some(t) = foes.iter_mut().find(|a| !a.is_down()) {
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.focus = t.focus.saturating_sub(focus);
                     log.push(format!("  confuses {} (-{focus} Focus).", t.name));
                 }

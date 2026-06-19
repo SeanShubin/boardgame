@@ -7,25 +7,25 @@
 //! - **C[p]** clearable **iff** B[p] was built (path *p* is necessary and sufficient).
 //! - **Final** clearable **iff** all paths are covered.
 //!
-//! *First-pass:* the clear-model is **analytical** — a party's currency-power (treasure earned) vs a
-//! per-location **demand** — not a full battle playthrough (that needs the human-emulating AI,
-//! roadmap). So this fixture catches *structural / gating* regressions today; a combat-resolving
-//! evaluator can replace [`clearable`] later without changing the lattice.
+//! *First-pass:* the clear-model is **analytical** — a party's **role-track coverage** (which tracks
+//! it holds rewards in, §8.3) vs a per-location **demand** — not a full battle playthrough (that needs
+//! the human-emulating AI, roadmap). So this fixture catches *structural / gating* regressions today;
+//! a combat-resolving evaluator can replace [`clearable`] later without changing the lattice.
 
-use crate::currency::{Coins, Currency, balance};
+use crate::currency::Currency;
 use crate::encounter::{EncounterCard, RosterEntry};
 use crate::form::StatCard;
 use crate::world::{Coord, Layout, Location, Run};
 
-/// What a location demands to be cleared (analytical clear-model).
+/// What a location demands to be cleared (analytical clear-model, in terms of §8.3 reward coverage).
 #[derive(Clone, Copy, Debug)]
 enum Demand {
     /// Clearable from a clean slate (A, B[p]).
     Free,
-    /// Needs ≥ `amount` of one currency — the reward a built path yields (C[p]).
-    Counter(Currency, i64),
-    /// Needs ≥ `amount` of **every** path currency (the final).
-    AllPaths(i64),
+    /// Needs the party to hold rewards in track `p` — what a built path yields (C[p]).
+    NeedTrack(Currency),
+    /// Needs **every** role track covered (the final).
+    AllTracks,
 }
 
 /// The reference scenario: the lattice over the world map, its per-location encounters and demands,
@@ -58,9 +58,9 @@ fn make_encounter(name: &str, currency: Currency, count: u32) -> EncounterCard {
     }
 }
 
-/// Build the reference scenario over `paths` (the progression paths — currently the five roles).
+/// Build the reference scenario over `paths` (the progression tracks — the five roles).
 /// Layout (grid): A at col 0; B[p] at col 1; C[p] at col 2; final at col 3 — connected so every
-/// location is reachable from A. Payout = a cleared location yields its currency × its `max_level`.
+/// location is reachable from A. Clearing a track-`p` location unlocks that track's rewards (§8.3).
 pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
     let level: u32 = 5; // max clear depth of the deep locations (seed)
     let mut locations = Vec::new();
@@ -102,11 +102,11 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
             currency: p,
             max_level: level,
         });
-        encounters.push(make_encounter(&format!("C[{}]", p.label()), p, 2)); // gate: bare loses, 1 Upgrade wins
-        demands.push(Demand::Counter(p, level as i64)); // B[p] at max yields exactly `level`
+        encounters.push(make_encounter(&format!("C[{}]", p.label()), p, 2)); // gate: bare loses, the p-kit wins
+        demands.push(Demand::NeedTrack(p)); // needs the track-p rewards a cleared B[p] yields
     }
 
-    // Final — needs all paths covered (B *and* C cleared → 2×level per path).
+    // Final — needs all tracks covered (every B[p] cleared → its track's rewards held).
     let final_index = locations.len();
     locations.push(Location {
         name: "Final".into(),
@@ -115,7 +115,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         max_level: level,
     });
     encounters.push(make_encounter("Final", Currency::Gold, 10)); // boss: needs the full party
-    demands.push(Demand::AllPaths(2 * level as i64));
+    demands.push(Demand::AllTracks);
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);
     ReferenceScenario {
@@ -130,12 +130,13 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
     }
 }
 
-/// Is a `demand` met by a party that has `earned` (and `spent`) the given currency, over `paths`?
-fn clearable(demand: Demand, earned: &[Coins], spent: &[Coins], paths: &[Currency]) -> bool {
+/// Is a `demand` met by a party that **covers** `covered` tracks (holds rewards in them), over the
+/// scenario's `paths`?
+fn clearable(demand: Demand, covered: &[Currency], paths: &[Currency]) -> bool {
     match demand {
         Demand::Free => true,
-        Demand::Counter(c, amount) => balance(c, earned, spent) >= amount,
-        Demand::AllPaths(amount) => paths.iter().all(|&p| balance(p, earned, spent) >= amount),
+        Demand::NeedTrack(p) => covered.contains(&p),
+        Demand::AllTracks => paths.iter().all(|p| covered.contains(p)),
     }
 }
 
@@ -163,13 +164,6 @@ fn reachable(run: &Run) -> Vec<bool> {
 pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
     let mut v = Vec::new();
     let n = s.paths.len();
-    let spent: Vec<Coins> = Vec::new();
-    let payout = |idx: usize| {
-        Coins::new(
-            s.run.locations[idx].currency,
-            s.run.locations[idx].max_level,
-        )
-    };
 
     // --- structural ---
     if s.b_index.len() != n || s.c_index.len() != n {
@@ -177,10 +171,10 @@ pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
     }
     for (i, &p) in s.paths.iter().enumerate() {
         if s.run.locations[s.b_index[i]].currency != p {
-            v.push(format!("B[{}] mints the wrong currency", p.label()));
+            v.push(format!("B[{}] is the wrong track", p.label()));
         }
         if s.run.locations[s.c_index[i]].currency != p {
-            v.push(format!("C[{}] mints the wrong currency", p.label()));
+            v.push(format!("C[{}] is the wrong track", p.label()));
         }
     }
     if s.run.objective != s.final_index {
@@ -190,28 +184,28 @@ pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
         v.push("some location is unreachable from A".into());
     }
 
-    // --- gating (analytical) ---
-    if !clearable(s.demands[s.a_index], &[], &spent, &s.paths) {
+    // --- gating (analytical, in §8.3 reward coverage) ---
+    if !clearable(s.demands[s.a_index], &[], &s.paths) {
         v.push("A is not clearable from a clean slate".into());
     }
     for (i, &b) in s.b_index.iter().enumerate() {
-        if !clearable(s.demands[b], &[], &spent, &s.paths) {
+        if !clearable(s.demands[b], &[], &s.paths) {
             v.push(format!(
                 "B[{}] not clearable clean-slate",
                 s.paths[i].label()
             ));
         }
     }
-    // C[p]: NOT clearable without path p (no coverage leak); clearable after building B[p].
+    // C[p]: NOT clearable without covering track p (no coverage leak); clearable after building B[p].
     for (i, &c) in s.c_index.iter().enumerate() {
-        if clearable(s.demands[c], &[], &spent, &s.paths) {
+        if clearable(s.demands[c], &[], &s.paths) {
             v.push(format!(
-                "C[{}] is clearable WITHOUT building its path (coverage leak)",
+                "C[{}] is clearable WITHOUT building its track (coverage leak)",
                 s.paths[i].label()
             ));
         }
-        let after_b = [payout(s.b_index[i])];
-        if !clearable(s.demands[c], &after_b, &spent, &s.paths) {
+        let after_b = [s.paths[i]]; // building B[p] yields track-p reward coverage
+        if !clearable(s.demands[c], &after_b, &s.paths) {
             v.push(format!(
                 "C[{}] is NOT clearable even after building B[{}]",
                 s.paths[i].label(),
@@ -219,21 +213,15 @@ pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
             ));
         }
     }
-    // Final: clearable with full coverage; NOT with a path missing.
-    let mut full: Vec<Coins> = Vec::new();
-    full.extend(s.b_index.iter().map(|&b| payout(b)));
-    full.extend(s.c_index.iter().map(|&c| payout(c)));
-    if !clearable(s.demands[s.final_index], &full, &spent, &s.paths) {
+    // Final: clearable with full coverage; NOT with a track missing.
+    let full: Vec<Currency> = s.paths.clone();
+    if !clearable(s.demands[s.final_index], &full, &s.paths) {
         v.push("Final is NOT clearable with full coverage".into());
     }
     if n > 0 {
-        let missing: Vec<Coins> = full
-            .iter()
-            .copied()
-            .filter(|c| c.currency != s.paths[0])
-            .collect();
-        if clearable(s.demands[s.final_index], &missing, &spent, &s.paths) {
-            v.push("Final is clearable with a path missing (a path is redundant)".into());
+        let missing: Vec<Currency> = s.paths[1..].to_vec();
+        if clearable(s.demands[s.final_index], &missing, &s.paths) {
+            v.push("Final is clearable with a track missing (a track is redundant)".into());
         }
     }
     v
@@ -244,13 +232,13 @@ pub fn check_invariants(s: &ReferenceScenario) -> Vec<String> {
 /// (Currency *affordability* — that p-Upgrades require clearing B[p] — is the analytical check
 /// above; this confirms the *difficulty* sits in the right band.)
 pub fn check_combat_bands(s: &ReferenceScenario, seed: u64) -> Vec<String> {
-    use crate::scenarios::{build_character, build_encounter_foes, upgrades_for};
+    use crate::scenarios::{build_character, build_encounter_foes, rewards_for};
     use crate::solver::auto_resolve;
 
     let mut v = Vec::new();
     let novice = || build_character("Novice", &[]);
-    // A character "invested in path p" owns that currency's Upgrades (what clearing B[p] buys).
-    let specialist = |p: Currency| build_character("Novice", &upgrades_for(p));
+    // A character "invested in track p" holds that track's rewards (what clearing B[p] unlocks).
+    let specialist = |p: Currency| build_character("Novice", &rewards_for(p));
 
     // C[p]: a bare party should lose; a p-equipped specialist should win.
     for (i, &p) in s.paths.iter().enumerate() {

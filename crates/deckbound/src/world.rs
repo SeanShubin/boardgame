@@ -9,7 +9,7 @@
 
 use serde::Deserialize;
 
-use crate::currency::{Coins, Currency};
+use crate::currency::Currency;
 
 /// A map coordinate. Rectangles tile as a grid or an offset-hex field (§8.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -153,15 +153,20 @@ impl Run {
         self.day += 1;
     }
 
-    /// Treasure earned so far (§8.3, earned side): each cleared location mints its currency × its
-    /// clear marker. *(Seed payout — depth N yields N of the location's currency; human-tuned.)*
-    pub fn treasure(&self) -> Vec<Coins> {
-        self.locations
-            .iter()
-            .zip(&self.cleared)
-            .filter(|&(_, &lvl)| lvl > 0)
-            .map(|(loc, &lvl)| Coins::new(loc.currency, lvl))
-            .collect()
+    /// The role-track rewards a party has unlocked so far (§8.3): a location of track `Y` cleared to
+    /// level `N` unlocks `(Y, 1..=N)`. Generic (Gold) locations mint no reward track. The build is a
+    /// pure function of the clear markers — no currency, no path-dependent budget (§0.1).
+    pub fn unlocked(&self) -> Vec<(Currency, u32)> {
+        let mut out = Vec::new();
+        for (loc, &lvl) in self.locations.iter().zip(&self.cleared) {
+            if loc.currency == Currency::Gold {
+                continue; // generic locations are not a reward track (§8.5)
+            }
+            for level in 1..=lvl {
+                out.push((loc.currency, level));
+            }
+        }
+        out
     }
 }
 
@@ -219,7 +224,16 @@ mod tests {
         run.record_clear(1, 9); // clamps to max_level 5
         assert_eq!(run.cleared[1], 5);
         assert!(run.is_won());
-        // Earned treasure: 5 Iron from the Final, nothing from the unclear start.
-        assert_eq!(run.treasure(), vec![Coins::new(Currency::Iron, 5)]);
+        // Unlocked rewards: the Iron Final cleared to 5 ⇒ (Iron, 1..=5); the generic start mints none.
+        assert_eq!(
+            run.unlocked(),
+            vec![
+                (Currency::Iron, 1),
+                (Currency::Iron, 2),
+                (Currency::Iron, 3),
+                (Currency::Iron, 4),
+                (Currency::Iron, 5),
+            ]
+        );
     }
 }

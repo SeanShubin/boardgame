@@ -85,6 +85,10 @@ pub struct Round {
     /// Actors who have already acted in the current target phase (Skirmish / Reserve).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
+    /// §4.4 per-role-per-round cap: the role tracks each actor has already played a card of this
+    /// round (reset each round). A role card is playable only if its track is not yet present here.
+    pub hero_roles_played: Vec<Vec<crate::currency::Currency>>,
+    pub foe_roles_played: Vec<Vec<crate::currency::Currency>>,
     /// Vanguard awaiting a lane during the Assign phase (the side currently committing).
     pub assign_queue: Vec<usize>,
     /// Sides that still owe a manual lane assignment, in order — each `(side, its Vanguard)`.
@@ -109,6 +113,8 @@ impl Round {
             foe_skirmisher: vec![false; foes],
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
+            hero_roles_played: vec![Vec::new(); heroes],
+            foe_roles_played: vec![Vec::new(); foes],
             assign_queue: Vec::new(),
             assign_pending: Vec::new(),
             committing: 0,

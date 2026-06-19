@@ -1,5 +1,6 @@
 //! §8 — the playable **Campaign**: a world map you move on, entering locations to fight the §4
-//! battle, buying Upgrades with earned currency, toward a run victory (clear the objective).
+//! battle, **assigning the role-card rewards** a clear unlocks (§8.3, no currency), toward a run
+//! victory (clear the objective).
 //!
 //! An `engine::Game` that **embeds** the combat game ([`battle_state`]) and folds its result back
 //! into the run. A `suggest()` **guide** walks the reference scenario's scripted path
@@ -11,27 +12,30 @@
 use engine::{Accent, Game, GameError, MapTile, MapView, Outcome, PlayerId, TableView};
 
 use crate::actor::Actor;
-use crate::currency::{Coins, Currency, balance};
+use crate::currency::Currency;
 use crate::encounter::EncounterCard;
 use crate::game::{self, Deckbound, battle_state};
 use crate::reference::reference_scenario;
-use crate::scenarios::{build_character, build_encounter_foes, upgrade_price, upgrades_for};
+use crate::scenarios::{RewardId, build_character, build_encounter_foes};
 use crate::solver;
 use crate::state::State;
 use crate::world::Run;
 
-/// A party member: a clean-slate character specialising in one path, plus its bought Upgrades.
+/// A party member: a clean-slate character specialising in one **track**, plus the **rewards**
+/// (§8.3) the party has assigned to it — permanent, accreting (a character *is* its role cards, §8.5).
 #[derive(Clone, Debug)]
 pub struct Member {
     pub name: String,
     pub base: String,
-    pub path: Currency,
-    pub upgrades: Vec<String>,
+    /// The role track this member specialises in (the guide assigns matching rewards here).
+    pub track: Currency,
+    /// Rewards assigned to this member — permanent; only ever grows (§0.1 monotone).
+    pub rewards: Vec<RewardId>,
 }
 
 impl Member {
     fn actor(&self) -> Actor {
-        let mut a = build_character(&self.base, &self.upgrades);
+        let mut a = build_character(&self.base, &self.rewards);
         a.name = self.name.clone();
         a
     }
@@ -69,6 +73,10 @@ pub struct CampaignState {
     pub outcome: Option<Outcome>,
     /// The scripted location order the guide follows (indices into `run.locations`).
     pub script: Vec<usize>,
+    /// Rewards unlocked by a clear but **not yet assigned** (§8.3 SD2 — assign at unlock). While
+    /// non-empty, the only legal moves are to assign its head to a member. Derived (unlocked −
+    /// assigned), so the build stays a §0.1 function of clears + assignment.
+    pub unassigned: Vec<RewardId>,
 }
 
 /// One step a player can take in the campaign.
@@ -78,8 +86,8 @@ pub enum CampAction {
     Move(usize, usize),
     /// Enter location `loc` with token `t` — fight to clear it (at the location's max level).
     Enter(usize, usize),
-    /// Buy Upgrade `up` for member `m`.
-    Buy(usize, String),
+    /// Assign the just-unlocked reward `(track, level)` permanently to member `m` (§8.3 SD2).
+    Assign(usize, Currency, u32),
     /// End the Day — advance the clock; tokens refresh.
     EndDay,
     /// A combat action, delegated to the embedded battle.
@@ -93,37 +101,37 @@ pub enum CampAction {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Campaign;
 
-// ---- economy (the §8.3 recompute, on demand) -----------------------------
-
-fn earned(s: &CampaignState) -> Vec<Coins> {
-    s.run.treasure()
-}
-
-fn spent(s: &CampaignState) -> Vec<Coins> {
-    s.party
-        .iter()
-        .flat_map(|m| m.upgrades.iter().map(|u| upgrade_price(u)))
-        .collect()
-}
-
-fn affordable(s: &CampaignState, price: Coins) -> bool {
-    balance(price.currency, &earned(s), &spent(s)) >= price.amount as i64
-}
+// ---- reward unlock & assignment (§8.3 SD2) --------------------------------
 
 fn fully_cleared(s: &CampaignState, loc: usize) -> bool {
     s.run.cleared[loc] >= s.run.locations[loc].max_level
 }
 
-/// The next affordable, unowned Upgrade for some member (matched to its path's currency).
-fn next_upgrade(s: &CampaignState) -> Option<(usize, String)> {
-    for (mi, m) in s.party.iter().enumerate() {
-        for up in upgrades_for(m.path) {
-            if !m.upgrades.contains(&up) && affordable(s, upgrade_price(&up)) {
-                return Some((mi, up));
-            }
-        }
-    }
-    None
+/// Every reward currently assigned to some member (the party's whole pool).
+fn assigned_rewards(s: &CampaignState) -> Vec<RewardId> {
+    s.party
+        .iter()
+        .flat_map(|m| m.rewards.iter().copied())
+        .collect()
+}
+
+/// Recompute the not-yet-assigned queue = (rewards unlocked by clears) − (rewards already assigned).
+/// Markovian: a pure function of `run.cleared` + the party's assignments (§0.1).
+fn recompute_unassigned(s: &mut CampaignState) {
+    let held = assigned_rewards(s);
+    s.unassigned = s
+        .run
+        .unlocked()
+        .into_iter()
+        .map(|(track, level)| RewardId { track, level })
+        .filter(|r| !held.contains(r))
+        .collect();
+    s.unassigned.sort_by_key(|r| (r.track.label(), r.level));
+}
+
+/// The member the guide would assign reward `r` to: the one specialising in its track, else member 0.
+fn guide_assignee(s: &CampaignState, r: RewardId) -> usize {
+    s.party.iter().position(|m| m.track == r.track).unwrap_or(0)
 }
 
 /// One step toward `target` from `from` over the layout (BFS), or `None` if unreachable / already there.
@@ -183,6 +191,14 @@ impl Campaign {
                 s.run.record_clear(loc, max);
                 s.log
                     .push(format!("Cleared {}.", s.run.locations[loc].name));
+                // A clear may unlock new rewards to assign (§8.3 SD2).
+                recompute_unassigned(s);
+                if !s.unassigned.is_empty() {
+                    s.log.push(format!(
+                        "{} reward(s) unlocked — assign them.",
+                        s.unassigned.len()
+                    ));
+                }
             } else {
                 s.log
                     .push(format!("Retreated from {}.", s.run.locations[loc].name));
@@ -205,9 +221,9 @@ impl Campaign {
             let actions = Deckbound.legal_actions(battle);
             return Some(CampAction::Battle(solver::greedy(battle, &actions)));
         }
-        // Buy what we can afford first (so a freshly-cleared path funds its Upgrades).
-        if let Some((m, up)) = next_upgrade(s) {
-            return Some(CampAction::Buy(m, up));
+        // Assign any just-unlocked reward before anything else (§8.3 SD2): to its track specialist.
+        if let Some(&r) = s.unassigned.first() {
+            return Some(CampAction::Assign(guide_assignee(s, r), r.track, r.level));
         }
         let t = 0; // single token, this scenario
         let pos = s.run.positions[t];
@@ -256,6 +272,13 @@ impl Game for Campaign {
             a.push(CampAction::Retreat);
             return a;
         }
+        // A just-unlocked reward must be assigned before anything else (§8.3 SD2): one Assign per
+        // member, for the head of the queue. No other world action is offered until it is placed.
+        if let Some(&r) = s.unassigned.first() {
+            return (0..s.party.len())
+                .map(|m| CampAction::Assign(m, r.track, r.level))
+                .collect();
+        }
         let mut a = Vec::new();
         let t = 0;
         let pos = s.run.positions[t];
@@ -271,14 +294,6 @@ impl Game for Campaign {
         if !s.tokens[t].acted && !fully_cleared(s, pos) {
             a.push(CampAction::Enter(t, pos));
         }
-        // Buy any affordable, unowned Upgrade.
-        for (mi, m) in s.party.iter().enumerate() {
-            for up in upgrades_for(m.path) {
-                if !m.upgrades.contains(&up) && affordable(s, upgrade_price(&up)) {
-                    a.push(CampAction::Buy(mi, up));
-                }
-            }
-        }
         a.push(CampAction::EndDay);
         a
     }
@@ -290,7 +305,10 @@ impl Game for Campaign {
                 name => format!("Travel to {name}"),
             },
             CampAction::Enter(_, loc) => format!("Enter {}", s.run.locations[*loc].name),
-            CampAction::Buy(m, up) => format!("{}: buy {up}", s.party[*m].name),
+            CampAction::Assign(m, track, level) => {
+                let role = track.role().unwrap_or_else(|| track.label());
+                format!("Assign {role} L{level} → {}", s.party[*m].name)
+            }
             CampAction::EndDay => "End the day".into(),
             CampAction::Battle(b) => Deckbound.action_label(s.battle.as_ref().unwrap(), b),
             CampAction::Retreat => "Retreat (forfeit this fight)".into(),
@@ -317,12 +335,24 @@ impl Game for Campaign {
                 s.phase = CampPhase::Battle;
                 Ok(())
             }
-            CampAction::Buy(m, up) => {
-                let price = upgrade_price(up);
-                if !affordable(s, price) {
-                    return Err(GameError::new("can't afford that"));
+            CampAction::Assign(m, track, level) => {
+                let rid = RewardId {
+                    track: *track,
+                    level: *level,
+                };
+                if s.unassigned.first() != Some(&rid) {
+                    return Err(GameError::new("that reward is not the one to assign now"));
                 }
-                s.party[*m].upgrades.push(up.clone());
+                if *m >= s.party.len() {
+                    return Err(GameError::new("no such member"));
+                }
+                s.party[*m].rewards.push(rid);
+                s.unassigned.remove(0);
+                s.log.push(format!(
+                    "Assigned {} L{level} to {}.",
+                    track.role().unwrap_or_else(|| track.label()),
+                    s.party[*m].name
+                ));
                 Ok(())
             }
             CampAction::EndDay => {
@@ -398,7 +428,10 @@ impl Game for Campaign {
                 } else if s.run.cleared[i] > 0 {
                     format!("lvl {}/{}", s.run.cleared[i], loc.max_level)
                 } else {
-                    loc.currency.label().to_string()
+                    loc.currency
+                        .role()
+                        .unwrap_or_else(|| loc.currency.label())
+                        .to_string()
                 };
                 (Some(loc.name.clone()), Some(status))
             } else {
@@ -429,14 +462,25 @@ impl Game for Campaign {
                 tokens: tokens_here,
             });
         }
-        let bal: Vec<String> = Currency::ALL
+        // Per-track reward coverage: how many of each role track's five levels the party holds
+        // (the §8.3 pool, replacing the old currency balances).
+        let held = assigned_rewards(s);
+        let cover: Vec<String> = Currency::TRACKS
             .iter()
-            .map(|&c| format!("{} {}", balance(c, &earned(s), &spent(s)), c.label()))
+            .map(|&t| {
+                let n = held.iter().filter(|r| r.track == t).count();
+                format!("{} {}/5", t.role().unwrap_or_else(|| t.label()), n)
+            })
             .collect();
         // Surface the run's state and its latest event in the caption (the map has no log pane):
-        // a clear victory banner when won, otherwise the day/economy line plus the last log entry
+        // a clear victory banner when won, otherwise the day/coverage line plus the last log entry
         // (e.g. "Cleared the Iron Mire.") so travelling and fighting give feedback.
-        let day_line = format!("Day {} — {}", s.run.day + 1, bal.join(" · "));
+        let pending = if s.unassigned.is_empty() {
+            String::new()
+        } else {
+            format!(" — {} reward(s) to assign", s.unassigned.len())
+        };
+        let day_line = format!("Day {} — {}{pending}", s.run.day + 1, cover.join(" · "));
         let status = match (&s.outcome, s.log.last()) {
             (Some(_), _) => format!(
                 "Victory! The run is won in {} days.\n{day_line}",
@@ -468,12 +512,12 @@ pub fn reference_campaign() -> CampaignState {
     let party: Vec<Member> = paths
         .iter()
         .map(|&p| Member {
-            // Name a recruit by the combat role its path funds (Wall / Infiltrator / …), not the
-            // currency, so the party reads as roles; fall back to the currency for the generic Gold.
+            // Name a recruit by the combat role its track funds (Wall / Infiltrator / …) so the
+            // party reads as roles; fall back to the track id for the generic Gold.
             name: format!("{} Recruit", p.role().unwrap_or(p.label())),
             base: "Novice".into(),
-            path: p,
-            upgrades: Vec::new(),
+            track: p,
+            rewards: Vec::new(),
         })
         .collect();
     let tokens = vec![Token {
@@ -494,6 +538,7 @@ pub fn reference_campaign() -> CampaignState {
         log: vec!["The reference run begins.".into()],
         outcome: None,
         script,
+        unassigned: Vec::new(),
     }
 }
 

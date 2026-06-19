@@ -153,6 +153,9 @@ pub struct Actor {
     // round-scoped budgets
     pub tempo: i32,
     pub focus: u32,
+    /// Round-scoped: a Lifeline (M3 *Last Stand*) — this round the Actor cannot be downed; damage
+    /// that would down it leaves it at 1 Body (resolved in [`crate::combat::tally`]). Reset each round.
+    pub cannot_fall: bool,
     /// Finalized dead. Body reaching 0 is "mortally wounded" — death is tallied at the phase
     /// boundary, which sets this; once set the Actor is out of the fight.
     pub fallen: bool,
@@ -188,6 +191,7 @@ impl Actor {
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
         self.focus = self.defense.mind;
+        self.cannot_fall = false;
         self.defense.end_round();
     }
 }

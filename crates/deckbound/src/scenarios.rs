@@ -9,8 +9,8 @@ use serde::Deserialize;
 use engine::{Accent, CardView, ProseLine};
 
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
-use crate::cards::{Card, Effect};
-use crate::currency::{Coins, Currency};
+use crate::cards::{Card, Effect, RoleKind};
+use crate::currency::Currency;
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
@@ -27,9 +27,11 @@ struct Catalog {
     tutorials: Vec<ScenarioCard>,
     #[serde(default)]
     versus: Vec<ScenarioCard>,
+    /// The 25 role-card rewards (§8.3): 5 tracks × 5 levels, each an atomic set of role cards + a
+    /// bundled Stat card. Replaces the currency/Upgrade economy.
     #[serde(default)]
-    upgrades: Vec<UpgradeCard>,
-    /// Flavor for the enum content that has no data row of its own (§8.3 currencies): the prose is
+    rewards: Vec<Reward>,
+    /// Flavor for the enum content that has no data row of its own (§8.3 tracks): the prose is
     /// keyed by the `Currency` itself, so code references only the key and the text stays in data.
     #[serde(default)]
     currency_flavor: HashMap<Currency, String>,
@@ -38,15 +40,40 @@ struct Catalog {
     role_flavor: HashMap<String, String>,
 }
 
-/// A purchasable Upgrade (§8.3): a `price` in one currency, and a `grant` (Form attachment, the
-/// stat boosts it adds when bought).
+/// A role-card **reward** (§8.3): clearing `(track, level)` unlocks this atomic set — its role
+/// `cards` (Base / Modifier / Mode) plus a bundled `stat` Form attachment. One physical copy.
 #[derive(Debug, Deserialize)]
-struct UpgradeCard {
-    name: String,
-    price: Coins,
-    grant: StatCard,
+struct Reward {
+    track: Currency,
+    level: u32,
+    #[serde(default)]
+    cards: Vec<Card>,
+    #[serde(default)]
+    stat: StatCard,
     #[serde(default)]
     flavor: String,
+}
+
+/// The id of a reward (which `(track, level)` clear yields it). The campaign assigns rewards by id;
+/// the content lives in the booklet's [`Reward`] table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RewardId {
+    pub track: Currency,
+    pub level: u32,
+}
+
+/// Whether a Stat card actually grants anything (so empty bundles don't clutter a Form).
+fn stat_is_empty(s: &StatCard) -> bool {
+    s.power == 0
+        && s.precision == 0
+        && s.speed == 0
+        && s.spirit == 0
+        && s.body == 0
+        && s.toughness == 0
+        && s.resolve == 0
+        && s.mind == 0
+        && s.armor.is_empty()
+        && s.ward.is_empty()
 }
 
 #[derive(Debug, Deserialize)]
@@ -377,6 +404,7 @@ fn build_actor_with(
         attack: c.attack,
         tempo: 0,
         focus: 0,
+        cannot_fall: false,
         fallen: false,
     };
     actor.refresh_round();
@@ -404,38 +432,63 @@ pub fn build_encounter_foes(enc: &EncounterCard, level: u32) -> Vec<Actor> {
     foes
 }
 
-fn upgrade<'a>(cat: &'a Catalog, name: &str) -> &'a UpgradeCard {
-    cat.upgrades
+fn reward(cat: &Catalog, id: RewardId) -> Option<&Reward> {
+    cat.rewards
         .iter()
-        .find(|u| u.name == name)
-        .unwrap_or_else(|| panic!("booklet has no upgrade named {name:?}"))
+        .find(|r| r.track == id.track && r.level == id.level)
 }
 
-/// Build a clean-slate character (§8.5): the `base` identity plus its bought `upgrades`, each
-/// grafted onto the Form as an attachment (stats-as-deck, §8.3). The character's strength is
-/// entirely a function of the Upgrades it has bought.
-pub fn build_character(base: &str, upgrades: &[String]) -> Actor {
+/// Build a character (§8.5): the clean-slate `base` identity plus its assigned **rewards** — each
+/// reward's Stat card grafts onto the Form (stats-as-deck) and its role cards join the kit. A
+/// character **is** its assigned role cards (§8.5). Curse (M5) folds at build time: +1 debuff
+/// target on the owner's Controller bases.
+pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
     let cat = catalog();
-    let grants: Vec<StatCard> = upgrades
+    let mut stats: Vec<StatCard> = Vec::new();
+    let mut role_cards: Vec<Card> = Vec::new();
+    for &id in rewards {
+        if let Some(r) = reward(cat, id) {
+            if !stat_is_empty(&r.stat) {
+                let mut s = r.stat.clone();
+                if s.name.is_empty() {
+                    s.name = format!("{} {} · Stat", id.track.label(), id.level);
+                }
+                stats.push(s);
+            }
+            role_cards.extend(r.cards.iter().cloned());
+        }
+    }
+    // Curse modifier fold (M5): a played Controller debuff hits +1 extra foe while Curse is owned.
+    if role_cards
         .iter()
-        .map(|u| upgrade(cat, u).grant.clone())
+        .any(|c| c.kind == RoleKind::Modifier && c.name == "Curse")
+    {
+        for c in role_cards.iter_mut() {
+            if c.role == Some(Currency::Bone) && c.kind == RoleKind::Base {
+                c.targets += 1;
+            }
+        }
+    }
+    let mut actor = build_actor_with(cat, base, &stats, None);
+    actor.actions.extend(role_cards);
+    actor
+}
+
+/// All reward ids of a track (its five levels), in level order — the full specialist kit (§8.3),
+/// used by the reference scenario's combat-band probe.
+pub fn rewards_for(track: Currency) -> Vec<RewardId> {
+    let cat = catalog();
+    let mut ids: Vec<RewardId> = cat
+        .rewards
+        .iter()
+        .filter(|r| r.track == track)
+        .map(|r| RewardId {
+            track: r.track,
+            level: r.level,
+        })
         .collect();
-    build_actor_with(cat, base, &grants, None)
-}
-
-/// The price of an Upgrade (§8.3).
-pub fn upgrade_price(name: &str) -> Coins {
-    upgrade(catalog(), name).price
-}
-
-/// The Upgrade names purchasable with a given currency (one role's shop).
-pub fn upgrades_for(currency: Currency) -> Vec<String> {
-    catalog()
-        .upgrades
-        .iter()
-        .filter(|u| u.price.currency == currency)
-        .map(|u| u.name.clone())
-        .collect()
+    ids.sort_by_key(|r| r.level);
+    ids
 }
 
 // --- Flavor lookups (§8.3 style) ---------------------------------------------------------------
@@ -477,16 +530,6 @@ pub fn trait_flavor(name: &str) -> &'static str {
         .iter()
         .find(|t| t.name == name)
         .map(|t| t.flavor.as_str())
-        .unwrap_or_default()
-}
-
-/// In-world flavor for a named Upgrade. Empty if none authored.
-pub fn upgrade_flavor(name: &str) -> &'static str {
-    catalog()
-        .upgrades
-        .iter()
-        .find(|u| u.name == name)
-        .map(|u| u.flavor.as_str())
         .unwrap_or_default()
 }
 
@@ -549,8 +592,8 @@ fn build_catalog() -> Vec<CatalogEntry> {
     for t in &cat.traits {
         out.push(trait_entry(t));
     }
-    for u in &cat.upgrades {
-        out.push(upgrade_entry(u));
+    for r in &cat.rewards {
+        out.push(reward_entry(r));
     }
     for a in &cat.actors {
         out.push(actor_entry(a));
@@ -636,6 +679,14 @@ fn effect_rule(e: &Effect) -> String {
             dtype.label(),
             dtype.label()
         ),
+        Effect::Guard { focus } => format!(
+            "Braces: +{focus} Focus to the holder this round, hardening its block against slips (M2, \u{00A7}4.2)."
+        ),
+        Effect::Lifeline => {
+            "Last Stand: this round the holder cannot be downed \u{2014} damage that would fell it \
+             leaves it at 1 Body (M3)."
+                .into()
+        }
         Effect::Stagger => "On a landed hit, the target loses its action this round.".into(),
         Effect::Sunder { armor } => {
             format!(
@@ -864,34 +915,62 @@ fn stat_grants(s: &StatCard) -> Vec<String> {
     v
 }
 
-fn upgrade_entry(u: &UpgradeCard) -> CatalogEntry {
-    let price = format!("{} {}", u.price.amount, u.price.currency.label());
-    let grants = stat_grants(&u.grant);
-    let mut body = vec![format!("Cost: {price}")];
-    body.extend(grants.clone());
-    let view = CardView::up(u.name.clone())
-        .typed("Upgrade")
+/// A short "Wall · III" provenance label for a reward (§3.5).
+fn reward_provenance(r: &Reward) -> String {
+    let role = r.track.role().unwrap_or_else(|| r.track.label());
+    format!("{role} \u{00B7} L{}", r.level)
+}
+
+fn reward_entry(r: &Reward) -> CatalogEntry {
+    let prov = reward_provenance(r);
+    let card_names: Vec<String> = r.cards.iter().map(|c| c.name.clone()).collect();
+    let grants = stat_grants(&r.stat);
+    let mut body: Vec<String> = card_names.clone();
+    body.extend(grants.iter().map(|g| format!("Stat {g}")));
+    let view = CardView::up(prov.clone())
+        .typed("Reward")
         .body(body)
-        .corner(price.clone())
+        .corner(format!("L{}", r.level))
         .accent(Accent::Good);
 
-    let path = match u.price.currency.role() {
-        Some(r) => format!(" \u{2014} the {r} path"),
-        None => " \u{2014} the generic path".into(),
-    };
+    let role = r.track.role().unwrap_or_else(|| r.track.label());
     let mut detail = vec![
-        ProseLine::Heading(u.name.clone()),
-        ProseLine::Term("Upgrade (\u{00A7}8.3)".into()),
-        ProseLine::Body(format!(
-            "Bought for {price}{path}. Attaches to a character's Form as a permanent card, so its \
-             stats sum into the block (stats-as-deck)."
+        ProseLine::Heading(prov.clone()),
+        ProseLine::Term(format!(
+            "Role-card reward (\u{00A7}8.3) \u{2014} the {role} track"
         )),
-        ProseLine::Body(format!("Grants: {}.", grants.join(", "))),
+        ProseLine::Body(format!(
+            "Cleared {role} level {}: an atomic set, assigned permanently to one character (§8.3). \
+             A character **is** its assigned role cards (§8.5).",
+            r.level
+        )),
     ];
-    flavor_tail(&mut detail, upgrade_flavor(&u.name));
+    for c in &r.cards {
+        let kind = match c.kind {
+            RoleKind::Base => "Base",
+            RoleKind::Modifier => "Modifier",
+            RoleKind::Mode => "Mode",
+        };
+        let how = if c.passive {
+            "passive".into()
+        } else {
+            c.summary()
+        };
+        detail.push(ProseLine::Body(format!(
+            "{}: {kind} \u{2014} {how}.",
+            c.name
+        )));
+    }
+    if !grants.is_empty() {
+        detail.push(ProseLine::Body(format!(
+            "Bundled Stat card: {} (stats-as-deck, §2.3).",
+            grants.join(", ")
+        )));
+    }
+    flavor_tail(&mut detail, &r.flavor);
     CatalogEntry {
-        kind: "Upgrades",
-        name: u.name.clone(),
+        kind: "Rewards",
+        name: prov,
         view,
         detail,
     }
@@ -1000,7 +1079,7 @@ mod tests {
             "Weapons",
             "Powers",
             "Form",
-            "Upgrades",
+            "Rewards",
             "Characters",
         ] {
             assert!(
@@ -1145,12 +1224,13 @@ mod tests {
     }
 
     #[test]
-    fn upgrades_strengthen_a_clean_slate_character() {
+    fn rewards_strengthen_a_clean_slate_character() {
         let bare = build_character("Novice", &[]);
-        let upgraded = build_character("Novice", &["Bulwark".into()]);
-        // Bulwark grants +4 body — the character is tougher only because it bought the Upgrade.
-        assert!(upgraded.defense.body.max > bare.defense.body.max);
-        assert_eq!(upgrade_price("Bulwark").currency, Currency::Iron);
-        assert!(upgrades_for(Currency::Iron).contains(&"Bulwark".to_string()));
+        let wall = build_character("Novice", &rewards_for(Currency::Iron));
+        // The Wall track's bundled Stat cards make the character tougher; its role cards join the kit.
+        assert!(wall.defense.body.max > bare.defense.body.max);
+        assert!(wall.actions.len() > bare.actions.len());
+        // Five levels per track (§8.3).
+        assert_eq!(rewards_for(Currency::Iron).len(), 5);
     }
 }

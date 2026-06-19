@@ -8,8 +8,23 @@
 
 use serde::Deserialize;
 
+use crate::currency::Currency;
 use crate::stats::DamageType;
 use crate::zones::ZoneBehavior;
+
+/// The §5.6 role-card taxonomy kind. `Stat` cards are [`crate::form::StatCard`]s (Form
+/// attachments), not `Card`s, so they are not in this enum. `Mode` is defined-but-deferred
+/// (M1, 2026-06-19): the first content builds capstones as `Spend`-zone `Base` cards instead.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum RoleKind {
+    /// Played from Hand — the track's core effect.
+    #[default]
+    Base,
+    /// Passive — auto-applies to its Base; never separately played (the scaling card).
+    Modifier,
+    /// Played — an alternative / charged Base (deferred; unused in the first content).
+    Mode,
+}
 
 /// A single effect a card can carry. Edge scales the **primary** (first) effect's
 /// natural unit (+1 per Edge); see [`Card::primary_damage`].
@@ -17,6 +32,12 @@ use crate::zones::ZoneBehavior;
 pub enum Effect {
     /// Deal `power` damage of `dtype` (Edge adds on top, per target).
     Damage { power: u32, dtype: DamageType },
+    /// Add `focus` to the holder this round — a defensive Guard boost to its block vs slips
+    /// (M2, Wall L1 *Brace*).
+    Guard { focus: u32 },
+    /// This round the holder **cannot fall**: damage that would down it leaves it at 1 Body
+    /// (M3, Wall L5 *Last Stand*).
+    Lifeline,
     /// On a landed hit, the target loses its action this round.
     Stagger,
     /// Shear `armor` off the target's plate (a Sunder).
@@ -77,6 +98,22 @@ pub struct Card {
     pub passive: bool,
     #[serde(default)]
     pub effects: Vec<Effect>,
+    // ---- role-card metadata (§5.6 / §4.4); defaults keep plain cards role-free ----
+    /// The role track this card belongs to (§8.3) — `None` for non-role cards (weapons, the
+    /// pre-built scenario kits).
+    #[serde(default)]
+    pub role: Option<Currency>,
+    /// Which taxonomy kind (§5.6).
+    #[serde(default)]
+    pub kind: RoleKind,
+    /// A **positional** role card (Wall / Infiltrator / Artillery) — playable only from the
+    /// matching §4 position (§4.4 D2). Effect cards (Support / Controller) are position-agnostic.
+    #[serde(default)]
+    pub positional: bool,
+    /// A `Modifier` names the Base it auto-applies to when both are owned (§5.6); folded at
+    /// build time (e.g. Curse → +1 debuff target).
+    #[serde(default)]
+    pub modifies: Option<String>,
 }
 
 fn one() -> u32 {
@@ -106,6 +143,8 @@ impl Card {
         for e in &self.effects {
             parts.push(match e {
                 Effect::Damage { power, dtype } => format!("{} {power}", dtype.label()),
+                Effect::Guard { focus } => format!("guard +{focus} focus"),
+                Effect::Lifeline => "cannot fall".into(),
                 Effect::Stagger => "stagger".into(),
                 Effect::Sunder { armor } => format!("sunder -{armor}"),
                 Effect::Disarm => "disarm".into(),
@@ -147,6 +186,10 @@ mod tests {
                 power: 5,
                 dtype: DamageType::Heat,
             }],
+            role: None,
+            kind: RoleKind::Base,
+            positional: false,
+            modifies: None,
         }
     }
 

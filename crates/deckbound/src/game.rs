@@ -650,6 +650,68 @@ impl Deckbound {
         state.s_lane(side)[i].is_none() && !state.s_skirm(side)[i]
     }
 
+    /// Actor `i`'s current §4 position (0 = Vanguard, 1 = Skirmisher, 2 = Reserve).
+    fn position_of(&self, state: &State, side: u8, i: usize) -> u8 {
+        if state.s_skirm(side)[i] {
+            1
+        } else if state.s_lane(side)[i].is_some() {
+            0
+        } else {
+            2
+        }
+    }
+
+    /// §4.4 — may actor `i` of `side` play this role `card` right now? Enforces the **per-role
+    /// per-round cap** (one card of each role track per round) and **positional coherence**
+    /// (a positional Wall / Infiltrator / Artillery card requires its §4 position). Non-role cards
+    /// (the pre-built scenario kits, `role: None`) are unaffected — only `passive` is excluded.
+    fn role_card_playable(
+        &self,
+        state: &State,
+        side: u8,
+        i: usize,
+        card: &crate::cards::Card,
+    ) -> bool {
+        use crate::currency::Currency;
+        if card.passive {
+            return false;
+        }
+        if let Some(track) = card.role {
+            let played = if side == 0 {
+                &state.plan.hero_roles_played
+            } else {
+                &state.plan.foe_roles_played
+            };
+            if played[i].contains(&track) {
+                return false; // already played a card of this role this round
+            }
+        }
+        if card.positional {
+            let need = match card.role {
+                Some(Currency::Iron) => 0u8,   // Wall → Vanguard
+                Some(Currency::Silver) => 1u8, // Infiltrator → Skirmisher
+                Some(Currency::Brass) => 2u8,  // Artillery → Reserve
+                _ => return true,              // positional flag without a positional role
+            };
+            return self.position_of(state, side, i) == need;
+        }
+        true
+    }
+
+    /// Record that actor `i` of `side` played a card of `card`'s role this round (the §4.4 cap).
+    fn note_role_played(&self, state: &mut State, side: u8, i: usize, card: &crate::cards::Card) {
+        if let Some(track) = card.role {
+            let played = if side == 0 {
+                &mut state.plan.hero_roles_played
+            } else {
+                &mut state.plan.foe_roles_played
+            };
+            if !played[i].contains(&track) {
+                played[i].push(track);
+            }
+        }
+    }
+
     /// The enemies a Reserve of `side` may target (§4 matrix): the enemy front (Vanguard +
     /// Skirmishers). **Longshot** (or an empty front) extends the reach to enemy Reserves.
     fn reserve_targets(&self, state: &State, side: u8, actor: usize) -> Vec<usize> {
@@ -962,6 +1024,17 @@ impl Game for Deckbound {
                     for t in combat::living(state.s_pool(other)) {
                         a.push(Action::Target(i, t));
                     }
+                    // A Skirmisher may also play its role cards (Infiltrator / effect cards, §4.4).
+                    for idx in 0..state.s_pool(side)[i].actions.len() {
+                        if self.role_card_playable(
+                            state,
+                            side,
+                            i,
+                            &state.s_pool(side)[i].actions[idx],
+                        ) {
+                            a.push(Action::PlayCard(i, idx));
+                        }
+                    }
                     a.push(Action::Pass(i));
                 }
                 a.push(Action::ToMenu);
@@ -977,7 +1050,12 @@ impl Game for Deckbound {
                         }
                     }
                     for idx in 0..state.s_pool(side)[i].actions.len() {
-                        if !state.s_pool(side)[i].actions[idx].passive {
+                        if self.role_card_playable(
+                            state,
+                            side,
+                            i,
+                            &state.s_pool(side)[i].actions[idx],
+                        ) {
                             a.push(Action::PlayCard(i, idx));
                         }
                     }
@@ -1229,6 +1307,10 @@ impl Game for Deckbound {
                         state.creatures[*i].offense.power += 3;
                     }
                 }
+                // Assassinate (M4): a killing strike — when an Infiltrator with the capstone hits an
+                // enemy Reserve, that foe is downed outright (the §10 execute).
+                let execute =
+                    state.s_pool(side)[*i].has("Assassinate") && self.is_reserve(state, other, *t);
                 self.strike(state, side == 0, *i, *t, Range::Melee);
                 if backstab {
                     if side == 0 {
@@ -1236,6 +1318,67 @@ impl Game for Deckbound {
                     } else {
                         state.creatures[*i].offense.power -= 3;
                     }
+                }
+                if execute {
+                    let victim = if side == 0 {
+                        &mut state.creatures[*t]
+                    } else {
+                        &mut state.heroes[*t]
+                    };
+                    if !victim.is_down() {
+                        victim.defense.body.remaining = 0;
+                        let vname = victim.name.clone();
+                        state.log.push(format!("{vname} is marked and executed!"));
+                    }
+                }
+                state.s_acted_mut(side)[*i] = true;
+                combat::tally(&mut state.heroes);
+                combat::tally(&mut state.creatures);
+                check_outcome(state);
+                if state.outcome.is_none() && self.pending_targets(state, side, false).is_empty() {
+                    self.skirmish_done(state);
+                }
+            }
+            (Phase::Skirmish, Action::PlayCard(i, idx)) => {
+                let side = state.plan.committing;
+                let card = state.s_pool(side)[*i]
+                    .actions
+                    .get(*idx)
+                    .cloned()
+                    .ok_or_else(|| GameError::new("no such card"))?;
+                if !self.role_card_playable(state, side, *i, &card) {
+                    return Err(GameError::new("that card can't be played from here now"));
+                }
+                self.note_role_played(state, side, *i, &card);
+                let pow = state.s_pool(side)[*i].offense.power;
+                let pre = state.s_pool(side)[*i].offense.precision;
+                let name = state.s_pool(side)[*i].name.clone();
+                if side == 0 {
+                    let mut allies = std::mem::take(&mut state.heroes);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.creatures,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.heroes = allies;
+                } else {
+                    let mut allies = std::mem::take(&mut state.creatures);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.heroes,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.creatures = allies;
                 }
                 state.s_acted_mut(side)[*i] = true;
                 combat::tally(&mut state.heroes);
@@ -1270,9 +1413,10 @@ impl Game for Deckbound {
                     .get(*idx)
                     .cloned()
                     .ok_or_else(|| GameError::new("no such card"))?;
-                if card.passive {
-                    return Err(GameError::new("that is a passive ability"));
+                if !self.role_card_playable(state, side, *i, &card) {
+                    return Err(GameError::new("that card can't be played from here now"));
                 }
+                self.note_role_played(state, side, *i, &card);
                 let pow = state.s_pool(side)[*i].offense.power;
                 let pre = state.s_pool(side)[*i].offense.precision;
                 let name = state.s_pool(side)[*i].name.clone();

@@ -1,10 +1,29 @@
 # Deckbound — Role-Card Redesign (tracking doc)
 
-> **Status: design GRADUATED to canon (2026-06-19); code migration NOT started.** The model — role
-> identity as a scarce, shared, level-gated pool of role cards — is now binding **Spec §8.3 / §8.5 /
-> §5.6 / §4.4** (the live authority). This doc keeps the full rationale, the consequences, and the
-> migration plan; §8 records what graduated, §9 is the **engine-schema proposal** (Phase 1–2 design,
-> no code yet). The Spec sections are `🟡 migration pending` — the currency/Upgrade economy still runs.
+> **Status: design GRADUATED to canon + MIGRATED to code (2026-06-19).** The model — role identity as a
+> scarce, shared, level-gated pool of role cards — is binding **Spec §8.3 / §8.5 / §5.6 / §4.4** and is
+> now **implemented**: the currency/Upgrade economy is gone; clearing `(track, level)` unlocks an atomic
+> reward (`CampAction::Assign`, assigned at unlock); a character is built from its rewards
+> (`build_character(base, rewards)`); combat enforces the §4.4 per-role-per-round cap + positional
+> gating; the 25 sets are authored in `booklet.ron`. This doc keeps the full rationale (§1–§7), what
+> graduated (§8), the engine schema (§9), and the §10 content.
+>
+> **Implementation notes / scoping calls (2026-06-19):**
+> - **M1** — capstones are `Spend`-zone **Base** cards (once per fight via the §5.3 zone machine); the
+>   `Mode` kind is in the taxonomy but **deferred** (no charged "spend-a-round" play yet).
+> - **Per-role cap** is an *upper bound*: each character acts in **one** phase per round (the engine's
+>   one-action-per-round), so it naturally plays ≤1 role card/round — the cap is satisfied, not yet
+>   binding. The richer "god plays ~3/round" (§3.2) awaits a multi-play combat step (future work).
+> - **Card play** rides the existing phases (SD1): Reserve already played cards; **Skirmish** now does
+>   too. A **Vanguard holder has no discrete play step**, so Wall *Base* cards (Brace/Rally/Last Stand)
+>   don't yet fire from a held lane — the Wall's power is in its Stat + passive layer for now (flagged
+>   for the Vanguard-play follow-up). The combat guide routes Artillery/Controller/Support kits to the
+>   **Reserve** so their cards cast.
+> - **New effects** (Spec §5.6 M2–M6): `Guard` (Brace), `Lifeline`/cannot-fall (Last Stand, via
+>   `combat::tally`), execute-on-Reserve (Assassinate, via the strike path like Backstab), the `Curse`
+>   Modifier (+1 debuff target, folded at `build_character`), and `targets: all` buffs (Sanctuary).
+> - **Reference scenario** (`reference.rs`) re-expressed in **role-track coverage** (no currency
+>   balances); the combat-band probe builds specialists from `rewards_for(track)`.
 
 ---
 
