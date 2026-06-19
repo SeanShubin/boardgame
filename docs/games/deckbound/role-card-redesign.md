@@ -166,14 +166,14 @@ Hold this as a **per-track option**, not a global commitment.
 | No RNG / hidden info in the core | Yes — role cards are deterministic effects; unlock is gated by *clearing*, not a draw. |
 | Foes a fixed environment | Unaffected. |
 | Battles stateless `f(build, place)` | **Yes, iff** a set's multi-card tracking is *combat-runtime* state that resets each battle (§3.3). |
-| **Builds monotone / additive / order-independent** | **The key risk.** The "build" now includes the **card→character assignment**. Monotone **iff assignment is permanent** (cards only accrue; an assigned card stays). **Free reassignment = a swap → path-dependent → breaks §0.1.** *Decision required (§6).* |
+| **Builds monotone / additive / order-independent** | **Holds either way.** The owned-card set only *grows* (monotone). The card→character **assignment** is fully captured by the *current* state (Markovian) regardless of history — so even **free reassignment does not break §0.1** (an earlier mis-read; corrected 2026-06-19). What §0.1's "no swap" actually forbids is a **resource-refunding** swap — sell-back / oscillation that makes a *budget* path-dependent — which this isn't (no resource is refunded; cards only accrue). If anything, free reassignment is *more* computable: the assignment stops being *carried* state (re-chosen per battle) and the campaign build collapses to the owned-set. |
 | Bounded horizon / branching | Build space grows (≤25 owns × *K* characters) but stays bounded; watch it against the §4 budget test. |
 
-**Bottom line:** the redesign is computability-safe **provided** (a) card→character assignment is
-permanent (or tightly bounded), and (b) sets are atomic and non-multiplicative. Both are §6 decisions.
-Two later decisions *reduce* the build space rather than grow it: **eliminating currency** (§6) drops
-the balance-recompute state, and **scaling chains** (§3.4) keep a track's cards together (assign ~5
-chains, not ~25 loose cards).
+**Bottom line:** the redesign is computability-safe **provided** sets are atomic and
+non-multiplicative (§3.3). The **permanent-vs-reassignable** choice is a *gameplay* call (§6), **not** a
+computability one. Several decisions *reduce* the build space rather than grow it: **eliminating
+currency** (§6) drops the balance-recompute state; **scaling chains** (§3.4) keep a track's cards
+together; and **permanent** assignment, if chosen for gameplay reasons, is at worst neutral here.
 
 ---
 
@@ -190,18 +190,25 @@ chains, not ~25 loose cards).
   currency and becomes the paired stat-card track.
 - **Economy → eliminate the middle man.** Direct unlock (clear level → reward pair); no
   earn-currency-then-buy step. *Simpler and more computable* (no currency-balance state).
-  **Honest caveat (carry into playtest):** removing currency also removes the decisions it created —
-  *which* to acquire, budgeting/saving, and §8.3 co-location "sharing as logistics." Opportunity cost
-  **shifts** from "which to buy" to "who carries it" + "when to play it." Confirm the new decisions
-  are *as rich* (the §6 variety analysis can check for flattening).
+  **The substantive decision survives:** depth-vs-breadth (which roles to invest in) lives in
+  **routing** — which levels you clear — and currency was only the middleman expressing it; "whether
+  to spend" was a *dominated* (fake) decision anyway. **The one real thing removed** is §8.3
+  **co-location / "sharing as logistics"** (earn here, spend there, pool across the party). So the
+  playtest question is narrow: *was co-location pulling its weight as fun, or was it bookkeeping?* If
+  the latter, removing it is pure gain.
+- **Reassignment → permanent (for gameplay, not computability).** *Correction (2026-06-19):* free
+  reassignment does **not** break §0.1 (§5) — the assignment is Markovian, and freely re-choosable, it
+  would just stop being carried state. Permanent is chosen because it makes **"who gets this scarce
+  card" a weighty, irreversible decision** — the interesting constraint we want; free reassignment
+  would make allocation trivial and gut it.
+- **Pair splitting → no (bundle).** Bundling keeps each role a **self-contained package**: a role's
+  *effects* and the *survivability to use them* grow together, so a fragile role-investment is never
+  left a glass cannon by someone else taking its generic cards. Splitting would license a
+  **"stat-mule"** decoupling (all stats on one body, all effects on others), severing the role ↔
+  survivability coupling and adding balance surface; it also doubles the assignment space.
 
 ### Still open
 
-- **Reassignment:** is a card's owner **permanent**, or can the party redistribute? (Permanent →
-  monotone, computability-safe; reassignable → a swap, needs an explicit bound — §5.) *Strong default:
-  permanent, possibly with a costly, rare "re-deal."* **(The computability hinge.)**
-- **Pair splitting:** can the `(role, generic)` pair be **split** across characters (effect to one,
-  stat to another → *more* allocation decisions), or is it bundled to one?
 - **Scaling vs independent (per track, §3.4):** the **new-effect ↔ modifier ratio** — the
   variety↔escalation dial. Set it with the §6 dimensionality/clustering analysis, not by gut.
 - **Per-level complexity curve:** how fast do sets grow (level 1 simple → level 5 a set)? The
