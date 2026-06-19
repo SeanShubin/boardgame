@@ -55,6 +55,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 
 | System                                            | Spec status | Current design source if not yet specced                                                                                                               |
 | ------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **The deterministic core** (separable balance)    | 🟡 seeded    | **§0** — determinism · separable luck layers · objective core balance — `computability-and-balance.md`                                                  |
 | **The Clash** (tactical core)                     | ✅ worked    | —                                                                                                                                                      |
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
 | **Speed/Tempo + Mind/Focus**                      | 🟡 seeded    | `notes/speed-and-tempo.md`, `notes/mind-and-stances.md`                                                                                                |
@@ -72,6 +73,96 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
 `future-possibilities.md`.
+
+---
+
+## 0. The deterministic core — separable balance 🟡
+
+Deckbound is built so that **balance is decomposable.** Beneath the played game sits a
+**deterministic, perfect-information, single-agent core** — the canonical mode with the Clash
+module **off** and creature draw decks and locations **open**. That core is **feasibly
+computable**: a scenario's par (fewest Days to clear it) and every combat outcome can be
+*computed*, not estimated. **Luck and hidden information are separable layers on top of it.** The
+design contract: **solve the core, balance each luck layer in isolation, and the composition is
+balanced with high confidence** — without ever solving the full stochastic game. This section is
+the binding form of that contract; full rationale, the design-review checklist, and the balancing
+method are in [`computability-and-balance.md`](../../computability-and-balance.md) (**Charter
+#11**). *(This is the **whole-game** core for tuning; not to be confused with the **Clash**, the
+**tactical** core of §1.)*
+
+### 0.1 The core is computable
+
+**RULE.** With the **Clash module off** and creature decks and locations **open**, the game is
+**deterministic** (no rule consumes randomness), **perfect-information** (nothing hidden),
+**single-agent** in PvE (creatures run a fixed, non-adaptive policy — an environment, not an
+opponent that searches back), and **bounded** (a Day cap, finitely many reachable builds,
+terminating combat). In that mode a run is a finite planning problem with a computable optimum.
+
+**WHY.** A computable core is the **balance instrument**: it lets us *prove* a scenario is
+beatable, *compute* its par, and *check* that no single line dominates (#11). It is how we **keep**
+#2's "no solvable collapse" and #4's "balance by scenario" — by *measuring* them instead of hoping.
+Lose computability and balance becomes unverifiable.
+
+**GUARANTEES.**
+- **Clash off ⇒ a battle's outcome is a pure function** of the two sides' Forms and the encounter —
+  no RNG, bit-identical every run.
+- Creatures never **adapt to the player's specific plan** (fixed instinct / policy); PvE stays
+  single-agent. *(Two human sides is the Versus mode, §3.4 — outside the core.)*
+- A battle carries **no state between fights**: each is rebuilt from `(build, place)`; the only
+  thing that flows across fights is the economy (§8.3). Combat is therefore a **memoizable oracle**.
+- Builds grow **monotonically** — permanent, additive, order-independent attachments (§5.2 / §2.3);
+  no removal, swap, or multiplicative combo in the core, so the reachable build set stays small.
+- The run is **bounded and terminating** — Days are capped, branching is finite, combat has its
+  termination backstop (§1.6).
+
+### 0.2 Luck is a separable layer
+
+**RULE.** Every **randomness or hidden-information** mechanism — the Clash's hidden simultaneous
+reveal and randomized creature decks (§1), location fog (§8.1), the event deck (§8.2), threat-deck
+draws (§8.4) — is an **optional layer over the core.** Disabling all of them **recovers the
+computable core unchanged.** No luck mechanism is load-bearing for core *function*: turning luck off
+may make the game easier or more legible, but never breaks it.
+
+**WHY.** Separability is what makes balance decompose (#11): if luck lifts off cleanly, the core can
+be solved on its own and each luck layer reasoned about on its own. A luck mechanism welded into
+core function would couple the two and destroy the instrument.
+
+**GUARANTEES.**
+- There is a switch (conceptual or real) that disables each luck / hidden-info mechanism; with all of
+  them off, the game is exactly the §0.1 core.
+- No core rule's **correctness** depends on a luck mechanism being present — only its *difficulty* or
+  *legibility* may.
+
+### 0.3 Separable balance
+
+**RULE.** Balance is established in two **independent** steps and composed. **(1) The core is
+balanced on the solver:** par is computed and the numbers tuned so that *many* **interesting**
+strategies tie near par and **no** strategy dominates them — including the **closure check** that no
+*unnamed* strategy beats the interesting set. **(2) Each luck layer is balanced in isolation:** shown
+neutral / non-dominant on its own terms **before** it is added. A luck layer is not admitted until it
+is independently balanced.
+
+**WHY.** If the core is balanced and only **independently-balanced** luck is added, the full
+(non-computable) game is balanced with high confidence — without solving the full game (#11). The
+player still meets uncomputable strategy (#2) and scenario-borne fairness (#4); the *designer* gets an
+objective floor.
+
+**GUARANTEES.**
+- Core balance is **objective** — measured against the computed par, not estimated by playtest alone.
+  *(Today the harness is the reference scenario's invariant / combat-band checks —
+  `reference-scenario.md`; the full par solver is a pending build — see `computability-and-balance.md`
+  §4, §8.)*
+- No luck mechanism ships **un-balanced on its own** (neutral-in-expectation / no dominant exploit in
+  isolation); "balance the whole stochastic game directly" is **never** the method.
+- **Par is policy-relative** — always stated relative to a fixed combat resolver; a weak resolver
+  biases the result (`computability-and-balance.md` §5).
+
+*(SEEDED — §0 graduates Charter #11 into binding GUARANTEES. §0.1 / §0.2 are structural invariants
+the code already upholds (Clash is the sole RNG; battles rebuild from `(build, place)`; Form
+combination is commutative, §5.5). §0.3 is the **method**: its instrument — the par solver / balance
+harness — is a pending build (a Rust crate or `examples/` program, never an ad-hoc script), so today
+core balance leans on the reference-scenario checks. No `TERM` encyclopedia lines: these are
+**designer** invariants, not player vocabulary.)*
 
 ---
 

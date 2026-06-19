@@ -183,11 +183,16 @@ single-agent and deterministic.
 
 ## 8. How this graduates
 
-- **Into the Spec.** As each system (combat, world, economy) gets its Spec section, write its
-  computability invariant as a **GUARANTEE** there — e.g. "GUARANTEE: with the Clash off, a
-  battle outcome is a pure function of the two Forms and the encounter (no RNG, no carried
-  state)." The Spec owns mechanical invariants; this document owns the *why* and the
-  cross-cutting discipline.
+- **Into the Spec — done (the cross-cutting core).** The separability contract is now binding as
+  **[Spec §0](canon/2-spec/README.md#0-the-deterministic-core--separable-balance-)** (*The
+  deterministic core — separable balance*): §0.1 the core is computable, §0.2 luck is a separable
+  layer, §0.3 separable balance — each as RULE / WHY / GUARANTEES. The Spec owns those mechanical
+  invariants; **this document owns the *why* and the cross-cutting discipline** (the §3 checklist,
+  §5 policy-relativity, the §6 method).
+- **Into the Spec — per system.** As each individual system is worked, it should *also* restate the
+  slice of §0 it upholds as a local GUARANTEE (e.g. the §4 battle section: "with Clash off, the
+  outcome is a pure function of the two Forms and the encounter"). §0 is the cross-cutting
+  statement; the per-section GUARANTEES are its local witnesses.
 - **Into code.** The par solver / balance harness is a **future build** — a new Rust crate or
   an `examples/` program reusing `deckbound::solver` and the campaign's legal-action API,
   **never an ad-hoc script** (per the repo guardrail). When it lands, add the §4 budget test
