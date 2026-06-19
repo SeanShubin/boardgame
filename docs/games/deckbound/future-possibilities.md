@@ -294,3 +294,35 @@ whole new aspect/deck. Background: `notes/decks-and-aspects.md`, `notes/combos.m
 - The full **aspect list**, and how a brand-new aspect/deck is introduced to a character.
 - How chord-combos interact with the §5 zone/exhaustion economy and the §8 currency/Upgrade economy.
 - Whether "aspect" keeps that name (it currently collides with the §2 defense channels).
+
+---
+
+## 5. Role-card redesign — a scarce, shared, level-gated pool
+
+- **Status:** **Under active exploration** (raised 2026-06-19). Full analysis in its own tracking
+  doc: **[`role-card-redesign.md`](role-card-redesign.md).**
+- **Scope:** how role identity and progression rewards are structured — re-types rewards from stat
+  Upgrades (§8.3) into a **25-card role pool** (5 roles × 5 levels). Touches §8.3 / §8.5 / §5; must
+  clear the Spec §0 computability invariants.
+
+### Idea (three constraints)
+
+One copy of each role card, **one per (role, level)** → exactly **25 effects**, unlocked by clearing
+levels, with the **party assigning** each scarce reward. **One role card per role per turn** (the
+god-vs-party lever). Unlocks may be **multi-card sets** for richer high-level effects (">25 cards, 25
+effects").
+
+### Why explore it
+
+The bet: *the right constraints maximise interesting options* — scarcity (no stacking), the
+per-role-per-turn cap (no spamming), and atomic sets (no combo-multiplication) each remove a dominant
+pattern, and that is where real choice lives. It also **regularises** today's uneven 1–3 / 0–3 / 2
+patchwork into a flat 5 × 5 grid (easier to balance) and maps cleanly onto the physical format.
+
+### Current lean / open questions
+
+Promising; the load-bearing decisions are in the tracking doc §6 — **permanent vs reassignable card
+ownership** (the computability hinge), whether role cards carry **stat growth** or just effects,
+whether this **replaces the currency-buy step**, and the per-level **set-complexity curve**. See
+[`role-card-redesign.md`](role-card-redesign.md) §3 (consequences), §5 (computability check), §6
+(decisions).
