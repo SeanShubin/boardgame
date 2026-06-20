@@ -28,6 +28,12 @@ pub fn snapshot(a: &Actor) -> Strike {
 /// damage and type, what got through (body lost + HP remaining), or that the blow was turned aside —
 /// so the combat log reads as a clear play-by-play (§4 resolution).
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
+    // Overkill: in a simultaneous phase several attackers can commit to the same target. Once it has
+    // fallen this phase, further blows are wasted — don't apply or narrate them (they'd otherwise
+    // read as "armor turns it aside" on a target that is simply already down).
+    if target.is_down() {
+        return;
+    }
     let max = target.defense.body.max;
     let out = target
         .defense
@@ -54,9 +60,9 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
     if let Some(b) = out.broke {
         log.push(format!("  {name} {}!", break_note(b)));
     }
-    if out.down {
-        log.push(format!("{name} falls!"));
-    }
+    // Death is *not* narrated here: a phase resolves order-independently from snapshots, so several
+    // strikes may land on the same target. "Falls" is reported once, when the phase boundary
+    // finalizes it (see `tally`) — by then any same-phase healing has already netted out.
 }
 
 fn break_note(b: Break) -> &'static str {
@@ -92,15 +98,19 @@ pub fn living(pool: &[Actor]) -> Vec<usize> {
         .collect()
 }
 
-/// Finalize deaths at a phase boundary: a downed Actor becomes `fallen` — unless it has a
-/// Lifeline this round (M3 *Last Stand*), which leaves it standing at 1 Body instead.
-pub fn tally(pool: &mut [Actor]) {
+/// Finalize deaths at a phase boundary: an Actor whose keystone is gone becomes `fallen` — unless it
+/// has a Lifeline this round (M3 *Last Stand*), which leaves it standing at 1 Body instead. This is
+/// the **single** place a fall is decided and narrated (once per Actor), after the phase's
+/// order-independent damage has fully accumulated — so it reflects the net result, not a mid-stream
+/// overkill.
+pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
-        if a.is_down() {
+        if a.is_down() && !a.fallen {
             if a.cannot_fall {
                 a.defense.body.remaining = a.defense.body.remaining.max(1);
             } else {
                 a.fallen = true;
+                log.push(format!("{} falls!", a.name));
             }
         }
     }

@@ -458,8 +458,8 @@ impl Deckbound {
             }
         }
 
-        combat::tally(&mut state.heroes);
-        combat::tally(&mut state.creatures);
+        combat::tally(&mut state.heroes, &mut state.log);
+        combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
         if state.outcome.is_some() {
             return;
@@ -516,8 +516,8 @@ impl Deckbound {
                 self.strike(state, false, f, t, Range::Melee);
             }
         }
-        combat::tally(&mut state.heroes);
-        combat::tally(&mut state.creatures);
+        combat::tally(&mut state.heroes, &mut state.log);
+        combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
         if state.outcome.is_some() {
             return;
@@ -561,8 +561,8 @@ impl Deckbound {
                 self.strike(state, false, f, t, Range::Ranged);
             }
         }
-        combat::tally(&mut state.heroes);
-        combat::tally(&mut state.creatures);
+        combat::tally(&mut state.heroes, &mut state.log);
+        combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
         if state.outcome.is_some() {
             return;
@@ -1334,8 +1334,8 @@ impl Game for Deckbound {
                     state.creatures = allies;
                 }
                 // The holder keeps holding (no `acted`, no phase change); the front resolves later.
-                combat::tally(&mut state.heroes);
-                combat::tally(&mut state.creatures);
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
             }
             (Phase::Slip, Action::Hold(i)) => {
@@ -1393,8 +1393,8 @@ impl Game for Deckbound {
                     }
                 }
                 state.s_acted_mut(side)[*i] = true;
-                combat::tally(&mut state.heroes);
-                combat::tally(&mut state.creatures);
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
                 if state.outcome.is_none() && self.pending_targets(state, side, false).is_empty() {
                     self.skirmish_done(state);
@@ -1442,8 +1442,8 @@ impl Game for Deckbound {
                     state.creatures = allies;
                 }
                 state.s_acted_mut(side)[*i] = true;
-                combat::tally(&mut state.heroes);
-                combat::tally(&mut state.creatures);
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
                 if state.outcome.is_none() && self.pending_targets(state, side, false).is_empty() {
                     self.skirmish_done(state);
@@ -1460,8 +1460,8 @@ impl Game for Deckbound {
                 let side = state.plan.committing;
                 self.strike(state, side == 0, *i, *t, Range::Ranged);
                 state.s_acted_mut(side)[*i] = true;
-                combat::tally(&mut state.heroes);
-                combat::tally(&mut state.creatures);
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
                 if state.outcome.is_none() && self.pending_targets(state, side, true).is_empty() {
                     self.reserve_done(state);
@@ -1509,8 +1509,8 @@ impl Game for Deckbound {
                     state.creatures = allies;
                 }
                 state.s_acted_mut(side)[*i] = true;
-                combat::tally(&mut state.heroes);
-                combat::tally(&mut state.creatures);
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
                 if state.outcome.is_none() && self.pending_targets(state, side, true).is_empty() {
                     self.reserve_done(state);
