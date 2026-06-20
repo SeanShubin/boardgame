@@ -28,17 +28,21 @@ pub fn snapshot(a: &Actor) -> Strike {
 /// damage and type, what got through (body lost + HP remaining), or that the blow was turned aside —
 /// so the combat log reads as a clear play-by-play (§4 resolution).
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
-    // Overkill: in a simultaneous phase several attackers can commit to the same target. Once it has
-    // fallen this phase, further blows are wasted — don't apply or narrate them (they'd otherwise
-    // read as "armor turns it aside" on a target that is simply already down).
+    let max = target.defense.body.max;
+    let dt = strike.dtype.label();
+    // Every strike is narrated — the log is how the player verifies the mechanics and learns who
+    // acted, so a blow is never silently dropped. Overkill (a simultaneous-phase blow on a target
+    // already felled this phase) is reported as such, not applied again.
     if target.is_down() {
+        log.push(format!(
+            "  {attacker} hits {}: {} {dt} — but it has already fallen.",
+            target.name, strike.raw
+        ));
         return;
     }
-    let max = target.defense.body.max;
     let out = target
         .defense
         .take(strike.raw, strike.dtype, strike.precision);
-    let dt = strike.dtype.label();
     let name = &target.name;
     if out.cards_flipped > 0 {
         // A wound: report the body cards lost and what's left.
