@@ -866,7 +866,7 @@ fn redraw<G: Game + Clone>(
         .collect();
     // Each button carries its index into the full legal-action list, so hiding
     // some (e.g. Exit on the web, or actions bound to cards) never misaligns clicks.
-    let buttons: Vec<(usize, String)> = game
+    let buttons: Vec<(usize, String, bool)> = game
         .0
         .legal_actions(&state.0)
         .iter()
@@ -875,7 +875,13 @@ fn redraw<G: Game + Clone>(
             !bound.contains(index)
                 && (platform.can_quit || !game.0.is_exit_action(&state.0, action))
         })
-        .map(|(index, action)| (index, game.0.action_label(&state.0, action)))
+        .map(|(index, action)| {
+            (
+                index,
+                game.0.action_label(&state.0, action),
+                game.0.is_suggested(&state.0, action),
+            )
+        })
         .collect();
 
     let controls = TableControls {
@@ -977,6 +983,9 @@ const BTN_HOVER_LIFT: f32 = 2.0;
 const BTN_PRESS_SINK: f32 = 2.0;
 const BUTTON_HOVER: Color = Color::srgb(0.24, 0.50, 0.72);
 const BUTTON_PRESS: Color = Color::srgb(0.12, 0.30, 0.46);
+/// The guide's recommended action button — teal, matching the map glow and the hint line.
+const SUGGESTED_BUTTON: Color = Color::srgb(0.18, 0.46, 0.40);
+const SUGGESTED_BUTTON_HOVER: Color = Color::srgb(0.26, 0.62, 0.54);
 
 /// Per-card animation state. `age` drives the settle-in and starts *negative*
 /// to encode this card's stagger delay (it sits small and low until `age`
@@ -993,6 +1002,11 @@ struct ButtonAnim {
     hover: f32,
     press: f32,
 }
+
+/// Marks the action button the guide recommends next (the reference run), so it glows teal — the
+/// single "do this" target that matches the bottom hint line.
+#[derive(Component)]
+struct SuggestedButton;
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
@@ -1082,10 +1096,11 @@ fn animate_buttons(
         &mut UiTransform,
         &mut BackgroundColor,
         &mut ButtonAnim,
+        Option<&SuggestedButton>,
     )>,
 ) {
     let dt = time.delta_secs().min(1.0 / 20.0);
-    for (interaction, mut transform, mut bg, mut anim) in &mut buttons {
+    for (interaction, mut transform, mut bg, mut anim, suggested) in &mut buttons {
         let (want_hover, want_press) = match *interaction {
             Interaction::Pressed => (1.0, 1.0),
             Interaction::Hovered => (1.0, 0.0),
@@ -1098,7 +1113,13 @@ fn animate_buttons(
 
         transform.translation = Val2::px(0.0, p * BTN_PRESS_SINK - h * BTN_HOVER_LIFT);
         transform.scale = Vec2::splat(1.0 + h * 0.02 - p * 0.03);
-        bg.0 = mix_color(mix_color(BUTTON, BUTTON_HOVER, h), BUTTON_PRESS, p);
+        // The guide's pick glows teal from its own base colour, so it stays distinct under hover.
+        let (base, base_hover) = if suggested.is_some() {
+            (SUGGESTED_BUTTON, SUGGESTED_BUTTON_HOVER)
+        } else {
+            (BUTTON, BUTTON_HOVER)
+        };
+        bg.0 = mix_color(mix_color(base, base_hover, h), BUTTON_PRESS, p);
     }
 }
 
@@ -1269,7 +1290,7 @@ fn play_card_hover_sfx(
 fn build_table(
     commands: &mut Commands,
     view: &TableView,
-    actions: &[(usize, String)],
+    actions: &[(usize, String, bool)],
     controls: TableControls,
     hint: Option<&str>,
 ) {
@@ -1317,8 +1338,8 @@ fn build_table(
                     },
                     TextColor(INK),
                 ));
-                for (index, label) in actions {
-                    spawn_action_button(left, *index, label);
+                for (index, label, suggested) in actions {
+                    spawn_action_button(left, *index, label, *suggested);
                 }
             });
 
@@ -2106,39 +2127,51 @@ fn spawn_control_row(parent: &mut ChildSpawnerCommands, keys: &str, desc: &str) 
         });
 }
 
-fn spawn_action_button(parent: &mut ChildSpawnerCommands, index: usize, label: &str) {
-    parent
-        .spawn((
-            Button,
-            ActionButton(index),
-            ButtonAnim::default(),
-            Node {
-                width: Val::Percent(100.0),
-                padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
-                justify_content: JustifyContent::FlexStart,
-                align_items: AlignItems::Center,
-                border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
+fn spawn_action_button(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    label: &str,
+    suggested: bool,
+) {
+    let mut button = parent.spawn((
+        Button,
+        ActionButton(index),
+        ButtonAnim::default(),
+        Node {
+            width: Val::Percent(100.0),
+            padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Center,
+            border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
+            ..default()
+        },
+        BackgroundColor(if suggested { SUGGESTED_BUTTON } else { BUTTON }),
+        BoxShadow::new(
+            Color::srgba(0.0, 0.0, 0.0, 0.25),
+            Val::Px(0.0),
+            Val::Px(2.0),
+            Val::Px(0.0),
+            Val::Px(5.0),
+        ),
+    ));
+    if suggested {
+        button.insert(SuggestedButton);
+    }
+    button.with_children(|button| {
+        // A small ▶ marker so the guide's pick reads even before colour registers.
+        button.spawn((
+            Text::new(if suggested {
+                format!("\u{25B6} {label}")
+            } else {
+                label.to_string()
+            }),
+            TextFont {
+                font_size: FONT_TITLE,
                 ..default()
             },
-            BackgroundColor(BUTTON),
-            BoxShadow::new(
-                Color::srgba(0.0, 0.0, 0.0, 0.25),
-                Val::Px(0.0),
-                Val::Px(2.0),
-                Val::Px(0.0),
-                Val::Px(5.0),
-            ),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label.to_string()),
-                TextFont {
-                    font_size: FONT_TITLE,
-                    ..default()
-                },
-                TextColor(INK),
-            ));
-        });
+            TextColor(INK),
+        ));
+    });
 }
 
 /// A meta-control button (Back / Forward) — styled apart from the game's action buttons (muted, no
