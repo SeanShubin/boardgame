@@ -151,8 +151,9 @@ pub struct Actor {
     pub attack: Attack,
 
     // round-scoped budgets
+    /// The one breadth pool (§3): initiative spent to act *and* to defend. Sized by Speed; refreshes
+    /// each round. (Focus/Mind are merged out — defense is a Tempo spend.)
     pub tempo: i32,
-    pub focus: u32,
     /// Round-scoped: a Lifeline (M3 *Last Stand*) — this round the Actor cannot be downed; damage
     /// that would down it leaves it at 1 Body (resolved in [`crate::combat::tally`]). Reset each round.
     pub cannot_fall: bool,
@@ -187,10 +188,9 @@ impl Actor {
         self.actions.iter().any(|c| c.name == card)
     }
 
-    /// Refresh tempo & focus and clear round-scoped defense state.
+    /// Refresh the Tempo pool and clear round-scoped defense state.
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
-        self.focus = self.defense.mind;
         self.cannot_fall = false;
         self.defense.end_round();
     }

@@ -83,7 +83,6 @@ impl EncounterCard {
             body: s.body * level,
             toughness: s.toughness * level,
             resolve: s.resolve * level,
-            mind: s.mind * level,
             ..Default::default()
         }
     }

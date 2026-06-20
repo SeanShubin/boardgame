@@ -71,7 +71,6 @@ fn stat_is_empty(s: &StatCard) -> bool {
         && s.body == 0
         && s.toughness == 0
         && s.resolve == 0
-        && s.mind == 0
         && s.armor.is_empty()
         && s.ward.is_empty()
 }
@@ -87,8 +86,6 @@ struct TraitCard {
     ward: Vec<(DamageType, u32)>,
     #[serde(default)]
     resolve: u32,
-    #[serde(default)]
-    mind: u32,
     #[serde(default)]
     keystone: Option<Aspect>,
 }
@@ -368,7 +365,6 @@ fn build_actor_with(
             armor: t.armor.clone(),
             ward: t.ward.clone(),
             resolve: t.resolve,
-            mind: t.mind,
             keystone: t.keystone,
             ..Default::default()
         });
@@ -402,7 +398,6 @@ fn build_actor_with(
         driver,
         attack: c.attack,
         tempo: 0,
-        focus: 0,
         cannot_fall: false,
         fallen: false,
     };
@@ -678,8 +673,8 @@ fn effect_rule(e: &Effect) -> String {
             dtype.label(),
             dtype.label()
         ),
-        Effect::Guard { focus } => format!(
-            "Braces: +{focus} Focus to the holder this round, hardening its block against slips (M2, \u{00A7}4.2)."
+        Effect::Guard { tempo } => format!(
+            "Braces: +{tempo} Tempo to the holder this round — more initiative to answer incoming blows (M2)."
         ),
         Effect::Lifeline => {
             "Last Stand: this round the holder cannot be downed \u{2014} damage that would fell it \
@@ -716,8 +711,10 @@ fn effect_rule(e: &Effect) -> String {
         Effect::Slow { speed } => {
             format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")
         }
-        Effect::Confuse { focus } => {
-            format!("Strips {focus} Focus from a foe so it cannot block (a Confuse).")
+        Effect::Confuse { tempo } => {
+            format!(
+                "Drains {tempo} Tempo from a foe (a Confuse) — less initiative to act or defend."
+            )
         }
     }
 }
@@ -848,9 +845,6 @@ fn trait_entry(t: &TraitCard) -> CatalogEntry {
     if t.resolve > 0 {
         body.push(format!("+{} Resolve", t.resolve));
     }
-    if t.mind > 0 {
-        body.push(format!("+{} Mind", t.mind));
-    }
     let view = CardView::up(t.name.clone())
         .typed("Form \u{00B7} attachment")
         .body(body)
@@ -899,7 +893,6 @@ fn stat_grants(s: &StatCard) -> Vec<String> {
         (s.body, "Body"),
         (s.toughness, "Tough"),
         (s.resolve, "Resolve"),
-        (s.mind, "Mind"),
     ] {
         if n > 0 {
             v.push(format!("+{n} {label}"));
@@ -983,7 +976,7 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let body = vec![
         format!("Spd {} \u{00B7} Pow {}", off.speed, off.power),
         format!("Body {} \u{00B7} Tgh {}", def.body.max, def.body.toughness),
-        format!("Res {} \u{00B7} Mind {}", def.resolve, def.mind),
+        format!("Res {} \u{00B7} Tempo {}", def.resolve, off.speed),
     ];
     let view = CardView::up(a.name.clone())
         .typed(format!(
@@ -1008,15 +1001,9 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
                 .into(),
         ),
         ProseLine::Body(format!(
-            "Stats \u{2014} Speed {}, Power {}, Precision {}; Body pool {} (toughness {}), \
-             Resolve {}, Mind {}.",
-            off.speed,
-            off.power,
-            off.precision,
-            def.body.max,
-            def.body.toughness,
-            def.resolve,
-            def.mind
+            "Stats \u{2014} Speed {} (Tempo), Power {}, Precision {}; Body pool {} (toughness {}), \
+             Resolve {}.",
+            off.speed, off.power, off.precision, def.body.max, def.body.toughness, def.resolve,
         )),
     ];
     if !def.armor.is_empty() {

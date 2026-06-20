@@ -35,8 +35,6 @@ pub struct StatCard {
     #[serde(default)]
     pub resolve: u32,
     #[serde(default)]
-    pub mind: u32,
-    #[serde(default)]
     pub armor: Vec<(DamageType, u32)>,
     #[serde(default)]
     pub ward: Vec<(DamageType, u32)>,
@@ -75,8 +73,7 @@ impl Form {
         let body = self.cards.iter().map(|c| c.body).sum();
         let toughness = self.cards.iter().map(|c| c.toughness).sum();
         let resolve = self.cards.iter().map(|c| c.resolve).sum();
-        let mind = self.cards.iter().map(|c| c.mind).sum();
-        let mut d = Defense::new(body, toughness, resolve, mind);
+        let mut d = Defense::new(body, toughness, resolve);
         let mut armor: BTreeMap<DamageType, u32> = BTreeMap::new();
         let mut ward: BTreeMap<DamageType, u32> = BTreeMap::new();
         for c in &self.cards {
@@ -110,7 +107,6 @@ mod tests {
             body: 10,
             toughness: 2,
             resolve: 5,
-            mind: 5,
             ..Default::default()
         };
         let plate = StatCard {
@@ -132,7 +128,6 @@ mod tests {
         assert_eq!(d.body.max, 10);
         assert_eq!(d.body.toughness, 2);
         assert_eq!(d.resolve, 6); // 5 + 1 from the charm
-        assert_eq!(d.mind, 5);
         assert_eq!(d.armor.get(&DamageType::Sharp), Some(&4));
         assert_eq!(d.ward.get(&DamageType::Fear), Some(&2));
 

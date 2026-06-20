@@ -32,9 +32,9 @@ pub enum RoleKind {
 pub enum Effect {
     /// Deal `power` damage of `dtype` (Edge adds on top, per target).
     Damage { power: u32, dtype: DamageType },
-    /// Add `focus` to the holder this round — a defensive Guard boost to its block vs slips
-    /// (M2, Wall L1 *Brace*).
-    Guard { focus: u32 },
+    /// Add `tempo` to the holder this round — a defensive Guard boost (more initiative to answer
+    /// blows) (M2, Wall L1 *Brace*).
+    Guard { tempo: u32 },
     /// This round the holder **cannot fall**: damage that would down it leaves it at 1 Body
     /// (M3, Wall L5 *Last Stand*).
     Lifeline,
@@ -64,8 +64,9 @@ pub enum Effect {
     Suppress { tempo: u32 },
     /// Cut `speed` Speed from a foe (a Slow — cheaper to block/engage).
     Slow { speed: u32 },
-    /// Strip `focus` Focus from a foe so it cannot block (a Confuse).
-    Confuse { focus: u32 },
+    /// Drain `tempo` from a foe (a Confuse) — scramble it so it has less initiative to act *or*
+    /// defend (the merged-pool reframing of the old "can't block").
+    Confuse { tempo: u32 },
 }
 
 /// An Action card: its effect(s), how many foes it hits, its §5 zone behavior, and tags.
@@ -143,7 +144,7 @@ impl Card {
         for e in &self.effects {
             parts.push(match e {
                 Effect::Damage { power, dtype } => format!("{} {power}", dtype.label()),
-                Effect::Guard { focus } => format!("guard +{focus} focus"),
+                Effect::Guard { tempo } => format!("brace +{tempo} tempo"),
                 Effect::Lifeline => "cannot fall".into(),
                 Effect::Stagger => "stagger".into(),
                 Effect::Sunder { armor } => format!("sunder -{armor}"),
@@ -158,7 +159,7 @@ impl Card {
                 Effect::Haste { tempo } => format!("haste +{tempo}"),
                 Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
                 Effect::Slow { speed } => format!("slow -{speed} speed"),
-                Effect::Confuse { focus } => format!("confuse -{focus} focus"),
+                Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),
             });
         }
         if self.targets > 1 {

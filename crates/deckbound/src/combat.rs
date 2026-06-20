@@ -1,6 +1,6 @@
-//! Combat resolution helpers for the §4 lane system: typed strikes, the **range** rule
-//! (same-range trade vs auto-hit, §4.2), creature AI for the commitment phases, and card
-//! effects. The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
+//! Combat resolution helpers for the §4 charge-and-gauntlet system: typed strikes, the **range**
+//! rule (same-range trade vs auto-hit, §4.2), the gauntlet resolver, creature AI, and card effects.
+//! The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
 
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
@@ -81,7 +81,6 @@ fn break_note(b: Break) -> &'static str {
         Break::Freeze => "freezes (will broken this round)",
         Break::Flee => "is routed and flees",
         Break::ScaredToDeath => "is scared to death",
-        Break::Blind => "is confused — blind this round",
     }
 }
 
@@ -237,11 +236,11 @@ pub fn play_card(
                     );
                 }
             }
-            Effect::Guard { focus } => {
-                // M2 — a defensive boost to this holder's block vs slips this round.
+            Effect::Guard { tempo } => {
+                // M2 (Brace) — a defensive boost: extra Tempo this round to answer blows.
                 if let Some(i) = self_idx {
-                    allies[i].focus += focus;
-                    log.push(format!("  braces (+{focus} Focus)."));
+                    allies[i].tempo += tempo as i32;
+                    log.push(format!("  braces (+{tempo} Tempo)."));
                 }
             }
             Effect::Lifeline => {
@@ -308,10 +307,11 @@ pub fn play_card(
                     log.push(format!("  slows {} (-{speed} Speed).", t.name));
                 }
             }
-            Effect::Confuse { focus } => {
+            Effect::Confuse { tempo } => {
+                // Drain a foe's Tempo — less initiative to act *or* defend (merged-pool reframing).
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
-                    t.focus = t.focus.saturating_sub(focus);
-                    log.push(format!("  confuses {} (-{focus} Focus).", t.name));
+                    t.tempo -= tempo as i32;
+                    log.push(format!("  confuses {} (-{tempo} Tempo).", t.name));
                 }
             }
             Effect::Sunder { armor } => {

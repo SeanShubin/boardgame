@@ -1,17 +1,17 @@
 //! Stats and the **cut → bar → pool** defense model.
 //!
-//! Every attack is one of three **channels** — outer **Body** (physical, including
-//! conjured elements), inner **Fear** (Spirit), inner **Confusion** (Mind). Each
-//! resolves the same way: subtract a per-source **cut** (Armor outer, Ward inner),
-//! accumulate into the round's **pile**, then test the **bar** — only the Body
-//! channel has a **pool** (Health cards) behind it; the inner channels **break** on
-//! one crossing. See `docs/games/deckbound/notes/form-and-defeat.md`.
+//! Every attack is one of two **channels** — outer **Body** (physical, including conjured
+//! elements) or inner **Fear** (Spirit). Each resolves the same way: subtract a per-source **cut**
+//! (Armor outer, Ward inner), accumulate into the round's **pile**, then test the **bar** — only the
+//! Body channel has a **pool** (Health cards) behind it; the inner (Fear) channel **breaks** on one
+//! crossing. *(The Mind / Confusion channel was removed 2026-06-20 with the Tempo/Focus merge — Spec
+//! §2 / §3.2.)* See `docs/games/deckbound/notes/form-and-defeat.md`.
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-/// The three aspects an Actor acts through and can be broken in.
+/// The aspects an Actor can be broken in (a Form's keystone, §2). Usually Body.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum Aspect {
     Body,
@@ -19,8 +19,9 @@ pub enum Aspect {
     Spirit,
 }
 
-/// A damage type. Physical/elemental types are outer (met by Armor); Fear and
-/// Confusion are inner (met by Ward).
+/// A damage type. Physical/elemental types are outer (met by Armor); Fear is inner (met by Ward).
+/// `Confusion` is retained as a type but now flows through the **Fear** channel (the Mind channel is
+/// gone) — a mental attack on the will.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub enum DamageType {
     Blunt,
@@ -40,15 +41,13 @@ pub enum Channel {
     Body,
     /// Inner: Ward(vs-fear) → Resolve, no pool.
     Fear,
-    /// Inner: Ward(vs-confusion) → Mind-capacity, no pool.
-    Confusion,
 }
 
 impl DamageType {
     pub fn channel(self) -> Channel {
         match self {
-            DamageType::Fear => Channel::Fear,
-            DamageType::Confusion => Channel::Confusion,
+            // Fear and the former Confusion both attack the will (the Mind channel is gone, §3.2).
+            DamageType::Fear | DamageType::Confusion => Channel::Fear,
             _ => Channel::Body,
         }
     }
@@ -90,7 +89,7 @@ impl Health {
     }
 }
 
-/// The will/mind break an inner crossing produces. Tiers scale with how far the
+/// The will break an inner (Fear) crossing produces. Tiers scale with how far the
 /// pile clears the bar (past R / 2R / 3R) — first-pass knob.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Break {
@@ -100,34 +99,28 @@ pub enum Break {
     Flee,
     /// Spirit: the lethal extreme — bleeds into the Body pool.
     ScaredToDeath,
-    /// Mind: blinded — your stances auto-succeed against it this round.
-    Blind,
 }
 
-/// Everything that defends an Actor. Bars (Resolve, Mind) and cuts (Armor, Ward)
-/// are **passive stats**; only the Body pool is a maintained meter. The `*_pile`
-/// fields are round-scoped accumulators that clear at round end.
+/// Everything that defends an Actor. The bar (Resolve) and cuts (Armor, Ward) are **passive
+/// stats**; only the Body pool is a maintained meter. The `*_pile` fields are round-scoped
+/// accumulators that clear at round end.
 #[derive(Clone, Debug)]
 pub struct Defense {
     pub body: Health,
     /// Outer per-source cut by type.
     pub armor: BTreeMap<DamageType, u32>,
-    /// Inner per-source cut by type (Fear / Confusion).
+    /// Inner per-source cut by type (Fear).
     pub ward: BTreeMap<DamageType, u32>,
     /// Spirit bar — fear must exceed it.
     pub resolve: u32,
-    /// Mind-capacity bar — confusion must exceed it; also the Focus pool size.
-    pub mind: u32,
     /// Which aspect's loss is lethal (usually Body).
     pub keystone: Aspect,
 
     // round-scoped piles (cleared at round end)
     pub body_pile: u32,
     pub fear_pile: u32,
-    pub confusion_pile: u32,
-    // this-round break flags (lifted at round end)
+    // this-round break flag (lifted at round end)
     pub will_break: Option<Break>,
-    pub mind_break: bool,
 }
 
 /// What a single hit did.
@@ -144,19 +137,16 @@ pub struct HitOutcome {
 }
 
 impl Defense {
-    pub fn new(body_count: u32, toughness: u32, resolve: u32, mind: u32) -> Self {
+    pub fn new(body_count: u32, toughness: u32, resolve: u32) -> Self {
         Self {
             body: Health::new(body_count, toughness),
             armor: BTreeMap::new(),
             ward: BTreeMap::new(),
             resolve,
-            mind,
             keystone: Aspect::Body,
             body_pile: 0,
             fear_pile: 0,
-            confusion_pile: 0,
             will_break: None,
-            mind_break: false,
         }
     }
 
@@ -172,7 +162,7 @@ impl Defense {
 
     fn armor_cut(&self, dtype: DamageType, precision: u32) -> u32 {
         let raw = self.armor.get(&dtype).copied().unwrap_or(0);
-        // Precision (the Mind's gift) bypasses some Armor.
+        // Precision bypasses some Armor.
         raw.saturating_sub(precision)
     }
 
@@ -221,28 +211,17 @@ impl Defense {
                     }
                 }
             }
-            Channel::Confusion => {
-                let eff = raw.saturating_sub(self.ward_cut(DamageType::Confusion));
-                out.through = eff;
-                self.confusion_pile += eff;
-                if self.confusion_pile > self.mind {
-                    self.mind_break = true;
-                    out.broke = Some(Break::Blind);
-                }
-            }
         }
         out
     }
 
     /// Round end: partial (sub-bar) damage clears, and this-round breaks lift.
     /// A `ScaredToDeath` already bled into the (permanent) Body pool, so only the
-    /// transient will/mind flags reset.
+    /// transient will flag resets.
     pub fn end_round(&mut self) {
         self.body_pile = 0;
         self.fear_pile = 0;
-        self.confusion_pile = 0;
         self.will_break = None;
-        self.mind_break = false;
     }
 }
 
@@ -271,7 +250,7 @@ mod tests {
     use super::*;
 
     fn knight() -> Defense {
-        let mut d = Defense::new(8, 2, 4, 3);
+        let mut d = Defense::new(8, 2, 4);
         d.armor.insert(DamageType::Sharp, 3);
         d.armor.insert(DamageType::Heat, 0);
         d
@@ -336,16 +315,5 @@ mod tests {
             assert!(d.take(3, DamageType::Fear, 0).broke.is_none());
         }
         assert_eq!(d.fear_pile, 3);
-    }
-
-    #[test]
-    fn confusion_breaks_mind_capacity() {
-        let mut d = knight(); // mind 3
-        assert!(d.take(3, DamageType::Confusion, 0).broke.is_none());
-        d.end_round();
-        assert_eq!(
-            d.take(4, DamageType::Confusion, 0).broke,
-            Some(Break::Blind)
-        );
     }
 }
