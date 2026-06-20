@@ -130,6 +130,77 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
+/// Resolve the **gauntlet** (§4): the two charge-columns thread through each other. Each side's
+/// chargers (in roster order) pair off by order; at each crossing the **faster slips past** (becomes
+/// a Skirmisher) while the one it passes lands a **parting free hit**; **equal speed → both stop and
+/// trade** (both become Vanguard); **surplus chargers** on the longer column meet no opposition and
+/// **break through** cleanly. A charger that stops (or never broke through) is a Vanguard; a
+/// non-charger is a Reserve. Returns `(hero_skirmisher, foe_skirmisher)` — who broke through.
+///
+/// *(v1: the crossing contest uses Speed as the tempo stand-in and auto-resolves; the interactive
+/// per-crossing tempo auction is a later enrichment. Damage applies from pre-crossing snapshots.)*
+pub fn gauntlet(
+    heroes: &mut [Actor],
+    hero_charging: &[bool],
+    foes: &mut [Actor],
+    foe_charging: &[bool],
+    log: &mut Vec<String>,
+) -> (Vec<bool>, Vec<bool>) {
+    let mut hero_skirm = vec![false; heroes.len()];
+    let mut foe_skirm = vec![false; foes.len()];
+    let h_chargers: Vec<usize> = (0..heroes.len())
+        .filter(|&i| hero_charging[i] && !heroes[i].is_down())
+        .collect();
+    let f_chargers: Vec<usize> = (0..foes.len())
+        .filter(|&i| foe_charging[i] && !foes[i].is_down())
+        .collect();
+    let pairs = h_chargers.len().min(f_chargers.len());
+
+    for k in 0..pairs {
+        let h = h_chargers[k];
+        let f = f_chargers[k];
+        let hs = heroes[h].offense.speed;
+        let fs = foes[f].offense.speed;
+        if hs > fs {
+            // Hero slips past; the foe it passes lands a parting blow.
+            let snap = snapshot(&foes[f]);
+            let name = foes[f].name.clone();
+            apply_strike(&mut heroes[h], snap, &name, log);
+            if !heroes[h].is_down() {
+                hero_skirm[h] = true;
+                log.push(format!("{} breaks through the line!", heroes[h].name));
+            }
+        } else if fs > hs {
+            let snap = snapshot(&heroes[h]);
+            let name = heroes[h].name.clone();
+            apply_strike(&mut foes[f], snap, &name, log);
+            if !foes[f].is_down() {
+                foe_skirm[f] = true;
+            }
+        } else {
+            // Equal speed → both stop and trade (both become Vanguard).
+            let hsnap = snapshot(&heroes[h]);
+            let fsnap = snapshot(&foes[f]);
+            let hname = heroes[h].name.clone();
+            let fname = foes[f].name.clone();
+            apply_strike(&mut heroes[h], fsnap, &fname, log);
+            apply_strike(&mut foes[f], hsnap, &hname, log);
+        }
+    }
+    // Surplus chargers on the longer column meet no opposition → break through cleanly.
+    for &h in h_chargers.iter().skip(pairs) {
+        hero_skirm[h] = true;
+        log.push(format!(
+            "{} runs an open gauntlet and breaks through!",
+            heroes[h].name
+        ));
+    }
+    for &f in f_chargers.iter().skip(pairs) {
+        foe_skirm[f] = true;
+    }
+    (hero_skirm, foe_skirm)
+}
+
 /// Apply a hero's action/power card. The deterministic effects (§"cards may supersede the
 /// core") are wired here; foes use the same path. `foes`/`allies` are the opposing and
 /// friendly pools.

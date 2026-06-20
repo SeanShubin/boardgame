@@ -14,7 +14,7 @@ use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
 use crate::scenarios::{self, Scenario};
-use crate::state::{Clash, Lane, Menu, Phase, Round, State};
+use crate::state::{Clash, Menu, Phase, Round, State};
 
 /// Break off a Clash after this many no-connect beats (termination backstop, §1.6).
 const STALL_CAP: u32 = 12;
@@ -197,20 +197,6 @@ pub fn battle_state(heroes: Vec<Actor>, creatures: Vec<Actor>, clash: bool, seed
     state
 }
 
-/// Place a side's Vanguard across the lanes round-robin (the larger side stacks its surplus).
-/// Used for any side that doesn't assign its lanes by hand.
-fn auto_assign(state: &mut State, side: u8, vanguard: &[usize], lanes: usize) {
-    for (i, &a) in vanguard.iter().enumerate() {
-        let lane = i % lanes;
-        state.s_lane_mut(side)[a] = Some(lane);
-        if side == 0 {
-            state.plan.lanes[lane].heroes.push(a);
-        } else {
-            state.plan.lanes[lane].foes.push(a);
-        }
-    }
-}
-
 pub(crate) fn check_outcome(state: &mut State) {
     if state.living_creatures() == 0 {
         state.outcome = Some(Outcome::Win(PlayerId(0)));
@@ -224,240 +210,36 @@ pub(crate) fn check_outcome(state: &mut State) {
 impl Deckbound {
     // ---- base-mode lane round ------------------------------------------------
 
-    /// Deploy: read the human assemble, assemble the creatures (aggression ≥ 5 → Vanguard), set
-    /// lanes = min(counts), assign both sides round-robin (the larger side stacks).
+    /// Deploy: read the human charge selection, decide the creatures' charge (aggression ≥ 5), then
+    /// resolve the **gauntlet** (§4) — the charge-columns thread through each other, producing
+    /// Skirmishers (broke through) and Vanguard (stopped) — and open the Skirmish phase.
     fn deploy(&self, state: &mut State) {
-        let hero_vg: Vec<usize> = (0..state.heroes.len())
-            .filter(|&h| state.plan.hero_lane[h].is_some() && !state.heroes[h].fallen)
-            .collect();
-        // PvP: side B assembled by hand (foe_lane); PvE: creatures assemble by AI (aggression ≥ 5).
-        let foe_vg: Vec<usize> = if state.pvp {
-            (0..state.creatures.len())
-                .filter(|&f| state.plan.foe_lane[f].is_some() && !state.creatures[f].is_down())
-                .collect()
-        } else {
-            (0..state.creatures.len())
-                .filter(|&f| {
-                    !state.creatures[f].is_down()
-                        && state.creatures[f]
-                            .behavior()
-                            .map(|b| b.aggression >= 5)
-                            .unwrap_or(false)
-                })
-                .collect()
-        };
-        for f in 0..state.creatures.len() {
-            state.plan.foe_lane[f] = None;
-        }
-
-        let lanes = hero_vg.len().min(foe_vg.len());
-        state.plan.lanes = vec![Lane::default(); lanes];
-        for h in 0..state.heroes.len() {
-            state.plan.hero_lane[h] = None;
-        }
-        if lanes == 0 {
-            // Zero lanes: no front. Enemy Vanguard advance as Skirmishers; an all-vs-all if
-            // both sides fielded none (open brawl, §4 — handled by targeting all comers).
-            for &f in &foe_vg {
-                state.plan.foe_skirmisher[f] = true;
-            }
-            state.log.push("-- no lanes form (open field) --".into());
-            self.begin_skirmish(state);
-            return;
-        }
-        // A side assigns its lanes by hand when there's a real choice (≥2 lanes, ≥2 Vanguard) —
-        // count-adaptive (§4.1). Heroes always may; the foe side may only in PvP (PvE foes are
-        // assembled by the AI and auto-assign). Any side without a choice auto-assigns now.
-        let manual = |vg: &[usize]| lanes >= 2 && vg.len() >= 2;
-        let hero_manual = manual(&hero_vg);
-        let foe_manual = state.pvp && manual(&foe_vg);
-
-        if !foe_manual {
-            auto_assign(state, 1, &foe_vg, lanes);
-        }
-        if !hero_manual {
-            auto_assign(state, 0, &hero_vg, lanes);
-        }
-
-        // Queue the sides that owe a manual assignment (heroes / side A first), then begin.
-        state.plan.assign_pending.clear();
-        if hero_manual {
-            state.plan.assign_pending.push((0, hero_vg));
-        }
-        if foe_manual {
-            state.plan.assign_pending.push((1, foe_vg));
-        }
-        self.start_next_assign(state);
-    }
-
-    /// Begin the next side's manual lane assignment, or — when none remain — open the Slip phase.
-    fn start_next_assign(&self, state: &mut State) {
-        if !state.plan.assign_pending.is_empty() {
-            let (side, queue) = state.plan.assign_pending.remove(0);
-            state.plan.committing = side;
-            state.plan.assign_queue = queue;
-            state.phase = Phase::Assign;
-            let whose = if side == 0 { "your" } else { "side B's" };
-            let lanes = state.plan.lanes.len();
-            state
-                .log
-                .push(format!("-- {lanes} lanes — assign {whose} Vanguard --"));
-        } else {
-            state.plan.committing = 0;
-            state.phase = Phase::Slip;
-            state
-                .log
-                .push(format!("-- {} lane(s) form --", state.plan.lanes.len()));
-        }
-    }
-
-    /// Resolve the Vanguard phase: lane trades (melee, §4.2) and slips (Tempo vs Focus).
-    fn resolve_front(&self, state: &mut State) {
-        // Creature slip decisions: PvP reads the human's choice; PvE has infiltrators (≥7) slip.
-        let foe_slip: Vec<bool> = (0..state.creatures.len())
-            .map(|f| {
-                if state.pvp {
-                    state.plan.foe_lane[f].is_some() && state.plan.foe_slip[f] == Some(true)
-                } else {
-                    state.plan.foe_lane[f].is_some()
-                        && state.creatures[f]
-                            .behavior()
-                            .map(|b| b.aggression >= 7)
-                            .unwrap_or(false)
-                }
-            })
-            .collect();
-
-        let lanes = state.plan.lanes.clone();
-        // Bodyguard / Taunt: a guardian holder lends its Focus to the *other* lanes' walls.
-        let hero_guardians: Vec<(usize, u32)> = (0..state.heroes.len())
-            .filter(|&h| {
-                state.plan.hero_lane[h].is_some()
-                    && state.plan.hero_slip[h] != Some(true)
-                    && (state.heroes[h].has("Bodyguard") || state.heroes[h].has("Taunt"))
-            })
-            .map(|h| (state.plan.hero_lane[h].unwrap(), state.heroes[h].focus))
-            .collect();
-
-        for (li, lane) in lanes.iter().enumerate() {
-            let hero_holders: Vec<usize> = lane
-                .heroes
-                .iter()
-                .copied()
-                .filter(|&h| state.plan.hero_slip[h] != Some(true))
-                .collect();
-            let hero_slippers: Vec<usize> = lane
-                .heroes
-                .iter()
-                .copied()
-                .filter(|&h| state.plan.hero_slip[h] == Some(true))
-                .collect();
-            let foe_holders: Vec<usize> = lane
-                .foes
-                .iter()
-                .copied()
-                .filter(|&f| !foe_slip[f])
-                .collect();
-            let foe_slippers: Vec<usize> =
-                lane.foes.iter().copied().filter(|&f| foe_slip[f]).collect();
-
-            // Holders trade (melee). Snapshot first for order-independence.
-            let hero_snaps: Vec<_> = hero_holders
-                .iter()
-                .map(|&h| combat::snapshot(&state.heroes[h]))
-                .collect();
-            let foe_snaps: Vec<_> = foe_holders
-                .iter()
-                .map(|&f| combat::snapshot(&state.creatures[f]))
-                .collect();
-            if let Some(&h0) = hero_holders.first() {
-                for (i, &f) in foe_holders.iter().enumerate() {
-                    if state.creatures[f].can_contest(Range::Melee) {
-                        let name = state.creatures[f].name.clone();
-                        combat::apply_strike(
-                            &mut state.heroes[h0],
-                            foe_snaps[i],
-                            &name,
-                            &mut state.log,
-                        );
-                    }
-                }
-            }
-            if let Some(&f0) = foe_holders.first() {
-                for (i, &h) in hero_holders.iter().enumerate() {
-                    if state.heroes[h].can_contest(Range::Melee) {
-                        let name = state.heroes[h].name.clone();
-                        combat::apply_strike(
-                            &mut state.creatures[f0],
-                            hero_snaps[i],
-                            &name,
-                            &mut state.log,
-                        );
-                    }
-                }
-            }
-
-            // Block pools: Phalanx combines holders' Focus, else the best single holder; a
-            // guardian (Bodyguard / Taunt) in another lane adds its Focus here.
-            let foe_block = block_pool(&state.creatures, &foe_holders);
-            let foe_best = foe_holders
-                .iter()
-                .map(|&f| state.creatures[f].focus)
-                .max()
-                .unwrap_or(0);
-            let guard_bonus: u32 = hero_guardians
-                .iter()
-                .filter(|(l, _)| *l != li)
-                .map(|(_, f)| f)
-                .sum();
-            let hero_block = block_pool(&state.heroes, &hero_holders) + guard_bonus;
-            let foe_lane_speed: u32 = lane
-                .foes
-                .iter()
-                .map(|&f| state.creatures[f].offense.speed.max(1))
-                .sum();
-
-            for &h in &hero_slippers {
-                let spd = state.heroes[h].offense.speed.max(1);
-                if !state.heroes[h].has("Blitz") {
-                    state.heroes[h].tempo -= foe_lane_speed as i32; // Blitz: the slip is free
-                }
-                // Shadowstep: ignore one blocker (drop the best single Focus from the wall).
-                let eff = if state.heroes[h].has("Shadowstep") {
-                    foe_block.saturating_sub(foe_best)
-                } else {
-                    foe_block
-                };
-                if eff >= spd && !foe_holders.is_empty() {
-                    if let Some(&f0) = foe_holders.first() {
-                        let snap = combat::snapshot(&state.creatures[f0]);
-                        let name = state.creatures[f0].name.clone();
-                        combat::apply_strike(&mut state.heroes[h], snap, &name, &mut state.log);
-                    }
-                    state
-                        .log
-                        .push(format!("{} is blocked in the lane.", state.heroes[h].name));
-                } else if !state.heroes[h].is_down() {
-                    state.plan.hero_skirmisher[h] = true;
-                    state
-                        .log
-                        .push(format!("{} slips the line!", state.heroes[h].name));
-                }
-            }
-            for &f in &foe_slippers {
-                let spd = state.creatures[f].offense.speed.max(1);
-                if hero_block >= spd && !hero_holders.is_empty() {
-                    if let Some(&h0) = hero_holders.first() {
-                        let snap = combat::snapshot(&state.heroes[h0]);
-                        let name = state.heroes[h0].name.clone();
-                        combat::apply_strike(&mut state.creatures[f], snap, &name, &mut state.log);
-                    }
-                } else if !state.creatures[f].is_down() {
-                    state.plan.foe_skirmisher[f] = true;
-                }
+        // PvP: side B's charge is set by hand (foe_charging); PvE: creatures charge by AI
+        // (aggression ≥ 5).
+        if !state.pvp {
+            for f in 0..state.creatures.len() {
+                state.plan.foe_charging[f] = !state.creatures[f].is_down()
+                    && state.creatures[f]
+                        .behavior()
+                        .map(|b| b.aggression >= 5)
+                        .unwrap_or(false);
             }
         }
-
+        let hero_charging = state.plan.hero_charging.clone();
+        let foe_charging = state.plan.foe_charging.clone();
+        let mut heroes = std::mem::take(&mut state.heroes);
+        let mut creatures = std::mem::take(&mut state.creatures);
+        let (h_skirm, f_skirm) = combat::gauntlet(
+            &mut heroes,
+            &hero_charging,
+            &mut creatures,
+            &foe_charging,
+            &mut state.log,
+        );
+        state.heroes = heroes;
+        state.creatures = creatures;
+        state.plan.hero_skirmisher = h_skirm;
+        state.plan.foe_skirmisher = f_skirm;
         combat::tally(&mut state.heroes, &mut state.log);
         combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
@@ -484,7 +266,7 @@ impl Deckbound {
             .filter(|&i| {
                 let a = &state.s_pool(side)[i];
                 let role_ok = if reserve {
-                    state.s_lane(side)[i].is_none() && !state.s_skirm(side)[i]
+                    !state.s_charging(side)[i]
                 } else {
                     state.s_skirm(side)[i]
                 };
@@ -550,7 +332,7 @@ impl Deckbound {
             return;
         }
         for f in 0..state.creatures.len() {
-            let reserve = state.plan.foe_lane[f].is_none() && !state.plan.foe_skirmisher[f];
+            let reserve = !state.plan.foe_charging[f];
             let fires = reserve
                 && !state.creatures[f].is_down()
                 && state.creatures[f].can_contest(Range::Ranged);
@@ -645,16 +427,17 @@ impl Deckbound {
         }
     }
 
-    /// Is actor `i` of `side` currently a Reserve (not in a lane, not a Skirmisher)?
+    /// Is actor `i` of `side` currently a Reserve (it did not charge)?
     fn is_reserve(&self, state: &State, side: u8, i: usize) -> bool {
-        state.s_lane(side)[i].is_none() && !state.s_skirm(side)[i]
+        !state.s_charging(side)[i]
     }
 
-    /// Actor `i`'s current §4 position (0 = Vanguard, 1 = Skirmisher, 2 = Reserve).
+    /// Actor `i`'s current §4 position (0 = Vanguard, 1 = Skirmisher, 2 = Reserve). A charger that
+    /// broke through is a Skirmisher; a charger that stopped is a Vanguard; a non-charger is Reserve.
     fn position_of(&self, state: &State, side: u8, i: usize) -> u8 {
         if state.s_skirm(side)[i] {
             1
-        } else if state.s_lane(side)[i].is_some() {
+        } else if state.s_charging(side)[i] {
             0
         } else {
             2
@@ -857,15 +640,9 @@ impl Deckbound {
             ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
             (None, Phase::Assemble) => format!(
-                "Round {} — assemble: set Vanguard / Reserve, then Deploy. (Esc: menu)",
+                "Round {} — charge: pick who runs the gauntlet, then Deploy. (Esc: menu)",
                 state.round
             ),
-            (None, Phase::Assign) => {
-                "Assign your Vanguard to lanes — stack to overwhelm. (Esc: menu)".to_string()
-            }
-            (None, Phase::Slip) => {
-                "Front: each Vanguard holds or slips, then Resolve. (Esc: menu)".to_string()
-            }
             (None, Phase::Skirmish) => "Skirmishers pick targets. (Esc: menu)".to_string(),
             (None, Phase::Reserve) => "Reserve: fire or aid. (Esc: menu)".to_string(),
             (None, Phase::Clash) => match state.clash {
@@ -883,7 +660,7 @@ impl Deckbound {
             && state.outcome.is_none()
             && matches!(
                 state.phase,
-                Phase::Assemble | Phase::Assign | Phase::Slip | Phase::Skirmish | Phase::Reserve
+                Phase::Assemble | Phase::Skirmish | Phase::Reserve
             )
         {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
@@ -963,6 +740,8 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
+            // Charge selection: each hero either charges (runs the gauntlet) or holds back (Reserve),
+            // then Deploy resolves the gauntlet (§4).
             Phase::Assemble => {
                 let side = state.plan.committing;
                 let mut a = Vec::new();
@@ -970,54 +749,13 @@ impl Game for Deckbound {
                     if state.s_pool(side)[i].fallen {
                         continue;
                     }
-                    if state.s_lane(side)[i].is_some() {
+                    if state.s_charging(side)[i] {
                         a.push(Action::SetReserve(i));
                     } else {
                         a.push(Action::SetVanguard(i));
                     }
                 }
                 a.push(Action::Deploy);
-                a.push(Action::ToMenu);
-                a
-            }
-            Phase::Assign => {
-                let mut a = Vec::new();
-                if let Some(&h) = state.plan.assign_queue.first() {
-                    for lane in 0..state.plan.lanes.len() {
-                        a.push(Action::AssignLane(h, lane));
-                    }
-                }
-                a.push(Action::ToMenu);
-                a
-            }
-            Phase::Slip => {
-                let side = state.plan.committing;
-                let mut a = Vec::new();
-                for i in 0..state.s_len(side) {
-                    if state.s_lane(side)[i].is_some() && !state.s_pool(side)[i].is_down() {
-                        let slipping = if side == 0 {
-                            state.plan.hero_slip[i] == Some(true)
-                        } else {
-                            state.plan.foe_slip[i] == Some(true)
-                        };
-                        if slipping {
-                            a.push(Action::Hold(i));
-                        } else {
-                            a.push(Action::Slip(i));
-                            // A *holder* may also play its role cards (Wall cards + effect cards)
-                            // before the front resolves, so buffs land first (§4.4). In addition to
-                            // holding, not instead of it; the per-role cap limits it to one card per
-                            // role. Role cards only — legacy scenario kits keep their Reserve play.
-                            for idx in 0..state.s_pool(side)[i].actions.len() {
-                                let c = &state.s_pool(side)[i].actions[idx];
-                                if c.role.is_some() && self.role_card_playable(state, side, i, c) {
-                                    a.push(Action::PlayCard(i, idx));
-                                }
-                            }
-                        }
-                    }
-                }
-                a.push(Action::ResolveFront);
                 a.push(Action::ToMenu);
                 a
             }
@@ -1249,11 +987,11 @@ impl Game for Deckbound {
 
             (Phase::Assemble, Action::SetVanguard(i)) => {
                 let side = state.plan.committing;
-                state.s_lane_mut(side)[*i] = Some(0);
+                state.s_charging_mut(side)[*i] = true;
             }
             (Phase::Assemble, Action::SetReserve(i)) => {
                 let side = state.plan.committing;
-                state.s_lane_mut(side)[*i] = None;
+                state.s_charging_mut(side)[*i] = false;
             }
             (Phase::Assemble, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
@@ -1261,97 +999,6 @@ impl Game for Deckbound {
                     state.log.push("-- side B: assemble --".into());
                 } else {
                     self.deploy(state);
-                }
-            }
-
-            (Phase::Assign, Action::AssignLane(h, lane)) => {
-                if *lane >= state.plan.lanes.len() || !state.plan.assign_queue.contains(h) {
-                    return Err(GameError::new("that lane assignment is not available"));
-                }
-                let side = state.plan.committing;
-                state.s_lane_mut(side)[*h] = Some(*lane);
-                if side == 0 {
-                    state.plan.lanes[*lane].heroes.push(*h);
-                } else {
-                    state.plan.lanes[*lane].foes.push(*h);
-                }
-                state.plan.assign_queue.retain(|&x| x != *h);
-                // This side is done; hand off to the next manual side (PvP) or open Slip.
-                if state.plan.assign_queue.is_empty() {
-                    self.start_next_assign(state);
-                }
-            }
-
-            (Phase::Slip, Action::PlayCard(i, idx)) => {
-                let side = state.plan.committing;
-                let card = state.s_pool(side)[*i]
-                    .actions
-                    .get(*idx)
-                    .cloned()
-                    .ok_or_else(|| GameError::new("no such card"))?;
-                // Holders only (a Vanguard not committed to slip), and role cards only.
-                let slipping = if side == 0 {
-                    state.plan.hero_slip[*i] == Some(true)
-                } else {
-                    state.plan.foe_slip[*i] == Some(true)
-                };
-                if state.s_lane(side)[*i].is_none()
-                    || slipping
-                    || card.role.is_none()
-                    || !self.role_card_playable(state, side, *i, &card)
-                {
-                    return Err(GameError::new("that card can't be played from here now"));
-                }
-                self.note_role_played(state, side, *i, &card);
-                let pow = state.s_pool(side)[*i].offense.power;
-                let pre = state.s_pool(side)[*i].offense.precision;
-                let name = state.s_pool(side)[*i].name.clone();
-                if side == 0 {
-                    let mut allies = std::mem::take(&mut state.heroes);
-                    combat::play_card(
-                        &card,
-                        &name,
-                        pow,
-                        pre,
-                        &mut state.creatures,
-                        &mut allies,
-                        Some(*i),
-                        &mut state.log,
-                    );
-                    state.heroes = allies;
-                } else {
-                    let mut allies = std::mem::take(&mut state.creatures);
-                    combat::play_card(
-                        &card,
-                        &name,
-                        pow,
-                        pre,
-                        &mut state.heroes,
-                        &mut allies,
-                        Some(*i),
-                        &mut state.log,
-                    );
-                    state.creatures = allies;
-                }
-                // The holder keeps holding (no `acted`, no phase change); the front resolves later.
-                combat::tally(&mut state.heroes, &mut state.log);
-                combat::tally(&mut state.creatures, &mut state.log);
-                check_outcome(state);
-            }
-            (Phase::Slip, Action::Hold(i)) => {
-                let side = state.plan.committing;
-                state.s_slip_mut(side)[*i] = Some(false);
-            }
-            (Phase::Slip, Action::Slip(i)) => {
-                let side = state.plan.committing;
-                state.s_slip_mut(side)[*i] = Some(true);
-            }
-            (Phase::Slip, Action::ResolveFront) => {
-                if state.pvp && state.plan.committing == 0 {
-                    state.plan.committing = 1;
-                    state.log.push("-- side B: hold or slip --".into());
-                } else {
-                    self.resolve_front(state);
                 }
             }
 
@@ -1675,9 +1322,9 @@ impl Game for Deckbound {
                     zones.push(hero_zone(state, Some(c.hero)));
                 }
             }
-            // Assemble reads as **card placement**: the enemy on top, then your Vanguard and Reserve
-            // zones with each character card clickable to move it between them (§4). The action
-            // rides on the card itself, so the position toggle *is* dropping the card in a zone.
+            // Charge selection reads as **card placement**: the enemy on top, then your Charge and
+            // Reserve zones, each character card clickable to move it between them (§4). The action
+            // rides on the card itself, so dropping the card in a zone *is* the choice.
             Phase::Assemble => {
                 let side = state.plan.committing;
                 zones.push(if side == 0 {
@@ -1687,16 +1334,16 @@ impl Game for Deckbound {
                 });
                 let acts = self.legal_actions(state);
                 let idx_of = |want: &Action| acts.iter().position(|a| a == want);
-                let mut vanguard = Vec::new();
+                let mut charging = Vec::new();
                 let mut reserve = Vec::new();
                 for i in 0..state.s_len(side) {
                     let actor = &state.s_pool(side)[i];
                     if actor.fallen {
                         continue;
                     }
-                    let in_vanguard = state.s_lane(side)[i].is_some();
-                    // Clicking a card sends it to the *other* zone (the assemble toggle as placement).
-                    let toggle = if in_vanguard {
+                    let is_charging = state.s_charging(side)[i];
+                    // Clicking a card sends it to the *other* zone (the charge toggle as placement).
+                    let toggle = if is_charging {
                         Action::SetReserve(i)
                     } else {
                         Action::SetVanguard(i)
@@ -1705,20 +1352,20 @@ impl Game for Deckbound {
                     if let Some(idx) = idx_of(&toggle) {
                         card = card.action(idx);
                     }
-                    if in_vanguard {
-                        vanguard.push(card);
+                    if is_charging {
+                        charging.push(card);
                     } else {
                         reserve.push(card);
                     }
                 }
                 zones.push(ZoneView {
-                    label: "Vanguard — hold the front".into(),
+                    label: "Charge — run the gauntlet".into(),
                     layout: Layout::Row,
                     owner: None,
-                    cards: vanguard,
+                    cards: charging,
                 });
                 zones.push(ZoneView {
-                    label: "Reserve — act from the back".into(),
+                    label: "Reserve — hold back, fire from the rear".into(),
                     layout: Layout::Row,
                     owner: None,
                     cards: reserve,
@@ -1741,16 +1388,6 @@ impl Game for Deckbound {
 
 // ---- view helpers -------------------------------------------------------
 
-/// A lane wall's block Focus (§4 powers): **Phalanx** combines all holders' Focus; otherwise
-/// only the best single holder blocks.
-fn block_pool(pool: &[crate::actor::Actor], holders: &[usize]) -> u32 {
-    if holders.iter().any(|&i| pool[i].has("Phalanx")) {
-        holders.iter().map(|&i| pool[i].focus).sum()
-    } else {
-        holders.iter().map(|&i| pool[i].focus).max().unwrap_or(0)
-    }
-}
-
 fn pips(remaining: u32, max: u32) -> String {
     let lost = max.saturating_sub(remaining) as usize;
     format!("{}{}", "#".repeat(remaining as usize), ".".repeat(lost))
@@ -1767,7 +1404,7 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
                 a.offense.power,
                 a.attack.label()
             ),
-            format!("Tempo {} Focus {}", a.tempo, a.focus),
+            format!("Tempo {}", a.tempo),
         ])
         .accent(accent)
 }
@@ -1999,12 +1636,6 @@ mod tests {
                     }
                 }
                 Phase::Assemble => Action::Deploy,
-                Phase::Assign => acts
-                    .iter()
-                    .find(|a| matches!(a, Action::AssignLane(..)))
-                    .copied()
-                    .unwrap_or(Action::ResolveFront),
-                Phase::Slip => Action::ResolveFront,
                 Phase::Skirmish | Phase::Reserve => acts
                     .iter()
                     .find(|a| matches!(a, Action::Target(..)))
@@ -2269,45 +1900,6 @@ mod tests {
         );
     }
 
-    /// Manual lane assignment: with ≥2 lanes and ≥2 Vanguard, the player places them and may
-    /// stack a lane (§4 Blotto). Count-adaptive — only offered when there's a real choice.
-    #[test]
-    fn manual_lane_assignment_allows_stacking() {
-        let game = Deckbound;
-        let mut s = game.new_game(2, 1);
-        game.apply(&mut s, &Action::OpenTutorial).unwrap();
-        let idx = scenarios::tutorials()
-            .iter()
-            .position(|t| t.name.starts_with("3."))
-            .unwrap();
-        game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
-        let anvil = s.heroes.iter().position(|h| h.name == "Anvil").unwrap();
-        let wisp = s.heroes.iter().position(|h| h.name == "Wisp").unwrap();
-        game.apply(&mut s, &Action::SetVanguard(anvil)).unwrap();
-        game.apply(&mut s, &Action::SetVanguard(wisp)).unwrap();
-        game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(
-            s.phase,
-            Phase::Assign,
-            "two lanes, two vanguard → a placement choice"
-        );
-        // Stack both into lane 0.
-        let next = |s: &State| match game
-            .legal_actions(s)
-            .into_iter()
-            .find(|a| matches!(a, Action::AssignLane(..)))
-        {
-            Some(Action::AssignLane(h, _)) => h,
-            _ => unreachable!(),
-        };
-        let h1 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(h1, 0)).unwrap();
-        let h2 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(h2, 0)).unwrap();
-        assert_eq!(s.phase, Phase::Slip);
-        assert_eq!(s.plan.lanes[0].heroes.len(), 2, "both stacked into lane 0");
-    }
-
     /// Hotseat PvP: each phase is committed by side A, then side B (current_player alternates),
     /// before it resolves — pass-and-play hidden commit (§3.4).
     #[test]
@@ -2336,75 +1928,7 @@ mod tests {
         assert!(s.outcome.is_some());
     }
 
-    /// Hotseat PvP manual stacking: with ≥2 lanes and ≥2 Vanguard, *both* sides place their own
-    /// lanes by hand (the device passes A → B), and either may stack a lane (§4).
-    #[test]
-    fn pvp_manual_lane_assignment_lets_both_sides_stack() {
-        let game = Deckbound;
-        let mut s = game.new_game(3, 1);
-        game.apply(&mut s, &Action::OpenVersus).unwrap();
-        let idx = scenarios::versus()
-            .iter()
-            .position(|v| v.name.starts_with("Mirror"))
-            .unwrap();
-        game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
-
-        // Side A assembles two Vanguard, then deploys; the device passes to side B.
-        let a1 = s.heroes.iter().position(|h| h.name == "Anvil").unwrap();
-        let a2 = s.heroes.iter().position(|h| h.name == "Wisp").unwrap();
-        game.apply(&mut s, &Action::SetVanguard(a1)).unwrap();
-        game.apply(&mut s, &Action::SetVanguard(a2)).unwrap();
-        game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(
-            game.current_player(&s),
-            Some(PlayerId(1)),
-            "side B assembles"
-        );
-        let b1 = s.creatures.iter().position(|c| c.name == "Anvil").unwrap();
-        let b2 = s.creatures.iter().position(|c| c.name == "Wisp").unwrap();
-        game.apply(&mut s, &Action::SetVanguard(b1)).unwrap();
-        game.apply(&mut s, &Action::SetVanguard(b2)).unwrap();
-        game.apply(&mut s, &Action::Deploy).unwrap();
-
-        // Two lanes, two Vanguard each → side A assigns first (the new PvP behaviour).
-        assert_eq!(s.phase, Phase::Assign);
-        assert_eq!(s.plan.committing, 0, "side A assigns its lanes first");
-
-        let next = |s: &State| match game
-            .legal_actions(s)
-            .into_iter()
-            .find(|a| matches!(a, Action::AssignLane(..)))
-        {
-            Some(Action::AssignLane(h, _)) => h,
-            _ => unreachable!("an assignment should be offered"),
-        };
-        // Side A stacks both into lane 0.
-        let h1 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(h1, 0)).unwrap();
-        let h2 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(h2, 0)).unwrap();
-
-        // The device passes to side B, which assigns by hand too (the refinement).
-        assert_eq!(
-            s.phase,
-            Phase::Assign,
-            "side B still has a placement choice"
-        );
-        assert_eq!(
-            s.plan.committing, 1,
-            "the device passes to side B to assign"
-        );
-        let f1 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(f1, 1)).unwrap();
-        let f2 = next(&s);
-        game.apply(&mut s, &Action::AssignLane(f2, 1)).unwrap();
-
-        assert_eq!(s.phase, Phase::Slip, "both sides assigned → on to Slip");
-        assert_eq!(s.plan.lanes[0].heroes.len(), 2, "side A stacked lane 0");
-        assert_eq!(s.plan.lanes[1].foes.len(), 2, "side B stacked lane 1");
-    }
-
-    /// A base-mode cooperation scenario runs the lane round to an outcome.
+    /// A base-mode cooperation scenario runs the gauntlet round to an outcome.
     #[test]
     fn base_scenario_runs_lanes() {
         let game = Deckbound;

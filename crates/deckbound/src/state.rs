@@ -30,30 +30,20 @@ pub enum Menu {
     CardDetail(usize),
 }
 
-/// Where the round is.
+/// Where the round is (§4 charge-and-gauntlet). `Charge` selects who runs in; on Deploy the
+/// **gauntlet** resolves automatically (the two charge-columns thread through each other), producing
+/// Skirmishers (broke through) and Vanguard (stopped); then the Skirmish and Reserve phases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Menu(Menu),
-    /// Assign each hero to the Vanguard or the Reserve, then deploy.
+    /// Select which heroes charge (vs. hold back as Reserve), then Deploy to run the gauntlet.
     Assemble,
-    /// Place each Vanguard hero into a specific lane (stacking is the choice, §4).
-    Assign,
-    /// Each Vanguard hero chooses to hold its lane or slip past (→ Skirmisher).
-    Slip,
-    /// Skirmishers pick targets.
+    /// Skirmishers (broke through the gauntlet) strike the enemy Reserve, then Vanguard.
     Skirmish,
-    /// Reserves pick targets (or aid allies).
+    /// Reserves fire ranged at the enemy front.
     Reserve,
     /// An interactive four-card Clash (the optional module) for a 1v1 same-range duel.
     Clash,
-}
-
-/// A lane: the Vanguard Actors of each side that meet here (§4). The smaller side has one per
-/// lane; the larger side **stacks** its surplus.
-#[derive(Clone, Debug, Default)]
-pub struct Lane {
-    pub heroes: Vec<usize>,
-    pub foes: Vec<usize>,
 }
 
 /// The active interactive Clash (module): the two duelists and their per-duel Force.
@@ -67,19 +57,15 @@ pub struct Clash {
     pub stall: u32,
 }
 
-/// The per-round working plan for the lane commitment system.
+/// The per-round working plan for the §4 charge-and-gauntlet system.
 #[derive(Clone, Debug, Default)]
 pub struct Round {
-    pub lanes: Vec<Lane>,
-    /// Per hero: which lane it's a Vanguard in (`Some`) or `None` for Reserve. Sized to heroes.
-    pub hero_lane: Vec<Option<usize>>,
+    /// Per hero: did it **charge** (run the gauntlet)? `false` = held back (Reserve). Sized to heroes.
+    pub hero_charging: Vec<bool>,
     /// Per creature: same.
-    pub foe_lane: Vec<Option<usize>>,
-    /// Per Vanguard: `Some(true)` = slip, `Some(false)` = hold, `None` = not yet decided.
-    pub hero_slip: Vec<Option<bool>>,
-    /// Creature slip choices (PvP — set by the human side B; PvE computes from AI).
-    pub foe_slip: Vec<Option<bool>>,
-    /// Heroes / creatures who became Skirmishers this round (slipped a lane and survived).
+    pub foe_charging: Vec<bool>,
+    /// Heroes / creatures who **broke through** the gauntlet and became Skirmishers. A charger that
+    /// did *not* break through is a Vanguard (stopped at the front); a non-charger is a Reserve.
     pub hero_skirmisher: Vec<bool>,
     pub foe_skirmisher: Vec<bool>,
     /// Actors who have already acted in the current target phase (Skirmish / Reserve).
@@ -89,11 +75,6 @@ pub struct Round {
     /// round (reset each round). A role card is playable only if its track is not yet present here.
     pub hero_roles_played: Vec<Vec<crate::currency::Currency>>,
     pub foe_roles_played: Vec<Vec<crate::currency::Currency>>,
-    /// Vanguard awaiting a lane during the Assign phase (the side currently committing).
-    pub assign_queue: Vec<usize>,
-    /// Sides that still owe a manual lane assignment, in order — each `(side, its Vanguard)`.
-    /// PvP can queue both sides; drained one at a time into `assign_queue`.
-    pub assign_pending: Vec<(u8, Vec<usize>)>,
     /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always
     /// 0 in PvE.
     pub committing: u8,
@@ -104,19 +85,14 @@ pub struct Round {
 impl Round {
     pub fn sized(heroes: usize, foes: usize) -> Self {
         Round {
-            lanes: Vec::new(),
-            hero_lane: vec![None; heroes],
-            foe_lane: vec![None; foes],
-            hero_slip: vec![None; heroes],
-            foe_slip: vec![None; foes],
+            hero_charging: vec![false; heroes],
+            foe_charging: vec![false; foes],
             hero_skirmisher: vec![false; heroes],
             foe_skirmisher: vec![false; foes],
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
             hero_roles_played: vec![Vec::new(); heroes],
             foe_roles_played: vec![Vec::new(); foes],
-            assign_queue: Vec::new(),
-            assign_pending: Vec::new(),
             committing: 0,
             clash_mode: false,
         }
@@ -165,25 +141,18 @@ impl State {
     pub fn s_len(&self, side: u8) -> usize {
         self.s_pool(side).len()
     }
-    pub fn s_lane(&self, side: u8) -> &[Option<usize>] {
+    pub fn s_charging(&self, side: u8) -> &[bool] {
         if side == 0 {
-            &self.plan.hero_lane
+            &self.plan.hero_charging
         } else {
-            &self.plan.foe_lane
+            &self.plan.foe_charging
         }
     }
-    pub fn s_lane_mut(&mut self, side: u8) -> &mut Vec<Option<usize>> {
+    pub fn s_charging_mut(&mut self, side: u8) -> &mut Vec<bool> {
         if side == 0 {
-            &mut self.plan.hero_lane
+            &mut self.plan.hero_charging
         } else {
-            &mut self.plan.foe_lane
-        }
-    }
-    pub fn s_slip_mut(&mut self, side: u8) -> &mut Vec<Option<bool>> {
-        if side == 0 {
-            &mut self.plan.hero_slip
-        } else {
-            &mut self.plan.foe_slip
+            &mut self.plan.foe_charging
         }
     }
     pub fn s_skirm(&self, side: u8) -> &[bool] {

@@ -39,9 +39,9 @@ pub fn auto_resolve(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64) -> Option<b
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // Put melee fighters (Wall / Infiltrator / plain) in the Vanguard; keep back-line casters
-        // and shooters (Artillery / Controller / Support kits) in the Reserve so their role cards
-        // fire from where they act (§4.4); then Deploy.
+        // Charge selection: melee fighters (Wall / Infiltrator / plain) run the gauntlet; keep
+        // back-line casters and shooters (Artillery / Controller / Support kits) in the Reserve so
+        // they fire / cast from the rear (§4); then Deploy to resolve the gauntlet.
         Phase::Assemble => {
             for a in actions {
                 if let SetVanguard(i) = a
@@ -53,19 +53,6 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
             }
             Deploy
         }
-        // Assign the queued Vanguard to a lane (first offered = lane 0; stacking is fine).
-        Phase::Assign => actions
-            .iter()
-            .copied()
-            .find(|a| matches!(a, AssignLane(..)))
-            .unwrap_or(Deploy),
-        // A holding Vanguard plays its role cards (Brace / Rally / Last Stand) before the front
-        // resolves — buffs land first; the per-role cap ends it, then resolve. Default hold/slip.
-        Phase::Slip => actions
-            .iter()
-            .copied()
-            .find(|a| matches!(a, PlayCard(..)))
-            .unwrap_or(ResolveFront),
         // Strike a reachable foe; else play a role card (a damaging one first); else pass.
         Phase::Skirmish => actions
             .iter()
@@ -169,55 +156,8 @@ mod tests {
         }
     }
 
-    /// A Wall that holds a lane now plays its role cards (Brace / Rally / Last Stand) during the
-    /// Slip phase, before the front resolves (§4.4 Vanguard play). Drives a solo Wall specialist vs
-    /// a husk with the guide and checks a Wall card actually fired.
-    #[test]
-    fn a_holding_wall_plays_its_role_cards() {
-        use crate::currency::Currency;
-        use crate::encounter::{EncounterCard, RosterEntry};
-        use crate::form::StatCard;
-        use crate::game::{Deckbound, battle_state};
-        use crate::scenarios::{build_character, build_encounter_foes, rewards_for};
-        use engine::Game;
-
-        let wall = build_character("Novice", &rewards_for(Currency::Iron));
-        let enc = EncounterCard {
-            name: "probe".into(),
-            currency: Currency::Iron,
-            strategy: "aggressor".into(),
-            foes: vec![RosterEntry {
-                creature: "Husk".into(),
-                from_level: 1,
-                base: 1,
-                growth: 0,
-            }],
-            scaling: StatCard::default(),
-        };
-        let game = Deckbound;
-        let mut s = battle_state(vec![wall], build_encounter_foes(&enc, 1), false, 1);
-        let mut played = false;
-        for _ in 0..2_000 {
-            if game.outcome(&s).is_some() {
-                break;
-            }
-            let action = greedy(&s, &game.legal_actions(&s));
-            game.apply(&mut s, &action).expect("guided move is legal");
-            if s.log.iter().any(|l| {
-                l.contains("plays Brace")
-                    || l.contains("plays Rally")
-                    || l.contains("plays Last Stand")
-            }) {
-                played = true;
-                break;
-            }
-        }
-        assert!(
-            played,
-            "a holding Wall never played a role card; log tail: {:?}",
-            &s.log[s.log.len().saturating_sub(12)..]
-        );
-    }
+    // (Removed `a_holding_wall_plays_its_role_cards`: the gauntlet auto-resolves the Vanguard, so
+    // there is no interactive Wall play window in v1 — a known limitation, see role-card-redesign.)
 
     #[test]
     fn auto_resolve_terminates_on_every_campaign_scenario() {

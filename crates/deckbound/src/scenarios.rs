@@ -189,7 +189,6 @@ const SPEC: &str = include_str!("../../../docs/games/deckbound/canon/2-spec/READ
 /// The category order for the encyclopedia sidebar (rule categories from the Spec, then Powers).
 const CATEGORY_ORDER: &[&str] = &[
     "Roles",
-    "Lanes",
     "Combat",
     "Resources",
     "Round",
@@ -1132,7 +1131,14 @@ mod tests {
 
         let has = |term: &str| g.iter().any(|e| e.term == term);
         // Rule terms parsed from the Spec, across several sections.
-        for term in ["Vanguard", "Lanes", "Tempo", "Focus", "Trade", "The Clash"] {
+        for term in [
+            "Vanguard",
+            "The gauntlet",
+            "Charge",
+            "Tempo",
+            "Trade",
+            "The Clash",
+        ] {
             assert!(
                 has(term),
                 "Spec TERM `{term}` was not parsed into the glossary"
@@ -1156,8 +1162,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            18,
-            "expected 18 Spec TERM entries — a marker may have failed to parse"
+            16,
+            "expected 16 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).

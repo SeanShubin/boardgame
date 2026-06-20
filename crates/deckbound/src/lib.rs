@@ -40,7 +40,7 @@ pub use scenarios::{
     card_catalog, god, rewards_for, tutorials, versus,
 };
 pub use solver::auto_resolve;
-pub use state::{Clash, Lane, Menu, Phase, Round, State};
+pub use state::{Clash, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
 pub use world::{Coord, Layout, Location, Run};
 pub use zones::{Zone, ZoneBehavior};
