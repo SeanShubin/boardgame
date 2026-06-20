@@ -328,3 +328,40 @@ ownership** (the computability hinge), whether role cards carry **stat growth** 
 whether this **replaces the currency-buy step**, and the per-level **set-complexity curve**. See
 [`role-card-redesign.md`](role-card-redesign.md) §3 (consequences), §5 (computability check), §6
 (decisions).
+
+---
+
+## 6. The card-table UI — a rigorous physical metaphor
+
+- **Status:** **Future direction, not scheduled** (recorded 2026-06-20). **Tuning the role-card model
+  comes first.** Full vision: **[`presentation/card-table-ui.md`](presentation/card-table-ui.md).**
+  This is the **north star for the renderer** — new UI should move toward it, not away.
+- **Scope:** presentation only (the `tabletop` renderer); governs *how the rules are shown*, no rules
+  change.
+
+### Idea
+
+Make the UI a faithful image of the tabletop game: **every card always has a physical place and is
+always on screen** — shown as a card, or **collapsed into a deck** (a labelled, counted pile) when not
+attended to. Two primitives: **cards** (exist) and **decks** (new). **Click a deck to fan it out and
+focus the camera; click the table to zoom out one level** (recursive; dead-zone around cards).
+Focusing one set **collapses everything else into decks**, so nothing is lost and nothing crowds.
+Several decks fan at once when an action spans them (e.g. placing a character card into Vanguard /
+Reserve shows hand + both zone cards + others' placements). A **damage deck** of 1-damage cards piles
+onto a target through a phase and resolves **once at the phase boundary** (the physical image of the
+order-independent `tally`).
+
+### Why explore it
+
+It directly serves Charter **#7** (cards only) and **#9 / #10** (rules ride on a metaphor, are
+re-derivable). It also unifies several ad-hoc affordances we've added (the "Next" hint, the
+suggested-action highlight, the event feed, muster-as-placement) into one coherent model, and gives a
+clean answer to "where do all the cards go" as the game grows.
+
+### Current lean / open questions
+
+Endorsed as the *direction*; deferred until after tuning. Open questions (full list in the doc §7):
+deck identity/count rendering, how many zoom levels, multi-deck fan layout, the "perspective" convention
+for a single player driving several characters, and the visual language for "a legal move lives here"
+vs. "you may only look." The muster-as-placement and zone-visuals steps (label-card-left, fan, hover-pop)
+should be built so they **generalise into** this deck/zoom model, not as one-offs.
