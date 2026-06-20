@@ -183,9 +183,18 @@ fn party_actors(s: &CampaignState, token: usize) -> Vec<Actor> {
 }
 
 impl Campaign {
-    /// Fold a finished battle back into the run: record the clear or the retreat.
+    /// Fold a finished battle back into the run: carry its play-by-play into the run feed (so a
+    /// fight won in a single resolution doesn't flash by before you can read it), then record the
+    /// clear or the retreat.
     fn resolve_battle(&self, s: &mut CampaignState, won: bool) {
         if let Some((t, loc)) = s.pending.take() {
+            // Persist the battle's combat log into the run feed before the map reclaims the screen.
+            if let Some(b) = &s.battle {
+                let lines = b.log.clone();
+                let name = s.run.locations[loc].name.clone();
+                s.log.push(format!("-- {name} --"));
+                s.log.extend(lines);
+            }
             if won {
                 let max = s.run.locations[loc].max_level;
                 s.run.record_clear(loc, max);
