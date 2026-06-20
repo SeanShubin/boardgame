@@ -1138,6 +1138,7 @@ mod tests {
             "Tempo",
             "Trade",
             "The Clash",
+            "Suit",
         ] {
             assert!(
                 has(term),
@@ -1162,8 +1163,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            16,
-            "expected 16 Spec TERM entries — a marker may have failed to parse"
+            17,
+            "expected 17 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).

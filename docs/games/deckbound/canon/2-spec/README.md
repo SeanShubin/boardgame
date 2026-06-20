@@ -67,8 +67,8 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
 | **Run victory / defeat** (across many skirmishes) | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                 |
 | **Geography & travel** (the world map + movement) | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                |
-| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; **no currency** (role-card redesign, *in code 2026-06-19*) — `role-card-redesign.md`         |
-| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*in code 2026-06-19*) — `role-card-redesign.md`         |
+| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; each reward **of a Suit** (Iron · Silver · Brass · Bone · Salt); **no currency** (role-card redesign, *in code 2026-06-19*) — `role-card-redesign.md`         |
+| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks, each a **Suit** ↔ **Role** (identity ↔ function) + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*in code 2026-06-19*) — `role-card-redesign.md`         |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
@@ -1277,7 +1277,7 @@ atomic reward assigned at unlock; combat enforces the §4.4 cap + positional gat
 **RULE.** The world is **face-down location cards** in a scenario-authored layout — a **grid**, an
 **offset-hex** field (alternate rows shifted half a card), or a mix. A character's **identity card**
 (its Actor) marks where it is. Entering a location **flips it face-up** (revealing its name → its
-**Currency type** → the **threat deck** it draws from, §8.4) but does **not** start a fight.
+**Suit** (§8.5) → the **threat deck** it draws from, §8.4) but does **not** start a fight.
 Movement is **one adjacent space per Day** (§8.2). *(Travel cost / risk beyond this is deferred.)*
 
 **WHY.** Cards-only (#7); a face-down map makes scouting a push-your-luck act (#2) and is the engine
@@ -1308,13 +1308,13 @@ Deferring defeat until we *measure* avoids guessing difficulty before we have da
 
 ### 8.3 Rewards & role cards 🟡 *(in code 2026-06-19)*
 
-**RULE.** Clearing **level X of role-track Y** unlocks the **reward** for `(Y, X)`: a fixed, **atomic
-set** of cards — role-effect card(s), a bundled generic **Stat** card, and any passive **Modifier**
-(§5.6) — **one physical copy each** (scarce). The **party assigns the whole set, permanently, to one
-character — at unlock** (the clear that earns it surfaces the choice; there is no holding pool). Five
-tracks × five levels = **25 rewards**. **No currency** — clearing *is* the unlock (clear level N of a
-track ⇒ its levels 1..N). Each card prints its `(role, level)` **provenance**, so a set is identifiable
-and stays together.
+**RULE.** Clearing **level X of a Suit-track Y** unlocks the **reward** for `(Y, X)` — a reward **of
+that Suit** (§8.5): a fixed, **atomic set** of cards — role-effect card(s), a bundled generic **Stat**
+card, and any passive **Modifier** (§5.6) — **one physical copy each** (scarce). The **party assigns
+the whole set, permanently, to one character — at unlock** (the clear that earns it surfaces the
+choice; there is no holding pool). Five Suits × five levels = **25 rewards**. **No currency** — clearing
+*is* the unlock (clear level N of a Suit ⇒ its levels 1..N). Each card prints its `(suit, level)`
+**provenance** (e.g. *Iron · III*), so a set is identifiable by its Suit and stays together.
 
 > **Replaced (2026-06-19) — the currency economy.** §8.3 was *Currency & loot*: clearing earned typed
 > **Currency** (Iron/Silver/Brass/Bone/Salt + generic Gold) that bought stat **Upgrades**, balance
@@ -1323,6 +1323,11 @@ and stays together.
 > only as **track colours/identities**; generic **Gold** becomes the bundled **Stat layer**, not a
 > currency. (The *co-location* spend rule was already cut as bookkeeping.) Full design + migration plan:
 > [`role-card-redesign.md`](../../role-card-redesign.md).
+>
+> **Renamed (2026-06-20) — "track colour/identity" → Suit.** Those five surviving identities are now the
+> first-class **Suits** (§8.5): **Iron · Silver · Brass · Bone · Salt**, bound 1:1 to the five Roles.
+> Treasure is named by its **Suit**, not its Role. **Gold is retired** (no sixth/generic suit — the
+> Stat layer is suit-less). Pure vocabulary; no mechanic or number changed.
 
 **WHY.** One-copy scarcity (no stacking) + atomic permanent assignment make *"who carries this"* a
 weighty choice (#2 opportunity cost; #4 team balance); the shared pool is a **party-size-independent
@@ -1338,44 +1343,53 @@ function of clears + assignment, with the strategic fork in **routing** (§8.1�
 - **Power is monotone in level** — within a track a deeper reward is *at least as powerful* as a
   shallower one (the doom-to-mastery curve, #5); complexity is an *optional lever* for that power,
   never the intent.
-- One physical copy per reward; each card prints its `(role, level)` provenance, so scarcity and
+- One physical copy per reward; each card prints its `(suit, level)` provenance, so scarcity and
   atomic assignment are legible / self-enforcing.
 
 ### 8.4 Encounters — the parametric deck-recipe
 
-**RULE.** Combat at a location is **opt-in at a chosen level**. On first engagement a single
-**encounter card** is drawn from the location's **threat deck** (one deck **per role track** — five)
-and then **fixed**: it is the location's **persistent, learnable threat** (retrying faces the
+**RULE.** Combat at a location is **opt-in at a chosen level**. Every location has a **Suit** (§8.5),
+its threat's identity. On first engagement a single **encounter card** is drawn from that **Suit's
+threat deck** (one deck **per Suit** — five) and then **fixed**: it is the location's **persistent,
+learnable threat** (retrying faces the
 *same* fight). The encounter card is a **parametric deck-recipe** evaluated at the attempted level —
 a roster and **thematic** stat-scaling (which stats scale signals the counter to bring). The **level
 is one dial scaling reward and threat together**.
 
-**WHY.** Each threat deck is a **diegetic tutorial** — you meet track-C threats and unlock the **track-C
-role cards** that answer them (#1 reward intellect; #6 emergence). A fixed, learnable threat means
-failure teaches (#1); one dial keeps the risk/reward choice honest and re-derivable (#2 / #10).
+**WHY.** Each threat deck is a **diegetic tutorial** — you meet a **Suit's** threats and unlock that
+**Suit's role cards** that answer them (#1 reward intellect; #6 emergence). A fixed, learnable threat
+means failure teaches (#1); one dial keeps the risk/reward choice honest and re-derivable (#2 / #10).
 
 **GUARANTEES.**
-- Reveal gives the **type** (threat deck), never the exact card before you commit a fight.
+- Reveal gives the **Suit** (threat deck), never the exact card before you commit a fight.
 - A failed clear costs a Day and the threat persists; you advance only by beating it at the depth
   you want.
 
 ### 8.5 Progression & roles 🟡 *(in code 2026-06-19)*
 
 **RULE.** A character **is its assigned role cards** — "role" is *emergent*, not a label, and roles
-only **accrete** (assignment is permanent, §8.3). The five **role tracks** are the §4 triangle's
-**`3 + 2`** — **Wall · Infiltrator · Artillery · Controller · Support** — each with the track
-colour/identity it banks (the former currency colours **Iron · Silver · Brass · Bone · Salt**). A
-generic **Stat layer** is **bundled into every reward** (the old generic currency, **Gold**, is gone —
-now a stat-card pairing, not a currency or a sixth role). A character's **first clear commits a
-direction**; from there it **specializes** (depth: pour one track) or **branches** (breadth: cover
-several). Party size sets the spectrum: many bodies → specialists (one track each); few → multi-track;
-one → a **god** spanning all five.
+only **accrete** (assignment is permanent, §8.3). There are five **role tracks**, the §4 triangle's
+**`3 + 2`**. Each track has two names in **different registers**:
+- a **Suit** — its **identity**, a substance: **Iron · Silver · Brass · Bone · Salt**;
+- a **Role** — its **function** in combat: **Wall · Infiltrator · Artillery · Controller · Support**.
+
+They are bound **1:1** — **Iron = Wall · Silver = Infiltrator · Brass = Artillery · Bone = Controller ·
+Salt = Support**. The **Suit is what a reward / treasure *is*; the Role is what it *does*.** Name a
+treasure by its **Suit** — *"an Iron reward,"* never *"a Wall reward"* — so identity never collapses
+into function. (Identity and function are deliberately kept in different registers — substance vs.
+combat job — so the Suit never merely restates the Role.) A generic **Stat layer** is **bundled into
+every reward** and is **suit-less** (the retired generic, **Gold**, is gone — now a stat-card pairing,
+not a sixth Suit). A character's **first clear commits a direction**; from there it **specializes**
+(depth: pour one track) or **branches** (breadth: cover several). Party size sets the spectrum: many
+bodies → specialists (one track each); few → multi-track; one → a **god** spanning all five.
 
 **WHY.** Characters are deliberately unbalanced; coverage and challenge come from the **team and the
 scenario** (#4). Depth-vs-breadth is the uncomputable strategic fork (#2), fractally at map and build
 scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4). Role-as-assigned-cards
 makes "god ≈ party" *concrete* — the **same** shared pool, distributed — and the per-role play cap
-(§4.4) is what equalizes their throughput.
+(§4.4) is what equalizes their throughput. **A reward needs a noun of its own:** named only by its Role,
+*"a Wall treasure"* conflates what it *is* with what it *does* — the **Suit** gives identity its own
+register (#10 conceptual integrity — each concept named once, for one job).
 
 **Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
 so the count is re-derivable, not arbitrary (#10):
@@ -1400,8 +1414,15 @@ against #6 / the small core).
 - A character's roles = its assigned role-card tracks; they **accrete** (monotone, §0.1).
 - **Stats are bundled with role rewards** — the survivability to *use* a role grows *with* the role;
   there is no free-floating generic stat pool (no "stat-mule").
-- Five role tracks (the `3 + 2`); the generic is a **Stat layer**, not a currency.
+- Five role tracks (the `3 + 2`); the generic is a **Stat layer**, not a sixth track.
+- **Each track has exactly one Suit** — a 1:1 Suit↔Role binding. There are **exactly five Suits**
+  (Iron · Silver · Brass · Bone · Salt) and **no generic / colourless suit**; the bundled Stat layer is
+  **suit-less**.
 - A solo god ≈ a full party in total power (the budget difficulty is tuned against).
+
+**Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
+
+- **TERM.** `Suit` (Roles) — A role track's **identity** (a substance): Iron · Silver · Brass · Bone · Salt, bound 1:1 to a **Role** (Wall · Infiltrator · Artillery · Controller · Support). The Suit is what a reward *is*; the Role is what it *does*. Name treasure by its Suit — "an Iron reward," never "a Wall reward."
 
 *(SEEDED — §8 is the strategic layer's first graduation. The **role-card redesign** (this §8.3 / §8.5
 plus §4.4 / §5.6) is now **in code** (2026-06-19): no currency/Upgrades; clearing unlocks an atomic
