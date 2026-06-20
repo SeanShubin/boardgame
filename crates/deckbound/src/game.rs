@@ -1675,6 +1675,55 @@ impl Game for Deckbound {
                     zones.push(hero_zone(state, Some(c.hero)));
                 }
             }
+            // Muster reads as **card placement**: the enemy on top, then your Vanguard and Reserve
+            // zones with each character card clickable to move it between them (§4). The action
+            // rides on the card itself, so the position toggle *is* dropping the card in a zone.
+            Phase::Muster => {
+                let side = state.plan.committing;
+                zones.push(if side == 0 {
+                    creature_zone(state, None)
+                } else {
+                    hero_zone(state, None)
+                });
+                let acts = self.legal_actions(state);
+                let idx_of = |want: &Action| acts.iter().position(|a| a == want);
+                let mut vanguard = Vec::new();
+                let mut reserve = Vec::new();
+                for i in 0..state.s_len(side) {
+                    let actor = &state.s_pool(side)[i];
+                    if actor.fallen {
+                        continue;
+                    }
+                    let in_vanguard = state.s_lane(side)[i].is_some();
+                    // Clicking a card sends it to the *other* zone (the muster toggle as placement).
+                    let toggle = if in_vanguard {
+                        Action::SetReserve(i)
+                    } else {
+                        Action::SetVanguard(i)
+                    };
+                    let mut card = actor_card(actor, Accent::Ally);
+                    if let Some(idx) = idx_of(&toggle) {
+                        card = card.action(idx);
+                    }
+                    if in_vanguard {
+                        vanguard.push(card);
+                    } else {
+                        reserve.push(card);
+                    }
+                }
+                zones.push(ZoneView {
+                    label: "Vanguard — hold the front".into(),
+                    layout: Layout::Row,
+                    owner: None,
+                    cards: vanguard,
+                });
+                zones.push(ZoneView {
+                    label: "Reserve — act from the back".into(),
+                    layout: Layout::Row,
+                    owner: None,
+                    cards: reserve,
+                });
+            }
             _ => {
                 zones.push(creature_zone(state, None));
                 zones.push(hero_zone(state, None));
