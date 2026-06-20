@@ -494,6 +494,9 @@ impl Game for Campaign {
             zones: Vec::new(),
             prose: Vec::new(),
             map: Some(MapView { hex: false, tiles }),
+            // The world feed: clears, reward assignments, victory — the same side panel the battles
+            // use, so the run reads as one running record.
+            log: s.log.iter().rev().take(60).rev().cloned().collect(),
         }
     }
 }

@@ -823,16 +823,16 @@ impl Deckbound {
         }
     }
 
+    /// The combat event feed (the play-by-play), oldest first — surfaced as the renderer's side
+    /// panel (`TableView::log`), separate from the one-line `status` caption. Empty in menus.
+    fn feed(&self, state: &State) -> Vec<String> {
+        if matches!(state.phase, Phase::Menu(_)) {
+            return Vec::new();
+        }
+        state.log.iter().rev().take(60).rev().cloned().collect()
+    }
+
     fn status(&self, state: &State) -> String {
-        let log = state
-            .log
-            .iter()
-            .rev()
-            .take(12)
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
         let prompt = match (&state.outcome, &state.phase) {
             (Some(Outcome::Win(PlayerId(0))), _) => "Victory! Replay, or Main menu.".to_string(),
             (Some(_), _) => "Defeat. Replay, or Main menu.".to_string(),
@@ -877,23 +877,18 @@ impl Deckbound {
             },
         };
         // Hotseat: announce whose turn it is (pass-and-play); never reveal the other side's
-        // committed choices — they aren't rendered until resolution.
-        let prompt = if state.pvp
+        // committed choices — they aren't rendered until resolution. The play-by-play now lives in
+        // the event feed (`TableView::log`), so the caption is just this one-line prompt.
+        if state.pvp
             && state.outcome.is_none()
             && matches!(
                 state.phase,
                 Phase::Muster | Phase::Assign | Phase::Slip | Phase::Skirmish | Phase::Reserve
-            ) {
+            )
+        {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
         } else {
             prompt
-        };
-        // The log carries combat events; in menus it's just noise (and would echo the prompt),
-        // so menu screens show the prompt alone.
-        if matches!(state.phase, Phase::Menu(_)) {
-            prompt
-        } else {
-            format!("{prompt}\n\n{log}")
         }
     }
 }
@@ -1690,6 +1685,7 @@ impl Game for Deckbound {
             zones,
             prose,
             map: None,
+            log: self.feed(state),
         }
     }
 }

@@ -1431,6 +1431,65 @@ fn build_table(
                     });
                 }
             });
+
+            // RIGHT: the event feed — a scrolling play-by-play (combat resolution, world events),
+            // distinct from the one-line status caption. Hidden when there's nothing to report.
+            if !view.log.is_empty() {
+                spawn_log_feed(root, &view.log);
+            }
+        });
+}
+
+/// The right-hand **event feed**: a scrolling record of combat resolution / world events, oldest at
+/// top so the newest sits at the bottom edge. Indented sub-lines read muted; "falls!" reads as loss.
+fn spawn_log_feed(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(320.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                flex_shrink: 0.0,
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(3.0),
+                overflow: Overflow::scroll_y(),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+        ))
+        .with_children(|feed| {
+            feed.spawn((
+                Node {
+                    margin: UiRect::bottom(Val::Px(6.0)),
+                    ..default()
+                },
+                Text::new("Combat feed"),
+                TextFont {
+                    font_size: FONT_HEAD,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+            for line in lines {
+                let trimmed = line.trim_start();
+                let color = if line.ends_with("falls!") {
+                    accent_color(Accent::Foe)
+                } else if line.starts_with("--") {
+                    accent_color(Accent::Suggested) // round / phase markers
+                } else if line.starts_with("  ") {
+                    MUTED_INK // an indented sub-effect of the line above
+                } else {
+                    INK
+                };
+                feed.spawn((
+                    Text::new(trimmed.to_string()),
+                    TextFont {
+                        font_size: FONT_BODY,
+                        ..default()
+                    },
+                    TextColor(color),
+                ));
+            }
         });
 }
 
@@ -2252,6 +2311,7 @@ mod tests {
                 zones: Vec::new(),
                 prose: Vec::new(),
                 map: None,
+                log: Vec::new(),
             }
         }
         fn session_key(&self, s: &(u64, u32)) -> u64 {

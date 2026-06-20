@@ -23,6 +23,10 @@ pub struct TableView {
     /// Optional **spatial map** (a world board of tiles, with movable tokens). When set, a renderer
     /// draws it as a tiled grid in place of the card board — for a strategic/overworld layer.
     pub map: Option<MapView>,
+    /// Optional **event feed** — a running play-by-play (combat resolution, world events), oldest
+    /// first. When non-empty, a renderer should present it as a scrolling side panel distinct from
+    /// the one-line `status` caption.
+    pub log: Vec<String>,
 }
 
 /// A spatial map a renderer can draw as a tiled board (a world of locations, §8). Tiles sit at grid
