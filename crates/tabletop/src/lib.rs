@@ -93,6 +93,8 @@ impl<G: Game + Clone> Plugin for TabletopPlugin<G> {
             // `Interaction` and write `UiTransform`/shadow only, so they run
             // every frame independently of the redraw chain below.
             .add_systems(Update, (animate_cards, animate_buttons))
+            // Copy the event feed to the clipboard on demand (a read-only side action).
+            .add_systems(Update, copy_feed_on_click::<G>)
             // Sound: a click on action, a soft tick on card hover; `M` mutes.
             .add_systems(Update, (play_button_sfx, play_card_hover_sfx, toggle_mute))
             .add_systems(
@@ -339,6 +341,24 @@ fn apply_clicked_action<G: Game + Clone>(
             && commit(&game.0, &mut state.0, &mut history, &mut sessions, action)
         {
             redraw.0 = true;
+        }
+    }
+}
+
+/// Copy the current event feed to the system clipboard when its "Copy" control is clicked. Reads the
+/// live feed straight from the game's view (the same lines the panel shows), so it's always current.
+fn copy_feed_on_click<G: Game>(
+    buttons: Query<&Interaction, (Changed<Interaction>, With<CopyFeedButton>)>,
+    game: Res<GameRes<G>>,
+    state: Res<StateRes<G>>,
+) {
+    if buttons
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
+        let feed = game.0.view(&state.0, None).log.join("\n");
+        if !feed.is_empty() {
+            set_clipboard(feed);
         }
     }
 }
@@ -1008,6 +1028,21 @@ struct ButtonAnim {
 #[derive(Component)]
 struct SuggestedButton;
 
+/// Marks the "Copy" control in the event-feed header; clicking it writes the feed to the clipboard.
+#[derive(Component)]
+struct CopyFeedButton;
+
+/// Write `text` to the system clipboard. Desktop only — the web build no-ops (a browser build would
+/// route through the clipboard API instead).
+#[cfg(not(target_arch = "wasm32"))]
+fn set_clipboard(text: String) {
+    if let Ok(mut clip) = arboard::Clipboard::new() {
+        let _ = clip.set_text(text);
+    }
+}
+#[cfg(target_arch = "wasm32")]
+fn set_clipboard(_text: String) {}
+
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -1458,18 +1493,48 @@ fn spawn_log_feed(parent: &mut ChildSpawnerCommands, lines: &[String]) {
             BackgroundColor(PANEL),
         ))
         .with_children(|feed| {
+            // Header row: the title, and a "Copy" control that writes the feed to the clipboard.
             feed.spawn((
                 Node {
+                    width: Val::Percent(100.0),
                     margin: UiRect::bottom(Val::Px(6.0)),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
                     ..default()
                 },
-                Text::new("Combat feed"),
-                TextFont {
-                    font_size: FONT_HEAD,
-                    ..default()
-                },
-                TextColor(INK),
-            ));
+                BackgroundColor(Color::NONE),
+            ))
+            .with_children(|head| {
+                head.spawn((
+                    Text::new("Combat feed"),
+                    TextFont {
+                        font_size: FONT_HEAD,
+                        ..default()
+                    },
+                    TextColor(INK),
+                ));
+                head.spawn((
+                    Button,
+                    CopyFeedButton,
+                    ButtonAnim::default(),
+                    Node {
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                        border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
+                        ..default()
+                    },
+                    BackgroundColor(CONTROL_BUTTON),
+                ))
+                .with_children(|b| {
+                    b.spawn((
+                        Text::new("Copy"),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextColor(INK),
+                    ));
+                });
+            });
             for line in lines {
                 let trimmed = line.trim_start();
                 let color = if line.ends_with("falls!") {

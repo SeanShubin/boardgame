@@ -7,6 +7,11 @@ edition.workspace = true
 engine = { workspace = true }
 bevy = { workspace = true }
 
+# System clipboard for the "Copy feed" button — desktop only; the web build no-ops (it would use the
+# browser clipboard API, not wired yet).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+arboard = "3"
+
 [dev-dependencies]
 # The test mock game needs a serializable Action (Game::Action: Serialize).
 serde = { workspace = true }

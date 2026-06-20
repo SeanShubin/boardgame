@@ -829,7 +829,7 @@ impl Deckbound {
         if matches!(state.phase, Phase::Menu(_)) {
             return Vec::new();
         }
-        state.log.iter().rev().take(60).rev().cloned().collect()
+        state.log.iter().rev().take(200).rev().cloned().collect()
     }
 
     fn status(&self, state: &State) -> String {
