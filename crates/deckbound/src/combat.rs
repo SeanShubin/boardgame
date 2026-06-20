@@ -5,7 +5,7 @@
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
-use crate::stats::{Break, DamageType};
+use crate::stats::{Break, Channel, DamageType};
 
 /// The base strike profile: `(raw, damage type, precision)`. Power is the magnitude; the
 /// weapon supplies the type; a Damage card adds its own power.
@@ -24,25 +24,38 @@ pub fn snapshot(a: &Actor) -> Strike {
     }
 }
 
-/// Route a strike through the target's defense and narrate it.
+/// Route a strike through the target's defense and **narrate it in full** — who hit whom, the raw
+/// damage and type, what got through (body lost + HP remaining), or that the blow was turned aside —
+/// so the combat log reads as a clear play-by-play (§4 resolution).
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
+    let max = target.defense.body.max;
     let out = target
         .defense
         .take(strike.raw, strike.dtype, strike.precision);
+    let dt = strike.dtype.label();
+    let name = &target.name;
     if out.cards_flipped > 0 {
+        // A wound: report the body cards lost and what's left.
         log.push(format!(
-            "  {attacker} hits {} for {} ({} {}).",
-            target.name,
-            out.cards_flipped,
-            strike.raw,
-            strike.dtype.label()
+            "  {attacker} hits {name}: {} {dt}, {} body lost ({}/{} left).",
+            strike.raw, out.cards_flipped, target.defense.body.remaining, max
+        ));
+    } else if out.broke.is_none() {
+        // No wound and no break — the blow was absorbed. Say *why* (armor vs nerve) so a 0 reads.
+        let held = match strike.dtype.channel() {
+            Channel::Body => "armor turns it aside",
+            _ => "the nerve holds",
+        };
+        log.push(format!(
+            "  {attacker} strikes {name}: {} {dt} \u{2014} {held}.",
+            strike.raw
         ));
     }
     if let Some(b) = out.broke {
-        log.push(format!("  {} {}!", target.name, break_note(b)));
+        log.push(format!("  {name} {}!", break_note(b)));
     }
     if out.down {
-        log.push(format!("{} falls!", target.name));
+        log.push(format!("{name} falls!"));
     }
 }
 
