@@ -882,7 +882,13 @@ fn redraw<G: Game + Clone>(
         can_back: !history.past.is_empty(),
         can_forward: !history.future.is_empty(),
     };
-    build_table(&mut commands, &view, &buttons, controls);
+    // The guide's next scripted move (the reference run), surfaced as a hint line so you can follow
+    // it; deviating just makes it advise from where you are, and Back rewinds to re-show it.
+    let hint = game
+        .0
+        .suggest(&state.0)
+        .map(|a| game.0.action_label(&state.0, &a));
+    build_table(&mut commands, &view, &buttons, controls, hint.as_deref());
 }
 
 /// What history controls to surface this redraw (the Back / Forward buttons).
@@ -1265,6 +1271,7 @@ fn build_table(
     view: &TableView,
     actions: &[(usize, String)],
     controls: TableControls,
+    hint: Option<&str>,
 ) {
     commands
         .spawn((
@@ -1374,6 +1381,33 @@ fn build_table(
                     if !view.prose.is_empty() {
                         spawn_prose_pane(main, &view.prose);
                     }
+                }
+
+                // BOTTOM: the guide's next scripted action (the reference run). A teal-edged bar so
+                // it reads as "follow this to stay on script"; absent when there's nothing to advise.
+                if let Some(h) = hint {
+                    main.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            padding: UiRect::all(Val::Px(10.0)),
+                            border: UiRect::left(Val::Px(3.0)),
+                            border_radius: BorderRadius::all(Val::Px(PANEL_RADIUS)),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        BackgroundColor(PANEL),
+                        BorderColor::all(accent_color(Accent::Suggested)),
+                    ))
+                    .with_children(|bar| {
+                        bar.spawn((
+                            Text::new(format!("\u{25B6} Next (reference run): {h}")),
+                            TextFont {
+                                font_size: FONT_HEAD,
+                                ..default()
+                            },
+                            TextColor(accent_color(Accent::Suggested)),
+                        ));
+                    });
                 }
             });
         });
