@@ -133,6 +133,10 @@ pub struct Defense {
 /// What a single hit did.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HitOutcome {
+    /// Damage that got **through** the cut (Armor/Ward) into the round's pile — what "accumulates"
+    /// before any health card turns. 0 = the blow was turned aside entirely.
+    pub through: u32,
+    /// Health cards turned **face down** by this hit (the body pile crossing toughness).
     pub cards_flipped: u32,
     pub broke: Option<Break>,
     /// The keystone fell — the Actor is knocked out.
@@ -183,6 +187,7 @@ impl Defense {
         match dtype.channel() {
             Channel::Body => {
                 let eff = raw.saturating_sub(self.armor_cut(dtype, precision));
+                out.through = eff;
                 self.body_pile += eff;
                 while self.body_pile >= self.body.toughness && self.body.remaining > 0 {
                     self.body.remaining -= 1;
@@ -195,6 +200,7 @@ impl Defense {
             }
             Channel::Fear => {
                 let eff = raw.saturating_sub(self.ward_cut(DamageType::Fear));
+                out.through = eff;
                 self.fear_pile += eff;
                 if self.fear_pile > self.resolve {
                     let tier = will_tier(self.fear_pile, self.resolve);
@@ -217,6 +223,7 @@ impl Defense {
             }
             Channel::Confusion => {
                 let eff = raw.saturating_sub(self.ward_cut(DamageType::Confusion));
+                out.through = eff;
                 self.confusion_pile += eff;
                 if self.confusion_pile > self.mind {
                     self.mind_break = true;

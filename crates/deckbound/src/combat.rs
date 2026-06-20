@@ -24,18 +24,20 @@ pub fn snapshot(a: &Actor) -> Strike {
     }
 }
 
-/// Route a strike through the target's defense and **narrate it in full** — who hit whom, the raw
-/// damage and type, what got through (body lost + HP remaining), or that the blow was turned aside —
-/// so the combat log reads as a clear play-by-play (§4 resolution).
+/// Route a strike through the target's defense and **narrate it as card-state transitions** — there is
+/// no "life total": damage accumulates, and the only states are *health cards turning face down* and,
+/// at the phase boundary, *all of them face down → defeated*. So a strike reads as one of: turned
+/// aside (no card moves), damage accumulating (not yet enough to turn a card), or **N health cards
+/// turn face down**. Defeat is narrated once, at the boundary (see `tally`), never here.
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
-    let max = target.defense.body.max;
     let dt = strike.dtype.label();
+    let inner = !matches!(strike.dtype.channel(), Channel::Body); // Fear / Confusion break the will/mind
     // Every strike is narrated — the log is how the player verifies the mechanics and learns who
     // acted, so a blow is never silently dropped. Overkill (a simultaneous-phase blow on a target
-    // already felled this phase) is reported as such, not applied again.
+    // whose health cards are already all face down) is reported as such, not applied again.
     if target.is_down() {
         log.push(format!(
-            "  {attacker} hits {}: {} {dt} — but it has already fallen.",
+            "  {attacker} hits {}: {} {dt} — its health cards are already all face down.",
             target.name, strike.raw
         ));
         return;
@@ -44,29 +46,34 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
         .defense
         .take(strike.raw, strike.dtype, strike.precision);
     let name = &target.name;
-    if out.cards_flipped > 0 {
-        // A wound: report the body cards lost and what's left.
-        log.push(format!(
-            "  {attacker} hits {name}: {} {dt}, {} body lost ({}/{} left).",
-            strike.raw, out.cards_flipped, target.defense.body.remaining, max
-        ));
-    } else if out.broke.is_none() {
-        // No wound and no break — the blow was absorbed. Say *why* (armor vs nerve) so a 0 reads.
-        let held = match strike.dtype.channel() {
-            Channel::Body => "armor turns it aside",
-            _ => "the nerve holds",
-        };
-        log.push(format!(
-            "  {attacker} strikes {name}: {} {dt} \u{2014} {held}.",
-            strike.raw
-        ));
-    }
+    let what = if out.cards_flipped == 1 {
+        " — turns a health card face down.".to_string()
+    } else if out.cards_flipped > 1 {
+        format!(" — turns {} health cards face down.", out.cards_flipped)
+    } else if out.through == 0 {
+        // Nothing got through the cut — no card moves.
+        if inner {
+            " — warded off.".to_string()
+        } else {
+            " — turned aside by its armor.".to_string()
+        }
+    } else if inner {
+        // Got through to the will/mind pile; the break (if any) is narrated below.
+        " — the dread mounts.".to_string()
+    } else {
+        // Through the armor and accumulating, but not yet a full health card's worth.
+        " — damage accumulates.".to_string()
+    };
+    log.push(format!(
+        "  {attacker} hits {name}: {} {dt}{what}",
+        strike.raw
+    ));
     if let Some(b) = out.broke {
         log.push(format!("  {name} {}!", break_note(b)));
     }
-    // Death is *not* narrated here: a phase resolves order-independently from snapshots, so several
-    // strikes may land on the same target. "Falls" is reported once, when the phase boundary
-    // finalizes it (see `tally`) — by then any same-phase healing has already netted out.
+    // Defeat is *not* narrated here: a phase resolves order-independently from snapshots, so several
+    // strikes may land on the same target. "All health cards face down → falls" is reported once, when
+    // the phase boundary finalizes it (see `tally`) — by then any same-phase healing has netted out.
 }
 
 fn break_note(b: Break) -> &'static str {
@@ -114,7 +121,10 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
                 a.defense.body.remaining = a.defense.body.remaining.max(1);
             } else {
                 a.fallen = true;
-                log.push(format!("{} falls!", a.name));
+                log.push(format!(
+                    "{} — all its health cards are face down; defeated.",
+                    a.name
+                ));
             }
         }
     }

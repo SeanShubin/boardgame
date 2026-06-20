@@ -120,6 +120,36 @@ body pool (cut → bar → pool, §2). It is the tabletop image of the rule we a
 and "X falls" when the pile is totalled at phase end. The damage deck is the *visual* of the same
 event the feed describes in text.)*
 
+### 5.1 The combat log as a **card-transition ledger**
+
+> Raised 2026-06-20. **Direction; the full version depends on the card/deck state model below.**
+
+The natural endpoint of "represent all state with cards" is that **the combat log becomes a ledger of
+card state transitions** — the textual twin of the physical table. Every line is a card *moving* or
+*changing face*, not an abstract event. The transition vocabulary:
+
+- a card moves **between zones** (Hand → board, board → Spend/Down, deck → in play);
+- a **character card** moves into the **Vanguard / Reserve** zone (muster);
+- a **health card turns face down** (damage); a creature is **defeated** when all its health cards are
+  face down (resolved at the phase boundary);
+- a **damage card moves from the damage deck onto a creature's deck** (§5), and the pile is totalled at
+  phase end;
+- a **reward card moves from the treasure deck into a character's deck** when a location level is
+  cleared — so *which locations are cleared, and to what level, is read off **what is missing from the
+  treasure deck / present in a character's deck***, not a separate "cleared" marker. *(The data model
+  already works this way: rewards are assigned to members at unlock and the unclaimed pool shrinks —
+  see [`role-card-redesign.md`](../role-card-redesign.md) §8.3 / the campaign's `unassigned` queue. The
+  UI just needs to **show** it as physical card movement.)*
+
+There is deliberately **no "life total"** anywhere: a creature is never at "1/2 life"; it has *some
+health cards face up and some face down*, and that discrete state is all there is.
+
+**Done now (a first step):** the strike narration already speaks this language — "turns a health card
+face down", "damage accumulates", "turned aside by its armor", and at the boundary "all its health
+cards are face down; defeated" — with no life fraction. **Still future:** a *complete* ledger (zone
+moves, hand↔board, the literal damage-deck and treasure-deck transfers) needs the card/deck **state
+model** in §1 to exist first, so the log can name real card moves rather than describe combat math.
+
 ---
 
 ## 6. How this relates to what exists
