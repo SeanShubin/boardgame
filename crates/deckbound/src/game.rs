@@ -1009,6 +1009,16 @@ impl Game for Deckbound {
                             a.push(Action::Hold(i));
                         } else {
                             a.push(Action::Slip(i));
+                            // A *holder* may also play its role cards (Wall cards + effect cards)
+                            // before the front resolves, so buffs land first (§4.4). In addition to
+                            // holding, not instead of it; the per-role cap limits it to one card per
+                            // role. Role cards only — legacy scenario kits keep their Reserve play.
+                            for idx in 0..state.s_pool(side)[i].actions.len() {
+                                let c = &state.s_pool(side)[i].actions[idx];
+                                if c.role.is_some() && self.role_card_playable(state, side, i, c) {
+                                    a.push(Action::PlayCard(i, idx));
+                                }
+                            }
                         }
                     }
                 }
@@ -1277,6 +1287,62 @@ impl Game for Deckbound {
                 }
             }
 
+            (Phase::Slip, Action::PlayCard(i, idx)) => {
+                let side = state.plan.committing;
+                let card = state.s_pool(side)[*i]
+                    .actions
+                    .get(*idx)
+                    .cloned()
+                    .ok_or_else(|| GameError::new("no such card"))?;
+                // Holders only (a Vanguard not committed to slip), and role cards only.
+                let slipping = if side == 0 {
+                    state.plan.hero_slip[*i] == Some(true)
+                } else {
+                    state.plan.foe_slip[*i] == Some(true)
+                };
+                if state.s_lane(side)[*i].is_none()
+                    || slipping
+                    || card.role.is_none()
+                    || !self.role_card_playable(state, side, *i, &card)
+                {
+                    return Err(GameError::new("that card can't be played from here now"));
+                }
+                self.note_role_played(state, side, *i, &card);
+                let pow = state.s_pool(side)[*i].offense.power;
+                let pre = state.s_pool(side)[*i].offense.precision;
+                let name = state.s_pool(side)[*i].name.clone();
+                if side == 0 {
+                    let mut allies = std::mem::take(&mut state.heroes);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.creatures,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.heroes = allies;
+                } else {
+                    let mut allies = std::mem::take(&mut state.creatures);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.heroes,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.creatures = allies;
+                }
+                // The holder keeps holding (no `acted`, no phase change); the front resolves later.
+                combat::tally(&mut state.heroes);
+                combat::tally(&mut state.creatures);
+                check_outcome(state);
+            }
             (Phase::Slip, Action::Hold(i)) => {
                 let side = state.plan.committing;
                 state.s_slip_mut(side)[*i] = Some(false);
