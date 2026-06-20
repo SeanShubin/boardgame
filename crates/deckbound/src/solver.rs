@@ -42,7 +42,7 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
         // Put melee fighters (Wall / Infiltrator / plain) in the Vanguard; keep back-line casters
         // and shooters (Artillery / Controller / Support kits) in the Reserve so their role cards
         // fire from where they act (§4.4); then Deploy.
-        Phase::Muster => {
+        Phase::Assemble => {
             for a in actions {
                 if let SetVanguard(i) = a
                     && state.heroes[*i].can_contest(Range::Melee)

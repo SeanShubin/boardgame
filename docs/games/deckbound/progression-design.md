@@ -184,7 +184,7 @@ per level — going deeper means the *same* foes, escalated:
 - **Tactical (live every fight):** the creatures' §7 instinct decks pick moves each turn — you
   learn the behaviour *distribution*, never a fixed script. Exactly §7's Creature.
 
-The resolved roster then **musters into the §4 battle** (Vanguard / lanes / Reserve) like
+The resolved roster then **assembles into the §4 battle** (Vanguard / lanes / Reserve) like
 any party; its commitment and Clash choices are driven by the strategy deck.
 
 **One dial, both sides.** The **level** you opt into scales the **reward** (currency value,
@@ -377,7 +377,7 @@ own card type.
 actions, traits, attack), `Card` (one struct, **three uses** — weapon, power/action card,
 passive power), `TraitCard` (armor/ward), `ScenarioCard` (a battle setup). Physical Spec
 cards: the **Clash kit** (Strike/Anticipate/Gather/Evade), **number cards 0–9** + **decoy
-cards** (§4 muster/lanes), and **Body Health** cards (§2.1). *(The multi-deck aspect/chord card
+cards** (§4 assemble/lanes), and **Body Health** cards (§2.1). *(The multi-deck aspect/chord card
 kinds — numberless / modifier / passive — are deferred; `future-possibilities.md` entry 4.)*
 
 **Flags the audit raised.**

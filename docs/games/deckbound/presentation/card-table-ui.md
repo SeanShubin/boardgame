@@ -81,11 +81,11 @@ set and collapse the rest** for that moment, and to make clear *where to look*.
   the **locations pile into a single deck**, **each player's cards become an individual deck**, **my
   Form cards become a deck**, and **only my face-down deck is fanned out, shown face-up** (I "picked
   it up"). Every other card is still on screen — collapsed — so nothing vanished.
-- **Muster / placement.** Several decks are fanned at once because I'm **moving cards between zones**:
+- **Assemble / placement.** Several decks are fanned at once because I'm **moving cards between zones**:
   I pick my **character card** up into my hand and place it into the **Vanguard** or **Reserve** zone.
   So I see, together: **what's in my hand**, the **Vanguard zone card**, the **Reserve zone card**, and
   the **character cards other players have already placed** there. *(This is the §4.4 "place the
-  character card into a zone" model the current muster already moves toward — see
+  character card into a zone" model the current assemble already moves toward — see
   [`game-flow`](../game-flow.md) and the role-card play rule.)*
 
 The general rule: **multiple decks fan out whenever an action spans them** (moving a card from one
@@ -129,7 +129,7 @@ card state transitions** — the textual twin of the physical table. Every line 
 *changing face*, not an abstract event. The transition vocabulary:
 
 - a card moves **between zones** (Hand → board, board → Spend/Down, deck → in play);
-- a **character card** moves into the **Vanguard / Reserve** zone (muster);
+- a **character card** moves into the **Vanguard / Reserve** zone (assemble);
 - a **health card turns face down** (damage); a creature is **defeated** when all its health cards are
   face down (resolved at the phase boundary);
 - a **damage card moves from the damage deck onto a creature's deck** (§5), and the pile is totalled at
@@ -162,7 +162,7 @@ model** in §1 to exist first, so the log can name real card moves rather than d
   [`MapView`], the event feed, the suggested-action highlight, and per-card hover/animation — the raw
   materials. What's missing is the **deck primitive**, the **zoom/focus camera**, the
   **collapse-the-unattended** behaviour, and the **"actionable here" affordance**.
-- **Adjacent backlog:** the muster-as-placement and the zone-visuals direction (label-card-on-left,
+- **Adjacent backlog:** the assemble-as-placement and the zone-visuals direction (label-card-on-left,
   fan when crowded, hover-pop) in [`future-possibilities`](../future-possibilities.md) are *early steps
   on this path* — they should be built so they generalise into the deck/zoom model, not as one-offs.
 
@@ -223,7 +223,7 @@ infrastructure worth it for the metaphor gain? Does the **web build** weight aga
   (icon + numeral? a labelled spine?).
 - **Zoom levels** — how many levels deep does recursion realistically go (table → player area → deck →
   card), and what's the back-out gesture besides clicking the table?
-- **Multi-deck fan layout** — when several decks fan at once (muster), how they share the screen
+- **Multi-deck fan layout** — when several decks fan at once (assemble), how they share the screen
   without crowding (the same crowding problem as the zone-visuals fan).
 - **Perspective in a single-player game** — the human noted the metaphor blends a multiplayer table
   with one player controlling several characters; what "in front of me" means when *I am all the

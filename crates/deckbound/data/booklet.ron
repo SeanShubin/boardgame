@@ -253,7 +253,7 @@ Catalog(
     ],
     versus: [
         // Hotseat PvP lane battles — both sides human, pass-and-play, hidden commit per phase.
-        ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Muster, assign, slip, target — pass the device each phase; neither side sees the other's commit until it resolves.", flavor: "Same blades, same wall. The only difference left on the table is you.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
+        ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Assemble, assign, slip, target — pass the device each phase; neither side sees the other's commit until it resolves.", flavor: "Same blades, same wall. The only difference left on the table is you.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
         ScenarioCard( name: "Skirmish Line (2v2)", blurb: "A melee fighter and an archer a side — wall or slip, fire or guard.", flavor: "Small line, whole war — every choice shows.", heroes: ["Recruit", "Archer"], foes: ["Recruit", "Archer"], pvp: true ),
         // A 1v1 Clash duel vs the AI, for the optional mix-up module.
         ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up.", flavor: "One foe, one tell. Find it before it finds you.", heroes: ["Vael"], foes: ["Pell"], clash: true ),

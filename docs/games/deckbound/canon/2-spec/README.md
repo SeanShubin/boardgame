@@ -900,7 +900,7 @@ and aid allies. No Vanguard on either side → open brawl, hit anyone.*
 - **TERM.** `Hold vs Slip` (Lanes) — Each Vanguard holds (fight the lane and block slips) or slips (try to leave and become a Skirmisher). Slipping costs Tempo = the enemy lane's combined Speed.
 - **TERM.** `Block` (Lanes) — A holding Vanguard spends Focus = the slipper's Speed to stop a slip; a funded block wins. Overwhelm the wall's Focus (stack slippers) to push through.
 - **TERM.** `Zero lanes` (Lanes) — If a side fields no Vanguard there is no front: it's exposed (no exploit — you still can't reach their Reserve). If neither fields a front, it's an open brawl — anyone may hit anyone.
-- **TERM.** `Phases` (Round) — Muster (set Vanguard/Reserve) → Assign (place lanes) → Slip (hold/slip) → Vanguard resolves → Skirmishers strike → Reserve acts → refresh. Order-independent within each phase.
+- **TERM.** `Phases` (Round) — Assemble (set Vanguard/Reserve) → Assign (place lanes) → Slip (hold/slip) → Vanguard resolves → Skirmishers strike → Reserve acts → refresh. Order-independent within each phase.
 
 **Still unspecified (open dials — pin before/with implementation).** The structure (lanes,
 phases, targeting, reveal order, triangle) is settled; these are not:

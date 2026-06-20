@@ -80,7 +80,7 @@ Each is one lesson, algorithmic.
 
 ## Implementation status (this build)
 
-- ✅ Engine on the §4 lane system (Muster → **Assign** → Slip → Vanguard → Skirmish → Reserve),
+- ✅ Engine on the §4 lane system (Assemble → **Assign** → Slip → Vanguard → Skirmish → Reserve),
   same-range trade + range auto-hit (§4.2), optional 1v1 Clash module, count-adaptive.
 - ✅ **Manual lane assignment** (stacking) — offered when ≥2 lanes and ≥2 Vanguard.
 - ✅ **All seven powers wired as passive abilities** (detected by card name): Phalanx (combined
@@ -91,7 +91,7 @@ Each is one lesson, algorithmic.
 - ✅ Foe-side **reserve targeting matrix** enforced (heroes' Reserve fire hits the foe front;
   Longshot or an empty front reaches foe Reserves).
 - ✅ **Hotseat PvP lane driver** — both sides human, pass-and-play, hidden commit per phase
-  (Muster → **Assign** → Slip → Skirmish → Reserve, committing side alternates). Versus holds
+  (Assemble → **Assign** → Slip → Skirmish → Reserve, committing side alternates). Versus holds
   3v3/2v2 PvP lane battles plus a 1v1 Clash duel.
 - ✅ **PvP manual lane stacking** — with ≥2 lanes and ≥2 Vanguard, *each* side now places its own
   lanes by hand (the device passes A → B for the Assign phase) and may stack a lane, the same

@@ -355,7 +355,7 @@ order-independent `tally`).
 
 It directly serves Charter **#7** (cards only) and **#9 / #10** (rules ride on a metaphor, are
 re-derivable). It also unifies several ad-hoc affordances we've added (the "Next" hint, the
-suggested-action highlight, the event feed, muster-as-placement) into one coherent model, and gives a
+suggested-action highlight, the event feed, assemble-as-placement) into one coherent model, and gives a
 clean answer to "where do all the cards go" as the game grows.
 
 ### Current lean / open questions
@@ -364,6 +364,6 @@ Endorsed as the *direction*; deferred until after tuning. **Rendering approach (
 table — thickness, stacking, isometric, full camera orbit) is an explicit open question** (doc §7),
 leaning undecided. Other open questions (doc §8): deck identity/count rendering, how many zoom levels,
 multi-deck fan layout, the "perspective" convention for a single player driving several characters, and
-the visual language for "a legal move lives here" vs. "you may only look." The muster-as-placement and
+the visual language for "a legal move lives here" vs. "you may only look." The assemble-as-placement and
 zone-visuals steps (label-card-left, fan, hover-pop) should be built so they **generalise into** this
 deck/zoom model, not as one-offs.

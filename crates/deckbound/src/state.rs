@@ -1,6 +1,6 @@
 //! The state of a combat in progress (§4 lane commitment system).
 //!
-//! A round is a phase machine: **Muster** (assign Vanguard / Reserve) → **Slip** (Vanguard
+//! A round is a phase machine: **Assemble** (assign Vanguard / Reserve) → **Slip** (Vanguard
 //! hold or slip) → resolve the Vanguard phase → **Skirmish** (skirmishers pick targets) →
 //! resolve → **Reserve** (reserves pick targets / aid) → resolve → refresh. A same-range
 //! engagement is a **trade** unless the optional **Clash** module is on (then the four-card
@@ -35,7 +35,7 @@ pub enum Menu {
 pub enum Phase {
     Menu(Menu),
     /// Assign each hero to the Vanguard or the Reserve, then deploy.
-    Muster,
+    Assemble,
     /// Place each Vanguard hero into a specific lane (stacking is the choice, §4).
     Assign,
     /// Each Vanguard hero chooses to hold its lane or slip past (→ Skirmisher).

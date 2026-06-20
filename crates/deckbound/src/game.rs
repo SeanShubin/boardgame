@@ -1,7 +1,7 @@
 //! Deckbound as an [`engine::Game`] — the §4 lane commitment system.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
-//! §4.2) run through the lane round (Muster → Slip → Vanguard resolve → Skirmish → Reserve),
+//! §4.2) run through the lane round (Assemble → Slip → Vanguard resolve → Skirmish → Reserve),
 //! or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All numbers
 //! live in `data/booklet.ron`.
 
@@ -44,7 +44,7 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// Muster: put this hero in the Vanguard / Reserve, then deploy.
+    /// Assemble: put this hero in the Vanguard / Reserve, then deploy.
     SetVanguard(usize),
     SetReserve(usize),
     Deploy,
@@ -158,8 +158,8 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
         state.phase = Phase::Clash;
         state.log = vec![scenario.blurb.clone(), "-- the duel begins --".into()];
     } else {
-        state.phase = Phase::Muster;
-        state.log = vec![scenario.blurb.clone(), "-- Round 1: muster --".into()];
+        state.phase = Phase::Assemble;
+        state.log = vec![scenario.blurb.clone(), "-- Round 1: assemble --".into()];
     }
     state.scenario = Some(scenario);
 }
@@ -191,8 +191,8 @@ pub fn battle_state(heroes: Vec<Actor>, creatures: Vec<Actor>, clash: bool, seed
         // "choose a scenario set" line until combat events push it off.
         state.log = vec!["-- the duel begins --".into()];
     } else {
-        state.phase = Phase::Muster;
-        state.log = vec!["-- Round 1: muster --".into()];
+        state.phase = Phase::Assemble;
+        state.log = vec!["-- Round 1: assemble --".into()];
     }
     state
 }
@@ -224,13 +224,13 @@ pub(crate) fn check_outcome(state: &mut State) {
 impl Deckbound {
     // ---- base-mode lane round ------------------------------------------------
 
-    /// Deploy: read the human muster, muster the creatures (aggression ≥ 5 → Vanguard), set
+    /// Deploy: read the human assemble, assemble the creatures (aggression ≥ 5 → Vanguard), set
     /// lanes = min(counts), assign both sides round-robin (the larger side stacks).
     fn deploy(&self, state: &mut State) {
         let hero_vg: Vec<usize> = (0..state.heroes.len())
             .filter(|&h| state.plan.hero_lane[h].is_some() && !state.heroes[h].fallen)
             .collect();
-        // PvP: side B mustered by hand (foe_lane); PvE: creatures muster by AI (aggression ≥ 5).
+        // PvP: side B assembled by hand (foe_lane); PvE: creatures assemble by AI (aggression ≥ 5).
         let foe_vg: Vec<usize> = if state.pvp {
             (0..state.creatures.len())
                 .filter(|&f| state.plan.foe_lane[f].is_some() && !state.creatures[f].is_down())
@@ -267,7 +267,7 @@ impl Deckbound {
         }
         // A side assigns its lanes by hand when there's a real choice (≥2 lanes, ≥2 Vanguard) —
         // count-adaptive (§4.1). Heroes always may; the foe side may only in PvP (PvE foes are
-        // mustered by the AI and auto-assign). Any side without a choice auto-assigns now.
+        // assembled by the AI and auto-assign). Any side without a choice auto-assigns now.
         let manual = |vg: &[usize]| lanes >= 2 && vg.len() >= 2;
         let hero_manual = manual(&hero_vg);
         let foe_manual = state.pvp && manual(&foe_vg);
@@ -584,10 +584,10 @@ impl Deckbound {
         }
         state.round += 1;
         state.plan = Round::sized(state.heroes.len(), state.creatures.len());
-        state.phase = Phase::Muster;
+        state.phase = Phase::Assemble;
         state
             .log
-            .push(format!("-- Round {}: muster --", state.round));
+            .push(format!("-- Round {}: assemble --", state.round));
     }
 
     /// One actor strikes a target at `range` — a trade if the target can contest, else an
@@ -856,8 +856,8 @@ impl Deckbound {
                     .unwrap_or_else(|| "Card".into())
             ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
-            (None, Phase::Muster) => format!(
-                "Round {} — muster: set Vanguard / Reserve, then Deploy. (Esc: menu)",
+            (None, Phase::Assemble) => format!(
+                "Round {} — assemble: set Vanguard / Reserve, then Deploy. (Esc: menu)",
                 state.round
             ),
             (None, Phase::Assign) => {
@@ -883,7 +883,7 @@ impl Deckbound {
             && state.outcome.is_none()
             && matches!(
                 state.phase,
-                Phase::Muster | Phase::Assign | Phase::Slip | Phase::Skirmish | Phase::Reserve
+                Phase::Assemble | Phase::Assign | Phase::Slip | Phase::Skirmish | Phase::Reserve
             )
         {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
@@ -963,7 +963,7 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
-            Phase::Muster => {
+            Phase::Assemble => {
                 let side = state.plan.committing;
                 let mut a = Vec::new();
                 for i in 0..state.s_len(side) {
@@ -1247,18 +1247,18 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
-            (Phase::Muster, Action::SetVanguard(i)) => {
+            (Phase::Assemble, Action::SetVanguard(i)) => {
                 let side = state.plan.committing;
                 state.s_lane_mut(side)[*i] = Some(0);
             }
-            (Phase::Muster, Action::SetReserve(i)) => {
+            (Phase::Assemble, Action::SetReserve(i)) => {
                 let side = state.plan.committing;
                 state.s_lane_mut(side)[*i] = None;
             }
-            (Phase::Muster, Action::Deploy) => {
+            (Phase::Assemble, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
                     state.plan.committing = 1;
-                    state.log.push("-- side B: muster --".into());
+                    state.log.push("-- side B: assemble --".into());
                 } else {
                     self.deploy(state);
                 }
@@ -1675,10 +1675,10 @@ impl Game for Deckbound {
                     zones.push(hero_zone(state, Some(c.hero)));
                 }
             }
-            // Muster reads as **card placement**: the enemy on top, then your Vanguard and Reserve
+            // Assemble reads as **card placement**: the enemy on top, then your Vanguard and Reserve
             // zones with each character card clickable to move it between them (§4). The action
             // rides on the card itself, so the position toggle *is* dropping the card in a zone.
-            Phase::Muster => {
+            Phase::Assemble => {
                 let side = state.plan.committing;
                 zones.push(if side == 0 {
                     creature_zone(state, None)
@@ -1695,7 +1695,7 @@ impl Game for Deckbound {
                         continue;
                     }
                     let in_vanguard = state.s_lane(side)[i].is_some();
-                    // Clicking a card sends it to the *other* zone (the muster toggle as placement).
+                    // Clicking a card sends it to the *other* zone (the assemble toggle as placement).
                     let toggle = if in_vanguard {
                         Action::SetReserve(i)
                     } else {
@@ -1998,7 +1998,7 @@ mod tests {
                         Action::Play(Move::Anticipate)
                     }
                 }
-                Phase::Muster => Action::Deploy,
+                Phase::Assemble => Action::Deploy,
                 Phase::Assign => acts
                     .iter()
                     .find(|a| matches!(a, Action::AssignLane(..)))
@@ -2317,21 +2317,21 @@ mod tests {
         game.apply(&mut s, &Action::OpenVersus).unwrap();
         let idx = scenarios::versus().iter().position(|v| v.pvp).unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
-        assert_eq!(s.phase, Phase::Muster);
+        assert_eq!(s.phase, Phase::Assemble);
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(0)),
-            "side A musters first"
+            "side A assembles first"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(s.phase, Phase::Muster, "still mustering");
+        assert_eq!(s.phase, Phase::Assemble, "still assembling");
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(1)),
-            "now side B musters"
+            "now side B assembles"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        // Both mustered (no Vanguard) → deploys; play it out to an outcome.
+        // Both assembled (no Vanguard) → deploys; play it out to an outcome.
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
     }
@@ -2349,13 +2349,17 @@ mod tests {
             .unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
 
-        // Side A musters two Vanguard, then deploys; the device passes to side B.
+        // Side A assembles two Vanguard, then deploys; the device passes to side B.
         let a1 = s.heroes.iter().position(|h| h.name == "Anvil").unwrap();
         let a2 = s.heroes.iter().position(|h| h.name == "Wisp").unwrap();
         game.apply(&mut s, &Action::SetVanguard(a1)).unwrap();
         game.apply(&mut s, &Action::SetVanguard(a2)).unwrap();
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(game.current_player(&s), Some(PlayerId(1)), "side B musters");
+        assert_eq!(
+            game.current_player(&s),
+            Some(PlayerId(1)),
+            "side B assembles"
+        );
         let b1 = s.creatures.iter().position(|c| c.name == "Anvil").unwrap();
         let b2 = s.creatures.iter().position(|c| c.name == "Wisp").unwrap();
         game.apply(&mut s, &Action::SetVanguard(b1)).unwrap();
@@ -2407,7 +2411,7 @@ mod tests {
         let mut s = game.new_game(2, 1);
         game.apply(&mut s, &Action::OpenCooperation).unwrap();
         game.apply(&mut s, &Action::PickScenario(0)).unwrap();
-        assert_eq!(s.phase, Phase::Muster);
+        assert_eq!(s.phase, Phase::Assemble);
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
     }
