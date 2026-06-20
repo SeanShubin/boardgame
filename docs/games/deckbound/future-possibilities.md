@@ -360,8 +360,10 @@ clean answer to "where do all the cards go" as the game grows.
 
 ### Current lean / open questions
 
-Endorsed as the *direction*; deferred until after tuning. Open questions (full list in the doc §7):
-deck identity/count rendering, how many zoom levels, multi-deck fan layout, the "perspective" convention
-for a single player driving several characters, and the visual language for "a legal move lives here"
-vs. "you may only look." The muster-as-placement and zone-visuals steps (label-card-left, fan, hover-pop)
-should be built so they **generalise into** this deck/zoom model, not as one-offs.
+Endorsed as the *direction*; deferred until after tuning. **Rendering approach (flexbox UI vs a 3D
+table — thickness, stacking, isometric, full camera orbit) is an explicit open question** (doc §7),
+leaning undecided. Other open questions (doc §8): deck identity/count rendering, how many zoom levels,
+multi-deck fan layout, the "perspective" convention for a single player driving several characters, and
+the visual language for "a legal move lives here" vs. "you may only look." The muster-as-placement and
+zone-visuals steps (label-card-left, fan, hover-pop) should be built so they **generalise into** this
+deck/zoom model, not as one-offs.

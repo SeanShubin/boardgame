@@ -138,7 +138,56 @@ event the feed describes in text.)*
 
 ---
 
-## 7. Open questions (for the human, when we pick this up)
+## 7. Rendering approach — flexbox UI vs a 3D table — **OPEN, undecided**
+
+> **Status: open question (raised 2026-06-20). Leaning unsure — the human "is not sure I will ever go
+> with 3D."** Recorded so the tradeoff is on the table when UI work resumes; **not** a commitment
+> either way.
+
+The vision above (decks, zoom-to-focus, collapse-the-unattended) is achievable in **either** approach;
+this question is only about *how the table is drawn*. Note the current renderer is **not** Bevy sprite
+2D — it is **`bevy_ui`** (flexbox `Node`s, `Text`, `Interaction`, `UiTransform`) over a `Camera2d`. So
+the real fork is **flexbox UI vs a 3D mesh scene**, not "2D vs 3D sprites."
+
+**What only 3D can give** (these are *native* to a 3D scene, *faked at best* in UI):
+- **Card thickness + realistic stacking** — a card is a thin box mesh; stacks occlude via the depth
+  buffer, so you literally *see* how many are piled up.
+- **Isometric view** — an orthographic 3D camera at a fixed angle.
+- **Full camera orbit (pitch / yaw / roll)** around the table.
+- **Honest deals / flips** — animating a real `Transform` rotation, not a `UiTransform` lift trick.
+
+If we never want to *rotate* the table, UI + offset/shadow fakery (already used for identical-card
+stacks via `STACK_PEEK`) may be enough, and 3D's costs aren't worth it.
+
+**What 3D costs** (the price of leaving `bevy_ui`):
+1. **No layout engine.** `bevy_ui`/taffy positions every card, zone, and panel for free (rows, wrap,
+   gaps, scroll). A 3D scene places each mesh by explicit world `Transform` — fanning, stacking, and
+   zone spacing become **hand-computed layout**. This is the bulk of the work.
+2. **Text on card faces → a texture pipeline (the crux).** On a card that can rotate, text must live on
+   the card's *surface*, so screen-space `Text` won't do. The realistic path is **rasterising each card
+   face to an `Image` and using it as the card's material**, regenerated when the card's content
+   changes — new infrastructure, and Deckbound is text-heavy (stat blocks, card bodies).
+3. **Mesh picking** (`MeshPickingPlugin`, ray-cast) instead of automatic UI `Interaction` hit-testing.
+4. **The full 3D pipeline** — `Camera3d`, lighting, `StandardMaterial`/PBR, shadows, depth. Trivial GPU
+   cost for a card table, but more moving parts and look-tuning than flat UI quads.
+5. **Heavier on the web** (wasm / WebGL2) than the current flat UI.
+
+**What stays free either way:** the `engine` / `deckbound` logic and the **`TableView` seam** are
+renderer-agnostic, so the rules and tests don't move — the cost is **confined to the `tabletop`
+crate's view-building**. A 3D renderer could even be built **in parallel against the same `TableView`**
+while the UI renderer keeps working.
+
+**If we ever do go 3D, the recommended shape is hybrid, not all-3D:** keep `bevy_ui` for the
+**HUD** (action buttons, the event feed, status, encyclopedia, card-detail reading panes — documents
+and lists, text-heavy, miserable as meshes) and use **3D only for the physical table** (locations,
+character cards, decks, the Vanguard / Reserve zones). That keeps the text crisp where it's read and
+makes the table physical where it's handled — and it is exactly what the deck/zoom/orbit vision wants.
+
+**Decision criteria to settle it later:** do we actually want to *rotate/orbit* the table (→ 3D), or is
+a fixed top-down/iso-fake view with offset-stacking enough (→ stay UI)? Is the **text-to-texture**
+infrastructure worth it for the metaphor gain? Does the **web build** weight against 3D?
+
+## 8. Open questions (for the human, when we pick this up)
 
 - **Deck identity & count rendering** — how a collapsed deck shows its kind and size at a glance
   (icon + numeral? a labelled spine?).
