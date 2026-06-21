@@ -403,6 +403,7 @@ fn build_actor_with(
         shoved: false,
         disarmed: false,
         free_slip_used: false,
+        power_bonus: 0,
         fallen: false,
     };
     actor.refresh_round();
@@ -711,6 +712,9 @@ fn effect_rule(e: &Effect) -> String {
                 .into()
         }
         Effect::Haste { tempo } => format!("Grants +{tempo} Tempo to an ally (a Haste)."),
+        Effect::Empower { power } => format!(
+            "Raises allies' Power by {power} this round (an Empower) \u{2014} the Support force-multiplier's indirect offense."
+        ),
         Effect::Suppress { tempo } => format!("Strips {tempo} Tempo from a foe (a Suppress)."),
         Effect::Slow { speed } => {
             format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")

@@ -60,6 +60,9 @@ pub enum Effect {
     Ward,
     /// Grant +`tempo` Tempo to an ally (a Haste).
     Haste { tempo: u32 },
+    /// Raise allies' **Power** by `power` this round (an Empower — the Support force-multiplier's
+    /// indirect offense; round-scoped, §4 Salt).
+    Empower { power: u32 },
     /// Strip `tempo` Tempo from a foe (a Suppress).
     Suppress { tempo: u32 },
     /// Cut `speed` Speed from a foe (a Slow — cheaper to block/engage).
@@ -157,6 +160,7 @@ impl Card {
                 Effect::Mend { body } => format!("mend +{body}"),
                 Effect::Ward => "ward (grant melee)".into(),
                 Effect::Haste { tempo } => format!("haste +{tempo}"),
+                Effect::Empower { power } => format!("empower +{power} power"),
                 Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
                 Effect::Slow { speed } => format!("slow -{speed} speed"),
                 Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),

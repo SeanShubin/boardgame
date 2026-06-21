@@ -114,7 +114,7 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: level,
     });
-    encounters.push(make_encounter("Final", Currency::Gold, 10)); // boss: needs the full party
+    encounters.push(make_encounter("Final", Currency::Gold, 14)); // boss: needs the full party
     demands.push(Demand::AllTracks);
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);

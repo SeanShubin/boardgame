@@ -149,6 +149,24 @@ mod tests {
     }
 
     #[test]
+    fn an_equipped_party_never_loses_its_own_l5() {
+        // Regression guard for the Salt anomaly (a suit's own powers made the party *worse* than bare):
+        // a party fully equipped in a suit must clear that suit's L5. The remaining violations should
+        // all be "too easy" (encounter calibration) — never an "equipped party / 5×L4 should win" that
+        // came back a loss.
+        // The "should win" checks all read "… wins L5"; the too-easy ones read "… loses L5". A
+        // violated "wins L5" means a sufficiently-equipped party lost — the anomaly class.
+        let equipped_losses: Vec<_> = check_grind_balance(1)
+            .into_iter()
+            .filter(|vi| vi.property.contains("wins L5"))
+            .collect();
+        assert!(
+            equipped_losses.is_empty(),
+            "an equipped party must never lose its own L5 (the Salt anomaly): {equipped_losses:?}"
+        );
+    }
+
+    #[test]
     fn the_harness_runs_and_is_deterministic() {
         // The harness itself must be sound: it runs without panicking and is a pure function of the
         // seed (same seed ⇒ same verdict), so a violation count is a stable measurement to tune against.

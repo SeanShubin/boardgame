@@ -11,7 +11,12 @@ use crate::stats::{Break, Channel, DamageType};
 /// weapon supplies the type; a Damage card adds its own power.
 pub fn base_strike(a: &Actor) -> (u32, DamageType, u32) {
     let (card_pow, dtype) = a.weapon.primary_damage().unwrap_or((0, DamageType::Blunt));
-    (a.offense.power + card_pow, dtype, a.offense.precision)
+    // `power_bonus` is this round's Empower (a Support buff, §4 Salt) — indirect offense.
+    (
+        a.offense.power + card_pow + a.power_bonus,
+        dtype,
+        a.offense.precision,
+    )
 }
 
 /// A base [`Strike`] snapshot (for order-independent resolution from phase-start state).
@@ -402,6 +407,13 @@ pub fn play_card(
                     t.tempo += tempo as i32;
                     log.push(format!("  +{tempo} Tempo to {}.", t.name));
                 }
+            }
+            Effect::Empower { power } => {
+                // Round-scoped +Power to allies (the §4 Salt force-multiplier — indirect offense).
+                for t in allies.iter_mut().filter(|a| !a.is_down()) {
+                    t.power_bonus += power;
+                }
+                log.push(format!("  empowers the line (+{power} Power)."));
             }
             Effect::Suppress { tempo } => {
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {

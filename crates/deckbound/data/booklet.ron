@@ -130,22 +130,26 @@ Catalog(
                 flavor: "She speaks, and the enemy front simply forgets how to be brave.",
                 cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
 
-        // ---- Support (Salt) — the hand that holds the line: heal, ward, haste ----
+        // ---- Support (Salt) — the force multiplier: amplify the line, then outlast (§4 redesign) ----
+        // Proactive-first: the early cards are buffs that bite from Muster (race-positive — Salt's
+        // action becomes ally damage/actions); the heal is the attrition floor; Sanctuary is the
+        // mass-amplification capstone. (No standalone Ward here — its niche lives on the pool card the
+        // scenario casters carry.)
         Reward( track: Salt, level: 1, stat: (resolve: 2, body: 1),
-                flavor: "Close the worst of it, and send them back in.",
-                cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(body: 3)] ) ] ),
-        Reward( track: Salt, level: 2, stat: (resolve: 2),
-                flavor: "Press a blade into the hand of the one who swore never to carry one.",
-                cards: [ Card( name: "Ward", role: Some(Salt), kind: Base, zone: Lasting, effects: [Ward] ) ] ),
-        Reward( track: Salt, level: 3, stat: (speed: 1, body: 1),
                 flavor: "Borrow against the next breath; move twice on this one.",
-                cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 3)] ) ] ),
+                cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 2)], text: "Grants an ally +2 Tempo — an extra action this round (indirect offense)." ) ] ),
+        Reward( track: Salt, level: 2, stat: (resolve: 2),
+                flavor: "Put the weight of the whole line behind every blow.",
+                cards: [ Card( name: "Empower", role: Some(Salt), kind: Base, zone: Lasting, effects: [Empower(power: 2)], text: "Raises the whole party's Power by 2 this round — the Support force-multiplier's indirect offense." ) ] ),
+        Reward( track: Salt, level: 3, stat: (speed: 1, body: 1),
+                flavor: "Close the worst of it, and send them back in.",
+                cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(body: 4)], text: "Restores 4 Body to the most-wounded ally — the attrition floor." ) ] ),
         Reward( track: Salt, level: 4, stat: (resolve: 2),
                 flavor: "Swallow the fear whole, before it has the chance to spread.",
-                cards: [ Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel, Recover], text: "Steady mind and body: clears accumulated fear and turns one face-down health card back up on the most-wounded ally." ) ] ),
+                cards: [ Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel, Recover], text: "Steady mind and body: clears accumulated fear and turns one face-down health card back up on the most-wounded ally (returns a lost action)." ) ] ),
         Reward( track: Salt, level: 5, stat: (body: 2, resolve: 1),
-                flavor: "For one held breath, the whole line is untouchable, rested, and whole.",
-                cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Mend(body: 3), Ward, Haste(tempo: 3)] ) ] ),
+                flavor: "For one held breath, the whole line strikes as one — empowered, hastened, whole.",
+                cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Empower(power: 2), Haste(tempo: 3), Mend(body: 4)], text: "Mass amplification: empowers and hastens the whole party and heals the most-wounded — the Support capstone." ) ] ),
     ],
     actors: [
         // Novice — the clean-slate character (§8.5): weak base, gains power only by buying Upgrades.

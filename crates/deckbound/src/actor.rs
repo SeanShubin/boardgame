@@ -168,6 +168,9 @@ pub struct Actor {
     /// Round-scoped **Disarm** (a Controller debuff): this round the Actor cannot play its role cards
     /// (its hand is fouled). Cleared at Refresh.
     pub disarmed: bool,
+    /// Round-scoped **Empower** (a Support buff): bonus Power added to this Actor's strikes this round
+    /// (§4 Salt — indirect offense; the force-multiplier amplifies allies' hits). Cleared at Refresh.
+    pub power_bonus: u32,
     /// Round-scoped bookkeeping: has this Actor already taken its one free **Blitz** slip this round
     /// (§4 Infiltrator)? Cleared at Refresh.
     pub free_slip_used: bool,
@@ -223,6 +226,7 @@ impl Actor {
         self.shoved = false;
         self.disarmed = false;
         self.free_slip_used = false;
+        self.power_bonus = 0;
         self.defense.end_round();
     }
 }

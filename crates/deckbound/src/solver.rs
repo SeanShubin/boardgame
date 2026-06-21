@@ -89,38 +89,67 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
     }
 }
 
-/// The best `PlayCard` for the committing side: a card that deals damage (kills the gate) is
-/// preferred over a pure buff/debuff; otherwise the first playable card.
+/// The best `PlayCard` for the committing side — the highest-**scoring** playable card, so a member
+/// spends its one-per-role play on its strongest option (and deeper cards get used), not the first it
+/// happens to find. Scoring ranks **damage** (wins the race) over **amplification** (Empower/Haste —
+/// indirect offense, race-positive) over proactive **debuffs**, with reactive heals last (a Mend at
+/// Muster heals nobody — the solver shouldn't burn its play on it). Returns `None` if no card is
+/// playable.
 fn best_play(state: &State, actions: &[Action]) -> Option<Action> {
-    use crate::cards::Effect;
     let side = state.plan.committing;
-    let deals_damage = |i: usize, idx: usize| {
-        state
-            .s_pool(side)
-            .get(i)
-            .and_then(|a| a.actions.get(idx))
-            .is_some_and(|c| c.effects.iter().any(|e| matches!(e, Effect::Damage { .. })))
-    };
-    let mut fallback = None;
-    for a in actions {
-        if let Action::PlayCard(i, idx) = a {
-            if deals_damage(*i, *idx) {
-                return Some(*a);
-            }
-            fallback.get_or_insert(*a);
-        }
-    }
-    fallback
+    actions
+        .iter()
+        .copied()
+        .filter_map(|a| match a {
+            Action::PlayCard(i, idx) => state
+                .s_pool(side)
+                .get(i)
+                .and_then(|act| act.actions.get(idx))
+                .map(|c| (a, play_score(c))),
+            _ => None,
+        })
+        .max_by_key(|&(_, score)| score)
+        .filter(|&(_, score)| score > 0)
+        .map(|(a, _)| a)
 }
 
-/// A hero whose strength is played from the back line: it carries a non-passive Artillery /
-/// Controller / Support role card (Brass / Bone / Salt). Such heroes stay in the Reserve so they
-/// can cast (the Reserve is the phase that plays cards), rather than trading weakly in a lane.
+/// A heuristic value for playing `card` now (greedy policy). Damage ≫ amplification ≫ proactive debuff
+/// ≫ minor buff ≫ reactive heal. The magnitude terms give a mild preference for the deeper (stronger)
+/// card of a track. Used only by the greedy resolver — not a rule.
+fn play_score(card: &crate::cards::Card) -> i32 {
+    use crate::cards::Effect::*;
+    card.effects
+        .iter()
+        .map(|e| match e {
+            Damage { power, .. } => 100 + *power as i32,
+            Haste { tempo } => 50 + *tempo as i32,
+            Empower { power } => 50 + *power as i32,
+            Slow { .. }
+            | Confuse { .. }
+            | Suppress { .. }
+            | Stagger
+            | Shove
+            | Disarm
+            | Sunder { .. } => 40,
+            Rally { .. } | Guard { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
+            // Reactive: only worth it once someone is hurt/feared — at Muster (full health) it is a
+            // wasted play, so the greedy ranks it below acting.
+            Mend { .. } | Steel | Recover => 5,
+        })
+        .sum()
+}
+
+/// A hero whose strength is **ranged fire from the Reserve**: it carries a non-passive Artillery /
+/// Controller card (Brass / Bone) — cards that *attack the enemy* from range, so it holds back to cast
+/// rather than trading weakly up front. **Support (Salt) does *not* want the back line**: its cards are
+/// ally **buffs** (Empower / Haste / Mend) that work from anywhere, played at Muster — so a Salt member
+/// should **charge and fight in melee** (a Reserve full of buff-only melee actors deals no damage and
+/// is simply raided).
 fn wants_backline(a: &Actor) -> bool {
-    use crate::currency::Currency::{Bone, Brass, Salt};
+    use crate::currency::Currency::{Bone, Brass};
     a.actions
         .iter()
-        .any(|c| !c.passive && matches!(c.role, Some(Brass) | Some(Bone) | Some(Salt)))
+        .any(|c| !c.passive && matches!(c.role, Some(Brass) | Some(Bone)))
 }
 
 /// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
