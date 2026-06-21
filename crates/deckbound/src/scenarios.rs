@@ -753,6 +753,11 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
         Effect::Empower { power } => format!(
             "Raises allies' Power by {power} this round (an Empower) \u{2014} the Support force-multiplier's indirect offense."
         ),
+        Effect::Fortify { armor } => {
+            format!(
+                "Raises a shield wall: +{armor} Armor to the whole line this round (a Fortify)."
+            )
+        }
         Effect::Suppress { tempo } => format!("Strips {tempo} Tempo from a foe (a Suppress)."),
         Effect::Slow { speed } => {
             format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")

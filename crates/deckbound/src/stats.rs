@@ -12,8 +12,6 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 /// A damage type. Physical/elemental types are outer (met by Armor); Fear is inner (met by Ward).
-/// `Confusion` is retained as a type but now flows through the **Fear** channel (the Mind channel is
-/// gone) — a mental attack on the will.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub enum DamageType {
     Blunt,
@@ -23,7 +21,6 @@ pub enum DamageType {
     Cold,
     Lightning,
     Fear,
-    Confusion,
 }
 
 /// Which defense channel a damage type flows through.
@@ -38,8 +35,7 @@ pub enum Channel {
 impl DamageType {
     pub fn channel(self) -> Channel {
         match self {
-            // Fear and the former Confusion both attack the will (the Mind channel is gone, §3.2).
-            DamageType::Fear | DamageType::Confusion => Channel::Fear,
+            DamageType::Fear => Channel::Fear,
             _ => Channel::Body,
         }
     }
@@ -53,7 +49,6 @@ impl DamageType {
             DamageType::Cold => "cold",
             DamageType::Lightning => "lightning",
             DamageType::Fear => "fear",
-            DamageType::Confusion => "confusion",
         }
     }
 }
@@ -111,6 +106,9 @@ pub struct Defense {
     pub fear_pile: u32,
     // this-round break flag (lifted at round end)
     pub will_break: Option<Break>,
+    /// Round-scoped flat Armor from a Shield Wall (Fortify): cut from every outer hit, cleared at
+    /// round end. Bypassed by Precision (folded into `armor_cut`).
+    pub armor_bonus: u32,
 }
 
 /// What a single hit did.
@@ -136,6 +134,7 @@ impl Defense {
             body_pile: 0,
             fear_pile: 0,
             will_break: None,
+            armor_bonus: 0,
         }
     }
 
@@ -145,8 +144,8 @@ impl Defense {
     }
 
     fn armor_cut(&self, dtype: DamageType, precision: u32) -> u32 {
-        let raw = self.armor.get(&dtype).copied().unwrap_or(0);
-        // Precision bypasses some Armor.
+        // Typed Armor + any round-scoped Shield Wall (Fortify) bonus; Precision bypasses both.
+        let raw = self.armor.get(&dtype).copied().unwrap_or(0) + self.armor_bonus;
         raw.saturating_sub(precision)
     }
 
@@ -217,6 +216,7 @@ impl Defense {
         self.body_pile = 0;
         self.fear_pile = 0;
         self.will_break = None;
+        self.armor_bonus = 0;
     }
 }
 

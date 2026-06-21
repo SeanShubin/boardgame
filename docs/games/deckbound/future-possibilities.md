@@ -257,43 +257,15 @@ the game's depth *depend* on the Clash — it's a module, not a load-bearing wal
 
 ---
 
-## 4. Aspects & the chord — the multi-deck combo system
+## 4. Aspects & the chord — the multi-deck combo system *(RETIRED)*
 
-- **Status:** **Deferred** (parked 2026-06-18). Get a **single-deck core** working fully first;
-  revisit the combo layer after playtest. (Was Spec §6; demoted from a stub to here.)
-- **Scope:** how a character's cards are *organized and composed* — a multi-deck "chord." Does
-  **not** touch the three **defense channels** (Body / Mind / Spirit, §2), which stay; this is only
-  the *deck/composition* system, not the damage channels that happen to share the word "aspect."
+- **Status:** **Retired 2026-06-21** — removed from the live backlog; this is no longer a candidate.
+  The single-deck core + the §4.4 per-suit-per-round play already deliver its "combine capabilities"
+  intent, and a fused-action chord runs against the simplification trajectory and Charter #2 (small,
+  computable tactics). The idea, the full rationale, and **the bar it must clear to return** are parked
+  in **[retired-ideas.md](retired-ideas.md)**.
 
-### The idea (what was being designed)
-
-A character is a **set of aspect-decks** (dimensions of action — Body, Mind, Spirit, Magic…). A
-play is a **chord**: one card per aspect, combined into a single action. Card kinds: **numberless**,
-**modifier** (attachment order matters), **passive**. Only the tactical aspect (the Clash, §1) is
-rock-paper-scissors; the others compose commutatively. Acquiring a capability adds cards — or a
-whole new aspect/deck. Background: `notes/decks-and-aspects.md`, `notes/combos.md` (frozen).
-
-### Why defer
-
-- The **single-deck core** — Form + attachments + Action cards over the §5 zones, plus §1 Clash,
-  §4 battle, §8 strategic loop — is enough to test the whole game loop and tune difficulty against
-  the reference scenario. The chord/combo system is **depth on top**, not load-bearing for the core.
-- Classic "get one thing working fully before adding a combo system": composition multiplies the
-  balance surface, and we want clean data from the core first.
-
-### What "single core" means without aspects
-
-- **One deck** per character (not a chord of several aspect-decks).
-- **Attachments** still exist (Form = fundamental + attachments; Upgrades attach) and **compose
-  commutatively**; the order-dependent **modifier** card-kind is part of *this* deferred layer.
-- The three **defense channels** (Body / Mind / Spirit, §2) are unaffected.
-
-### Open questions for when it returns
-
-- The exact **chord combination rules** (how physical / tactical / magical cards combine).
-- The full **aspect list**, and how a brand-new aspect/deck is introduced to a character.
-- How chord-combos interact with the §5 zone/exhaustion economy and the §8 currency/Upgrade economy.
-- Whether "aspect" keeps that name (it currently collides with the §2 defense channels).
+*(Heading kept as a stable anchor: this was "entry 4", still referenced from the Spec and other notes.)*
 
 ---
 
@@ -367,3 +339,56 @@ multi-deck fan layout, the "perspective" convention for a single player driving 
 the visual language for "a legal move lives here" vs. "you may only look." The assemble-as-placement and
 zone-visuals steps (label-card-left, fan, hover-pop) should be built so they **generalise into** this
 deck/zoom model, not as one-offs.
+
+## 7. Gear system — a third treasure, and the reward-structure expansion
+
+- **Status:** **Wanted, deferred** (recorded 2026-06-21). **A working game comes first** — this is the
+  designated home for the gear idea and the reward-structure rescale it implies, so they have a place to
+  live until scheduled.
+- **Scope:** the **reward / progression** layer (§8.3 / §8.5) and the **damage-type / armor** model
+  (§2.2). Does not touch the Clash or the gauntlet core.
+
+### Idea
+
+Add **gear** as a **third treasure** per `(suit, level)`. Today a reward is **two** things — one **suit
+(role) card** + one **stat boost**; gear makes it **three** — **suit card + stat boost + a piece of
+gear**. Gear is the missing **player-managed weapons/armor layer**: a weapon deals a **damage type**, a
+piece of armor **resists** types — so equipping is a real choice.
+
+**Five is doing heavy lifting.** Five suits, and — conveniently — **five gear slots**: *weaponset, head,
+legs, arms, body*. The 5×5 lattice gains a natural third axis.
+
+**Reward-structure consequences (the rescale).** Three treasures per `(suit, level)` invites splitting
+them across locations:
+- **3 rewards → 3 locations:** the current **25** reward-locations become **75** (3× the map), OR
+- **a 5-stage campaign:** one **level** at a time — each stage is **15 locations** (5 suits × 3 rewards),
+  cleared before the next stage opens. A cleaner arc than one sprawling 75-node map.
+
+### Why explore it
+
+It **lights up four dormant systems at once** (the reason it keeps surfacing):
+- the **damage types** earn their slot — called-shots (§2.2) become a real *gear* choice (the type×armor
+  lattice is currently inert because weapons are fixed and foes are mostly unarmored);
+- the **Wall's** Armor / mitigation gains depth (and the **Shield Wall** card, which grants temporary
+  Armor, becomes a preview of this axis);
+- the **Artillery's** Pierce stat + the **Sunder** card become meaningful (something to pierce);
+- the **§8.6 emergent locks** get their content — an *armored-foe* lock is exactly what makes Pierce /
+  Sunder / type-choice the efficient key.
+
+### Risks / open questions (for playtest)
+
+- **Complexity budget.** Gear + 3 treasures + a rescaled map is a lot of new surface; it must not bury
+  the core. Sequence it *after* the role-card model is tuned in play.
+- **75 vs 5-stage.** Which reward-structure — a 3× map, or staged 15-location levels? (Leaning **staged**:
+  it keeps each stage legible and bounds the par search.)
+- **Build computability (§0.1).** Gear is *owned, monotone, additive* assets — keep it so (no sell-back /
+  swap-oscillation) or it breaks the no-path-dependent-budget invariant.
+- **Does gear scale with a stat, or is it flat?** (Cf. the signature-stat principle, Charter #12.)
+- **Damage-type set.** Gear is the thing that would justify keeping all 6 outer types; absent it, the
+  pure-physical distinctions are tabling candidates (and **Confusion** is already a dead type to cut).
+
+### Current lean
+
+**Build it — but not yet.** The current priority is a complete, tuned, working game on the existing
+2-treasure / 25-location model. Gear is the first major *expansion* after that floor holds. Until then,
+this entry is where gear-shaped ideas accumulate.

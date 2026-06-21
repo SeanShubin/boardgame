@@ -509,6 +509,7 @@ fn effect_keyword(e: &Effect) -> String {
     match e {
         Damage { dtype, .. } => format!("Damage ({})", dtype.label()),
         Guard { .. } => "Guard (Brace)".into(),
+        Fortify { .. } => "Fortify (Shield Wall)".into(),
         Lifeline => "Lifeline (Last Stand)".into(),
         Stagger => "Stagger".into(),
         Sunder { .. } => "Sunder".into(),

@@ -46,7 +46,7 @@ pub fn snapshot(a: &Actor) -> Strike {
 /// turn face down**. Defeat is narrated once, at the boundary (see `tally`), never here.
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
     let dt = strike.dtype.label();
-    let inner = !matches!(strike.dtype.channel(), Channel::Body); // Fear / Confusion break the will/mind
+    let inner = !matches!(strike.dtype.channel(), Channel::Body); // Fear breaks the will
     // Every strike is narrated — the log is how the player verifies the mechanics and learns who
     // acted, so a blow is never silently dropped. Overkill (a simultaneous-phase blow on a target
     // whose health cards are already all face down) is reported as such, not applied again.
@@ -417,6 +417,15 @@ pub fn play_card(
                     allies[i].tempo += tempo as i32;
                     log.push(format!("  braces (+{tempo} Tempo)."));
                 }
+            }
+            Effect::Fortify { armor } => {
+                // Shield Wall: the Wall raises temporary Armor over the whole line this round.
+                for t in allies.iter_mut().filter(|a| !a.is_down()) {
+                    t.defense.armor_bonus += armor;
+                }
+                log.push(format!(
+                    "  raises a shield wall (+{armor} Armor to the line)."
+                ));
             }
             Effect::Lifeline => {
                 // M3 — this round the holder cannot fall (damage leaves it at 1 Body); resolved

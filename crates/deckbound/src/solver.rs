@@ -131,7 +131,7 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             | Shove
             | Disarm
             | Sunder { .. } => 40,
-            Rally { .. } | Guard { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
+            Rally { .. } | Guard { .. } | Fortify { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
             // Reactive: only worth it once someone is hurt/feared — at Muster (full health) it is a
             // wasted play, so the greedy ranks it below acting.
             Mend { .. } | Steel | Recover => 5,

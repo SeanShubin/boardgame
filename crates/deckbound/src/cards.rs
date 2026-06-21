@@ -35,6 +35,9 @@ pub enum Effect {
     /// Add `tempo` to the holder this round — a defensive Guard boost (more initiative to answer
     /// blows) (M2, Wall L1 *Brace*).
     Guard { tempo: u32 },
+    /// Grant `armor` round-scoped flat Armor to the whole line (a **Shield Wall** — the Wall's active
+    /// mitigation; cut from every outer hit, bypassed by Precision, cleared at round end).
+    Fortify { armor: u32 },
     /// This round the holder **cannot fall**: damage that would down it leaves it at 1 Body
     /// (M3, Wall L5 *Last Stand*).
     Lifeline,
@@ -148,6 +151,7 @@ impl Card {
             parts.push(match e {
                 Effect::Damage { power, dtype } => format!("{} {power}", dtype.label()),
                 Effect::Guard { tempo } => format!("brace +{tempo} tempo"),
+                Effect::Fortify { armor } => format!("fortify +{armor} armor"),
                 Effect::Lifeline => "cannot fall".into(),
                 Effect::Stagger => "stagger".into(),
                 Effect::Sunder { armor } => format!("sunder -{armor}"),
