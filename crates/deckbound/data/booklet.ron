@@ -151,10 +151,16 @@ Catalog(
                 flavor: "For one held breath, the whole line strikes as one — empowered, hastened, whole.",
                 cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Empower(power: 2), Haste(tempo: 3), Mend(body: 4)], text: "Mass amplification: empowers and hastens the whole party and heals the most-wounded — the Support capstone." ) ] ),
     ],
+    // §2.3 (locked 2026-06-21) — the clean-slate baseline a *character* starts from, held as a
+    // SEPARATE Form card (its fundamental) so the identity Actor card stays bare. Numbers match the
+    // old Novice `base`; only characters (built via `build_character`) receive it. Creatures print theirs.
+    clean_slate: (name: "Clean-slate", speed: 3, power: 1, body: 5, toughness: 1, resolve: 1),
     actors: [
-        // Novice — the clean-slate character (§8.5): weak base, gains power only by buying Upgrades.
+        // Novice — the clean-slate character (§8.5): a BARE identity (§2.3) — a character carries NO
+        // printed stats. Its baseline is the separate `clean_slate` Form card above; power then grows
+        // only by adding reward cards. (Creatures keep a printed `base`.)
         ActorCard( name: "Novice", role: "Clean-slate", flavor: "Nothing yet but nerve and a fist. Everything it becomes, it has to buy.", driver: "hero", attack: Melee, weapon: "Fist",
-                   base: (speed: 3, power: 1, body: 5, toughness: 1, resolve: 1) ),
+                   base: () ),
         // An Actor is a bare identity + a starting deck (stats-as-deck, §2.3/§4.3): `base` is the
         // fundamental Form card (its stat block); `traits` are attachment Form cards; `actions` are
         // its Action cards; `weapon` supplies the strike's damage type.

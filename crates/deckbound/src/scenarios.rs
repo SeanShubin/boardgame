@@ -38,6 +38,11 @@ struct Catalog {
     /// Flavor for the §4 combat roles, keyed by the role string actors carry (`role: "Wall"`).
     #[serde(default)]
     role_flavor: HashMap<String, String>,
+    /// §2.3 — the clean-slate baseline a **character** starts from, as a **separate** Form card (its
+    /// fundamental), so a character's identity Actor card carries no stats. Injected by
+    /// [`build_character`]; creatures print their `base` instead.
+    #[serde(default)]
+    clean_slate: StatCard,
 }
 
 /// A role-card **reward** (§8.3): clearing `(track, level)` unlocks this atomic set — its role
@@ -105,7 +110,10 @@ struct ActorCard {
     flavor: String,
     /// "hero" (human) or a creature instinct keyword (brute / aggressor / charger / …).
     driver: String,
-    /// The fundamental Form card (stats-as-deck, §2.3/§4.3): the actor's base stat block.
+    /// The fundamental Form card (stats-as-deck, §2.3/§4.3): a **creature's** printed base stat block.
+    /// A **character** leaves this empty — its baseline is the catalog's separate `clean_slate` card
+    /// (§2.3, locked 2026-06-21), so the identity card carries no stats.
+    #[serde(default)]
     base: StatCard,
     weapon: String,
     #[serde(default)]
@@ -443,7 +451,10 @@ fn reward(cat: &Catalog, id: RewardId) -> Option<&Reward> {
 /// target on the owner's Controller bases.
 pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
     let cat = catalog();
-    let mut stats: Vec<StatCard> = Vec::new();
+    // §2.3 (locked 2026-06-21): a character's identity card is bare — its clean-slate baseline is a
+    // *separate* Form card (the fundamental), never stats printed on the Actor. Creatures keep a
+    // printed `base`; a character gets the catalog's `clean_slate` card here.
+    let mut stats: Vec<StatCard> = vec![cat.clean_slate.clone()];
     let mut role_cards: Vec<Card> = Vec::new();
     for &id in rewards {
         if let Some(r) = reward(cat, id) {
@@ -992,7 +1003,13 @@ fn reward_entry(r: &Reward) -> CatalogEntry {
 
 fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let is_hero = a.driver == "hero";
-    let actor = build_actor(catalog(), &a.name);
+    // §2.3: a character's identity card is bare, so display its **clean-slate** Form (the baseline
+    // card), not the empty Actor card; a creature shows its printed base.
+    let actor = if is_hero {
+        build_character(&a.name, &[])
+    } else {
+        build_actor(catalog(), &a.name)
+    };
     let off = &actor.offense;
     let def = &actor.defense;
     let body = vec![
@@ -1256,5 +1273,31 @@ mod tests {
         assert!(wall.actions.len() > bare.actions.len());
         // Five levels per track (§8.3).
         assert_eq!(rewards_for(Currency::Iron).len(), 5);
+    }
+
+    #[test]
+    fn character_identity_card_is_bare_and_baseline_comes_from_clean_slate() {
+        // §2.3 (locked 2026-06-21): a character carries NO printed stats — the Novice identity card's
+        // own `base` must contribute nothing; the baseline lives in the separate `clean_slate` card.
+        let cat = catalog();
+        let novice = cat.actors.iter().find(|a| a.name == "Novice").unwrap();
+        assert!(
+            stat_is_empty(&novice.base),
+            "a character's identity card must print no stats (§2.3)"
+        );
+        // The baseline is preserved by the separate clean-slate card: a bare-built Novice still
+        // fields the old numbers (body 5 / toughness 1 / resolve 1 / speed 3 / power 1).
+        let bare = build_character("Novice", &[]);
+        assert_eq!(bare.defense.body.max, 5);
+        assert_eq!(bare.defense.body.toughness, 1);
+        assert_eq!(bare.defense.resolve, 1);
+        assert_eq!(bare.offense.speed, 3);
+        assert_eq!(bare.offense.power, 1);
+        // A creature, by contrast, still prints its base on the identity card.
+        let brute = cat.actors.iter().find(|a| a.name == "Brute").unwrap();
+        assert!(
+            !stat_is_empty(&brute.base),
+            "a creature keeps a printed base (§2.3 carve-out)"
+        );
     }
 }
