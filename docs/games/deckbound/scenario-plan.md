@@ -1,5 +1,9 @@
 # Deckbound — Scenario & Tutorial Plan (build blueprint)
 
+> **Stale terms (2026-06-20).** Combat was respecced to **charge-and-gauntlet** (lanes gone, Spec §4) and
+> the breadth economy to one pool — **Tempo = Speed × Drive** (Focus/Mind merged out, Spec §3). Tutorial
+> scenarios that teach lanes / Focus / slipping need re-authoring; read this for *content intent* until then.
+
 > **Status: the authored target for the new combat.** This is the blueprint the code and
 > `booklet.ron` are being rebuilt to match (spec-first: rules in `canon/2-spec/README.md` §1,
 > §3, §4 are authoritative; this doc is the *content* plan that realizes them). Living — update

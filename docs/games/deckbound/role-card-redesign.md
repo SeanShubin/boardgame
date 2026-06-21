@@ -530,6 +530,14 @@ is unchanged — clearing still unlocks; it just yields role cards, not currency
 
 ## 10. The 25 sets — first-draft content (AI-seeded, human to tune)
 
+> **Superseded wording (combat migration, 2026-06-20).** This table is the *original* design record;
+> the **live content is `booklet.ron`** and the **rules are Spec §3/§4**. The combat rewrite (lanes →
+> **charge-and-gauntlet**; Focus/Mind merged into **Tempo = Speed × Drive**) re-themed several effects
+> below: **Brace** "Guard +block vs slips" → **+Tempo** (defend the gauntlet); **Confuse** "strip Focus"
+> → **drain Tempo**; the **+Mind** Stat grants were reallocated to Resolve/Spirit/Speed; the
+> Phalanx/Bodyguard/Taunt/Shadowstep text now reads in gauntlet terms. Read the effect names below as
+> *identities*; for the current mechanics see `booklet.ron`.
+
 > **Design intent.** Each role reads as a **distinct identity**; each level is *more powerful* than
 > the last (a level-1→5 investor is a **god at that role**); a **Stat card** is bundled into every
 > reward so survivability scales with the role (the fragile cannon survives firing). Grounded in

@@ -1,5 +1,10 @@
 # Deckbound — Zones & Exhaustion (design in progress)
 
+> **Stale terms (2026-06-20).** References to **Focus / Mind** predate the merge — there is now **one
+> breadth pool, Tempo = Speed × Drive** (Spec §3); the Tempo pool refreshes each round as before. The
+> zone machinery (Hand / Active / Down, Recover) is unaffected. Where this conflicts with the Spec, the
+> Spec wins.
+
 > **Status: living, non-authoritative.** This is the first-pass design for **Spec §5
 > (Zones / exhaustion)** — the system the source-of-truth calls *"the biggest known
 > mechanical hole (the orphaned exhaustion economy)."* It is **not** a source of truth; when

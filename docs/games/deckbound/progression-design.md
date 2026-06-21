@@ -1,5 +1,10 @@
 # Deckbound — Progression & Geography (design in progress)
 
+> **Stale terms (2026-06-20).** Read this for *shape*, not vocabulary. The **currency economy is gone**
+> (clearing unlocks a role-card reward of a **Suit** — Spec §8.3/§8.5); **Focus / Mind merged into Tempo**
+> (one breadth pool = **Speed × Drive**, Spec §3); combat is **charge-and-gauntlet**, not lanes (Spec §4).
+> Where this conflicts with the Spec, the Spec wins.
+
 > **Status: living, non-authoritative — the "how we get more powerful" half.** This
 > captures the first-pass design for the **strategic / run layer**: the world map,
 > clearing locations, the currency economy, and buying Upgrades. It is **not** a source of
