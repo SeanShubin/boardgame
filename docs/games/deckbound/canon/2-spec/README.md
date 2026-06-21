@@ -1026,6 +1026,17 @@ can't fire with. No one charges on either side → open brawl.*
 **Still unspecified (open dials — pin before/with implementation).** The structure (charge, gauntlet,
 crossings, the three emergent roles, phases, targeting) is settled; these are not:
 
+> **RATIFIED as the resolver-of-record (2026-06-20).** For the balance work (§0.3 — par is
+> **policy-relative** to a fixed resolver), the **v1 code semantics are the canonical combat resolver**
+> until a measured problem forces a change: the **single-card crossing** (advance Drive vs catch Drive,
+> one Tempo flipped per side, Phalanx/Shadowstep/Blitz riders), **index-pairing** of the charge columns
+> (after the Taunt sort), and **no multi-intercept** (dials 1–3 below). This keeps base combat
+> **deterministic** (the solver stays a maximizer, not an equilibrium-solver) so par is well-defined and
+> measurable now. The dials below are **candidate enrichments**, to be pinned *in response to* a balance
+> property the resolver-of-record cannot satisfy by tuning — not before. (In particular: do **not** pin
+> the auction as hidden-simultaneous unless forced — that is the one change that would make even PvE
+> combat a game-theoretic sub-game.)
+
 1. **Crossing numbers / the auction** — the rule is locked (§3: an **escalating Drive auction**, **ties
    to the catcher**, **catching = engaging** on the same cards). **Code implements the v1 single-card
    crossing** (each side flips one Tempo card; advance Drive vs catch Drive, Phalanx/Shadowstep/Blitz
