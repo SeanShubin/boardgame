@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn tempo_refreshes_to_speed() {
         // §3 tripwire: the Tempo pool's *count* is Speed. A freshly built/refreshed actor holds
-        // exactly Speed-many Tempo cards. If this drifts, the Speed·Drive·Tempo identity is broken.
+        // exactly Speed-many Tempo cards. If this drifts, the Speed·Daring·Tempo identity is broken.
         use crate::scenarios::build_character;
         let a = build_character("Novice", &[]);
         assert_eq!(
@@ -214,18 +214,18 @@ mod tests {
     }
 
     #[test]
-    fn higher_drive_slips_the_gauntlet_a_tie_stops_both() {
-        // §3 tripwire: a gauntlet crossing is decided by **Drive**, not Speed/Power. The
-        // higher-Drive charger slips past (Skirmisher); equal Drive stops both (Vanguard).
+    fn higher_daring_slips_the_gauntlet_a_tie_stops_both() {
+        // §3 tripwire: a gauntlet crossing is decided by **Daring**, not Speed/Power. The
+        // higher-Daring charger slips past (Skirmisher); equal Daring stops both (Vanguard).
         use crate::currency::Currency;
         use crate::scenarios::{build_character, rewards_for};
 
-        // Silver (Infiltrator) rewards seed Drive; a bare Novice floors at Drive 1.
+        // Silver (Infiltrator) rewards seed Daring; a bare Novice floors at Daring 1.
         let runner = build_character("Novice", &rewards_for(Currency::Silver));
         let blocker = build_character("Novice", &[]);
         assert!(
-            runner.offense.drive > blocker.offense.drive.max(1),
-            "test premise: the Silver-kitted runner must out-Drive the bare blocker"
+            runner.offense.daring > blocker.offense.daring.max(1),
+            "test premise: the Silver-kitted runner must out-dare the bare blocker"
         );
 
         let mut heroes = vec![runner];
@@ -235,17 +235,17 @@ mod tests {
             crate::combat::gauntlet(&mut heroes, &[true], &mut foes, &[true], &mut log);
         assert!(
             h_skirm[0],
-            "the higher-Drive charger must break through as a Skirmisher"
+            "the higher-Daring charger must break through as a Skirmisher"
         );
 
-        // Equal Drive → neither slips (both held as Vanguard).
+        // Equal Daring → neither slips (both held as Vanguard).
         let mut a = vec![build_character("Novice", &[])];
         let mut b = vec![build_character("Novice", &[])];
         let mut log = Vec::new();
         let (a_sk, b_sk) = crate::combat::gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
         assert!(
             !a_sk[0] && !b_sk[0],
-            "equal Drive must stop both chargers (tie to the catcher)"
+            "equal Daring must stop both chargers (tie to the catcher)"
         );
     }
 

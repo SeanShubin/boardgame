@@ -72,7 +72,8 @@ fn stat_is_empty(s: &StatCard) -> bool {
     s.power == 0
         && s.precision == 0
         && s.speed == 0
-        && s.spirit == 0
+        && s.dread == 0
+        && s.inspiration == 0
         && s.body == 0
         && s.toughness == 0
         && s.resolve == 0
@@ -937,8 +938,9 @@ fn stat_grants(s: &StatCard) -> Vec<String> {
         (s.power, "Power"),
         (s.precision, "Precision"),
         (s.speed, "Speed"),
-        (s.drive, "Drive"),
-        (s.spirit, "Spirit"),
+        (s.daring, "Daring"),
+        (s.dread, "Dread"),
+        (s.inspiration, "Inspiration"),
         (s.body, "Body"),
         (s.toughness, "Tough"),
         (s.resolve, "Resolve"),
@@ -1030,7 +1032,7 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let off = &actor.offense;
     let def = &actor.defense;
     let body = vec![
-        format!("Spd {} \u{00B7} Drv {}", off.speed, off.drive.max(1)),
+        format!("Spd {} \u{00B7} Drv {}", off.speed, off.daring.max(1)),
         format!("Pow {} \u{00B7} Body {}", off.power, def.body.max),
         format!("Res {} \u{00B7} Tempo {}", def.resolve, off.speed),
     ];
@@ -1057,10 +1059,10 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
                 .into(),
         ),
         ProseLine::Body(format!(
-            "Stats \u{2014} Speed {} (Tempo cards) · Drive {} (crossing grade), Power {}, Precision {}; \
+            "Stats \u{2014} Speed {} (Tempo cards) · Daring {} (crossing grade), Power {}, Precision {}; \
              Body pool {} (toughness {}), Resolve {}.",
             off.speed,
-            off.drive.max(1),
+            off.daring.max(1),
             off.power,
             off.precision,
             def.body.max,
@@ -1185,7 +1187,7 @@ mod tests {
             "The gauntlet",
             "Charge",
             "Speed",
-            "Drive",
+            "Daring",
             "Tempo",
             "Trade",
             "The Clash",

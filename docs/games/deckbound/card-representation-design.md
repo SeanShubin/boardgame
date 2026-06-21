@@ -37,9 +37,10 @@ Power only. Suits are global: **Quantity = how many, Power = how hard** (§2.4).
 | Deck | Quantity (breadth) | Power (depth) | Channel / note |
 |---|---|---|---|
 | **Body** | health-card count (`body`) | Toughness (`toughness`) | the maintained pool (§2.1) |
-| **Tempo** | Speed (`speed`) | Drive (`drive`) | ephemeral per-round pool (§3) |
+| **Tempo** | Speed (`speed`) | Daring (`daring`) | ephemeral per-round pool (§3) |
 | **Strike** | — | strike power (`power`) | the legacy "Power" stat ≡ Strike·Power (§2.4) |
-| **Spirit** | — | Spirit (`spirit`) | fear-strike force (inner offense) |
+| **Dread** | — | Dread (`dread`) | fear-strike force (inner offense; the Controller's fear-projection) |
+| **Inspiration** | — | Inspiration (`inspiration`) | Support augment force-multiplier — each buff +Inspiration (§2.4) |
 | **Pierce** | — | Precision (`precision`) | armor bypass |
 | **Resolve** | — | Resolve (`resolve`) | the inner **bar** — no pool (§2.2), so no Quantity |
 | **Guard·⟨type⟩** | — | Armor cut for that type | one deck **per damage type** (see D-armor) |
@@ -75,7 +76,7 @@ per set bit, denomination = that bit's place value, **at most one of each** (§2
 
 - `body 5` → Body·Quantity `[4] [1]`
 - `toughness 6` → Body·Power `[4] [2]`
-- `drive 0` → (no leaves)
+- `daring 0` → (no leaves)
 
 **Consumable pools (Body·Quantity).** The Health count is the one *maintained* meter (§2.1); as cards
 flip face-down the projection re-renders the remaining count's canonical form (16+2 → 16+1 → 8+4+2+1 …).
@@ -104,7 +105,7 @@ The only *future* §2.7 work is promoting "clock" to a **named, data-driven prop
 
 ## 4. The "Power" name — coexistence, no rename
 
-The engine's summed-stat field names (`power`, `toughness`, `drive`, `speed`, `body`, `resolve`, …)
+The engine's summed-stat field names (`power`, `toughness`, `daring`, `speed`, `body`, `resolve`, …)
 **stay as they are**. The Quantity/Power **suits** are the *card/print/UI* vocabulary, living in the
 projection layer; the field names are the *summed* vocabulary. They coexist with no churn:
 `offense.power` **is** the sum of the Strike·Power leaves. No field rename is needed or proposed.
@@ -116,16 +117,16 @@ projection layer; the field names are the *summed* vocabulary. They coexist with
 Each is the *generated* tree from the actor's actual summed stats (Novice clean-slate + one full reward
 track). Leaves shown as denominations; `pc` = popcount = card-count for that cell.
 
-**Anvil — Iron / Wall** · body 18, tough 6, spd 3, drv 0, pow 1, res 1
+**Anvil — Iron / Wall** · body 18, tough 6, spd 3, dar 0, pow 1, res 1
 ```
 Body    Quantity [16][2] (pc2)   Power [4][2] (pc2)
-Tempo   Quantity [2][1]  (pc2)   Power —      (drv 0)
+Tempo   Quantity [2][1]  (pc2)   Power —      (dar 0)
 Strike  Power [1] (pc1)
 Resolve Power [1] (pc1)
                                               total 8 leaves
 ```
 
-**Wisp — Silver / Infiltrator** · body 5, tough 1, spd 9, drv 4, pow 6, res 1
+**Wisp — Silver / Infiltrator** · body 5, tough 1, spd 9, dar 4, pow 6, res 1
 ```
 Body    Quantity [4][1] (pc2)    Power [1] (pc1)
 Tempo   Quantity [8][1] (pc2)    Power [4] (pc1)
@@ -144,12 +145,12 @@ Resolve Power [1] (pc1)
                                               total 9 leaves
 ```
 
-**Hex — Bone / Controller** · body 5, tough 1, spd 3, pow 1, spirit 8, res 3
+**Hex — Bone / Controller** · body 5, tough 1, spd 3, pow 1, dread 8, res 3
 ```
 Body    Quantity [4][1] (pc2)    Power [1] (pc1)
 Tempo   Quantity [2][1] (pc2)
 Strike  Power [1] (pc1)
-Spirit  Power [8] (pc1)
+Dread   Power [8] (pc1)
 Resolve Power [2][1] (pc2)
                                               total 9 leaves
 ```

@@ -5,7 +5,7 @@
 //! discuss one. A transcript fixes that: it runs a named scenario headlessly under the **resolver of
 //! record** (the same greedy policy + deterministic creatures as [`crate::solver::auto_resolve`]) and
 //! renders every decision **with the arithmetic that drove it** — the gauntlet's advance-vs-catch
-//! Drive comparison, each strike's damage past the cut, and the end-of-round Body table. Two readers
+//! Daring comparison, each strike's damage past the cut, and the end-of-round Body table. Two readers
 //! (and two transcripts, before/after a change) can then point at the exact line where the rules did
 //! something unexpected — which is as often a *rules misunderstanding* as a balance bug.
 //!
@@ -67,8 +67,8 @@ fn rules_tour() -> TranscriptScenario {
         a
     };
     let heroes = vec![
-        named("Anvil", Currency::Iron), // Wall: Phalanx → holds the line (catch Drive)
-        named("Wisp", Currency::Silver), // Infiltrator: high Drive → slips, becomes a Skirmisher
+        named("Anvil", Currency::Iron), // Wall: Phalanx → holds the line (the hold)
+        named("Wisp", Currency::Silver), // Infiltrator: high Daring → slips, becomes a Skirmisher
         named("Sear", Currency::Brass), // Artillery: holds back and fires from the Reserve
         named("Hex", Currency::Bone), // Controller: musters a persistent debuff before the gauntlet
     ];
@@ -244,9 +244,10 @@ fn form_block(a: &Actor) -> String {
     let cards: u32 = pc(a.defense.body.max)
         + pc(a.defense.body.toughness)
         + pc(a.offense.speed)
-        + pc(a.offense.drive)
+        + pc(a.offense.daring)
         + pc(a.offense.power)
-        + pc(a.offense.spirit)
+        + pc(a.offense.dread)
+        + pc(a.offense.inspiration)
         + pc(a.offense.precision)
         + pc(a.defense.resolve)
         + a.defense.armor.values().map(|v| pc(*v)).sum::<u32>()
@@ -268,12 +269,15 @@ fn form_block(a: &Actor) -> String {
     let flat = |label: &str, p: u32| format!("      {label:<11} P {}\n", suit_cell(p));
 
     out.push_str(&pool("Body", a.defense.body.max, a.defense.body.toughness));
-    out.push_str(&pool("Tempo", a.offense.speed, a.offense.drive));
+    out.push_str(&pool("Tempo", a.offense.speed, a.offense.daring));
     if a.offense.power > 0 {
         out.push_str(&flat("Strike", a.offense.power));
     }
-    if a.offense.spirit > 0 {
-        out.push_str(&flat("Spirit", a.offense.spirit));
+    if a.offense.dread > 0 {
+        out.push_str(&flat("Dread", a.offense.dread));
+    }
+    if a.offense.inspiration > 0 {
+        out.push_str(&flat("Inspiration", a.offense.inspiration));
     }
     if a.offense.precision > 0 {
         out.push_str(&flat("Pierce", a.offense.precision));

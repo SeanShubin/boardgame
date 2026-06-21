@@ -175,14 +175,24 @@ The five **Suits** are the unit of design. Each Suit names a **Role** — its fu
 
 - **Stats are instruments, not first-class.** Every stat exists to give some Role its teeth — Body /
   Toughness / Armor let the **Wall** hold; Speed / Drive let the **Infiltrator** slip; Strike / Pierce
-  arm the **Artillery**; Spirit / Resolve drive the **Controller**'s fear; the buffs ride the **Support**
+  arm the **Artillery**; **Dread** powers the **Controller**'s fear; the buffs ride the **Support**
   line. A stat **no Role needs is a defect** — cut it or re-home it. The Roles are **fixed**; the stats
-  are **negotiable** — refactor the stat layer freely whenever it serves the Roles better.
+  are **negotiable** — refactor the stat layer freely whenever it serves the Roles better. And a Role's
+  **signature stat is named *for* the Role** — evocative of its function (a Controller projects
+  **Dread**, not a clinical "fear-power"); only the shared **chassis** (Body · Speed · Strike · Resolve)
+  stays role-neutral.
 - **Each Role is uniquely valuable and load-bearing.** For every Role there is a challenge that **cannot
   be met without it**, so a party whose collective coverage **omits a Role is doomed**. The measure is
   the **campaign**, not a single fight: an individual conflict may be winnable by one Role alone — indeed
   a single-Role conflict is a **tutorial** in what that Role can and cannot do (#4 *balance by scenario*;
-  Spec §8.4). No Role is decorative; none is redundant with another.
+  Spec §8.4). No Role is decorative; none is redundant with another. **That necessity must be *earned*,
+  not *granted*:** a Role is needed because the situation's natural pressures make its mechanic the
+  effective answer — **never** because a foe is **arbitrarily immune** to the other Roles or a keyword
+  **bans** them. The other Roles are **outpaced, not forbidden** — without R they still act, they just
+  cannot clear the challenge within par. Manufacturing need by fiat-immunity is a design cheat: it fails
+  **#6** (emergence over scripted exceptions) and **#10** (a memorized exception, not a re-derivable
+  system) — and it is exactly why an *incorporeal, only-fear-kills* foe is **not** how the Controller
+  earns its slot.
 - **The Roles differ in kind, not degree.** Each owns a **distinct decision and mechanic** — hold the
   front / break through / fire from safety / **degrade** the foe / **augment** the ally — never a
   stat-reskin of another. This is also what makes a **god's role-combos** worth their concentration risk:

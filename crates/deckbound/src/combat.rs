@@ -5,15 +5,25 @@
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
-use crate::stats::{Break, Channel, DamageType};
+use crate::stats::{Break, Channel, DamageType, Offense};
 
-/// The base strike profile: `(raw, damage type, precision)`. Power is the magnitude; the
-/// weapon supplies the type; a Damage card adds its own power.
+/// The attack magnitude an actor brings to a damage type's **channel**: an outer (Body) strike scales
+/// off **Strike** (`power`), an inner (Fear) strike off **Spirit** — the two channels' parallel attack
+/// stats (Spec §2.2 / §2.4). Card power and round buffs add on top.
+fn channel_attack(off: Offense, dtype: DamageType) -> u32 {
+    match dtype.channel() {
+        Channel::Body => off.power,
+        Channel::Fear => off.dread,
+    }
+}
+
+/// The base strike profile: `(raw, damage type, precision)`. The channel's attack stat is the
+/// magnitude; the weapon supplies the type; a Damage card adds its own power.
 pub fn base_strike(a: &Actor) -> (u32, DamageType, u32) {
     let (card_pow, dtype) = a.weapon.primary_damage().unwrap_or((0, DamageType::Blunt));
     // `power_bonus` is this round's Empower (a Support buff, §4 Salt) — indirect offense.
     (
-        a.offense.power + card_pow + a.power_bonus,
+        channel_attack(a.offense, dtype) + card_pow + a.power_bonus,
         dtype,
         a.offense.precision,
     )
@@ -154,18 +164,18 @@ enum Cross {
     BothStop,
 }
 
-/// A unit's **advance Drive** — the grade it commits to *slip past* an opponent (its Form Drive,
-/// floor 1). Slipping needs advance Drive strictly greater than the other's catch Drive.
-fn advance_drive(a: &Actor) -> u32 {
-    a.offense.drive.max(1)
+/// A unit's **advance** — the **Daring** it commits to *slip past* an opponent (its Form Daring,
+/// floor 1). Slipping needs advance Daring strictly greater than the other's **hold**.
+fn advance_grade(a: &Actor) -> u32 {
+    a.offense.daring.max(1)
 }
 
-/// A unit's **catch Drive** — the grade it commits to *hold the line* (advance Drive plus the
-/// **Phalanx** bonus). A Wall that owns *Phalanx* combines its effort with the line, +2 to catch
-/// runners (a v1 flat stand-in for "Walls who stop together intercept as one"). Phalanx raises only
-/// catching, never advancing — a Wall holds; it does not slip through on a high number.
-fn catch_drive(a: &Actor) -> u32 {
-    advance_drive(a) + if a.has("Phalanx") { 2 } else { 0 }
+/// A unit's **hold** — the grade it commits to *hold the line* (its advance Daring plus the
+/// **Phalanx** bonus). A Wall that owns *Phalanx* combines its effort with the line, +2 to the hold
+/// (a v1 flat stand-in for "Walls who stop together intercept as one"). Phalanx raises only the
+/// hold, never advance — a Wall holds; it does not slip through on a high number.
+fn hold_grade(a: &Actor) -> u32 {
+    advance_grade(a) + if a.has("Phalanx") { 2 } else { 0 }
 }
 
 /// **Taunt** draws fire: a Wall that owns *Taunt* is pulled to the front of its charge column, so the
@@ -176,7 +186,7 @@ fn taunt_order(chargers: &mut [usize], pool: &[Actor]) {
 
 /// Resolve the **gauntlet** (§4): the two charge-columns thread through each other. **Taunt** Walls
 /// are pulled to the front; chargers then pair off by column order. Each crossing is decided by
-/// **Drive** (§3): the **higher** committed Drive **slips past** (becomes a Skirmisher) while the one
+/// **Daring** (§3): the **higher** committed advance **slips past** (becomes a Skirmisher) while the one
 /// it passes lands a **parting free hit**; a **tie stops both** (both become Vanguard) — unless a
 /// slipper owns **Shadowstep** (it wins the tie). Both spend a Tempo card to contest, except an
 /// Infiltrator's first **Blitz** slip (free). **Surplus** chargers on the longer column break through
@@ -184,7 +194,7 @@ fn taunt_order(chargers: &mut [usize], pool: &[Actor]) {
 /// never broke through) is a Vanguard; a non-charger is a Reserve. Returns `(hero_skirmisher,
 /// foe_skirmisher)` — who broke through.
 ///
-/// *(v1: each crossing flips one Tempo card per side — the full escalating Drive auction is a later
+/// *(v1: each crossing flips one Tempo card per side — the full escalating Daring auction is a later
 /// enrichment. Damage applies from pre-crossing snapshots, so the phase stays order-independent.)*
 pub fn gauntlet(
     heroes: &mut [Actor],
@@ -208,13 +218,13 @@ pub fn gauntlet(
     for k in 0..pairs {
         let h = h_chargers[k];
         let f = f_chargers[k];
-        // A unit slips past iff its **advance** Drive beats the other's **catch** Drive; a tie is
+        // A unit slips past iff its **advance** Daring beats the other's **hold**; a tie is
         // caught (held), unless the slipper owns **Shadowstep** (it wins the tie). Phalanx feeds catch
         // only, so a Wall holds the line rather than slipping through.
-        let h_slips = advance_drive(&heroes[h]) > catch_drive(&foes[f])
-            || (advance_drive(&heroes[h]) == catch_drive(&foes[f]) && heroes[h].has("Shadowstep"));
-        let f_slips = advance_drive(&foes[f]) > catch_drive(&heroes[h])
-            || (advance_drive(&foes[f]) == catch_drive(&heroes[h]) && foes[f].has("Shadowstep"));
+        let h_slips = advance_grade(&heroes[h]) > hold_grade(&foes[f])
+            || (advance_grade(&heroes[h]) == hold_grade(&foes[f]) && heroes[h].has("Shadowstep"));
+        let f_slips = advance_grade(&foes[f]) > hold_grade(&heroes[h])
+            || (advance_grade(&foes[f]) == hold_grade(&heroes[h]) && foes[f].has("Shadowstep"));
         // Decide the crossing first, then charge Tempo — so a Blitz free slip can skip its own cost.
         // Only one side can out-advance the other; a mutual Shadowstep tie holds (both stop).
         let outcome = match (h_slips, f_slips) {
@@ -223,10 +233,10 @@ pub fn gauntlet(
             _ => Cross::BothStop,
         };
         // Narrate the crossing **with the arithmetic that decided it** (a unit slips iff its advance
-        // Drive strictly exceeds the other's catch Drive): the four committed grades and the verdict,
+        // advance strictly exceeds the other's hold): the four committed grades and the verdict,
         // so the rules are auditable from the transcript.
-        let (h_adv, h_cat) = (advance_drive(&heroes[h]), catch_drive(&heroes[h]));
-        let (f_adv, f_cat) = (advance_drive(&foes[f]), catch_drive(&foes[f]));
+        let (h_adv, h_cat) = (advance_grade(&heroes[h]), hold_grade(&heroes[h]));
+        let (f_adv, f_cat) = (advance_grade(&foes[f]), hold_grade(&foes[f]));
         let verdict = match outcome {
             Cross::HeroSlips => format!("{} slips ({h_adv}>{f_cat})", heroes[h].name),
             Cross::FoeSlips => format!("{} slips ({f_adv}>{h_cat})", foes[f].name),
@@ -253,7 +263,7 @@ pub fn gauntlet(
         let f_can = foes[f].can_contest_now(Range::Melee);
         match outcome {
             Cross::HeroSlips => {
-                // Hero out-drives → slips past; the foe it passes lands a parting blow (if able).
+                // Hero out-dares → slips past; the foe it passes lands a parting blow (if able).
                 if f_can {
                     let snap = snapshot(&foes[f]);
                     let name = foes[f].name.clone();
@@ -369,8 +379,7 @@ fn intercept(
 pub fn play_card(
     card: &crate::cards::Card,
     actor_name: &str,
-    actor_power: u32,
-    actor_precision: u32,
+    attacker: Offense,
     foes: &mut [Actor],
     allies: &mut [Actor],
     self_idx: Option<usize>,
@@ -380,10 +389,14 @@ pub fn play_card(
     // How many foes / allies an effect touches (§4 AoE); ≥1. A Curse modifier (M5) and Sanctuary
     // (M6) raise this via the card's `targets` at build time.
     let n = (card.targets as usize).max(1);
+    // The Support's force-multiplier (§2.4): each augment gains +Inspiration on its magnitude.
+    let insp = attacker.inspiration;
     for effect in &card.effects {
         match *effect {
             Effect::Damage { power, dtype } => {
-                let raw = actor_power + power;
+                // The damage type's channel selects the attack stat: outer strikes scale off Strike
+                // (`power`), inner (Fear) strikes off **Spirit** (§2.2 parallel channels). Card power adds.
+                let raw = channel_attack(attacker, dtype) + power;
                 let alive: Vec<usize> = living(foes);
                 for ti in alive.into_iter().take(n) {
                     apply_strike(
@@ -391,7 +404,7 @@ pub fn play_card(
                         Strike {
                             raw,
                             dtype,
-                            precision: actor_precision,
+                            precision: attacker.precision,
                         },
                         actor_name,
                         log,
@@ -414,20 +427,22 @@ pub fn play_card(
                 }
             }
             Effect::Rally { resolve } => {
+                let amt = resolve + insp;
                 for a in allies.iter_mut().filter(|a| !a.is_down()) {
-                    a.defense.resolve += resolve;
+                    a.defense.resolve += amt;
                 }
-                log.push(format!("  +{resolve} Resolve to allies."));
+                log.push(format!("  +{amt} Resolve to allies."));
             }
             Effect::Mend { body } => {
                 // Heal the `n` most-wounded allies (M6 Sanctuary heals all).
                 let mut order: Vec<usize> = living(allies);
                 order.sort_by_key(|&i| allies[i].defense.body.remaining);
+                let amt = body + insp;
                 for ai in order.into_iter().take(n) {
                     let max = allies[ai].defense.body.max;
                     let r = &mut allies[ai].defense.body.remaining;
-                    *r = (*r + body).min(max);
-                    log.push(format!("  mends {} (+{body} Body).", allies[ai].name));
+                    *r = (*r + amt).min(max);
+                    log.push(format!("  mends {} (+{amt} Body).", allies[ai].name));
                 }
             }
             Effect::Ward => {
@@ -452,17 +467,19 @@ pub fn play_card(
                 }
             }
             Effect::Haste { tempo } => {
+                let amt = tempo + insp;
                 for t in allies.iter_mut().filter(|a| !a.is_down()).take(n) {
-                    t.tempo += tempo as i32;
-                    log.push(format!("  +{tempo} Tempo to {}.", t.name));
+                    t.tempo += amt as i32;
+                    log.push(format!("  +{amt} Tempo to {}.", t.name));
                 }
             }
             Effect::Empower { power } => {
                 // Round-scoped +Power to allies (the §4 Salt force-multiplier — indirect offense).
+                let amt = power + insp;
                 for t in allies.iter_mut().filter(|a| !a.is_down()) {
-                    t.power_bonus += power;
+                    t.power_bonus += amt;
                 }
-                log.push(format!("  empowers the line (+{power} Power)."));
+                log.push(format!("  empowers the line (+{amt} Power)."));
             }
             Effect::Suppress { tempo } => {
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
@@ -582,45 +599,45 @@ mod tests {
 
     #[test]
     fn phalanx_lets_a_wall_hold_a_runner_a_bare_wall_cannot() {
-        // Runner: Silver L1 grants Drive 2 (advance 2).
-        // A bare Wall has catch Drive 1 → the runner slips past.
+        // Runner: Silver L1 grants Daring 2 (advance 2).
+        // A bare Wall has hold 1 → the runner slips past.
         let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
         let mut bare_wall = vec![build_character("Novice", &[])];
         let mut log = Vec::new();
         let (skirm, _) = gauntlet(&mut runners, &[true], &mut bare_wall, &[true], &mut log);
         assert!(
             skirm[0],
-            "a bare Wall (catch 1) cannot hold a Drive-2 runner"
+            "a bare Wall (hold 1) cannot stop a Daring-2 runner"
         );
 
-        // A Phalanx Wall (Iron L2) has catch Drive 1+2 = 3 ≥ the runner's advance 2 → caught.
+        // A Phalanx Wall (Iron L2) has hold 1+2 = 3 ≥ the runner's advance 2 → caught.
         let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
         let mut phalanx_wall = vec![build_character("Novice", &[rid(Currency::Iron, 2)])];
         let mut log = Vec::new();
         let (skirm, _) = gauntlet(&mut runners, &[true], &mut phalanx_wall, &[true], &mut log);
-        assert!(!skirm[0], "a Phalanx Wall (catch 3) holds a Drive-2 runner");
+        assert!(!skirm[0], "a Phalanx Wall (hold 3) holds a Daring-2 runner");
         assert!(
-            phalanx_wall[0].has("Phalanx") && advance_drive(&phalanx_wall[0]) == 1,
+            phalanx_wall[0].has("Phalanx") && advance_grade(&phalanx_wall[0]) == 1,
             "Phalanx feeds catch only — the Wall never advances on it"
         );
     }
 
     #[test]
     fn shadowstep_wins_a_tie() {
-        // Equal advance/catch Drive and no Shadowstep → the tie is caught (both stop).
+        // Equal advance/hold and no Shadowstep → the tie is caught (both stop).
         let mut a = vec![build_character("Novice", &[])];
         let mut b = vec![build_character("Novice", &[])];
-        a[0].offense.drive = 2;
-        b[0].offense.drive = 2;
+        a[0].offense.daring = 2;
+        b[0].offense.daring = 2;
         let mut log = Vec::new();
         let (ask, bsk) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
         assert!(!ask[0] && !bsk[0], "an even tie stops both");
 
-        // Shadowstep (Silver L3) on A, forced to the same Drive → A wins the tie and slips.
+        // Shadowstep (Silver L3) on A, forced to the same Daring → A wins the tie and slips.
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 3)])];
         let mut b = vec![build_character("Novice", &[])];
-        a[0].offense.drive = 2;
-        b[0].offense.drive = 2;
+        a[0].offense.daring = 2;
+        b[0].offense.daring = 2;
         let mut log = Vec::new();
         let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
         assert!(ask[0], "Shadowstep wins the tie and slips through");
@@ -629,12 +646,12 @@ mod tests {
     #[test]
     fn blitz_makes_the_first_slip_cost_no_tempo() {
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 2)])]; // owns Blitz
-        a[0].offense.drive = 5; // clearly out-advances the bare blocker
+        a[0].offense.daring = 5; // clearly out-advances the bare blocker
         let mut b = vec![build_character("Novice", &[])];
         let tempo_before = a[0].tempo;
         let mut log = Vec::new();
         let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
-        assert!(ask[0], "the high-Drive runner slips");
+        assert!(ask[0], "the high-Daring runner slips");
         assert_eq!(
             a[0].tempo, tempo_before,
             "Blitz: the first slip each round costs no Tempo"
@@ -650,8 +667,7 @@ mod tests {
         play_card(
             &fx(vec![Effect::Stagger, Effect::Shove, Effect::Disarm]),
             "Hexer",
-            0,
-            0,
+            Offense::default(),
             &mut foes,
             &mut allies,
             Some(0),
@@ -679,8 +695,7 @@ mod tests {
         play_card(
             &fx(vec![Effect::Recover]),
             "Medic",
-            0,
-            0,
+            Offense::default(),
             &mut foes,
             &mut allies,
             Some(0),

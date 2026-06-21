@@ -636,7 +636,9 @@ ever in flux.
 ### 2.2 Every channel is cut → bar, and only Body has a pool
 
 **RULE.** Each attack is **outer** (physical/elemental → Body) or **inner**
-(fear → Spirit). It resolves: **subtract the cut** (Armor for outer, Ward for
+(fear → Spirit); its **base magnitude is the channel's attack stat — Strike for outer, Dread for
+inner** (the Controller's fear-projection), plus any card power. It resolves: **subtract the cut**
+(Armor for outer, Ward for
 inner; per source, typed, never depletes) → **accumulate the remainder into the
 round's pile** → **compare the pile to the bar** (Toughness for Body, Resolve for
 Spirit). Only the **outer** channel has a **pool** (Health cards) behind the bar;
@@ -666,7 +668,7 @@ yet specced. Numbers live in `booklet.ron`.)*
 **RULE.** An actor's **identity card** is **bare** — a name, a role, a map token (§8.1), nothing more —
 for **every** actor, hero or creature. All of its stats live on separate **build cards**, read as the
 **Form** (§5.2 / §2.4–§2.6): so §2.1's "passive stats read off the table" — **Armor, Ward, Toughness,
-Resolve**, and likewise **Speed, Drive, Power** — are **build-card-derived**, never authored on the
+Resolve**, and likewise **Speed, Daring, Power** — are **build-card-derived**, never authored on the
 identity. A build card encodes one build's stats; two kinds behave identically but differ in
 **lifecycle**:
 
@@ -712,13 +714,19 @@ cards* — and the hero/creature difference falls out of **lifecycle**, not of w
 - **Quantity** — *breadth*: how many cards (a count). Only **pooled** stats have a Quantity — **Body**
   (Health cards) and **Speed** (Tempo cards).
 - **Power** — *depth*: how much each card is worth (a per-card magnitude). **Every** stat has a Power:
-  **Toughness** (per Health card), **Drive** (per Tempo card), and the flat magnitudes — the strike
-  stat, **Spirit**, **Precision**, **Resolve**, **Armor**, **Ward**.
+  **Toughness** (per Health card), **Daring** (per Tempo card), and the flat magnitudes — the strike
+  stat, **Dread**, **Inspiration**, **Precision**, **Resolve**, **Armor**, **Ward**.
 
 The suit classifies; the **deck** (§2.6) names the stat. So each existing stat is a **(deck × suit)**
-cell: Body·Quantity = health count, Body·Power = Toughness, Tempo·Quantity = Speed, Tempo·Power = Drive,
+cell: Body·Quantity = health count, Body·Power = Toughness, Tempo·Quantity = Speed, Tempo·Power = Daring,
 Strike·Power = the strike stat. A pooled stat has **both** suits; a flat stat has **Power only**. A leaf
 card itself prints only *(suit, value)* — which stat it feeds is fixed by the deck it sits in.
+
+**Inspiration scales augments.** The Salt force-multiplier: a Support buff's magnitude gains the
+augmenter's **Inspiration** — Mend +Inspiration Body, Rally +Inspiration Resolve, Empower +Inspiration
+Power, Haste +Inspiration Tempo — exactly as an attack's magnitude gains its channel's attack stat
+(Strike / Dread, §2.2). It is the augment axis's magnitude dial and the **Support** role's signature
+(#12); flat buffs with no magnitude (Steel, Ward) do not scale.
 
 **WHY.** Two suits are the entire stat vocabulary, so a player learns "**Quantity = how many, Power = how
 hard**" once and reads it on every stat — §2.1's count×value shape generalised from defense to all of
@@ -772,7 +780,7 @@ cards. A deck's **face shows its rolled-up total**; opening it reveals the adden
 leaves carry values** — an intermediate deck is pure position, never a number.
 
 **WHY.** Positional notation is what lets the **generic** denomination cards (§2.5) be reused across every
-stat: a "Power 4" leaf means Toughness under Body and Drive under Tempo — meaning comes from the **path**,
+stat: a "Power 4" leaf means Toughness under Body and Daring under Tempo — meaning comes from the **path**,
 not the card, so the print vocabulary collapses to *{denomination × suit}*. The tree also **enforces
 position for free** (a card can't be orphaned — it lives inside its deck) and **maps to physical
 containment** (nested banded bundles). Deck-face = sum is §2.1's "read it off the table" made navigable:
@@ -819,13 +827,13 @@ the same card cost.
 
 ---
 
-## 3. Speed · Drive · Tempo — *the breadth budget* 🟡
+## 3. Speed · Daring · Tempo — *the breadth budget* 🟡
 
 Design source: [`notes/speed-and-tempo.md`](../notes/speed-and-tempo.md).
 
 > **Locked 2026-06-20.** The breadth economy is the three terms below, ratified together. Earlier forms
 > (two pools Tempo/Focus; a per-target-Speed cost; a value-less Tempo) are superseded — see the §3.2–3.4
-> history banners. This section is the **single canonical home** for what Speed, Drive, and Tempo are;
+> history banners. This section is the **single canonical home** for what Speed, Daring, and Tempo are;
 > any change that makes one of these three words do another's job has broken the concept (the GUARANTEES
 > are the tripwires).
 
@@ -833,28 +841,28 @@ Two permanent **Form** stats size one round-scoped **pool of cards** — the sam
 (Body × Toughness → Health):
 
 - **Speed** — *count*: how many **Tempo** cards you start each combat round with.
-- **Drive** — *grade*: the magnitude printed on each of those cards.
-- **Tempo** — the *pool*: Speed-many cards, each worth Drive, flipped face-down to spend and rebuilt
+- **Daring** — *grade*: the magnitude printed on each of those cards.
+- **Tempo** — the *pool*: Speed-many cards, each worth Daring, flipped face-down to spend and rebuilt
   fresh each round. **Spent cards stay spent for the whole round.**
 
-### 3.1 What Tempo and Drive do
+### 3.1 What Tempo and Daring do
 
 **RULE.** **Flipping a Tempo card gates every action** — intercept, engage, strike, strike back. Run
 out of face-up Tempo and you can do nothing more this round (so what you pour into the gauntlet is gone
 before the exchanges).
 
-**Drive's magnitude does real work in exactly one place — a gauntlet *crossing* (§4).** When a runner
-tries to slip past an interceptor, the two hold an **open, escalating Drive auction**: each may keep
-flipping Tempo cards, adding that card's Drive to its committed total for *this* crossing; either may
+**Daring's magnitude does real work in exactly one place — a gauntlet *crossing* (§4).** When a runner
+tries to slip past an interceptor, the two hold an **open, escalating Daring auction**: each may keep
+flipping Tempo cards, adding that card's Daring to its committed total for *this* crossing; either may
 stop; **the higher total wins, ties to the catcher** (caught → stopped; runner strictly higher → slips
 by). The committed total **resets at the next opponent**, but the spent cards **do not** return — so
 catching or slipping past *more* foes, or *harder* ones, drains more Tempo. **Catching a runner is the
 same as engaging it** — the cards spent to catch it pay for the exchange; you never pay twice.
 
-**Everywhere else, Drive's number is irrelevant — only the flip counts.** An **exchange** (a strike) is
-**single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Drive
-(Drive sizes a crossing, never a blow). An enemy can only attack you by **spending a Tempo card**, and
-that attack is Drive-independent. You may **reflexively strike back** at anyone who strikes you in melee
+**Everywhere else, Daring's number is irrelevant — only the flip counts.** An **exchange** (a strike) is
+**single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Daring
+(Daring sizes a crossing, never a blow). An enemy can only attack you by **spending a Tempo card**, and
+that attack is Daring-independent. You may **reflexively strike back** at anyone who strikes you in melee
 (position is irrelevant — they came to you), but striking back is an action: it costs **one** Tempo
 card, and with none to flip you simply **take the hit** (a free hit). *(Ranged fire is one-sided — you
 cannot strike back at a Reserve that did not come to you — except in the no-charge open brawl, where two
@@ -862,19 +870,19 @@ ranged foes exchange if both spend a card, or where a card grants an exception, 
 
 **WHY.** One pool for act-and-defend makes the cannon/wall axis a live **allocation** (spend it
 attacking and you cannot answer a skirmisher) rather than a second stat. Splitting the pool into
-**count (Speed)** and **grade (Drive)** gives two clean power dimensions that mean different things:
-**Speed = how many crossings/actions you get; Drive = how cheaply you win each crossing.** Confining
-Drive to the crossing keeps a strike's force on Power (not on how hard you shoved through the line), and
+**count (Speed)** and **grade (Daring)** gives two clean power dimensions that mean different things:
+**Speed = how many crossings/actions you get; Daring = how cheaply you win each crossing.** Confining
+Daring to the crossing keeps a strike's force on Power (not on how hard you shoved through the line), and
 the per-round depletion is the tension — run the gauntlet hard and you are spent for the exchanges (#2
 opportunity cost).
 
 **GUARANTEES.** *(the tripwires — break one and the concept no longer holds)*
-- **Speed = count**, **Drive = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
-  Speed-many at Drive each, spent within a round and refreshed between rounds.
-- **Drive's magnitude affects only a gauntlet crossing** (an escalating auction, ties to the catcher);
+- **Speed = count**, **Daring = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
+  Speed-many at Daring each, spent within a round and refreshed between rounds.
+- **Daring's magnitude affects only a gauntlet crossing** (an escalating auction, ties to the catcher);
   it never scales a strike, an attack, or anything outside a crossing.
 - **Every action is one Tempo card** (intercept, engage, strike, strike back); **catching = engaging**
-  on the same cards; an exchange is single-card and Drive-blind.
+  on the same cards; an exchange is single-card and Daring-blind.
 - **Spent Tempo does not return until the round refresh** — gauntlet spending is unavailable for later
   exchanges (the depletion tension); a *crossing's committed total* resets per opponent, the *pool*
   does not.
@@ -884,8 +892,8 @@ opportunity cost).
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Speed` (Resources) — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **TERM.** `Drive` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a gauntlet crossing, where both sides flip Tempo cards and the higher committed Drive wins (ties to the catcher). A strike is the same whatever its Drive.
-- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Drive**. Flip one to take any action (intercept, engage, strike, strike back); spent cards stay spent until the round refreshes. Run out and you can't act.
+- **TERM.** `Daring` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a gauntlet crossing, where both sides flip Tempo cards and the higher committed Daring wins (ties to the catcher). A strike is the same whatever its Daring.
+- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (intercept, engage, strike, strike back); spent cards stay spent until the round refreshes. Run out and you can't act.
 
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
@@ -976,18 +984,18 @@ phase.
 > rationale).
 
 **The budget (one pool).** **Tempo** is the action economy that gates everything (§3): a `count × value`
-pool of **Speed**-many cards, each worth **Drive**, flipped to spend (face-up = available, face-down =
+pool of **Speed**-many cards, each worth **Daring**, flipped to spend (face-up = available, face-down =
 spent, §5). **Flip a card to act** — charge, slip, intercept, strike, fire, *or* defend (turn an
 incoming melee blow into a **clash** rather than a **free hit**, §4.2). **Run out and you can't act.**
-**Tempo refreshes each round.** **Drive's magnitude matters in exactly one place — a gauntlet crossing**
-(an escalating Drive auction, §3 / below); every other action is one Drive-blind card.
+**Tempo refreshes each round.** **Daring's magnitude matters in exactly one place — a gauntlet crossing**
+(an escalating Daring auction, §3 / below); every other action is one Daring-blind card.
 
 Because the **same pool pays for offense *and* defense**, the **cannon/wall axis is an allocation
 choice**, not a second stat: pour Tempo into the gauntlet (charging through, or catching runners) and
 you have little left to strike or answer a skirmisher; hold it back and you survive but do less. (There
 is **no separate Focus/Mind pool** — **merged 2026-06-20**; defending is a Tempo spend.) Both pools share
 the **`count × value`** form: **Health = Body × Toughness** (value gates damage, persists), **Tempo =
-Speed × Drive** (value bites in a crossing, refreshes).
+Speed × Daring** (value bites in a crossing, refreshes).
 
 **RULE.** The three roles **emerge from a charge**:
 - **Reserve** — anyone who does **not** charge (holds back; the ranged / support line).
@@ -1034,9 +1042,9 @@ A round runs **five phases** (the Charge and Muster commits, then three open res
    squeeze). Resolve damage; then **Refresh** (Tempo resets, Body persists, round++).
 
 **A crossing (the gauntlet's atom).** When two opposing chargers meet, they hold an **open, escalating
-Drive auction** (§3): each may **keep flipping Tempo cards**, adding each card's **Drive** to its
-committed total *for this crossing*; either may stop. **Higher total Drive wins, ties to the catcher.**
-- **Caught** (interceptor's committed Drive ≥ the runner's) → the runner **stops** here; the catch
+Daring auction** (§3): each may **keep flipping Tempo cards**, adding each card's **Daring** to its
+committed total *for this crossing*; either may stop. **Higher total Daring wins, ties to the catcher.**
+- **Caught** (interceptor's committed hold ≥ the runner's advance) → the runner **stops** here; the catch
   **engages** them (the cards already spent pay for the exchange — no second cost). Both become Vanguard.
 - **Slips** (runner strictly higher) → the runner **advances to the next** enemy in the column.
 - **Barge** (spend nothing, take a **free hit**, keep moving) → the hit lands **before** the next
@@ -1049,23 +1057,23 @@ so Tempo poured into the gauntlet is gone before the exchanges (§3 depletion). 
 stays at its position and **remains an obstacle** for later advancers (Tempo permitting); a unit that
 **broke through** the whole opposing column becomes a **Skirmisher**.
 
-**Advancing vs catching (the Wall's hold).** A crossing weighs two distinct uses of Drive: **advance
-Drive** (the grade you commit to *slip past*) against the other's **catch Drive** (the grade it commits
-to *hold the line*). You slip iff your advance **strictly exceeds** their catch; a tie is held. For a
-plain unit the two are equal (its Drive), so the raw "higher slips, tie caught" rule stands. **Wall
-powers feed catch only, never advance** — a Wall raises the wall it makes the enemy climb without
+**Advancing vs holding (the Wall's hold).** A crossing weighs two distinct uses of Daring: **advance**
+(the Daring you commit to *slip past*) against the other's **hold** (the grade it commits
+to *hold the line*). You slip iff your advance **strictly exceeds** their hold; a tie is held. For a
+plain unit the two are equal (its Daring), so the raw "higher slips, tie held" rule stands. **Wall
+powers feed the hold only, never advance** — a Wall raises the wall it makes the enemy climb without
 itself slipping through on a big number (it is an immovable line, not a runner). This is the seam the
 role passives plug into.
 
 **Role powers in the gauntlet (and the round).** The specialist passives are not flavor — each bites a
 concrete step:
-- **Phalanx** (Wall) — +catch Drive: Walls who stop together intercept as one, holding faster runners.
+- **Phalanx** (Wall) — +hold: Walls who stop together intercept as one, holding faster runners.
 - **Bodyguard** (Wall) — a stopped Wall steps across to intercept a **surplus** enemy charger that
   would otherwise break through unopposed (guarding the backfield, not just the foe it met).
 - **Taunt** (Wall) — draws fire: the Wall is pulled to the **front** of its column so the enemy meets
   it first, sparing the rest of the line.
 - **Blitz** (Infiltrator) — the **first slip each round is free** (costs no Tempo).
-- **Shadowstep** (Infiltrator) — **win the tie** when slipping (advance ≥ catch, not just >).
+- **Shadowstep** (Infiltrator) — **win the tie** when slipping (advance ≥ hold, not just >).
 - **Backstab / Assassinate** (Infiltrator) — a Skirmisher hits an enemy **Reserve** harder / executes
   it outright (the §10 prize for breaking through).
 
@@ -1135,9 +1143,9 @@ threaten their back you must expose your front.
 - **Confluent resolution:** deterministic given the charge; order-independent except across an
   interception, whose outcome is itself determined.
 - **Two pools, both `count × value`:** **Health** (Body × Toughness, persists) and **Tempo** (Speed ×
-  Drive, refreshes). **Tempo pays for offense *and* defense** (charge / slip / intercept / skirmish /
+  Daring, refreshes). **Tempo pays for offense *and* defense** (charge / slip / intercept / skirmish /
   fire, *and* answering a melee blow), so the cannon/wall axis is an allocation choice, not a separate
-  stat. **Drive's magnitude bites only in a gauntlet crossing** (§3); a strike is Drive-blind. (No
+  stat. **Daring's magnitude bites only in a gauntlet crossing** (§3); a strike is Daring-blind. (No
   Focus/Mind pool — merged.)
 
 **MANUAL.** *Secretly pick who charges and in what order (an ordered face-down column); reveal together.
@@ -1145,7 +1153,7 @@ Non-chargers are your Reserve. **Muster**: before the gauntlet, play your standi
 Wall braces or sets a Last Stand, a Controller slows / staggers / disarms the enemy, a Support mends or
 hastes the line — these last the whole round and shape what follows. The two charge-columns thread
 through each other: at each meeting, both
-keep flipping Tempo cards into a **Drive auction** — higher total Drive wins, a tie is caught; or spend
+keep flipping Tempo cards into a **Daring auction** — higher total Daring wins, a tie is caught; or spend
 nothing and take a free hit to barge on. Your Tempo is one pool across all your crossings — choose whom
 to catch (and Tempo spent here is gone for the exchanges). Those who break all the way through are Skirmishers; those who
 stop are your Vanguard. Skirmishers with Tempo left strike the enemy Reserve (it defends by spending
@@ -1161,8 +1169,8 @@ can't fire with. No one charges on either side → open brawl.*
 - **TERM.** `Reserve` (Roles) — Anyone who did not charge: decisive but fragile (artillery, support). Fires ranged on the enemy front and aids allies, but can never target the enemy Reserve.
 - **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (intercepts it in the gauntlet); Skirmisher beats Reserve (breaks through to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
 - **TERM.** `Muster` (Combat) — The open window after the charge reveal and before the gauntlet, where each side plays its **standing / persistent** cards (Wall defenses, Controller debuffs, Support buffs). Mustered effects last the round and shape the gauntlet; positional attack cards wait for their own phase.
-- **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. A unit slips iff its advance Drive exceeds the other's catch Drive (Wall powers raise catch only). Breakthroughs become Skirmishers; those who stop become Vanguard.
-- **TERM.** `Slip` (Combat) — At a crossing, push past an enemy: an open Drive auction where both flip Tempo cards and the higher committed Drive wins — you need strictly more than the catcher to slip; a tie is caught. Spend nothing and you barge past taking a free hit.
+- **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. A unit slips iff its advance Daring exceeds the other's hold (Wall powers raise the hold only). Breakthroughs become Skirmishers; those who stop become Vanguard.
+- **TERM.** `Slip` (Combat) — At a crossing, push past an enemy: an open Daring auction where both flip Tempo cards and the higher committed Daring wins — you need strictly more than the catcher to slip; a tie is caught. Spend nothing and you barge past taking a free hit.
 - **TERM.** `Open brawl` (Combat) — If neither side charges, no front forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
 - **TERM.** `Phases` (Round) — Charge (hidden: who runs in, and in what order) → Muster (play standing/persistent cards) → Gauntlet (the columns thread through) → Skirmish (breakthroughs hit the enemy Reserve) → Reserve (ranged fire on the front) → Refresh. Confluent within each phase.
 
@@ -1171,7 +1179,7 @@ crossings, the three emergent roles, phases, targeting) is settled; these are no
 
 > **RATIFIED as the resolver-of-record (2026-06-20).** For the balance work (§0.3 — par is
 > **policy-relative** to a fixed resolver), the **v1 code semantics are the canonical combat resolver**
-> until a measured problem forces a change: the **single-card crossing** (advance Drive vs catch Drive,
+> until a measured problem forces a change: the **single-card crossing** (advance Daring vs the hold,
 > one Tempo flipped per side, Phalanx/Shadowstep/Blitz riders), **index-pairing** of the charge columns
 > (after the Taunt sort), and **no multi-intercept** (dials 1–3 below). This keeps base combat
 > **deterministic** (the solver stays a maximizer, not an equilibrium-solver) so par is well-defined and
@@ -1180,9 +1188,9 @@ crossings, the three emergent roles, phases, targeting) is settled; these are no
 > the auction as hidden-simultaneous unless forced — that is the one change that would make even PvE
 > combat a game-theoretic sub-game.)
 
-1. **Crossing numbers / the auction** — the rule is locked (§3: an **escalating Drive auction**, **ties
+1. **Crossing numbers / the auction** — the rule is locked (§3: an **escalating Daring auction**, **ties
    to the catcher**, **catching = engaging** on the same cards). **Code implements the v1 single-card
-   crossing** (each side flips one Tempo card; advance Drive vs catch Drive, Phalanx/Shadowstep/Blitz
+   crossing** (each side flips one Tempo card; advance Daring vs the hold, Phalanx/Shadowstep/Blitz
    riders live) — the full **escalating** auction (both sides keep flipping to outbid) is the remaining
    enrichment, along with the **free-hit** magnitude when barging.
 2. **Multi-intercept caps** — a stopped unit can intercept later advancers while Tempo lasts; is there a
@@ -1194,11 +1202,11 @@ crossings, the three emergent roles, phases, targeting) is settled; these are no
 5. **Reserve aid kit** — the buffs / heals / debuffs Reserve deliver — Action cards over the §5 zone
    layer (the aspect/combo layer is deferred — `future-possibilities.md`).
 6. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
-   (value gates damage; persists) and **Tempo = Speed × Drive** (refreshes). **Focus and Mind are
-   removed.** Speed = count (how many Tempo cards), **Drive = grade** (per-card magnitude), Tempo = the
-   cards. **Drive's magnitude bites only in a gauntlet crossing** (an escalating Drive auction, ties to
-   the catcher); every other action is one Drive-blind card. *(The earlier "no Tempo value" call is
-   reversed — Drive is the grade, ratified with Speed/Tempo in §3.)*
+   (value gates damage; persists) and **Tempo = Speed × Daring** (refreshes). **Focus and Mind are
+   removed.** Speed = count (how many Tempo cards), **Daring = grade** (per-card magnitude), Tempo = the
+   cards. **Daring's magnitude bites only in a gauntlet crossing** (an escalating Daring auction, ties to
+   the catcher); every other action is one Daring-blind card. *(The earlier "no Tempo value" call is
+   reversed — Daring is the grade, ratified with Speed/Tempo in §3.)*
 
 *(Range/attack dials are resolved by §4.2: "Reserve self-defense" = whether it carries melee; "strike
 shape" = a Clash when attacker and target share the range, an auto-hit when they don't.)*
@@ -1444,9 +1452,9 @@ unbounded; a small tag vocabulary is re-derivable (#6/#10).
 
 **RULE.** Permanent **Form stats size a fluctuating pool** — you spend the pool, never the stats
 (§3.1). There are **two** `count × value` pools in Active: **Health = Body × Toughness** (the value
-gates damage) and **Tempo = Speed × Drive** (Speed-many cards, each worth Drive). *(Focus and Mind are
+gates damage) and **Tempo = Speed × Daring** (Speed-many cards, each worth Daring). *(Focus and Mind are
 removed — merged 2026-06-20; defense is a Tempo spend.)* Spending moves cards to **Down**; they return
-by **Recover** (or the round refresh). A gauntlet-crossing contest compares the **total Drive each side
+by **Recover** (or the round refresh). A gauntlet-crossing contest compares the **total Daring each side
 commits** (§3); any other action just spends one card.
 - **Round refresh** *(Tempo)* — at Round end all spent Tempo flips up (re-derived each Round, §2.1) — a
   per-Round budget, not cross-Round attrition.
@@ -1720,7 +1728,7 @@ the reference scenarios under the analysis envelope (§0.4):
   campaign under optimal play.
 - **Necessary (each Role load-bearing).** For **each** Role R, a party identical except that **R's
   coverage is removed** **fails at least one** reference scenario — the scenario that is R's *lock*.
-- **Distinct.** Each Role has a **signature mechanic** (Wall: catch-Drive / Phalanx; Infiltrator: slip /
+- **Distinct.** Each Role has a **signature mechanic** (Wall: the hold / Phalanx; Infiltrator: slip /
   Blitz; Artillery: ranged fire; Controller: round-scoped status; Support: buff / heal) that is
   **invoked and outcome-changing** in at least one reference scenario; no two Roles clear their lock by
   the same mechanic.
@@ -1740,6 +1748,13 @@ slogan; the leave-one-out check turns it into a regression test.
 - The reference campaign has, for each Role, a **designated lock scenario** unwinnable without that Role,
   wired as a **regression test** (#11: the par solver is a regression test). Losing necessity for any
   Role **fails the build**.
+- **Necessity is emergent, not by fiat.** A lock scenario makes its Role necessary through the foe's
+  **stats and behaviour** (an offense you must *disable*, an armor you must *pierce*, a backfield you
+  must *reach*) — **never** through an **immunity** or keyword that *bans* the other Roles. Emergence
+  test: with R removed, the others are **outpaced within the analysis envelope** (§0.4), not
+  **forbidden** by a rule. An immunity gate that manufactures necessity is a **defect** — it satisfies
+  the necessity check while violating Charter #12 / #6. *(Systemic channel cross-immunity, §2.2, is not a
+  fiat gate — it is a symmetric system, not a per-foe script.)*
 - **No redundant stat:** every stat the engine carries is **read** on some Role's resolution path; a stat
   the engine never consumes is a **failing** state, not a latent one.
 - The invariant is **campaign-scope** (some scenario per Role), never per-encounter; single-Role

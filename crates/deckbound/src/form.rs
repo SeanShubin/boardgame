@@ -26,11 +26,14 @@ pub struct StatCard {
     /// Tempo-pool **count** (§3): how many Tempo cards.
     #[serde(default)]
     pub speed: u32,
-    /// Tempo-card **grade** (§3): Drive — the per-card magnitude weighed in a gauntlet crossing.
+    /// Tempo-card **grade** (§3): Daring — the per-card magnitude weighed in a gauntlet crossing.
     #[serde(default)]
-    pub drive: u32,
+    pub daring: u32,
     #[serde(default)]
-    pub spirit: u32,
+    pub dread: u32,
+    /// Salt·Power: the Support's augment force-multiplier (§2.4).
+    #[serde(default)]
+    pub inspiration: u32,
     // defense (Body pool = count × value)
     #[serde(default)]
     pub body: u32,
@@ -66,8 +69,9 @@ impl Form {
             o.power += c.power;
             o.precision += c.precision;
             o.speed += c.speed;
-            o.drive += c.drive;
-            o.spirit += c.spirit;
+            o.daring += c.daring;
+            o.dread += c.dread;
+            o.inspiration += c.inspiration;
         }
         o
     }

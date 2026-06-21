@@ -1108,16 +1108,14 @@ impl Game for Deckbound {
                     return Err(GameError::new("that card can't be mustered now"));
                 }
                 self.note_role_played(state, side, *i, &card);
-                let pow = state.s_pool(side)[*i].offense.power;
-                let pre = state.s_pool(side)[*i].offense.precision;
+                let off = state.s_pool(side)[*i].offense;
                 let name = state.s_pool(side)[*i].name.clone();
                 if side == 0 {
                     let mut allies = std::mem::take(&mut state.heroes);
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.creatures,
                         &mut allies,
                         Some(*i),
@@ -1129,8 +1127,7 @@ impl Game for Deckbound {
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.heroes,
                         &mut allies,
                         Some(*i),
@@ -1199,16 +1196,14 @@ impl Game for Deckbound {
                     return Err(GameError::new("that card can't be played from here now"));
                 }
                 self.note_role_played(state, side, *i, &card);
-                let pow = state.s_pool(side)[*i].offense.power;
-                let pre = state.s_pool(side)[*i].offense.precision;
+                let off = state.s_pool(side)[*i].offense;
                 let name = state.s_pool(side)[*i].name.clone();
                 if side == 0 {
                     let mut allies = std::mem::take(&mut state.heroes);
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.creatures,
                         &mut allies,
                         Some(*i),
@@ -1220,8 +1215,7 @@ impl Game for Deckbound {
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.heroes,
                         &mut allies,
                         Some(*i),
@@ -1266,16 +1260,14 @@ impl Game for Deckbound {
                     return Err(GameError::new("that card can't be played from here now"));
                 }
                 self.note_role_played(state, side, *i, &card);
-                let pow = state.s_pool(side)[*i].offense.power;
-                let pre = state.s_pool(side)[*i].offense.precision;
+                let off = state.s_pool(side)[*i].offense;
                 let name = state.s_pool(side)[*i].name.clone();
                 if side == 0 {
                     let mut allies = std::mem::take(&mut state.heroes);
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.creatures,
                         &mut allies,
                         Some(*i),
@@ -1287,8 +1279,7 @@ impl Game for Deckbound {
                     combat::play_card(
                         &card,
                         &name,
-                        pow,
-                        pre,
+                        off,
                         &mut state.heroes,
                         &mut allies,
                         Some(*i),
@@ -1542,7 +1533,7 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
             format!(
                 "Spd {} Drv {} Pow {} {}",
                 a.offense.speed,
-                a.offense.drive.max(1),
+                a.offense.daring.max(1),
                 a.offense.power,
                 a.attack.label()
             ),
@@ -2088,14 +2079,13 @@ mod tests {
             .position(|c| c.name == "Ward")
             .unwrap();
         let card = s.heroes[vow].actions[idx].clone();
-        let (pow, pre) = (s.heroes[vow].offense.power, s.heroes[vow].offense.precision);
+        let off = s.heroes[vow].offense;
         let name = s.heroes[vow].name.clone();
         let mut heroes = std::mem::take(&mut s.heroes);
         combat::play_card(
             &card,
             &name,
-            pow,
-            pre,
+            off,
             &mut s.creatures,
             &mut heroes,
             Some(vow),

@@ -251,17 +251,23 @@ fn will_tier(pile: u32, resolve: u32) -> Break {
 }
 
 /// The offensive stats: how hard, how precise, how fast, the force of fear, and the **grade** of
-/// each Tempo card (Drive, §3 — the magnitude that decides a gauntlet crossing).
+/// each Tempo card (Daring, §3 — the magnitude that decides a gauntlet crossing).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Offense {
     pub power: u32,
     pub precision: u32,
     /// The **count** of Tempo cards (§3): how many you start each round with.
     pub speed: u32,
-    /// The **grade** of each Tempo card (§3): its Drive — the magnitude weighed in a gauntlet
-    /// crossing. Irrelevant to a strike's force.
-    pub drive: u32,
-    pub spirit: u32,
+    /// The **grade** of each Tempo card (§3): its Daring — the magnitude weighed in a gauntlet
+    /// crossing (the Infiltrator's slip-grade). Irrelevant to a strike's force.
+    pub daring: u32,
+    /// The Controller's fear-projection (Bone): scales an inner (Fear-channel) attack, mirroring
+    /// Strike↔Body (§2.2). Named for its Role — a Controller projects **Dread** (Charter #12).
+    pub dread: u32,
+    /// The Support's force-multiplier (Salt): each augment it plays — Mend / Rally / Haste / Empower —
+    /// gains +Inspiration on its magnitude (§2.4), mirroring how an attack gains Strike/Dread. The
+    /// Salt role's signature stat (Charter #12).
+    pub inspiration: u32,
 }
 
 #[cfg(test)]

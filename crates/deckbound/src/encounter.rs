@@ -79,7 +79,7 @@ impl EncounterCard {
             power: s.power * level,
             precision: s.precision * level,
             speed: s.speed * level,
-            spirit: s.spirit * level,
+            dread: s.dread * level,
             body: s.body * level,
             toughness: s.toughness * level,
             resolve: s.resolve * level,
