@@ -36,6 +36,11 @@ The documentation is split by **authority**:
   the checkable balance properties the tuned numbers must satisfy (e.g. *a one-of-each-role party
   beats every same-size single-role party*), each an instance of "interesting beats boring." Verified
   by the harness / par solver; a satisfied invariant is a regression guard.
+- **[intended-player-experience.md](intended-player-experience.md) — the experiential north star.** A
+  non-authoritative synthesis that reads the *felt experience* off the Charter, the Spec, and the
+  balance instruments: the gentle on-ramp, the feel-the-lack-then-the-fix loop, layered depth, the
+  no-dead-disciplines finale, and the stats-survive / powers-decide split — each promise mapped to the
+  invariant that enforces it.
 - **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
   being worked out ahead of graduating onto the Spec —
   [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,
