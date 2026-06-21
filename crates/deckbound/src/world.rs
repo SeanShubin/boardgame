@@ -7,6 +7,7 @@
 //! encounter). **Run victory** = clear the **objective** location at its max level; the run is
 //! scored in **Days** (§8.2 golf — run defeat is deferred).
 
+use engine::Rng;
 use serde::Deserialize;
 
 use crate::currency::Currency;
@@ -153,21 +154,88 @@ impl Run {
         self.day += 1;
     }
 
-    /// The role-track rewards a party has unlocked so far (§8.3): a location of track `Y` cleared to
-    /// level `N` unlocks `(Y, 1..=N)`. Generic (Gold) locations mint no reward track. The build is a
-    /// pure function of the clear markers — no currency, no path-dependent budget (§0.1).
+    /// The role-track rewards a party has unlocked so far (§8.3): a location of suit `Y` cleared to
+    /// level `N` unlocks `(Y, 1..=N)`. Generic (Gold) locations mint no reward suit. **De-duplicated**:
+    /// with a per-level ladder (several cards of the same suit), clearing more than one tier — or a
+    /// high tier that subsumes the lower ones — would otherwise emit the same `(suit, level)` twice;
+    /// each unlock is reported once. The build is a pure function of the clear markers (§0.1).
     pub fn unlocked(&self) -> Vec<(Currency, u32)> {
         let mut out = Vec::new();
         for (loc, &lvl) in self.locations.iter().zip(&self.cleared) {
             if loc.currency == Currency::Gold {
-                continue; // generic locations are not a reward track (§8.5)
+                continue; // generic locations are not a reward suit (§8.5)
             }
             for level in 1..=lvl {
-                out.push((loc.currency, level));
+                let reward = (loc.currency, level);
+                if !out.contains(&reward) {
+                    out.push(reward);
+                }
             }
         }
         out
     }
+}
+
+/// The five reward **suits**, in canonical order — the grind tracks (Gold is the generic, non-reward
+/// suit, §8.5, excluded). Each appears as five level cards in [`base_locations`].
+pub const REWARD_SUITS: [Currency; 5] = [
+    Currency::Iron,
+    Currency::Silver,
+    Currency::Brass,
+    Currency::Bone,
+    Currency::Salt,
+];
+
+/// The **25 base grind locations** (§8.3): one card per `(suit, level)`, five reward suits × levels
+/// `1..=5` — the experience-grind base. Each card is a single-tier clear whose `max_level` *is* its
+/// level, so clearing it grants that suit's rewards `1..=level` cumulatively: a higher card **subsumes
+/// the lower ones** (they become skippable, though difficulty + travel cost discourage leaping ahead).
+/// Order is suit-major (Iron L1..L5, Silver L1..L5, …); coordinates are placeholders until placed by
+/// [`place_on_grid`].
+pub fn base_locations() -> Vec<Location> {
+    let mut out = Vec::with_capacity(25);
+    for suit in REWARD_SUITS {
+        for level in 1..=5u32 {
+            out.push(Location {
+                name: format!("{} L{level}", suit.label()),
+                coord: Coord::new(0, 0),
+                currency: suit,
+                max_level: level,
+            });
+        }
+    }
+    out
+}
+
+/// Place up to 25 `locations` onto a shuffled **5×5 grid**, deterministically by `seed` — so a world
+/// is **reproducible** (a reference/test scenario passes a fixed seed for a predictable layout, like
+/// the combat seed). Only coordinates are assigned; card *order* is preserved. A seeded Fisher–Yates
+/// shuffle of the 25 cells picks each card's cell. Panics if `locations.len() > 25`.
+pub fn place_on_grid(mut locations: Vec<Location>, seed: u64) -> Vec<Location> {
+    assert!(
+        locations.len() <= 25,
+        "a 5x5 grid holds at most 25 locations"
+    );
+    let mut cells: Vec<Coord> = (0..5)
+        .flat_map(|row| (0..5).map(move |col| Coord::new(col, row)))
+        .collect();
+    let mut rng = Rng::new(seed);
+    for i in (1..cells.len()).rev() {
+        cells.swap(i, rng.below(i + 1));
+    }
+    for (loc, cell) in locations.iter_mut().zip(cells) {
+        loc.coord = cell;
+    }
+    locations
+}
+
+/// Build a **base grind run**: the 25 `(suit, level)` cards on a seeded random 5×5 grid. `objective`
+/// and `start` index [`base_locations`] order (suit-major). The full grid is 4-connected, so every
+/// card is reachable for **any** seed; the seed only permutes *where* each card sits (and thus travel
+/// distances / par). Scenario-specific special locations are layered on top of this base elsewhere.
+pub fn base_grind_run(seed: u64, objective: usize, start: usize, party: usize) -> Run {
+    let locations = place_on_grid(base_locations(), seed);
+    Run::new(Layout::Grid, locations, objective, start, party)
 }
 
 #[cfg(test)]
@@ -234,6 +302,80 @@ mod tests {
                 (Currency::Iron, 4),
                 (Currency::Iron, 5),
             ]
+        );
+    }
+
+    #[test]
+    fn base_locations_are_25_one_card_per_suit_per_level() {
+        let locs = base_locations();
+        assert_eq!(locs.len(), 25);
+        for suit in REWARD_SUITS {
+            assert_ne!(suit, Currency::Gold, "the grind suits exclude Gold");
+            for level in 1..=5 {
+                assert!(
+                    locs.iter()
+                        .any(|l| l.currency == suit && l.max_level == level),
+                    "missing {} L{level}",
+                    suit.label()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn clearing_a_higher_card_subsumes_the_lower_ones() {
+        // Iron L4 cleared alone ⇒ Iron 1..=4 unlocked; the lower Iron cards are never needed, and L5
+        // is not granted. (Suit-major order: Iron is index 0..5, so Iron L4 is index 3.)
+        let mut run = base_grind_run(1, 24, 0, 1);
+        let iron_l4 = 3;
+        assert_eq!(run.locations[iron_l4].currency, Currency::Iron);
+        assert_eq!(run.locations[iron_l4].max_level, 4);
+        run.record_clear(iron_l4, run.locations[iron_l4].max_level);
+        let unlocked = run.unlocked();
+        for level in 1..=4 {
+            assert!(unlocked.contains(&(Currency::Iron, level)));
+        }
+        assert!(!unlocked.contains(&(Currency::Iron, 5)));
+    }
+
+    #[test]
+    fn unlocked_dedups_across_a_suits_ladder() {
+        // Clearing both Iron L2 (index 1) and Iron L4 (index 3) yields the cumulative union once —
+        // no duplicate (Iron, 1) / (Iron, 2).
+        let mut run = base_grind_run(1, 24, 0, 1);
+        run.record_clear(1, run.locations[1].max_level);
+        run.record_clear(3, run.locations[3].max_level);
+        let unlocked = run.unlocked();
+        assert_eq!(
+            unlocked
+                .iter()
+                .filter(|&&x| x == (Currency::Iron, 1))
+                .count(),
+            1,
+            "each unlock appears once"
+        );
+        for level in 1..=4 {
+            assert!(unlocked.contains(&(Currency::Iron, level)));
+        }
+    }
+
+    #[test]
+    fn grid_placement_is_seeded_reproducible_and_full() {
+        let coords = |r: &Run| r.locations.iter().map(|l| l.coord).collect::<Vec<_>>();
+        let a = base_grind_run(7, 24, 0, 1);
+        let b = base_grind_run(7, 24, 0, 1);
+        let c = base_grind_run(8, 24, 0, 1);
+        assert_eq!(coords(&a), coords(&b), "same seed ⇒ identical layout");
+        assert_ne!(coords(&a), coords(&c), "different seed ⇒ different layout");
+        // Every card sits on its own cell, all within the 5×5 grid (25 distinct cells).
+        let mut cells = coords(&a);
+        cells.sort_by_key(|c| (c.row, c.col));
+        cells.dedup();
+        assert_eq!(cells.len(), 25, "every card on a distinct cell");
+        assert!(
+            a.locations
+                .iter()
+                .all(|l| (0..5).contains(&l.coord.col) && (0..5).contains(&l.coord.row))
         );
     }
 }

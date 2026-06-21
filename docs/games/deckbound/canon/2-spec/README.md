@@ -1389,6 +1389,16 @@ atomic reward assigned at unlock; combat enforces the §4.4 cap + positional gat
 **Suit** (§8.5) → the **threat deck** it draws from, §8.4) but does **not** start a fight.
 Movement is **one adjacent space per Day** (§8.2). *(Travel cost / risk beyond this is deferred.)*
 
+**The grind base — 25 location cards.** The §8.3 reward set is the world's **experience-grind base**:
+**one location card per `(Suit, level)`** — five Suits × five levels = **25 cards**, each a single-tier
+clear that grants its Suit's rewards `1..=level` (a higher card **subsumes** the lower ones, so they
+are skippable — difficulty + travel cost are what discourage leaping ahead). The base set tiles a
+**5×5 grid**, placed by a **seed** the world is created with (so a layout is reproducible and a
+reference/test scenario is predictable — the seed is a world-creation parameter alongside the combat
+seed; the full grid is always connected, so every card is reachable for any seed). A game uses **some
+subset of the 25** (usually all) plus **scenario-specific special locations** whose treasures sit
+*outside* the 25-card base and change play more dramatically.
+
 **WHY.** Cards-only (#7); a face-down map makes scouting a push-your-luck act (#2) and is the engine
 of doom-to-mastery (#5 — you learn a place by going there); a pawn on a map is a clean metaphor (#9).
 
