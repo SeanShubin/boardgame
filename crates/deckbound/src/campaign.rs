@@ -582,23 +582,48 @@ pub fn reference_campaign() -> CampaignState {
     }
 }
 
-/// A first-cut **threat recipe** for a suit's ladder (§8.4): a swarm whose **count grows with the
-/// location's level** (`count = level` Husks), so a `(suit, level)` card is harder the deeper you go.
-/// One recipe per suit, cloned to that suit's five level cards; the location's level is the dial. A
-/// deliberately *generic, gentle* curve — winnable by the accreting guided party so there is a baseline
-/// par to **measure**. The suit-specific "tutorial" encounters (each best solved by its own suit's
-/// powers) and the real difficulty gating are the next refinement, driven by the balance harness.
+/// A **tutorial threat recipe** for a suit's ladder (§8.4): each suit's roster builds the *situation*
+/// its powers are the answer to, so a location teaches its suit (§8.3). The location's **level** is the
+/// difficulty dial (counts grow with it). One recipe per suit, cloned to that suit's five level cards.
+///
+/// - **Iron / Wall** — *hold the line*: an aggressive melee charge (`count = level` Husks) to intercept
+///   and hold.
+/// - **Silver / Infiltrator** — *slip & assassinate*: a dangerous ranged caster behind a thin guard;
+///   slip past and kill it (a Seer + a growing Husk front).
+/// - **Brass / Artillery** — *thin from range*: a **wide** front best cleared by AoE/ranged fire.
+/// - **Bone / Controller** — *debuff the threat*: a fast raider, far easier once slowed / staggered.
+/// - **Salt / Support** — *outlast*: an attrition fight (a fear caster + a chipping swarm) survived by
+///   healing.
+///
+/// Counts are kept gentle so the accreting guided party (Iron fought weakest, Salt strongest) wins and
+/// yields a par to **measure**; the precise difficulty gating is the balance harness's job to tune.
 fn grind_encounter(suit: Currency, level_name: &str) -> EncounterCard {
+    use crate::encounter::RosterEntry;
+    let husks = |base, growth| RosterEntry {
+        creature: "Husk".into(),
+        from_level: 1,
+        base,
+        growth,
+    };
+    let solo = |creature: &str| RosterEntry {
+        creature: creature.into(),
+        from_level: 1,
+        base: 1,
+        growth: 0,
+    };
+    let foes = match suit {
+        Currency::Iron => vec![husks(1, 1)], // L1:1 .. L5:5 — the charge to hold
+        Currency::Silver => vec![solo("Seer"), husks(0, 1)], // Seer prize + L−1 guard Husks
+        Currency::Brass => vec![husks(2, 1)], // L1:2 .. L5:6 — a wide front for AoE
+        Currency::Bone => vec![solo("Raider"), husks(0, 1)], // a fast raider + L−1 Husks
+        Currency::Salt => vec![solo("Seer"), husks(1, 1)], // fear caster + L chipping Husks
+        Currency::Gold => vec![husks(1, 1)],
+    };
     EncounterCard {
         name: format!("{} {level_name}", suit.label()),
         currency: suit,
         strategy: "aggressor".into(),
-        foes: vec![crate::encounter::RosterEntry {
-            creature: "Husk".into(),
-            from_level: 1,
-            base: 1,
-            growth: 1, // count = level
-        }],
+        foes,
         scaling: crate::form::StatCard::default(),
     }
 }
@@ -703,6 +728,37 @@ mod tests {
         );
         assert_eq!(s.run.unlocked().len(), 25, "all 25 rewards acquired");
         println!("grind base par (guided): {} days", s.run.day + 1);
+    }
+
+    #[test]
+    fn tutorial_encounters_are_suit_specific() {
+        // Each suit's roster builds its own lesson, not a generic swarm (§8.3 tutorials).
+        let names = |suit| {
+            grind_encounter(suit, "L5")
+                .roster(5)
+                .into_iter()
+                .map(|(n, _)| n)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            names(Currency::Silver).contains(&"Seer".to_string()),
+            "Silver teaches slipping to assassinate a caster"
+        );
+        assert!(
+            names(Currency::Bone).contains(&"Raider".to_string()),
+            "Bone teaches debuffing a fast threat"
+        );
+        let total = |suit, lvl| {
+            grind_encounter(suit, "Lx")
+                .roster(lvl)
+                .into_iter()
+                .map(|(_, c)| c)
+                .sum::<u32>()
+        };
+        assert!(
+            total(Currency::Brass, 5) > total(Currency::Iron, 5),
+            "Brass fields a wider front than Iron — the AoE lesson"
+        );
     }
 
     #[test]
