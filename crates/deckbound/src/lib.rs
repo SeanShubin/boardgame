@@ -1,12 +1,13 @@
 //! Deckbound — the cooperative card-combat game, as an [`engine::Game`].
 //!
-//! Combat is a sequence of **rounds** built on the documented model: three aspects
-//! (Body/Mind/Spirit), the cut→bar→pool defense (`stats`), data-driven action/effect
-//! cards (`cards`), the card-based **Clash** (Strike/Throw/Parry/Evade + Charge/Recover)
-//! as the engagement atom (`duel`), and a round loop with Tempo/Focus budgets, overflow
-//! free-hits, the gauntlet, and AoE (`combat`). Actors are Characters (human) or Creatures
-//! (scripted). No Bevy dependency, so it's unit-testable and seed-reproducible; the
-//! `tabletop` plugin renders it. All numbers live in `data/booklet.ron`.
+//! Combat is a sequence of **rounds** built on the documented model: two defense channels —
+//! outer **Body** and inner **Fear/Spirit** — each resolved cut→bar→pool, only Body with a pool
+//! (`stats`); data-driven action/effect cards (`cards`); the **charge-and-gauntlet** battle on a
+//! single **Tempo** budget, with overflow free-hits, the gauntlet, and AoE (`combat`); and an
+//! optional four-card **Clash** mix-up (Strike/Anticipate/Gather/Evade + Force) that replaces a
+//! same-range trade (`duel`). Actors are Characters (human) or Creatures (scripted). No Bevy
+//! dependency, so it's unit-testable and seed-reproducible; the `tabletop` plugin renders it. All
+//! numbers live in `data/booklet.ron`.
 
 pub mod actor;
 pub mod balance;

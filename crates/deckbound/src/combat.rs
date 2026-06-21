@@ -8,7 +8,7 @@ use crate::duel::Strike;
 use crate::stats::{Break, Channel, DamageType, Offense};
 
 /// The attack magnitude an actor brings to a damage type's **channel**: an outer (Body) strike scales
-/// off **Strike** (`power`), an inner (Fear) strike off **Spirit** — the two channels' parallel attack
+/// off **Strike** (`power`), an inner (Fear) strike off **Dread** — the two channels' parallel attack
 /// stats (Spec §2.2 / §2.4). Card power and round buffs add on top.
 fn channel_attack(off: Offense, dtype: DamageType) -> u32 {
     match dtype.channel() {
@@ -395,7 +395,7 @@ pub fn play_card(
         match *effect {
             Effect::Damage { power, dtype } => {
                 // The damage type's channel selects the attack stat: outer strikes scale off Strike
-                // (`power`), inner (Fear) strikes off **Spirit** (§2.2 parallel channels). Card power adds.
+                // (`power`), inner (Fear) strikes off **Dread** (§2.2 parallel channels). Card power adds.
                 let raw = channel_attack(attacker, dtype) + power;
                 let alive: Vec<usize> = living(foes);
                 for ti in alive.into_iter().take(n) {
