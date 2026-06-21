@@ -18,6 +18,7 @@ pub mod encounter;
 pub mod form;
 pub mod game;
 pub mod reference;
+pub mod ruleset;
 pub mod scenarios;
 pub mod solver;
 pub mod state;

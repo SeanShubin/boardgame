@@ -7,7 +7,8 @@ use engine::{Game, Outcome, PlayerId};
 
 use crate::actor::{Actor, Range};
 use crate::duel::Move;
-use crate::game::{Action, Deckbound, battle_state};
+use crate::game::{Action, Deckbound, battle_state_with};
+use crate::ruleset::Ruleset;
 use crate::state::{Phase, State};
 
 /// Hard cap on decision steps, so a degenerate scenario (no one can damage anyone) returns rather
@@ -15,11 +16,23 @@ use crate::state::{Phase, State};
 const MAX_STEPS: usize = 100_000;
 
 /// Auto-resolve a PvE battle headlessly (Clash off → deterministic): the party (`heroes`) vs
-/// `foes`. `Some(true)` = heroes win, `Some(false)` = heroes fall, `None` = it never resolved
-/// (a degenerate stalemate — surfaces as a balance/AI bug rather than a silent result).
+/// `foes`. `Some(true)` = heroes win, `Some(false)` = heroes fall **or draw** (a draw is no different
+/// from a loss in PvE), `None` = it never resolved (a degenerate stalemate — a balance/AI bug rather
+/// than a silent result). Runs under the **analysis** [`Ruleset`] (bounded round horizon) so the
+/// combat is finite, matching how the balance tooling sets up games (§0).
 pub fn auto_resolve(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64) -> Option<bool> {
+    auto_resolve_with(heroes, foes, seed, Ruleset::analysis())
+}
+
+/// As [`auto_resolve`], but with an explicit [`Ruleset`] (round/roster bounds).
+pub fn auto_resolve_with(
+    heroes: Vec<Actor>,
+    foes: Vec<Actor>,
+    seed: u64,
+    ruleset: Ruleset,
+) -> Option<bool> {
     let game = Deckbound;
-    let mut state = battle_state(heroes, foes, false, seed);
+    let mut state = battle_state_with(heroes, foes, false, seed, ruleset);
     for _ in 0..MAX_STEPS {
         if let Some(outcome) = game.outcome(&state) {
             return Some(matches!(outcome, Outcome::Win(PlayerId(0))));

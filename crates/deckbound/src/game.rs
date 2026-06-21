@@ -13,6 +13,7 @@ use crate::actor::{Actor, Range};
 use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
+use crate::ruleset::Ruleset;
 use crate::scenarios::{self, Scenario};
 use crate::state::{Clash, Menu, Phase, Round, State};
 
@@ -82,6 +83,7 @@ fn menu_state(seed: u64) -> State {
         outcome: None,
         clash_module: false,
         pvp: false,
+        ruleset: Ruleset::default(),
         campaign: None,
     }
 }
@@ -166,11 +168,25 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
 
 /// Build a battle [`State`] directly from explicit rosters — for **headless auto-resolution** (the
 /// par-solver, §8). `clash` selects the optional RPS module; **off → deterministic** (§4.2), so a
-/// greedy hero policy can play the battle to an `Outcome`. No `Scenario` is attached.
+/// greedy hero policy can play the battle to an `Outcome`. No `Scenario` is attached. Uses the live
+/// [`Ruleset::default`]; analysis callers want [`battle_state_with`].
 pub fn battle_state(heroes: Vec<Actor>, creatures: Vec<Actor>, clash: bool, seed: u64) -> State {
+    battle_state_with(heroes, creatures, clash, seed, Ruleset::default())
+}
+
+/// As [`battle_state`], but with an explicit [`Ruleset`] (the pre-game round/roster bounds). Analysis
+/// tooling passes [`Ruleset::analysis`] so the combat tree is finite and exactly searchable (§0).
+pub fn battle_state_with(
+    heroes: Vec<Actor>,
+    creatures: Vec<Actor>,
+    clash: bool,
+    seed: u64,
+    ruleset: Ruleset,
+) -> State {
     let nh = heroes.len();
     let nf = creatures.len();
     let mut state = menu_state(seed);
+    state.ruleset = ruleset;
     state.heroes = heroes;
     state.creatures = creatures;
     state.round = 1;
@@ -354,10 +370,14 @@ impl Deckbound {
     }
 
     fn next_round(&self, state: &mut State) {
-        // Termination backstop: a fight that neither side can close is a draw.
-        if state.round >= 100 {
+        // Round cap (§0 Ruleset): a fight not closed within `max_rounds` is a **draw** (PvE: a draw is
+        // no different from a loss). Live play caps high (the historical backstop); analysis bounds it
+        // low (e.g. 5) so the combat tree is finite and the win/lose question is horizon-terminal.
+        if state.round >= state.ruleset.max_rounds {
             state.outcome = Some(Outcome::Tie(vec![PlayerId(0), PlayerId(1)]));
-            state.log.push("The battle grinds to a standstill.".into());
+            state
+                .log
+                .push("The battle reaches the round cap — a draw.".into());
             return;
         }
         for a in state.heroes.iter_mut().chain(state.creatures.iter_mut()) {
@@ -2009,6 +2029,32 @@ mod tests {
         assert!(
             s.heroes[0].tempo > tempo_before,
             "Brace's Guard Tempo persists into the gauntlet"
+        );
+    }
+
+    /// §0 Ruleset: reaching the round cap ends an unfinished fight as a **draw** (which, in PvE, is no
+    /// different from a loss). The cap is a pre-game parameter, not a fixed law.
+    #[test]
+    fn the_round_cap_draws_an_unfinished_fight() {
+        let game = Deckbound;
+        let hero = scenarios::build_character("Novice", &[]);
+        let foe = scenarios::build_character("Husk", &[]);
+        let mut s = battle_state_with(
+            vec![hero],
+            vec![foe],
+            false,
+            1,
+            Ruleset {
+                max_rounds: 3,
+                max_unique_per_side: 5,
+            },
+        );
+        assert!(s.outcome.is_none());
+        s.round = 3; // sitting at the cap, with the fight unfinished
+        game.next_round(&mut s);
+        assert!(
+            matches!(s.outcome, Some(Outcome::Tie(_))),
+            "reaching the round cap is a draw"
         );
     }
 

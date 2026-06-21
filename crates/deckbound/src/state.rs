@@ -11,6 +11,7 @@ use engine::{Outcome, Rng};
 
 use crate::actor::Actor;
 use crate::campaign::CampaignState;
+use crate::ruleset::Ruleset;
 use crate::scenarios::Scenario;
 
 /// Which menu page is showing.
@@ -120,6 +121,10 @@ pub struct State {
     pub clash_module: bool,
     /// True when this is a hotseat PvP scenario (both sides human, §3.4).
     pub pvp: bool,
+    /// Pre-game tuning parameters (§0 separable balance) — the round/roster bounds, set once before
+    /// the battle like the seed and the Clash module. Live play uses [`Ruleset::default`]; analysis
+    /// tooling uses [`Ruleset::analysis`]. See [`crate::ruleset`].
+    pub ruleset: Ruleset,
     /// When `Some`, the menu launched the **world-map Campaign** (§8); the [`Deckbound`] game
     /// delegates to it. Boxed because the campaign embeds combat `State`s (its battles).
     ///

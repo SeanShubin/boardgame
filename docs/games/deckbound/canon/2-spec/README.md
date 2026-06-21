@@ -178,6 +178,47 @@ harness — is a pending build (a Rust crate or `examples/` program, never an ad
 core balance leans on the reference-scenario checks. No `TERM` encyclopedia lines: these are
 **designer** invariants, not player vocabulary.)*
 
+### 0.4 The analysis envelope — bounding for solvability 🟡
+
+**RULE.** Two of combat's bounds are **pre-game parameters**, not fixed laws — set once before a battle
+like the seed and the Clash module, and carried in the **`Ruleset`** (`ruleset.rs`):
+- a **round cap** — reaching it ends the fight as a **draw** (in PvE, a draw is no different from a
+  loss given current mechanics); and
+- a **roster cap** — the max distinct unit *types* per side, where a **swarm counts as one** (identical
+  instances are symmetric).
+
+Live play uses `Ruleset::default()` (effectively unbounded — the historical termination backstop, §1.6
+/ §4). **Analysis tooling uses `Ruleset::analysis()`** (a short horizon — currently 5 rounds — and a
+small roster — 5 types). The bounded envelope is what makes optimal single-combat play **finite and
+exactly searchable**: with a hard round horizon whose leaf is *terminal by rule*, there is nothing to
+estimate — backward induction is exact, with **no evaluation heuristic** (the usual source of
+"strong-but-not-perfect"). The roster cap (with swarm-as-one symmetry) bounds per-round branching.
+
+**WHY.** §0.1 says the core is computable *in principle*; this is the lever that makes it computable *in
+practice*. The horizon collapses depth and removes the convergence/backstop reasoning; the draw-on-cap
+rule makes the PvE objective a clean boolean ("winnable within the horizon?"), so a perfect player is a
+bounded reachability search rather than an open-ended optimizer. In the game-theoretic modes (PvP,
+Clash, a simultaneous auction) the same bounds shrink each hidden-simultaneous commit to a *small matrix
+game* solvable by LP, so backward induction over the bounded horizon computes the equilibrium.
+
+**GUARANTEES.**
+- The round/roster bounds are **parameters**, defaulting to unbounded live play; only the *analysis*
+  setup imposes the short envelope, so live balance/behaviour is unchanged by their existence.
+- Bounding gives **finiteness / tractability**, which is **orthogonal to rule completeness**: the solver
+  still optimizes a *concrete* rule-set, so the §4 open dials (the escalating auction's form, the
+  multi-intercept cap, charge-order threading) must be pinned (or the v1 code semantics ratified) before
+  "perfect" means *perfect at the designed game*.
+- The envelope doubles as a **design assertion**: every intended encounter is winnable within the
+  horizon under optimal play; one that is not is **mis-tuned** (too grindy), not merely "hard". A
+  not-enforced cap means a cap-draw verdict reads as "violates the round-horizon design target", not
+  "the unbounded game cannot win it". *(Empirically the reference campaign resolves within **3** rounds
+  under the greedy resolver — comfortably inside the 5-round envelope, so the bound is non-disruptive
+  today.)*
+
+*(SEEDED — no `TERM` lines: a **designer/analysis** invariant, not player vocabulary. The `Ruleset`
+exists in code; the par-solver that consumes the envelope is the pending build of §0.3 /
+`computability-and-balance.md`.)*
+
 ---
 
 ## 1. The Clash — *the tactical core* ✅
