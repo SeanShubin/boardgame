@@ -619,9 +619,9 @@ yet specced. Numbers live in `booklet.ron`.)*
 **RULE.** A character has **no stats on its identity card** — it is a **bare Actor** (a name and a
 map token, §8.1). **Every stat is read off its deck**, from the **Form** zone (§5.2): a
 **fundamental card** sets the base, **attachment** cards modify each dimension. So §2.1's "passive
-stats read off the table" — **Armor, Ward, Toughness, Resolve**, and likewise **Speed, Power** — are
+stats read off the table" — **Armor, Ward, Toughness, Resolve**, and likewise **Speed, Drive, Power** — are
 **Form-derived**, never authored fields. The **Body Health pool** is a **count × value** Form pool
-(Body × Toughness); the **Tempo pool** is a plain count of action cards (Speed) (§5.5).
+(Body × Toughness); the **Tempo pool** is **Speed × Drive** — Speed-many cards each worth Drive (§5.5).
 
 **WHY.** "The deck *is* the character" (#8) made literal: it removes a redundant authored stat-block,
 so *getting stronger = adding cards* (the Upgrade economy, §8.3), and **§2.1's "read it off the
@@ -635,46 +635,73 @@ specialization = accreted attachments (§8.5).
 
 ---
 
-## 3. Speed/Tempo — *the breadth budget* 🟡
+## 3. Speed · Drive · Tempo — *the breadth budget* 🟡
 
 Design source: [`notes/speed-and-tempo.md`](../notes/speed-and-tempo.md).
 
-> **Merged (2026-06-20).** What were **two** breadth budgets — Tempo (initiative) and Focus (reaction) —
-> are now **one pool: Tempo**, which pays for **both** offense and **defense** (§4). **Mind and the
-> Focus pool are removed.** §3.2 below is retired (kept as a stub); the surviving rule is §3.1. Tempo is
-> a plain **action economy** — a pool of **Speed** action cards (each = 1, no value dimension); run out
-> and you can't act. *(This §3 still carries old duel-model phrasing in its prose; its core — one capped
-> breadth pool, pay-after, cannon/wall — is intact, fuller reconciliation pending with the §4 code
-> migration.)*
+> **Locked 2026-06-20.** The breadth economy is the three terms below, ratified together. Earlier forms
+> (two pools Tempo/Focus; a per-target-Speed cost; a value-less Tempo) are superseded — see the §3.2–3.4
+> history banners. This section is the **single canonical home** for what Speed, Drive, and Tempo are;
+> any change that makes one of these three words do another's job has broken the concept (the GUARANTEES
+> are the tripwires).
 
-Tempo is **pure breadth** — it decides *which exchanges you are a full participant in*, never *which
-cards you hold* (the kit is always complete, §1.0). One pool spent on **initiative** (the gauntlet,
-striking, firing) **and reaction** (turning an incoming blow into a clash), so being aggressive and
-being defensible **compete for the same budget** (the cannon/wall allocation, §4). It is a plain action
-count, **hard-capped by Speed**; each spend costs Tempo, and running out ends your actions.
+Two permanent **Form** stats size one round-scoped **pool of cards** — the same shape as Health
+(Body × Toughness → Health):
 
-### 3.1 Tempo — admission to the duels you start
+- **Speed** — *count*: how many **Tempo** cards you start each combat round with.
+- **Drive** — *grade*: the magnitude printed on each of those cards.
+- **Tempo** — the *pool*: Speed-many cards, each worth Drive, flipped face-down to spend and rebuilt
+  fresh each round. **Spent cards stay spent for the whole round.**
 
-**RULE.** **Speed** is a fixed stat; it sizes your **Tempo** pool (= Speed, refreshed each
-round) and is the **price others pay** to engage you. Spend Tempo to **initiate a duel** (cost
-= the foe's Speed): inside you have your full kit and **results stick** — you can damage or
-kill. **Counterattacking** a duel started on you also costs Tempo (§3.2), so **every kill —
-initiated or countered — draws from this one pool**. Pay-**after**: you may take the action
-that drives Tempo **negative** (so even a fighter too slow to afford a foe still gets one
-action); that action is your **last** for the round. Speed sets budgets and thresholds only —
-it **never** sets resolution order (§1.9).
+### 3.1 What Tempo and Drive do
 
-**WHY.** A single capped offense pool keeps kill output on one tunable dial — the linchpin of
-the god ≈ party-total budget (a god clears at most Tempo-many foes, never farming extra kills
-off defense). Pay-after guarantees the slow fighter an action and makes the **negative line,
-not zero, the wall**.
+**RULE.** **Flipping a Tempo card gates every action** — intercept, engage, strike, strike back. Run
+out of face-up Tempo and you can do nothing more this round (so what you pour into the gauntlet is gone
+before the exchanges).
 
-**GUARANTEES.**
-- Kill output is capped at one pool (Tempo) — which now also pays for defense (one shared budget).
-- Tempo is re-derivable from Speed minus visible spends (no token needed).
-- Speed sizes the budget / sets thresholds, never initiative or who-goes-first.
+**Drive's magnitude does real work in exactly one place — a gauntlet *crossing* (§4).** When a runner
+tries to slip past an interceptor, the two hold an **open, escalating Drive auction**: each may keep
+flipping Tempo cards, adding that card's Drive to its committed total for *this* crossing; either may
+stop; **the higher total wins, ties to the catcher** (caught → stopped; runner strictly higher → slips
+by). The committed total **resets at the next opponent**, but the spent cards **do not** return — so
+catching or slipping past *more* foes, or *harder* ones, drains more Tempo. **Catching a runner is the
+same as engaging it** — the cards spent to catch it pay for the exchange; you never pay twice.
 
-- **TERM.** `Tempo` (Resources) — Your one breadth pool, spent to **act** (charge, slip, intercept, skirmish-strike, fire) **and to defend** (turn an incoming melee blow into a clash, else a free hit) (§4). A plain action economy: a pool of **Speed** action cards (each = 1); flip to spend; run out and you can't act. Refreshes each round.
+**Everywhere else, Drive's number is irrelevant — only the flip counts.** An **exchange** (a strike) is
+**single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Drive
+(Drive sizes a crossing, never a blow). An enemy can only attack you by **spending a Tempo card**, and
+that attack is Drive-independent. You may **reflexively strike back** at anyone who strikes you in melee
+(position is irrelevant — they came to you), but striking back is an action: it costs **one** Tempo
+card, and with none to flip you simply **take the hit** (a free hit). *(Ranged fire is one-sided — you
+cannot strike back at a Reserve that did not come to you — except in the no-charge open brawl, where two
+ranged foes exchange if both spend a card, or where a card grants an exception, §4.2.)*
+
+**WHY.** One pool for act-and-defend makes the cannon/wall axis a live **allocation** (spend it
+attacking and you cannot answer a skirmisher) rather than a second stat. Splitting the pool into
+**count (Speed)** and **grade (Drive)** gives two clean power dimensions that mean different things:
+**Speed = how many crossings/actions you get; Drive = how cheaply you win each crossing.** Confining
+Drive to the crossing keeps a strike's force on Power (not on how hard you shoved through the line), and
+the per-round depletion is the tension — run the gauntlet hard and you are spent for the exchanges (#2
+opportunity cost).
+
+**GUARANTEES.** *(the tripwires — break one and the concept no longer holds)*
+- **Speed = count**, **Drive = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
+  Speed-many at Drive each, spent within a round and refreshed between rounds.
+- **Drive's magnitude affects only a gauntlet crossing** (an escalating auction, ties to the catcher);
+  it never scales a strike, an attack, or anything outside a crossing.
+- **Every action is one Tempo card** (intercept, engage, strike, strike back); **catching = engaging**
+  on the same cards; an exchange is single-card and Drive-blind.
+- **Spent Tempo does not return until the round refresh** — gauntlet spending is unavailable for later
+  exchanges (the depletion tension); a *crossing's committed total* resets per opponent, the *pool*
+  does not.
+- **Reflexive strike-back is always available against a melee attacker** for one Tempo card; no card → a
+  free hit. Ranged is one-sided save the no-charge open brawl / a card exception.
+
+**Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
+
+- **TERM.** `Speed` (Resources) — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
+- **TERM.** `Drive` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a gauntlet crossing, where both sides flip Tempo cards and the higher committed Drive wins (ties to the catcher). A strike is the same whatever its Drive.
+- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Drive**. Flip one to take any action (intercept, engage, strike, strike back); spent cards stay spent until the round refreshes. Run out and you can't act.
 
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
@@ -763,19 +790,19 @@ phase.
 > the lane model — a defect to fix, `/spec-sync §4`). Old text is in git history (`role-card-redesign`
 > and the combat-redesign commit record the rationale).
 
-**The budget (one pool).** **Tempo = the initiative to act *and* react** — spent to **move** (charge,
-slip, intercept), to **strike** (skirmish, fire), **and to defend** (turn an incoming melee blow into a
-**clash** rather than a **free hit**, §4.2). Tempo is a plain **action economy**: a pool of **Speed**
-action cards (each worth **1** — no value dimension), flipped to spend (face-up = available, face-down =
-spent, §5). **Run out of Tempo and you can't act** (a defense you can't pay for is a free hit);
-**god-tier Tempo handles several enemies at once**. Contests (a slip vs a stop) compare **how many cards
-each side commits**. **Tempo refreshes each round.**
+**The budget (one pool).** **Tempo** is the action economy that gates everything (§3): a `count × value`
+pool of **Speed**-many cards, each worth **Drive**, flipped to spend (face-up = available, face-down =
+spent, §5). **Flip a card to act** — charge, slip, intercept, strike, fire, *or* defend (turn an
+incoming melee blow into a **clash** rather than a **free hit**, §4.2). **Run out and you can't act.**
+**Tempo refreshes each round.** **Drive's magnitude matters in exactly one place — a gauntlet crossing**
+(an escalating Drive auction, §3 / below); every other action is one Drive-blind card.
 
 Because the **same pool pays for offense *and* defense**, the **cannon/wall axis is an allocation
-choice**, not a second stat: pour Tempo into charging and striking and you have little left to answer a
-skirmisher; hold it back and you survive but do less. (There is **no separate Focus/Mind pool** —
-**merged 2026-06-20**; defending is a Tempo spend.) The **Health** pool keeps its **`count × value`**
-form (Body × Toughness — there the value gates damage); **Tempo is a simple count** (Speed).
+choice**, not a second stat: pour Tempo into the gauntlet (charging through, or catching runners) and
+you have little left to strike or answer a skirmisher; hold it back and you survive but do less. (There
+is **no separate Focus/Mind pool** — **merged 2026-06-20**; defending is a Tempo spend.) Both pools share
+the **`count × value`** form: **Health = Body × Toughness** (value gates damage, persists), **Tempo =
+Speed × Drive** (value bites in a crossing, refreshes).
 
 **RULE.** The three roles **emerge from a charge**:
 - **Reserve** — anyone who does **not** charge (holds back; the ranged / support line).
@@ -811,24 +838,21 @@ A round runs **four phases**:
    **less left to fire** — one pool pays for both, so survival and firepower compete (the core Reserve
    squeeze). Resolve damage; then **Refresh** (Tempo resets, Body persists, round++).
 
-**A crossing (the gauntlet's atom).** When two opposing chargers meet, each may spend Tempo to **get
-past** the other or to **stop** the other; resolution is **open** (both flip Tempo cards face-up, in
-view). A unit's Tempo is **one pool** spent across **all** its crossings — there is no fixed
-"blocker": a unit may let one enemy slip by (declining to spend) and still spend remaining Tempo to
-stop the next, **choosing whom to prioritize**. Outcomes:
+**A crossing (the gauntlet's atom).** When two opposing chargers meet, they hold an **open, escalating
+Drive auction** (§3): each may **keep flipping Tempo cards**, adding each card's **Drive** to its
+committed total *for this crossing*; either may stop. **Higher total Drive wins, ties to the catcher.**
+- **Caught** (interceptor's committed Drive ≥ the runner's) → the runner **stops** here; the catch
+  **engages** them (the cards already spent pay for the exchange — no second cost). Both become Vanguard.
+- **Slips** (runner strictly higher) → the runner **advances to the next** enemy in the column.
+- **Barge** (spend nothing, take a **free hit**, keep moving) → the hit lands **before** the next
+  crossing, then the charger advances.
 
-- **Both spend to engage** → a melee **trade** (or a **Clash**, if the module is on, §4.2); **both
-  stop** here (both become Vanguard).
-- **One tries to pass, the other intercepts** → an open **match-to-stop**: the passer must flip
-  **strictly more** Tempo than the interceptor flips to match — **a match stops them.** Stopped → the
-  interceptor lands a hit (or they engage); passed → the passer **advances to the next** enemy in the
-  column.
-- **Barge** (spend nothing, take a **free hit**, keep moving) → the hit lands **before** reaching the
-  next crossing, then the charger advances.
-- **Neither spends** → both **slip past** each other to their next crossings.
-
-A unit that **stopped** stays at its position and **remains an obstacle** for later advancers (Tempo
-permitting); a unit that **broke through** the whole opposing column becomes a **Skirmisher**.
+A unit's Tempo is **one pool** spent across **all** its crossings — there is no fixed "blocker": it may
+let one enemy slip by (declining to spend) and still spend remaining Tempo to catch the next, **choosing
+whom to prioritize**. The committed total **resets each crossing**, but **spent cards do not return** —
+so Tempo poured into the gauntlet is gone before the exchanges (§3 depletion). A unit that **stopped**
+stays at its position and **remains an obstacle** for later advancers (Tempo permitting); a unit that
+**broke through** the whole opposing column becomes a **Skirmisher**.
 
 **Targeting matrix.**
 
@@ -889,16 +913,17 @@ threaten their back you must expose your front.
   optional Clash.
 - **Confluent resolution:** deterministic given the charge; order-independent except across an
   interception, whose outcome is itself determined.
-- **Two pools:** **Health** (Body × Toughness — `count × value`, persists) and **Tempo** (Speed — a
-  plain action count, refreshes). **Tempo pays for offense *and* defense** (charge / slip / intercept /
-  skirmish / fire, *and* answering a melee blow), so the cannon/wall axis is an allocation choice, not a
-  separate stat. (No Focus/Mind pool — merged.)
+- **Two pools, both `count × value`:** **Health** (Body × Toughness, persists) and **Tempo** (Speed ×
+  Drive, refreshes). **Tempo pays for offense *and* defense** (charge / slip / intercept / skirmish /
+  fire, *and* answering a melee blow), so the cannon/wall axis is an allocation choice, not a separate
+  stat. **Drive's magnitude bites only in a gauntlet crossing** (§3); a strike is Drive-blind. (No
+  Focus/Mind pool — merged.)
 
 **MANUAL.** *Secretly pick who charges and in what order (an ordered face-down column); reveal together.
-Non-chargers are your Reserve. The two charge-columns thread through each other: at each meeting, flip
-Tempo face-up to stop the enemy or to push past — a match stops, strictly-more gets through; or spend
-nothing and take a free hit to barge on; or both engage and trade. Your Tempo is one pool across all
-your crossings — choose whom to stop. Those who break all the way through are Skirmishers; those who
+Non-chargers are your Reserve. The two charge-columns thread through each other: at each meeting, both
+keep flipping Tempo cards into a **Drive auction** — higher total Drive wins, a tie is caught; or spend
+nothing and take a free hit to barge on. Your Tempo is one pool across all your crossings — choose whom
+to catch (and Tempo spent here is gone for the exchanges). Those who break all the way through are Skirmishers; those who
 stop are your Vanguard. Skirmishers with Tempo left strike the enemy Reserve (it defends by spending
 Tempo to make the blow a clash; no Tempo to spare = a free hit), then the enemy Vanguard. Finally your
 Reserve fire ranged at the enemy front (never their Reserve) — but Tempo spent defending is Tempo you
@@ -912,16 +937,16 @@ can't fire with. No one charges on either side → open brawl.*
 - **TERM.** `Reserve` (Roles) — Anyone who did not charge: decisive but fragile (artillery, support). Fires ranged on the enemy front and aids allies, but can never target the enemy Reserve.
 - **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (intercepts it in the gauntlet); Skirmisher beats Reserve (breaks through to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
 - **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. Breakthroughs become Skirmishers; those who stop become Vanguard.
-- **TERM.** `Slip` (Combat) — At a crossing, push past an enemy instead of stopping: flip strictly more Tempo than they flip to match. A match stops you; spend nothing and you barge past taking a free hit.
+- **TERM.** `Slip` (Combat) — At a crossing, push past an enemy: an open Drive auction where both flip Tempo cards and the higher committed Drive wins — you need strictly more than the catcher to slip; a tie is caught. Spend nothing and you barge past taking a free hit.
 - **TERM.** `Open brawl` (Combat) — If neither side charges, no front forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
 - **TERM.** `Phases` (Round) — Charge (hidden: who runs in, and in what order) → Gauntlet (the columns thread through) → Skirmish (breakthroughs hit the enemy Reserve) → Reserve (ranged fire on the front) → Refresh. Confluent within each phase.
 
 **Still unspecified (open dials — pin before/with implementation).** The structure (charge, gauntlet,
 crossings, the three emergent roles, phases, targeting) is settled; these are not:
 
-1. **Crossing numbers** — the tie rule is set (**a match stops; strictly-more slips**), but the **free
-   hit** magnitude when barging, and whether an **engage/trade** costs one Tempo each or more, need
-   pinning.
+1. **Crossing numbers** — the rule is locked (§3: an **escalating Drive auction**, **ties to the
+   catcher**, **catching = engaging** on the same cards); the **free-hit** magnitude when barging is the
+   remaining number.
 2. **Multi-intercept caps** — a stopped unit can intercept later advancers while Tempo lasts; is there a
    cap, or is it purely Tempo-bounded?
 3. **Charge order semantics** — confirm the column is strictly front-to-back (an advancer meets the
@@ -930,12 +955,12 @@ crossings, the three emergent roles, phases, targeting) is settled; these are no
    costs extra.
 5. **Reserve aid kit** — the buffs / heals / debuffs Reserve deliver — Action cards over the §5 zone
    layer (the aspect/combo layer is deferred — `future-possibilities.md`).
-6. **Pool model — settled.** Two pools: **Health = Body × Toughness** (a `count × value` deck — value
-   gates damage; persists) and **Tempo = Speed** (a plain action count, each card = 1; refreshes).
-   **Focus, Mind, and a Tempo value dimension are removed** — Tempo is just an action economy (run out →
-   can't act; god-tier count → many enemies at once); defense is a Tempo spend (§3.2). Tempo contests
-   compare **card counts**. *(The parked "what does a Tempo card's value do on defense" question is
-   resolved: nothing — there is no Tempo value.)*
+6. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
+   (value gates damage; persists) and **Tempo = Speed × Drive** (refreshes). **Focus and Mind are
+   removed.** Speed = count (how many Tempo cards), **Drive = grade** (per-card magnitude), Tempo = the
+   cards. **Drive's magnitude bites only in a gauntlet crossing** (an escalating Drive auction, ties to
+   the catcher); every other action is one Drive-blind card. *(The earlier "no Tempo value" call is
+   reversed — Drive is the grade, ratified with Speed/Tempo in §3.)*
 
 *(Range/attack dials are resolved by §4.2: "Reserve self-defense" = whether it carries melee; "strike
 shape" = a Clash when attacker and target share the range, an auto-hit when they don't.)*
@@ -1174,11 +1199,11 @@ unbounded; a small tag vocabulary is re-derivable (#6/#10).
 ### 5.5 Resources — Health · Tempo 🟡
 
 **RULE.** Permanent **Form stats size a fluctuating pool** — you spend the pool, never the stats
-(§3.1). There are **two** pools in Active: **Health = Body × Toughness** (a `count × value` card-pile —
-the value gates damage) and **Tempo = Speed** (a plain count of action cards, each = 1). *(Focus, Mind,
-and a Tempo value dimension are removed — merged/simplified 2026-06-20; defense is a Tempo spend.)*
-Spending moves cards to **Down**; they return by **Recover** (or the round refresh). A Tempo contest
-compares **how many cards each side commits**.
+(§3.1). There are **two** `count × value` pools in Active: **Health = Body × Toughness** (the value
+gates damage) and **Tempo = Speed × Drive** (Speed-many cards, each worth Drive). *(Focus and Mind are
+removed — merged 2026-06-20; defense is a Tempo spend.)* Spending moves cards to **Down**; they return
+by **Recover** (or the round refresh). A gauntlet-crossing contest compares the **total Drive each side
+commits** (§3); any other action just spends one card.
 - **Round refresh** *(Tempo)* — at Round end all spent Tempo flips up (re-derived each Round, §2.1) — a
   per-Round budget, not cross-Round attrition.
 - **Heal cards** *(Health)* — Recover Health within a fight.

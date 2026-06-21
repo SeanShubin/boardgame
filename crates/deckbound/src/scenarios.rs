@@ -1122,6 +1122,8 @@ mod tests {
             "Vanguard",
             "The gauntlet",
             "Charge",
+            "Speed",
+            "Drive",
             "Tempo",
             "Trade",
             "The Clash",
@@ -1150,8 +1152,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            17,
-            "expected 17 Spec TERM entries — a marker may have failed to parse"
+            19,
+            "expected 19 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).
