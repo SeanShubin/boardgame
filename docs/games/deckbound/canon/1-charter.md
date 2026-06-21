@@ -168,6 +168,39 @@ boring, plus the closure check that no unnamed strategy dominates) — lives in
 mechanic that touches randomness, foe behaviour, carried state, build growth, or the day
 clock.**
 
+## 12. Roles are the spine; stats serve the roles
+
+The five **Suits** are the unit of design. Each Suit names a **Role** — its function in combat — and the
+**Role, not the stat, is what the game is built around.** Three things follow, and they are binding:
+
+- **Stats are instruments, not first-class.** Every stat exists to give some Role its teeth — Body /
+  Toughness / Armor let the **Wall** hold; Speed / Drive let the **Infiltrator** slip; Strike / Pierce
+  arm the **Artillery**; Spirit / Resolve drive the **Controller**'s fear; the buffs ride the **Support**
+  line. A stat **no Role needs is a defect** — cut it or re-home it. The Roles are **fixed**; the stats
+  are **negotiable** — refactor the stat layer freely whenever it serves the Roles better.
+- **Each Role is uniquely valuable and load-bearing.** For every Role there is a challenge that **cannot
+  be met without it**, so a party whose collective coverage **omits a Role is doomed**. The measure is
+  the **campaign**, not a single fight: an individual conflict may be winnable by one Role alone — indeed
+  a single-Role conflict is a **tutorial** in what that Role can and cannot do (#4 *balance by scenario*;
+  Spec §8.4). No Role is decorative; none is redundant with another.
+- **The Roles differ in kind, not degree.** Each owns a **distinct decision and mechanic** — hold the
+  front / break through / fire from safety / **degrade** the foe / **augment** the ally — never a
+  stat-reskin of another. This is also what makes a **god's role-combos** worth their concentration risk:
+  combining Roles in one round (the per-role play cap, Spec §4.4) only pays if the Roles genuinely
+  differ. If two Roles play the same and differ only in numbers, one of them has failed.
+
+This is the operational sharpening of **#4** (*asymmetry by design, balance by scenario*): #4 says
+fairness comes from the team and the scenario; #12 says **how** — each Role is a *necessary key* that
+some scenario is the *lock* for, and the Roles stay maximally distinct so covering them is a real
+composition problem, not a stat-shopping list. It rests on **#11** (*computable by construction*):
+role-necessity is only a slogan unless the solver can **measure** it — remove a Role's coverage and some
+reference scenario must become unwinnable. And it subordinates the stats to the Roles so the game stays
+**reconstructable from a few intents** (#10): learn five Roles, and the stats fall out as their
+implementation. See Spec §8.5 / §8.6.
+
+*(The solver measures **structural** necessity — that some scenario is unwinnable without a Role. Whether
+a Role *feels* distinct or *fun* stays the human's ratification, as with every balance claim — #11.)*
+
 ---
 
 **Using this document.** Every other design note should trace back to one or more

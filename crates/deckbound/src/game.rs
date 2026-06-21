@@ -1998,7 +1998,7 @@ mod tests {
         use crate::currency::Currency;
         let game = Deckbound;
         let wall = scenarios::build_character("Novice", &scenarios::rewards_for(Currency::Iron));
-        let foe = scenarios::build_character("Husk", &[]);
+        let foe = scenarios::build_creature("Husk");
         let mut s = battle_state(vec![wall], vec![foe], false, 1);
         assert_eq!(s.phase, Phase::Assemble);
         let brace = s.heroes[0]
@@ -2038,7 +2038,7 @@ mod tests {
     fn the_round_cap_draws_an_unfinished_fight() {
         let game = Deckbound;
         let hero = scenarios::build_character("Novice", &[]);
-        let foe = scenarios::build_character("Husk", &[]);
+        let foe = scenarios::build_creature("Husk");
         let mut s = battle_state_with(
             vec![hero],
             vec![foe],

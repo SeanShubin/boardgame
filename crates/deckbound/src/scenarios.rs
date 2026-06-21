@@ -451,6 +451,15 @@ fn reward(cat: &Catalog, id: RewardId) -> Option<&Reward> {
 /// target on the owner's Controller bases.
 pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
     let cat = catalog();
+    // §2.3: build_character is for a *character* (a bare identity that gains the clean-slate baseline
+    // + rewards). A creature prints its own base and must be built with `build_creature` — building it
+    // here would double-count, stacking the clean-slate baseline on top of the printed base.
+    if let Some(c) = cat.actors.iter().find(|a| a.name == base) {
+        debug_assert!(
+            stat_is_empty(&c.base),
+            "build_character('{base}') on an actor with a printed base — use build_creature for creatures (§2.3)"
+        );
+    }
     // §2.3 (locked 2026-06-21): a character's identity card is bare — its clean-slate baseline is a
     // *separate* Form card (the fundamental), never stats printed on the Actor. Creatures keep a
     // printed `base`; a character gets the catalog's `clean_slate` card here.
@@ -482,6 +491,13 @@ pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
     let mut actor = build_actor_with(cat, base, &stats, None);
     actor.actions.extend(role_cards);
     actor
+}
+
+/// Build a **creature** (§2.3 carve-out): a non-progressing foe whose stats are **printed** on its
+/// actor card. Unlike [`build_character`], it receives no clean-slate baseline and no rewards — the
+/// printed `base` *is* its Form, already summed.
+pub fn build_creature(name: &str) -> Actor {
+    build_actor(catalog(), name)
 }
 
 /// All reward ids of a track (its five levels), in level order — the full specialist kit (§8.3),
@@ -1003,9 +1019,10 @@ fn reward_entry(r: &Reward) -> CatalogEntry {
 
 fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let is_hero = a.driver == "hero";
-    // §2.3: a character's identity card is bare, so display its **clean-slate** Form (the baseline
-    // card), not the empty Actor card; a creature shows its printed base.
-    let actor = if is_hero {
+    // §2.3: a *bare-identity* character (empty printed base — the clean-slate Novice) must be built via
+    // build_character so its separate clean-slate baseline card shows. Anything with a printed base —
+    // creatures AND fixed specialist hero kits — displays its printed Form directly.
+    let actor = if stat_is_empty(&a.base) {
         build_character(&a.name, &[])
     } else {
         build_actor(catalog(), &a.name)

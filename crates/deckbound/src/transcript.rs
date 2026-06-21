@@ -28,7 +28,9 @@ use crate::cards::{Card, Effect};
 use crate::currency::Currency;
 use crate::game::{Deckbound, battle_state_with};
 use crate::ruleset::Ruleset;
-use crate::scenarios::{build_character, effect_rule, rewards_for, zone_behavior_rule};
+use crate::scenarios::{
+    build_character, build_creature, effect_rule, rewards_for, zone_behavior_rule,
+};
 use crate::solver::greedy;
 use crate::state::{Phase, State};
 use crate::zones::ZoneBehavior;
@@ -71,9 +73,9 @@ fn rules_tour() -> TranscriptScenario {
         named("Hex", Currency::Bone), // Controller: musters a persistent debuff before the gauntlet
     ];
     let foes = vec![
-        build_character("Brute", &[]), // a wall to be held against / slipped past
-        build_character("Raider", &[]), // a fast charger (the enemy gauntlet)
-        build_character("Seer", &[]),  // a ranged Fear caster (the enemy Reserve)
+        build_creature("Brute"),  // a wall to be held against / slipped past
+        build_creature("Raider"), // a fast charger (the enemy gauntlet)
+        build_creature("Seer"),   // a ranged Fear caster (the enemy Reserve)
     ];
     TranscriptScenario {
         name: "rules-tour",
@@ -184,13 +186,18 @@ fn header(out: &mut String, scn: &TranscriptScenario, seed: u64, state: &State) 
     );
     push_line(out, &format!("          {}", scn.blurb));
     push_line(out, "");
+    push_line(
+        out,
+        "FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (how many) · P Power (each) · §2.4–§2.6",
+    );
+    push_line(out, "");
     push_line(out, "HEROES");
     for a in &state.heroes {
-        push_line(out, &format!("  {}", stat_line(a)));
+        out.push_str(&form_block(a));
     }
     push_line(out, "FOES");
     for a in &state.creatures {
-        push_line(out, &format!("  {}", stat_line(a)));
+        out.push_str(&form_block(a));
     }
 }
 
@@ -201,32 +208,90 @@ fn ruleset_label(r: Ruleset) -> String {
     )
 }
 
-/// One actor's stat block: the numbers that decide the §4 phases (Drive for the gauntlet, Power for
-/// strikes, Speed for the Tempo budget, Body/Resolve/armour for defence).
-fn stat_line(a: &Actor) -> String {
-    let armor = if a.defense.armor.is_empty() {
+/// Decompose `v` into its base-2 **quantifier cards** (the set bits), high to low: `18 → [16, 2]`.
+fn base2_cards(v: u32) -> Vec<u32> {
+    (0..32)
+        .rev()
+        .map(|i| 1u32 << i)
+        .filter(|bit| v & bit != 0)
+        .collect()
+}
+
+/// One suit cell: the quantifier cards summing to `v`, e.g. `16+2 = 18`; `—` when zero.
+fn suit_cell(v: u32) -> String {
+    let cards = base2_cards(v);
+    if cards.is_empty() {
         "—".to_string()
     } else {
-        a.defense
-            .armor
+        let cards = cards
             .iter()
-            .map(|(t, v)| format!("{}{v}", t.label().chars().next().unwrap_or('?')))
+            .map(u32::to_string)
             .collect::<Vec<_>>()
-            .join(",")
-    };
-    format!(
-        "{:8} {:11} Body {}/{}  res {}  spd {}  drv {}  pow {}  armor {}  [{}]",
+            .join("+");
+        format!("{cards} = {v}")
+    }
+}
+
+/// §2.4–§2.6 — an actor's build as the **cards on the table**: every stat is a deck of base-2
+/// quantifier cards, **Quantity** (how many) × **Power** (each), summing to its value. A **pool**
+/// (Body, Tempo) carries both suits; a flat stat carries Power only. This renders what the §2.3 build
+/// card instantiates, so the tabletop representation can be audited directly. (Body shows the full
+/// pool; depletion during play is the maintained meter, §2.1.)
+fn form_block(a: &Actor) -> String {
+    // §2.5 — the build's physical card-cost: how many base-2 quantifier cards it takes (the popcount
+    // of every stat, summed). Each set bit is one card on the table.
+    let pc = |v: u32| v.count_ones();
+    let cards: u32 = pc(a.defense.body.max)
+        + pc(a.defense.body.toughness)
+        + pc(a.offense.speed)
+        + pc(a.offense.drive)
+        + pc(a.offense.power)
+        + pc(a.offense.spirit)
+        + pc(a.offense.precision)
+        + pc(a.defense.resolve)
+        + a.defense.armor.values().map(|v| pc(*v)).sum::<u32>()
+        + a.defense.ward.values().map(|v| pc(*v)).sum::<u32>();
+    let mut out = format!(
+        "  {} — {} · {} [{}]  ({cards} cards)\n",
         a.name,
         a.role,
-        a.defense.body.remaining,
-        a.defense.body.max,
-        a.defense.resolve,
-        a.offense.speed,
-        a.offense.drive,
-        a.offense.power,
-        armor,
-        a.attack.label(),
-    )
+        a.weapon.name,
+        a.attack.label()
+    );
+    let pool = |label: &str, q: u32, p: u32| {
+        format!(
+            "      {label:<11} Q {:<13} P {}\n",
+            suit_cell(q),
+            suit_cell(p)
+        )
+    };
+    let flat = |label: &str, p: u32| format!("      {label:<11} P {}\n", suit_cell(p));
+
+    out.push_str(&pool("Body", a.defense.body.max, a.defense.body.toughness));
+    out.push_str(&pool("Tempo", a.offense.speed, a.offense.drive));
+    if a.offense.power > 0 {
+        out.push_str(&flat("Strike", a.offense.power));
+    }
+    if a.offense.spirit > 0 {
+        out.push_str(&flat("Spirit", a.offense.spirit));
+    }
+    if a.offense.precision > 0 {
+        out.push_str(&flat("Pierce", a.offense.precision));
+    }
+    if a.defense.resolve > 0 {
+        out.push_str(&flat("Resolve", a.defense.resolve));
+    }
+    for (t, v) in &a.defense.armor {
+        if *v > 0 {
+            out.push_str(&flat(&format!("Guard·{}", t.label()), *v));
+        }
+    }
+    for (t, v) in &a.defense.ward {
+        if *v > 0 {
+            out.push_str(&flat(&format!("Ward·{}", t.label()), *v));
+        }
+    }
+    out
 }
 
 /// Who ran the gauntlet vs held back, per side (read after Deploy resolves it).
@@ -527,5 +592,24 @@ mod tests {
                 "rules-tour transcript is missing `{marker}`:\n{a}"
             );
         }
+    }
+
+    /// Golden snapshot (regression guard): the rules-tour transcript is a stable, committed artifact.
+    /// Any change to mechanics, rendering, or the cast surfaces here as a diff to **review and ratify**
+    /// — e.g. this catches a foe's Body silently shifting. To update after an *intended* change:
+    /// regenerate (`cargo run -p deckbound --example transcript`) and copy `transcripts/rules-tour.1.txt`
+    /// over `crates/deckbound/src/snapshots/rules-tour.1.txt`.
+    #[test]
+    fn rules_tour_transcript_matches_golden() {
+        let got = transcribe(&rules_tour(), 1);
+        let want = include_str!("snapshots/rules-tour.1.txt");
+        // Normalise line endings so a CRLF checkout (Windows) doesn't spuriously fail.
+        let norm = |s: &str| s.replace("\r\n", "\n");
+        assert_eq!(
+            norm(&got),
+            norm(want),
+            "rules-tour transcript drifted from its golden snapshot. If intended, regenerate and update \
+             crates/deckbound/src/snapshots/rules-tour.1.txt (see this test's doc comment)."
+        );
     }
 }

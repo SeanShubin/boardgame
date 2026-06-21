@@ -658,46 +658,50 @@ yet specced. Numbers live in `booklet.ron`.)*
 
 ### 2.3 Stats live in the deck — *stats-as-deck*
 
-> **Locked 2026-06-21.** *No printed stats on a character* is ratified, together with the **creature
-> carve-out**: the rule binds **progressing** entities (characters), not fixed ones (creatures). The
-> asymmetry is **motivated, not an exception** — both fall out of the same intent (see WHY), so the real
-> line is *does it progress?*, never character-vs-creature by fiat.
+> **Locked 2026-06-21.** *No actor's identity card carries stats* — hero or creature. Stats always live
+> on separate **build cards**. The hero/creature difference is the build card's **lifecycle**, set by
+> **progression** — not whether stats are "printed." (Refined 2026-06-21 from an earlier character-bare /
+> creature-printed split into this single rule — see WHY.)
 
-**RULE.** A **character** (a progressing hero, §8.5) has **no stats on its identity card** — it is a
-**bare Actor**: a name and a map token (§8.1), nothing more. **Every one of its stats is read off its
-deck**, from the **Form** zone (§5.2), supplied by **separate, accreted cards** — a **fundamental card**
-sets the base and **attachment** cards modify each dimension. So §2.1's "passive stats read off the
-table" — **Armor, Ward, Toughness, Resolve**, and likewise **Speed, Drive, Power** — are
-**Form-derived**, never authored on the character. The **Body Health pool** is a **count × value** Form
-pool (Body × Toughness); the **Tempo pool** is **Speed × Drive** — Speed-many cards each worth Drive (§5.5).
+**RULE.** An actor's **identity card** is **bare** — a name, a role, a map token (§8.1), nothing more —
+for **every** actor, hero or creature. All of its stats live on separate **build cards**, read as the
+**Form** (§5.2 / §2.4–§2.6): so §2.1's "passive stats read off the table" — **Armor, Ward, Toughness,
+Resolve**, and likewise **Speed, Drive, Power** — are **build-card-derived**, never authored on the
+identity. A build card encodes one build's stats; two kinds behave identically but differ in
+**lifecycle**:
 
-A **creature** (a non-progressing foe) is the **carve-out**: its stats **are** printed — a single
-**printed fundamental** on its actor card (plus any fixed traits). It is still resolved through the Form
-path at combat time, so the engine is uniform; the printed block is simply that Form **pre-summed**.
-*(Numbers live in `booklet.ron`.)*
+- **Hero build card** — encodes a **starting build** (a clean slate, or a pre-set scenario kit). In the
+  printed game it is a **setup artifact**: at setup you instantiate the hero's Form from it, then **set
+  it aside**. The live Form is thereafter the hero's stats, and it **grows** as Upgrades are added
+  (§8.3/§8.5) — so the starting-build card is a template, never live state.
+- **Monster build card** — encodes a creature's **fixed core stats**. It **persists** in play as the
+  creature's stat representation, because a creature never progresses (the build *is* the creature).
 
-**WHY.** "The deck *is* the character" (#8) made literal — but the binding reason is **progression**. A
-character *gets stronger by gaining cards* (the Upgrade economy, §8.3), so its power must stay
-**decomposed into cards on the table**: then every point of strength is a card you can point to, and
-"stronger = more cards" is true by construction. A single printed stat-block would be a redundant second
-home for the same numbers and would hide where power came from. The creature carve-out springs from the
-*same* intent rather than contradicting it: **pre-summing a Form onto one printed card is lossless
-exactly when nothing will ever be added.** A creature never progresses — there is nothing to add and
-nothing to point to — so printing its Form costs nothing against the "deck-is-the-character" goal while
-saving components and reading effort. Clean slate = a bare Actor with a minimal Form; specialization =
-accreted attachments (§8.5).
+Changeable, maintained state — the **Body Health pool**, **Tempo** — is tracked **as normal** (§2.1),
+separate from the build cards. *(Numbers live in `booklet.ron`.)*
+
+**WHY.** "The deck *is* the character" (#8), generalised: an identity is *who*, a build is *what*, and
+keeping *what* on cards makes **every point of strength a card you can point to**. The single splitter is
+**progression**: a hero's Form **diverges** from any starting build (it gains cards), so that build card
+can only be a setup template — keeping live stats on the assembled Form is what makes "stronger = more
+cards" true. A creature **never** diverges, so its build card can *be* its standing representation. This
+**refines** the earlier "character bare / creature printed" wording: putting creature stats "on the
+identity card" wrongly implied two rules. There is **one** — *identities are bare; stats are build
+cards* — and the hero/creature difference falls out of **lifecycle**, not of where stats are printed.
 
 **GUARANTEES.**
-- **For a character:** no stat exists except as a Form card on the table — **nothing** is authored on the
-  identity card; getting stronger is *only ever* adding cards (a Form attachment, or an Action card §5 —
-  §8.3, §8.5).
-- **For a creature:** its printed stats are exactly its Form **pre-summed** — a shortcut, not a second
-  mechanism. A creature and a character with the *same* summed Form play **identically** (combat resolves
-  both through the Form path).
-- The carve-out is gated on **progression, not type**: any entity that can gain power carries **no**
-  printed stats; any entity fixed for life **may** print its Form.
-- The §3 / §4 economy is unchanged in behavior; only the **source** of a character's stat moved (card →
-  deck).
+- **No identity card carries stats** — hero or creature alike. Stats are always build cards / Form cards.
+- **Hero build cards are setup-only:** they instantiate a starting Form and are then set aside; the live
+  (and possibly grown) Form is the hero's stats. Heroes with the *same* assembled Form play identically,
+  however the build was specified.
+- **Monster build cards persist** as a creature's fixed stats; a creature neither gains nor sheds build
+  cards in play.
+- The splitter is **progression, not type**: a build that can grow keeps its card a setup template; a
+  build fixed for life may persist as the representation.
+- **Data note:** in `booklet.ron`, `ActorCard.base` is an **inline build card** — empty for a bare
+  campaign hero (the Novice; its build is the separate clean-slate + reward cards), populated for a
+  creature or a fixed scenario-hero kit (its build card, stored inline). Combat resolves every actor
+  through the one Form path.
 
 ### 2.4 The two suits — *Quantity & Power*
 
@@ -1322,10 +1326,16 @@ once — its body still occupies a single §4 position physically. (The Wall/Art
 **WHY.** The per-role cap is the **god-vs-party lever** (#4: god ≈ party). A god holds every track and
 fires up to **five** effects in a round — but on **one body**, in one gauntlet position, that the enemy
 can **focus-fire**; a five-specialist party fires the same five across **five resilient bodies**. So it
-is a **concentration-vs-resilience tradeoff, not dominance** (candidate **BI-3**). Playing each card
-**in its appropriate phase** keeps the §4 information gradient intact (a Wall card commits in the
-Gauntlet, before the Reserve fires with full info) — a card is **not** held for the most-informed
-moment.
+is a **concentration-vs-resilience tradeoff, not dominance** (candidate **BI-3**). The cap is
+**per-role, not per-round, on purpose**: it is what lets a god **combo across Roles** — combine
+*different* Roles in one round (Controller-degrade, then Artillery-fire, then Support-buff). Such combos
+are the god's distinctive reward for breadth, and they are valued **precisely because the Roles differ in
+kind** (Charter #12) — comboing two stat-reskins would be pointless doubling. They stay
+**additive / commutative**: each effect feeds an accumulator and **no played effect multiplies or gates
+another's output** (the GUARANTEE below, §0.1 / #11), so "combo" means *diverse effects concentrated in
+one round*, **never** a multiplying chain. Playing each card **in its appropriate phase** keeps the §4
+information gradient intact (a Wall card commits in the Gauntlet, before the Reserve fires with full
+info) — a card is **not** held for the most-informed moment.
 
 **GUARANTEES.**
 - One role card of each role, per character, per round; each played in its **appropriate phase** (so the
@@ -1701,3 +1711,45 @@ reward assigned at unlock; combat enforces the §4.4 cap + positional gating; th
 **per-day abilities**, **world events**, and **run-level defeat** are deferred (the last until
 reference-scenario testing). Numbers are `booklet.ron`, human-tuned. `TERM` glossary lines + encyclopedia
 land with the `/spec-sync §8` code pass.)*
+
+### 8.6 The role set is necessary-and-sufficient 🟡
+
+**RULE.** The five Roles (`3 + 2`, §8.5) are **necessary and sufficient** for the campaign, measured on
+the reference scenarios under the analysis envelope (§0.4):
+- **Sufficient.** A party whose **collective coverage includes all five Roles** can clear the reference
+  campaign under optimal play.
+- **Necessary (each Role load-bearing).** For **each** Role R, a party identical except that **R's
+  coverage is removed** **fails at least one** reference scenario — the scenario that is R's *lock*.
+- **Distinct.** Each Role has a **signature mechanic** (Wall: catch-Drive / Phalanx; Infiltrator: slip /
+  Blitz; Artillery: ranged fire; Controller: round-scoped status; Support: buff / heal) that is
+  **invoked and outcome-changing** in at least one reference scenario; no two Roles clear their lock by
+  the same mechanic.
+
+The invariant is **campaign-scope**: an **individual** conflict may be winnable by one Role alone, or
+unwinnable for the Role it is built to humble — a single-Role spotlight is a **tutorial** (§8.4) in that
+Role's powers and limits, **not** a violation.
+
+**WHY.** §8.5 establishes the role set is minimal-complete *by counting* (a triangle + an effect pair).
+§8.6 makes that completeness a **measured property of play** (Charter #11, #12): "uniquely valuable"
+becomes *demonstrably the only key to some lock*, "behave differently" becomes *demonstrably a different
+mechanic*, and the stat layer gets its acceptance test — a stat earns its slot **iff** it lies on some
+Role's load-bearing path (Charter #12: *stats serve the Roles*). Without a measure, role-necessity is a
+slogan; the leave-one-out check turns it into a regression test.
+
+**GUARANTEES.**
+- The reference campaign has, for each Role, a **designated lock scenario** unwinnable without that Role,
+  wired as a **regression test** (#11: the par solver is a regression test). Losing necessity for any
+  Role **fails the build**.
+- **No redundant stat:** every stat the engine carries is **read** on some Role's resolution path; a stat
+  the engine never consumes is a **failing** state, not a latent one.
+- The invariant is **campaign-scope** (some scenario per Role), never per-encounter; single-Role
+  tutorials are intended, not breaches.
+- Measured on the **core** (§0.1) under the **analysis envelope** (§0.4); like all balance claims it is
+  **policy-relative** to the resolver-of-record (§0.3) and **blind to fun / feel** (the human ratifies
+  those).
+
+*(SEEDED — a designer/solver invariant graduating Charter #12; **no `TERM` line** (not player
+vocabulary). The enforcing tests — sufficiency, leave-one-out necessity, no-redundant-stat, distinctness
+— ride the par-solver / balance harness (§0.3, `computability-and-balance.md`); the cheap "is every stat
+consumed?" check can land **ahead of** the solver. The five **designated lock scenarios** — one per Role,
+doubling as the role tutorials — are an authoring task on the reference set (§8.4).)*

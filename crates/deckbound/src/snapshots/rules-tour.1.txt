@@ -1,0 +1,119 @@
+SCENARIO  rules-tour   seed=1   ruleset(max_rounds=5, max_unique=5)
+          every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, Fear, defeat, refresh.
+
+FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (how many) · P Power (each) · §2.4–§2.6
+
+HEROES
+  Anvil — Clean-slate · Fist [melee]  (8 cards)
+      Body        Q 16+2 = 18     P 4+2 = 6
+      Tempo       Q 2+1 = 3       P —
+      Strike      P 1 = 1
+      Resolve     P 1 = 1
+  Wisp — Clean-slate · Fist [melee]  (9 cards)
+      Body        Q 4+1 = 5       P 1 = 1
+      Tempo       Q 8+1 = 9       P 4 = 4
+      Strike      P 4+2 = 6
+      Resolve     P 1 = 1
+  Sear — Clean-slate · Fist [melee]  (9 cards)
+      Body        Q 4+1 = 5       P 1 = 1
+      Tempo       Q 2+1 = 3       P —
+      Strike      P 8+1 = 9
+      Pierce      P 2 = 2
+      Resolve     P 1 = 1
+  Hex — Clean-slate · Fist [melee]  (9 cards)
+      Body        Q 4+1 = 5       P 1 = 1
+      Tempo       Q 2+1 = 3       P —
+      Strike      P 1 = 1
+      Spirit      P 8 = 8
+      Resolve     P 2+1 = 3
+FOES
+  Brute — Bruiser · Maul [melee]  (9 cards)
+      Body        Q 8 = 8         P 2+1 = 3
+      Tempo       Q 2 = 2         P —
+      Strike      P 4+1 = 5
+      Guard·blunt P 2+1 = 3
+      Guard·sharp P 4 = 4
+  Raider — Infiltrator · Claw [melee]  (8 cards)
+      Body        Q 4 = 4         P 1 = 1
+      Tempo       Q 4+2 = 6       P 4+1 = 5
+      Strike      P 2+1 = 3
+  Seer — Hexer · Wand [ranged]  (7 cards)
+      Body        Q 4 = 4         P 1 = 1
+      Tempo       Q 2+1 = 3       P —
+      Strike      P 2+1 = 3
+      Spirit      P 4 = 4
+
+── round 1 ──────────────────────────────────────
+  Hex plays Dread.
+    Hex hits Brute: 5 fear — turns a health card face down. [5 past ward; fear 5/0]
+    Brute is scared to death!
+    Hex hits Raider: 5 fear — turns a health card face down. [5 past ward; fear 5/0]
+    Raider is scared to death!
+    staggers Brute (loses its action).
+    staggers Raider (loses its action).
+  Anvil plays Last Stand.
+    steels for a last stand — it cannot fall this round.
+    nerves settle.
+CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
+         foes   — charged: Brute   reserve: Seer
+  crossing: Anvil(adv 1/catch 3) × Brute(adv 1/catch 1) → both hold (1≤1, 1≤3)
+    Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 7/8]
+  crossing: Wisp(adv 4/catch 4) × Raider(adv 5/catch 5) → Raider slips (5>4)
+    Wisp hits Raider: 6 blunt — turns 3 health cards face down. [6 past armor; Body 0/4]
+  Raider — all its health cards are face down; defeated.
+  Sear plays Bombardment.
+    Sear hits Brute: 14 sharp — turns 4 health cards face down. [12 past armor; Body 3/8]
+    Sear hits Seer: 14 sharp — turns 4 health cards face down. [14 past armor; Body 0/4]
+  Seer — all its health cards are face down; defeated.
+ENDROUND heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 3/8  Raider 0/4 down  Seer 0/4 down
+
+── round 2 ──────────────────────────────────────
+  Hex plays Dread.
+    Hex hits Brute: 5 fear — turns a health card face down. [5 past ward; fear 5/0]
+    Brute is scared to death!
+    staggers Brute (loses its action).
+  Anvil plays Last Stand.
+    steels for a last stand — it cannot fall this round.
+    nerves settle.
+CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
+         foes   — charged: Brute   reserve: —
+  crossing: Anvil(adv 1/catch 3) × Brute(adv 1/catch 1) → both hold (1≤1, 1≤3)
+    Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 2/8]
+  Wisp runs an open gauntlet and breaks through!
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 1/8]
+  Sear plays Bombardment.
+    Sear hits Brute: 14 sharp — turns a health card face down. [12 past armor; Body 0/8]
+  Brute — all its health cards are face down; defeated.
+  Every foe is down — victory!
+FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 0/8 down  Raider 0/4 down  Seer 0/4 down
+
+OUTCOME  WIN (heroes) — round 2
+
+CARDS USED   (every card played, plus the chargers' weapons and powers)
+  Action  Bombardment    [Brass]  sharp 5, x5 targets             (played by Sear)
+  Action  Dread          [Bone]   fear 4, stagger, x2 targets     (played by Hex)
+  Action  Last Stand     [Iron]   cannot fall, steel              (played by Anvil)
+  Weapon  Claw                    sharp weapon                    (wielded by Raider)
+  Weapon  Fist                    blunt weapon                    (wielded by Anvil, Wisp)
+  Weapon  Maul                    blunt weapon                    (wielded by Brute)
+  Power   Backstab       [Silver] passive power                   (carried by Wisp)
+  Power   Blitz          [Silver] passive power                   (carried by Wisp)
+  Power   Bodyguard      [Iron]   passive power                   (carried by Anvil)
+  Power   Phalanx        [Iron]   passive power                   (carried by Anvil)
+  Power   Shadowstep     [Silver] passive power                   (carried by Wisp)
+  Power   Taunt          [Iron]   passive power                   (carried by Anvil)
+
+GLOSSARY   (what the rulebook says about each keyword above)
+  Backstab               Bonus damage when this Skirmisher strikes an enemy Reserve.
+  Blitz                  The first slip each round is free — it costs no Tempo.
+  Bodyguard              A Wall can intercept a charger bearing down on an ally, not only the one it meets itself.
+  Damage (blunt)         Deals blunt damage (base 0). It is reduced by the target's blunt Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
+  Damage (fear)          Deals fear damage (base 4) to the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool. If it clears Resolve the will breaks (Freeze / Flee / Scared-to-death, §2); Edge scales this.
+  Damage (sharp)         Deals sharp damage (base 5). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
+  Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 Body (M3).
+  Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.
+  Shadowstep             Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.
+  Stagger                On a landed hit, the target loses its action this round.
+  Steel                  Clears accumulated Fear and steadies the nerve (a Steel).
+  Taunt                  Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.
+  Zone: Spend            Zone — Spend: the card goes face-down (Down) after use; only a Recover stands it back up. That gap is its cooldown (§5.3).
