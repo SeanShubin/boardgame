@@ -43,6 +43,7 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
         // back-line casters and shooters (Artillery / Controller / Support kits) in the Reserve so
         // they fire / cast from the rear (§4); then Deploy to resolve the gauntlet.
         Phase::Assemble => {
+            // 1. Send melee front-liners to charge (casters/shooters hold back to fire/cast).
             for a in actions {
                 if let SetVanguard(i) = a
                     && state.heroes[*i].can_contest(Range::Melee)
@@ -51,7 +52,9 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
                     return *a;
                 }
             }
-            Deploy
+            // 2. Muster: play standing defenses / debuffs / buffs before the gauntlet so they bite it.
+            // 3. Then Deploy.
+            best_play(state, actions).unwrap_or(Deploy)
         }
         // Strike a reachable foe; else play a role card (a damaging one first); else pass.
         Phase::Skirmish => actions

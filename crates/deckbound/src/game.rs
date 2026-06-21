@@ -270,7 +270,8 @@ impl Deckbound {
                 } else {
                     state.s_skirm(side)[i]
                 };
-                role_ok && !a.fallen && !a.is_down() && !state.s_acted(side)[i]
+                // A Staggered actor loses its action this round (§4 Controller debuff) — skip it.
+                role_ok && !a.fallen && !a.is_down() && !a.stunned && !state.s_acted(side)[i]
             })
             .collect()
     }
@@ -416,7 +417,7 @@ impl Deckbound {
                 &atk_name,
                 &mut state.log,
             );
-            if state.creatures[target].can_contest(range)
+            if state.creatures[target].can_contest_now(range)
                 && !state.creatures[target].is_down()
                 && state.creatures[target].tempo > 0
             {
@@ -432,7 +433,7 @@ impl Deckbound {
                 &atk_name,
                 &mut state.log,
             );
-            if state.heroes[target].can_contest(range)
+            if state.heroes[target].can_contest_now(range)
                 && !state.heroes[target].is_down()
                 && state.heroes[target].tempo > 0
             {
@@ -476,6 +477,10 @@ impl Deckbound {
         if card.passive {
             return false;
         }
+        // A Disarmed actor cannot play its role cards this round (§4 Controller debuff).
+        if state.s_pool(side)[i].disarmed {
+            return false;
+        }
         if let Some(track) = card.role {
             let played = if side == 0 {
                 &state.plan.hero_roles_played
@@ -509,6 +514,46 @@ impl Deckbound {
             if !played[i].contains(&track) {
                 played[i].push(track);
             }
+        }
+    }
+
+    /// §4 **Muster** — may actor `i` of `side` play this role `card` *now*, during the pre-gauntlet
+    /// Muster window? Muster is for cards whose effect **persists through the round**: a charging
+    /// Wall's standing defenses (Brace / Rally / Last Stand) and the position-agnostic Controller
+    /// (Bone) / Support (Salt) buffs & debuffs — played before the Gauntlet so they bite it. The
+    /// positional attack cards (Infiltrator slips, Artillery fire) are **not** mustered; they wait for
+    /// their own phase (they need post-gauntlet targets). Respects the per-role cap and Disarm.
+    fn muster_card_playable(
+        &self,
+        state: &State,
+        side: u8,
+        i: usize,
+        card: &crate::cards::Card,
+    ) -> bool {
+        use crate::currency::Currency;
+        if card.passive {
+            return false;
+        }
+        if state.s_pool(side)[i].disarmed {
+            return false;
+        }
+        let Some(track) = card.role else {
+            return false; // only role cards muster (weapons / scenario kits do not)
+        };
+        let played = if side == 0 {
+            &state.plan.hero_roles_played
+        } else {
+            &state.plan.foe_roles_played
+        };
+        if played[i].contains(&track) {
+            return false;
+        }
+        if card.positional {
+            // Only a Wall's Vanguard standing cards muster, and only if it is charging (it intends to
+            // hold the front). Infiltrator / Artillery positional cards act in their own phase.
+            matches!(track, Currency::Iron) && state.s_charging(side)[i]
+        } else {
+            true // Controller / Support effect cards persist the round — muster them
         }
     }
 
@@ -757,8 +802,9 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
-            // Charge selection: each hero either charges (runs the gauntlet) or holds back (Reserve),
-            // then Deploy resolves the gauntlet (§4).
+            // Charge selection + the Muster window: each hero charges or holds back (Reserve), and may
+            // play standing/persistent cards (Wall defenses, Controller debuffs, Support buffs) before
+            // Deploy resolves the gauntlet (§4).
             Phase::Assemble => {
                 let side = state.plan.committing;
                 let mut a = Vec::new();
@@ -770,6 +816,16 @@ impl Game for Deckbound {
                         a.push(Action::SetReserve(i));
                     } else {
                         a.push(Action::SetVanguard(i));
+                    }
+                    for idx in 0..state.s_pool(side)[i].actions.len() {
+                        if self.muster_card_playable(
+                            state,
+                            side,
+                            i,
+                            &state.s_pool(side)[i].actions[idx],
+                        ) {
+                            a.push(Action::PlayCard(i, idx));
+                        }
                     }
                 }
                 a.push(Action::Deploy);
@@ -1017,6 +1073,54 @@ impl Game for Deckbound {
                 } else {
                     self.deploy(state);
                 }
+            }
+            (Phase::Assemble, Action::PlayCard(i, idx)) => {
+                // The Muster window (§4): play a standing/persistent card before the Gauntlet. Its
+                // effect (a Wall's Brace/Last Stand, a Controller's debuff, a Support's buff) holds
+                // through the round and shapes the gauntlet that follows.
+                let side = state.plan.committing;
+                let card = state.s_pool(side)[*i]
+                    .actions
+                    .get(*idx)
+                    .cloned()
+                    .ok_or_else(|| GameError::new("no such card"))?;
+                if !self.muster_card_playable(state, side, *i, &card) {
+                    return Err(GameError::new("that card can't be mustered now"));
+                }
+                self.note_role_played(state, side, *i, &card);
+                let pow = state.s_pool(side)[*i].offense.power;
+                let pre = state.s_pool(side)[*i].offense.precision;
+                let name = state.s_pool(side)[*i].name.clone();
+                if side == 0 {
+                    let mut allies = std::mem::take(&mut state.heroes);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.creatures,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.heroes = allies;
+                } else {
+                    let mut allies = std::mem::take(&mut state.creatures);
+                    combat::play_card(
+                        &card,
+                        &name,
+                        pow,
+                        pre,
+                        &mut state.heroes,
+                        &mut allies,
+                        Some(*i),
+                        &mut state.log,
+                    );
+                    state.creatures = allies;
+                }
+                combat::tally(&mut state.heroes, &mut state.log);
+                combat::tally(&mut state.creatures, &mut state.log);
+                check_outcome(state);
             }
 
             (Phase::Skirmish, Action::Target(i, t)) => {
@@ -1864,6 +1968,47 @@ mod tests {
         assert!(
             s2.creatures[0].defense.body.remaining < f && s2.heroes[0].defense.body.remaining < h,
             "same-range melee is a trade — both are hit"
+        );
+    }
+
+    /// §4 Muster: a charging Wall may play a standing card (Brace) before the gauntlet, and only
+    /// while charging — its effect (here, the Guard Tempo boost) persists into the round.
+    #[test]
+    fn muster_window_offers_a_charging_walls_standing_card() {
+        use crate::currency::Currency;
+        let game = Deckbound;
+        let wall = scenarios::build_character("Novice", &scenarios::rewards_for(Currency::Iron));
+        let foe = scenarios::build_character("Husk", &[]);
+        let mut s = battle_state(vec![wall], vec![foe], false, 1);
+        assert_eq!(s.phase, Phase::Assemble);
+        let brace = s.heroes[0]
+            .actions
+            .iter()
+            .position(|c| c.name == "Brace")
+            .expect("the Iron kit owns Brace");
+
+        // Not charging yet → a positional Wall standing card is not yet musterable.
+        assert!(
+            !game.legal_actions(&s).contains(&Action::PlayCard(0, brace)),
+            "Brace is offered only once the Wall is charging"
+        );
+
+        // Charge the Wall, then the Muster window offers Brace.
+        game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
+        assert!(
+            game.legal_actions(&s).contains(&Action::PlayCard(0, brace)),
+            "a charging Wall may muster Brace"
+        );
+        let tempo_before = s.heroes[0].tempo;
+        game.apply(&mut s, &Action::PlayCard(0, brace)).unwrap();
+        assert_eq!(
+            s.phase,
+            Phase::Assemble,
+            "mustering stays in the Assemble window"
+        );
+        assert!(
+            s.heroes[0].tempo > tempo_before,
+            "Brace's Guard Tempo persists into the gauntlet"
         );
     }
 

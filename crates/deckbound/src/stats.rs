@@ -215,6 +215,20 @@ impl Defense {
         out
     }
 
+    /// **Recover**: turn one face-down Health card back up (§5 card-state) — the inverse of a card
+    /// flipping down. Clears the current sub-card pile first, then restores one whole card if any are
+    /// down. Returns the number of cards turned back up (0 if already at full Body). A down Actor with
+    /// a card restored is no longer down.
+    pub fn recover_card(&mut self) -> u32 {
+        self.body_pile = 0;
+        if self.body.remaining < self.body.max {
+            self.body.remaining += 1;
+            1
+        } else {
+            0
+        }
+    }
+
     /// Round end: partial (sub-bar) damage clears, and this-round breaks lift.
     /// A `ScaredToDeath` already bled into the (permanent) Body pool, so only the
     /// transient will flag resets.

@@ -1,10 +1,11 @@
-//! The state of a combat in progress (§4 lane commitment system).
+//! The state of a combat in progress (§4 charge-and-gauntlet system).
 //!
-//! A round is a phase machine: **Assemble** (assign Vanguard / Reserve) → **Slip** (Vanguard
-//! hold or slip) → resolve the Vanguard phase → **Skirmish** (skirmishers pick targets) →
-//! resolve → **Reserve** (reserves pick targets / aid) → resolve → refresh. A same-range
-//! engagement is a **trade** unless the optional **Clash** module is on (then the four-card
-//! mix-up runs, [`Phase::Clash`]). Resolution is order-independent within each phase.
+//! A round is a phase machine: **Assemble** (declare who charges, and **Muster** standing/persistent
+//! cards before the gauntlet) → on Deploy the **gauntlet** resolves (the two charge-columns thread
+//! through each other, producing Skirmishers who broke through and Vanguard who stopped) → **Skirmish**
+//! (skirmishers strike the enemy Reserve) → **Reserve** (reserves fire ranged) → refresh. A same-range
+//! engagement is a **trade** unless the optional **Clash** module is on (then the four-card mix-up
+//! runs, [`Phase::Clash`]). Resolution is order-independent within each phase.
 
 use engine::{Outcome, Rng};
 
@@ -30,13 +31,15 @@ pub enum Menu {
     CardDetail(usize),
 }
 
-/// Where the round is (§4 charge-and-gauntlet). `Charge` selects who runs in; on Deploy the
-/// **gauntlet** resolves automatically (the two charge-columns thread through each other), producing
-/// Skirmishers (broke through) and Vanguard (stopped); then the Skirmish and Reserve phases.
+/// Where the round is (§4 charge-and-gauntlet). `Assemble` selects who charges **and** is the
+/// **Muster** window (play standing/persistent cards before the gauntlet); on Deploy the **gauntlet**
+/// resolves automatically (the two charge-columns thread through each other), producing Skirmishers
+/// (broke through) and Vanguard (stopped); then the Skirmish and Reserve phases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Menu(Menu),
-    /// Select which heroes charge (vs. hold back as Reserve), then Deploy to run the gauntlet.
+    /// Select which heroes charge (vs. hold back as Reserve) and **Muster** standing cards, then
+    /// Deploy to run the gauntlet.
     Assemble,
     /// Skirmishers (broke through the gauntlet) strike the enemy Reserve, then Vanguard.
     Skirmish,

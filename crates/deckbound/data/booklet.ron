@@ -59,7 +59,7 @@ Catalog(
     // SEEDS — human-tuned by playtest. `role` keys the §4.4 per-role cap; `positional: true` (Wall /
     // Infiltrator / Artillery) means the card is playable only from its §4 position.
     rewards: [
-        // ---- Wall (Iron) — the immovable line: hold lanes, protect the backline ----
+        // ---- Wall (Iron) — the immovable line: hold the front, protect the backline ----
         Reward( track: Iron, level: 1, stat: (body: 2, toughness: 1),
                 flavor: "Set your feet. The line begins where you decide it does.",
                 cards: [ Card( name: "Brace", role: Some(Iron), kind: Base, positional: true, effects: [Guard(tempo: 3)] ) ] ),
@@ -82,7 +82,7 @@ Catalog(
         // ---- Infiltrator (Silver) — the unseen blade: slip walls, delete the backline ----
         Reward( track: Silver, level: 1, stat: (speed: 2, drive: 2),
                 flavor: "You won't see her cross the room. You'll notice who is no longer in it.",
-                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
+                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3, dtype: Sharp), Shove], text: "Stab and shove: hits for sharp damage and knocks the foe out of the line (no melee strike-back this round)." ) ] ),
         Reward( track: Silver, level: 2, stat: (speed: 1, power: 1),
                 flavor: "The first step is always free; take it before they're set.",
                 cards: [ Card( name: "Blitz", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "The first slip each round is free — it costs no Tempo." ) ] ),
@@ -119,10 +119,10 @@ Catalog(
                 cards: [ Card( name: "Slow", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2)] ) ] ),
         Reward( track: Bone, level: 2, stat: (spirit: 1, resolve: 1),
                 flavor: "A sound the body hears before the mind does.",
-                cards: [ Card( name: "Dread", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
+                cards: [ Card( name: "Dread", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear), Stagger], text: "Fear that locks the limbs: deals fear and staggers the foe — it loses its action this round." ) ] ),
         Reward( track: Bone, level: 3, stat: (spirit: 2),
                 flavor: "Scramble the one moment they needed to think.",
-                cards: [ Card( name: "Confuse", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Confuse(tempo: 3)] ) ] ),
+                cards: [ Card( name: "Confuse", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Confuse(tempo: 3), Disarm], text: "Scramble their plan: drains Tempo and disarms the foe — it cannot play its role cards this round." ) ] ),
         Reward( track: Bone, level: 4, stat: (spirit: 1, resolve: 1),
                 flavor: "A whisper that follows the foe home and unmakes the courage it finds there.",
                 cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (M5)." ) ] ),
@@ -142,7 +142,7 @@ Catalog(
                 cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 3)] ) ] ),
         Reward( track: Salt, level: 4, stat: (resolve: 2),
                 flavor: "Swallow the fear whole, before it has the chance to spread.",
-                cards: [ Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel] ) ] ),
+                cards: [ Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel, Recover], text: "Steady mind and body: clears accumulated fear and turns one face-down health card back up on the most-wounded ally." ) ] ),
         Reward( track: Salt, level: 5, stat: (body: 2, resolve: 1),
                 flavor: "For one held breath, the whole line is untouchable, rested, and whole.",
                 cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Mend(body: 3), Ward, Haste(tempo: 3)] ) ] ),
@@ -215,7 +215,7 @@ Catalog(
         ),
         ScenarioCard(
             name: "The Five (cascade)",
-            blurb: "All five specialists. Coordinated: Anvil walls Vow's lane, Hex confuses and slows, Vow wards Sear, Sear and Hex delete the front, Wisp slips to kill their Seer. Uncoordinated: your Vow is assassinated and the deck unravels.",
+            blurb: "All five specialists. Coordinated: Anvil holds the front for Vow, Hex confuses and slows, Vow wards Sear, Sear and Hex delete the front, Wisp slips the gauntlet to kill their Seer. Uncoordinated: your Vow is assassinated and the deck unravels.",
             flavor: "Five crafts, one breath. Out of step, it is just five people dying in order.",
             heroes: ["Anvil", "Wisp", "Sear", "Vow", "Hex"],
             foes: ["Brute", "Raider", "Raider", "Seer", "Husk", "Husk"],
@@ -231,7 +231,7 @@ Catalog(
         ),
         ScenarioCard(
             name: "The Swarm",
-            blurb: "A husk tide past your Mind. Wall what you can; let Sear and Hex thin the overflow.",
+            blurb: "A husk tide that tests your front. Hold what you can; let Sear and Hex thin the overflow.",
             flavor: "You will not kill them all. You only have to kill the ones in front for long enough.",
             heroes: ["Anvil", "Sear", "Hex", "Vow"],
             foes: ["Husk", "Husk", "Husk", "Husk", "Husk", "Husk"],
@@ -241,9 +241,9 @@ Catalog(
         ScenarioCard( name: "1. The Trade", blurb: "Same-range melee is a simultaneous trade — both deal base through armor. Bring more effective power; armor matters.", flavor: "Two blades, one heartbeat. Whoever brought more, keeps standing.", heroes: ["Recruit"], foes: ["Husk"] ),
         ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; a melee hero can't answer (auto-hit). Bring ranged (Archer) to trade back.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
         ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Skirmishers slip to the back, Reserve fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
-        ScenarioCard( name: "4. Lanes & Concentration", blurb: "Commit Vanguard and stack a lane to overwhelm the wall. An even spread loses the stacked lane.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
-        ScenarioCard( name: "5. Slip & Wall", blurb: "Slip past a thin wall to become a Skirmisher (Tempo), or hold to block (Focus). Overwhelm Focus to get through.", flavor: "A wall is a question. Tempo is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
-        ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Wall its lane or the Raider assassinates it.", flavor: "The most important person on the field is the one who can't defend themselves.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
+        ScenarioCard( name: "4. Charge & Concentration", blurb: "Concentrate your charge against one stretch of the line to break through; an even charge is caught everywhere and breaks through nowhere.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
+        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-Drive a thin wall to slip the gauntlet and become a Skirmisher, or hold to block. A Wall with more catch Drive than your advance Drive stops you cold.", flavor: "A wall is a question. Drive is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
+        ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Hold the front for it or the Raider slips through and assassinates it.", flavor: "The most important person on the field is the one who can't defend themselves.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
         ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", flavor: "A storm tells you it is coming. Listen, then move.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
         ScenarioCard( name: "C2. Read the Lead", blurb: "Bron leads every blow (Anticipate). Strike or Gather; never Evade.", flavor: "He is always one step ahead — so do not take the step he expects.", heroes: ["Vael"], foes: ["Bron"], clash: true ),
         ScenarioCard( name: "C3. Catch the Dodger", blurb: "Hollow dodges and counters. Anticipate beats Evade; never Strike a dodger.", flavor: "Swing at a shadow and you'll meet the knife it was hiding.", heroes: ["Vael"], foes: ["Hollow"], clash: true ),
@@ -252,8 +252,8 @@ Catalog(
         ScenarioCard( name: "C6. The Duelist", blurb: "Sable plays the whole kit. The full mind-game.", flavor: "No tells, no pattern, no mercy. Just two minds and one opening.", heroes: ["Vael"], foes: ["Sable"], clash: true ),
     ],
     versus: [
-        // Hotseat PvP lane battles — both sides human, pass-and-play, hidden commit per phase.
-        ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Assemble, assign, slip, target — pass the device each phase; neither side sees the other's commit until it resolves.", flavor: "Same blades, same wall. The only difference left on the table is you.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
+        // Hotseat PvP battles — both sides human, pass-and-play, hidden charge commit per round.
+        ScenarioCard( name: "Mirror (3v3)", blurb: "Two identical squads. Charge, muster, run the gauntlet, strike — pass the device each phase; neither side sees the other's charge until it reveals.", flavor: "Same blades, same wall. The only difference left on the table is you.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Anvil", "Wisp", "Sear"], pvp: true ),
         ScenarioCard( name: "Skirmish Line (2v2)", blurb: "A melee fighter and an archer a side — wall or slip, fire or guard.", flavor: "Small line, whole war — every choice shows.", heroes: ["Recruit", "Archer"], foes: ["Recruit", "Archer"], pvp: true ),
         // A 1v1 Clash duel vs the AI, for the optional mix-up module.
         ScenarioCard( name: "Duel: Charger", blurb: "Read the wind-up.", flavor: "One foe, one tell. Find it before it finds you.", heroes: ["Vael"], foes: ["Pell"], clash: true ),

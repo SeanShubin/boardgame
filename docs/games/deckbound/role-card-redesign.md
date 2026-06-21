@@ -14,11 +14,18 @@
 > - **Per-role cap** is an *upper bound*: each character acts in **one** phase per round (the engine's
 >   one-action-per-round), so it naturally plays ≤1 role card/round — the cap is satisfied, not yet
 >   binding. The richer "god plays ~3/round" (§3.2) awaits a multi-play combat step (future work).
-> - **Card play** rides the existing phases (SD1): Reserve already played cards; **Skirmish** now does
->   too. A **Vanguard holder has no discrete play step**, so Wall *Base* cards (Brace/Rally/Last Stand)
->   don't yet fire from a held lane — the Wall's power is in its Stat + passive layer for now (flagged
->   for the Vanguard-play follow-up). The combat guide routes Artillery/Controller/Support kits to the
->   **Reserve** so their cards cast.
+> - **Card play** rides the phases, plus the **Muster** window (added 2026-06-20, Spec §4). Reserve and
+>   Skirmish play their positional attack cards; **Muster** (at charge declaration, before the gauntlet)
+>   is where the persistent cards fire — a charging Wall's *Base* defenses (Brace/Rally/Last Stand), the
+>   Controller debuffs, and the Support buffs — so they shape the whole round. This closed the
+>   Vanguard-play gap (Wall Base cards now fire) and made the Controller suite bite (debuffs land *before*
+>   the foe acts). The combat guide still routes Artillery/Controller/Support kits to the **Reserve** for
+>   their post-gauntlet attacks.
+> - **Role passives are now live in the gauntlet/strike** (2026-06-20): Phalanx (+catch Drive),
+>   Shadowstep (win slip ties), Blitz (first slip free), Bodyguard (intercept a surplus charger), Taunt
+>   (drawn to the front), Backstab/Assassinate (Reserve-strike riders). The four previously-inert effects
+>   — Stagger, Shove, Disarm, Recover — are wired onto real cards (Dread, Slip Strike, Confuse, Steel)
+>   and carry round-scoped status (Spec §4 "Persistent status").
 > - **New effects** (Spec §5.6 M2–M6): `Guard` (Brace), `Lifeline`/cannot-fall (Last Stand, via
 >   `combat::tally`), execute-on-Reserve (Assassinate, via the strike path like Backstab), the `Curse`
 >   Modifier (+1 debuff target, folded at `build_character`), and `targets: all` buffs (Sanctuary).

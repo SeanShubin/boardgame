@@ -399,6 +399,10 @@ fn build_actor_with(
         attack: c.attack,
         tempo: 0,
         cannot_fall: false,
+        stunned: false,
+        shoved: false,
+        disarmed: false,
+        free_slip_used: false,
         fallen: false,
     };
     actor.refresh_round();
@@ -1159,8 +1163,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            19,
-            "expected 19 Spec TERM entries — a marker may have failed to parse"
+            20,
+            "expected 20 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).

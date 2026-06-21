@@ -723,7 +723,7 @@ opportunity cost).
 ### 3.4 The round — orchestration (PvE & PvP)
 
 > **SUPERSEDED by §4 (charge-and-gauntlet).** The round is no longer a player-phase/foe-phase loop over
-> formation; it is the **Charge → Gauntlet → Skirmish → Reserve** model in §4. **Tempo is now the single
+> formation; it is the **Charge → Muster → Gauntlet → Skirmish → Reserve** model in §4. **Tempo is now the single
 > currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per phase*. The
 > PvE/PvP text below (and its Focus-defend modes) is kept for design history; where it conflicts with
 > §4, §4 wins.
@@ -786,9 +786,10 @@ phase.
 > **thread through each other in a single open gauntlet**. The roles now *emerge* from the gauntlet
 > rather than being pre-assigned. The motivation: lanes were the one construct with no physical
 > picture, and the "lead holder absorbs all" abstraction produced wasted overkill; the gauntlet makes
-> targeting explicit and rides one clean metaphor. **The code does not yet implement this** (it runs
-> the lane model — a defect to fix, `/spec-sync §4`). Old text is in git history (`role-card-redesign`
-> and the combat-redesign commit record the rationale).
+> targeting explicit and rides one clean metaphor. **The code now implements this** — the gauntlet
+> resolver, the **Muster** window (below), the role passives, and the Controller status effects are
+> all live. Old text is in git history (`role-card-redesign` and the combat-redesign commit record the
+> rationale).
 
 **The budget (one pool).** **Tempo** is the action economy that gates everything (§3): a `count × value`
 pool of **Speed**-many cards, each worth **Drive**, flipped to spend (face-up = available, face-down =
@@ -814,12 +815,22 @@ The spine is still the counter-triangle **Vanguard ▸ Skirmisher ▸ Reserve �
 intercepts chargers in the gauntlet (stops Skirmishers); a Skirmisher who broke through reaches the
 otherwise-untouchable Reserve; the Reserve fires on the exposed front from safety.
 
-A round runs **four phases**:
+A round runs **five phases** (the Charge and Muster commits, then three open resolutions):
 
 1. **Charge** *(the one hidden, simultaneous commit).* Each side secretly picks **which Actors charge,
    and in what order** (a face-down ordered column), then **both reveal at once**. Non-chargers are
    **Reserve**. *(Hidden because open ordering would be degenerate — the second mover would just
    reorder to counter. Everything after the reveal is open information.)*
+1b. **Muster** *(open, before the gauntlet).* Each side plays its **standing / persistent** cards —
+   cards whose effect **lasts the round** rather than resolving on a single target after the gauntlet.
+   This is the window for a charging **Wall**'s defenses (Brace, Last Stand, Rally), a **Controller**'s
+   debuffs (Slow, Confuse, Dread, and the Stagger / Shove / Disarm riders), and a **Support**'s buffs
+   (Mend, Ward, Haste, Steel). Mustered effects are in force **for the gauntlet and the rest of the
+   round** — a Slow shrinks a foe's Tempo *before* it crosses; a Stagger costs it its whole turn; a
+   Brace banks Tempo for the crossing. The positional **attack** cards (Infiltrator slips, Artillery
+   fire) are **not** mustered — they need a post-gauntlet target and wait for their own phase. *(Why
+   here: a debuff played in the last phase is wasted — its target has already acted. Muster is the
+   point where a persistent effect can actually shape the round.)*
 2. **The Gauntlet** *(open).* The two charge-columns **thread through each other**. Resolution is a
    public sequence of **crossings** (see below); chargers who **stop** become **Vanguard**, chargers
    who **break all the way through** become **Skirmishers**. Damage **accumulates** and resolves at the
@@ -853,6 +864,32 @@ whom to prioritize**. The committed total **resets each crossing**, but **spent 
 so Tempo poured into the gauntlet is gone before the exchanges (§3 depletion). A unit that **stopped**
 stays at its position and **remains an obstacle** for later advancers (Tempo permitting); a unit that
 **broke through** the whole opposing column becomes a **Skirmisher**.
+
+**Advancing vs catching (the Wall's hold).** A crossing weighs two distinct uses of Drive: **advance
+Drive** (the grade you commit to *slip past*) against the other's **catch Drive** (the grade it commits
+to *hold the line*). You slip iff your advance **strictly exceeds** their catch; a tie is held. For a
+plain unit the two are equal (its Drive), so the raw "higher slips, tie caught" rule stands. **Wall
+powers feed catch only, never advance** — a Wall raises the wall it makes the enemy climb without
+itself slipping through on a big number (it is an immovable line, not a runner). This is the seam the
+role passives plug into.
+
+**Role powers in the gauntlet (and the round).** The specialist passives are not flavor — each bites a
+concrete step:
+- **Phalanx** (Wall) — +catch Drive: Walls who stop together intercept as one, holding faster runners.
+- **Bodyguard** (Wall) — a stopped Wall steps across to intercept a **surplus** enemy charger that
+  would otherwise break through unopposed (guarding the backfield, not just the foe it met).
+- **Taunt** (Wall) — draws fire: the Wall is pulled to the **front** of its column so the enemy meets
+  it first, sparing the rest of the line.
+- **Blitz** (Infiltrator) — the **first slip each round is free** (costs no Tempo).
+- **Shadowstep** (Infiltrator) — **win the tie** when slipping (advance ≥ catch, not just >).
+- **Backstab / Assassinate** (Infiltrator) — a Skirmisher hits an enemy **Reserve** harder / executes
+  it outright (the §10 prize for breaking through).
+
+**Persistent status (Controller debuffs).** A Controller card can hang a **round-scoped status** on a
+foe, cleared at Refresh: **Stagger** (loses its action — no strike, card, or strike-back this round),
+**Shove** (knocked out of melee — cannot contest a melee blow), **Disarm** (hand fouled — cannot play
+its role cards). Played at **Muster**, these degrade the foe's whole round (its gauntlet, its strikes,
+its defense); their bite is timing — see the Muster phase.
 
 **Targeting matrix.**
 
@@ -920,7 +957,10 @@ threaten their back you must expose your front.
   Focus/Mind pool — merged.)
 
 **MANUAL.** *Secretly pick who charges and in what order (an ordered face-down column); reveal together.
-Non-chargers are your Reserve. The two charge-columns thread through each other: at each meeting, both
+Non-chargers are your Reserve. **Muster**: before the gauntlet, play your standing cards — a charging
+Wall braces or sets a Last Stand, a Controller slows / staggers / disarms the enemy, a Support mends or
+hastes the line — these last the whole round and shape what follows. The two charge-columns thread
+through each other: at each meeting, both
 keep flipping Tempo cards into a **Drive auction** — higher total Drive wins, a tie is caught; or spend
 nothing and take a free hit to barge on. Your Tempo is one pool across all your crossings — choose whom
 to catch (and Tempo spent here is gone for the exchanges). Those who break all the way through are Skirmishers; those who
@@ -936,17 +976,20 @@ can't fire with. No one charges on either side → open brawl.*
 - **TERM.** `Skirmisher` (Roles) — A charger who runs the gauntlet all the way through to the enemy backfield. The only route to the enemy Reserve; acts after the gauntlet resolves.
 - **TERM.** `Reserve` (Roles) — Anyone who did not charge: decisive but fragile (artillery, support). Fires ranged on the enemy front and aids allies, but can never target the enemy Reserve.
 - **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (intercepts it in the gauntlet); Skirmisher beats Reserve (breaks through to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
-- **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. Breakthroughs become Skirmishers; those who stop become Vanguard.
+- **TERM.** `Muster` (Combat) — The open window after the charge reveal and before the gauntlet, where each side plays its **standing / persistent** cards (Wall defenses, Controller debuffs, Support buffs). Mustered effects last the round and shape the gauntlet; positional attack cards wait for their own phase.
+- **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. A unit slips iff its advance Drive exceeds the other's catch Drive (Wall powers raise catch only). Breakthroughs become Skirmishers; those who stop become Vanguard.
 - **TERM.** `Slip` (Combat) — At a crossing, push past an enemy: an open Drive auction where both flip Tempo cards and the higher committed Drive wins — you need strictly more than the catcher to slip; a tie is caught. Spend nothing and you barge past taking a free hit.
 - **TERM.** `Open brawl` (Combat) — If neither side charges, no front forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
-- **TERM.** `Phases` (Round) — Charge (hidden: who runs in, and in what order) → Gauntlet (the columns thread through) → Skirmish (breakthroughs hit the enemy Reserve) → Reserve (ranged fire on the front) → Refresh. Confluent within each phase.
+- **TERM.** `Phases` (Round) — Charge (hidden: who runs in, and in what order) → Muster (play standing/persistent cards) → Gauntlet (the columns thread through) → Skirmish (breakthroughs hit the enemy Reserve) → Reserve (ranged fire on the front) → Refresh. Confluent within each phase.
 
 **Still unspecified (open dials — pin before/with implementation).** The structure (charge, gauntlet,
 crossings, the three emergent roles, phases, targeting) is settled; these are not:
 
-1. **Crossing numbers** — the rule is locked (§3: an **escalating Drive auction**, **ties to the
-   catcher**, **catching = engaging** on the same cards); the **free-hit** magnitude when barging is the
-   remaining number.
+1. **Crossing numbers / the auction** — the rule is locked (§3: an **escalating Drive auction**, **ties
+   to the catcher**, **catching = engaging** on the same cards). **Code implements the v1 single-card
+   crossing** (each side flips one Tempo card; advance Drive vs catch Drive, Phalanx/Shadowstep/Blitz
+   riders live) — the full **escalating** auction (both sides keep flipping to outbid) is the remaining
+   enrichment, along with the **free-hit** magnitude when barging.
 2. **Multi-intercept caps** — a stopped unit can intercept later advancers while Tempo lasts; is there a
    cap, or is it purely Tempo-bounded?
 3. **Charge order semantics** — confirm the column is strictly front-to-back (an advancer meets the

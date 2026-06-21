@@ -129,15 +129,45 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
-/// Resolve the **gauntlet** (§4): the two charge-columns thread through each other. Each side's
-/// chargers (in roster order) pair off by order; at each crossing the **faster slips past** (becomes
-/// a Skirmisher) while the one it passes lands a **parting free hit**; **equal speed → both stop and
-/// trade** (both become Vanguard); **surplus chargers** on the longer column meet no opposition and
-/// **break through** cleanly. A charger that stops (or never broke through) is a Vanguard; a
-/// non-charger is a Reserve. Returns `(hero_skirmisher, foe_skirmisher)` — who broke through.
+/// The §4 outcome of a single gauntlet crossing.
+enum Cross {
+    HeroSlips,
+    FoeSlips,
+    BothStop,
+}
+
+/// A unit's **advance Drive** — the grade it commits to *slip past* an opponent (its Form Drive,
+/// floor 1). Slipping needs advance Drive strictly greater than the other's catch Drive.
+fn advance_drive(a: &Actor) -> u32 {
+    a.offense.drive.max(1)
+}
+
+/// A unit's **catch Drive** — the grade it commits to *hold the line* (advance Drive plus the
+/// **Phalanx** bonus). A Wall that owns *Phalanx* combines its effort with the line, +2 to catch
+/// runners (a v1 flat stand-in for "Walls who stop together intercept as one"). Phalanx raises only
+/// catching, never advancing — a Wall holds; it does not slip through on a high number.
+fn catch_drive(a: &Actor) -> u32 {
+    advance_drive(a) + if a.has("Phalanx") { 2 } else { 0 }
+}
+
+/// **Taunt** draws fire: a Wall that owns *Taunt* is pulled to the front of its charge column, so the
+/// enemy meets it first (sparing the rest of the line). Stable-sort keeps roster order otherwise.
+fn taunt_order(chargers: &mut [usize], pool: &[Actor]) {
+    chargers.sort_by_key(|&i| !pool[i].has("Taunt"));
+}
+
+/// Resolve the **gauntlet** (§4): the two charge-columns thread through each other. **Taunt** Walls
+/// are pulled to the front; chargers then pair off by column order. Each crossing is decided by
+/// **Drive** (§3): the **higher** committed Drive **slips past** (becomes a Skirmisher) while the one
+/// it passes lands a **parting free hit**; a **tie stops both** (both become Vanguard) — unless a
+/// slipper owns **Shadowstep** (it wins the tie). Both spend a Tempo card to contest, except an
+/// Infiltrator's first **Blitz** slip (free). **Surplus** chargers on the longer column break through
+/// cleanly — unless a stopped enemy Wall with **Bodyguard** intercepts one. A charger that stops (or
+/// never broke through) is a Vanguard; a non-charger is a Reserve. Returns `(hero_skirmisher,
+/// foe_skirmisher)` — who broke through.
 ///
-/// *(v1: the crossing contest uses Speed as the tempo stand-in and auto-resolves; the interactive
-/// per-crossing tempo auction is a later enrichment. Damage applies from pre-crossing snapshots.)*
+/// *(v1: each crossing flips one Tempo card per side — the full escalating Drive auction is a later
+/// enrichment. Damage applies from pre-crossing snapshots, so the phase stays order-independent.)*
 pub fn gauntlet(
     heroes: &mut [Actor],
     hero_charging: &[bool],
@@ -147,62 +177,135 @@ pub fn gauntlet(
 ) -> (Vec<bool>, Vec<bool>) {
     let mut hero_skirm = vec![false; heroes.len()];
     let mut foe_skirm = vec![false; foes.len()];
-    let h_chargers: Vec<usize> = (0..heroes.len())
+    let mut h_chargers: Vec<usize> = (0..heroes.len())
         .filter(|&i| hero_charging[i] && !heroes[i].is_down())
         .collect();
-    let f_chargers: Vec<usize> = (0..foes.len())
+    let mut f_chargers: Vec<usize> = (0..foes.len())
         .filter(|&i| foe_charging[i] && !foes[i].is_down())
         .collect();
+    taunt_order(&mut h_chargers, heroes);
+    taunt_order(&mut f_chargers, foes);
     let pairs = h_chargers.len().min(f_chargers.len());
 
     for k in 0..pairs {
         let h = h_chargers[k];
         let f = f_chargers[k];
-        // The crossing is decided by **Drive** (§3) — the grade of the Tempo each commits. Both
-        // spend a Tempo card to contest; higher Drive slips past, a tie stops both (ties to the
-        // catcher). *(v1: one card each — the full escalating auction is a later enrichment.)*
-        let hd = heroes[h].offense.drive.max(1);
-        let fd = foes[f].offense.drive.max(1);
-        heroes[h].tempo -= 1;
-        foes[f].tempo -= 1;
-        if hd > fd {
-            // Hero out-drives → slips past; the foe it passes lands a parting blow.
-            let snap = snapshot(&foes[f]);
-            let name = foes[f].name.clone();
-            apply_strike(&mut heroes[h], snap, &name, log);
-            if !heroes[h].is_down() {
-                hero_skirm[h] = true;
-                log.push(format!("{} breaks through the line!", heroes[h].name));
+        // A unit slips past iff its **advance** Drive beats the other's **catch** Drive; a tie is
+        // caught (held), unless the slipper owns **Shadowstep** (it wins the tie). Phalanx feeds catch
+        // only, so a Wall holds the line rather than slipping through.
+        let h_slips = advance_drive(&heroes[h]) > catch_drive(&foes[f])
+            || (advance_drive(&heroes[h]) == catch_drive(&foes[f]) && heroes[h].has("Shadowstep"));
+        let f_slips = advance_drive(&foes[f]) > catch_drive(&heroes[h])
+            || (advance_drive(&foes[f]) == catch_drive(&heroes[h]) && foes[f].has("Shadowstep"));
+        // Decide the crossing first, then charge Tempo — so a Blitz free slip can skip its own cost.
+        // Only one side can out-advance the other; a mutual Shadowstep tie holds (both stop).
+        let outcome = match (h_slips, f_slips) {
+            (true, false) => Cross::HeroSlips,
+            (false, true) => Cross::FoeSlips,
+            _ => Cross::BothStop,
+        };
+        // Tempo: each contests for one card, but an Infiltrator's first Blitz slip is free.
+        let blitz_free = |a: &mut Actor, slipped: bool| {
+            if slipped && a.has("Blitz") && !a.free_slip_used {
+                a.free_slip_used = true;
+            } else {
+                a.tempo -= 1;
             }
-        } else if fd > hd {
-            let snap = snapshot(&heroes[h]);
-            let name = heroes[h].name.clone();
-            apply_strike(&mut foes[f], snap, &name, log);
-            if !foes[f].is_down() {
-                foe_skirm[f] = true;
+        };
+        blitz_free(&mut heroes[h], matches!(outcome, Cross::HeroSlips));
+        blitz_free(&mut foes[f], matches!(outcome, Cross::FoeSlips));
+        match outcome {
+            Cross::HeroSlips => {
+                // Hero out-drives → slips past; the foe it passes lands a parting blow.
+                let snap = snapshot(&foes[f]);
+                let name = foes[f].name.clone();
+                apply_strike(&mut heroes[h], snap, &name, log);
+                if !heroes[h].is_down() {
+                    hero_skirm[h] = true;
+                    log.push(format!("{} breaks through the line!", heroes[h].name));
+                }
             }
-        } else {
-            // Equal Drive → caught, both stop and trade (both become Vanguard).
-            let hsnap = snapshot(&heroes[h]);
-            let fsnap = snapshot(&foes[f]);
-            let hname = heroes[h].name.clone();
-            let fname = foes[f].name.clone();
-            apply_strike(&mut heroes[h], fsnap, &fname, log);
-            apply_strike(&mut foes[f], hsnap, &hname, log);
+            Cross::FoeSlips => {
+                let snap = snapshot(&heroes[h]);
+                let name = heroes[h].name.clone();
+                apply_strike(&mut foes[f], snap, &name, log);
+                if !foes[f].is_down() {
+                    foe_skirm[f] = true;
+                }
+            }
+            Cross::BothStop => {
+                // Caught: both stop and trade (both become Vanguard).
+                let hsnap = snapshot(&heroes[h]);
+                let fsnap = snapshot(&foes[f]);
+                let hname = heroes[h].name.clone();
+                let fname = foes[f].name.clone();
+                apply_strike(&mut heroes[h], fsnap, &fname, log);
+                apply_strike(&mut foes[f], hsnap, &hname, log);
+            }
         }
     }
-    // Surplus chargers on the longer column meet no opposition → break through cleanly.
+    // Surplus chargers on the longer column meet no opposition → break through cleanly, unless a
+    // stopped enemy Wall with **Bodyguard** steps across to intercept one (guarding the backfield).
+    let mut foe_guards = bodyguards(&f_chargers, &foe_skirm, foes, pairs);
     for &h in h_chargers.iter().skip(pairs) {
-        hero_skirm[h] = true;
-        log.push(format!(
-            "{} runs an open gauntlet and breaks through!",
-            heroes[h].name
-        ));
+        if heroes[h].is_down() {
+            continue;
+        }
+        if let Some(g) = foe_guards.pop() {
+            intercept(heroes, h, foes, g, log);
+        } else {
+            hero_skirm[h] = true;
+            log.push(format!(
+                "{} runs an open gauntlet and breaks through!",
+                heroes[h].name
+            ));
+        }
     }
+    let mut hero_guards = bodyguards(&h_chargers, &hero_skirm, heroes, pairs);
     for &f in f_chargers.iter().skip(pairs) {
-        foe_skirm[f] = true;
+        if foes[f].is_down() {
+            continue;
+        }
+        if let Some(g) = hero_guards.pop() {
+            intercept(foes, f, heroes, g, log);
+        } else {
+            foe_skirm[f] = true;
+        }
     }
     (hero_skirm, foe_skirm)
+}
+
+/// The stopped Vanguard interceptors (charged, didn't break through, still up, Tempo to spend) on a
+/// side that own **Bodyguard** — each can step across to catch one surplus enemy charger.
+fn bodyguards(chargers: &[usize], skirm: &[bool], pool: &[Actor], pairs: usize) -> Vec<usize> {
+    chargers
+        .iter()
+        .take(pairs)
+        .copied()
+        .filter(|&i| {
+            !skirm[i] && !pool[i].is_down() && pool[i].has("Bodyguard") && pool[i].tempo > 0
+        })
+        .collect()
+}
+
+/// A `guard` (in `gpool`) intercepts a surplus `runner` (in `rpool`): both spend a Tempo card and
+/// trade from pre-crossing snapshots; the runner is stopped (no breakthrough).
+fn intercept(
+    rpool: &mut [Actor],
+    runner: usize,
+    gpool: &mut [Actor],
+    guard: usize,
+    log: &mut Vec<String>,
+) {
+    rpool[runner].tempo -= 1;
+    gpool[guard].tempo -= 1;
+    let rsnap = snapshot(&rpool[runner]);
+    let gsnap = snapshot(&gpool[guard]);
+    let rname = rpool[runner].name.clone();
+    let gname = gpool[guard].name.clone();
+    log.push(format!("{gname} guards the line — intercepts {rname}!"));
+    apply_strike(&mut rpool[runner], gsnap, &gname, log);
+    apply_strike(&mut gpool[guard], rsnap, &rname, log);
 }
 
 /// Apply a hero's action/power card. The deterministic effects (§"cards may supersede the
@@ -340,8 +443,41 @@ pub fn play_card(
                 }
                 log.push(format!("  +{amount} Tempo banked."));
             }
-            Effect::Stagger | Effect::Disarm | Effect::Shove | Effect::Recover => {
-                log.push("  (effect applied)".into());
+            Effect::Stagger => {
+                // A Controller debuff: the foe loses its action this round (no strike, no card, no
+                // strike-back). Played at Muster, it bites the whole round (§4).
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.stunned = true;
+                    log.push(format!("  staggers {} (loses its action).", t.name));
+                }
+            }
+            Effect::Shove => {
+                // Knock the foe out of melee: this round it cannot contest a melee blow (no
+                // strike-back; takes free hits).
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.shoved = true;
+                    log.push(format!("  shoves {} out of the line.", t.name));
+                }
+            }
+            Effect::Disarm => {
+                // Foul the foe's hand: this round it cannot play its role cards.
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.disarmed = true;
+                    log.push(format!("  disarms {} (cannot play cards).", t.name));
+                }
+            }
+            Effect::Recover => {
+                // Turn a face-down Health card back up on the most-wounded ally/allies (§5).
+                let mut order: Vec<usize> = living(allies);
+                order.sort_by_key(|&i| allies[i].defense.body.remaining);
+                for ai in order.into_iter().take(n) {
+                    if allies[ai].defense.recover_card() > 0 {
+                        log.push(format!(
+                            "  {} turns a health card back up.",
+                            allies[ai].name
+                        ));
+                    }
+                }
             }
         }
     }
@@ -350,4 +486,149 @@ pub fn play_card(
 /// Can `defender` contest a strike at `range` (§4.2)? If not, the strike is an auto-hit.
 pub fn contests(defender: &Actor, range: Range) -> bool {
     defender.can_contest(range)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cards::{Card, RoleKind};
+    use crate::currency::Currency;
+    use crate::scenarios::{RewardId, build_character};
+    use crate::zones::ZoneBehavior;
+
+    fn rid(track: Currency, level: u32) -> RewardId {
+        RewardId { track, level }
+    }
+
+    /// A throwaway played card carrying `effects` (for testing the effect wiring directly).
+    fn fx(effects: Vec<Effect>) -> Card {
+        Card {
+            name: "Test".into(),
+            text: String::new(),
+            flavor: String::new(),
+            targets: 1,
+            reach: [1, 1],
+            zone: ZoneBehavior::Return,
+            tags: vec![],
+            passive: false,
+            effects,
+            role: None,
+            kind: RoleKind::Base,
+            positional: false,
+            modifies: None,
+        }
+    }
+
+    #[test]
+    fn phalanx_lets_a_wall_hold_a_runner_a_bare_wall_cannot() {
+        // Runner: Silver L1 grants Drive 2 (advance 2).
+        // A bare Wall has catch Drive 1 → the runner slips past.
+        let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
+        let mut bare_wall = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+        let (skirm, _) = gauntlet(&mut runners, &[true], &mut bare_wall, &[true], &mut log);
+        assert!(
+            skirm[0],
+            "a bare Wall (catch 1) cannot hold a Drive-2 runner"
+        );
+
+        // A Phalanx Wall (Iron L2) has catch Drive 1+2 = 3 ≥ the runner's advance 2 → caught.
+        let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
+        let mut phalanx_wall = vec![build_character("Novice", &[rid(Currency::Iron, 2)])];
+        let mut log = Vec::new();
+        let (skirm, _) = gauntlet(&mut runners, &[true], &mut phalanx_wall, &[true], &mut log);
+        assert!(!skirm[0], "a Phalanx Wall (catch 3) holds a Drive-2 runner");
+        assert!(
+            phalanx_wall[0].has("Phalanx") && advance_drive(&phalanx_wall[0]) == 1,
+            "Phalanx feeds catch only — the Wall never advances on it"
+        );
+    }
+
+    #[test]
+    fn shadowstep_wins_a_tie() {
+        // Equal advance/catch Drive and no Shadowstep → the tie is caught (both stop).
+        let mut a = vec![build_character("Novice", &[])];
+        let mut b = vec![build_character("Novice", &[])];
+        a[0].offense.drive = 2;
+        b[0].offense.drive = 2;
+        let mut log = Vec::new();
+        let (ask, bsk) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
+        assert!(!ask[0] && !bsk[0], "an even tie stops both");
+
+        // Shadowstep (Silver L3) on A, forced to the same Drive → A wins the tie and slips.
+        let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 3)])];
+        let mut b = vec![build_character("Novice", &[])];
+        a[0].offense.drive = 2;
+        b[0].offense.drive = 2;
+        let mut log = Vec::new();
+        let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
+        assert!(ask[0], "Shadowstep wins the tie and slips through");
+    }
+
+    #[test]
+    fn blitz_makes_the_first_slip_cost_no_tempo() {
+        let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 2)])]; // owns Blitz
+        a[0].offense.drive = 5; // clearly out-advances the bare blocker
+        let mut b = vec![build_character("Novice", &[])];
+        let tempo_before = a[0].tempo;
+        let mut log = Vec::new();
+        let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
+        assert!(ask[0], "the high-Drive runner slips");
+        assert_eq!(
+            a[0].tempo, tempo_before,
+            "Blitz: the first slip each round costs no Tempo"
+        );
+        assert!(a[0].free_slip_used, "the free slip is now spent");
+    }
+
+    #[test]
+    fn stagger_shove_and_disarm_set_round_status() {
+        let mut foes = vec![build_character("Novice", &[])];
+        let mut allies = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+        play_card(
+            &fx(vec![Effect::Stagger, Effect::Shove, Effect::Disarm]),
+            "Hexer",
+            0,
+            0,
+            &mut foes,
+            &mut allies,
+            Some(0),
+            &mut log,
+        );
+        assert!(foes[0].stunned, "Stagger sets the lose-its-action flag");
+        assert!(foes[0].shoved, "Shove sets the no-melee-contest flag");
+        assert!(foes[0].disarmed, "Disarm sets the no-cards flag");
+        assert!(
+            !foes[0].can_contest_now(Range::Melee),
+            "a staggered/shoved foe cannot contest melee"
+        );
+    }
+
+    #[test]
+    fn recover_turns_a_health_card_back_up() {
+        let mut allies = vec![build_character("Novice", &[])];
+        let mut foes = vec![build_character("Novice", &[])];
+        // Knock one Health card face down.
+        let t = allies[0].defense.body.toughness;
+        allies[0].defense.take(t, DamageType::Blunt, 0);
+        let before = allies[0].defense.body.remaining;
+        assert!(before < allies[0].defense.body.max, "a card is face down");
+        let mut log = Vec::new();
+        play_card(
+            &fx(vec![Effect::Recover]),
+            "Medic",
+            0,
+            0,
+            &mut foes,
+            &mut allies,
+            Some(0),
+            &mut log,
+        );
+        assert_eq!(
+            allies[0].defense.body.remaining,
+            before + 1,
+            "Recover turns one face-down Health card back up"
+        );
+    }
 }

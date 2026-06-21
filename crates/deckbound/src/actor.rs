@@ -3,8 +3,10 @@
 //! An Actor is the umbrella (see `docs/games/deckbound/notes/entities.md`): a **Character**
 //! is human-driven; a **Creature** follows a scripted `Behavior`. Both carry the full stat
 //! block — [`Offense`](crate::stats::Offense) / [`Defense`](crate::stats::Defense) — a weapon,
-//! action cards, and round budgets (**tempo** = Speed, **focus** = Mind). Each Actor also has
-//! an **attack profile** (§4.2): the range(s) it can strike and contest at.
+//! action cards, and the round's **Tempo** pool (= Speed; the single breadth budget since the
+//! Focus/Mind merge, §3). Each Actor also has an **attack profile** (§4.2): the range(s) it can
+//! strike and contest at, plus round-scoped **status** (Stagger / Shove / Disarm) set by Controller
+//! cards and cleared at Refresh.
 
 use engine::Rng;
 use serde::Deserialize;
@@ -157,6 +159,18 @@ pub struct Actor {
     /// Round-scoped: a Lifeline (M3 *Last Stand*) — this round the Actor cannot be downed; damage
     /// that would down it leaves it at 1 Body (resolved in [`crate::combat::tally`]). Reset each round.
     pub cannot_fall: bool,
+    /// Round-scoped **Stagger** (a Controller debuff): this round the Actor loses its action — it may
+    /// not initiate a strike or play a card, nor strike back. Cleared at Refresh.
+    pub stunned: bool,
+    /// Round-scoped **Shove** (an Infiltrator/Controller debuff): this round the Actor is knocked out
+    /// of melee — it cannot contest a melee blow (no strike-back; takes free hits). Cleared at Refresh.
+    pub shoved: bool,
+    /// Round-scoped **Disarm** (a Controller debuff): this round the Actor cannot play its role cards
+    /// (its hand is fouled). Cleared at Refresh.
+    pub disarmed: bool,
+    /// Round-scoped bookkeeping: has this Actor already taken its one free **Blitz** slip this round
+    /// (§4 Infiltrator)? Cleared at Refresh.
+    pub free_slip_used: bool,
     /// Finalized dead. Body reaching 0 is "mortally wounded" — death is tallied at the phase
     /// boundary, which sets this; once set the Actor is out of the fight.
     pub fallen: bool,
@@ -183,15 +197,32 @@ impl Actor {
         self.attack.has(range)
     }
 
+    /// Can this Actor contest a blow at `range` **right now**, accounting for round-scoped status?
+    /// A **Shoved** unit is knocked out of melee (no strike-back at melee); a **Stagger**ed unit
+    /// loses its action entirely (no strike-back at any range).
+    pub fn can_contest_now(&self, range: Range) -> bool {
+        if self.stunned {
+            return false;
+        }
+        if self.shoved && range == Range::Melee {
+            return false;
+        }
+        self.can_contest(range)
+    }
+
     /// Does this Actor carry the named power card (a passive ability, §4 powers)?
     pub fn has(&self, card: &str) -> bool {
         self.actions.iter().any(|c| c.name == card)
     }
 
-    /// Refresh the Tempo pool and clear round-scoped defense state.
+    /// Refresh the Tempo pool and clear round-scoped defense + status state.
     pub fn refresh_round(&mut self) {
         self.tempo = self.offense.speed as i32;
         self.cannot_fall = false;
+        self.stunned = false;
+        self.shoved = false;
+        self.disarmed = false;
+        self.free_slip_used = false;
         self.defense.end_round();
     }
 }
