@@ -62,7 +62,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Speed/Tempo** (one breadth pool)                | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                               |
 | **The battle — the charge & the gauntlet**        | 🟡 seeded    | §4 **respecced** to charge-and-gauntlet (lanes removed, 2026-06-20); code migration pending `/spec-sync §4`. §4.3 actors-are-decks also pending |
 | **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
-| **Aspects / the chord**                           | ⏸ deferred  | parked → `future-possibilities.md` (entry 4) — single-deck core first                                                                                  |
+| **Aspects / the chord**                           | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                              |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
 | **Strategic layer** (world/event decks)           | 🟡 seeded    | **§8** (world · clock · role-card rewards · encounters · progression) — `progression-design.md`                                                        |
 | **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
@@ -73,7 +73,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
-`future-possibilities.md`.
+`future-possibilities.md` · ✖ retired = decommissioned, parked to `retired-ideas.md`.
 
 ---
 
@@ -561,8 +561,8 @@ engagement** (= descending tempo at stake), in three tiers:
 Thus **attacks resolve before buffs**: a self-effect cannot negate a blow already
 incoming this exchange; it takes hold from the next exchange on. Within a tier order
 is immaterial: in the single-deck core all modifiers (attachments) compose **commutatively** (§5),
-so nothing is order-dependent. *(The order-dependent **modifier** card-kind is deferred —
-`future-possibilities.md`; were it to return, its on-target conflicts would resolve in a **fixed
+so nothing is order-dependent. *(The order-dependent **modifier** card-kind is retired with the chord
+layer — `retired-ideas.md`; were it to return, its on-target conflicts would resolve in a **fixed
 seat order**, Speed playing no part in timing, §3.1.)* Resolution is fully deterministic.
 
 Within a tier, **resolution order is immaterial by construction**, not by luck. Three
@@ -589,7 +589,7 @@ determinism without manufacturing a contest the design does not need.
 - Defense is anticipatory, not reactive: a buff played into an incoming attack does
   not save you from it (human-confirmed intent).
 - Speed never affects resolution order: every effect is order-independent (modifiers compose
-  commutatively, §5; the deferred order-dependent modifier would use a fixed seat key, not Speed).
+  commutatively, §5; the retired order-dependent modifier would use a fixed seat key, not Speed).
 - Intra-tier resolution is order-independent by construction (keyed RNG + commutative
   damage + boundary down-checks): an Actor in K duels takes the **sum** of the blows,
   its fall decided by the total at the boundary, and — per §1.3 — it still lands every
@@ -613,7 +613,7 @@ Design source: [`notes/form-and-defeat.md`](../notes/form-and-defeat.md),
 
 > **Naming.** The defensive dimensions — **Body · Spirit** — are the **channels** (outer physical,
 > inner fear/will). *(The **Mind / Confusion** channel was **removed** 2026-06-20 with the Tempo/Focus
-> merge — see §3.2.)* The word *aspect* is **reserved** for the deferred deck-chord combo layer (§6) and
+> merge — see §3.2.)* The word *aspect* is **reserved** for the retired deck-chord combo layer (§6) and
 > is **not** used for these. *(The frozen `notes/` still call the channels "aspects" — read that as
 > "channels".)*
 
@@ -1200,7 +1200,7 @@ crossings, the three emergent roles, phases, targeting) is settled; these are no
 4. **Skirmish strike cost** — one Tempo per strike (assumed); confirm, and whether switching targets
    costs extra.
 5. **Reserve aid kit** — the buffs / heals / debuffs Reserve deliver — Action cards over the §5 zone
-   layer (the aspect/combo layer is deferred — `future-possibilities.md`).
+   layer (the aspect/combo layer is retired — `retired-ideas.md`).
 6. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
    (value gates damage; persists) and **Tempo = Speed × Daring** (refreshes). **Focus and Mind are
    removed.** Speed = count (how many Tempo cards), **Daring = grade** (per-card magnitude), Tempo = the
@@ -1476,8 +1476,8 @@ the schema, "Form stat" still resolves via the actor-card stat in the running co
 sizes, Spend/Recover costs, charge magnitudes — live in `booklet.ron`, human-tuned.)*
 
 **Open dials.** (1) **Attachment composition** — in the single-deck core, attachments **compose
-commutatively**; the order-dependent **modifier** variant is part of the deferred aspect/combo layer
-(§6 → `future-possibilities.md`). (2) **`TERM` glossary vocabulary + encyclopedia + glossary test** —
+commutatively**; the order-dependent **modifier** variant is part of the retired aspect/combo layer
+(§6 → `retired-ideas.md`). (2) **`TERM` glossary vocabulary + encyclopedia + glossary test** —
 land together in the **`/spec-sync §5`** code pass. (3) **Numbers** — `booklet.ron`.
 
 ### 5.6 Role-card taxonomy — Base · Modifier · Mode · Stat 🟡 *(in code 2026-06-19)*
@@ -1517,16 +1517,17 @@ resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
 - **M6 — `targets: all`** (Support L5 *Sanctuary*): a buff effect (Mend / Ward / Haste) may target
   **all allies** — a party-wide target mode.
 
-## 6. Aspects / the chord — *deferred*
+## 6. Aspects / the chord — *retired*
 
-**Deferred to `future-possibilities.md` (entry 4).** The multi-deck **chord/combo** system (a
-character as a set of aspect-decks; a play as one card per aspect, combined) is **parked** until the
-**single-deck core** is working fully and tuned against the reference scenario. The core character
-model is **one deck** — Form (fundamental + attachments) + Action cards over the §5 zones — not a
-chord of aspect-decks.
+**Retired to `retired-ideas.md` (decommissioned 2026-06-21).** The multi-deck **chord/combo** system
+(a character as a set of aspect-decks; a play as one card per aspect, combined) was **dropped**: the
+single-deck core — Form (fundamental + attachments) + Action cards over the §5 zones — plus the §4.4
+per-suit-per-round play deliver its intent, and a fused-action chord works against Charter #2 (small,
+computable tactics). `retired-ideas.md` records the full rationale and **the bar it must clear to
+return**. *(Section kept as a stable §6 anchor; the heading is referenced elsewhere.)*
 
-*(Terminology note: the three **defense channels** Body / Mind / Spirit (§2) are unaffected — they
-are damage types / thresholds, not the deferred deck-chord, despite the shared word "aspect.")*
+*(Terminology note: the two **defense channels** Body / Spirit (§2) are unaffected — they are damage
+types / thresholds, not the retired deck-chord, despite the shared word "aspect.")*
 
 ## 7. Agents — Character vs Creature ⬜
 

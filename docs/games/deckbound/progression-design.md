@@ -383,7 +383,7 @@ actions, traits, attack), `Card` (one struct, **three uses** — weapon, power/a
 passive power), `TraitCard` (armor/ward), `ScenarioCard` (a battle setup). Physical Spec
 cards: the **Clash kit** (Strike/Anticipate/Gather/Evade), **number cards 0–9** + **decoy
 cards** (§4 assemble/lanes), and **Body Health** cards (§2.1). *(The multi-deck aspect/chord card
-kinds — numberless / modifier / passive — are deferred; `future-possibilities.md` entry 4.)*
+kinds — numberless / modifier / passive — are retired; `retired-ideas.md`.)*
 
 **Flags the audit raised.**
 

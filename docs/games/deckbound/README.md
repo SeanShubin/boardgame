@@ -21,6 +21,9 @@ The documentation is split by **authority**:
 - **[future-possibilities.md](future-possibilities.md) — design backlog.** A living,
   non-authoritative parking lot for big speculative changes awaiting playtest before any
   decision. Neither canon nor frozen notes.
+- **[retired-ideas.md](retired-ideas.md) — the design graveyard.** The counterpart to the backlog:
+  ideas that were **deliberately decommissioned**, each with *why* it was retired and **the bar it must
+  clear to come back** — so a revived idea has to answer the objections that sank it.
 - **[scenario-plan.md](scenario-plan.md) — combat content blueprint.** The authored target for
   the rebuilt combat: cast, tutorials, and scenarios that realize §1/§3/§4.
 - **[game-flow.md](game-flow.md) — the complete game-flow map.** Every cycle and phase, largest to

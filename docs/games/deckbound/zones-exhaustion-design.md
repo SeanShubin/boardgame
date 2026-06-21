@@ -203,8 +203,8 @@ tunable is **Recover/refresh rate vs Spend rate**.
 
 - **Spec Coverage table:** this is **§5 (Zones / exhaustion)**, now 🟡 graduated
   (`canon/2-spec/README.md`). It also touches **§1.0** (the Clash = the all-default case) and
-  **§2.1** (health = face-down cards). *(The multi-deck **aspect/chord combo** layer is deferred —
-  `future-possibilities.md` entry 4; the single-deck core uses Form + attachments, composed
+  **§2.1** (health = face-down cards). *(The multi-deck **aspect/chord combo** layer is retired —
+  `retired-ideas.md`; the single-deck core uses Form + attachments, composed
   commutatively.)*
 - **Companion design:** [`progression-design.md`](progression-design.md) §7 (deck-as-stats,
   clean-slate characters, Upgrades) — together these two docs define the character + economy layer.
