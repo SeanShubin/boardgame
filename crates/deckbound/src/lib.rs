@@ -9,6 +9,7 @@
 //! `tabletop` plugin renders it. All numbers live in `data/booklet.ron`.
 
 pub mod actor;
+pub mod balance;
 pub mod campaign;
 pub mod cards;
 pub mod combat;

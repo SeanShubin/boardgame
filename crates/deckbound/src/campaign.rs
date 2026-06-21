@@ -596,8 +596,9 @@ pub fn reference_campaign() -> CampaignState {
 ///   healing.
 ///
 /// Counts are kept gentle so the accreting guided party (Iron fought weakest, Salt strongest) wins and
-/// yields a par to **measure**; the precise difficulty gating is the balance harness's job to tune.
-fn grind_encounter(suit: Currency, level_name: &str) -> EncounterCard {
+/// yields a par to **measure**; the precise difficulty gating is the balance harness's job to tune
+/// ([`crate::balance`]). `level` names the card and drives the per-level counts.
+pub fn grind_encounter(suit: Currency, level: u32) -> EncounterCard {
     use crate::encounter::RosterEntry;
     let husks = |base, growth| RosterEntry {
         creature: "Husk".into(),
@@ -620,7 +621,7 @@ fn grind_encounter(suit: Currency, level_name: &str) -> EncounterCard {
         Currency::Gold => vec![husks(1, 1)],
     };
     EncounterCard {
-        name: format!("{} {level_name}", suit.label()),
+        name: format!("{} L{level}", suit.label()),
         currency: suit,
         strategy: "aggressor".into(),
         foes,
@@ -639,7 +640,7 @@ pub fn grind_campaign(seed: u64) -> CampaignState {
     let locations = base_locations(); // suit-major: Iron L1..L5, Silver L1..L5, …
     let encounters: Vec<EncounterCard> = locations
         .iter()
-        .map(|l| grind_encounter(l.currency, &format!("L{}", l.max_level)))
+        .map(|l| grind_encounter(l.currency, l.max_level))
         .collect();
 
     let party: Vec<Member> = REWARD_SUITS
@@ -734,7 +735,7 @@ mod tests {
     fn tutorial_encounters_are_suit_specific() {
         // Each suit's roster builds its own lesson, not a generic swarm (§8.3 tutorials).
         let names = |suit| {
-            grind_encounter(suit, "L5")
+            grind_encounter(suit, 5)
                 .roster(5)
                 .into_iter()
                 .map(|(n, _)| n)
@@ -749,7 +750,7 @@ mod tests {
             "Bone teaches debuffing a fast threat"
         );
         let total = |suit, lvl| {
-            grind_encounter(suit, "Lx")
+            grind_encounter(suit, lvl)
                 .roster(lvl)
                 .into_iter()
                 .map(|(_, c)| c)
