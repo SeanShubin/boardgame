@@ -71,7 +71,7 @@ impl EncounterCard {
     }
 
     /// The stat scaling to attach to **each** foe's Form at `level`: the coefficients × level
-    /// (only the scalar stats scale; armor/ward/keystone are not level-scaled).
+    /// (only the scalar stats scale; armor/ward are not level-scaled).
     pub fn scaling_at(&self, level: u32) -> StatCard {
         let s = &self.scaling;
         StatCard {

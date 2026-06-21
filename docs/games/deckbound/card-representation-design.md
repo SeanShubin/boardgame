@@ -46,9 +46,6 @@ Power only. Suits are global: **Quantity = how many, Power = how hard** (§2.4).
 | **Guard·⟨type⟩** | — | Armor cut for that type | one deck **per damage type** (see D-armor) |
 | **Ward·Fear** | — | Ward cut vs Fear | the inner cut |
 
-Not a suit: **Keystone** (which aspect is lethal, §2 stats) is a categorical **marker card**, not a
-magnitude — it names a deck as the kill-condition, it has no Quantity/Power value.
-
 **Quantity appears only on the two genuine pools (Body, Tempo).** Everything else is "a flat magnitude =
 Power under its deck," which is why two suit-names cover the whole stat space.
 

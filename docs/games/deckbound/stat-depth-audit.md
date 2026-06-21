@@ -1,5 +1,10 @@
 # Stat-Depth Audit — does every stat earn its slot?
 
+> **Historical (promoted from `needs-merge/`, 2026-06-21).** The findings here have **shipped**:
+> Spirit→**Dread** (now wired), Support's missing stat → **Inspiration**, Pierce/**Daring** kept,
+> **Keystone cut**; the foundational principle became **Charter #12** + **Spec §8.6**. Kept as the
+> design-reasoning record — non-authoritative, canon wins.
+
 **Status:** design pass (suggestions only — 2026-06-21). No code or canon edited. A separate
 instance merges `needs-merge/`. Per `0-source-of-truth.md`: AI proposes, human disposes —
 **especially on numbers**, and every intent-level call is surfaced as **case 3** explicitly.

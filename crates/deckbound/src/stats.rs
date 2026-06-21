@@ -11,14 +11,6 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-/// The aspects an Actor can be broken in (a Form's keystone, §2). Usually Body.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-pub enum Aspect {
-    Body,
-    Mind,
-    Spirit,
-}
-
 /// A damage type. Physical/elemental types are outer (met by Armor); Fear is inner (met by Ward).
 /// `Confusion` is retained as a type but now flows through the **Fear** channel (the Mind channel is
 /// gone) — a mental attack on the will.
@@ -113,8 +105,6 @@ pub struct Defense {
     pub ward: BTreeMap<DamageType, u32>,
     /// Spirit bar — fear must exceed it.
     pub resolve: u32,
-    /// Which aspect's loss is lethal (usually Body).
-    pub keystone: Aspect,
 
     // round-scoped piles (cleared at round end)
     pub body_pile: u32,
@@ -132,7 +122,7 @@ pub struct HitOutcome {
     /// Health cards turned **face down** by this hit (the body pile crossing toughness).
     pub cards_flipped: u32,
     pub broke: Option<Break>,
-    /// The keystone fell — the Actor is knocked out.
+    /// The Body pool emptied — the Actor is knocked out.
     pub down: bool,
 }
 
@@ -143,21 +133,15 @@ impl Defense {
             armor: BTreeMap::new(),
             ward: BTreeMap::new(),
             resolve,
-            keystone: Aspect::Body,
             body_pile: 0,
             fear_pile: 0,
             will_break: None,
         }
     }
 
-    /// Keystone gone → out of the fight.
+    /// Body gone → out of the fight.
     pub fn is_down(&self) -> bool {
-        match self.keystone {
-            Aspect::Body => self.body.is_empty(),
-            // Incorporeal keystones (Spirit) fall when their bar is shattered.
-            Aspect::Spirit => matches!(self.will_break, Some(Break::ScaredToDeath)),
-            Aspect::Mind => false,
-        }
+        self.body.is_empty()
     }
 
     fn armor_cut(&self, dtype: DamageType, precision: u32) -> u32 {
@@ -184,7 +168,7 @@ impl Defense {
                     self.body_pile -= self.body.toughness;
                     out.cards_flipped += 1;
                 }
-                if self.body.is_empty() && self.keystone == Aspect::Body {
+                if self.body.is_empty() {
                     out.down = true;
                 }
             }
@@ -202,10 +186,7 @@ impl Defense {
                             self.body.remaining -= 1;
                             out.cards_flipped += 1;
                         }
-                        if self.body.is_empty() && self.keystone == Aspect::Body {
-                            out.down = true;
-                        }
-                        if self.keystone == Aspect::Spirit {
+                        if self.body.is_empty() {
                             out.down = true;
                         }
                     }

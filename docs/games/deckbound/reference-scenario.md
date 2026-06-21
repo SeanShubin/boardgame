@@ -83,6 +83,30 @@ The lattice and its invariants are now a **live regression test** ([`reference.r
 by holding any of its rewards. A full combat-resolving / par-search evaluator (the human-emulating AI
 roadmap item) can still replace the band check later without changing the lattice.
 
+## Open — making necessity *emergent*, not headcount (§8.6)
+
+The necessity invariants (3, 4) are satisfied **structurally** today: `check_invariants` uses
+**coverage** demands (`NeedTrack`/`AllTracks`), and `check_combat_bands` makes the Final a **Husk
+swarm**, so a path-missing party loses on **raw headcount**, not because the absent role's *mechanic*
+is the unique key. Charter **#12** / Spec **§8.6** require necessity to be **emergent, not by fiat**:
+each role must be load-bearing because its *mechanic* is the efficient answer — *outpaced, not
+forbidden* (no immunity gates). The open work:
+
+- **Author one mechanic-lock per role** so each C[*p*] (and the Final's demand) is unwinnable within
+  the analysis envelope without *p*'s signature mechanic — e.g. **Brass/Artillery** → a heavily-armored
+  foe only **Pierce** cracks; **Iron/Wall** → a frontal grind only a **hold** survives;
+  **Silver/Infiltrator** → a backfield only a **slip** reaches; **Bone/Controller** → an offense you
+  must **disable** (Stagger/Slow), not out-trade; **Salt/Support** → an attrition fight only **buffs**
+  outlast. Each must be *emergent* (the other roles still act, they just lose the race), never an
+  immunity that bans them.
+- **This closes T2 and T3 together.** The same authored locks make the signature *stats* **decisive** —
+  `balance.rs::stat_necessity_report` (the T3 probe) currently reports **Pierce / Daring / Dread /
+  Inspiration** as *not decisive in the grind ladder* precisely because the Husk content never forces
+  their use. (The precise *consumption* guards already exist: `combat.rs`'s
+  `dread_is_consumed_by_fear_attacks` / `inspiration_is_consumed_by_augments`.)
+
+`reference.rs` carries an inline NOTE at the Final band-check marking this headcount-vs-emergent gap.
+
 ## Maps onto
 
 - **Tests, in one fixture:** `canon/2-spec` §1–§4 (combat), `zones-exhaustion-design.md`

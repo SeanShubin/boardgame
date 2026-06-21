@@ -1,5 +1,10 @@
 # Stat redesign direction — through the lens of Charter #12
 
+> **Historical (promoted from `needs-merge/`, 2026-06-21).** The punch-list here is **done** —
+> Spirit→Dread wired, Inspiration minted, Pierce/Daring kept, Keystone cut, and the T3 stat guards
+> landed. The remaining open work (emergent per-role lock scenarios) lives in
+> [`reference-scenario.md`](reference-scenario.md). Non-authoritative — canon wins.
+
 **Status:** design direction + test plan for ratification (2026-06-21). Suggestions only; no code or
 canon edited (staged in `needs-merge/`). Builds on the now-canon **Charter #12** (*roles are the spine;
 stats serve the roles*) and **Spec §8.6** (*the role set is necessary-and-sufficient*). Companion to

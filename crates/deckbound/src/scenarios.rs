@@ -14,7 +14,7 @@ use crate::currency::Currency;
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
-use crate::stats::{Aspect, Channel, DamageType};
+use crate::stats::{Channel, DamageType};
 use crate::zones::ZoneBehavior;
 
 #[derive(Debug, Deserialize)]
@@ -92,8 +92,6 @@ struct TraitCard {
     ward: Vec<(DamageType, u32)>,
     #[serde(default)]
     resolve: u32,
-    #[serde(default)]
-    keystone: Option<Aspect>,
 }
 
 fn five() -> u32 {
@@ -374,7 +372,6 @@ fn build_actor_with(
             armor: t.armor.clone(),
             ward: t.ward.clone(),
             resolve: t.resolve,
-            keystone: t.keystone,
             ..Default::default()
         });
     }

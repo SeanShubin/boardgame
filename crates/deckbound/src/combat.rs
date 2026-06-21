@@ -136,7 +136,7 @@ pub fn living(pool: &[Actor]) -> Vec<usize> {
         .collect()
 }
 
-/// Finalize deaths at a phase boundary: an Actor whose keystone is gone becomes `fallen` — unless it
+/// Finalize deaths at a phase boundary: an Actor whose Body is gone becomes `fallen` — unless it
 /// has a Lifeline this round (M3 *Last Stand*), which leaves it standing at 1 Body instead. This is
 /// the **single** place a fall is decided and narrated (once per Actor), after the phase's
 /// order-independent damage has fully accumulated — so it reflects the net result, not a mid-stream
@@ -679,6 +679,89 @@ mod tests {
         assert!(
             !foes[0].can_contest_now(Range::Melee),
             "a staggered/shoved foe cannot contest melee"
+        );
+    }
+
+    /// T3 — no-redundant-stat (§8.6): an inner (Fear) attack scales off **Dread**. Zeroing Dread must
+    /// reduce the fear dealt — the regression guard that would have caught the old dead "Spirit".
+    #[test]
+    fn dread_is_consumed_by_fear_attacks() {
+        let card = fx(vec![Effect::Damage {
+            power: 0,
+            dtype: DamageType::Fear,
+        }]);
+        let mut allies = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+
+        let mut with = vec![build_character("Novice", &[])];
+        play_card(
+            &card,
+            "Hexer",
+            Offense {
+                dread: 8,
+                ..Default::default()
+            },
+            &mut with,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        let mut without = vec![build_character("Novice", &[])];
+        play_card(
+            &card,
+            "Hexer",
+            Offense::default(),
+            &mut without,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        assert!(
+            with[0].defense.fear_pile > without[0].defense.fear_pile,
+            "Dread must scale a fear attack (no-redundant-stat, §8.6)"
+        );
+    }
+
+    /// T3 — no-redundant-stat (§8.6): a Support **augment** scales off **Inspiration**. A Mend with
+    /// Inspiration restores more Body than one without — proof the Salt signature is consumed.
+    #[test]
+    fn inspiration_is_consumed_by_augments() {
+        let card = fx(vec![Effect::Mend { body: 1 }]);
+        let mut foes = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+
+        let wounded = || {
+            let mut a = build_character("Novice", &[]);
+            a.defense.body.remaining = 1; // wounded but alive (a down ally isn't a Mend target)
+            a
+        };
+
+        let mut hi = vec![wounded()];
+        play_card(
+            &card,
+            "Vow",
+            Offense {
+                inspiration: 5,
+                ..Default::default()
+            },
+            &mut foes,
+            &mut hi,
+            Some(0),
+            &mut log,
+        );
+        let mut lo = vec![wounded()];
+        play_card(
+            &card,
+            "Vow",
+            Offense::default(),
+            &mut foes,
+            &mut lo,
+            Some(0),
+            &mut log,
+        );
+        assert!(
+            hi[0].defense.body.remaining > lo[0].defense.body.remaining,
+            "Inspiration must scale an augment (no-redundant-stat, §8.6)"
         );
     }
 

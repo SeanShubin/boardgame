@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::stats::{Aspect, DamageType, Defense, Offense};
+use crate::stats::{DamageType, Defense, Offense};
 
 /// One card's contribution to the Form stat block. The **fundamental** card sets the base; each
 /// **attachment** (a trait, or a bought Upgrade, §8.3) adds on top. Body pool = `body` (count) ×
@@ -45,8 +45,6 @@ pub struct StatCard {
     pub armor: Vec<(DamageType, u32)>,
     #[serde(default)]
     pub ward: Vec<(DamageType, u32)>,
-    #[serde(default)]
-    pub keystone: Option<Aspect>,
 }
 
 /// A character's **Form**: the fundamental card + attachments. Sums to the Offense/Defense the
@@ -76,8 +74,7 @@ impl Form {
         o
     }
 
-    /// The defensive stats, summed across the Form. Armor/Ward merge per damage type; the keystone
-    /// is the last card to name one (so an attachment can move it), defaulting to Body.
+    /// The defensive stats, summed across the Form. Armor/Ward merge per damage type.
     pub fn defense(&self) -> Defense {
         let body = self.cards.iter().map(|c| c.body).sum();
         let toughness = self.cards.iter().map(|c| c.toughness).sum();
@@ -91,9 +88,6 @@ impl Form {
             }
             for (dt, v) in &c.ward {
                 *ward.entry(*dt).or_insert(0) += v;
-            }
-            if let Some(k) = c.keystone {
-                d.keystone = k;
             }
         }
         d.armor = armor;

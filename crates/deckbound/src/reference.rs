@@ -267,6 +267,11 @@ pub fn check_combat_bands(s: &ReferenceScenario, seed: u64) -> Vec<String> {
     if auto_resolve(full.clone(), build_encounter_foes(enc, 1), seed) != Some(true) {
         v.push("Final too hard — a full party should win".into());
     }
+    // NOTE (§8.6 emergent-vs-fiat): today the Final is a Husk swarm, so a path-missing party loses on
+    // raw headcount, not because the absent role's *mechanic* is the unique key. Charter #12 / §8.6
+    // require necessity to be **emergent** — making each role load-bearing by its mechanic needs five
+    // authored lock scenarios (one per role). Tracked as future content; this guards the weaker
+    // headcount form for now.
     if full.len() > 1 {
         let short = full[1..].to_vec();
         if auto_resolve(short, build_encounter_foes(enc, 1), seed) == Some(true) {

@@ -135,6 +135,49 @@ pub fn report(violations: &[Violation]) -> String {
     s
 }
 
+/// T3 — **stat decisiveness** (§8.6 no-redundant-stat, coarse view): zero each offensive magnitude
+/// stat across the grind-ladder parties and report whether it **flips** any L5 win/loss. This is a
+/// *decisiveness* probe, not a consumption proof: a stat that is consumed but never tips an outcome
+/// (e.g. it adds damage to a fight already won) reads as "not decisive here". The precise
+/// no-redundant-stat guards are the focused `*_is_consumed_by_*` unit tests in `combat.rs`; a stat
+/// that is decisive **nowhere** *and* consumed nowhere is dead (the old "Spirit"). Diagnostic;
+/// run with `--ignored`. *(Defensive / pool stats are structurally consumed by `Defense::take`.)*
+pub fn stat_necessity_report(seed: u64) -> String {
+    let zeroers: [(&str, fn(&mut Actor)); 5] = [
+        ("power (Strike)", |a| a.offense.power = 0),
+        ("precision (Pierce)", |a| a.offense.precision = 0),
+        ("daring", |a| a.offense.daring = 0),
+        ("dread", |a| a.offense.dread = 0),
+        ("inspiration", |a| a.offense.inspiration = 0),
+    ];
+    let mut out =
+        String::from("stat decisiveness — zero-and-flip over the 5 suits' L5 (§8.6 T3, coarse):\n");
+    for (name, zero) in zeroers {
+        let mut flipped = 0;
+        for &suit in REWARD_SUITS.iter() {
+            let enc = grind_encounter(suit, 5);
+            let rw = rewards_up_to(suit, 5);
+            let base = auto_resolve(party(5, &rw), build_encounter_foes(&enc, 5), seed);
+            let mut zeroed_party = party(5, &rw);
+            zeroed_party.iter_mut().for_each(zero);
+            let zeroed = auto_resolve(zeroed_party, build_encounter_foes(&enc, 5), seed);
+            if base != zeroed {
+                flipped += 1;
+            }
+        }
+        out.push_str(&format!(
+            "  {name:<20} {}\n",
+            if flipped > 0 {
+                format!("decisive ({flipped}/5 fights flip)")
+            } else {
+                "not decisive in the grind ladder (consumed-but-not-tipping, or unexercised)"
+                    .to_string()
+            }
+        ));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +189,14 @@ mod tests {
     fn probe_grind_balance() {
         let v = check_grind_balance(1);
         println!("{}", report(&v));
+    }
+
+    /// T3 probe (§8.6 no-redundant-stat): print which offensive magnitude stats are load-bearing.
+    /// `cargo test -p deckbound probe_stat_necessity -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_stat_necessity() {
+        println!("{}", stat_necessity_report(1));
     }
 
     #[test]
