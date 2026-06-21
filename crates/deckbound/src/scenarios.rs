@@ -14,7 +14,7 @@ use crate::currency::Currency;
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
-use crate::stats::{Aspect, DamageType};
+use crate::stats::{Aspect, Channel, DamageType};
 use crate::zones::ZoneBehavior;
 
 #[derive(Debug, Deserialize)]
@@ -673,12 +673,24 @@ pub(crate) fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
 /// keywords from the same single source of truth as the encyclopedia (no drift).
 pub(crate) fn effect_rule(e: &Effect) -> String {
     match e {
-        Effect::Damage { power, dtype } => format!(
-            "Deals {} damage (base {power}). It is reduced by the target's {} Armor, then absorbed \
-             by its Body pool (cut \u{2192} bar \u{2192} pool, \u{00A7}2); Edge scales this.",
-            dtype.label(),
-            dtype.label()
-        ),
+        Effect::Damage { power, dtype } => match dtype.channel() {
+            // Outer channel: Armor cut → Toughness bar → the Body pool.
+            Channel::Body => format!(
+                "Deals {} damage (base {power}). It is reduced by the target's {} Armor, then absorbed \
+                 by its Body pool (cut \u{2192} bar \u{2192} pool, \u{00A7}2); Edge scales this.",
+                dtype.label(),
+                dtype.label()
+            ),
+            // Inner channel: Ward cut → the Resolve bar; no Body pool — the will *breaks* on a
+            // crossing (Freeze / Flee / Scared-to-death) rather than turning Health cards.
+            Channel::Fear => format!(
+                "Deals {} damage (base {power}) to the will (the inner channel): reduced by the \
+                 target's Ward, then tested against its Resolve bar \u{2014} no Body pool. If it \
+                 clears Resolve the will breaks (Freeze / Flee / Scared-to-death, \u{00A7}2); Edge \
+                 scales this.",
+                dtype.label()
+            ),
+        },
         Effect::Guard { tempo } => format!(
             "Braces: +{tempo} Tempo to the holder this round — more initiative to answer incoming blows (M2)."
         ),

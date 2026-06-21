@@ -58,6 +58,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **The deterministic core** (separable balance)    | 🟡 seeded    | **§0** — determinism · separable luck layers · objective core balance — `computability-and-balance.md`                                                  |
 | **The Clash** (tactical core)                     | ✅ worked    | —                                                                                                                                                      |
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
+| **Card representation** (suits · base-2 · tree · clocks) | ✅ locked | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync` |
 | **Speed/Tempo** (one breadth pool)                | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                               |
 | **The battle — the charge & the gauntlet**        | 🟡 seeded    | §4 **respecced** to charge-and-gauntlet (lanes removed, 2026-06-20); code migration pending `/spec-sync §4`. §4.3 actors-are-decks also pending |
 | **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
@@ -657,22 +658,160 @@ yet specced. Numbers live in `booklet.ron`.)*
 
 ### 2.3 Stats live in the deck — *stats-as-deck*
 
-**RULE.** A character has **no stats on its identity card** — it is a **bare Actor** (a name and a
-map token, §8.1). **Every stat is read off its deck**, from the **Form** zone (§5.2): a
-**fundamental card** sets the base, **attachment** cards modify each dimension. So §2.1's "passive
-stats read off the table" — **Armor, Ward, Toughness, Resolve**, and likewise **Speed, Drive, Power** — are
-**Form-derived**, never authored fields. The **Body Health pool** is a **count × value** Form pool
-(Body × Toughness); the **Tempo pool** is **Speed × Drive** — Speed-many cards each worth Drive (§5.5).
+> **Locked 2026-06-21.** *No printed stats on a character* is ratified, together with the **creature
+> carve-out**: the rule binds **progressing** entities (characters), not fixed ones (creatures). The
+> asymmetry is **motivated, not an exception** — both fall out of the same intent (see WHY), so the real
+> line is *does it progress?*, never character-vs-creature by fiat.
 
-**WHY.** "The deck *is* the character" (#8) made literal: it removes a redundant authored stat-block,
-so *getting stronger = adding cards* (the Upgrade economy, §8.3), and **§2.1's "read it off the
-table" now extends from defense to every stat**. Clean slate = a bare Actor with a minimal Form;
-specialization = accreted attachments (§8.5).
+**RULE.** A **character** (a progressing hero, §8.5) has **no stats on its identity card** — it is a
+**bare Actor**: a name and a map token (§8.1), nothing more. **Every one of its stats is read off its
+deck**, from the **Form** zone (§5.2), supplied by **separate, accreted cards** — a **fundamental card**
+sets the base and **attachment** cards modify each dimension. So §2.1's "passive stats read off the
+table" — **Armor, Ward, Toughness, Resolve**, and likewise **Speed, Drive, Power** — are
+**Form-derived**, never authored on the character. The **Body Health pool** is a **count × value** Form
+pool (Body × Toughness); the **Tempo pool** is **Speed × Drive** — Speed-many cards each worth Drive (§5.5).
+
+A **creature** (a non-progressing foe) is the **carve-out**: its stats **are** printed — a single
+**printed fundamental** on its actor card (plus any fixed traits). It is still resolved through the Form
+path at combat time, so the engine is uniform; the printed block is simply that Form **pre-summed**.
+*(Numbers live in `booklet.ron`.)*
+
+**WHY.** "The deck *is* the character" (#8) made literal — but the binding reason is **progression**. A
+character *gets stronger by gaining cards* (the Upgrade economy, §8.3), so its power must stay
+**decomposed into cards on the table**: then every point of strength is a card you can point to, and
+"stronger = more cards" is true by construction. A single printed stat-block would be a redundant second
+home for the same numbers and would hide where power came from. The creature carve-out springs from the
+*same* intent rather than contradicting it: **pre-summing a Form onto one printed card is lossless
+exactly when nothing will ever be added.** A creature never progresses — there is nothing to add and
+nothing to point to — so printing its Form costs nothing against the "deck-is-the-character" goal while
+saving components and reading effort. Clean slate = a bare Actor with a minimal Form; specialization =
+accreted attachments (§8.5).
 
 **GUARANTEES.**
-- No stat exists except as a Form card on the table — nothing is authored on the Actor.
-- The §3 / §4 economy is unchanged in behavior; only the **source** of a stat moved (card → deck).
-- A bought Upgrade is a Form attachment (or an Action card, §5) — power grows by cards.
+- **For a character:** no stat exists except as a Form card on the table — **nothing** is authored on the
+  identity card; getting stronger is *only ever* adding cards (a Form attachment, or an Action card §5 —
+  §8.3, §8.5).
+- **For a creature:** its printed stats are exactly its Form **pre-summed** — a shortcut, not a second
+  mechanism. A creature and a character with the *same* summed Form play **identically** (combat resolves
+  both through the Form path).
+- The carve-out is gated on **progression, not type**: any entity that can gain power carries **no**
+  printed stats; any entity fixed for life **may** print its Form.
+- The §3 / §4 economy is unchanged in behavior; only the **source** of a character's stat moved (card →
+  deck).
+
+### 2.4 The two suits — *Quantity & Power*
+
+> **Locked 2026-06-21.** Every Form stat is one of two named suits. The names are the whole stat
+> vocabulary; learn them once, read them everywhere.
+
+**RULE.** A Form card carries a **suit** and a value, and is one of exactly **two** suits:
+- **Quantity** — *breadth*: how many cards (a count). Only **pooled** stats have a Quantity — **Body**
+  (Health cards) and **Speed** (Tempo cards).
+- **Power** — *depth*: how much each card is worth (a per-card magnitude). **Every** stat has a Power:
+  **Toughness** (per Health card), **Drive** (per Tempo card), and the flat magnitudes — the strike
+  stat, **Spirit**, **Precision**, **Resolve**, **Armor**, **Ward**.
+
+The suit classifies; the **deck** (§2.6) names the stat. So each existing stat is a **(deck × suit)**
+cell: Body·Quantity = health count, Body·Power = Toughness, Tempo·Quantity = Speed, Tempo·Power = Drive,
+Strike·Power = the strike stat. A pooled stat has **both** suits; a flat stat has **Power only**. A leaf
+card itself prints only *(suit, value)* — which stat it feeds is fixed by the deck it sits in.
+
+**WHY.** Two suits are the entire stat vocabulary, so a player learns "**Quantity = how many, Power = how
+hard**" once and reads it on every stat — §2.1's count×value shape generalised from defense to all of
+them, and §2.3's "the deck is the character" (#8) made addressable. **Power is the quantum of meaning**:
+it sets the smallest difference the game will represent (a Body·Power-4 Health card flips only after 4
+damage banks), so the power-fantasy scaling pours into **Power** — huge effect, card count flat — while
+**Quantity** stays small and every card on the table stays a meaningful state. The collision with the
+legacy strike stat *"Power"* is intentional, not a clash: that stat simply **is** Strike·Power, the
+canonical flat instance of the suit — Power is the magnitude atom.
+
+**GUARANTEES.**
+- No stat exists outside the two suits **{Quantity, Power}**.
+- **Quantity** appears only on pooled stats (Body, Speed); **every** stat has a Power.
+- Suit meaning is **global** — Quantity is always a count, Power always a per-card magnitude; a suit is
+  never rebound to a different role under a different deck.
+- The legacy **"Power" stat = Strike·Power**; the shared name is the same concept, not two.
+
+### 2.5 Base-2 denominations
+
+> **Locked 2026-06-21.** Suit cards come in powers of two, one of each — the uniquely-canonical,
+> fewest-cards encoding.
+
+**RULE.** Suit cards come in **base-2 denominations** — 1, 2, 4, 8, 16, … — with **at most one of each
+denomination per suit per deck**. A stat's value is the **sum** of its denomination cards. Because no
+denomination repeats, **every value has exactly one representation** (its binary expansion), and a value
+*V* costs **popcount(*V*)** cards.
+
+**WHY.** One-of-each base-2 is the **unique, minimal** encoding: there is never a second way to show 18
+(= 16 + 2), so a value reads and renders unambiguously, and card-count = set-bits = **O(log V)** — a stat
+can scale into the power-fantasy range while the table stays sparse (§2.4: scale via Power, keep Quantity
+small). The base also fixes the game's **natural numbers**: balance values gravitate to powers of two and
+their sparse sums — an intentional binary aesthetic, and a ready cost metric (popcount).
+
+**GUARANTEES.**
+- One copy max of each denomination, per suit per deck → the canonical (binary) form is unique.
+- A stat's card-cost is **popcount(value)**; doubling a stat is **+1 card** (one new denomination).
+- **Consumable interaction:** decrementing a consumed Quantity pool (Body Health) past a high denomination
+  "makes change" — the digital UI re-renders the canonical form; a printed edition may instead hold a
+  *consumed* pool at unit denomination. Read-once Power stats are always free to denominate.
+- The popcount cost is a **tiebreaker only** — it never overrides a balance target, and it never collapses
+  stats that differ by reset clock (§2.7).
+
+### 2.6 The deck hierarchy — *positional notation*
+
+> **Locked 2026-06-21.** A character's Form is a tree of decks; a card's meaning is its path.
+
+**RULE.** A character's Form is a **tree of decks**, and a leaf card's **meaning is its path**. The root
+is the bare identity card (§2.3); its children are the **stat decks** (Body, Tempo, Strike, …); a stat
+deck's children are its **suit decks** (Quantity, Power); the **leaves** are the base-2 denomination
+cards. A deck's **face shows its rolled-up total**; opening it reveals the addends that sum to it. **Only
+leaves carry values** — an intermediate deck is pure position, never a number.
+
+**WHY.** Positional notation is what lets the **generic** denomination cards (§2.5) be reused across every
+stat: a "Power 4" leaf means Toughness under Body and Drive under Tempo — meaning comes from the **path**,
+not the card, so the print vocabulary collapses to *{denomination × suit}*. The tree also **enforces
+position for free** (a card can't be orphaned — it lives inside its deck) and **maps to physical
+containment** (nested banded bundles). Deck-face = sum is §2.1's "read it off the table" made navigable:
+the total you act on, the addends you audit.
+
+**GUARANTEES.**
+- A leaf's meaning = *(its path) × (its denomination)*; the same leaf under two decks is two different stats.
+- Only leaves hold values; a number on an intermediate deck is a defect — meaning lives at exactly one level.
+- A deck's face equals the **sum** of its contents (Form is commutative, §5.2 — order within a deck is irrelevant).
+- Positional encoding governs the **static Form tableau only** — never a shuffled or drawn pile. Action
+  cards (§5) stay intrinsically meaningful; you may not positionally encode a deck you draw from.
+
+### 2.7 Reset clocks — *when mitigation discards*
+
+> **Locked 2026-06-21.** A mitigation layer is defined by *when* it discards, not only how much.
+
+**RULE.** A defensive layer carries a **reset clock** — when the damage it absorbs is discarded — and the
+clock is part of the stat. The Body channel stacks three:
+- **Armor** — **per hit**: the cut applies to each blow independently; sub-cut damage is discarded at once.
+- **Toughness** — **per round**: damage banks into the round's pile and flips a Health card each Toughness;
+  the sub-Toughness remainder clears at round end (§2.2).
+- **Health (Quantity)** — **per encounter**: a flipped Health card stays flipped until combat ends
+  (restored on a win, §2.1).
+
+The clock is **orthogonal to magnitude** — the same Power can sit on any clock — and choosing the clock is
+a design dimension in its own right.
+
+**WHY.** The clocks are **non-redundant because they counter different damage *shapes***: per-hit Armor
+erases **many small** hits (each shaved in full); high per-round Toughness lumps **few big** hits into
+rare, meaningful flips; per-encounter Health is raw, shape-agnostic capacity. Keeping all three is
+**several strategies toward one end (survival)** — armor and a tough hide are *different on purpose*, and
+"it matters *when* they discard" is precisely why they do not collapse into one stat (the §2.2 WHY's
+"many small vs any one big," generalised to a timing axis). The clock is also where new mitigation
+flavours are **minted without new complexity** — a per-exchange or per-attacker cut is a fresh strategy at
+the same card cost.
+
+**GUARANTEES.**
+- Every mitigation layer names a reset clock; two layers of equal magnitude on different clocks are
+  **distinct** stats, not duplicates.
+- The popcount tiebreaker (§2.5) breaks ties **within** a clock, **never across** — it must never collapse
+  Armor into Toughness.
+- The clocks form a **closed, named set** per channel; adding a clock is a Spec change (a new mitigation
+  kind), not free data.
 
 ---
 

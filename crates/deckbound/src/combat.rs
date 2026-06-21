@@ -246,33 +246,47 @@ pub fn gauntlet(
         };
         blitz_free(&mut heroes[h], matches!(outcome, Cross::HeroSlips));
         blitz_free(&mut foes[f], matches!(outcome, Cross::FoeSlips));
+        // A gauntlet blow is a melee strike, so a unit that has **lost its action** (Stagger) or been
+        // **knocked out of melee** (Shove) lands none — it still holds the line / takes the parting
+        // hit, but cannot strike back (the same status `pending_targets` honours in Skirmish/Reserve).
+        let h_can = heroes[h].can_contest_now(Range::Melee);
+        let f_can = foes[f].can_contest_now(Range::Melee);
         match outcome {
             Cross::HeroSlips => {
-                // Hero out-drives → slips past; the foe it passes lands a parting blow.
-                let snap = snapshot(&foes[f]);
-                let name = foes[f].name.clone();
-                apply_strike(&mut heroes[h], snap, &name, log);
+                // Hero out-drives → slips past; the foe it passes lands a parting blow (if able).
+                if f_can {
+                    let snap = snapshot(&foes[f]);
+                    let name = foes[f].name.clone();
+                    apply_strike(&mut heroes[h], snap, &name, log);
+                }
                 if !heroes[h].is_down() {
                     hero_skirm[h] = true;
                     log.push(format!("{} breaks through the line!", heroes[h].name));
                 }
             }
             Cross::FoeSlips => {
-                let snap = snapshot(&heroes[h]);
-                let name = heroes[h].name.clone();
-                apply_strike(&mut foes[f], snap, &name, log);
+                if h_can {
+                    let snap = snapshot(&heroes[h]);
+                    let name = heroes[h].name.clone();
+                    apply_strike(&mut foes[f], snap, &name, log);
+                }
                 if !foes[f].is_down() {
                     foe_skirm[f] = true;
                 }
             }
             Cross::BothStop => {
-                // Caught: both stop and trade (both become Vanguard).
+                // Caught: both stop and trade (both become Vanguard) — each blow only if its dealer
+                // can still act.
                 let hsnap = snapshot(&heroes[h]);
                 let fsnap = snapshot(&foes[f]);
                 let hname = heroes[h].name.clone();
                 let fname = foes[f].name.clone();
-                apply_strike(&mut heroes[h], fsnap, &fname, log);
-                apply_strike(&mut foes[f], hsnap, &hname, log);
+                if f_can {
+                    apply_strike(&mut heroes[h], fsnap, &fname, log);
+                }
+                if h_can {
+                    apply_strike(&mut foes[f], hsnap, &hname, log);
+                }
             }
         }
     }
@@ -315,7 +329,12 @@ fn bodyguards(chargers: &[usize], skirm: &[bool], pool: &[Actor], pairs: usize) 
         .take(pairs)
         .copied()
         .filter(|&i| {
-            !skirm[i] && !pool[i].is_down() && pool[i].has("Bodyguard") && pool[i].tempo > 0
+            !skirm[i]
+                && !pool[i].is_down()
+                && pool[i].has("Bodyguard")
+                && pool[i].tempo > 0
+                // A Staggered / Shoved Wall has lost its action — it cannot step across to intercept.
+                && pool[i].can_contest_now(Range::Melee)
         })
         .collect()
 }
@@ -337,7 +356,10 @@ fn intercept(
     let gname = gpool[guard].name.clone();
     log.push(format!("{gname} guards the line — intercepts {rname}!"));
     apply_strike(&mut rpool[runner], gsnap, &gname, log);
-    apply_strike(&mut gpool[guard], rsnap, &rname, log);
+    // The runner only strikes back if it can still act (Stagger / Shove suppress the trade).
+    if rpool[runner].can_contest_now(Range::Melee) {
+        apply_strike(&mut gpool[guard], rsnap, &rname, log);
+    }
 }
 
 /// Apply a hero's action/power card. The deterministic effects (§"cards may supersede the

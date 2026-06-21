@@ -523,6 +523,12 @@ fn build_character(base, rewards) -> Actor {
   newly-unlocked rewards `(Y, 1..N)` are assigned to characters **then**, permanently — the
   "who-gets-it" decision at the reward moment. **No unassigned pool.** → graduated to **Spec §8.3**.
 - **SD3 — base identity = clean-slate `Novice`.** ✅ Bare stats; all power from rewards (§8.5).
+  - ⚠️ **Corrected 2026-06-21 — this ✅ is stale.** "Bare stats" is **false**: the Novice carries a
+    printed `base: (speed 3, power 1, body 5, toughness 1, resolve 1)` block in `booklet.ron`. **Spec
+    §2.3** (locked 2026-06-21) forbids printed stats on a *character*, so the Novice is a **flagged
+    defect** pending `/spec-sync`. The original ✅ verified "all *power* comes from rewards" (true) but
+    **not** "no printed stats" (false) — it asked the wrong question. The migration target is the
+    bare-identity + base-2 Quantity/Power Form-tree of **§2.3–§2.7**.
 - **SD4 — `Currency` enum = keep as `Track`.** ✅ The role colour/id survives; only the spend logic is
   deleted (preserves the role↔colour provenance, §3.5).
 
