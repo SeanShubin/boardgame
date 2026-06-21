@@ -236,12 +236,17 @@ fn will_tier(pile: u32, resolve: u32) -> Break {
     }
 }
 
-/// The offensive stats: how hard, how precise, how fast, and the force of fear.
+/// The offensive stats: how hard, how precise, how fast, the force of fear, and the **grade** of
+/// each Tempo card (Drive, §3 — the magnitude that decides a gauntlet crossing).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Offense {
     pub power: u32,
     pub precision: u32,
+    /// The **count** of Tempo cards (§3): how many you start each round with.
     pub speed: u32,
+    /// The **grade** of each Tempo card (§3): its Drive — the magnitude weighed in a gauntlet
+    /// crossing. Irrelevant to a strike's force.
+    pub drive: u32,
     pub spirit: u32,
 }
 

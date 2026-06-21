@@ -398,7 +398,17 @@ impl Deckbound {
         if !atk_can {
             return; // can't attack at this range
         }
-        // attacker -> target
+        // Striking is an action: it spends one of the attacker's **Tempo** cards (§3). Pay-after —
+        // the strike always lands even if it drives Tempo negative — so a phase never stalemates;
+        // the bite is on *defense* (a depleted unit can't strike back).
+        if hero_attacker {
+            state.heroes[attacker].tempo -= 1;
+        } else {
+            state.creatures[attacker].tempo -= 1;
+        }
+        // attacker -> target. The target may **reflexively strike back** (§3) — but striking is an
+        // action, so it must spend a **Tempo** card; with none to flip it just takes the hit (a free
+        // hit). Ranged is one-sided: only a contesting *melee/both* defender answers (`can_contest`).
         if hero_attacker {
             combat::apply_strike(
                 &mut state.creatures[target],
@@ -406,8 +416,11 @@ impl Deckbound {
                 &atk_name,
                 &mut state.log,
             );
-            // trade back if the target can contest
-            if state.creatures[target].can_contest(range) && !state.creatures[target].is_down() {
+            if state.creatures[target].can_contest(range)
+                && !state.creatures[target].is_down()
+                && state.creatures[target].tempo > 0
+            {
+                state.creatures[target].tempo -= 1; // strike-back spends a Tempo card
                 let back = combat::snapshot(&state.creatures[target]);
                 let name = state.creatures[target].name.clone();
                 combat::apply_strike(&mut state.heroes[attacker], back, &name, &mut state.log);
@@ -419,7 +432,11 @@ impl Deckbound {
                 &atk_name,
                 &mut state.log,
             );
-            if state.heroes[target].can_contest(range) && !state.heroes[target].is_down() {
+            if state.heroes[target].can_contest(range)
+                && !state.heroes[target].is_down()
+                && state.heroes[target].tempo > 0
+            {
+                state.heroes[target].tempo -= 1; // strike-back spends a Tempo card
                 let back = combat::snapshot(&state.heroes[target]);
                 let name = state.heroes[target].name.clone();
                 combat::apply_strike(&mut state.creatures[attacker], back, &name, &mut state.log);
@@ -1399,8 +1416,9 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
         .body(vec![
             format!("HP [{}]", pips(d.body.remaining, d.body.max)),
             format!(
-                "Spd {} Pow {} {}",
+                "Spd {} Drv {} Pow {} {}",
                 a.offense.speed,
+                a.offense.drive.max(1),
                 a.offense.power,
                 a.attack.label()
             ),

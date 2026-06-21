@@ -23,8 +23,12 @@ pub struct StatCard {
     pub power: u32,
     #[serde(default)]
     pub precision: u32,
+    /// Tempo-pool **count** (§3): how many Tempo cards.
     #[serde(default)]
     pub speed: u32,
+    /// Tempo-card **grade** (§3): Drive — the per-card magnitude weighed in a gauntlet crossing.
+    #[serde(default)]
+    pub drive: u32,
     #[serde(default)]
     pub spirit: u32,
     // defense (Body pool = count × value)
@@ -62,6 +66,7 @@ impl Form {
             o.power += c.power;
             o.precision += c.precision;
             o.speed += c.speed;
+            o.drive += c.drive;
             o.spirit += c.spirit;
         }
         o

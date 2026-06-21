@@ -889,6 +889,7 @@ fn stat_grants(s: &StatCard) -> Vec<String> {
         (s.power, "Power"),
         (s.precision, "Precision"),
         (s.speed, "Speed"),
+        (s.drive, "Drive"),
         (s.spirit, "Spirit"),
         (s.body, "Body"),
         (s.toughness, "Tough"),
@@ -974,8 +975,8 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let off = &actor.offense;
     let def = &actor.defense;
     let body = vec![
-        format!("Spd {} \u{00B7} Pow {}", off.speed, off.power),
-        format!("Body {} \u{00B7} Tgh {}", def.body.max, def.body.toughness),
+        format!("Spd {} \u{00B7} Drv {}", off.speed, off.drive.max(1)),
+        format!("Pow {} \u{00B7} Body {}", off.power, def.body.max),
         format!("Res {} \u{00B7} Tempo {}", def.resolve, off.speed),
     ];
     let view = CardView::up(a.name.clone())
@@ -1001,9 +1002,15 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
                 .into(),
         ),
         ProseLine::Body(format!(
-            "Stats \u{2014} Speed {} (Tempo), Power {}, Precision {}; Body pool {} (toughness {}), \
-             Resolve {}.",
-            off.speed, off.power, off.precision, def.body.max, def.body.toughness, def.resolve,
+            "Stats \u{2014} Speed {} (Tempo cards) · Drive {} (crossing grade), Power {}, Precision {}; \
+             Body pool {} (toughness {}), Resolve {}.",
+            off.speed,
+            off.drive.max(1),
+            off.power,
+            off.precision,
+            def.body.max,
+            def.body.toughness,
+            def.resolve,
         )),
     ];
     if !def.armor.is_empty() {

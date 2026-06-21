@@ -158,10 +158,15 @@ pub fn gauntlet(
     for k in 0..pairs {
         let h = h_chargers[k];
         let f = f_chargers[k];
-        let hs = heroes[h].offense.speed;
-        let fs = foes[f].offense.speed;
-        if hs > fs {
-            // Hero slips past; the foe it passes lands a parting blow.
+        // The crossing is decided by **Drive** (§3) — the grade of the Tempo each commits. Both
+        // spend a Tempo card to contest; higher Drive slips past, a tie stops both (ties to the
+        // catcher). *(v1: one card each — the full escalating auction is a later enrichment.)*
+        let hd = heroes[h].offense.drive.max(1);
+        let fd = foes[f].offense.drive.max(1);
+        heroes[h].tempo -= 1;
+        foes[f].tempo -= 1;
+        if hd > fd {
+            // Hero out-drives → slips past; the foe it passes lands a parting blow.
             let snap = snapshot(&foes[f]);
             let name = foes[f].name.clone();
             apply_strike(&mut heroes[h], snap, &name, log);
@@ -169,7 +174,7 @@ pub fn gauntlet(
                 hero_skirm[h] = true;
                 log.push(format!("{} breaks through the line!", heroes[h].name));
             }
-        } else if fs > hs {
+        } else if fd > hd {
             let snap = snapshot(&heroes[h]);
             let name = heroes[h].name.clone();
             apply_strike(&mut foes[f], snap, &name, log);
@@ -177,7 +182,7 @@ pub fn gauntlet(
                 foe_skirm[f] = true;
             }
         } else {
-            // Equal speed → both stop and trade (both become Vanguard).
+            // Equal Drive → caught, both stop and trade (both become Vanguard).
             let hsnap = snapshot(&heroes[h]);
             let fsnap = snapshot(&foes[f]);
             let hname = heroes[h].name.clone();

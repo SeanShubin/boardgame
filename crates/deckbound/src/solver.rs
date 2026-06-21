@@ -156,6 +156,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn tempo_refreshes_to_speed() {
+        // §3 tripwire: the Tempo pool's *count* is Speed. A freshly built/refreshed actor holds
+        // exactly Speed-many Tempo cards. If this drifts, the Speed·Drive·Tempo identity is broken.
+        use crate::scenarios::build_character;
+        let a = build_character("Novice", &[]);
+        assert_eq!(
+            a.tempo, a.offense.speed as i32,
+            "a refreshed actor must hold Speed-many Tempo cards"
+        );
+    }
+
+    #[test]
+    fn higher_drive_slips_the_gauntlet_a_tie_stops_both() {
+        // §3 tripwire: a gauntlet crossing is decided by **Drive**, not Speed/Power. The
+        // higher-Drive charger slips past (Skirmisher); equal Drive stops both (Vanguard).
+        use crate::currency::Currency;
+        use crate::scenarios::{build_character, rewards_for};
+
+        // Silver (Infiltrator) rewards seed Drive; a bare Novice floors at Drive 1.
+        let runner = build_character("Novice", &rewards_for(Currency::Silver));
+        let blocker = build_character("Novice", &[]);
+        assert!(
+            runner.offense.drive > blocker.offense.drive.max(1),
+            "test premise: the Silver-kitted runner must out-Drive the bare blocker"
+        );
+
+        let mut heroes = vec![runner];
+        let mut foes = vec![blocker];
+        let mut log = Vec::new();
+        let (h_skirm, _f_skirm) =
+            crate::combat::gauntlet(&mut heroes, &[true], &mut foes, &[true], &mut log);
+        assert!(
+            h_skirm[0],
+            "the higher-Drive charger must break through as a Skirmisher"
+        );
+
+        // Equal Drive → neither slips (both held as Vanguard).
+        let mut a = vec![build_character("Novice", &[])];
+        let mut b = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+        let (a_sk, b_sk) = crate::combat::gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
+        assert!(
+            !a_sk[0] && !b_sk[0],
+            "equal Drive must stop both chargers (tie to the catcher)"
+        );
+    }
+
     // (Removed `a_holding_wall_plays_its_role_cards`: the gauntlet auto-resolves the Vanguard, so
     // there is no interactive Wall play window in v1 — a known limitation, see role-card-redesign.)
 
