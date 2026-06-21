@@ -51,6 +51,19 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
         .defense
         .take(strike.raw, strike.dtype, strike.precision);
     let name = &target.name;
+    // The arithmetic tail, so a transcript reader can verify the cut and the result: how much got
+    // **through** the cut (Armor outer / Ward inner) and the channel's resulting meter.
+    let math = if inner {
+        format!(
+            " [{} past ward; fear {}/{}]",
+            out.through, target.defense.fear_pile, target.defense.resolve
+        )
+    } else {
+        format!(
+            " [{} past armor; Body {}/{}]",
+            out.through, target.defense.body.remaining, target.defense.body.max
+        )
+    };
     let what = if out.cards_flipped == 1 {
         " — turns a health card face down.".to_string()
     } else if out.cards_flipped > 1 {
@@ -70,7 +83,7 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
         " — damage accumulates.".to_string()
     };
     log.push(format!(
-        "  {attacker} hits {name}: {} {dt}{what}",
+        "  {attacker} hits {name}: {} {dt}{what}{math}",
         strike.raw
     ));
     if let Some(b) = out.broke {
@@ -209,6 +222,20 @@ pub fn gauntlet(
             (false, true) => Cross::FoeSlips,
             _ => Cross::BothStop,
         };
+        // Narrate the crossing **with the arithmetic that decided it** (a unit slips iff its advance
+        // Drive strictly exceeds the other's catch Drive): the four committed grades and the verdict,
+        // so the rules are auditable from the transcript.
+        let (h_adv, h_cat) = (advance_drive(&heroes[h]), catch_drive(&heroes[h]));
+        let (f_adv, f_cat) = (advance_drive(&foes[f]), catch_drive(&foes[f]));
+        let verdict = match outcome {
+            Cross::HeroSlips => format!("{} slips ({h_adv}>{f_cat})", heroes[h].name),
+            Cross::FoeSlips => format!("{} slips ({f_adv}>{h_cat})", foes[f].name),
+            Cross::BothStop => format!("both hold ({h_adv}≤{f_cat}, {f_adv}≤{h_cat})"),
+        };
+        log.push(format!(
+            "crossing: {}(adv {h_adv}/catch {h_cat}) × {}(adv {f_adv}/catch {f_cat}) → {verdict}",
+            heroes[h].name, foes[f].name
+        ));
         // Tempo: each contests for one card, but an Infiltrator's first Blitz slip is free.
         let blitz_free = |a: &mut Actor, slipped: bool| {
             if slipped && a.has("Blitz") && !a.free_slip_used {

@@ -24,6 +24,7 @@ pub mod scenarios;
 pub mod solver;
 pub mod state;
 pub mod stats;
+pub mod transcript;
 pub mod world;
 pub mod zones;
 
@@ -44,5 +45,6 @@ pub use scenarios::{
 pub use solver::auto_resolve;
 pub use state::{Clash, Menu, Phase, Round, State};
 pub use stats::{Aspect, DamageType, Defense, Health, Offense};
+pub use transcript::{TranscriptScenario, transcribe, transcript_scenarios};
 pub use world::{Coord, Layout, Location, Run};
 pub use zones::{Zone, ZoneBehavior};

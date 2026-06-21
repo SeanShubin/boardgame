@@ -652,7 +652,7 @@ fn zone_behavior_label(z: ZoneBehavior) -> &'static str {
     }
 }
 
-fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
+pub(crate) fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
     match z {
         ZoneBehavior::Return => {
             "Zone \u{2014} Return (default): after it resolves the card goes back to your Hand, \
@@ -669,8 +669,9 @@ fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
     }
 }
 
-/// A rules sentence for one card effect.
-fn effect_rule(e: &Effect) -> String {
+/// A rules sentence for one card effect. `pub(crate)` so the transcript glossary defines a card's
+/// keywords from the same single source of truth as the encyclopedia (no drift).
+pub(crate) fn effect_rule(e: &Effect) -> String {
     match e {
         Effect::Damage { power, dtype } => format!(
             "Deals {} damage (base {power}). It is reduced by the target's {} Armor, then absorbed \

@@ -1,4 +1,5 @@
 /target/
+/transcripts/
 dist/
 /.idea/
 .claude/settings.local.json
