@@ -72,10 +72,22 @@ fn rules_tour() -> TranscriptScenario {
         named("Sear", Currency::Brass), // Artillery: holds back and fires from the Reserve
         named("Hex", Currency::Bone), // Controller: musters a persistent debuff before the gauntlet
     ];
+    // The tour fields four MAX-LEVEL specialists, so the foe line must be a real threat to run past
+    // round 1 (so refresh and the later-round mechanics show). Each creature is reinforced: Resolve so
+    // the wired Dread frightens rather than instantly routs, and Body/Toughness so it survives a round
+    // of the Infiltrator's multi-strike. Numbers are seeded for a multi-round fight; tune to taste.
+    let threat = |name: &str| {
+        let mut a = build_creature(name);
+        a.defense.resolve += 6;
+        a.defense.body.max += 8;
+        a.defense.body.remaining += 8;
+        a.defense.body.toughness += 2;
+        a
+    };
     let foes = vec![
-        build_creature("Brute"),  // a wall to be held against / slipped past
-        build_creature("Raider"), // a fast charger (the enemy gauntlet)
-        build_creature("Seer"),   // a ranged Fear caster (the enemy Reserve)
+        threat("Brute"),  // a wall to be held against / slipped past (armour + the hold)
+        threat("Raider"), // a fast charger (the enemy gauntlet — slips / parting hits)
+        threat("Seer"),   // a ranged Fear caster (the enemy Reserve)
     ];
     TranscriptScenario {
         name: "rules-tour",
@@ -587,6 +599,7 @@ mod tests {
             "SCENARIO",
             "CHARGE",
             "crossing:", // a Skirmisher's card-bound crossing contest (§4 the Line)
+            "ENDROUND",  // at least two rounds — refresh happened
             "OUTCOME",
             "CARDS USED",
             "GLOSSARY",

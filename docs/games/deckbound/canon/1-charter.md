@@ -211,6 +211,23 @@ implementation. See Spec §8.5 / §8.6.
 *(The solver measures **structural** necessity — that some scenario is unwinnable without a Role. Whether
 a Role *feels* distinct or *fun* stays the human's ratification, as with every balance claim — #11.)*
 
+## 13. Damage is the triangle's; control and augment are the effect Roles'
+
+**Direct damage belongs to the three §4-triangle Roles — Wall, Infiltrator, Artillery.** The two effect
+Roles never deal it: the **Controller degrades** (a round-scoped status — fear is *pure control*, never
+damage) and the **Support augments** (buff / heal). A Controller or Support card that dealt direct damage
+is a **defect**.
+
+This is the hard edge of **#12**'s "differ in kind, not degree": the cleanest possible separation of the
+`3 + 2` is that one axis — the triangle — **removes Body**, and the other — the effect pair — **never
+does**; it bends the fight instead. It keeps each effect Role un-blurrable (a Controller cannot quietly
+become a fifth damage-dealer), gives the game a **single, legible kill-condition** (#7 *playable by hand*:
+you die exactly one way — your Body pool empties), and makes "what does this Suit *do*?" answerable
+without numbers: Iron / Silver / Brass **kill**, Bone **disables**, Salt **sustains**. Fear that *killed*
+(the old scared-to-death) violated this and is gone — the Controller's **Dread** now drives a tiered
+control status (Freeze → Shaken → Rout), never Body loss. See **Spec §2.2** (inner channel = control, no
+damage) and **§8.6** (the damage-separation GUARANTEE).
+
 ---
 
 **Using this document.** Every other design note should trace back to one or more

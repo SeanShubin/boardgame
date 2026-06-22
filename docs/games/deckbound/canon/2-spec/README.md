@@ -641,18 +641,23 @@ inner** (the Controller's fear-projection), plus any card power. It resolves: **
 (Armor for outer, Ward for
 inner; per source, typed, never depletes) → **accumulate the remainder into the
 round's pile** → **compare the pile to the bar** (Toughness for Body, Resolve for
-Spirit). Only the **outer** channel has a **pool** (Health cards) behind the bar;
-the **inner** (fear) channel **breaks** when the pile exceeds the bar, with no
-pool. Cross-immunity: outer ignores Ward; inner ignores Armor.
+Spirit). Only the **outer** channel has a **pool** (Health cards) behind the bar — so it is the **only
+channel that deals damage**. The **inner** (fear) channel has **no pool and deals no damage**: when the
+pile exceeds the bar it **breaks the will into a round-scoped control status**, tiered by how far past
+Resolve it clears (Freeze / Shaken / Rout — §4 Controller status). **Fear never touches Body.**
+Cross-immunity: outer ignores Ward; inner ignores Armor.
 
 **WHY.** A per-source cut answers *many small hits*; a high bar answers *any one
 big hit* — non-redundant, so you want both. Typing the cut makes "called shots"
 fall out for free (choosing a damage type chooses which channel you attack).
 
 **GUARANTEES.**
-- Both channels are structurally parallel (offense · cut · bar · [pool]); only Body has a pool.
-- An inner break is a this-round event that clears at round end — **except**
-  scared-to-death, the one inner result that bleeds into the Body pool.
+- Both channels are structurally parallel (offense · cut · bar), but only the **outer** has a **pool** —
+  and that pool is what makes it the **only damaging channel**.
+- An inner break is a this-round **control status** that clears at Refresh; it **never reduces Body**.
+  The inner channel deals **no direct damage** — death is the outer channel's alone. *(Proposed
+  2026-06-21; supersedes the former scared-to-death Body-bleed.)*
+- **Fear is the Controller's control, not its damage** — consistent with §8.6's damage-separation law.
 - Accumulation is always cards in a zone, never a number in the head.
 
 *(SEEDED — the damage formula, scaling, and the Resolve break threshold are not
@@ -1063,8 +1068,15 @@ the first catch),
 
 **Persistent status (Controller debuffs).** A Controller card hangs a round-scoped status, cleared at
 Refresh: **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee — cannot
-contest a melee blow), **Disarm** (cannot play role cards). Played at **Assemble**, they degrade the
-foe's whole round.
+contest a melee blow), **Disarm** (cannot play role cards), **Rout** (driven from the Vanguard to the
+Reserve — removed from the front *before* the charge resolves, so it cannot hold the line or trade this
+round). Played at **Assemble**, they degrade the foe's whole round.
+
+**Fear applies these by tier (§2.2), not damage.** Fear cleared past **Resolve / 2·Resolve / 3·Resolve**
+escalates: **Freeze** = Stagger (loses its action) → **Shaken** = Stagger + Shove (also cannot defend) →
+**Rout** = Stagger + Shove + driven to the Reserve (helpless and off the line). This is the Controller's
+*control* in place of direct damage (§8.6). *(Tier→effect mapping and the Assemble-time Rout are seeded
+2026-06-21 — tune to taste.)*
 
 **Bypass = open season.** Once a unit is *behind the enemy line* — a Skirmisher that **slipped** past a
 Vanguard, or a Vanguard that **killed** the one it faced — **every enemy rank is fair game to it**. The
@@ -1716,6 +1728,11 @@ slogan; the leave-one-out check turns it into a regression test.
 - The reference campaign has, for each Role, a **designated lock scenario** unwinnable without that Role,
   wired as a **regression test** (#11: the par solver is a regression test). Losing necessity for any
   Role **fails the build**.
+- **Damage belongs to the triangle.** Only the three §4-triangle Roles — **Wall, Infiltrator,
+  Artillery** — deal **direct damage**. The two effect Roles never do: **Controller** *degrades*
+  (round-scoped status, no damage — §2.2 fear is pure control) and **Support** *augments* (buff / heal,
+  no damage). A Controller or Support card that dealt direct damage would collapse the 3+2 distinction
+  (**Charter #13**). *(Locked 2026-06-21.)*
 - **Necessity is emergent, not by fiat.** A lock scenario makes its Role necessary through the foe's
   **stats and behaviour** (an offense you must *disable*, an armor you must *pierce*, a backfield you
   must *reach*) — **never** through an **immunity** or keyword that *bans* the other Roles. Emergence

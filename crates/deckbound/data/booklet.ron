@@ -121,7 +121,7 @@ Catalog(
                 cards: [ Card( name: "Slow", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2)] ) ] ),
         Reward( track: Bone, level: 2, stat: (dread: 1, resolve: 1),
                 flavor: "A sound the body hears before the mind does.",
-                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear), Stagger], text: "Fear that locks the limbs: deals fear and staggers the foe — it loses its action this round." ) ] ),
+                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)], text: "Fear that breaks the will: its Dread, cleared past the foe's Resolve, freezes / shakes / routs it (§2.2) — control, never damage." ) ] ),
         Reward( track: Bone, level: 3, stat: (dread: 2),
                 flavor: "Scramble the one moment they needed to think.",
                 cards: [ Card( name: "Confuse", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Confuse(tempo: 3), Disarm], text: "Scramble their plan: drains Tempo and disarms the foe — it cannot play its role cards this round." ) ] ),

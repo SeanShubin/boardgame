@@ -100,6 +100,16 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
     if let Some(b) = out.broke {
         log.push(format!("  {name} {}!", break_note(b)));
     }
+    // §2.2 / Charter #13 — fear is control, not damage: the break tier applies a round-scoped status.
+    // (Rout's Vanguard→Reserve demotion is applied by the §4 charge step — b2; here we set the flags.)
+    match out.broke {
+        Some(Break::Freeze) => target.stunned = true,
+        Some(Break::Shaken | Break::Rout) => {
+            target.stunned = true;
+            target.shoved = true;
+        }
+        None => {}
+    }
     // Defeat is *not* narrated here: a phase resolves order-independently from snapshots, so several
     // strikes may land on the same target. "All health cards face down → falls" is reported once, when
     // the phase boundary finalizes it (see `tally`) — by then any same-phase healing has netted out.
@@ -107,9 +117,9 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
 
 fn break_note(b: Break) -> &'static str {
     match b {
-        Break::Freeze => "freezes (will broken this round)",
-        Break::Flee => "is routed and flees",
-        Break::ScaredToDeath => "is scared to death",
+        Break::Freeze => "freezes in fear — loses its action",
+        Break::Shaken => "is shaken — cannot act or defend",
+        Break::Rout => "is routed — driven from the line",
     }
 }
 

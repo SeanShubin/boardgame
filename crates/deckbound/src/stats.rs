@@ -76,16 +76,17 @@ impl Health {
     }
 }
 
-/// The will break an inner (Fear) crossing produces. Tiers scale with how far the
-/// pile clears the bar (past R / 2R / 3R) — first-pass knob.
+/// The will break an inner (Fear) crossing produces — **control, never damage** (§2.2, Charter #13).
+/// Tiers scale with how far the pile clears the bar (past R / 2R / 3R) and escalate the status:
+/// Freeze = Stagger → Shaken = Stagger + Shove → Rout = + driven to the Reserve (§4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Break {
-    /// Spirit: held this round, can't press.
+    /// > R: frozen — loses its action this round (Stagger).
     Freeze,
-    /// Spirit: routed — flees.
-    Flee,
-    /// Spirit: the lethal extreme — bleeds into the Body pool.
-    ScaredToDeath,
+    /// > 2R: shaken — also cannot defend (Stagger + Shove).
+    Shaken,
+    /// > 3R: routed — Stagger + Shove + driven from the Vanguard to the Reserve.
+    Rout,
 }
 
 /// Everything that defends an Actor. The bar (Resolve) and cuts (Armor, Ward) are **passive
@@ -172,6 +173,9 @@ impl Defense {
                 }
             }
             Channel::Fear => {
+                // The inner channel deals **no damage** (§2.2 / Charter #13): fear accumulates and, once
+                // past the Resolve bar, breaks the will into a round-scoped *control* status — it never
+                // touches Body. Death is the outer channel's alone.
                 let eff = raw.saturating_sub(self.ward_cut(DamageType::Fear));
                 out.through = eff;
                 self.fear_pile += eff;
@@ -179,16 +183,6 @@ impl Defense {
                     let tier = will_tier(self.fear_pile, self.resolve);
                     self.will_break = Some(tier);
                     out.broke = Some(tier);
-                    if tier == Break::ScaredToDeath {
-                        // Bleeds into the Body pool: flip a card.
-                        if self.body.remaining > 0 {
-                            self.body.remaining -= 1;
-                            out.cards_flipped += 1;
-                        }
-                        if self.body.is_empty() {
-                            out.down = true;
-                        }
-                    }
                 }
             }
         }
@@ -209,9 +203,8 @@ impl Defense {
         }
     }
 
-    /// Round end: partial (sub-bar) damage clears, and this-round breaks lift.
-    /// A `ScaredToDeath` already bled into the (permanent) Body pool, so only the
-    /// transient will flag resets.
+    /// Round end: partial (sub-bar) damage clears, and this-round breaks lift. Fear leaves **no Body
+    /// damage** behind (§2.2 / Charter #13), so only the transient piles and the will flag reset.
     pub fn end_round(&mut self) {
         self.body_pile = 0;
         self.fear_pile = 0;
@@ -223,9 +216,9 @@ impl Defense {
 /// Tier a will break by how far the fear pile clears Resolve (past R / 2R / 3R).
 fn will_tier(pile: u32, resolve: u32) -> Break {
     if pile > resolve.saturating_mul(3) {
-        Break::ScaredToDeath
+        Break::Rout
     } else if pile > resolve.saturating_mul(2) {
-        Break::Flee
+        Break::Shaken
     } else {
         Break::Freeze
     }
@@ -298,18 +291,19 @@ mod tests {
     }
 
     #[test]
-    fn fear_must_exceed_resolve_and_tiers_up() {
+    fn fear_must_exceed_resolve_and_tiers_up_without_damaging_body() {
         let mut d = knight(); // resolve 4
+        let full = d.body.remaining;
         assert!(d.take(4, DamageType::Fear, 0).broke.is_none()); // 4 !> 4
         d.end_round();
         assert_eq!(d.take(5, DamageType::Fear, 0).broke, Some(Break::Freeze)); // >R
         d.end_round();
-        assert_eq!(d.take(9, DamageType::Fear, 0).broke, Some(Break::Flee)); // >2R
+        assert_eq!(d.take(9, DamageType::Fear, 0).broke, Some(Break::Shaken)); // >2R
         d.end_round();
-        assert_eq!(
-            d.take(13, DamageType::Fear, 0).broke,
-            Some(Break::ScaredToDeath)
-        ); // >3R
+        assert_eq!(d.take(13, DamageType::Fear, 0).broke, Some(Break::Rout)); // >3R
+        // §2.2 / Charter #13 — fear is control, never damage: Body is untouched and never down.
+        assert_eq!(d.body.remaining, full);
+        assert!(!d.is_down());
     }
 
     #[test]
