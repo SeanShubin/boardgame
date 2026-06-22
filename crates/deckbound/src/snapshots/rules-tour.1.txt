@@ -55,42 +55,29 @@ FOES
     steels for a last stand — it cannot fall this round.
     nerves settle.
 CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute   reserve: Seer
-  crossing: Anvil(adv 1/catch 3) × Brute(adv 1/catch 1) → both hold (1≤1, 1≤3)
+         foes   — charged: Brute, Raider   reserve: Seer
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 7/8]
-  crossing: Wisp(adv 4/catch 4) × Raider(adv 5/catch 5) → Raider slips (5>4)
-    Wisp hits Raider: 6 blunt — turns 3 health cards face down. [6 past armor; Body 0/4]
-  Raider — all its health cards are face down; defeated.
-  Sear plays Bombardment.
-    Sear hits Brute: 14 sharp — turns 4 health cards face down. [12 past armor; Body 3/8]
-    Sear hits Seer: 14 sharp — turns 4 health cards face down. [14 past armor; Body 0/4]
-  Seer — all its health cards are face down; defeated.
-ENDROUND heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 3/8  Raider 0/4 down  Seer 0/4 down
-
-── round 2 ──────────────────────────────────────
-  Hex plays Terror.
-    Hex hits Brute: 12 fear — turns a health card face down. [12 past ward; fear 12/0]
-    Brute is scared to death!
-    staggers Brute (loses its action).
-  Anvil plays Last Stand.
-    steels for a last stand — it cannot fall this round.
-    nerves settle.
-CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute   reserve: —
-  crossing: Anvil(adv 1/catch 3) × Brute(adv 1/catch 1) → both hold (1≤1, 1≤3)
-    Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 2/8]
-  Wisp runs an open gauntlet and breaks through!
+  Wisp slips an unguarded gap.
+  crossing: Raider(adv 5×2=10) vs Anvil(hold 5) → slips
+    Anvil hits Raider: 1 blunt — turns a health card face down. [1 past armor; Body 2/4]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 6/8]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 5/8]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 4/8]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 3/8]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 2/8]
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 1/8]
-  Sear plays Bombardment.
-    Sear hits Brute: 14 sharp — turns a health card face down. [12 past armor; Body 0/8]
+    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 0/8]
   Brute — all its health cards are face down; defeated.
+    Wisp hits Raider: 6 blunt — turns 2 health cards face down. [6 past armor; Body 0/4]
+  Raider — all its health cards are face down; defeated.
+    Wisp hits Seer: 9 blunt — turns 4 health cards face down. [9 past armor; Body 0/4]
+  Seer — all its health cards are face down; defeated.
   Every foe is down — victory!
 FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 0/8 down  Raider 0/4 down  Seer 0/4 down
 
-OUTCOME  WIN (heroes) — round 2
+OUTCOME  WIN (heroes) — round 1
 
 CARDS USED   (every card played, plus the chargers' weapons and powers)
-  Action  Bombardment    [Brass]  sharp 5, x5 targets             (played by Sear)
   Action  Last Stand     [Iron]   cannot fall, steel              (played by Anvil)
   Action  Terror         [Bone]   fear 4, stagger, x2 targets     (played by Hex)
   Weapon  Claw                    sharp weapon                    (wielded by Raider)
@@ -109,7 +96,7 @@ GLOSSARY   (what the rulebook says about each keyword above)
   Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
   Damage (blunt)         Deals blunt damage (base 0). It is reduced by the target's blunt Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
   Damage (fear)          Deals fear damage (base 4) to the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool. If it clears Resolve the will breaks (Freeze / Flee / Scared-to-death, §2); Edge scales this.
-  Damage (sharp)         Deals sharp damage (base 5). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
+  Damage (sharp)         Deals sharp damage (base 0). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
   Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 Body (M3).
   Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.
   Shadowstep             Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.

@@ -52,20 +52,31 @@ pub fn auto_resolve_with(
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // Charge selection: melee fighters (Wall / Infiltrator / plain) run the gauntlet; keep
-        // back-line casters and shooters (Artillery / Controller / Support kits) in the Reserve so
-        // they fire / cast from the rear (§4); then Deploy to resolve the gauntlet.
+        // Rank declaration (§4 static-ranks): melee **Infiltrators** flank as **Skirmishers** (cross to
+        // the backfield); other melee fighters hold as **Vanguards**; back-line casters / shooters
+        // (Artillery / Controller / Support) stay in the **Reserve** to fire / cast from the rear. Then
+        // Muster standing cards and Deploy.
         Phase::Assemble => {
-            // 1. Send melee front-liners to charge (casters/shooters hold back to fire/cast).
+            // 1a. Melee Infiltrators flank as Skirmishers.
             for a in actions {
-                if let SetVanguard(i) = a
+                if let SetSkirmisher(i) = a
                     && state.heroes[*i].can_contest(Range::Melee)
-                    && !wants_backline(&state.heroes[*i])
+                    && wants_flank(&state.heroes[*i])
                 {
                     return *a;
                 }
             }
-            // 2. Muster: play standing defenses / debuffs / buffs before the gauntlet so they bite it.
+            // 1b. Other melee front-liners hold as Vanguards (casters/shooters keep to the Reserve).
+            for a in actions {
+                if let SetVanguard(i) = a
+                    && state.heroes[*i].can_contest(Range::Melee)
+                    && !wants_backline(&state.heroes[*i])
+                    && !wants_flank(&state.heroes[*i])
+                {
+                    return *a;
+                }
+            }
+            // 2. Muster: play standing defenses / debuffs / buffs before the Line so they bite it.
             // 3. Then Deploy.
             best_play(state, actions).unwrap_or(Deploy)
         }
@@ -152,6 +163,16 @@ fn wants_backline(a: &Actor) -> bool {
         .any(|c| !c.passive && matches!(c.role, Some(Brass) | Some(Bone)))
 }
 
+/// A hero whose strength is **crossing to the enemy backfield** — it carries a non-passive
+/// **Infiltrator** (Silver) card, so it declares as a **Skirmisher** and flanks rather than holding the
+/// line as a Vanguard.
+fn wants_flank(a: &Actor) -> bool {
+    use crate::currency::Currency::Silver;
+    a.actions
+        .iter()
+        .any(|c| !c.passive && c.role == Some(Silver))
+}
+
 /// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
 fn first_attack_or_pass(actions: &[Action]) -> Action {
     use Action::*;
@@ -214,38 +235,55 @@ mod tests {
     }
 
     #[test]
-    fn higher_daring_slips_the_gauntlet_a_tie_stops_both() {
-        // §3 tripwire: a gauntlet crossing is decided by **Daring**, not Speed/Power. The
-        // higher-Daring charger slips past (Skirmisher); equal Daring stops both (Vanguard).
+    fn higher_daring_crosses_an_equal_one_card_tie_is_held() {
+        // §3 tripwire: a crossing contest is decided by **Daring**, not Speed/Power. The higher
+        // advance crosses; an equal *one-card* crossing is a tie, held by the catcher.
+        use crate::combat::the_line;
         use crate::currency::Currency;
         use crate::scenarios::{build_character, rewards_for};
 
-        // Silver (Infiltrator) rewards seed Daring; a bare Novice floors at Daring 1.
+        // Silver (Infiltrator) seeds Daring; a bare Novice floors at Daring 1. One card clears the bare
+        // wall's hold → the Skirmisher crosses.
         let runner = build_character("Novice", &rewards_for(Currency::Silver));
         let blocker = build_character("Novice", &[]);
         assert!(
             runner.offense.daring > blocker.offense.daring.max(1),
             "test premise: the Silver-kitted runner must out-dare the bare blocker"
         );
-
         let mut heroes = vec![runner];
         let mut foes = vec![blocker];
         let mut log = Vec::new();
-        let (h_skirm, _f_skirm) =
-            crate::combat::gauntlet(&mut heroes, &[true], &mut foes, &[true], &mut log);
+        let (crossed, _) = the_line(
+            &mut heroes,
+            &[true],
+            &[true],
+            &mut foes,
+            &[true],
+            &[false],
+            &mut log,
+        );
         assert!(
-            h_skirm[0],
-            "the higher-Daring charger must break through as a Skirmisher"
+            crossed[0],
+            "the higher-Daring Skirmisher crosses on one card"
         );
 
-        // Equal Daring → neither slips (both held as Vanguard).
+        // Equal Daring, one card → advance == hold → a tie, held by the catcher.
         let mut a = vec![build_character("Novice", &[])];
+        a[0].tempo = 1;
         let mut b = vec![build_character("Novice", &[])];
         let mut log = Vec::new();
-        let (a_sk, b_sk) = crate::combat::gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
+        let (crossed, _) = the_line(
+            &mut a,
+            &[true],
+            &[true],
+            &mut b,
+            &[true],
+            &[false],
+            &mut log,
+        );
         assert!(
-            !a_sk[0] && !b_sk[0],
-            "equal Daring must stop both chargers (tie to the catcher)"
+            !crossed[0],
+            "an equal one-card crossing is held (tie to the catcher)"
         );
     }
 

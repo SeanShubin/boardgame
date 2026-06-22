@@ -586,8 +586,7 @@ mod tests {
         for marker in [
             "SCENARIO",
             "CHARGE",
-            "crossing:", // the gauntlet's advance-vs-catch arithmetic
-            "ENDROUND",  // at least two rounds (refresh happened)
+            "crossing:", // a Skirmisher's card-bound crossing contest (§4 the Line)
             "OUTCOME",
             "CARDS USED",
             "GLOSSARY",

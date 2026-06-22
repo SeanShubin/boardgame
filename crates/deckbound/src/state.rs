@@ -64,10 +64,16 @@ pub struct Clash {
 /// The per-round working plan for the §4 charge-and-gauntlet system.
 #[derive(Clone, Debug, Default)]
 pub struct Round {
-    /// Per hero: did it **charge** (run the gauntlet)? `false` = held back (Reserve). Sized to heroes.
+    /// Per hero: did it **charge** (commit to the front)? `false` = held back (Reserve). A charger is a
+    /// Vanguard unless it also **flanks** (then a Skirmisher). Sized to heroes.
     pub hero_charging: Vec<bool>,
     /// Per creature: same.
     pub foe_charging: Vec<bool>,
+    /// Per hero: does this charger **flank** — declare itself a **Skirmisher** (attempt to cross) rather
+    /// than hold as a Vanguard? Only meaningful when charging. Sized to heroes.
+    pub hero_flank: Vec<bool>,
+    /// Per creature: same.
+    pub foe_flank: Vec<bool>,
     /// Heroes / creatures who **broke through** the gauntlet and became Skirmishers. A charger that
     /// did *not* break through is a Vanguard (stopped at the front); a non-charger is a Reserve.
     pub hero_skirmisher: Vec<bool>,
@@ -91,6 +97,8 @@ impl Round {
         Round {
             hero_charging: vec![false; heroes],
             foe_charging: vec![false; foes],
+            hero_flank: vec![false; heroes],
+            foe_flank: vec![false; foes],
             hero_skirmisher: vec![false; heroes],
             foe_skirmisher: vec![false; foes],
             hero_acted: vec![false; heroes],
@@ -161,6 +169,20 @@ impl State {
             &mut self.plan.hero_charging
         } else {
             &mut self.plan.foe_charging
+        }
+    }
+    pub fn s_flank(&self, side: u8) -> &[bool] {
+        if side == 0 {
+            &self.plan.hero_flank
+        } else {
+            &self.plan.foe_flank
+        }
+    }
+    pub fn s_flank_mut(&mut self, side: u8) -> &mut Vec<bool> {
+        if side == 0 {
+            &mut self.plan.hero_flank
+        } else {
+            &mut self.plan.foe_flank
         }
     }
     pub fn s_skirm(&self, side: u8) -> &[bool] {

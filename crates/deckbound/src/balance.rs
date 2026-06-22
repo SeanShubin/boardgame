@@ -143,7 +143,8 @@ pub fn report(violations: &[Violation]) -> String {
 /// that is decisive **nowhere** *and* consumed nowhere is dead (the old "Spirit"). Diagnostic;
 /// run with `--ignored`. *(Defensive / pool stats are structurally consumed by `Defense::take`.)*
 pub fn stat_necessity_report(seed: u64) -> String {
-    let zeroers: [(&str, fn(&mut Actor)); 5] = [
+    type Zeroer = (&'static str, fn(&mut Actor));
+    let zeroers: [Zeroer; 5] = [
         ("power (Strike)", |a| a.offense.power = 0),
         ("precision (Pierce)", |a| a.offense.precision = 0),
         ("daring", |a| a.offense.daring = 0),

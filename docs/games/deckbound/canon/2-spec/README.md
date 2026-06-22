@@ -60,7 +60,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync` |
 | **Speed/Tempo** (one breadth pool)                | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                               |
-| **The battle — declare ranks, hold the line**     | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed, 2026-06-21); code migration pending `/spec-sync §4`. §4.3 actors-are-decks also pending |
+| **The battle — declare ranks, hold the line**     | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21). §4.3 actors-are-decks still pending |
 | **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
 | **Aspects / the chord**                           | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                              |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
@@ -966,7 +966,7 @@ phase.
 
 ---
 
-## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model, 2026-06-21; code migration pending `/spec-sync §4`)*
+## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model; **code synced 2026-06-21** — `combat.rs::the_line`. Remaining enrichments: the per-contest bid-magnitude escalation, the BI-3 force-not-fiat test, Reserve multi-fire.)*
 
 > **History.** Superseded forms: front/back formation → speed-pairing → lane assignment → the
 > **charge-and-gauntlet** (secret charge + threading columns, roles *emergent*). All replaced by the
@@ -1153,14 +1153,14 @@ takes a free hit. Standing and soaking cost nothing — only acting spends Tempo
 **Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
 the three declared roles, targeting) is settled; these are not:
 
-> **RATIFICATION — in transition (2026-06-21).** §4 is now the **static-ranks** model. The balance work
-> (§0.3 — par is policy-relative to a fixed resolver) needs one canonical resolver; that role transfers
-> from the retired v1 gauntlet to the **static-ranks resolver when the code lands at `/spec-sync §4`**.
-> Until then the harness measures against the current code; once synced, the static-ranks semantics
-> (single simultaneous Daring bid, defender-assigned catches, two snapshot tiers, ties to the catcher,
-> Shadowstep / Phalanx / Blitz riders) are the resolver-of-record. Keep the **bid a single
-> simultaneous commitment** (not an iterated auction) so base PvE combat stays a maximizer, not an
-> equilibrium-solver — par stays well-defined.
+> **RATIFICATION (2026-06-21).** §4 is the **static-ranks** model, and the **code is synced** —
+> `combat.rs::the_line` is the **resolver-of-record** the balance work (§0.3) measures against:
+> card-bound catch (one card per catch, defender-assigned, Taunt first), the Skirmisher bids the fewest
+> cards to beat the hold, two snapshot tiers, ties to the catcher, Shadowstep / Phalanx / Bulwark / Blitz
+> riders. The **bid is a single simultaneous commitment** (not an iterated auction), so base PvE combat
+> stays a maximizer, not an equilibrium-solver — par stays well-defined. *(v1 prices a catch at one card;
+> the per-contest **bid-magnitude escalation** — a Vanguard committing several cards to raise one hold —
+> is the remaining enrichment, dial 1.)*
 
 1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
    cards × Daring, ties to the catcher, Shadowstep overrides); the **numbers** (the parting-hit weight,

@@ -47,6 +47,7 @@ pub enum Action {
     Replay,
     /// Assemble: put this hero in the Vanguard / Reserve, then deploy.
     SetVanguard(usize),
+    SetSkirmisher(usize),
     SetReserve(usize),
     Deploy,
     /// Assign phase: place this Vanguard hero into this lane.
@@ -226,32 +227,64 @@ pub(crate) fn check_outcome(state: &mut State) {
 impl Deckbound {
     // ---- base-mode lane round ------------------------------------------------
 
-    /// Deploy: read the human charge selection, decide the creatures' charge (aggression ≥ 5), then
-    /// resolve the **gauntlet** (§4) — the charge-columns thread through each other, producing
-    /// Skirmishers (broke through) and Vanguard (stopped) — and open the Skirmish phase.
+    /// Deploy: read the declared ranks (human + AI), resolve **the Line** (§4 Tier 1, static-ranks),
+    /// then open the **Open** (Skirmish + Reserve). Skirmishers who **crossed** — plus Vanguards who
+    /// **pour through** a wiped enemy front — are flagged as `skirmisher` so the Open lets them strike
+    /// the backfield.
     fn deploy(&self, state: &mut State) {
-        // PvP: side B's charge is set by hand (foe_charging); PvE: creatures charge by AI
-        // (aggression ≥ 5).
+        // PvP: side B's ranks are set by hand; PvE: creatures declare by aggression — the bold charge
+        // and flank (Skirmisher), the steady charge and hold (Vanguard), the timid hold back (Reserve).
         if !state.pvp {
             for f in 0..state.creatures.len() {
-                state.plan.foe_charging[f] = !state.creatures[f].is_down()
-                    && state.creatures[f]
-                        .behavior()
-                        .map(|b| b.aggression >= 5)
-                        .unwrap_or(false);
+                let aggr = state.creatures[f]
+                    .behavior()
+                    .map(|b| b.aggression)
+                    .unwrap_or(0);
+                let up = !state.creatures[f].is_down();
+                let melee = state.creatures[f].can_contest(Range::Melee);
+                // The bold charge (aggression); ranged/support hold the Reserve. A charger **flanks** as
+                // a Skirmisher only if it is *fast* (high Daring — an Infiltrator); steady melee holds the
+                // line as a Vanguard.
+                state.plan.foe_charging[f] = up && aggr >= 3 && melee;
+                state.plan.foe_flank[f] =
+                    up && aggr >= 3 && melee && state.creatures[f].offense.daring >= 3;
             }
         }
-        let hero_charging = state.plan.hero_charging.clone();
-        let foe_charging = state.plan.foe_charging.clone();
+        let h_charging = state.plan.hero_charging.clone();
+        let h_flank = state.plan.hero_flank.clone();
+        let f_charging = state.plan.foe_charging.clone();
+        let f_flank = state.plan.foe_flank.clone();
         let mut heroes = std::mem::take(&mut state.heroes);
         let mut creatures = std::mem::take(&mut state.creatures);
-        let (h_skirm, f_skirm) = combat::gauntlet(
+        let (mut h_skirm, mut f_skirm) = combat::the_line(
             &mut heroes,
-            &hero_charging,
+            &h_charging,
+            &h_flank,
             &mut creatures,
-            &foe_charging,
+            &f_charging,
+            &f_flank,
             &mut state.log,
         );
+        // Pour-through: once a side has no living Vanguard, the enemy Vanguards break through to the
+        // backfield in the Open — flagged as skirmishers so they may strike anything.
+        let f_van_alive =
+            (0..creatures.len()).any(|i| f_charging[i] && !f_flank[i] && !creatures[i].is_down());
+        if !f_van_alive {
+            for i in 0..heroes.len() {
+                if h_charging[i] && !h_flank[i] && !heroes[i].is_down() {
+                    h_skirm[i] = true;
+                }
+            }
+        }
+        let h_van_alive =
+            (0..heroes.len()).any(|i| h_charging[i] && !h_flank[i] && !heroes[i].is_down());
+        if !h_van_alive {
+            for i in 0..creatures.len() {
+                if f_charging[i] && !f_flank[i] && !creatures[i].is_down() {
+                    f_skirm[i] = true;
+                }
+            }
+        }
         state.heroes = heroes;
         state.creatures = creatures;
         state.plan.hero_skirmisher = h_skirm;
@@ -832,10 +865,18 @@ impl Game for Deckbound {
                     if state.s_pool(side)[i].fallen {
                         continue;
                     }
-                    if state.s_charging(side)[i] {
-                        a.push(Action::SetReserve(i));
-                    } else {
+                    // Offer the ranks this unit is not already in (Skirmisher needs a melee attack).
+                    let charging = state.s_charging(side)[i];
+                    let flank = state.s_flank(side)[i];
+                    let melee = state.s_pool(side)[i].can_contest(Range::Melee);
+                    if !charging || flank {
                         a.push(Action::SetVanguard(i));
+                    }
+                    if melee && (!charging || !flank) {
+                        a.push(Action::SetSkirmisher(i));
+                    }
+                    if charging {
+                        a.push(Action::SetReserve(i));
                     }
                     for idx in 0..state.s_pool(side)[i].actions.len() {
                         if self.muster_card_playable(
@@ -966,6 +1007,7 @@ impl Game for Deckbound {
                 _ => "?".into(),
             },
             Action::SetVanguard(h) => format!("Send {} to the Vanguard", hname(*h)),
+            Action::SetSkirmisher(h) => format!("Send {} to flank as a Skirmisher", hname(*h)),
             Action::SetReserve(h) => format!("Pull {} back to the Reserve", hname(*h)),
             Action::Deploy => "Deploy — start the round".into(),
             Action::AssignLane(h, lane) => format!("Place {} in lane {}", hname(*h), lane + 1),
@@ -1081,10 +1123,17 @@ impl Game for Deckbound {
             (Phase::Assemble, Action::SetVanguard(i)) => {
                 let side = state.plan.committing;
                 state.s_charging_mut(side)[*i] = true;
+                state.s_flank_mut(side)[*i] = false;
+            }
+            (Phase::Assemble, Action::SetSkirmisher(i)) => {
+                let side = state.plan.committing;
+                state.s_charging_mut(side)[*i] = true;
+                state.s_flank_mut(side)[*i] = true;
             }
             (Phase::Assemble, Action::SetReserve(i)) => {
                 let side = state.plan.committing;
                 state.s_charging_mut(side)[*i] = false;
+                state.s_flank_mut(side)[*i] = false;
             }
             (Phase::Assemble, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
@@ -1177,7 +1226,11 @@ impl Game for Deckbound {
                         state.log.push(format!("{vname} is marked and executed!"));
                     }
                 }
-                state.s_acted_mut(side)[*i] = true;
+                // Act while you have Tempo (§4 the Open): a crossed Skirmisher keeps striking the
+                // backfield until its cards run out.
+                if state.s_pool(side)[*i].tempo <= 0 {
+                    state.s_acted_mut(side)[*i] = true;
+                }
                 combat::tally(&mut state.heroes, &mut state.log);
                 combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);

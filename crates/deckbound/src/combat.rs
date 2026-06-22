@@ -1,6 +1,7 @@
-//! Combat resolution helpers for the §4 charge-and-gauntlet system: typed strikes, the **range**
-//! rule (same-range trade vs auto-hit, §4.2), the gauntlet resolver, creature AI, and card effects.
-//! The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
+//! Combat resolution helpers for the §4 **static-ranks** system: typed strikes, the **range** rule
+//! (same-range trade vs auto-hit, §4.2), **the Line** resolver ([`the_line`] — declared ranks, the
+//! card-bound crossing contest), creature AI, and card effects. The interactive four-card Clash
+//! ([`crate::duel`]) is the optional 1v1 module.
 
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
@@ -157,218 +158,176 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
-/// The §4 outcome of a single gauntlet crossing.
-enum Cross {
-    HeroSlips,
-    FoeSlips,
-    BothStop,
-}
-
-/// A unit's **advance** — the **Daring** it commits to *slip past* an opponent (its Form Daring,
-/// floor 1). Slipping needs advance Daring strictly greater than the other's **hold**.
-fn advance_grade(a: &Actor) -> u32 {
+/// A unit's **advance** — the per-card **Daring** it commits to *cross* the line (floor 1). A
+/// Skirmisher's total advance is `cards-bid × advance`.
+fn advance_daring(a: &Actor) -> u32 {
     a.offense.daring.max(1)
 }
 
-/// A unit's **hold** — the grade it commits to *hold the line* (its advance Daring plus the
-/// **Phalanx** bonus). A Wall that owns *Phalanx* combines its effort with the line, +2 to the hold
-/// (a v1 flat stand-in for "Walls who stop together intercept as one"). Phalanx raises only the
-/// hold, never advance — a Wall holds; it does not slip through on a high number.
-fn hold_grade(a: &Actor) -> u32 {
-    advance_grade(a) + if a.has("Phalanx") { 2 } else { 0 }
+/// A Vanguard's **hold** for one catch — its per-card Daring plus **Phalanx** (+2, catch strength)
+/// and **Bulwark** (+2 if any living ally carries it — the line anchors as one). A catch is a single
+/// committed card, so this is the grade a Skirmisher's advance must beat. Phalanx/Bulwark raise the
+/// hold only, never advance — a Wall holds; it does not slip through on a high number.
+fn hold_daring(catcher: &Actor, allies: &[Actor]) -> u32 {
+    let bulwark = allies.iter().any(|x| !x.is_down() && x.has("Bulwark"));
+    advance_daring(catcher)
+        + if catcher.has("Phalanx") { 2 } else { 0 }
+        + if bulwark { 2 } else { 0 }
 }
 
-/// **Taunt** draws fire: a Wall that owns *Taunt* is pulled to the front of its charge column, so the
-/// enemy meets it first (sparing the rest of the line). Stable-sort keeps roster order otherwise.
-fn taunt_order(chargers: &mut [usize], pool: &[Actor]) {
-    chargers.sort_by_key(|&i| !pool[i].has("Taunt"));
+/// The fewest cards a Skirmisher must bid for `cards × advance` to beat `hold` (strictly, or `≥` with
+/// **Shadowstep**, which wins a tie). Floors at 1.
+fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
+    let adv = advance_daring(sk);
+    let b = if sk.has("Shadowstep") {
+        hold.div_ceil(adv) // adv·b ≥ hold
+    } else {
+        hold / adv + 1 // adv·b > hold
+    };
+    b.max(1)
 }
 
-/// Resolve the **gauntlet** (§4): the two charge-columns thread through each other. **Taunt** Walls
-/// are pulled to the front; chargers then pair off by column order. Each crossing is decided by
-/// **Daring** (§3): the **higher** committed advance **slips past** (becomes a Skirmisher) while the one
-/// it passes lands a **parting free hit**; a **tie stops both** (both become Vanguard) — unless a
-/// slipper owns **Shadowstep** (it wins the tie). Both spend a Tempo card to contest, except an
-/// Infiltrator's first **Blitz** slip (free). **Surplus** chargers on the longer column break through
-/// cleanly — unless a stopped enemy Wall with **Bodyguard** intercepts one. A charger that stops (or
-/// never broke through) is a Vanguard; a non-charger is a Reserve. Returns `(hero_skirmisher,
-/// foe_skirmisher)` — who broke through.
-///
-/// *(v1: each crossing flips one Tempo card per side — the full escalating Daring auction is a later
-/// enrichment. Damage applies from pre-crossing snapshots, so the phase stays order-independent.)*
-pub fn gauntlet(
+/// Resolve **the Line** (§4 Tier 1, static-ranks). Ranks are *declared*: a charger that **flanks** is a
+/// **Skirmisher** attempting to cross; a charger that does not is a **Vanguard** holding; a non-charger
+/// is **Reserve**. Nobody moves. From the start-of-tier state: **Vanguards strike** the opposing front
+/// (one card each), and each **Skirmisher** runs a **crossing contest** against the enemy Vanguards —
+/// **card-bound catch** (a Vanguard catches one Skirmisher per Tempo card, **Taunt** first; each catch's
+/// hold = [`hold_daring`]). A caught Skirmisher bids the fewest cards to beat the hold
+/// ([`cards_to_cross`]); affordable (or **uncaught**) → it **slips** (the catcher lands a **parting free
+/// hit** off the same catch-card), else **held** and it trades. **Blitz** frees a Skirmisher's first
+/// slip. Returns `(hero_crossed, foe_crossed)`. Order-independent (offense is immutable here); deaths
+/// finalize at the boundary (`tally`).
+pub fn the_line(
     heroes: &mut [Actor],
-    hero_charging: &[bool],
+    h_charging: &[bool],
+    h_flank: &[bool],
     foes: &mut [Actor],
-    foe_charging: &[bool],
+    f_charging: &[bool],
+    f_flank: &[bool],
     log: &mut Vec<String>,
 ) -> (Vec<bool>, Vec<bool>) {
-    let mut hero_skirm = vec![false; heroes.len()];
-    let mut foe_skirm = vec![false; foes.len()];
-    let mut h_chargers: Vec<usize> = (0..heroes.len())
-        .filter(|&i| hero_charging[i] && !heroes[i].is_down())
-        .collect();
-    let mut f_chargers: Vec<usize> = (0..foes.len())
-        .filter(|&i| foe_charging[i] && !foes[i].is_down())
-        .collect();
-    taunt_order(&mut h_chargers, heroes);
-    taunt_order(&mut f_chargers, foes);
-    let pairs = h_chargers.len().min(f_chargers.len());
+    let van = |charging: &[bool], flank: &[bool], pool: &[Actor]| -> Vec<usize> {
+        (0..pool.len())
+            .filter(|&i| charging[i] && !flank[i] && !pool[i].is_down())
+            .collect()
+    };
+    let skirm = |charging: &[bool], flank: &[bool], pool: &[Actor]| -> Vec<usize> {
+        (0..pool.len())
+            .filter(|&i| charging[i] && flank[i] && !pool[i].is_down())
+            .collect()
+    };
+    let h_van = van(h_charging, h_flank, heroes);
+    let f_van = van(f_charging, f_flank, foes);
+    let h_sk = skirm(h_charging, h_flank, heroes);
+    let f_sk = skirm(f_charging, f_flank, foes);
+    let mut h_crossed = vec![false; heroes.len()];
+    let mut f_crossed = vec![false; foes.len()];
 
-    for k in 0..pairs {
-        let h = h_chargers[k];
-        let f = f_chargers[k];
-        // A unit slips past iff its **advance** Daring beats the other's **hold**; a tie is
-        // caught (held), unless the slipper owns **Shadowstep** (it wins the tie). Phalanx feeds catch
-        // only, so a Wall holds the line rather than slipping through.
-        let h_slips = advance_grade(&heroes[h]) > hold_grade(&foes[f])
-            || (advance_grade(&heroes[h]) == hold_grade(&foes[f]) && heroes[h].has("Shadowstep"));
-        let f_slips = advance_grade(&foes[f]) > hold_grade(&heroes[h])
-            || (advance_grade(&foes[f]) == hold_grade(&heroes[h]) && foes[f].has("Shadowstep"));
-        // Decide the crossing first, then charge Tempo — so a Blitz free slip can skip its own cost.
-        // Only one side can out-advance the other; a mutual Shadowstep tie holds (both stop).
-        let outcome = match (h_slips, f_slips) {
-            (true, false) => Cross::HeroSlips,
-            (false, true) => Cross::FoeSlips,
-            _ => Cross::BothStop,
-        };
-        // Narrate the crossing **with the arithmetic that decided it** (a unit slips iff its advance
-        // advance strictly exceeds the other's hold): the four committed grades and the verdict,
-        // so the rules are auditable from the transcript.
-        let (h_adv, h_cat) = (advance_grade(&heroes[h]), hold_grade(&heroes[h]));
-        let (f_adv, f_cat) = (advance_grade(&foes[f]), hold_grade(&foes[f]));
-        let verdict = match outcome {
-            Cross::HeroSlips => format!("{} slips ({h_adv}>{f_cat})", heroes[h].name),
-            Cross::FoeSlips => format!("{} slips ({f_adv}>{h_cat})", foes[f].name),
-            Cross::BothStop => format!("both hold ({h_adv}≤{f_cat}, {f_adv}≤{h_cat})"),
-        };
-        log.push(format!(
-            "crossing: {}(adv {h_adv}/catch {h_cat}) × {}(adv {f_adv}/catch {f_cat}) → {verdict}",
-            heroes[h].name, foes[f].name
-        ));
-        // Tempo: each contests for one card, but an Infiltrator's first Blitz slip is free.
-        let blitz_free = |a: &mut Actor, slipped: bool| {
-            if slipped && a.has("Blitz") && !a.free_slip_used {
-                a.free_slip_used = true;
-            } else {
-                a.tempo -= 1;
-            }
-        };
-        blitz_free(&mut heroes[h], matches!(outcome, Cross::HeroSlips));
-        blitz_free(&mut foes[f], matches!(outcome, Cross::FoeSlips));
-        // A gauntlet blow is a melee strike, so a unit that has **lost its action** (Stagger) or been
-        // **knocked out of melee** (Shove) lands none — it still holds the line / takes the parting
-        // hit, but cannot strike back (the same status `pending_targets` honours in Skirmish/Reserve).
-        let h_can = heroes[h].can_contest_now(Range::Melee);
-        let f_can = foes[f].can_contest_now(Range::Melee);
-        match outcome {
-            Cross::HeroSlips => {
-                // Hero out-dares → slips past; the foe it passes lands a parting blow (if able).
-                if f_can {
-                    let snap = snapshot(&foes[f]);
-                    let name = foes[f].name.clone();
-                    apply_strike(&mut heroes[h], snap, &name, log);
-                }
-                if !heroes[h].is_down() {
-                    hero_skirm[h] = true;
-                    log.push(format!("{} breaks through the line!", heroes[h].name));
-                }
-            }
-            Cross::FoeSlips => {
-                if h_can {
-                    let snap = snapshot(&heroes[h]);
-                    let name = heroes[h].name.clone();
-                    apply_strike(&mut foes[f], snap, &name, log);
-                }
-                if !foes[f].is_down() {
-                    foe_skirm[f] = true;
-                }
-            }
-            Cross::BothStop => {
-                // Caught: both stop and trade (both become Vanguard) — each blow only if its dealer
-                // can still act.
-                let hsnap = snapshot(&heroes[h]);
-                let fsnap = snapshot(&foes[f]);
-                let hname = heroes[h].name.clone();
-                let fname = foes[f].name.clone();
-                if f_can {
-                    apply_strike(&mut heroes[h], fsnap, &fname, log);
-                }
-                if h_can {
-                    apply_strike(&mut foes[f], hsnap, &hname, log);
-                }
-            }
-        }
-    }
-    // Surplus chargers on the longer column meet no opposition → break through cleanly, unless a
-    // stopped enemy Wall with **Bodyguard** steps across to intercept one (guarding the backfield).
-    let mut foe_guards = bodyguards(&f_chargers, &foe_skirm, foes, pairs);
-    for &h in h_chargers.iter().skip(pairs) {
-        if heroes[h].is_down() {
-            continue;
-        }
-        if let Some(g) = foe_guards.pop() {
-            intercept(heroes, h, foes, g, log);
-        } else {
-            hero_skirm[h] = true;
-            log.push(format!(
-                "{} runs an open gauntlet and breaks through!",
-                heroes[h].name
-            ));
-        }
-    }
-    let mut hero_guards = bodyguards(&h_chargers, &hero_skirm, heroes, pairs);
-    for &f in f_chargers.iter().skip(pairs) {
-        if foes[f].is_down() {
-            continue;
-        }
-        if let Some(g) = hero_guards.pop() {
-            intercept(foes, f, heroes, g, log);
-        } else {
-            foe_skirm[f] = true;
-        }
-    }
-    (hero_skirm, foe_skirm)
+    // 1. Vanguard clash — each Vanguard strikes the first opposing Vanguard (one card).
+    clash_line(heroes, &h_van, foes, &f_van, log);
+    clash_line(foes, &f_van, heroes, &h_van, log);
+
+    // 2. Crossing contests — the defender's Vanguards catch the crossing Skirmishers.
+    cross_contest(heroes, &h_sk, foes, &f_van, &mut h_crossed, log);
+    cross_contest(foes, &f_sk, heroes, &h_van, &mut f_crossed, log);
+
+    (h_crossed, f_crossed)
 }
 
-/// The stopped Vanguard interceptors (charged, didn't break through, still up, Tempo to spend) on a
-/// side that own **Bodyguard** — each can step across to catch one surplus enemy charger.
-fn bodyguards(chargers: &[usize], skirm: &[bool], pool: &[Actor], pairs: usize) -> Vec<usize> {
-    chargers
-        .iter()
-        .take(pairs)
-        .copied()
-        .filter(|&i| {
-            !skirm[i]
-                && !pool[i].is_down()
-                && pool[i].has("Bodyguard")
-                && pool[i].tempo > 0
-                // A Staggered / Shoved Wall has lost its action — it cannot step across to intercept.
-                && pool[i].can_contest_now(Range::Melee)
-        })
-        .collect()
-}
-
-/// A `guard` (in `gpool`) intercepts a surplus `runner` (in `rpool`): both spend a Tempo card and
-/// trade from pre-crossing snapshots; the runner is stopped (no breakthrough).
-fn intercept(
-    rpool: &mut [Actor],
-    runner: usize,
-    gpool: &mut [Actor],
-    guard: usize,
+/// Each Vanguard in `van` strikes the first living opposing Vanguard (one card), if it can still act.
+fn clash_line(
+    pool: &mut [Actor],
+    van: &[usize],
+    enemy: &mut [Actor],
+    enemy_van: &[usize],
     log: &mut Vec<String>,
 ) {
-    rpool[runner].tempo -= 1;
-    gpool[guard].tempo -= 1;
-    let rsnap = snapshot(&rpool[runner]);
-    let gsnap = snapshot(&gpool[guard]);
-    let rname = rpool[runner].name.clone();
-    let gname = gpool[guard].name.clone();
-    log.push(format!("{gname} guards the line — intercepts {rname}!"));
-    apply_strike(&mut rpool[runner], gsnap, &gname, log);
-    // The runner only strikes back if it can still act (Stagger / Shove suppress the trade).
-    if rpool[runner].can_contest_now(Range::Melee) {
-        apply_strike(&mut gpool[guard], rsnap, &rname, log);
+    for &v in van {
+        let Some(&t) = enemy_van.iter().find(|&&e| !enemy[e].is_down()) else {
+            continue; // no opposing front — this Vanguard pours through in the Open
+        };
+        if pool[v].tempo > 0 && pool[v].can_contest_now(Range::Melee) {
+            pool[v].tempo -= 1;
+            let snap = snapshot(&pool[v]);
+            let name = pool[v].name.clone();
+            apply_strike(&mut enemy[t], snap, &name, log);
+        }
+    }
+}
+
+/// Resolve the crossing contests for one side's Skirmishers (`sk` in `skpool`) against the enemy
+/// Vanguards (`van` in `vanpool`). Card-bound catch: a Vanguard catches one Skirmisher per Tempo card,
+/// **Taunt** Vanguards first; the highest-Daring Skirmishers are caught first; uncaught ones slip free.
+fn cross_contest(
+    skpool: &mut [Actor],
+    sk: &[usize],
+    vanpool: &mut [Actor],
+    van: &[usize],
+    crossed: &mut [bool],
+    log: &mut Vec<String>,
+) {
+    let mut catchers: Vec<usize> = van
+        .iter()
+        .copied()
+        .filter(|&v| !vanpool[v].is_down())
+        .collect();
+    catchers.sort_by_key(|&v| !vanpool[v].has("Taunt")); // Taunt draws the first catch
+    let mut runners: Vec<usize> = sk
+        .iter()
+        .copied()
+        .filter(|&s| !skpool[s].is_down())
+        .collect();
+    runners.sort_by_key(|&s| std::cmp::Reverse(advance_daring(&skpool[s])));
+
+    for s in runners {
+        let catcher = catchers
+            .iter()
+            .copied()
+            .find(|&v| vanpool[v].tempo > 0 && vanpool[v].can_contest_now(Range::Melee));
+        let Some(c) = catcher else {
+            crossed[s] = true; // the wall is out of catch-cards — slips free, no parting hit
+            log.push(format!("{} slips an unguarded gap.", skpool[s].name));
+            continue;
+        };
+        vanpool[c].tempo -= 1; // the catch costs the Vanguard a card
+        let hold = hold_daring(&vanpool[c], vanpool);
+        let need = cards_to_cross(&skpool[s], hold);
+        let adv = advance_daring(&skpool[s]);
+        let affordable = need as i32 <= skpool[s].tempo;
+        log.push(format!(
+            "crossing: {}(adv {adv}×{need}={}) vs {}(hold {hold}) → {}",
+            skpool[s].name,
+            adv * need,
+            vanpool[c].name,
+            if affordable { "slips" } else { "held" },
+        ));
+        if affordable {
+            if skpool[s].has("Blitz") && !skpool[s].free_slip_used {
+                skpool[s].free_slip_used = true;
+            } else {
+                skpool[s].tempo -= need as i32;
+            }
+            if vanpool[c].can_contest_now(Range::Melee) {
+                let snap = snapshot(&vanpool[c]);
+                let name = vanpool[c].name.clone();
+                apply_strike(&mut skpool[s], snap, &name, log);
+            }
+            if !skpool[s].is_down() {
+                crossed[s] = true;
+            }
+        } else {
+            skpool[s].tempo -= 1; // tried (one card) and trades with its catcher
+            if skpool[s].can_contest_now(Range::Melee) {
+                let snap = snapshot(&skpool[s]);
+                let name = skpool[s].name.clone();
+                apply_strike(&mut vanpool[c], snap, &name, log);
+            }
+            if vanpool[c].can_contest_now(Range::Melee) {
+                let snap = snapshot(&vanpool[c]);
+                let name = vanpool[c].name.clone();
+                apply_strike(&mut skpool[s], snap, &name, log);
+            }
+        }
     }
 }
 
@@ -606,61 +565,71 @@ mod tests {
         }
     }
 
-    #[test]
-    fn phalanx_lets_a_wall_hold_a_runner_a_bare_wall_cannot() {
-        // Runner: Silver L1 grants Daring 2 (advance 2).
-        // A bare Wall has hold 1 → the runner slips past.
-        let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
-        let mut bare_wall = vec![build_character("Novice", &[])];
+    /// A Skirmisher (charges + flanks) crossing a Vanguard (charges, holds). Returns `crossed[0]`.
+    fn cross(runner: &mut [Actor], wall: &mut [Actor]) -> bool {
         let mut log = Vec::new();
-        let (skirm, _) = gauntlet(&mut runners, &[true], &mut bare_wall, &[true], &mut log);
+        let (crossed, _) = the_line(runner, &[true], &[true], wall, &[true], &[false], &mut log);
+        crossed[0]
+    }
+
+    #[test]
+    fn phalanx_raises_the_hold_so_a_one_card_runner_is_held() {
+        // Runner: Silver L1 → Daring 2. One card → advance 2.
+        // A bare Wall has hold 1 → 2 > 1, the one-card runner slips.
+        let mut runner = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
+        runner[0].tempo = 1;
+        let mut bare = vec![build_character("Novice", &[])];
         assert!(
-            skirm[0],
-            "a bare Wall (hold 1) cannot stop a Daring-2 runner"
+            cross(&mut runner, &mut bare),
+            "a bare Wall (hold 1) cannot stop advance 2"
         );
 
-        // A Phalanx Wall (Iron L2) has hold 1+2 = 3 ≥ the runner's advance 2 → caught.
-        let mut runners = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
-        let mut phalanx_wall = vec![build_character("Novice", &[rid(Currency::Iron, 2)])];
-        let mut log = Vec::new();
-        let (skirm, _) = gauntlet(&mut runners, &[true], &mut phalanx_wall, &[true], &mut log);
-        assert!(!skirm[0], "a Phalanx Wall (hold 3) holds a Daring-2 runner");
+        // A Phalanx Wall (Iron L2) raises the hold to 1+2 = 3 — the *one-card* runner (advance 2) is
+        // held. (Force, not fiat: a runner with the Tempo to bid 2 cards — advance 4 — still crosses;
+        // Phalanx makes it *cost more*, never impossible.)
+        let mut runner = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
+        runner[0].tempo = 1;
+        let mut phalanx = vec![build_character("Novice", &[rid(Currency::Iron, 2)])];
         assert!(
-            phalanx_wall[0].has("Phalanx") && advance_grade(&phalanx_wall[0]) == 1,
-            "Phalanx feeds catch only — the Wall never advances on it"
+            !cross(&mut runner, &mut phalanx),
+            "Phalanx (hold 3) holds a one-card advance-2 runner"
+        );
+        assert!(
+            phalanx[0].has("Phalanx") && hold_daring(&phalanx[0], &phalanx) == 3,
+            "Phalanx raises the hold to 3"
         );
     }
 
     #[test]
     fn shadowstep_wins_a_tie() {
-        // Equal advance/hold and no Shadowstep → the tie is caught (both stop).
+        // One card each, equal Daring → advance 2 vs hold 2, a tie. Without Shadowstep, a tie needs a
+        // second card (advance 4) to win — with only one card the runner is held.
         let mut a = vec![build_character("Novice", &[])];
-        let mut b = vec![build_character("Novice", &[])];
         a[0].offense.daring = 2;
+        a[0].tempo = 1;
+        let mut b = vec![build_character("Novice", &[])];
         b[0].offense.daring = 2;
-        let mut log = Vec::new();
-        let (ask, bsk) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
-        assert!(!ask[0] && !bsk[0], "an even tie stops both");
+        assert!(!cross(&mut a, &mut b), "an even one-card tie is held");
 
-        // Shadowstep (Silver L3) on A, forced to the same Daring → A wins the tie and slips.
+        // Shadowstep (Silver L3) wins the tie: one card (advance 2 ≥ hold 2) slips.
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 3)])];
-        let mut b = vec![build_character("Novice", &[])];
         a[0].offense.daring = 2;
+        a[0].tempo = 1;
+        let mut b = vec![build_character("Novice", &[])];
         b[0].offense.daring = 2;
-        let mut log = Vec::new();
-        let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
-        assert!(ask[0], "Shadowstep wins the tie and slips through");
+        assert!(
+            cross(&mut a, &mut b),
+            "Shadowstep wins the tie and slips through on one card"
+        );
     }
 
     #[test]
     fn blitz_makes_the_first_slip_cost_no_tempo() {
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 2)])]; // owns Blitz
-        a[0].offense.daring = 5; // clearly out-advances the bare blocker
+        a[0].offense.daring = 5; // clearly out-advances the bare wall (hold 1) on one card
         let mut b = vec![build_character("Novice", &[])];
         let tempo_before = a[0].tempo;
-        let mut log = Vec::new();
-        let (ask, _) = gauntlet(&mut a, &[true], &mut b, &[true], &mut log);
-        assert!(ask[0], "the high-Daring runner slips");
+        assert!(cross(&mut a, &mut b), "the high-Daring runner slips");
         assert_eq!(
             a[0].tempo, tempo_before,
             "Blitz: the first slip each round costs no Tempo"

@@ -114,10 +114,10 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: level,
     });
-    encounters.push(make_encounter("Final", Currency::Gold, 16)); // boss: needs the full party
-    // (16, up from 14: the Stagger/Shove gauntlet fix made staggered foes deal no parting blow, so the
-    // band's lower edge — where a path-missing party still loses — moved from 14 to 15; 16 keeps a Husk
-    // of margin while the full party wins far past it.)
+    encounters.push(make_encounter("Final", Currency::Gold, 32)); // boss: needs the full party
+    // (32, up from 16: the static-ranks resolver — card-bound crossing + "act while you have Tempo"
+    // multi-strike — makes a party stronger, so the band's lower edge, where a path-missing party still
+    // loses, rose to ~30; 32 keeps margin while the full party wins far past it.)
     demands.push(Demand::AllTracks);
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);
