@@ -266,11 +266,9 @@ fn cross_contest(
     crossed: &mut [bool],
     log: &mut Vec<String>,
 ) {
-    let mut catchers: Vec<usize> = van
-        .iter()
-        .copied()
-        .filter(|&v| !vanpool[v].is_down())
-        .collect();
+    // Catchers = the Vanguards alive at tier start (`van`). A Vanguard mortally wounded by the clash
+    // still catches — deaths finalize at the tier boundary (§1.3), so the Line stays order-independent.
+    let mut catchers: Vec<usize> = van.to_vec();
     catchers.sort_by_key(|&v| !vanpool[v].has("Taunt")); // Taunt draws the first catch
     let mut runners: Vec<usize> = sk
         .iter()

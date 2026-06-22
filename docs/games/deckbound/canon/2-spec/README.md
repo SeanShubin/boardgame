@@ -966,7 +966,7 @@ phase.
 
 ---
 
-## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model; **code synced 2026-06-21** — `combat.rs::the_line`. Remaining enrichments: the per-contest bid-magnitude escalation, the BI-3 force-not-fiat test, Reserve multi-fire.)*
+## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model; **code synced 2026-06-21** — `combat.rs::the_line`. Remaining enrichments: the per-contest bid-magnitude escalation (dial 1) and the BI-3 force-not-fiat test.)*
 
 > **History.** Superseded forms: front/back formation → speed-pairing → lane assignment → the
 > **charge-and-gauntlet** (secret charge + threading columns, roles *emergent*). All replaced by the

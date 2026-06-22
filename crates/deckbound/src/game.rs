@@ -1294,7 +1294,10 @@ impl Game for Deckbound {
             (Phase::Reserve, Action::Target(i, t)) => {
                 let side = state.plan.committing;
                 self.strike(state, side == 0, *i, *t, Range::Ranged);
-                state.s_acted_mut(side)[*i] = true;
+                // Act while you have Tempo (§4 the Open): a Reserve keeps firing until its cards run out.
+                if state.s_pool(side)[*i].tempo <= 0 {
+                    state.s_acted_mut(side)[*i] = true;
+                }
                 combat::tally(&mut state.heroes, &mut state.log);
                 combat::tally(&mut state.creatures, &mut state.log);
                 check_outcome(state);
