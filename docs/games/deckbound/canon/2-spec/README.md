@@ -60,7 +60,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync` |
 | **Speed/Tempo** (one breadth pool)                | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                               |
-| **The battle — the charge & the gauntlet**        | 🟡 seeded    | §4 **respecced** to charge-and-gauntlet (lanes removed, 2026-06-20); code migration pending `/spec-sync §4`. §4.3 actors-are-decks also pending |
+| **The battle — declare ranks, hold the line**     | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed, 2026-06-21); code migration pending `/spec-sync §4`. §4.3 actors-are-decks also pending |
 | **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
 | **Aspects / the chord**                           | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                              |
 | **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
@@ -206,9 +206,9 @@ game* solvable by LP, so backward induction over the bounded horizon computes th
 - The round/roster bounds are **parameters**, defaulting to unbounded live play; only the *analysis*
   setup imposes the short envelope, so live balance/behaviour is unchanged by their existence.
 - Bounding gives **finiteness / tractability**, which is **orthogonal to rule completeness**: the solver
-  still optimizes a *concrete* rule-set, so the §4 open dials (the escalating auction's form, the
-  multi-intercept cap, charge-order threading) must be pinned (or the v1 code semantics ratified) before
-  "perfect" means *perfect at the designed game*.
+  still optimizes a *concrete* rule-set, so the §4 open dials (the bid / free-hit magnitudes, the
+  Bodyguard catch-count) must be pinned (or the static-ranks semantics ratified) before "perfect" means
+  *perfect at the designed game*.
 - The envelope doubles as a **design assertion**: every intended encounter is winnable within the
   horizon under optimal play; one that is not is **mis-tuned** (too grindy), not merely "hard". A
   not-enforced cap means a cap-draw verdict reads as "violates the round-horizon design target", not
@@ -847,17 +847,17 @@ Two permanent **Form** stats size one round-scoped **pool of cards** — the sam
 
 ### 3.1 What Tempo and Daring do
 
-**RULE.** **Flipping a Tempo card gates every action** — intercept, engage, strike, strike back. Run
-out of face-up Tempo and you can do nothing more this round (so what you pour into the gauntlet is gone
-before the exchanges).
+**RULE.** **Flipping a Tempo card gates every *action*** — a strike, a crossing contest (slip or catch),
+a strike back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are free** — Tempo is
+the currency of acting on the enemy, not of mere presence. Run out of face-up Tempo and you can take no
+more actions this round (you still hold your rank and soak with Body).
 
-**Daring's magnitude does real work in exactly one place — a gauntlet *crossing* (§4).** When a runner
-tries to slip past an interceptor, the two hold an **open, escalating Daring auction**: each may keep
-flipping Tempo cards, adding that card's Daring to its committed total for *this* crossing; either may
-stop; **the higher total wins, ties to the catcher** (caught → stopped; runner strictly higher → slips
-by). The committed total **resets at the next opponent**, but the spent cards **do not** return — so
-catching or slipping past *more* foes, or *harder* ones, drains more Tempo. **Catching a runner is the
-same as engaging it** — the cards spent to catch it pay for the exchange; you never pay twice.
+**Daring's magnitude does real work in exactly one place — a *crossing contest* (§4).** When a Skirmisher
+tries to cross a Vanguard, the two hold a **single simultaneous Daring bid**: each commits some Tempo
+cards, worth (cards × Daring); **the higher total wins, ties to the catcher** (Shadowstep overrides) —
+strictly higher → slips by; equal-or-less → held. The bid cards are spent (they do **not** return until
+refresh), so crossing *more* walls, or *harder* ones, drains more Tempo. A **held** Skirmisher and its
+catcher **trade** (each deals Power) on the cards they committed — you never pay twice.
 
 **Everywhere else, Daring's number is irrelevant — only the flip counts.** An **exchange** (a strike) is
 **single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Daring
@@ -865,7 +865,7 @@ same as engaging it** — the cards spent to catch it pay for the exchange; you 
 that attack is Daring-independent. You may **reflexively strike back** at anyone who strikes you in melee
 (position is irrelevant — they came to you), but striking back is an action: it costs **one** Tempo
 card, and with none to flip you simply **take the hit** (a free hit). *(Ranged fire is one-sided — you
-cannot strike back at a Reserve that did not come to you — except in the no-charge open brawl, where two
+cannot strike back at a Reserve that did not come to you — except in the no-front open brawl, where two
 ranged foes exchange if both spend a card, or where a card grants an exception, §4.2.)*
 
 **WHY.** One pool for act-and-defend makes the cannon/wall axis a live **allocation** (spend it
@@ -873,27 +873,26 @@ attacking and you cannot answer a skirmisher) rather than a second stat. Splitti
 **count (Speed)** and **grade (Daring)** gives two clean power dimensions that mean different things:
 **Speed = how many crossings/actions you get; Daring = how cheaply you win each crossing.** Confining
 Daring to the crossing keeps a strike's force on Power (not on how hard you shoved through the line), and
-the per-round depletion is the tension — run the gauntlet hard and you are spent for the exchanges (#2
+the per-round depletion is the tension — press the crossings hard and you are spent for the strikes (#2
 opportunity cost).
 
 **GUARANTEES.** *(the tripwires — break one and the concept no longer holds)*
 - **Speed = count**, **Daring = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
   Speed-many at Daring each, spent within a round and refreshed between rounds.
-- **Daring's magnitude affects only a gauntlet crossing** (an escalating auction, ties to the catcher);
-  it never scales a strike, an attack, or anything outside a crossing.
-- **Every action is one Tempo card** (intercept, engage, strike, strike back); **catching = engaging**
-  on the same cards; an exchange is single-card and Daring-blind.
-- **Spent Tempo does not return until the round refresh** — gauntlet spending is unavailable for later
-  exchanges (the depletion tension); a *crossing's committed total* resets per opponent, the *pool*
-  does not.
+- **Daring's magnitude affects only a crossing contest** (a single simultaneous bid, ties to the
+  catcher); it never scales a strike, an attack, or anything outside a crossing.
+- **Every action is one Tempo card** (strike, contest, strike back); **standing and soaking are free**;
+  a strike is single-card and Daring-blind.
+- **Spent Tempo does not return until the round refresh** — cards bid on a crossing are unavailable for
+  later strikes (the depletion tension); the bid is per-contest, the pool does not refill mid-round.
 - **Reflexive strike-back is always available against a melee attacker** for one Tempo card; no card → a
-  free hit. Ranged is one-sided save the no-charge open brawl / a card exception.
+  free hit. Ranged is one-sided save the no-front open brawl / a card exception.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Speed` (Resources) — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **TERM.** `Daring` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a gauntlet crossing, where both sides flip Tempo cards and the higher committed Daring wins (ties to the catcher). A strike is the same whatever its Daring.
-- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (intercept, engage, strike, strike back); spent cards stay spent until the round refreshes. Run out and you can't act.
+- **TERM.** `Daring` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a crossing contest, where both sides commit Tempo cards (cards × Daring) and the higher total wins (ties to the catcher). A strike is the same whatever its Daring.
+- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (strike, contest a crossing, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
 
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
@@ -914,9 +913,9 @@ opportunity cost).
 
 ### 3.4 The round — orchestration (PvE & PvP)
 
-> **SUPERSEDED by §4 (charge-and-gauntlet).** The round is no longer a player-phase/foe-phase loop over
-> formation; it is the **Charge → Muster → Gauntlet → Skirmish → Reserve** model in §4. **Tempo is now the single
-> currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per phase*. The
+> **SUPERSEDED by §4 (static ranks).** The round is no longer a player-phase/foe-phase loop over
+> formation; it is the **Assemble → the Line → the Open → Refresh** model in §4. **Tempo is now the single
+> currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per tier*. The
 > PvE/PvP text below (and its Focus-defend modes) is kept for design history; where it conflicts with
 > §4, §4 wins.
 
@@ -967,246 +966,213 @@ phase.
 
 ---
 
-## 4. The battle — the charge & the gauntlet 🟡
+## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model, 2026-06-21; code migration pending `/spec-sync §4`)*
 
-> **History.** This section has been through several superseded forms: a **front-line / back-line**
-> formation, a **speed-pairing** commitment order, then a **lane-based** commitment order (assign
-> Vanguard to lanes, stack, hold/slip). All are replaced by the **charge-and-gauntlet** model below.
-> The *spine survives* — three roles (Vanguard / Skirmisher / Reserve), hidden commitment, "the front
-> protects the back" — but **lanes are gone**: instead of assigning Vanguard to abstract lanes, both
-> sides **secretly declare a charge** (who runs in, and in what order), then the two charge-columns
-> **thread through each other in a single open gauntlet**. The roles now *emerge* from the gauntlet
-> rather than being pre-assigned. The motivation: lanes were the one construct with no physical
-> picture, and the "lead holder absorbs all" abstraction produced wasted overkill; the gauntlet makes
-> targeting explicit and rides one clean metaphor. **The code now implements this** — the gauntlet
-> resolver, the **Muster** window (below), the role passives, and the Controller status effects are
-> all live. Old text is in git history (`role-card-redesign` and the combat-redesign commit record the
-> rationale).
+> **History.** Superseded forms: front/back formation → speed-pairing → lane assignment → the
+> **charge-and-gauntlet** (secret charge + threading columns, roles *emergent*). All replaced by the
+> **static-ranks** model below. The *spine survives* — three roles (Vanguard / Skirmisher / Reserve),
+> hidden commitment, "the front protects the back" — but the **threading gauntlet is gone**: roles are
+> now **declared, not emergent**, nobody moves, and each Skirmisher's crossing is a single **Daring
+> contest** against the wall, resolved in two ordered tiers. Motivation: the gauntlet's threading
+> (column pairing, surplus loops, interception-across) was the one genuinely complex construct and
+> bought nothing the static model can't express more cleanly. Rationale + decision trail:
+> `future-possibilities.md` entry 8. *(Earlier code implemented the gauntlet; the static-ranks code
+> lands in the §4 spec-sync.)*
 
-**The budget (one pool).** **Tempo** is the action economy that gates everything (§3): a `count × value`
-pool of **Speed**-many cards, each worth **Daring**, flipped to spend (face-up = available, face-down =
-spent, §5). **Flip a card to act** — charge, slip, intercept, strike, fire, *or* defend (turn an
-incoming melee blow into a **clash** rather than a **free hit**, §4.2). **Run out and you can't act.**
-**Tempo refreshes each round.** **Daring's magnitude matters in exactly one place — a gauntlet crossing**
-(an escalating Daring auction, §3 / below); every other action is one Daring-blind card.
+**The budget (one pool).** **Tempo** is the action economy (§3): a `count × value` pool of
+**Speed**-many cards, each worth **Daring**, flipped to spend (§5). **A flipped card buys exactly one
+action — of any kind:** strike, contest a crossing (slip or catch), or strike back. **Standing in a
+rank, letting a foe slip by, and *absorbing* a blow are all free** — Tempo is the currency of *acting
+on the enemy*, not of mere presence. **Run out and you can no longer act** (you still hold your rank and
+soak hits with Body). **Tempo refreshes each round.** **Daring's magnitude is read in exactly one
+place — a crossing contest** (below); every other action is one Daring-blind card whose damage is set by
+**Power**.
 
-Because the **same pool pays for offense *and* defense**, the **cannon/wall axis is an allocation
-choice**, not a second stat: pour Tempo into the gauntlet (charging through, or catching runners) and
-you have little left to strike or answer a skirmisher; hold it back and you survive but do less. (There
-is **no separate Focus/Mind pool** — **merged 2026-06-20**; defending is a Tempo spend.) Both pools share
-the **`count × value`** form: **Health = Body × Toughness** (value gates damage, persists), **Tempo =
-Speed × Daring** (value bites in a crossing, refreshes).
+Because the **same pool pays for offense and defense**, the cannon/wall axis is an **allocation
+choice**, not a second stat: spend Tempo catching runners and striking and you have none left to strike
+back; hold it and you survive but do less. Both pools share the `count × value` form: **Health = Body ×
+Toughness** (persists), **Tempo = Speed × Daring** (refreshes). *(No Focus/Mind pool — merged 2026-06-20.)*
 
-**RULE.** The three roles **emerge from a charge**:
-- **Reserve** — anyone who does **not** charge (holds back; the ranged / support line).
-- **Vanguard** — a charger who **stops** at the front (intercepts, or is intercepted) — the melee
-  front line.
-- **Skirmisher** — a charger who **runs the gauntlet all the way through** to the enemy backfield.
+**RULE — three declared ranks.** Each side secretly assigns every Actor a rank, then both reveal:
 
-The spine is still the counter-triangle **Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard**: a Vanguard
-intercepts chargers in the gauntlet (stops Skirmishers); a Skirmisher who broke through reaches the
-otherwise-untouchable Reserve; the Reserve fires on the exposed front from safety.
+- **Vanguard** — the melee front line; holds, and may spend to **catch** crossing Skirmishers.
+- **Skirmisher** — the flankers; each attempts to **cross** the enemy line to reach the backfield.
+- **Reserve** — the ranged / support line behind the front; fires over it, and can be reached only by a
+  Skirmisher who crossed (or once the front is broken).
 
-A round runs **five phases** (the Charge and Muster commits, then three open resolutions):
+The counter-triangle holds — **Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard**: a Vanguard catches
+Skirmishers; a Skirmisher who crosses reaches the otherwise-untouchable Reserve; the Reserve fires on
+the exposed front.
 
-1. **Charge** *(the one hidden, simultaneous commit).* Each side secretly picks **which Actors charge,
-   and in what order** (a face-down ordered column), then **both reveal at once**. Non-chargers are
-   **Reserve**. *(Hidden because open ordering would be degenerate — the second mover would just
-   reorder to counter. Everything after the reveal is open information.)*
-1b. **Muster** *(open, before the gauntlet).* Each side plays its **standing / persistent** cards —
-   cards whose effect **lasts the round** rather than resolving on a single target after the gauntlet.
-   This is the window for a charging **Wall**'s defenses (Brace, Last Stand, Rally), a **Controller**'s
-   debuffs (Slow, Confuse, Dread, and the Stagger / Shove / Disarm riders), and a **Support**'s buffs
-   (Mend, Ward, Haste, Steel). Mustered effects are in force **for the gauntlet and the rest of the
-   round** — a Slow shrinks a foe's Tempo *before* it crosses; a Stagger costs it its whole turn; a
-   Brace banks Tempo for the crossing. The positional **attack** cards (Infiltrator slips, Artillery
-   fire) are **not** mustered — they need a post-gauntlet target and wait for their own phase. *(Why
-   here: a debuff played in the last phase is wasted — its target has already acted. Muster is the
-   point where a persistent effect can actually shape the round.)*
-2. **The Gauntlet** *(open).* The two charge-columns **thread through each other**. Resolution is a
-   public sequence of **crossings** (see below); chargers who **stop** become **Vanguard**, chargers
-   who **break all the way through** become **Skirmishers**. Damage **accumulates** and resolves at the
-   phase boundary (§2 card-state: health cards turn face down; *all* face down → defeated).
-3. **Skirmish** *(open).* Skirmishers who broke through **and still hold a face-up Tempo card** strike
-   the enemy **Reserve** — choosing targets freely (opposing Skirmishers can no longer intercept; their
-   chance was the gauntlet). Each strike spends **Tempo**; a Skirmisher with more may keep striking,
-   switching targets. The defender answers by **spending Tempo** — flip a Tempo card to turn the blow
-   into a **clash** (defend *and* counter); **no Tempo to spare → a free hit**. With the enemy Reserve
-   cleared and Tempo left, Skirmishers may turn on the enemy **Vanguard** (who likewise defend by
-   spending Tempo). Resolve damage at the phase boundary.
-4. **Reserve** *(open, one-sided).* Surviving Reserve spend **Tempo** to fire **ranged** at the enemy
-   **Vanguard or Skirmishers** — **never** the enemy Reserve (out of range). Ranged fire is **one-sided**
-   (no counter) unless a special ability or **no enemy Vanguard** opens range-on-range, which makes it a
-   normal **exchange** (§4.2). A Reserve that **spent Tempo defending** in the Skirmish phase has
-   **less left to fire** — one pool pays for both, so survival and firepower compete (the core Reserve
-   squeeze). Resolve damage; then **Refresh** (Tempo resets, Body persists, round++).
+**The round.**
 
-**A crossing (the gauntlet's atom).** When two opposing chargers meet, they hold an **open, escalating
-Daring auction** (§3): each may **keep flipping Tempo cards**, adding each card's **Daring** to its
-committed total *for this crossing*; either may stop. **Higher total Daring wins, ties to the catcher.**
-- **Caught** (interceptor's committed hold ≥ the runner's advance) → the runner **stops** here; the catch
-  **engages** them (the cards already spent pay for the exchange — no second cost). Both become Vanguard.
-- **Slips** (runner strictly higher) → the runner **advances to the next** enemy in the column.
-- **Barge** (spend nothing, take a **free hit**, keep moving) → the hit lands **before** the next
-  crossing, then the charger advances.
+1. **Assemble** *(the one hidden, simultaneous commit).* Each side secretly assigns ranks **and** commits
+   its **bids** — how many Tempo cards each Skirmisher throws at its crossing, how many each Vanguard
+   throws at a catch, and (defender's choice) **which Vanguard catches which Skirmisher** — and plays its
+   **standing cards** (a Wall's Brace / Last Stand, a Controller's Slow / Stagger / Disarm, a Support's
+   Mend / Haste), whose effect **lasts the round** and shapes what follows. Reveal together; nobody moves
+   after.
+2. **Tier 1 — the Line.** From the start-of-round snapshot, resolved together (deaths tally at the tier
+   boundary — a unit mortally wounded here still lands every blow it committed, §1.3):
+   - **Vanguards strike** the opposing Vanguard (a card per blow).
+   - **Crossing contests** *(the only place Daring is read)*: each Skirmisher's committed **advance**
+     (cards × Daring) vs its assigned Vanguard's committed **hold** (cards × Daring + Phalanx).
+     Strictly greater → **slips** (the bypassed Vanguard lands a **parting free hit**, Power); ≤ →
+     **held** (Skirmisher and catcher **trade**, both Power; the Skirmisher does not cross). **Ties to
+     the catcher** unless the Skirmisher has **Shadowstep**. A Skirmisher with **no catcher assigned**
+     (more Skirmishers than the wall pays to catch) **slips free** — no contest, no parting hit.
+3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved together (tally at the boundary):
+   - **Crossed Skirmishers strike** — behind the line, they may hit **any** enemy rank (Reserve first,
+     the prize; the Vanguard from behind; or an enemy Skirmisher). One card per strike, **act while
+     cards remain**; a melee blow on a foe that can't answer melee (a Reserve) is **free**.
+   - **A Vanguard whose opposite is dead pours through** and strikes the now-undefended enemy Reserve /
+     Skirmisher (free).
+   - **Reserves fire** ranged at the enemy Vanguard + Skirmisher (never the enemy Reserve) — picking off
+     exposed Skirmishers; auto-hits any target with no ranged answer.
+   - **Strike-backs:** a struck unit that can answer the range and has a card left strikes back (Power);
+     otherwise it eats a free hit.
+4. **Refresh.** Clear round-scoped status; refill Tempo to Speed; round++. (A battle not closed by the
+   ruleset round cap is a draw — §0.4.)
 
-A unit's Tempo is **one pool** spent across **all** its crossings — there is no fixed "blocker": it may
-let one enemy slip by (declining to spend) and still spend remaining Tempo to catch the next, **choosing
-whom to prioritize**. The committed total **resets each crossing**, but **spent cards do not return** —
-so Tempo poured into the gauntlet is gone before the exchanges (§3 depletion). A unit that **stopped**
-stays at its position and **remains an obstacle** for later advancers (Tempo permitting); a unit that
-**broke through** the whole opposing column becomes a **Skirmisher**.
+**The crossing contest (the only Daring read).** A single **simultaneous Daring bid**, *not* an iterated
+auction: each side has committed *k* cards at Assemble, worth *k ×* Daring; the higher total crosses /
+holds, tie to the catcher (Shadowstep overrides); bid cards are spent. A Skirmisher's **advance** is
+weighed against the Vanguard's **hold**: Wall powers feed **hold only**, never advance — a Wall raises
+the number you must clear without itself slipping through (an immovable line, not a runner).
 
-**Advancing vs holding (the Wall's hold).** A crossing weighs two distinct uses of Daring: **advance**
-(the Daring you commit to *slip past*) against the other's **hold** (the grade it commits
-to *hold the line*). You slip iff your advance **strictly exceeds** their hold; a tie is held. For a
-plain unit the two are equal (its Daring), so the raw "higher slips, tie held" rule stands. **Wall
-powers feed the hold only, never advance** — a Wall raises the wall it makes the enemy climb without
-itself slipping through on a big number (it is an immovable line, not a runner). This is the seam the
-role passives plug into.
+**Demise — protection comes from the line.** Each rank's vulnerability is *how much line stands between
+it and the enemy*:
 
-**Role powers in the gauntlet (and the round).** The specialist passives are not flavor — each bites a
-concrete step:
-- **Phalanx** (Wall) — +hold: Walls who stop together intercept as one, holding faster runners.
-- **Bodyguard** (Wall) — a stopped Wall steps across to intercept a **surplus** enemy charger that
-  would otherwise break through unopposed (guarding the backfield, not just the foe it met).
-- **Taunt** (Wall) — draws fire: the Wall is pulled to the **front** of its column so the enemy meets
-  it first, sparing the rest of the line.
-- **Blitz** (Infiltrator) — the **first slip each round is free** (costs no Tempo).
-- **Shadowstep** (Infiltrator) — **win the tie** when slipping (advance ≥ hold, not just >).
-- **Backstab / Assassinate** (Infiltrator) — a Skirmisher hits an enemy **Reserve** harder / executes
-  it outright (the §10 prize for breaking through).
+| Rank | Dies to | Safe from |
+| --- | --- | --- |
+| **Vanguard** (is the line) | direct engagement (enemy Vanguard); a crossed enemy Skirmisher from behind | being flanked while it holds — it faces forward |
+| **Skirmisher** (left the line) | the wall's **catch / parting hit**; the enemy **Reserve's** fire; an enemy **Skirmisher** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
+| **Reserve** (behind the line) | a Skirmisher who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through | everything, *while its line holds* |
 
-**Persistent status (Controller debuffs).** A Controller card can hang a **round-scoped status** on a
-foe, cleared at Refresh: **Stagger** (loses its action — no strike, card, or strike-back this round),
-**Shove** (knocked out of melee — cannot contest a melee blow), **Disarm** (hand fouled — cannot play
-its role cards). Played at **Muster**, these degrade the foe's whole round (its gauntlet, its strikes,
-its defense); their bite is timing — see the Muster phase.
+So the **Skirmisher is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
+is thus both **spear and screen**: field it to assassinate the enemy Reserve *and* to kill the enemy's
+Skirmishers before they reach yours.
+
+**Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold), **Bodyguard** (a Vanguard
+may catch one *extra* Skirmisher — a second catch-bid), **Taunt** (must be assigned the first catch),
+**Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
+/ Assassinate** (a crossed Skirmisher hits an enemy Reserve harder / executes it — the §10 prize).
+
+**Persistent status (Controller debuffs).** A Controller card hangs a round-scoped status, cleared at
+Refresh: **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee — cannot
+contest a melee blow), **Disarm** (cannot play role cards). Played at **Assemble**, they degrade the
+foe's whole round.
+
+**Bypass = open season.** Once a unit is *behind the enemy line* — a Skirmisher that **slipped** past a
+Vanguard, or a Vanguard that **killed** the one it faced — **every enemy rank is fair game to it**. The
+line only protects what is still in front of it; bypass it (by slipping or by killing it) and the
+backfield is open.
 
 **Targeting matrix.**
 
-| Chooser        | May target                                                                  |
-| -------------- | --------------------------------------------------------------------------- |
-| **Vanguard**   | the enemy charger(s) it **meets in the gauntlet**                           |
-| **Skirmisher** | the enemy **Reserve** (first), then the enemy **Vanguard** — its prize      |
-| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** enemy Reserve |
+| Chooser | May target |
+| --- | --- |
+| **Vanguard** | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Reserve or Skirmisher) |
+| **Skirmisher** | **held** → only its catcher; **crossed** → **any** enemy rank (Reserve first, then the Vanguard from behind, or an enemy Skirmisher) |
+| **Reserve** | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** the enemy Reserve |
 
-**No chargers / one side charges.**
+**Edge cases.** *All-Reserve (no front):* nothing can catch, so every enemy Skirmisher slips free and
+raids the Reserve — holding everyone back only exposes you. *No Skirmishers:* the lines trade and the
+Reserves fire — attrition the heavier line wins. *Neither side fields a front:* the "Reserve is safe"
+privilege (paid for by fielding a front) lifts — open brawl, anyone may target anyone in range.
 
-- **One side charges, the other holds all back** — the holding side has **no Vanguard**, so its whole
-  line is Reserve; the chargers meet **no opposition** in the gauntlet, break through as **Skirmishers**,
-  and raid that Reserve. Holding everyone back only **exposes** you (your own Reserve has no front), it
-  never reaches the enemy Reserve — there is no charge to break *their* line.
-- **Neither side charges** — no front forms anywhere, so the privilege "**Reserve is safe from enemy
-  Reserve**" (paid for by fielding a front) **lifts**: it's an **open brawl** — everyone may target
-  anyone with whatever range they carry.
+**Protection is the wall's, this round.** Only catching a Skirmisher at the line — or screening it with
+your own Skirmisher, or shooting it with the Reserve — saves the backfield this round; a wiped Vanguard
+stops protecting its Reserve immediately. **No rank is ever permanently safe** — every unit is reachable
+by enough force (the **force-not-fiat** invariant, §0.3 / balance-invariants BI-3).
 
-**In-round protection is the gauntlet's alone.** Only **intercepting in the gauntlet** can save a
-Reserve **this round** — it stops the raider before it becomes a Skirmisher. A later Reserve→Skirmisher
-shot is **attrition**: it denies the raider *next* round, it doesn't shield the target *this* one.
+**Determinism (two ordered tiers).** Each tier resolves from a snapshot, **order-independent within**
+(permuting the units yields the identical end-state — the §1.9 property), **strictly sequenced between**
+(the Line, then the Open); deaths finalize at each tier boundary, so a mortally-wounded unit still lands
+every blow it committed (§1.3). The base battle is **perfect-information and deterministic given the
+Assemble commit** (#11); the crossing's **bid** is a single simultaneous commitment (not an iterated
+raise-war), so it stays computable. The hidden, simultaneous mind-game is the optional **Clash** (§1.0).
 
-**Confluence (order-independence, honestly stated).** The gauntlet is resolved as a sequence, but it is
-**confluent**: where two chargers slip past each other, resolving either one's continuation first gives
-the **same** result. Order matters **only at a stop** (an interception changes who meets whom next), and
-a stop's outcome is **fully determined** by the revealed Tempo. So the phase is "as order-independent as
-the physics allows" — deterministic given the charge commitments (preserving §0.1 / #11), just not
-freely reorderable across a block. Damage from a barge lands **before** the next crossing (sequential
-within one charger's run), but across *independent* runs the order is free.
+**What is hidden.** Only the **Assemble commit** — ranks + bids + catch-assignments — and only until the
+simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend. Always public: stats
+(Speed / Body) and the spent/unspent pool.
 
-**What is hidden.** Only the **Charge** (who charges, in what order) is hidden, and only until its
-simultaneous reveal. **Everything after is open** — Tempo cards are flipped *face-up* to spend, in view.
-The deeper hidden, simultaneous mind-game (a true 1v1 crossing) lives in the optional **Clash module**
-(§4.2 / §1.0), layered on top — it is **not** baked into the base gauntlet, which stays
-perfect-information and deterministic (#11). Always public: stats (Speed / Body) and the spent/unspent
-Tempo pool.
-
-**WHY.** The triangle survives but its mechanics get a **single physical picture**: two lines charging
-through each other, choosing at each crossing to stop a runner or push past. Removing lanes removes the
-only construct with no metaphor and the "lead holder eats every blow" abstraction (which wasted attacks
-as overkill) — targeting is now **explicit** (you choose whom to stop, whom to strike). **Tempo as one
-pool** spent on advancing, intercepting, *and defending* makes the core decision crisp — *where do I
-spend my initiative?* — and turns the cannon/wall axis into a live allocation (spend it all attacking
-and you can't answer a skirmisher; hold it and you survive but do less). **Hiding only the charge** keeps the prediction
-game where it must be (you commit blind to their charge) while leaving resolution **open and
-computable** — the bluff layer is the Clash's job, not the gauntlet's. "**The front protects the
-back**" stays load-bearing: the only route to the enemy Reserve is breaking their charge line, so to
-threaten their back you must expose your front.
+**WHY.** The triangle survives on a single physical picture — a battle line with a front, flankers, and
+a rear — but the **threading gauntlet is gone**: roles are declared, nobody moves, and a Skirmisher's
+fate is one **Daring contest** against the wall, not a walk through a column. **Tempo as one pool spent
+only on *acting*** (striking, contesting, answering) makes the core decision crisp — *where do I spend
+my initiative?* — while standing and soaking stay free, so a spent wall is still a wall. **Daring read
+in one place** keeps the three stats orthogonal: **Speed** = how many actions, **Daring** = whether you
+cross, **Power** = how hard you hit. **Force, not fiat:** nothing is forbidden by rule — a low-Daring
+Skirmisher can still cross by overspending, an out-numbered wall is overwhelmed, an over-powered lone
+hero wipes a weaker party — opposition is always *cost*, never *impossibility*.
 
 **GUARANTEES.**
-- **The role triangle holds:** Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard; roles **emerge from the
-  charge** (Reserve = didn't charge, Vanguard = stopped, Skirmisher = broke through).
-- **The Reserve is reachable only by breaking the charge line** — never by enemy Reserve, only by a
-  Skirmisher who ran the gauntlet through — *except* the no-charge open brawl.
-- **One hidden commit:** only the Charge (units + order) is hidden+simultaneous; **all resolution is
-  open**. Base combat is **perfect-information and deterministic** (#11); the hidden mind-game is the
-  optional Clash.
-- **Confluent resolution:** deterministic given the charge; order-independent except across an
-  interception, whose outcome is itself determined.
-- **Two pools, both `count × value`:** **Health** (Body × Toughness, persists) and **Tempo** (Speed ×
-  Daring, refreshes). **Tempo pays for offense *and* defense** (charge / slip / intercept / skirmish /
-  fire, *and* answering a melee blow), so the cannon/wall axis is an allocation choice, not a separate
-  stat. **Daring's magnitude bites only in a gauntlet crossing** (§3); a strike is Daring-blind. (No
-  Focus/Mind pool — merged.)
 
-**MANUAL.** *Secretly pick who charges and in what order (an ordered face-down column); reveal together.
-Non-chargers are your Reserve. **Muster**: before the gauntlet, play your standing cards — a charging
-Wall braces or sets a Last Stand, a Controller slows / staggers / disarms the enemy, a Support mends or
-hastes the line — these last the whole round and shape what follows. The two charge-columns thread
-through each other: at each meeting, both
-keep flipping Tempo cards into a **Daring auction** — higher total Daring wins, a tie is caught; or spend
-nothing and take a free hit to barge on. Your Tempo is one pool across all your crossings — choose whom
-to catch (and Tempo spent here is gone for the exchanges). Those who break all the way through are Skirmishers; those who
-stop are your Vanguard. Skirmishers with Tempo left strike the enemy Reserve (it defends by spending
-Tempo to make the blow a clash; no Tempo to spare = a free hit), then the enemy Vanguard. Finally your
-Reserve fire ranged at the enemy front (never their Reserve) — but Tempo spent defending is Tempo you
-can't fire with. No one charges on either side → open brawl.*
+- **The role triangle holds:** Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard; roles are **declared**.
+- **The Reserve is reachable only by crossing the line** — a Skirmisher who beats the wall, or a
+  Vanguard pouring through a broken front — never by enemy Reserve (except the no-front open brawl).
+- **One hidden commit:** only the Assemble commit (ranks + bids + assignment) is hidden + simultaneous;
+  all resolution is open. Base combat is perfect-information and deterministic (#11); the hidden
+  mind-game is the optional Clash.
+- **Two ordered tiers, snapshot-resolved:** order-independent within a tier, strictly sequenced between;
+  a mortally-wounded unit still lands its committed blows (§1.3).
+- **Two pools, both `count × value`:** Health (persists) and Tempo (refreshes). **Tempo buys actions
+  only** (strike / contest / strike-back); standing and soaking are free. **Daring bites only in a
+  crossing**; a strike is Daring-blind (Power sets damage).
+- **Force, not fiat:** every rank is killable by enough force — no immunity, no hard cap, no skill-gate.
+  A no-skills, infinite-stat character wipes any finite party in one round (BI-3).
+
+**MANUAL.** *Secretly assign each Actor a rank — Vanguard (front), Skirmisher (flanker), Reserve
+(rear) — and commit your bids: how many Tempo cards each Skirmisher throws at its crossing, each
+Vanguard at a catch, and which Vanguard catches which Skirmisher; play your standing cards (braces,
+debuffs, buffs — they last the round) in the same commit. Reveal together; no one moves. **The Line:**
+Vanguards strike across (a card a blow); each Skirmisher's advance (cards × Daring) meets its catcher's
+hold — strictly more slips (and takes the wall's parting hit), equal-or-less is held and trades; an
+uncaught Skirmisher slips free. **The Open:** Skirmishers who crossed strike anything behind the line
+(the Reserve is the prize); a Vanguard whose foe is dead pours through; Reserves fire at the enemy front
+and pick off Skirmishers in the open; anyone struck at a range it can answer strikes back (a card), else
+takes a free hit. Standing and soaking cost nothing — only acting spends Tempo. Refresh and go again.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Charge` (Roles) — The hidden, simultaneous declaration of who runs in and in what order. Revealed together; everything after resolves in the open. Non-chargers are the Reserve.
-- **TERM.** `Vanguard` (Roles) — A charger who stops at the front — by intercepting, or being intercepted. The melee front line; it strikes first and shields the Reserve.
-- **TERM.** `Skirmisher` (Roles) — A charger who runs the gauntlet all the way through to the enemy backfield. The only route to the enemy Reserve; acts after the gauntlet resolves.
-- **TERM.** `Reserve` (Roles) — Anyone who did not charge: decisive but fragile (artillery, support). Fires ranged on the enemy front and aids allies, but can never target the enemy Reserve.
-- **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (intercepts it in the gauntlet); Skirmisher beats Reserve (breaks through to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
-- **TERM.** `Muster` (Combat) — The open window after the charge reveal and before the gauntlet, where each side plays its **standing / persistent** cards (Wall defenses, Controller debuffs, Support buffs). Mustered effects last the round and shape the gauntlet; positional attack cards wait for their own phase.
-- **TERM.** `The gauntlet` (Combat) — The open phase where the two charge-columns thread through each other; at each crossing a unit spends Tempo to stop the enemy or push past. A unit slips iff its advance Daring exceeds the other's hold (Wall powers raise the hold only). Breakthroughs become Skirmishers; those who stop become Vanguard.
-- **TERM.** `Slip` (Combat) — At a crossing, push past an enemy: an open Daring auction where both flip Tempo cards and the higher committed Daring wins — you need strictly more than the catcher to slip; a tie is caught. Spend nothing and you barge past taking a free hit.
-- **TERM.** `Open brawl` (Combat) — If neither side charges, no front forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
-- **TERM.** `Phases` (Round) — Charge (hidden: who runs in, and in what order) → Muster (play standing/persistent cards) → Gauntlet (the columns thread through) → Skirmish (breakthroughs hit the enemy Reserve) → Reserve (ranged fire on the front) → Refresh. Confluent within each phase.
+- **TERM.** `Assemble` (Roles) — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Skirmisher / Reserve), commits its crossing / catch bids and which Vanguard catches which Skirmisher, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
+- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers; once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
+- **TERM.** `Skirmisher` (Roles) — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Reserve.
+- **TERM.** `Reserve` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Reserve, and is reached only by a Skirmisher who crossed or a Vanguard pouring through a broken front.
+- **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (catches it at the line); Skirmisher beats Reserve (crosses to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
+- **TERM.** `The Line` (Combat) — Tier 1: Vanguards strike across, and each crossing Skirmisher's advance Daring is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
+- **TERM.** `Crossing` (Combat) — A Skirmisher's attempt to pass the wall: a single simultaneous Daring bid (committed cards × Daring). Strictly more than the catcher's hold slips (taking a parting free hit); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
+- **TERM.** `The Open` (Combat) — Tier 2: crossed Skirmishers strike anything behind the line (the Reserve is the prize), a Vanguard whose foe is dead pours through, Reserves fire on the front and pick off exposed Skirmishers, and the struck strike back if they can answer the range.
+- **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
+- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + bids + standing cards) → the Line (Vanguards trade, Skirmishers contest the crossing) → the Open (breakthroughs strike, Reserves fire) → Refresh. Order-independent within each tier, strictly sequenced between.
 
-**Still unspecified (open dials — pin before/with implementation).** The structure (charge, gauntlet,
-crossings, the three emergent roles, phases, targeting) is settled; these are not:
+**Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
+the three declared roles, targeting) is settled; these are not:
 
-> **RATIFIED as the resolver-of-record (2026-06-20).** For the balance work (§0.3 — par is
-> **policy-relative** to a fixed resolver), the **v1 code semantics are the canonical combat resolver**
-> until a measured problem forces a change: the **single-card crossing** (advance Daring vs the hold,
-> one Tempo flipped per side, Phalanx/Shadowstep/Blitz riders), **index-pairing** of the charge columns
-> (after the Taunt sort), and **no multi-intercept** (dials 1–3 below). This keeps base combat
-> **deterministic** (the solver stays a maximizer, not an equilibrium-solver) so par is well-defined and
-> measurable now. The dials below are **candidate enrichments**, to be pinned *in response to* a balance
-> property the resolver-of-record cannot satisfy by tuning — not before. (In particular: do **not** pin
-> the auction as hidden-simultaneous unless forced — that is the one change that would make even PvE
-> combat a game-theoretic sub-game.)
+> **RATIFICATION — in transition (2026-06-21).** §4 is now the **static-ranks** model. The balance work
+> (§0.3 — par is policy-relative to a fixed resolver) needs one canonical resolver; that role transfers
+> from the retired v1 gauntlet to the **static-ranks resolver when the code lands at `/spec-sync §4`**.
+> Until then the harness measures against the current code; once synced, the static-ranks semantics
+> (single simultaneous Daring bid, defender-assigned catches, two snapshot tiers, ties to the catcher,
+> Shadowstep / Phalanx / Bodyguard / Blitz riders) are the resolver-of-record. Keep the **bid a single
+> simultaneous commitment** (not an iterated auction) so base PvE combat stays a maximizer, not an
+> equilibrium-solver — par stays well-defined.
 
-1. **Crossing numbers / the auction** — the rule is locked (§3: an **escalating Daring auction**, **ties
-   to the catcher**, **catching = engaging** on the same cards). **Code implements the v1 single-card
-   crossing** (each side flips one Tempo card; advance Daring vs the hold, Phalanx/Shadowstep/Blitz
-   riders live) — the full **escalating** auction (both sides keep flipping to outbid) is the remaining
-   enrichment, along with the **free-hit** magnitude when barging.
-2. **Multi-intercept caps** — a stopped unit can intercept later advancers while Tempo lasts; is there a
-   cap, or is it purely Tempo-bounded?
-3. **Charge order semantics** — confirm the column is strictly front-to-back (an advancer meets the
-   enemy column in their charge order) and that a stopped unit holds its column slot.
-4. **Skirmish strike cost** — one Tempo per strike (assumed); confirm, and whether switching targets
-   costs extra.
-5. **Reserve aid kit** — the buffs / heals / debuffs Reserve deliver — Action cards over the §5 zone
+1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
+   cards × Daring, ties to the catcher, Shadowstep overrides); the **numbers** (the parting-hit weight,
+   strike Power) live in `booklet.ron`, human-tuned.
+2. **Bodyguard catch-count** — Bodyguard grants a Vanguard **one extra catch**; confirm whether further
+   catches scale with Tempo or stop at +1.
+3. **Skirmish strike cost** — one Tempo per strike (a unit acts while it holds cards); confirm whether
+   switching targets costs extra.
+4. **Reserve aid kit** — the buffs / heals / debuffs a Reserve delivers — Action cards over the §5 zone
    layer (the aspect/combo layer is retired — `retired-ideas.md`).
-6. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
-   (value gates damage; persists) and **Tempo = Speed × Daring** (refreshes). **Focus and Mind are
-   removed.** Speed = count (how many Tempo cards), **Daring = grade** (per-card magnitude), Tempo = the
-   cards. **Daring's magnitude bites only in a gauntlet crossing** (an escalating Daring auction, ties to
-   the catcher); every other action is one Daring-blind card. *(The earlier "no Tempo value" call is
-   reversed — Daring is the grade, ratified with Speed/Tempo in §3.)*
+5. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
+   (persists) and **Tempo = Speed × Daring** (refreshes). **Focus and Mind are removed.** Speed = count
+   (how many Tempo cards), **Daring = grade** (per-card magnitude). **Daring is read only in a crossing
+   contest**; every other action is one Daring-blind card (Power sets damage), and **standing / soaking
+   cost no card at all**.
 
 *(Range/attack dials are resolved by §4.2: "Reserve self-defense" = whether it carries melee; "strike
 shape" = a Clash when attacker and target share the range, an auto-hit when they don't.)*
@@ -1214,20 +1180,18 @@ shape" = a Clash when attacker and target share the range, an auto-hit when they
 ### 4.1 Count-adaptivity — the system degrades to the choices that exist
 
 **RULE.** The commitment layer is **count-adaptive**: any choice with a **single legal option
-resolves automatically**, presenting no decision. The charge declaration, the gauntlet crossings,
-and Skirmisher/Reserve targeting appear only when party size makes more than one option legal.
-Concretely:
+resolves automatically**, presenting no decision. Rank assignment, the crossing bids, catch
+assignment, and Skirmisher / Reserve targeting appear only when party size makes more than one option
+legal. Concretely:
 
-- **1 v 1** — each side has one Actor; the only non-degenerate line is to charge it, so the two
-  meet in a **single crossing** and fight a **trade** (or a **Clash** with the module on). No charge
-  bluff (one unit, one order), no meaningful slip (slipping just delays the same fight), no Reserve,
-  no Skirmisher — it is exactly the plain duel (the tutorial case).
-- **Small parties (2–3)** — only live choices surface: the **charge declaration** (who runs in, in
-  what order) becomes a real choice once you have ≥2 chargers; **stop-or-pass** at a crossing only
-  where both are affordable; **Reserve targeting** only when you have a surviving Reserve and a legal
-  target.
-- **Larger parties** — the full machinery (a bluffed charge column, multiple crossings, breakthroughs
-  and interceptions).
+- **1 v 1** — each side has one Actor; ranks are moot (front meets front), so the two simply **trade**
+  (or fight a **Clash** with the module on). No rank bluff, no crossing (one unit can't both hold and
+  flank), no Reserve, no Skirmisher — it is exactly the plain duel (the tutorial case).
+- **Small parties (2–3)** — only live choices surface: **rank assignment** becomes real once a second
+  body makes a front-vs-flank split meaningful; a **crossing bid** only where a Skirmisher faces a
+  catcher both can afford; **targeting** only with a surviving target and a legal line to it.
+- **Larger parties** — the full machinery (a bluffed formation, several crossings, breakthroughs,
+  pour-throughs, and screening).
 
 **WHY.** Complexity should scale with the number of bodies. The protection layer only *means*
 something when you have an ally to protect, so it must be invisible until then — keeping 1 v 1
@@ -1242,7 +1206,7 @@ current head-count.
 ### 4.2 Range & attack type — melee, ranged, both, or neither
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
-**position-determined**, never chosen: **gauntlet crossings and Skirmisher strikes are melee;
+**position-determined**, never chosen: **crossing contests and Skirmisher strikes are melee;
 Reserve fire is ranged.** A strike lands at its range; whether the target can **contest** it depends
 on owning an attack of that same range:
 
@@ -1258,15 +1222,15 @@ The **Clash is a module, not the floor** — the game is fully playable with sam
 
 What follows from it:
 
-- **Skirmishers are melee** (they broke through a melee gauntlet), so the **only core route to an
+- **Skirmishers are melee** (they cross a melee line), so the **only core route to an
   enemy Reserve is a melee assassin.** Ranged Actors do **not** skirmish in the core. *(A card may
   explicitly supersede this — e.g. grant a ranged Skirmisher; see "Cards may supersede the
   core.")*
 - **Reserve self-defense = whether it carries melee.** A Reserve with a melee attack **trades/Clashes**
   an assassin (fends it off by spending Tempo to clash); a pure caster (no melee) is **auto-hit**
   (assassinated).
-- A **melee-less charger is legal but a very bad idea** — it is auto-hit at each crossing and cannot
-  answer. (Emergent positioning, not a banned move.)
+- A **melee-less Vanguard or Skirmisher is legal but a very bad idea** — it is auto-hit when it meets
+  melee and cannot answer. (Emergent positioning, not a banned move.)
 - **Neither** = pure support (heal / buff / area-control): it makes no attacks and is **always
   auto-hit** when reached — the most decisive-yet-fragile Reserve piece, wholly dependent on the
   wall. Its kit is Action cards over the §5 zone layer.
@@ -1280,7 +1244,7 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 **GUARANTEES.**
 - A strike is a **Clash** iff attacker and target **share the range**; otherwise an **auto-hit**
   (armor-gated, no Force, no Focus contest).
-- Range is **position-determined** (gauntlet / Skirmisher = melee, Reserve = ranged) — never the
+- Range is **position-determined** (the Line / Skirmisher = melee, Reserve = ranged) — never the
   attacker's free pick.
 - Core: **only melee Actors skirmish**; a card may explicitly supersede.
 
@@ -1288,7 +1252,7 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 
 - **TERM.** `Trade` (Combat) — A same-range engagement: both sides deal their base damage through armor/toughness. In the optional Clash module, the trade is replaced by the four-card mix-up.
 - **TERM.** `Auto-hit` (Combat) — A range mismatch: the attacker lands uncontested (the target can't answer at that range). Armor still blunts it; Focus cannot.
-- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Gauntlet crossings & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit.
 
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
@@ -1320,46 +1284,45 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 
 ### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; code pending)*
 
-**RULE.** Role cards are an **ability layer** over the physical gauntlet (§4). A character may play
+**RULE.** Role cards are an **ability layer** over the physical battle (§4). A character may play
 **one role card of each role per round** — several in a round, so long as they are **different roles**.
 A god holding all five tracks fires **up to five** effects in a round; a single-role specialist fires
 **one** (and chooses which of its cards), then that role is spent until next round. Each card is played
-**in its appropriate phase** — the phase that matches its role: a **Wall** card in the **Gauntlet**, an
-**Infiltrator** card in **Skirmish**, an **Artillery** card in the **Reserve** phase; **Support /
-Controller** cards in the phase their effect fits. Play is **decoupled from the body's gauntlet
-position**: a god fires its five effects **across the round's phases**, *not* from five positions at
-once — its body still occupies a single §4 position physically. (The Wall/Artillery labels are
-**thematic**, not a position gate.)
+**when its effect fits**: a **Wall**'s standing defenses and the **Controller** / **Support** persistent
+debuffs and buffs at **Assemble** (they last the round); an **Infiltrator**'s slip and an **Artillery**'s
+fire resolve in their tier (the Line / the Open). Play is **decoupled from the body's rank**: a god fires
+its effects **across the round**, *not* from five ranks at once — its body still occupies a single rank.
+(The role labels are **thematic**, not a rank gate.)
 
 **WHY.** The per-role cap is the **god-vs-party lever** (#4: god ≈ party). A god holds every track and
-fires up to **five** effects in a round — but on **one body**, in one gauntlet position, that the enemy
-can **focus-fire**; a five-specialist party fires the same five across **five resilient bodies**. So it
-is a **concentration-vs-resilience tradeoff, not dominance** (candidate **BI-3**). The cap is
-**per-role, not per-round, on purpose**: it is what lets a god **combo across Roles** — combine
-*different* Roles in one round (Controller-degrade, then Artillery-fire, then Support-buff). Such combos
-are the god's distinctive reward for breadth, and they are valued **precisely because the Roles differ in
-kind** (Charter #12) — comboing two stat-reskins would be pointless doubling. They stay
-**additive / commutative**: each effect feeds an accumulator and **no played effect multiplies or gates
-another's output** (the GUARANTEE below, §0.1 / #11), so "combo" means *diverse effects concentrated in
-one round*, **never** a multiplying chain. Playing each card **in its appropriate phase** keeps the §4
-information gradient intact (a Wall card commits in the Gauntlet, before the Reserve fires with full
-info) — a card is **not** held for the most-informed moment.
+fires up to **five** effects in a round — but on **one body**, in one rank, that the enemy can
+**focus-fire**; a five-specialist party fires the same five across **five resilient bodies**. So it is a
+**concentration-vs-resilience tradeoff, not dominance** (candidate **BI-4**). The cap is **per-role, not
+per-round, on purpose**: it is what lets a god **combo across Roles** — combine *different* Roles in one
+round (Controller-degrade, then Artillery-fire, then Support-buff). Such combos are the god's distinctive
+reward for breadth, and they are valued **precisely because the Roles differ in kind** (Charter #12) —
+comboing two stat-reskins would be pointless doubling. They stay **additive / commutative**: each effect
+feeds an accumulator and **no played effect multiplies or gates another's output** (the GUARANTEE below,
+§0.1 / #11), so "combo" means *diverse effects concentrated in one round*, **never** a multiplying chain.
+Because the **Assemble commit is simultaneous**, a card is **committed up front or resolves in its
+tier** — never *held* for a more-informed moment (there is no information gradient to exploit).
 
 **GUARANTEES.**
-- One role card of each role, per character, per round; each played in its **appropriate phase** (so the
-  §4 gradient holds), **decoupled from the body's physical position**.
+- One role card of each role, per character, per round; each played **when its effect fits** (Assemble
+  for persistent effects; the relevant tier for slips / fire), **decoupled from the body's physical
+  rank**.
 - **Order-independent effects (the simultaneity constraint).** A round's role-card effects must
   **combine commutatively**: every effect feeds an **accumulator** (damage piles, heals pile, buffs add
   or set flags) resolved at the phase boundary, and **no played effect multiplies or gates another
   played effect's output.** So a god firing five effects gets the **same result regardless of order**
   (§0.1 / #11). *(Modifiers like Curse stay safe by folding into the build — passive, not a play.)*
-- No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-3**, which the
+- No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-4**, which the
   par solver verifies).
 
 *(The old **positional gate** (a card required its matching position) is **removed** 2026-06-20 — it
-capped a god at ~3 and blocked the intended five-effect god; play is now phase-appropriate but
-position-decoupled. Code/data + `TERM` lines land with the role-card migration: `role-card-redesign.md`
-§8.)*
+capped a god at ~3 and blocked the intended five-effect god; play is now moment-appropriate (Assemble or
+its tier) but rank-decoupled. Code/data + `TERM` lines land with the role-card migration:
+`role-card-redesign.md` §8.)*
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 

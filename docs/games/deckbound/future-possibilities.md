@@ -399,8 +399,9 @@ this entry is where gear-shaped ideas accumulate.
 
 - **Status:** **Exploring** (raised 2026-06-21). A candidate **simplification** of the §4
   charge-and-gauntlet that would replace the secret-charge + threading gauntlet (the current
-  resolver-of-record). Not yet specced. Descends from **entry 2** (which became §4) but drops its
-  *information gradient* for simultaneous declaration.
+  resolver-of-record). **Decision 2026-06-21: promote to Spec §4** (via spec-sync) — the two knobs
+  below are now locked. Descends from **entry 2** (which became §4) but drops its *information
+  gradient* for simultaneous declaration.
 - **Scope:** the §4 battle's positioning + resolution. Does **not** touch the Clash (§1) or the stat
   model (§2) beyond *reading* Speed / Drive / Power.
 
@@ -410,9 +411,9 @@ Declare ranks **simultaneously and hidden** — each living character → **Fron
 reveal together, **nobody moves**. Resolve the round as a fixed sequence of windows ("be precise about
 the order"), in **two tiers**:
 
-- **Tier 1 — at the line** (from start-of-round snapshots): Front-vs-Front trades; each Flank runs an
-  **infiltration contest** vs the enemy front; deaths tally at the tier boundary (a Front killed in the
-  trade still landed its parting hit, §1.3).
+- **Tier 1 — at the line** (from start-of-round snapshots): Fronts may **strike** the opposing Front
+  (a card per blow); each crossing Flank runs an **infiltration contest** vs the enemy front; deaths
+  tally at the tier boundary (a Front killed at the line still landed every blow it committed, §1.3).
 - **Tier 2 — the breakthrough**: slipped Flanks strike the enemy **Back**; both Backs volley the enemy
   Front + Flank; tally; refresh.
 
@@ -508,11 +509,15 @@ layer (#2), solvable for a mixed-strategy optimum.
 
 ### Decisions to pin
 
-1. **Front clash vs catch — shared pool?** Lean: the front-vs-front trade is the rank's *free default*;
-   catching extra Flanks costs cards.
-2. **Tie-breaker:** equal totals → held (catcher), unless Shadowstep; optionally equal → higher-Speed
-   slips (a small, bounded role for volume at the margin).
-3. **Held Flank:** trades with its catcher, or just stalls? (Stall is simplest.)
+1. **[LOCKED] Tempo is the currency of aggression; the defender directs the catch.** Standing in a
+   rank and **absorbing** hits are free; every **strike** (a front blow, a strike-back) and every
+   **contest** (slip / catch) costs a card — so an out-of-cards Front still holds and soaks (it just
+   can't hit back), and a passive Front lets Flanks slip by free. The verbs reduce to **Strike**
+   (reads Power) and **Contest** (reads Drive). And the **defender freely assigns which Front catches
+   which Flank**, committed in the hidden reveal so the round stays simultaneous.
+2. **[OPEN] Tie-breaker:** equal totals → held (catcher), unless Shadowstep; optionally equal →
+   higher-Speed slips (a small, bounded role for volume at the margin).
+3. **[OPEN] Held Flank:** trades with its catcher, or just stalls? (Stall is simplest.)
 4. **Reachability — settled by the invariant.** A **slipped Flank is behind the line and may strike any
    enemy rank** (Back, Front-from-behind, or enemy Flank), and **a wiped Front no longer protects its
    Back** (enemy Fronts pour through the break). No rank is ever permanently safe — every unit is

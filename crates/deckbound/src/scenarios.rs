@@ -1186,8 +1186,8 @@ mod tests {
         // Rule terms parsed from the Spec, across several sections.
         for term in [
             "Vanguard",
-            "The gauntlet",
-            "Charge",
+            "The Line",
+            "Assemble",
             "Speed",
             "Daring",
             "Tempo",

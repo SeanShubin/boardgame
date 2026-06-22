@@ -82,6 +82,38 @@ BI-1.** Anchored to the reference scenario; generalises to any coverage-demandin
 
 ---
 
+## BI-3 — Force, not fiat (no rule forbids what stats can buy) ⬜
+
+**Invariant.** A single character with **no role cards / powers** but **arbitrarily large stats**
+(Speed, Daring, Power, Body) **wins any finite-stat encounter in one round.** Equivalently: for every
+rank it could take and every defending formation of finite stats, enough Speed / Daring / Power / Body
+lets the lone god **reach and kill every enemy within round 1**.
+
+**Why.** The operational form of the §4 (`canon/2-spec/README.md`) **"force, not fiat"** guarantee, and
+of Charter **#12** (*outpaced, not forbidden*): opposition must always be **cost**, never
+**impossibility**. A failure means some rule **forbids by fiat** — a hard cap (e.g. one strike per
+unit), an immunity, a **skill-gate** (an outcome reachable only with a specific power), or a
+**permanently-unreachable rank**. The **no-powers** clause forces the win to come from *stats*, so no
+skill can be a load-bearing *key*; the **infinite-stats** clause isolates rule-barriers from tuning. It
+complements **BI-1**: BI-1 says a same-treasure balanced party matches or beats a god; BI-3 says raw
+force, given enough of it, is never *walled off* — together they pin "power scales with treasure, by
+force, with no hard floor or ceiling by fiat."
+
+**Check.** Wire as a test against the resolver-of-record: build a god with **large-but-finite** stats
+(e.g. `1_000_000`, to avoid overflow) and **no role cards**, run it (each rank) against several
+**adversarial finite formations** (a deep wall, a swarm, a hide-in-the-back party), and assert a
+**round-1 wipe**. **Pending the static-ranks resolver** (`/spec-sync §4`); against the current gauntlet
+it already runs as a **diagnostic** that surfaces any existing fiat barrier (a cap / immunity /
+unreachable rank).
+
+**Scope & notes.** Uses a large *finite* value, not literal infinity (overflow safety + a terminating
+"act while you have Tempo" loop). The **round-1** bar is the sharp form — overwhelming force, not merely
+sufficient-over-many-rounds. It is the guard behind §4's *"every rank is reachable by enough force / no
+permanent safe rank,"* and it is **not** a claim about balanced play — only that the rules never make an
+outcome *impossible* where stats should make it *costly-but-achievable*.
+
+---
+
 ## Adding an invariant
 
 Copy the BI-1 shape: **Invariant** (precise enough to check), **Why** (the Charter north star /
