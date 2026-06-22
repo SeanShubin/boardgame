@@ -206,8 +206,8 @@ game* solvable by LP, so backward induction over the bounded horizon computes th
 - The round/roster bounds are **parameters**, defaulting to unbounded live play; only the *analysis*
   setup imposes the short envelope, so live balance/behaviour is unchanged by their existence.
 - Bounding gives **finiteness / tractability**, which is **orthogonal to rule completeness**: the solver
-  still optimizes a *concrete* rule-set, so the §4 open dials (the bid / free-hit magnitudes, the
-  Bodyguard catch-count) must be pinned (or the static-ranks semantics ratified) before "perfect" means
+  still optimizes a *concrete* rule-set, so the §4 open dials (the bid / free-hit magnitudes) must be
+  pinned (or the static-ranks semantics ratified) before "perfect" means
   *perfect at the designed game*.
 - The envelope doubles as a **design assertion**: every intended encounter is winnable within the
   horizon under optimal play; one that is not is **mis-tuned** (too grindy), not merely "hard". A
@@ -995,7 +995,8 @@ Toughness** (persists), **Tempo = Speed × Daring** (refreshes). *(No Focus/Mind
 
 **RULE — three declared ranks.** Each side secretly assigns every Actor a rank, then both reveal:
 
-- **Vanguard** — the melee front line; holds, and may spend to **catch** crossing Skirmishers.
+- **Vanguard** — the melee front line; holds, and may spend Tempo to **catch** crossing Skirmishers —
+  **as many as it can pay catch-bids for** (Speed = catch breadth, Daring = catch strength).
 - **Skirmisher** — the flankers; each attempts to **cross** the enemy line to reach the backfield.
 - **Reserve** — the ranged / support line behind the front; fires over it, and can be reached only by a
   Skirmisher who crossed (or once the front is broken).
@@ -1019,8 +1020,9 @@ the exposed front.
      (cards × Daring) vs its assigned Vanguard's committed **hold** (cards × Daring + Phalanx).
      Strictly greater → **slips** (the bypassed Vanguard lands a **parting free hit**, Power); ≤ →
      **held** (Skirmisher and catcher **trade**, both Power; the Skirmisher does not cross). **Ties to
-     the catcher** unless the Skirmisher has **Shadowstep**. A Skirmisher with **no catcher assigned**
-     (more Skirmishers than the wall pays to catch) **slips free** — no contest, no parting hit.
+     the catcher** unless the Skirmisher has **Shadowstep**. Each catch is a **separate bid** a Vanguard
+     pays from its own Tempo, so a wall holds only as many Skirmishers as it can afford to contest; a
+     Skirmisher **no Vanguard pays to catch slips free** — no contest, no parting hit.
 3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved together (tally at the boundary):
    - **Crossed Skirmishers strike** — behind the line, they may hit **any** enemy rank (Reserve first,
      the prize; the Vanguard from behind; or an enemy Skirmisher). One card per strike, **act while
@@ -1053,8 +1055,8 @@ So the **Skirmisher is the exposed rank** — it bought reach by giving up cover
 is thus both **spear and screen**: field it to assassinate the enemy Reserve *and* to kill the enemy's
 Skirmishers before they reach yours.
 
-**Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold), **Bodyguard** (a Vanguard
-may catch one *extra* Skirmisher — a second catch-bid), **Taunt** (must be assigned the first catch),
+**Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold — more catch strength),
+**Taunt** (must be assigned the first catch),
 **Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
 / Assassinate** (a crossed Skirmisher hits an enemy Reserve harder / executes it — the §10 prize).
 
@@ -1137,7 +1139,7 @@ takes a free hit. Standing and soaking cost nothing — only acting spends Tempo
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Assemble` (Roles) — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Skirmisher / Reserve), commits its crossing / catch bids and which Vanguard catches which Skirmisher, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
-- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers; once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
+- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers — as many as it can pay catch-bids for (Speed = breadth, Daring = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
 - **TERM.** `Skirmisher` (Roles) — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Reserve.
 - **TERM.** `Reserve` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Reserve, and is reached only by a Skirmisher who crossed or a Vanguard pouring through a broken front.
 - **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (catches it at the line); Skirmisher beats Reserve (crosses to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
@@ -1155,15 +1157,16 @@ the three declared roles, targeting) is settled; these are not:
 > from the retired v1 gauntlet to the **static-ranks resolver when the code lands at `/spec-sync §4`**.
 > Until then the harness measures against the current code; once synced, the static-ranks semantics
 > (single simultaneous Daring bid, defender-assigned catches, two snapshot tiers, ties to the catcher,
-> Shadowstep / Phalanx / Bodyguard / Blitz riders) are the resolver-of-record. Keep the **bid a single
+> Shadowstep / Phalanx / Blitz riders) are the resolver-of-record. Keep the **bid a single
 > simultaneous commitment** (not an iterated auction) so base PvE combat stays a maximizer, not an
 > equilibrium-solver — par stays well-defined.
 
 1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
    cards × Daring, ties to the catcher, Shadowstep overrides); the **numbers** (the parting-hit weight,
    strike Power) live in `booklet.ron`, human-tuned.
-2. **Bodyguard catch-count** — Bodyguard grants a Vanguard **one extra catch**; confirm whether further
-   catches scale with Tempo or stop at +1.
+2. **Catch capacity — locked (card-bound).** A Vanguard catches as many Skirmishers as it pays
+   catch-bids for (Speed = breadth, Daring = strength); **Bodyguard is retired** (its old +1 niche is
+   now just the card budget).
 3. **Skirmish strike cost** — one Tempo per strike (a unit acts while it holds cards); confirm whether
    switching targets costs extra.
 4. **Reserve aid kit** — the buffs / heals / debuffs a Reserve delivers — Action cards over the §5 zone
