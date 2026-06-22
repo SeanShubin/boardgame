@@ -1056,7 +1056,8 @@ is thus both **spear and screen**: field it to assassinate the enemy Reserve *an
 Skirmishers before they reach yours.
 
 **Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold — more catch strength),
-**Taunt** (must be assigned the first catch),
+**Bulwark** (+hold to *every* allied Vanguard — the line anchors as one), **Taunt** (must be assigned
+the first catch),
 **Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
 / Assassinate** (a crossed Skirmisher hits an enemy Reserve harder / executes it — the §10 prize).
 

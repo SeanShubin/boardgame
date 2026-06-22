@@ -98,7 +98,7 @@ CARDS USED   (every card played, plus the chargers' weapons and powers)
   Weapon  Maul                    blunt weapon                    (wielded by Brute)
   Power   Backstab       [Silver] passive power                   (carried by Wisp)
   Power   Blitz          [Silver] passive power                   (carried by Wisp)
-  Power   Bodyguard      [Iron]   passive power                   (carried by Anvil)
+  Power   Bulwark        [Iron]   passive power                   (carried by Anvil)
   Power   Phalanx        [Iron]   passive power                   (carried by Anvil)
   Power   Shadowstep     [Silver] passive power                   (carried by Wisp)
   Power   Taunt          [Iron]   passive power                   (carried by Anvil)
@@ -106,7 +106,7 @@ CARDS USED   (every card played, plus the chargers' weapons and powers)
 GLOSSARY   (what the rulebook says about each keyword above)
   Backstab               Bonus damage when this Skirmisher strikes an enemy Reserve.
   Blitz                  The first slip each round is free — it costs no Tempo.
-  Bodyguard              A Wall can intercept a charger bearing down on an ally, not only the one it meets itself.
+  Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
   Damage (blunt)         Deals blunt damage (base 0). It is reduced by the target's blunt Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
   Damage (fear)          Deals fear damage (base 4) to the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool. If it clears Resolve the will breaks (Freeze / Flee / Scared-to-death, §2); Edge scales this.
   Damage (sharp)         Deals sharp damage (base 5). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.

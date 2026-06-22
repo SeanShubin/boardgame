@@ -42,7 +42,7 @@ Catalog(
         // --- passive powers (detected by name; not played as effects) ---
         // `text` is the encyclopedia's Powers entry, generated from this card data (§4 powers).
         Card( name: "Phalanx",    passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.", flavor: "Shields locked, the wall holds as one." ),
-        Card( name: "Bodyguard",  passive: true, text: "A Wall can intercept a charger bearing down on an ally, not only the one it meets itself.", flavor: "Stands in front of someone else and dares the blow to find them." ),
+        Card( name: "Bulwark",  passive: true, text: "Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.", flavor: "One shield is a man. A line of them is a wall." ),
         Card( name: "Taunt",      passive: true, text: "Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.", flavor: "Be the loudest problem on the field — on purpose." ),
         Card( name: "Blitz",      passive: true, text: "The first slip each round is free — it costs no Tempo.", flavor: "The first step is always free; take it before they're set." ),
         Card( name: "Shadowstep", passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.", flavor: "Through the one gap the guard forgot they had." ),
@@ -69,8 +69,8 @@ Catalog(
                 flavor: "Shields locked, the wall holds as one.",
                 cards: [ Card( name: "Phalanx", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one." ) ] ),
         Reward( track: Iron, level: 3, stat: (body: 3),
-                flavor: "Stands in front of someone else and dares the blow to find them.",
-                cards: [ Card( name: "Bodyguard", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "A Wall can intercept a charger bearing down on an ally, not only the one it meets itself." ) ] ),
+                flavor: "One shield is a man; a line of them is a wall.",
+                cards: [ Card( name: "Bulwark", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's." ) ] ),
         Reward( track: Iron, level: 4, stat: (body: 2, toughness: 1),
                 flavor: "Shields up, edge to edge — for one breath nothing gets through the line.",
                 cards: [ Card( name: "Shield Wall", role: Some(Iron), kind: Base, positional: true, zone: Lasting, effects: [Fortify(armor: 2)], text: "Raises a shield wall: +2 Armor to the whole front line this round — the Wall's active mitigation against a heavy assault." ) ] ),
@@ -172,7 +172,7 @@ Catalog(
         // ---- the specialist cast (fresh) ----
         ActorCard( name: "Anvil", role: "Wall", flavor: "He does not advance. He does not retreat. The battle simply happens around the place he is standing.", driver: "hero", attack: Melee, weapon: "Maul",
                    base: (speed: 2, power: 4, precision: 1, body: 10, toughness: 2, resolve: 5),
-                   actions: ["Brace", "Shield Wall", "Phalanx", "Bodyguard", "Taunt"], traits: ["Heavy-Plate"] ),
+                   actions: ["Brace", "Shield Wall", "Phalanx", "Bulwark", "Taunt"], traits: ["Heavy-Plate"] ),
         ActorCard( name: "Wisp", role: "Infiltrator", flavor: "You won't see her cross the room. You'll only notice, later, who is no longer in it.", driver: "hero", attack: Melee, weapon: "Blade",
                    base: (speed: 7, power: 4, precision: 2, body: 4, toughness: 1, resolve: 3, daring: 5),
                    actions: ["Bank", "Blitz", "Shadowstep", "Backstab"] ),
