@@ -182,6 +182,9 @@ pub fn stat_necessity_report(seed: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ruleset::Ruleset;
+    use crate::scenarios::build_creature;
+    use crate::solver::auto_resolve_with;
 
     /// Diagnostic (run on demand): print the current balance violations.
     /// `cargo test -p deckbound probe_grind_balance -- --ignored --nocapture`.
@@ -229,5 +232,44 @@ mod tests {
             b.len(),
             "the harness is deterministic for a fixed seed"
         );
+    }
+
+    /// A no-skills character with arbitrarily large stats — the BI-3 **force-not-fiat** witness.
+    fn infinite_god() -> Actor {
+        let mut g = build_character("Novice", &[]);
+        let big = 1_000_000;
+        g.offense.power = big; // one-shots anything finite
+        g.offense.daring = big; // crosses any finite hold
+        g.offense.speed = big; // unlimited actions
+        g.tempo = big as i32;
+        g.defense.body.max = big; // survives anything finite
+        g.defense.body.remaining = big;
+        g.defense.body.toughness = 1;
+        g
+    }
+
+    #[test]
+    fn bi3_force_not_fiat_infinite_god_wipes_any_finite_party_in_one_round() {
+        // BI-3 (`balance-invariants.md`): a **no-skills**, **infinite-stat** character must win any
+        // **finite-stat** encounter **in one round** — opposition is always *cost*, never
+        // *impossibility*. A failure means a rule forbids by fiat (a hard cap, an immunity, a
+        // skill-gate, or a permanently-unreachable rank). "One round" = a win under a one-round Ruleset
+        // (else the round cap makes it a draw = loss). Probed against formations that stress each rank.
+        let one_round = Ruleset {
+            max_rounds: 1,
+            max_unique_per_side: u32::MAX,
+        };
+        let parties: [(&str, Vec<Actor>); 3] = [
+            ("a deep wall", vec![build_creature("Brute"); 5]),
+            ("a swarm", vec![build_creature("Husk"); 12]),
+            ("a hide-in-the-back line", vec![build_creature("Seer"); 5]),
+        ];
+        for (name, foes) in parties {
+            assert_eq!(
+                auto_resolve_with(vec![infinite_god()], foes, 1, one_round),
+                Some(true),
+                "the infinite-stat god failed to wipe {name} in one round — a fiat barrier"
+            );
+        }
     }
 }

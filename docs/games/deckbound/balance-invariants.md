@@ -82,7 +82,7 @@ BI-1.** Anchored to the reference scenario; generalises to any coverage-demandin
 
 ---
 
-## BI-3 — Force, not fiat (no rule forbids what stats can buy) ⬜
+## BI-3 — Force, not fiat (no rule forbids what stats can buy) ✅
 
 **Invariant.** A single character with **no role cards / powers** but **arbitrarily large stats**
 (Speed, Daring, Power, Body) **wins any finite-stat encounter in one round.** Equivalently: for every
@@ -99,12 +99,14 @@ complements **BI-1**: BI-1 says a same-treasure balanced party matches or beats 
 force, given enough of it, is never *walled off* — together they pin "power scales with treasure, by
 force, with no hard floor or ceiling by fiat."
 
-**Check.** Wire as a test against the resolver-of-record: build a god with **large-but-finite** stats
-(e.g. `1_000_000`, to avoid overflow) and **no role cards**, run it (each rank) against several
-**adversarial finite formations** (a deep wall, a swarm, a hide-in-the-back party), and assert a
-**round-1 wipe**. **Pending the static-ranks resolver** (`/spec-sync §4`); against the current gauntlet
-it already runs as a **diagnostic** that surfaces any existing fiat barrier (a cap / immunity /
-unreachable rank).
+**Check.** ✅ **Wired** —
+[`balance.rs::bi3_force_not_fiat_infinite_god_wipes_any_finite_party_in_one_round`](../../../crates/deckbound/src/balance.rs):
+a god with **large-but-finite** stats (`1_000_000`, to avoid overflow) and **no role cards** must win
+under a **one-round `Ruleset`** (so "wins" *is* "round-1 wipe") against adversarial finite formations —
+a deep wall (Brutes), a swarm (Husks), and a hide-in-the-back line (Seers). It runs against the
+static-ranks resolver of record. *(Wiring it surfaced and fixed a real fiat-ish gap: the solver only
+flanked units with an Infiltrator card, so a no-skills high-Daring god was stuck as a one-clash-per-round
+Vanguard; `wants_flank` now also fires on raw Daring — stats alone make a flanker.)*
 
 **Scope & notes.** Uses a large *finite* value, not literal infinity (overflow safety + a terminating
 "act while you have Tempo" loop). The **round-1** bar is the sharp form — overwhelming force, not merely

@@ -168,9 +168,12 @@ fn wants_backline(a: &Actor) -> bool {
 /// line as a Vanguard.
 fn wants_flank(a: &Actor) -> bool {
     use crate::currency::Currency::Silver;
+    // An Infiltrator kit, *or* raw Daring high enough to cross (force, not fiat: stats alone make a
+    // flanker — this is what lets the BI-3 infinite-stat god declare as a Skirmisher and cross).
     a.actions
         .iter()
         .any(|c| !c.passive && c.role == Some(Silver))
+        || a.offense.daring >= 3
 }
 
 /// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
