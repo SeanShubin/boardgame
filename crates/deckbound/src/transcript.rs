@@ -26,6 +26,7 @@ use engine::{Game, Outcome, PlayerId};
 use crate::actor::Actor;
 use crate::cards::{Card, Effect};
 use crate::currency::Currency;
+use crate::form::StatCard;
 use crate::game::{Deckbound, battle_state_with};
 use crate::ruleset::Ruleset;
 use crate::scenarios::{
@@ -270,17 +271,61 @@ fn form_block(a: &Actor) -> String {
         + pc(a.defense.resolve)
         + a.defense.armor.values().map(|v| pc(*v)).sum::<u32>()
         + a.defense.ward.values().map(|v| pc(*v)).sum::<u32>();
+    // Cardsets possessed: the suit tracks this Actor holds treasures in (the suits of its role cards),
+    // in first-seen order. A built character *is* the Human baseline plus these cardsets.
+    let mut cardsets: Vec<&str> = Vec::new();
+    for c in &a.actions {
+        if let Some(r) = c.role {
+            let l = r.label();
+            if !cardsets.contains(&l) {
+                cardsets.push(l);
+            }
+        }
+    }
     let mut out = format!(
-        "  {} — {} · {} [{}]  ({cards} cards)\n",
+        "  {} — {} · {} [{}]  ({cards} cards){}\n",
         a.name,
         a.role,
         a.weapon.name,
-        a.attack.label()
+        a.attack.label(),
+        if cardsets.is_empty() {
+            String::new()
+        } else {
+            format!("   cardsets: {}", cardsets.join(", "))
+        },
     );
-    // The actor's **deck** — the cards it can bring to a round, so "X plays Y" is verifiable against
-    // the roster (the `cards` count above is the *Form* / stat cards; these are the ones that *do*
-    // something). Split into played **Actions** and always-on **Powers** (passives); the weapon is in
-    // the header. Foes list theirs too, so the enemy kit is legible.
+    // The cards a treasure grants come in two kinds, and a build is shown as both:
+    // - **Stat cards** — the Form (§2.3): the `Human` baseline + each treasure's Stat card. The summed
+    //   stats below are *derivable* from these (empty structural cards, like the bare identity, are
+    //   skipped; a creature shows its printed base + traits here instead).
+    // - **Actions / Powers** — the ability cards: what it plays, and its always-on passives.
+    let stat_empty = |s: &StatCard| {
+        s.power == 0
+            && s.precision == 0
+            && s.speed == 0
+            && s.daring == 0
+            && s.dread == 0
+            && s.inspiration == 0
+            && s.body == 0
+            && s.toughness == 0
+            && s.resolve == 0
+            && s.armor.is_empty()
+            && s.ward.is_empty()
+    };
+    let stat_cards: Vec<&str> = a
+        .form
+        .cards
+        .iter()
+        .filter(|s| !stat_empty(s))
+        .map(|s| s.name.as_str())
+        .collect();
+    if !stat_cards.is_empty() {
+        out.push_str(&format!(
+            "      {:<11} {}\n",
+            "Stat cards",
+            stat_cards.join(" · ")
+        ));
+    }
     let deck = |passive: bool| -> Vec<&str> {
         a.actions
             .iter()

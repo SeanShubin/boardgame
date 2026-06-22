@@ -125,7 +125,7 @@
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
-| — | Novice | character | Clean-slate · Fist |
+| — | Novice | character | Human · Fist |
 | — | Anvil | character | Wall · Maul |
 | — | Wisp | character | Infiltrator · Blade |
 | — | Sear | character | Artillery · Bow |

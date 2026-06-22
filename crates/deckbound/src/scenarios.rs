@@ -399,6 +399,7 @@ fn build_actor_with(
         role: c.role.clone(),
         offense,
         defense,
+        form,
         weapon: find_card(cat, &c.weapon),
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
@@ -468,7 +469,7 @@ pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
             if !stat_is_empty(&r.stat) {
                 let mut s = r.stat.clone();
                 if s.name.is_empty() {
-                    s.name = format!("{} {} · Stat", id.track.label(), id.level);
+                    s.name = format!("{} L{}", id.track.label(), id.level);
                 }
                 stats.push(s);
             }

@@ -13,6 +13,7 @@ use serde::Deserialize;
 
 use crate::cards::Card;
 use crate::duel::Move;
+use crate::form::Form;
 use crate::stats::{Defense, Offense};
 
 /// The range of an engagement (§4.2). Position-determined: lanes and Skirmisher strikes are
@@ -144,6 +145,10 @@ pub struct Actor {
     pub role: String,
     pub offense: Offense,
     pub defense: Defense,
+    /// The **Form** (§2.3 stats-as-deck): the stat cards this Actor's `offense`/`defense` are summed
+    /// from — the `Human` baseline plus each treasure's Stat card (and any trait / scaling). Retained
+    /// so a build is auditable: the totals are *derivable* from these cards. Not used in resolution.
+    pub form: Form,
     /// The base strike profile (supplies the damage type).
     pub weapon: Card,
     /// Action/power cards playable in the round (§"cards may supersede the core").
