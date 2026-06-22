@@ -392,3 +392,136 @@ It **lights up four dormant systems at once** (the reason it keeps surfacing):
 **Build it — but not yet.** The current priority is a complete, tuned, working game on the existing
 2-treasure / 25-location model. Gear is the first major *expansion* after that floor holds. Until then,
 this entry is where gear-shaped ideas accumulate.
+
+---
+
+## 8. Static ranks + ordered resolution — simplify the gauntlet
+
+- **Status:** **Exploring** (raised 2026-06-21). A candidate **simplification** of the §4
+  charge-and-gauntlet that would replace the secret-charge + threading gauntlet (the current
+  resolver-of-record). Not yet specced. Descends from **entry 2** (which became §4) but drops its
+  *information gradient* for simultaneous declaration.
+- **Scope:** the §4 battle's positioning + resolution. Does **not** touch the Clash (§1) or the stat
+  model (§2) beyond *reading* Speed / Drive / Power.
+
+### The idea
+
+Declare ranks **simultaneously and hidden** — each living character → **Front / Flank / Back** —
+reveal together, **nobody moves**. Resolve the round as a fixed sequence of windows ("be precise about
+the order"), in **two tiers**:
+
+- **Tier 1 — at the line** (from start-of-round snapshots): Front-vs-Front trades; each Flank runs an
+  **infiltration contest** vs the enemy front; deaths tally at the tier boundary (a Front killed in the
+  trade still landed its parting hit, §1.3).
+- **Tier 2 — the breakthrough**: slipped Flanks strike the enemy **Back**; both Backs volley the enemy
+  Front + Flank; tally; refresh.
+
+Roles are **declared, not emergent**. This deletes the threading machinery (column pairing, Taunt sort,
+surplus loops, Bodyguard-across, the `Cross` enum, ~150 lines of `combat.rs`) in favor of per-contest
+comparisons.
+
+### The contest — priced summation (force, not fiat)
+
+A contest (slip vs catch) is a **single simultaneous hidden Tempo bid**: each side commits *k* of its
+Tempo cards; committed Drive = **k × grade**; higher total wins; committed cards are spent. So the three
+stats finally separate:
+
+- **Speed** (card count) = how many actions / contests / defenses you get — *volume*.
+- **Drive** (card grade) = how *cheaply* you win a contest — *efficiency* (one-card the common case,
+  keep the rest of your hand).
+- **Power** = strike weight (Drive is inert in a strike).
+
+Quantity *can* substitute for quality, but at a worse exchange rate (you pay extra cards), so Drive
+stays valuable as **tempo-efficiency** and the depth/breadth build fork is real (Charter #2). This is
+**force, not fiat**: a low-Drive Flank is *outpaced* by a high-Drive wall (it must overspend), never
+*forbidden* (Charter #12 — outpaced, not forbidden). A **single simultaneous bid** (not an iterated
+raise-war) keeps it computable (#11) and a hidden, simultaneous bet (#3). *(This is the "escalating
+Drive auction" the v1 gauntlet deferred — adopted in its single-bid, computable form.)*
+
+### "Act while you have Tempo"
+
+No per-phase action cap. A unit strikes / catches / strikes back while it has cards (1 each). A
+high-Speed god's hand is therefore **breadth**: slip, carve several backliners, and still punish
+focus-fire — it cannot win a duel *harder* (Drive caps that) or hit *harder* (Power caps that), only do
+*more*. Aggregate party Tempo (5 bodies) exceeds one god's, so breadth opposes the god **with force**,
+diminishing returns, never a hard cap.
+
+### Re-homed powers
+
+Threading-specific powers become clean stat-modifiers: **Phalanx** = +catch Drive; **Bodyguard** = catch
+one extra Flank (one more catch-bid); **Taunt** = must be assigned the first catch; **Blitz** = a free
+slip card; **Shadowstep** = win a tied contest. All **accelerators, not keys** — a no-skill unit can
+still do everything by raw stats (see the invariant below).
+
+### Demise — protection comes from the line
+
+Each rank's vulnerability is just *how much line stands between it and the enemy*, which gives one
+thematic rule for who dies how:
+
+| Rank | Dies to | Safe from |
+| --- | --- | --- |
+| **Front** (is the line) | direct engagement (enemy Front clash); a slipped enemy Flank striking from behind | being flanked while it holds — it faces forward |
+| **Flank** (left the line) | the wall's **catch / parting hit** at the line · the enemy **Back's** ranged fire · an enemy **Flank** in the open | the committed enemy **Front** — a holding line cannot wheel and chase |
+| **Back** (behind the line) | a Flank that **slips past** its wall · its own **Front wiped**, then enemy Fronts pour through | everything, *while its line holds* |
+
+So the **Flank is the exposed rank**: it bought reach by giving up cover, and dies in the open. Two
+consequences: (1) **Drive is read in exactly one interaction** — Flank vs the Front's catch; the
+front-clash, parting hits, gap-fights, and volleys are all **Power**. (2) the Flank is **both spear and
+screen** — you field Skirmishers to assassinate the enemy Back *and* to kill the enemy's Skirmishers in
+the open before they reach yours, giving the Back a third line of defense (hold the wall · screen with
+flanks · shoot the crossers).
+
+### The "force, not fiat" invariant (proposed test)
+
+**A single character with *no skills* but *infinite stats* must wipe any *finite-stat* party in one
+round.** Infinite Speed = unlimited actions, infinite Drive = win every contest, infinite Power =
+one-shot, infinite Body = survive. If it *cannot*, some rule forbids by **fiat** — a hard cap, an
+immunity, a skill-gate, a permanently-unreachable rank — which is exactly the bug to catch. The
+*no-skills* clause forces the win to come from **stats**, so a skill can never be a load-bearing key.
+Implementation: a large-but-finite god vs several adversarial finite parties (deep wall, swarm,
+hide-in-back); assert a **round-1 wipe**. The test also *pressures the targeting matrix* to keep every
+rank reachable by enough force (no permanent safe rank). Its mirror — a same-treasure balanced party
+matches or beats a god — is the existing BI-1 direction.
+
+### Computability (does the bidding break the solver?)
+
+No. In **analysis mode** (Clash off, creatures a *fixed environment*) a creature's bid is a
+deterministic function of state, so the hero **best-responds by optimization**, not game-theoretic
+search — single-agent, exactly as today's deterministic creature charge. The bids add only **bounded**
+branching (*k* ∈ 0..Speed per contest), and because each character bids from **its own** Tempo pool,
+contests are **independent per character** — linear in roster, not a joint product — so no combinatorial
+blow-up; a single PvE combat stays a finite, exactly-solvable tree (#11). A genuine simultaneous-move
+game appears only in **PvP / Clash-on**, where the bid is the intended small RPS-plus-magnitude tactical
+layer (#2), solvable for a mixed-strategy optimum.
+
+### What it preserves / sheds / changes
+
+- **Preserves:** the Front/Flank/Back triangle and Iron/Silver/Brass identities; the hidden-formation
+  bluff (#3); parting free hits; the merged Tempo economy paying offense *and* defense; the metaphors
+  (keep pace to block, run-past-gets-hit, more guards cover more angles, aggression spends you).
+- **Sheds:** the threading algorithm; emergent roles; "concentrate your charge" becomes the
+  surplus-Flank-slips-free-when-the-wall-runs-out-of-catch-cards rule.
+- **Changes:** outcomes are **more predictable** (no pairing lottery — a plus for #2/#11); drops entry
+  2's information gradient in favor of simultaneous declaration. (The gradient was elegant but is the
+  source of the "why be Vanguard?" tension; static ranks answer it structurally — the Front is the only
+  thing that can spend catch-bids to stop Flanks.)
+
+### Decisions to pin
+
+1. **Front clash vs catch — shared pool?** Lean: the front-vs-front trade is the rank's *free default*;
+   catching extra Flanks costs cards.
+2. **Tie-breaker:** equal totals → held (catcher), unless Shadowstep; optionally equal → higher-Speed
+   slips (a small, bounded role for volume at the margin).
+3. **Held Flank:** trades with its catcher, or just stalls? (Stall is simplest.)
+4. **Reachability — settled by the invariant.** A **slipped Flank is behind the line and may strike any
+   enemy rank** (Back, Front-from-behind, or enemy Flank), and **a wiped Front no longer protects its
+   Back** (enemy Fronts pour through the break). No rank is ever permanently safe — every unit is
+   reachable by enough force.
+5. **Re-ratification cost:** this replaces the v1 resolver-of-record, so re-tune the balance harness, the
+   reference combat bands, and the transcript.
+
+### Current lean
+
+**Promising — the strongest simplification on the table.** Same game, far less machine, and it makes
+Speed / Drive / Power finally orthogonal. Wants playtest plus the force-not-fiat invariant wired before
+graduating to §4; hold spec-first until the decisions above are pinned.
