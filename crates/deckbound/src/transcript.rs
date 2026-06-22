@@ -50,7 +50,7 @@ pub struct TranscriptScenario {
 }
 
 /// The catalogue of transcribable scenarios. Starts deliberately small: a single **rules tour** that
-/// exercises the core machinery (charge split, Muster, the gauntlet's slip / hold / parting-hit, the
+/// exercises the core machinery (rank allocation, Muster, the gauntlet's slip / hold / parting-hit, the
 /// Skirmish and Reserve strikes, armour and Fear, defeat, refresh, outcome). The per-skill and
 /// power-scaling scenarios are later additions.
 pub fn transcript_scenarios() -> Vec<TranscriptScenario> {
@@ -97,7 +97,7 @@ fn rules_tour() -> TranscriptScenario {
     ];
     TranscriptScenario {
         name: "rules-tour",
-        blurb: "every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.",
+        blurb: "every core mechanic once: rank allocation (Vanguard/Skirmisher/Reserve), Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.",
         heroes,
         foes,
         ruleset: Ruleset::analysis(),
@@ -152,7 +152,7 @@ pub fn transcribe(scn: &TranscriptScenario, seed: u64) -> String {
         // The gauntlet has just resolved (we left Assemble): record who charged.
         if was_assemble && state.phase != Phase::Assemble {
             collect_chargers(&mut chargers, &state);
-            push_line(&mut out, &charge_summary(&state));
+            push_line(&mut out, &ranks_summary(&state));
         }
         // Echo the new prose events (the gauntlet crossings, strikes, card plays), indented, and note
         // any card plays for the card list.
@@ -340,28 +340,46 @@ fn form_block(a: &Actor) -> String {
 }
 
 /// Who ran the gauntlet vs held back, per side (read after Deploy resolves it).
-fn charge_summary(state: &State) -> String {
-    let split = |pool: &[Actor], charging: &[bool]| {
-        let pick = |want: bool| {
-            pool.iter()
-                .zip(charging)
-                .filter(|(a, c)| **c == want && !a.fallen)
-                .map(|(a, _)| a.name.as_str())
+fn ranks_summary(state: &State) -> String {
+    // The §4 Assemble declares **three** ranks (Spec §4): a charger that holds is a **Vanguard**, a
+    // charger that flanks is a **Skirmisher**, a non-charger is a **Reserve**. (A unit Routed at Muster
+    // is driven to the Reserve — its charge flag is cleared, b2.) Show all three, not a charged/held
+    // binary, so the line matches the rank the rules assign.
+    let split = |pool: &[Actor], charging: &[bool], flank: &[bool]| {
+        let pick = |f: &dyn Fn(usize) -> bool| {
+            (0..pool.len())
+                .filter(|&i| f(i))
+                .map(|i| pool[i].name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let charged = pick(true);
-        let reserve = pick(false);
+        // A charger was *declared* this round (the plan resets each round and only living units are
+        // assigned), so show it in its rank even if it then fell in the gauntlet — that keeps the line
+        // consistent with the crossing/clash log below it. Only the Reserve filters the dead, to drop
+        // prior-round casualties (which carry the reset all-false flags).
+        let vanguard = pick(&|i| charging[i] && !flank[i]);
+        let skirmisher = pick(&|i| charging[i] && flank[i]);
+        let reserve = pick(&|i| !charging[i] && !pool[i].fallen);
+        let cell = |s: String| if s.is_empty() { "—".to_string() } else { s };
         format!(
-            "charged: {}   reserve: {}",
-            if charged.is_empty() { "—" } else { &charged },
-            if reserve.is_empty() { "—" } else { &reserve },
+            "vanguard: {}   skirmisher: {}   reserve: {}",
+            cell(vanguard),
+            cell(skirmisher),
+            cell(reserve),
         )
     };
     format!(
-        "CHARGE   heroes — {}\n         foes   — {}",
-        split(&state.heroes, &state.plan.hero_charging),
-        split(&state.creatures, &state.plan.foe_charging),
+        "RANKS    heroes — {}\n         foes   — {}",
+        split(
+            &state.heroes,
+            &state.plan.hero_charging,
+            &state.plan.hero_flank
+        ),
+        split(
+            &state.creatures,
+            &state.plan.foe_charging,
+            &state.plan.foe_flank
+        ),
     )
 }
 
@@ -628,9 +646,10 @@ mod tests {
         // The rules tour must exercise the machinery it claims to, and carry its reference sections.
         for marker in [
             "SCENARIO",
-            "CHARGE",
+            "RANKS", // the §4 Assemble rank allocation (Vanguard / Skirmisher / Reserve)
+            "skirmisher:", // the rank line names all three ranks, not a charged/held binary
             "crossing:", // a Skirmisher's card-bound crossing contest (§4 the Line)
-            "ENDROUND",  // at least two rounds — refresh happened
+            "ENDROUND", // at least two rounds — refresh happened
             "OUTCOME",
             "CARDS USED",
             "GLOSSARY",

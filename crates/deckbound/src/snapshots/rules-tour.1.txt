@@ -1,5 +1,5 @@
 SCENARIO  rules-tour   seed=1   ruleset(max_rounds=5, max_unique=5)
-          every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.
+          every core mechanic once: rank allocation (Vanguard/Skirmisher/Reserve), Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.
 
 FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (how many) · P Power (each) · §2.4–§2.6
 
@@ -71,8 +71,8 @@ FOES
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
-CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute, Husk   reserve: Seer, Raider
+RANKS    heroes — vanguard: Anvil   skirmisher: Wisp   reserve: Sear, Hex
+         foes   — vanguard: Brute, Husk   skirmisher: —   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 16/16]
     Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
   crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
@@ -107,8 +107,8 @@ ENDROUND heroes: Anvil 18/18  Wisp 3/5  Sear 5/5  Hex 5/5  |  foes: Brute 9/16  
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
-CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute, Husk   reserve: Seer, Raider
+RANKS    heroes — vanguard: Anvil   skirmisher: Wisp   reserve: Sear, Hex
+         foes   — vanguard: Brute, Husk   skirmisher: —   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 9/16]
     Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
   crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
@@ -143,8 +143,8 @@ ENDROUND heroes: Anvil 18/18  Wisp 1/5  Sear 5/5  Hex 5/5  |  foes: Brute 2/16  
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
-CHARGE   heroes — charged: Anvil   reserve: Sear, Hex
-         foes   — charged: Brute, Husk   reserve: Seer, Raider
+RANKS    heroes — vanguard: Anvil   skirmisher: Wisp   reserve: Sear, Hex
+         foes   — vanguard: Brute, Husk   skirmisher: —   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 2/16]
     Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
   crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
