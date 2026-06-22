@@ -30,7 +30,8 @@ use crate::form::StatCard;
 use crate::game::{Deckbound, battle_state_with};
 use crate::ruleset::Ruleset;
 use crate::scenarios::{
-    build_character, build_creature, card_level, effect_rule, rewards_for, zone_behavior_rule,
+    build_character, build_creature, card_level, effect_rule, rewards_for, stat_grant,
+    zone_behavior_rule,
 };
 use crate::solver::greedy;
 use crate::state::{Phase, State};
@@ -207,7 +208,7 @@ fn header(out: &mut String, scn: &TranscriptScenario, seed: u64, state: &State) 
     push_line(out, "");
     push_line(
         out,
-        "FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (how many) · P Power (each) · §2.4–§2.6",
+        "FORM  each line is a card the build holds — Human baseline + treasures (ability + stat grant); the grants sum to Totals (§2.3 stats-as-deck)",
     );
     push_line(out, "");
     push_line(out, "HEROES");
@@ -227,50 +228,28 @@ fn ruleset_label(r: Ruleset) -> String {
     )
 }
 
-/// Decompose `v` into its base-2 **quantifier cards** (the set bits), high to low: `18 → [16, 2]`.
-fn base2_cards(v: u32) -> Vec<u32> {
-    (0..32)
-        .rev()
-        .map(|i| 1u32 << i)
-        .filter(|bit| v & bit != 0)
-        .collect()
-}
-
-/// One suit cell: the quantifier cards summing to `v`, e.g. `16+2 = 18`; `—` when zero.
-fn suit_cell(v: u32) -> String {
-    let cards = base2_cards(v);
-    if cards.is_empty() {
-        "—".to_string()
-    } else {
-        let cards = cards
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join("+");
-        format!("{cards} = {v}")
-    }
-}
-
-/// §2.4–§2.6 — an actor's build as the **cards on the table**: every stat is a deck of base-2
-/// quantifier cards, **Quantity** (how many) × **Power** (each), summing to its value. A **pool**
-/// (Body, Tempo) carries both suits; a flat stat carries Power only. This renders what the §2.3 build
-/// card instantiates, so the tabletop representation can be audited directly. (Body shows the full
-/// pool; depletion during play is the maintained meter, §2.1.)
+/// An actor's **build**, card by card (§2.3 stats-as-deck): the Human baseline plus each treasure (or,
+/// for a creature, its printed base + traits), each shown with the **ability** it grants and its
+/// **stat grant** — and the grants sum to the **Totals** line, so the whole stat block is *derivable*
+/// from the cards. A treasure's ability card and Stat card share a row (aligned by `{suit} L{level}`).
 fn form_block(a: &Actor) -> String {
-    // §2.5 — the build's physical card-cost: how many base-2 quantifier cards it takes (the popcount
-    // of every stat, summed). Each set bit is one card on the table.
-    let pc = |v: u32| v.count_ones();
-    let cards: u32 = pc(a.defense.body.max)
-        + pc(a.defense.body.toughness)
-        + pc(a.offense.speed)
-        + pc(a.offense.daring)
-        + pc(a.offense.power)
-        + pc(a.offense.dread)
-        + pc(a.offense.inspiration)
-        + pc(a.offense.precision)
-        + pc(a.defense.resolve)
-        + a.defense.armor.values().map(|v| pc(*v)).sum::<u32>()
-        + a.defense.ward.values().map(|v| pc(*v)).sum::<u32>();
+    // A card-counted **build** (§2.3 stats-as-deck): the named cards the actor holds — its Form Stat
+    // cards (the Human baseline + each treasure's stat bundle) + its ability cards + its weapon.
+    let stat_empty = |s: &StatCard| {
+        s.power == 0
+            && s.precision == 0
+            && s.speed == 0
+            && s.daring == 0
+            && s.dread == 0
+            && s.inspiration == 0
+            && s.body == 0
+            && s.toughness == 0
+            && s.resolve == 0
+            && s.armor.is_empty()
+            && s.ward.is_empty()
+    };
+    let stat_count = a.form.cards.iter().filter(|s| !stat_empty(s)).count();
+    let cards = stat_count + a.actions.len() + 1; // + the weapon
     // Cardsets possessed: the suit tracks this Actor holds treasures in (the suits of its role cards),
     // in first-seen order. A built character *is* the Human baseline plus these cardsets.
     let mut cardsets: Vec<&str> = Vec::new();
@@ -294,93 +273,56 @@ fn form_block(a: &Actor) -> String {
             format!("   cardsets: {}", cardsets.join(", "))
         },
     );
-    // The cards a treasure grants come in two kinds, and a build is shown as both:
-    // - **Stat cards** — the Form (§2.3): the `Human` baseline + each treasure's Stat card. The summed
-    //   stats below are *derivable* from these (empty structural cards, like the bare identity, are
-    //   skipped; a creature shows its printed base + traits here instead).
-    // - **Actions / Powers** — the ability cards: what it plays, and its always-on passives.
-    let stat_empty = |s: &StatCard| {
-        s.power == 0
-            && s.precision == 0
-            && s.speed == 0
-            && s.daring == 0
-            && s.dread == 0
-            && s.inspiration == 0
-            && s.body == 0
-            && s.toughness == 0
-            && s.resolve == 0
-            && s.armor.is_empty()
-            && s.ward.is_empty()
-    };
-    let stat_cards: Vec<&str> = a
-        .form
-        .cards
-        .iter()
-        .filter(|s| !stat_empty(s))
-        .map(|s| s.name.as_str())
-        .collect();
-    if !stat_cards.is_empty() {
+    // The build, **card by card**, so the totals are *derivable*: each source card — the Human
+    // baseline, each treasure, or (for a creature) its printed base + traits — shows the **ability** it
+    // granted and its **stat grant**, and the grants sum to the Totals line. A treasure grants *both* an
+    // ability card and a Stat card; they are aligned on one row by the shared `"{suit} L{level}"` key.
+    let mut abilities: std::collections::BTreeMap<String, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for c in &a.actions {
+        let key = match (c.role, card_level(&c.name)) {
+            (Some(r), Some(l)) => format!("{} L{}", r.label(), l),
+            _ => String::new(), // a pool / scenario-kit card with no treasure coordinate
+        };
+        abilities.entry(key).or_default().push(&c.name);
+    }
+    for s in a.form.cards.iter().filter(|s| !stat_empty(s)) {
+        let ability = abilities
+            .remove(s.name.as_str())
+            .map(|v| v.join(" · "))
+            .unwrap_or_default();
         out.push_str(&format!(
-            "      {:<11} {}\n",
-            "Stat cards",
-            stat_cards.join(" · ")
+            "      {:<12}{:<24}{}\n",
+            s.name,
+            ability,
+            stat_grant(s)
         ));
     }
-    let deck = |passive: bool| -> Vec<&str> {
-        a.actions
-            .iter()
-            .filter(|c| c.passive == passive)
-            .map(|c| c.name.as_str())
-            .collect::<Vec<_>>()
+    // Any ability cards not tied to a Stat card (an empty-stat treasure, or a pool / scenario kit).
+    for (key, names) in &abilities {
+        let label = if key.is_empty() {
+            "(loose)"
+        } else {
+            key.as_str()
+        };
+        out.push_str(&format!("      {:<12}{}\n", label, names.join(" · ")));
+    }
+    // Totals — the grants above sum to exactly these (nothing else feeds the stat block, §2.3).
+    let totals = StatCard {
+        name: String::new(),
+        power: a.offense.power,
+        precision: a.offense.precision,
+        speed: a.offense.speed,
+        daring: a.offense.daring,
+        dread: a.offense.dread,
+        inspiration: a.offense.inspiration,
+        body: a.defense.body.max,
+        toughness: a.defense.body.toughness,
+        resolve: a.defense.resolve,
+        armor: a.defense.armor.iter().map(|(d, v)| (*d, *v)).collect(),
+        ward: a.defense.ward.iter().map(|(d, v)| (*d, *v)).collect(),
     };
-    let actions = deck(false);
-    if !actions.is_empty() {
-        out.push_str(&format!(
-            "      {:<11} {}\n",
-            "Actions",
-            actions.join(" · ")
-        ));
-    }
-    let powers = deck(true);
-    if !powers.is_empty() {
-        out.push_str(&format!("      {:<11} {}\n", "Powers", powers.join(" · ")));
-    }
-    let pool = |label: &str, q: u32, p: u32| {
-        format!(
-            "      {label:<11} Q {:<13} P {}\n",
-            suit_cell(q),
-            suit_cell(p)
-        )
-    };
-    let flat = |label: &str, p: u32| format!("      {label:<11} P {}\n", suit_cell(p));
-
-    out.push_str(&pool("Body", a.defense.body.max, a.defense.body.toughness));
-    out.push_str(&pool("Tempo", a.offense.speed, a.offense.daring));
-    if a.offense.power > 0 {
-        out.push_str(&flat("Strike", a.offense.power));
-    }
-    if a.offense.dread > 0 {
-        out.push_str(&flat("Dread", a.offense.dread));
-    }
-    if a.offense.inspiration > 0 {
-        out.push_str(&flat("Inspiration", a.offense.inspiration));
-    }
-    if a.offense.precision > 0 {
-        out.push_str(&flat("Pierce", a.offense.precision));
-    }
-    if a.defense.resolve > 0 {
-        out.push_str(&flat("Resolve", a.defense.resolve));
-    }
-    for (t, v) in &a.defense.armor {
-        if *v > 0 {
-            out.push_str(&flat(&format!("Guard·{}", t.label()), *v));
-        }
-    }
-    for (t, v) in &a.defense.ward {
-        if *v > 0 {
-            out.push_str(&flat(&format!("Ward·{}", t.label()), *v));
-        }
-    }
+    out.push_str(&format!("      {:<36}{}\n", "Totals", stat_grant(&totals)));
     out
 }
 

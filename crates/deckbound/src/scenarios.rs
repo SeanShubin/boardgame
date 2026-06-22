@@ -557,21 +557,68 @@ fn card_kind(c: &Card) -> &'static str {
     }
 }
 
+/// A one-line summary of what a **Stat card** grants (its non-zero fields), for the card library
+/// and the transcript's per-treasure build breakdown.
+pub fn stat_grant(s: &StatCard) -> String {
+    let mut parts: Vec<String> = [
+        ("body", s.body),
+        ("toughness", s.toughness),
+        ("speed", s.speed),
+        ("daring", s.daring),
+        ("strike", s.power),
+        ("pierce", s.precision),
+        ("dread", s.dread),
+        ("inspiration", s.inspiration),
+        ("resolve", s.resolve),
+    ]
+    .iter()
+    .filter(|(_, v)| *v > 0)
+    .map(|(l, v)| format!("{l} {v}"))
+    .collect();
+    for (d, v) in s.armor.iter().chain(&s.ward) {
+        if *v > 0 {
+            parts.push(format!("{} {v}", d.label()));
+        }
+    }
+    parts.join(", ")
+}
+
 /// Every printable card as a flat [`LibraryRow`], set by set: the five suit tracks first (booklet
 /// order, suit-major), then Weapons, the standalone Pool, Form traits, and the Cast.
 pub fn card_library() -> Vec<LibraryRow> {
     let cat = catalog();
     let mut rows = Vec::new();
-    // The five suit tracks — the role cardsets (progression cards).
+    // The Human baseline — the stat card every character starts from (§2.3).
+    rows.push(LibraryRow {
+        set: "Baseline".into(),
+        name: cat.clean_slate.name.clone(),
+        suit: None,
+        level: None,
+        kind: "stat",
+        summary: stat_grant(&cat.clean_slate),
+    });
+    // The five suit tracks — the role cardsets. Each treasure grants **both** an ability card (Base /
+    // Modifier) **and** a Stat card; show both so the cardset is complete (and a build derivable).
     for r in &cat.rewards {
+        let set = format!("{} — {}", r.track.label(), r.track.role().unwrap_or(""));
         for c in &r.cards {
             rows.push(LibraryRow {
-                set: format!("{} — {}", r.track.label(), r.track.role().unwrap_or("")),
+                set: set.clone(),
                 name: c.name.clone(),
                 suit: Some(r.track),
                 level: Some(r.level),
                 kind: card_kind(c),
                 summary: c.summary(),
+            });
+        }
+        if !stat_is_empty(&r.stat) {
+            rows.push(LibraryRow {
+                set: set.clone(),
+                name: format!("{} L{}", r.track.label(), r.level),
+                suit: Some(r.track),
+                level: Some(r.level),
+                kind: "stat",
+                summary: stat_grant(&r.stat),
             });
         }
     }

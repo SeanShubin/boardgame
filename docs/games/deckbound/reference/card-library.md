@@ -7,68 +7,100 @@
 
 | Cardset | Cards |
 | --- | ---: |
-| Iron — Wall | 6 |
-| Silver — Infiltrator | 5 |
-| Brass — Artillery | 5 |
-| Bone — Controller | 5 |
-| Salt — Support | 6 |
+| Baseline | 1 |
+| Iron — Wall | 11 |
+| Silver — Infiltrator | 10 |
+| Brass — Artillery | 10 |
+| Bone — Controller | 10 |
+| Salt — Support | 11 |
 | Weapons | 7 |
 | Pool | 25 |
 | Form (traits) | 4 |
 | Cast | 21 |
-| **Total** | **84** |
+| **Total** | **110** |
 
-## Iron — Wall (6 cards)
+## Baseline (1 cards)
+
+| Level | Card | Kind | Effect |
+| ---: | --- | --- | --- |
+| — | Human | stat | body 5, toughness 1, speed 3, strike 1, resolve 1 |
+
+## Iron — Wall (11 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
 | 1 | Brace | action | brace +3 tempo |
+| 1 | Iron L1 | stat | body 2, toughness 1 |
 | 2 | Phalanx | passive | — |
+| 2 | Iron L2 | stat | body 2, toughness 1 |
 | 3 | Bulwark | passive | — |
+| 3 | Iron L3 | stat | body 3 |
 | 4 | Shield Wall | action | fortify +2 armor |
+| 4 | Iron L4 | stat | body 2, toughness 1 |
 | 5 | Last Stand | action | cannot fall, steel |
 | 5 | Taunt | passive | — |
+| 5 | Iron L5 | stat | body 4, toughness 2 |
 
-## Silver — Infiltrator (5 cards)
+## Silver — Infiltrator (10 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
 | 1 | Slip Strike | action | sharp 3, shove |
+| 1 | Silver L1 | stat | speed 2, daring 2 |
 | 2 | Blitz | passive | — |
+| 2 | Silver L2 | stat | speed 1, strike 1 |
 | 3 | Shadowstep | passive | — |
+| 3 | Silver L3 | stat | speed 2, daring 2 |
 | 4 | Backstab | passive | — |
+| 4 | Silver L4 | stat | strike 2 |
 | 5 | Assassinate | action | sharp 6 |
+| 5 | Silver L5 | stat | speed 1, strike 2 |
 
-## Brass — Artillery (5 cards)
+## Brass — Artillery (10 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
 | 1 | Bolt | action | sharp 3 |
+| 1 | Brass L1 | stat | strike 2 |
 | 2 | Volley | action | sharp 3, x3 targets |
+| 2 | Brass L2 | stat | strike 1, pierce 1 |
 | 3 | Sunder | action | sunder -2 |
+| 3 | Brass L3 | stat | strike 2 |
 | 4 | Longshot | passive | — |
+| 4 | Brass L4 | stat | strike 1, pierce 1 |
 | 5 | Bombardment | action | sharp 5, x5 targets |
+| 5 | Brass L5 | stat | strike 2 |
 
-## Bone — Controller (5 cards)
+## Bone — Controller (10 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
 | 1 | Menace | action | fear 2 |
+| 1 | Bone L1 | stat | dread 2 |
 | 2 | Shackle | action | slow -2 speed, disarm |
+| 2 | Bone L2 | stat | dread 1, resolve 1 |
 | 3 | Terror | action | fear 4 |
+| 3 | Bone L3 | stat | dread 2 |
 | 4 | Curse | passive | — |
+| 4 | Bone L4 | stat | dread 1, resolve 1 |
 | 5 | Unmake | action | fear 4, x3 targets |
+| 5 | Bone L5 | stat | dread 2 |
 
-## Salt — Support (6 cards)
+## Salt — Support (11 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
 | 1 | Haste | action | haste +2 |
+| 1 | Salt L1 | stat | body 1, inspiration 2 |
 | 2 | Empower | action | empower +2 power |
+| 2 | Salt L2 | stat | inspiration 2 |
 | 3 | Mend | action | mend +4 |
+| 3 | Salt L3 | stat | body 1, speed 1, inspiration 1 |
 | 4 | Steel | action | steel, recover |
 | 4 | Rally | action | rally +4 |
+| 4 | Salt L4 | stat | inspiration 2 |
 | 5 | Sanctuary | action | empower +2 power, haste +3, mend +4, x99 targets |
+| 5 | Salt L5 | stat | body 2, inspiration 2 |
 
 ## Weapons (7 cards)
 

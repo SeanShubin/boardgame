@@ -155,4 +155,37 @@ mod tests {
             );
         }
     }
+
+    /// **Completeness guard** (the lesson of the silently-dropped Stat cards): a treasure grants *both*
+    /// an ability card and a Stat card, and the library must show both — plus the Human baseline. This
+    /// is the kind of invariant a golden snapshot can't enforce (a snapshot happily locks in an
+    /// *incomplete* output); only an explicit "is everything accounted for?" check catches an omission.
+    #[test]
+    fn the_library_accounts_for_the_baseline_and_every_treasures_stat_card() {
+        use crate::currency::Currency;
+        let rows = card_library();
+        assert!(
+            rows.iter().any(|r| r.name == "Human" && r.kind == "stat"),
+            "the Human baseline card must appear in the library"
+        );
+        for suit in [
+            Currency::Iron,
+            Currency::Silver,
+            Currency::Brass,
+            Currency::Bone,
+            Currency::Salt,
+        ] {
+            let set = format!("{} — {}", suit.label(), suit.role().unwrap());
+            let stat_levels: std::collections::BTreeSet<u32> = rows
+                .iter()
+                .filter(|r| r.set == set && r.kind == "stat")
+                .filter_map(|r| r.level)
+                .collect();
+            assert_eq!(
+                stat_levels,
+                (1..=5).collect(),
+                "{suit:?} must show its treasure's Stat card at every level"
+            );
+        }
+    }
 }
