@@ -526,6 +526,108 @@ pub fn rewards_for(track: Currency) -> Vec<RewardId> {
     ids
 }
 
+// --- Card library (generated projection) --------------------------------------------------------
+
+/// One row of the generated **card library** ([`crate::handbook`]): a printable card with its
+/// cardset, suit, level, kind, and one-line effect — the lookup table for *what cards exist, in
+/// which set, at what level*. A generated projection of `booklet.ron` (per source-of-truth,
+/// human-readable card sheets are **generated, never hand-kept**), so it cannot drift.
+#[derive(Clone)]
+pub struct LibraryRow {
+    /// The cardset: a suit track (`"Bone — Controller"`), or `Weapons` / `Pool` / `Form (traits)` / `Cast`.
+    pub set: String,
+    pub name: String,
+    pub suit: Option<Currency>,
+    pub level: Option<u32>,
+    /// `action` / `modifier` / `passive` / `weapon` / `trait` / `character`.
+    pub kind: &'static str,
+    pub summary: String,
+}
+
+fn card_kind(c: &Card) -> &'static str {
+    if c.passive {
+        "passive"
+    } else {
+        match c.kind {
+            RoleKind::Base => "action",
+            RoleKind::Modifier => "modifier",
+            RoleKind::Mode => "mode",
+        }
+    }
+}
+
+/// Every printable card as a flat [`LibraryRow`], set by set: the five suit tracks first (booklet
+/// order, suit-major), then Weapons, the standalone Pool, Form traits, and the Cast.
+pub fn card_library() -> Vec<LibraryRow> {
+    let cat = catalog();
+    let mut rows = Vec::new();
+    // The five suit tracks — the role cardsets (progression cards).
+    for r in &cat.rewards {
+        for c in &r.cards {
+            rows.push(LibraryRow {
+                set: format!("{} — {}", r.track.label(), r.track.role().unwrap_or("")),
+                name: c.name.clone(),
+                suit: Some(r.track),
+                level: Some(r.level),
+                kind: card_kind(c),
+                summary: c.summary(),
+            });
+        }
+    }
+    // Weapons (carry a damage type) and the standalone pool (creature / generic cards).
+    let weapons: std::collections::HashSet<&str> =
+        cat.actors.iter().map(|a| a.weapon.as_str()).collect();
+    for c in &cat.cards {
+        let is_weapon = weapons.contains(c.name.as_str());
+        rows.push(LibraryRow {
+            set: if is_weapon { "Weapons" } else { "Pool" }.to_string(),
+            name: c.name.clone(),
+            suit: c.role,
+            level: card_level(&c.name),
+            kind: if is_weapon { "weapon" } else { card_kind(c) },
+            summary: if is_weapon {
+                c.primary_damage()
+                    .map(|(_, dt)| format!("{} weapon", dt.label()))
+                    .unwrap_or_else(|| "weapon".into())
+            } else {
+                c.summary()
+            },
+        });
+    }
+    // Form traits (armor / ward) and the cast (characters & creatures).
+    for t in &cat.traits {
+        let mut mit: Vec<String> = t
+            .armor
+            .iter()
+            .map(|(d, v)| format!("{} {v}", d.label()))
+            .collect();
+        mit.extend(
+            t.ward
+                .iter()
+                .map(|(d, v)| format!("ward {} {v}", d.label())),
+        );
+        rows.push(LibraryRow {
+            set: "Form (traits)".into(),
+            name: t.name.clone(),
+            suit: None,
+            level: None,
+            kind: "trait",
+            summary: mit.join(", "),
+        });
+    }
+    for a in &cat.actors {
+        rows.push(LibraryRow {
+            set: "Cast".into(),
+            name: a.name.clone(),
+            suit: None,
+            level: None,
+            kind: "character",
+            summary: format!("{} · {}", a.role, a.weapon),
+        });
+    }
+    rows
+}
+
 // --- Flavor lookups (§8.3 style) ---------------------------------------------------------------
 // All flavor prose lives in `data/booklet.ron`; these read it by key. Card-like content carries a
 // per-row `flavor` field; the enum content (currencies, roles) is keyed in the `*_flavor` maps.

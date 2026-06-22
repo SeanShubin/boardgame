@@ -19,6 +19,7 @@ pub mod duel;
 pub mod encounter;
 pub mod form;
 pub mod game;
+pub mod handbook;
 pub mod reference;
 pub mod ruleset;
 pub mod scenarios;
