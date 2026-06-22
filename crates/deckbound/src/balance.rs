@@ -21,6 +21,7 @@
 use crate::actor::Actor;
 use crate::campaign::grind_encounter;
 use crate::currency::Currency;
+use crate::encounter::EncounterCard;
 use crate::scenarios::{RewardId, build_character, build_encounter_foes, rewards_for};
 use crate::solver::auto_resolve;
 use crate::world::REWARD_SUITS;
@@ -53,6 +54,122 @@ fn god_rewards(k: u32) -> Vec<RewardId> {
 /// `n` clean-slate Novices each carrying `rewards`.
 fn party(n: usize, rewards: &[RewardId]) -> Vec<Actor> {
     (0..n).map(|_| build_character("Novice", rewards)).collect()
+}
+
+/// The four **non-Wall** roles, proven by **pairing** (§8.6 emergent necessity) rather than a solo
+/// blob: each must flip a fight a baseline killer party *loses* into a *win* (remove it → the win
+/// flips back). The **Wall is excluded** — it is the one role proven solo (it *holds the line*), and
+/// here it doubles as the baseline **killer** the four others augment. (Charter #13: the §4 triangle
+/// kills; the effect roles enable — so an enabler's necessity is only legible *paired* with a killer.)
+const PAIRED_ROLES: [Currency; 4] = [
+    Currency::Silver,
+    Currency::Brass,
+    Currency::Bone,
+    Currency::Salt,
+];
+
+/// The baseline party member a role's lock is measured against — chosen to be **exactly the capability
+/// the lock denies**, so the gap is structural (force, not fiat):
+/// - **penetration / reach** locks (Brass / Silver) pit a **Wall** (Iron) killer — tanky, melee, blunt —
+///   that structurally *can't pierce plate* or *can't reach the backline*;
+/// - **survival** locks (Bone / Salt) pit a **glass Artillery** (Brass) cannon — high sharp damage, low
+///   Body — that *out-damages but dies* without the effect role keeping it up (Charter #13: the triangle
+///   kills; Bone disables the incoming, Salt heals it).
+fn baseline_member(lock: Currency) -> Actor {
+    match lock {
+        Currency::Bone | Currency::Salt => {
+            build_character("Novice", &rewards_up_to(Currency::Brass, 5)) // glass cannon
+        }
+        _ => build_character("Novice", &rewards_up_to(Currency::Iron, 5)), // Wall killer
+    }
+}
+
+/// The party for a role's lock: `n` baseline members; the first slot swapped for the **lock role's**
+/// specialist when `add_role` — i.e. the role's contribution bought at the cost of one baseline slot.
+fn lock_party(lock: Currency, n: usize, add_role: bool) -> Vec<Actor> {
+    let mut p: Vec<Actor> = (0..n).map(|_| baseline_member(lock)).collect();
+    if add_role {
+        p[0] = build_character("Novice", &rewards_up_to(lock, 5));
+    }
+    p
+}
+
+/// A roster entry of `count` `creature`s (no level scaling — the lock is a fixed band, §8.4).
+fn lock_entry(creature: &str, count: u32) -> crate::encounter::RosterEntry {
+    crate::encounter::RosterEntry {
+        creature: creature.into(),
+        from_level: 1,
+        base: count,
+        growth: 0,
+    }
+}
+
+/// The **lock encounter** for a non-Wall role (§8.6 emergent necessity): a fight raw Wall damage
+/// **cannot** win, whose *natural pressure* makes that one role's mechanic the efficient key — force,
+/// not fiat (the other roles still act; they just can't clear it within par). Numbers are **seeds**
+/// (human-tuned). Each lock realizes the card-design-audit's per-role lock:
+fn lock_encounter(role: Currency) -> EncounterCard {
+    use crate::form::StatCard;
+    let foes = match role {
+        // Infiltrator — a lethal ranged **backline** (Slingers) screened by a Husk front: melee Wall
+        // killers bog on the screen while the Slingers plink them down; only a **slip** reaches the back.
+        Currency::Silver => vec![lock_entry("Husk", 6), lock_entry("Slinger", 12)],
+        // Artillery — an **armored** front (Heavy-Plate Brutes, Blunt-armor 3): blunt Wall fists bounce
+        // off entirely; only **sharp + Pierce** cracks the plate.
+        Currency::Brass => vec![lock_entry("Brute", 3)],
+        // Controller — **Resolve-0 bruisers** (Brutes) whose burst kills the glass cannons before they
+        // grind through the plate; **fear Routs** them (any pile clears Resolve 0) and the b2 demotion
+        // drives them off the line, so the cannons survive to crack it. (Glass baseline.)
+        Currency::Bone => vec![lock_entry("Brute", 4)],
+        // Support — steady **attrition** that whittles the low-Body cannons over the round horizon; only
+        // a **healer** sustains them past their bare capacity. (Glass baseline.)
+        Currency::Salt => vec![lock_entry("Slinger", 18)],
+        _ => vec![lock_entry("Husk", 1)],
+    };
+    EncounterCard {
+        name: format!("{} lock", role.label()),
+        currency: role,
+        strategy: "aggressor".into(),
+        foes,
+        scaling: StatCard::default(),
+    }
+}
+
+/// Party size for the lock probes (seed). Small enough that one role swap is a decisive fraction of the
+/// party, large enough to field the baseline capability.
+const LOCK_PARTY: usize = 3;
+
+/// **Paired role-necessity** (§8.6, Charter #12/#13): for each non-Wall role, the baseline party — the
+/// one missing exactly the capability its [`lock_encounter`] demands — **loses** the lock, and **adding
+/// the role** (at the cost of one baseline slot) **wins** it. That two-sided check is the honest proof a
+/// role is *load-bearing*: not "a single-role blob can solo a fight" (incoherent for the effect roles,
+/// which deal no damage — Charter #13), but "remove this role and an otherwise-winning party loses." The
+/// Wall is excluded: it is the one role proven *solo* (it holds the line; see [`check_grind_balance`]'s
+/// Iron row) and here serves as the baseline killer the reach/penetration locks pit against the foe.
+/// Returns the violations (empty ⇒ every non-Wall role is necessary in its lock).
+pub fn check_role_necessity(seed: u64) -> Vec<Violation> {
+    let mut v = Vec::new();
+    for &role in &PAIRED_ROLES {
+        let enc = lock_encounter(role);
+        let foes = || build_encounter_foes(&enc, 5);
+        let base = auto_resolve(lock_party(role, LOCK_PARTY, false), foes(), seed);
+        check(
+            &mut v,
+            role,
+            "baseline (without the role) loses the lock",
+            base,
+            false,
+        );
+        let keyed = auto_resolve(lock_party(role, LOCK_PARTY, true), foes(), seed);
+        check(
+            &mut v,
+            role,
+            "adding the role wins the lock (it tips the fight)",
+            keyed,
+            true,
+        );
+    }
+    v
 }
 
 /// Record a check: if the resolved outcome disagrees with `want_win`, it is a violation. `outcome`
@@ -203,21 +320,70 @@ mod tests {
         println!("{}", stat_necessity_report(1));
     }
 
+    /// Tuning probe (§8.6 paired necessity): for each non-Wall role's **lock**, print the baseline
+    /// (all-Wall) outcome and the outcome when each role is swapped in — so a lock should be *lost* by
+    /// killers alone and *won* only when **its** role joins (ideally exclusively).
+    /// `cargo test -p deckbound probe_role_necessity -- --ignored --nocapture`.
+    /// Diagnostic: for each lock, print the seeded outcome (baseline vs +role) and a cross-check of which
+    /// *other* roles also flip it — the closer the lock is to flipped-by-its-role-alone, the more it
+    /// proves that role specifically (vs. raw help). `cargo test -p deckbound probe_role_necessity -- --ignored --nocapture`.
     #[test]
-    fn an_equipped_party_never_loses_its_own_l5() {
-        // Regression guard for the Salt anomaly (a suit's own powers made the party *worse* than bare):
-        // a party fully equipped in a suit must clear that suit's L5. The remaining violations should
-        // all be "too easy" (encounter calibration) — never an "equipped party / 5×L4 should win" that
-        // came back a loss.
-        // The "should win" checks all read "… wins L5"; the too-easy ones read "… loses L5". A
-        // violated "wins L5" means a sufficiently-equipped party lost — the anomaly class.
-        let equipped_losses: Vec<_> = check_grind_balance(1)
-            .into_iter()
-            .filter(|vi| vi.property.contains("wins L5"))
-            .collect();
+    #[ignore]
+    fn probe_role_necessity() {
+        for &lock in &PAIRED_ROLES {
+            let enc = lock_encounter(lock);
+            let foes = || build_encounter_foes(&enc, 5);
+            let base = auto_resolve(lock_party(lock, LOCK_PARTY, false), foes(), 1);
+            print!(
+                "{} lock {:?}: base={base:?}  flips:",
+                lock.label(),
+                enc.roster(5)
+            );
+            // Swap slot 0 for each role's specialist (keeping the lock's baseline for the rest).
+            for &r in &PAIRED_ROLES {
+                let mut p = lock_party(lock, LOCK_PARTY, false);
+                p[0] = build_character("Novice", &rewards_up_to(r, 5));
+                if auto_resolve(p, foes(), 1) == Some(true) && base != Some(true) {
+                    print!(" +{}{}", r.label(), if r == lock { "(KEY)" } else { "" });
+                }
+            }
+            println!();
+        }
+    }
+
+    #[test]
+    fn each_non_wall_role_is_necessary_in_its_lock() {
+        // §8.6 paired necessity (Charter #12/#13): each non-Wall role must flip its lock — the baseline
+        // party (missing that role's capability) loses, and adding the role wins. This *replaces* the
+        // old "an equipped single-role party clears its own L5" guard, which is incoherent for the
+        // effect roles: a Controller/Support deals no damage (Charter #13), so a solo blob of them can
+        // never win a kill-them-all fight. Usefulness is proven *paired with a killer*, not in isolation.
+        let v = check_role_necessity(1);
         assert!(
-            equipped_losses.is_empty(),
-            "an equipped party must never lose its own L5 (the Salt anomaly): {equipped_losses:?}"
+            v.is_empty(),
+            "a non-Wall role failed its paired-necessity lock (§8.6): {v:?}"
+        );
+    }
+
+    #[test]
+    fn the_wall_is_the_one_role_proven_solo() {
+        // The flip side of the pairing principle: the Wall is *not* a paired role — it holds the line on
+        // its own. A party equipped in Iron clears the Wall's own L5 grind; a bare party does not (the
+        // hold is what the lesson teaches). Guards the "only the Wall solos" half of the design.
+        assert!(
+            !PAIRED_ROLES.contains(&Currency::Iron),
+            "the Wall is not a paired role"
+        );
+        let enc = grind_encounter(Currency::Iron, 5);
+        let walls = auto_resolve(
+            party(5, &rewards_up_to(Currency::Iron, 5)),
+            build_encounter_foes(&enc, 5),
+            1,
+        );
+        assert_eq!(
+            walls,
+            Some(true),
+            "an Iron-equipped party holds (wins) the Wall's L5"
         );
     }
 

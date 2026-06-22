@@ -169,7 +169,7 @@ GLOSSARY   (what the rulebook says about each keyword above)
   Blitz                  The first slip each round is free — it costs no Tempo.
   Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
   Damage (blunt)         Deals blunt damage (base 0). It is reduced by the target's blunt Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
-  Damage (fear)          Deals fear damage (base 4) to the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool. If it clears Resolve the will breaks (Freeze / Flee / Scared-to-death, §2); Edge scales this.
+  Damage (fear)          Projects fear on the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool, no damage. The further it clears Resolve the harder it breaks: Freeze (loses its action) → Shaken (also cannot defend) → Rout (driven from the line, §4); Dread scales this.
   Damage (sharp)         Deals sharp damage (base 5). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
   Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 Body (M3).
   Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.

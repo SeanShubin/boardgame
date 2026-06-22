@@ -101,7 +101,9 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
         log.push(format!("  {name} {}!", break_note(b)));
     }
     // §2.2 / Charter #13 — fear is control, not damage: the break tier applies a round-scoped status.
-    // (Rout's Vanguard→Reserve demotion is applied by the §4 charge step — b2; here we set the flags.)
+    // Freeze Staggers (loses its action); Shaken adds Shove (also cannot defend); Rout adds the
+    // Vanguard→Reserve demotion — driven off the line — which the §4 charge step reads from the
+    // persisted `will_break` flag at Deploy (see `Deckbound::deploy`). Here we set the in-place flags.
     match out.broke {
         Some(Break::Freeze) => target.stunned = true,
         Some(Break::Shaken | Break::Rout) => {

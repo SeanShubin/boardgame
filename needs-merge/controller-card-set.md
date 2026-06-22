@@ -61,7 +61,7 @@ but is now **pure fear** (its explicit `Stagger` already removed — redundant w
   the fear tier climbs: vs Resolve R, Dread 8 lands Freeze at R≥8, Shaken at R 4–7, **Rout at R<3**.
 - **Foe Resolve is the counter-dial.** Against **Resolve-0** foes (today's reference creatures) *any*
   fear → **Rout** (full disable) — and with Curse + Unmake a maxed Controller **Routs the whole line**.
-  That is the dominance risk: total disable, even without kills, trivializes a fight. **Balance fix lives
+  That is the  dominance risk: total disable, even without kills, trivializes a fight. **Balance fix lives
   in the scenarios, not the cards:** most foes should carry **Resolve** so fear tiers *down*, and the
   Controller's §8.6 **lock** is a deliberately **low-Resolve, high-threat** foe only fear can shut down.
 - **Mass control gate:** keep AoE fear at the **capstone** (L5) and the widener as a **modifier** (L4),

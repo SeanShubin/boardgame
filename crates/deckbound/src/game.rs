@@ -250,6 +250,23 @@ impl Deckbound {
                     up && aggr >= 3 && melee && state.creatures[f].offense.daring >= 3;
             }
         }
+        // §4 Rout / Charter #13 — fear's top tier (pile past 3×Resolve) **drives the unit from the
+        // line to the Reserve**: a foe Routed at Muster neither holds as a Vanguard nor crosses as a
+        // Skirmisher this round. The `will_break` flag persists from the Muster card-play to here
+        // (cleared only at round end / by Steel), so reading it now applies the demotion before the
+        // Line resolves. (Freeze/Shaken merely Stagger/Shove in place — handled by `can_contest_now`.)
+        for h in 0..state.heroes.len() {
+            if state.heroes[h].defense.will_break == Some(crate::stats::Break::Rout) {
+                state.plan.hero_charging[h] = false;
+                state.plan.hero_flank[h] = false;
+            }
+        }
+        for f in 0..state.creatures.len() {
+            if state.creatures[f].defense.will_break == Some(crate::stats::Break::Rout) {
+                state.plan.foe_charging[f] = false;
+                state.plan.foe_flank[f] = false;
+            }
+        }
         let h_charging = state.plan.hero_charging.clone();
         let h_flank = state.plan.hero_flank.clone();
         let f_charging = state.plan.foe_charging.clone();
@@ -2076,6 +2093,34 @@ mod tests {
         assert!(
             s.heroes[0].tempo > tempo_before,
             "Brace's Guard Tempo persists into the gauntlet"
+        );
+    }
+
+    /// §4 Rout / Charter #13 (b2): the top fear tier **drives a unit from the line to the Reserve**.
+    /// A Vanguard carrying a `Rout` will-break (set at Muster, persisting via `will_break`) is pulled
+    /// off the line by `deploy` *before* the Line resolves — it ends the deploy a Reserve, not a
+    /// Vanguard. (Freeze/Shaken stay in place; only Rout relocates — that is the tier's whole point.)
+    #[test]
+    fn a_routed_vanguard_is_driven_to_the_reserve() {
+        let game = Deckbound;
+        let mut attacker = scenarios::build_character("Novice", &[]);
+        attacker.attack = crate::actor::Attack::Melee;
+        let foe = scenarios::build_creature("Husk");
+        let mut s = battle_state(vec![attacker], vec![foe], false, 1);
+
+        // The hero declares as a Vanguard (holds the line)…
+        game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
+        assert!(
+            !game.is_reserve(&s, 0, 0),
+            "test premise: the hero is a charging Vanguard before any Rout"
+        );
+        // …but a fear attack has Routed it (pile cleared 3×Resolve), recorded on the will.
+        s.heroes[0].defense.will_break = Some(crate::stats::Break::Rout);
+
+        game.deploy(&mut s);
+        assert!(
+            game.is_reserve(&s, 0, 0),
+            "a Routed unit is driven from the Vanguard to the Reserve before the Line"
         );
     }
 

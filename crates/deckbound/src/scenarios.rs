@@ -706,13 +706,14 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
                 dtype.label(),
                 dtype.label()
             ),
-            // Inner channel: Ward cut → the Resolve bar; no Body pool — the will *breaks* on a
-            // crossing (Freeze / Flee / Scared-to-death) rather than turning Health cards.
+            // Inner channel: Ward cut → the Resolve bar; no Body pool, no damage — the will
+            // *breaks* into a round-scoped control status (Freeze / Shaken / Rout), tiered by how
+            // far past Resolve it clears, rather than turning Health cards.
             Channel::Fear => format!(
-                "Deals {} damage (base {power}) to the will (the inner channel): reduced by the \
-                 target's Ward, then tested against its Resolve bar \u{2014} no Body pool. If it \
-                 clears Resolve the will breaks (Freeze / Flee / Scared-to-death, \u{00A7}2); Edge \
-                 scales this.",
+                "Projects {} on the will (the inner channel): reduced by the target's Ward, then \
+                 tested against its Resolve bar \u{2014} no Body pool, no damage. The further it \
+                 clears Resolve the harder it breaks: Freeze (loses its action) \u{2192} Shaken \
+                 (also cannot defend) \u{2192} Rout (driven from the line, \u{00A7}4); Dread scales this.",
                 dtype.label()
             ),
         },

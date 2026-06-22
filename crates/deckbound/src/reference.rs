@@ -242,19 +242,33 @@ pub fn check_combat_bands(s: &ReferenceScenario, seed: u64) -> Vec<String> {
     let novice = || build_character("Novice", &[]);
     // A character "invested in track p" holds that track's rewards (what clearing B[p] unlocks).
     let specialist = |p: Currency| build_character("Novice", &rewards_for(p));
+    // The two **effect** roles deal no direct damage (Charter #13): a *solo* specialist can never clear
+    // a kill-them-all gate — its kit only *enables* a killer. So their win-band is checked **paired**
+    // (specialist + a bare body). The under-equipped *floor* is meaningful only at the damage roles'
+    // solo scale: at C[p]'s small count any two competent bodies win, so a paired floor here would be
+    // vacuous. The effect roles' floor — and their *exclusive* necessity (remove the role → lose) — is
+    // enforced by the lock harness, `balance::check_role_necessity`; reference.rs only sanity-checks
+    // here that investing in the role clears the gate.
+    let effect = |p: Currency| matches!(p, Currency::Bone | Currency::Salt);
 
-    // C[p]: a bare party should lose; a p-equipped specialist should win.
+    // C[p]: an under-equipped party should lose (damage roles); investing in track p should win.
     for (i, &p) in s.paths.iter().enumerate() {
         let enc = &s.encounters[s.c_index[i]];
-        if auto_resolve(vec![novice()], build_encounter_foes(enc, 1), seed) != Some(false) {
+        let foes = || build_encounter_foes(enc, 1);
+        let invested = if effect(p) {
+            vec![specialist(p), novice()] // paired — the no-damage kit needs a body to act through
+        } else {
+            vec![specialist(p)] // a killer can clear C[p] solo
+        };
+        if !effect(p) && auto_resolve(vec![novice()], foes(), seed) != Some(false) {
             v.push(format!(
                 "C[{}] too easy — a bare party should lose",
                 p.label()
             ));
         }
-        if auto_resolve(vec![specialist(p)], build_encounter_foes(enc, 1), seed) != Some(true) {
+        if auto_resolve(invested, foes(), seed) != Some(true) {
             v.push(format!(
-                "C[{}] too hard — a {}-equipped party should win",
+                "C[{}] too hard — a {}-invested party should win",
                 p.label(),
                 p.label()
             ));
@@ -267,11 +281,12 @@ pub fn check_combat_bands(s: &ReferenceScenario, seed: u64) -> Vec<String> {
     if auto_resolve(full.clone(), build_encounter_foes(enc, 1), seed) != Some(true) {
         v.push("Final too hard — a full party should win".into());
     }
-    // NOTE (§8.6 emergent-vs-fiat): today the Final is a Husk swarm, so a path-missing party loses on
-    // raw headcount, not because the absent role's *mechanic* is the unique key. Charter #12 / §8.6
-    // require necessity to be **emergent** — making each role load-bearing by its mechanic needs five
-    // authored lock scenarios (one per role). Tracked as future content; this guards the weaker
-    // headcount form for now.
+    // NOTE (§8.6 emergent-vs-fiat): this Final is a Husk swarm, so a path-missing party loses on raw
+    // headcount, not because the absent role's *mechanic* is the unique key — this guards the weaker
+    // headcount form. The **emergent** form (Charter #12 / §8.6 — remove a role and a fight becomes
+    // unwinnable *by its mechanic*) is now authored as the four non-Wall **lock scenarios** in
+    // `balance::check_role_necessity`; the Wall is proven solo there too. Folding those locks into this
+    // Final lattice is the remaining step.
     if full.len() > 1 {
         let short = full[1..].to_vec();
         if auto_resolve(short, build_encounter_foes(enc, 1), seed) == Some(true) {
