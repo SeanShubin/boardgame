@@ -73,25 +73,31 @@ fn rules_tour() -> TranscriptScenario {
         named("Hex", Currency::Bone), // Controller: musters a persistent debuff before the gauntlet
     ];
     // The tour fields four MAX-LEVEL specialists, so the foe line must be a real threat to run past
-    // round 1 (so refresh and the later-round mechanics show). Each creature is reinforced: Resolve so
-    // the wired Dread frightens rather than instantly routs, and Body/Toughness so it survives a round
-    // of the Infiltrator's multi-strike. Numbers are seeded for a multi-round fight; tune to taste.
-    let threat = |name: &str| {
+    // round 1 (so refresh and the later-round mechanics show). Each creature is reinforced in Body /
+    // Toughness so it survives a round of the Infiltrator's multi-strike. Their **Resolve is varied on
+    // purpose** so Hex's one Unmake (fear ≈ 12) shows the whole control ladder at once — the higher the
+    // Resolve, the milder the break: Freeze (lose the action) → Shaken (also can't defend) → Rout
+    // (driven off the line to the Reserve). Numbers are seeded for a multi-round fight; tune to taste.
+    let threat = |name: &str, resolve: u32| {
         let mut a = build_creature(name);
-        a.defense.resolve += 6;
+        a.defense.resolve = resolve;
         a.defense.body.max += 8;
         a.defense.body.remaining += 8;
         a.defense.body.toughness += 2;
         a
     };
+    // Four foes span the whole Resolve dial, so one Unmake shows fear's counter-dial end to end: the
+    // bravest **shrugs it off** (and stays to fight, keeping the crossing contest), and each lower
+    // Resolve breaks one tier harder.
     let foes = vec![
-        threat("Brute"),  // a wall to be held against / slipped past (armour + the hold)
-        threat("Raider"), // a fast charger (the enemy gauntlet — slips / parting hits)
-        threat("Seer"),   // a ranged Fear caster (the enemy Reserve)
+        threat("Brute", 8),  // R 8: fear **Freezes** the armored wall (loses its action)
+        threat("Husk", 14), // R 14: fear **resisted** — it fights on and catches the slip (the crossing)
+        threat("Seer", 5),  // R 5: fear **Shakes** the ranged caster (also cannot defend)
+        threat("Raider", 3), // R 3: fear **Routs** the fast charger — driven off the line (b2 demotion)
     ];
     TranscriptScenario {
         name: "rules-tour",
-        blurb: "every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, Fear, defeat, refresh.",
+        blurb: "every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.",
         heroes,
         foes,
         ruleset: Ruleset::analysis(),

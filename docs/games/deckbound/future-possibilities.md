@@ -373,7 +373,11 @@ It **lights up four dormant systems at once** (the reason it keeps surfacing):
   Armor, becomes a preview of this axis);
 - the **Artillery's** Pierce stat + the **Sunder** card become meaningful (something to pierce);
 - the **§8.6 emergent locks** get their content — an *armored-foe* lock is exactly what makes Pierce /
-  Sunder / type-choice the efficient key.
+  Sunder / type-choice the efficient key. **(Partly realized 2026-06-21:** the Artillery necessity lock
+  in `crates/deckbound/src/balance.rs` (`check_role_necessity` / `lock_encounter`) is already this — a
+  Heavy-Plate Brute front that blunt Wall fists cannot crack and only Brass's sharp + precision defeats.
+  So the gear payoff has a **working witness in the balance harness, ahead of gear itself**; building
+  gear is what would let a *player* make that called-shot choice rather than it being a fixed lock.)
 
 ### Risks / open questions (for playtest)
 
@@ -384,8 +388,15 @@ It **lights up four dormant systems at once** (the reason it keeps surfacing):
 - **Build computability (§0.1).** Gear is *owned, monotone, additive* assets — keep it so (no sell-back /
   swap-oscillation) or it breaks the no-path-dependent-budget invariant.
 - **Does gear scale with a stat, or is it flat?** (Cf. the signature-stat principle, Charter #12.)
-- **Damage-type set.** Gear is the thing that would justify keeping all 6 outer types; absent it, the
-  pure-physical distinctions are tabling candidates (and **Confusion** is already a dead type to cut).
+- **Damage-type set.** Gear is what would justify keeping all **6 outer types** (Blunt / Sharp / Pierce /
+  Heat / Cold / Lightning); absent it, `Pierce` / `Cold` / `Lightning` sit **dormant — produced by no
+  card, answered by no armor** — and the pure-physical Blunt/Sharp/Pierce distinctions are tabling
+  candidates. **Anti-rediscovery note:** these dormant types *look* like dead code and have been flagged
+  as "cleanup" more than once; they are not — they are this feature's scaffolding, and the `DamageType`
+  enum (`crates/deckbound/src/stats.rs`) carries a pointer back to this section so the next reader stops
+  here instead of re-deriving the whole analysis. Do **not** prune them while gear is still wanted.
+  *(`Confusion` was a separate, already-closed case — the Mind channel was cut 2026-06-20, and the type
+  is already gone; it is not part of this dormant set.)*
 
 ### Current lean
 

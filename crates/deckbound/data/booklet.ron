@@ -115,16 +115,17 @@ Catalog(
                 flavor: "It does not ask which armor. It asks how much of the field you would like erased.",
                 cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, zone: Spend, targets: 5, reach: (2, 2), effects: [Damage(power: 5, dtype: Sharp)] ) ] ),
 
-        // ---- Controller (Bone) — the unmaker: strip, slow, fear ----
+        // ---- Controller (Bone) — the unmaker: fear that controls (Freeze→Shaken→Rout), plus one
+        //      Resolve-proof hard-lock for the fearless. Fear escalates Menace→Terror→Unmake. ----
         Reward( track: Bone, level: 1, stat: (dread: 2),
-                flavor: "Make every step cost what a sprint should.",
-                cards: [ Card( name: "Slow", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2)] ) ] ),
+                flavor: "Dread arrives early and uninvited — the first cold finger laid on the nerve.",
+                cards: [ Card( name: "Menace", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 2, dtype: Fear)] ) ] ),
         Reward( track: Bone, level: 2, stat: (dread: 1, resolve: 1),
-                flavor: "A sound the body hears before the mind does.",
-                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)], text: "Fear that breaks the will: its Dread, cleared past the foe's Resolve, freezes / shakes / routs it (§2.2) — control, never damage." ) ] ),
+                flavor: "Weight the feet and foul the hands; let it watch the fight happen without it.",
+                cards: [ Card( name: "Shackle", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2), Disarm] ) ] ),
         Reward( track: Bone, level: 3, stat: (dread: 2),
-                flavor: "Scramble the one moment they needed to think.",
-                cards: [ Card( name: "Confuse", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Confuse(tempo: 3), Disarm], text: "Scramble their plan: drains Tempo and disarms the foe — it cannot play its role cards this round." ) ] ),
+                flavor: "A sound the body hears before the mind does.",
+                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
         Reward( track: Bone, level: 4, stat: (dread: 1, resolve: 1),
                 flavor: "A whisper that follows the foe home and unmakes the courage it finds there.",
                 cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (M5)." ) ] ),

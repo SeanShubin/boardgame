@@ -12,6 +12,13 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 /// A damage type. Physical/elemental types are outer (met by Armor); Fear is inner (met by Ward).
+///
+/// **Do not "clean up" the unused arms.** Today no card deals `Pierce`, `Cold`, or `Lightning`, and
+/// `Armor` answers only Sharp/Blunt/Heat — so the type×armor "called-shot" lattice (§2.2) is **inert on
+/// purpose**, not by defect. It activates with the deferred **gear** feature (a weapon sets a type, a
+/// piece of armor resists types), which is *Wanted, deferred* in
+/// `docs/games/deckbound/future-possibilities.md` §7. Pruning these now just means rebuilding them for
+/// gear. (The retired Mind/Confusion type is a different, already-closed case — it is gone, not dormant.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub enum DamageType {
     Blunt,

@@ -1,5 +1,5 @@
 SCENARIO  rules-tour   seed=1   ruleset(max_rounds=5, max_unique=5)
-          every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, Fear, defeat, refresh.
+          every core mechanic once: charge split, Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.
 
 FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (how many) · P Power (each) · §2.4–§2.6
 
@@ -27,42 +27,48 @@ HEROES
       Dread       P 8 = 8
       Resolve     P 2+1 = 3
 FOES
-  Brute — Bruiser · Maul [melee]  (11 cards)
+  Brute — Bruiser · Maul [melee]  (10 cards)
       Body        Q 16 = 16       P 4+1 = 5
       Tempo       Q 2 = 2         P —
       Strike      P 4+1 = 5
-      Resolve     P 4+2 = 6
+      Resolve     P 8 = 8
       Guard·blunt P 2+1 = 3
       Guard·sharp P 4 = 4
-  Raider — Infiltrator · Claw [melee]  (12 cards)
-      Body        Q 8+4 = 12      P 2+1 = 3
-      Tempo       Q 4+2 = 6       P 4+1 = 5
-      Strike      P 2+1 = 3
-      Resolve     P 4+2 = 6
+  Husk — Swarmer · Claw [melee]  (10 cards)
+      Body        Q 8+2 = 10      P 2+1 = 3
+      Tempo       Q 2+1 = 3       P —
+      Strike      P 2 = 2
+      Resolve     P 8+4+2 = 14
   Seer — Hexer · Wand [ranged]  (11 cards)
       Body        Q 8+4 = 12      P 2+1 = 3
       Tempo       Q 2+1 = 3       P —
       Strike      P 2+1 = 3
       Dread       P 4 = 4
-      Resolve     P 4+2 = 6
+      Resolve     P 4+1 = 5
+  Raider — Infiltrator · Claw [melee]  (12 cards)
+      Body        Q 8+4 = 12      P 2+1 = 3
+      Tempo       Q 4+2 = 6       P 4+1 = 5
+      Strike      P 2+1 = 3
+      Resolve     P 2+1 = 3
 
 ── round 1 ──────────────────────────────────────
   Hex plays Unmake.
-    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/6]
+    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/8]
     Brute freezes in fear — loses its action!
-    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Raider freezes in fear — loses its action!
-    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Seer freezes in fear — loses its action!
+    Hex hits Husk: 12 fear — the dread mounts. [12 past ward; fear 12/14]
+    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/5]
+    Seer is shaken — cannot act or defend!
+    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/3]
+    Raider is routed — driven from the line!
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
 CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute, Raider   reserve: Seer
+         foes   — charged: Brute, Husk   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 16/16]
-  Wisp slips an unguarded gap.
-  crossing: Raider(adv 5×2=10) vs Anvil(hold 5) → slips
-    Anvil hits Raider: 1 blunt — damage accumulates. [1 past armor; Body 12/12]
+    Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
+  crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
+    Husk hits Wisp: 2 sharp — turns 2 health cards face down. [2 past armor; Body 3/5]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 16/16]
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 15/16]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 15/16]
@@ -72,33 +78,33 @@ CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 12/16]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 12/16]
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 11/16]
-    Raider hits Anvil: 3 sharp — damage accumulates. [3 past armor; Body 18/18]
-    Anvil hits Raider: 1 blunt — damage accumulates. [1 past armor; Body 12/12]
   Sear plays Bombardment.
     Sear hits Brute: 14 sharp — turns 2 health cards face down. [12 past armor; Body 9/16]
-    Sear hits Raider: 14 sharp — turns 5 health cards face down. [14 past armor; Body 7/12]
+    Sear hits Husk: 14 sharp — turns 4 health cards face down. [14 past armor; Body 6/10]
     Sear hits Seer: 14 sharp — turns 4 health cards face down. [14 past armor; Body 8/12]
+    Sear hits Raider: 14 sharp — turns 4 health cards face down. [14 past armor; Body 8/12]
     Seer hits Anvil: 6 fear — the dread mounts. [6 past ward; fear 6/1]
     Anvil is routed — driven from the line!
-ENDROUND heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 9/16  Raider 7/12  Seer 8/12
+ENDROUND heroes: Anvil 18/18  Wisp 3/5  Sear 5/5  Hex 5/5  |  foes: Brute 9/16  Husk 6/10  Seer 8/12  Raider 8/12
 
 ── round 2 ──────────────────────────────────────
   Hex plays Unmake.
-    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/6]
+    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/8]
     Brute freezes in fear — loses its action!
-    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Raider freezes in fear — loses its action!
-    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Seer freezes in fear — loses its action!
+    Hex hits Husk: 12 fear — the dread mounts. [12 past ward; fear 12/14]
+    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/5]
+    Seer is shaken — cannot act or defend!
+    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/3]
+    Raider is routed — driven from the line!
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
 CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute, Raider   reserve: Seer
+         foes   — charged: Brute, Husk   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 9/16]
-  Wisp slips an unguarded gap.
-  crossing: Raider(adv 5×2=10) vs Anvil(hold 5) → slips
-    Anvil hits Raider: 1 blunt — damage accumulates. [1 past armor; Body 7/12]
+    Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
+  crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
+    Husk hits Wisp: 2 sharp — turns 2 health cards face down. [2 past armor; Body 1/5]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 9/16]
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 8/16]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 8/16]
@@ -108,45 +114,45 @@ CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 5/16]
     Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 5/16]
     Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 4/16]
-    Raider hits Anvil: 3 sharp — damage accumulates. [3 past armor; Body 18/18]
-    Anvil hits Raider: 1 blunt — damage accumulates. [1 past armor; Body 7/12]
   Sear plays Bombardment.
     Sear hits Brute: 14 sharp — turns 2 health cards face down. [12 past armor; Body 2/16]
-    Sear hits Raider: 14 sharp — turns 5 health cards face down. [14 past armor; Body 2/12]
+    Sear hits Husk: 14 sharp — turns 4 health cards face down. [14 past armor; Body 2/10]
     Sear hits Seer: 14 sharp — turns 4 health cards face down. [14 past armor; Body 4/12]
+    Sear hits Raider: 14 sharp — turns 4 health cards face down. [14 past armor; Body 4/12]
     Seer hits Anvil: 6 fear — the dread mounts. [6 past ward; fear 6/1]
     Anvil is routed — driven from the line!
-ENDROUND heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 2/16  Raider 2/12  Seer 4/12
+ENDROUND heroes: Anvil 18/18  Wisp 1/5  Sear 5/5  Hex 5/5  |  foes: Brute 2/16  Husk 2/10  Seer 4/12  Raider 4/12
 
 ── round 3 ──────────────────────────────────────
   Hex plays Unmake.
-    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/6]
+    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/8]
     Brute freezes in fear — loses its action!
-    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Raider freezes in fear — loses its action!
-    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/6]
-    Seer freezes in fear — loses its action!
+    Hex hits Husk: 12 fear — the dread mounts. [12 past ward; fear 12/14]
+    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/5]
+    Seer is shaken — cannot act or defend!
+    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/3]
+    Raider is routed — driven from the line!
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
     nerves settle.
-CHARGE   heroes — charged: Anvil, Wisp   reserve: Sear, Hex
-         foes   — charged: Brute, Raider   reserve: Seer
+CHARGE   heroes — charged: Anvil   reserve: Sear, Hex
+         foes   — charged: Brute, Husk   reserve: Seer, Raider
     Anvil hits Brute: 1 blunt — turned aside by its armor. [0 past armor; Body 2/16]
-  Wisp slips an unguarded gap.
-  crossing: Raider(adv 5×2=10) vs Anvil(hold 5) → slips
-    Anvil hits Raider: 1 blunt — damage accumulates. [1 past armor; Body 2/12]
-    Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 2/16]
-    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 1/16]
-    Wisp hits Brute: 6 blunt — damage accumulates. [3 past armor; Body 1/16]
-    Wisp hits Brute: 6 blunt — turns a health card face down. [3 past armor; Body 0/16]
+    Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
+  crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
+    Husk hits Wisp: 2 sharp — turns a health card face down. [2 past armor; Body 0/5]
+  Wisp — all its health cards are face down; defeated.
+  Sear plays Bombardment.
+    Sear hits Brute: 14 sharp — turns 2 health cards face down. [12 past armor; Body 0/16]
+    Sear hits Husk: 14 sharp — turns 2 health cards face down. [14 past armor; Body 0/10]
+    Sear hits Seer: 14 sharp — turns 4 health cards face down. [14 past armor; Body 0/12]
+    Sear hits Raider: 14 sharp — turns 4 health cards face down. [14 past armor; Body 0/12]
   Brute — all its health cards are face down; defeated.
-    Wisp hits Raider: 6 blunt — turns 2 health cards face down. [6 past armor; Body 0/12]
-  Raider — all its health cards are face down; defeated.
-    Wisp hits Seer: 9 blunt — turns 3 health cards face down. [9 past armor; Body 1/12]
-  Seer is marked and executed!
+  Husk — all its health cards are face down; defeated.
   Seer — all its health cards are face down; defeated.
+  Raider — all its health cards are face down; defeated.
   Every foe is down — victory!
-FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  |  foes: Brute 0/16 down  Raider 0/12 down  Seer 0/12 down
+FINAL    heroes: Anvil 18/18  Wisp 0/5 down  Sear 5/5  Hex 5/5  |  foes: Brute 0/16 down  Husk 0/10 down  Seer 0/12 down  Raider 0/12 down
 
 OUTCOME  WIN (heroes) — round 3
 
@@ -154,7 +160,7 @@ CARDS USED   (every card played, plus the chargers' weapons and powers)
   Action  Bombardment    [Brass]  sharp 5, x5 targets             (played by Sear)
   Action  Last Stand     [Iron]   cannot fall, steel              (played by Anvil)
   Action  Unmake         [Bone]   fear 4, x4 targets              (played by Hex)
-  Weapon  Claw                    sharp weapon                    (wielded by Raider)
+  Weapon  Claw                    sharp weapon                    (wielded by Husk)
   Weapon  Fist                    blunt weapon                    (wielded by Anvil, Wisp)
   Weapon  Maul                    blunt weapon                    (wielded by Brute)
   Power   Backstab       [Silver] passive power                   (carried by Wisp)
