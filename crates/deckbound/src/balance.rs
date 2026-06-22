@@ -351,6 +351,56 @@ mod tests {
         }
     }
 
+    /// Tuning probe for a **five-suit** encounter (the rules-tour example): a combined threat that
+    /// should need *every* role — an armored front (Brutes: only Pierce cracks; Resolve-0 so fear
+    /// disables), a lethal ranged backline (Slingers: only a slip reaches the Reserve), and an
+    /// attrition swarm (Husks). Sweep counts and print which roles' removal flips a win to a loss.
+    /// `cargo test -p deckbound probe_five_suit_necessity -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_five_suit_necessity() {
+        let party = |exclude: Option<Currency>| -> Vec<Actor> {
+            REWARD_SUITS
+                .iter()
+                .filter(|&&s| Some(s) != exclude)
+                .map(|&s| build_character("Novice", &rewards_for(s)))
+                .collect()
+        };
+        let lineup = |brute: u32, sling: u32, husk: u32| EncounterCard {
+            name: "five".into(),
+            currency: Currency::Gold,
+            strategy: "aggressor".into(),
+            foes: vec![
+                lock_entry("Brute", brute),
+                lock_entry("Slinger", sling),
+                lock_entry("Husk", husk),
+            ],
+            scaling: crate::form::StatCard::default(),
+        };
+        for (b, s, h) in [
+            (6, 16, 0),
+            (7, 16, 0),
+            (8, 16, 0),
+            (6, 18, 0),
+            (8, 18, 0),
+            (6, 20, 0),
+            (8, 20, 0),
+            (10, 18, 0),
+        ] {
+            let enc = lineup(b, s, h);
+            let foes = || build_encounter_foes(&enc, 5);
+            let full = auto_resolve(party(None), foes(), 1);
+            let needed: Vec<&str> = REWARD_SUITS
+                .iter()
+                .filter(|&&suit| {
+                    full == Some(true) && auto_resolve(party(Some(suit)), foes(), 1) != Some(true)
+                })
+                .map(|s| s.label())
+                .collect();
+            println!("Brute {b} · Slinger {s} · Husk {h}: full={full:?}  needs: {needed:?}");
+        }
+    }
+
     #[test]
     fn each_non_wall_role_is_necessary_in_its_lock() {
         // §8.6 paired necessity (Charter #12/#13): each non-Wall role must flip its lock — the baseline

@@ -59,47 +59,53 @@ pub fn transcript_scenarios() -> Vec<TranscriptScenario> {
     vec![rules_tour()]
 }
 
-/// One fully-kitted member of each reward suit (the powers that *decide* the §4 phases) against a
-/// small mixed creature line — a wall (Brute), a backline-killer (Raider), and a ranged hexer (Seer)
-/// — so a single fight shows every core mechanic at least once.
+/// One MAX-LEVEL specialist of **each of the five suits** against a combined threat tailored to give
+/// every Role its distinct job — an armored front, a fast charger, a ranged backfield, and a swarm —
+/// so a single fight shows all five Roles contributing (and every core mechanic at least once). It is
+/// a *demonstration*, not a necessity proof: the full party wins; it does not claim each role is
+/// strictly required (single-encounter leave-one-out is the wrong bar — necessity is campaign-scope,
+/// §8.6).
 fn rules_tour() -> TranscriptScenario {
     let named = |name: &str, suit: Currency| {
         let mut a = build_character("Novice", &rewards_for(suit));
         a.name = name.to_string();
         a
     };
+    // One MAX-LEVEL specialist of **each** of the five suits — so the tour shows every Role doing its
+    // distinct job in one fight (it does *not* claim strict leave-one-out necessity; the Infiltrator's
+    // reach, in particular, is substitutable by clearing the front and pouring through — necessity is
+    // campaign-scope, §8.6).
     let heroes = vec![
-        named("Anvil", Currency::Iron), // Wall: Phalanx → holds the line (the hold)
-        named("Wisp", Currency::Silver), // Infiltrator: high Daring → slips, becomes a Skirmisher
-        named("Sear", Currency::Brass), // Artillery: holds back and fires from the Reserve
-        named("Hex", Currency::Bone), // Controller: musters a persistent debuff before the gauntlet
+        named("Anvil", Currency::Iron), // Wall: holds the armored front against the chargers
+        named("Wisp", Currency::Silver), // Infiltrator: slips past the line to the ranged backfield
+        named("Sear", Currency::Brass), // Artillery: cracks plate and fires from the Reserve
+        named("Hex", Currency::Bone),   // Controller: fears the line into the control ladder
+        named("Vow", Currency::Salt),   // Support: heals the line through the attrition
     ];
-    // The tour fields four MAX-LEVEL specialists, so the foe line must be a real threat to run past
-    // round 1 (so refresh and the later-round mechanics show). Each creature is reinforced in Body /
-    // Toughness so it survives a round of the Infiltrator's multi-strike. Their **Resolve is varied on
-    // purpose** so Hex's one Unmake (fear ≈ 12) shows the whole control ladder at once — the higher the
-    // Resolve, the milder the break: Freeze (lose the action) → Shaken (also can't defend) → Rout
-    // (driven off the line to the Reserve). Numbers are seeded for a multi-round fight; tune to taste.
+    // A combined threat that gives every Role its job: an **armored front** (Brute — Heavy-Plate, only
+    // the Artillery's pierce cracks it), a **fast charger** (Raider — the Wall holds it), a **ranged
+    // backfield** (Slinger / Seer — the Infiltrator slips to reach them), and a **swarm** (Husks — the
+    // attrition the Support heals through). Each is reinforced in Body / Toughness so the fight runs
+    // several rounds, and their **Resolve is varied on purpose** so Hex's fear shows the whole control
+    // ladder at once — higher Resolve, milder break: resist → Freeze → Shaken → Rout. Seeds; tune to taste.
     let threat = |name: &str, resolve: u32| {
         let mut a = build_creature(name);
         a.defense.resolve = resolve;
-        a.defense.body.max += 8;
-        a.defense.body.remaining += 8;
-        a.defense.body.toughness += 2;
+        a.defense.body.max += 40;
+        a.defense.body.remaining += 40;
+        a.defense.body.toughness += 3;
         a
     };
-    // Four foes span the whole Resolve dial, so one Unmake shows fear's counter-dial end to end: the
-    // bravest **shrugs it off** (and stays to fight, keeping the crossing contest), and each lower
-    // Resolve breaks one tier harder.
     let foes = vec![
-        threat("Brute", 8),  // R 8: fear **Freezes** the armored wall (loses its action)
-        threat("Husk", 14), // R 14: fear **resisted** — it fights on and catches the slip (the crossing)
-        threat("Seer", 5),  // R 5: fear **Shakes** the ranged caster (also cannot defend)
-        threat("Raider", 3), // R 3: fear **Routs** the fast charger — driven off the line (b2 demotion)
+        threat("Brute", 8), // armored front — only Artillery's pierce cracks the plate; fear Freezes it
+        threat("Raider", 3), // fast charger — the Wall holds it; fear Routs it off the line (b2)
+        threat("Slinger", 5), // ranged backfield — the Infiltrator slips to it; fear Shakes it
+        threat("Seer", 14), // ranged backfield — brave: it shrugs the dread off (fear resisted)
+        threat("Husk", 0),  // swarm — attrition the Support heals through; fear Routs it
     ];
     TranscriptScenario {
         name: "rules-tour",
-        blurb: "every core mechanic once: rank allocation (Vanguard/Skirmisher/Reserve), Muster, slip/hold/parting-hit, skirmish, reserve fire, armour, fear's control ladder (resist / Freeze / Shaken / Rout + the Rout demotion), defeat, refresh.",
+        blurb: "all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks plate, Controller's fear ladder (resist / Freeze / Shaken / Rout + demotion), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, armour, defeat, refresh.",
         heroes,
         foes,
         ruleset: Ruleset::analysis(),
