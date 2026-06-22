@@ -1483,4 +1483,29 @@ mod tests {
             "a creature keeps a printed base (§2.3 carve-out)"
         );
     }
+
+    #[test]
+    fn the_card_library_accounts_for_every_catalog_card() {
+        // Completeness invariant (generalizing the lesson of the silently-dropped Stat cards): every
+        // card the catalog defines must appear as a library row — the **Human** baseline, each reward's
+        // ability cards **and** its Stat card, every pool / weapon card, every trait, and every cast
+        // actor. A golden snapshot can't enforce this (it locks an output, complete or not); counting
+        // the sources here means *dropping* one — a new card kind not wired into `card_library`, or a
+        // reused-but-unshown field — fails the build instead of going unnoticed until a human spots it.
+        let cat = catalog();
+        let expected: usize = 1 // the Human baseline (clean_slate)
+            + cat
+                .rewards
+                .iter()
+                .map(|r| r.cards.len() + usize::from(!stat_is_empty(&r.stat)))
+                .sum::<usize>()
+            + cat.cards.len() // the standalone pool + weapons
+            + cat.traits.len() // Form traits
+            + cat.actors.len(); // the cast
+        assert_eq!(
+            card_library().len(),
+            expected,
+            "card_library() dropped or double-counted a catalog source — every catalog card must be a row"
+        );
+    }
 }
