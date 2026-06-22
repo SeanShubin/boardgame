@@ -5,22 +5,30 @@ FORM  each stat = base-2 quantifier cards summing to its value · Q Quantity (ho
 
 HEROES
   Anvil — Clean-slate · Fist [melee]  (8 cards)
+      Actions     Brace · Shield Wall · Last Stand
+      Powers      Phalanx · Bulwark · Taunt
       Body        Q 16+2 = 18     P 4+2 = 6
       Tempo       Q 2+1 = 3       P —
       Strike      P 1 = 1
       Resolve     P 1 = 1
   Wisp — Clean-slate · Fist [melee]  (9 cards)
+      Actions     Slip Strike · Assassinate
+      Powers      Blitz · Shadowstep · Backstab
       Body        Q 4+1 = 5       P 1 = 1
       Tempo       Q 8+1 = 9       P 4 = 4
       Strike      P 4+2 = 6
       Resolve     P 1 = 1
   Sear — Clean-slate · Fist [melee]  (9 cards)
+      Actions     Bolt · Volley · Sunder · Bombardment
+      Powers      Longshot
       Body        Q 4+1 = 5       P 1 = 1
       Tempo       Q 2+1 = 3       P —
       Strike      P 8+1 = 9
       Pierce      P 2 = 2
       Resolve     P 1 = 1
   Hex — Clean-slate · Fist [melee]  (9 cards)
+      Actions     Menace · Shackle · Terror · Unmake
+      Powers      Curse
       Body        Q 4+1 = 5       P 1 = 1
       Tempo       Q 2+1 = 3       P —
       Strike      P 1 = 1
@@ -157,18 +165,18 @@ FINAL    heroes: Anvil 18/18  Wisp 0/5 down  Sear 5/5  Hex 5/5  |  foes: Brute 0
 OUTCOME  WIN (heroes) — round 3
 
 CARDS USED   (every card played, plus the chargers' weapons and powers)
-  Action  Bombardment    [Brass]  sharp 5, x5 targets             (played by Sear)
-  Action  Last Stand     [Iron]   cannot fall, steel              (played by Anvil)
-  Action  Unmake         [Bone]   fear 4, x4 targets              (played by Hex)
-  Weapon  Claw                    sharp weapon                    (wielded by Husk)
-  Weapon  Fist                    blunt weapon                    (wielded by Anvil, Wisp)
-  Weapon  Maul                    blunt weapon                    (wielded by Brute)
-  Power   Backstab       [Silver] passive power                   (carried by Wisp)
-  Power   Blitz          [Silver] passive power                   (carried by Wisp)
-  Power   Bulwark        [Iron]   passive power                   (carried by Anvil)
-  Power   Phalanx        [Iron]   passive power                   (carried by Anvil)
-  Power   Shadowstep     [Silver] passive power                   (carried by Wisp)
-  Power   Taunt          [Iron]   passive power                   (carried by Anvil)
+  Action  Bombardment    [Brass L5]  sharp 5, x5 targets             (played by Sear)
+  Action  Last Stand     [Iron L5]   cannot fall, steel              (played by Anvil)
+  Action  Unmake         [Bone L5]   fear 4, x4 targets              (played by Hex)
+  Weapon  Claw                       sharp weapon                    (wielded by Husk)
+  Weapon  Fist                       blunt weapon                    (wielded by Anvil, Wisp)
+  Weapon  Maul                       blunt weapon                    (wielded by Brute)
+  Power   Backstab       [Silver L4] passive power                   (carried by Wisp)
+  Power   Blitz          [Silver L2] passive power                   (carried by Wisp)
+  Power   Bulwark        [Iron L3]   passive power                   (carried by Anvil)
+  Power   Phalanx        [Iron L2]   passive power                   (carried by Anvil)
+  Power   Shadowstep     [Silver L3] passive power                   (carried by Wisp)
+  Power   Taunt          [Iron L5]   passive power                   (carried by Anvil)
 
 GLOSSARY   (what the rulebook says about each keyword above)
   Backstab               Bonus damage when this Skirmisher strikes an enemy Reserve.

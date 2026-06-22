@@ -29,7 +29,7 @@ use crate::currency::Currency;
 use crate::game::{Deckbound, battle_state_with};
 use crate::ruleset::Ruleset;
 use crate::scenarios::{
-    build_character, build_creature, effect_rule, rewards_for, zone_behavior_rule,
+    build_character, build_creature, card_level, effect_rule, rewards_for, zone_behavior_rule,
 };
 use crate::solver::greedy;
 use crate::state::{Phase, State};
@@ -277,6 +277,29 @@ fn form_block(a: &Actor) -> String {
         a.weapon.name,
         a.attack.label()
     );
+    // The actor's **deck** — the cards it can bring to a round, so "X plays Y" is verifiable against
+    // the roster (the `cards` count above is the *Form* / stat cards; these are the ones that *do*
+    // something). Split into played **Actions** and always-on **Powers** (passives); the weapon is in
+    // the header. Foes list theirs too, so the enemy kit is legible.
+    let deck = |passive: bool| -> Vec<&str> {
+        a.actions
+            .iter()
+            .filter(|c| c.passive == passive)
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>()
+    };
+    let actions = deck(false);
+    if !actions.is_empty() {
+        out.push_str(&format!(
+            "      {:<11} {}\n",
+            "Actions",
+            actions.join(" · ")
+        ));
+    }
+    let powers = deck(true);
+    if !powers.is_empty() {
+        out.push_str(&format!("      {:<11} {}\n", "Powers", powers.join(" · ")));
+    }
     let pool = |label: &str, q: u32, p: u32| {
         format!(
             "      {label:<11} Q {:<13} P {}\n",
@@ -495,11 +518,13 @@ fn card_list(out: &mut String, used: &[CardUse]) {
     );
     for kind in ["Action", "Weapon", "Power"] {
         for u in used.iter().filter(|u| u.kind == kind) {
-            let suit = u
-                .card
-                .role
-                .map(|r| format!("[{}]", r.label()))
-                .unwrap_or_else(|| "     ".to_string());
+            // Suit + reward level — the card's `(track, level)` coordinate. Weapons and pool cards
+            // carry no role/level, so the tag is blank for them.
+            let suit = match (u.card.role, card_level(&u.card.name)) {
+                (Some(r), Some(l)) => format!("[{} L{l}]", r.label()),
+                (Some(r), None) => format!("[{}]", r.label()),
+                _ => String::new(),
+            };
             // The card list is a scannable index; the glossary carries the full keyword rules. So show
             // a short tag here: an Action's effect summary, a weapon's damage type, "passive" for a power.
             let summary = match kind {
@@ -513,7 +538,7 @@ fn card_list(out: &mut String, used: &[CardUse]) {
             push_line(
                 out,
                 &format!(
-                    "  {:7} {:14} {:8} {:30}  ({})",
+                    "  {:7} {:14} {:11} {:30}  ({})",
                     kind, u.card.name, suit, summary, u.note
                 ),
             );

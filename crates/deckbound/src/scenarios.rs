@@ -498,6 +498,17 @@ pub fn build_creature(name: &str) -> Actor {
     build_actor(catalog(), name)
 }
 
+/// The reward **level** a role card was minted at (its `(track, level)` coordinate), looked up by name
+/// from the print master. `None` for cards that aren't track rewards — weapons, the standalone pool,
+/// and prebuilt scenario kits — which have no level.
+pub fn card_level(name: &str) -> Option<u32> {
+    catalog()
+        .rewards
+        .iter()
+        .find(|r| r.cards.iter().any(|c| c.name == name))
+        .map(|r| r.level)
+}
+
 /// All reward ids of a track (its five levels), in level order — the full specialist kit (§8.3),
 /// used by the reference scenario's combat-band probe.
 pub fn rewards_for(track: Currency) -> Vec<RewardId> {
