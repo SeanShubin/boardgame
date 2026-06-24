@@ -197,7 +197,7 @@ The five **Suits** are the unit of design. Each Suit names a **Role** — its fu
 - **The Roles differ in kind, not degree.** Each owns a **distinct decision and mechanic** — hold the
   front / break through / fire from safety / **degrade** the foe / **augment** the ally — never a
   stat-reskin of another. This is also what makes a **god's role-combos** worth their concentration risk:
-  combining Roles in one round (the per-role play cap, Spec §4.4) only pays if the Roles genuinely
+  combining Roles in one round (tempo-gated, Spec §4.4) only pays if the Roles genuinely
   differ. If two Roles play the same and differ only in numbers, one of them has failed.
 
 This is the operational sharpening of **#4** (*asymmetry by design, balance by scenario*): #4 says

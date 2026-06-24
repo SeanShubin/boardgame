@@ -1325,61 +1325,61 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
-### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side conservation 2026-06-23; code pending)*
+### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Reserve-cast 2026**; code pending)*
 
-**RULE.** Role cards are an **ability layer** over the physical battle (§4). A **side** may discharge
-**one role card of each suit per round** — up to five effects, one per suit (Iron · Silver · Brass ·
-Bone · Salt) — **however many bodies it fields**. A god (one body holding all five tracks) fires up to
-five; a five-specialist party fires the same five across five bodies; a **2–4-body party runs multi-suit
-bodies** and still fires **at most one per suit**. Each card is played **when its effect fits**: a
-**Wall**'s standing defenses and the **Controller** / **Support** persistent debuffs and buffs at
-**Assemble** (they last the round); an **Infiltrator**'s slip and an **Artillery**'s fire resolve in
-their window (the Line / the Open, §4.6). **Casting spends a Tempo card** — it is an *action* like a
-strike or a contest (§4's budget), so a tapped-out body cannot fire even an unspent suit. Play is
-**decoupled from the body's rank**: the suit fires **across the round**, *not* from five ranks at once —
-the body still occupies a single rank. (The role labels are **thematic**, not a rank gate.)
+**RULE.** Role cards are an **ability layer** over the physical battle (§4). **Casting is an action:**
+each role card spends a **Tempo card** (§3) — it competes with strikes, contests, and evades for the one
+budget — and once played the card is **Spent** (face-down, §5) until Recovered, so each distinct card
+fires **once per round**. There is **no per-suit or per-side cap**: how much magic a side throws is
+bounded only by its **Tempo** (a conserved, party-size-invariant pool), its **distinct cards**, and the
+foe's **evade**.
 
-**WHY.** The per-suit cap is the **god-vs-party lever** (#4: god ≈ party), now stated as a
-**conservation law**. Treat the full card set as a **fixed pool** that party size (1–5) only
-**partitions across bodies**: **stats** conserve (bonuses ride on cardsets), **Tempo** conserves (Speed
-rides on cards), and **magic conserves the same way** — one discharge per suit per round, **five per side
-at every party size**. So the **god is simply the N=1 partition**, never a special case: one body holding
-the whole pool, all five suits, still five discharges. The only thing party size flexes is **simultaneous
-lane coverage** (fewer bodies man fewer of Vanguard / Skirmisher / Reserve per round) — the intended
-**concentration-vs-resilience** tradeoff (candidate **BI-4**), not dominance; and because casting is
-**decoupled from rank**, a small party's magic still does the artillery / control / support work remotely
-even while its few bodies hold one or two lanes. A **per-character** cap was rejected: a 2-body party of
-multi-suit bodies would fire up to **ten** effects (out-massing a five-body party — the "25-spell
-blowout"), and patched with one-suit-per-body it would instead **starve** a 2/3/4-body party of suits —
-both break conservation. Per-side closes that gap while leaving the canonical cases untouched (god = 5,
-five-specialist party = 5). The cap is **per-suit, not per-round, on purpose**: a god (one of each suit)
-still **combos across suits** in a round (Controller-degrade, then Artillery-fire, then Support-buff) —
-combos valued **precisely because the suits differ in kind** (Charter #12). They stay **additive /
-commutative**: each effect feeds an accumulator and **no played effect multiplies or gates another's
-output** (§0.1 / #11), so "combo" means *diverse effects concentrated in one round*, **never** a
-multiplying chain. Because the **Assemble commit is simultaneous**, a card is **committed up front or
-resolves in its window** — never *held* for a more-informed *hidden* moment (there is no information
-gradient to exploit; the open, face-up targeting in the Open is not hidden state).
+**Position gates *offensive* casting.** A **Controller** debuff or an **Artillery** shot is a **ranged
+attack** (§4.2), so it is **cast from the Reserve** and may be **evaded** (the tempo contest, §3.1).
+**Ally buffs** (Support) and a **Wall**'s standing defenses target your own side, are **not** attacks,
+and stay **rank-free Assemble standing cards** that last the round; an **Infiltrator**'s slip resolves at
+the Line. Each effect plays **when it fits** — Assemble for persistent buffs / braces, the relevant
+window (§4.6) for ranged fire and slips.
+
+**WHY.** The old **per-suit cap** (≤1/suit, ≤5/side, any party size) was a *fiat* conservation lever. The
+stat collapse makes it **redundant**: casting now spends **Tempo**, and Tempo is **already conserved**
+across party size (Speed rides on a fixed card pool that party size only *partitions* across bodies). So
+**god ≈ party (#4) falls straight out of the tempo economy** — total casting output is party-size-invariant
+*because total Tempo is*, with no hard cap. The cap's other jobs are covered too: **zone exhaustion** (§5)
+stops same-card spam (each card once per round), and **evade** (§3.1) gives every offensive spell built-in
+counterplay. Dropping it is **force, not fiat**: a side may **concentrate** (more spells, fewer strikes)
+or **spread**, paying Tempo either way — opportunity cost, never prohibition (#2; emergence over fiat,
+#6 / #12).
+
+Making **offensive casting Reserve-only** is the replacement god-vs-party lever, and a *positional* one: a
+god cannot both **hold the Vanguard** and **rain offensive spells** in one round — it must **hold back** to
+cast, paying a real lane-coverage cost (the concentration-vs-resilience tradeoff, candidate **BI-4**).
+Buffs stay rank-free because they are not attacks — Support mends the line from any rank. **Cross-suit
+combos** (degrade → fire → buff) are still *rewarded* — the suits differ in kind (#12) — just no longer
+*required* by a one-per-suit rule. Effects stay **additive / commutative**: each feeds an accumulator
+resolved at its window boundary and **no played effect multiplies or gates another's output** (§0.1 /
+#11), so a "combo" is diverse effects in a round, never a multiplying chain. Because the **Assemble commit
+is simultaneous**, a card is committed up front or resolves in its window — never *held* for a
+more-informed hidden moment.
 
 **GUARANTEES.**
-- One role card of each suit, **per side**, per round, **however many bodies it fields**; each played
-  **when its effect fits** (Assemble for persistent effects; the relevant window for slips / fire),
-  **decoupled from the body's physical rank**, and **spending a Tempo card** (casting is an action).
-- **Conservation across party size.** The card pool is fixed; party size only partitions it across
-  bodies, so **stats, Tempo, and magic output (5 / round) are all invariant to party size** — only
-  simultaneous lane coverage flexes. The god is the N=1 partition, not an exception.
-- **Order-independent effects (the simultaneity constraint).** A round's role-card effects must
-  **combine commutatively**: every effect feeds an **accumulator** (damage piles, heals pile, buffs add
-  or set flags) resolved at the window boundary, and **no played effect multiplies or gates another
-  played effect's output.** So a side firing five effects gets the **same result regardless of order**
-  (§0.1 / #11). *(Modifiers like Curse stay safe by folding into the build — passive, not a play.)*
-- No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-4**, which the
-  par solver verifies).
+- **No per-suit / per-side cap.** Casting is bounded only by **Tempo** (each cast = one Tempo card),
+  **zone exhaustion** (each distinct card once per round until Recovered), and **evade** (offensive
+  spells) — all *costs*, never prohibitions.
+- **Conservation across party size via Tempo.** Total Tempo is party-size-invariant (fixed Speed-card
+  pool), so total casting output is too — **god ≈ party** is the N=1 partition, not an exception. No party
+  size dominates role-card throughput (candidate **BI-4**, par-solver-verified).
+- **Offensive spells are Reserve-cast ranged attacks** (evadable, §3.1 / §4.2); a body **cannot** cast one
+  from the Vanguard / Skirmish line. **Ally buffs / Wall braces are rank-free Assemble standing cards.**
+- **Order-independent effects.** Every effect feeds an accumulator at its window boundary; **no played
+  effect multiplies or gates another's output** (§0.1 / #11) — the result is order-independent however many
+  a side fires.
 
-*(The old **positional gate** (a card required its matching position) is **removed** 2026-06-20 — it
-capped a god at ~3 and blocked the intended five-effect god; play is now moment-appropriate (Assemble or
-its tier) but rank-decoupled. Code/data + `TERM` lines land with the role-card migration:
-`role-card-redesign.md` §8.)*
+*(History: the original **matching-position gate** (a card required its own rank) was removed 2026-06-20;
+the **per-suit / per-side cap** that replaced it is now removed too (2026) in favour of tempo-gating. The
+surviving position rule is narrower and **emergent** — only *offensive* spells are gated, and only because
+they are **ranged attacks** from the Reserve (§4.2). Code/data + `TERM` lines land with the role-card
+migration; §4.4 was already code-pending — `role-card-redesign.md` §8.)*
 
 ### 4.5 Groups — bind same-side Actors into one unit 🟡 *(2026-06-23)*
 
@@ -1617,7 +1617,7 @@ resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
 **Retired to `retired-ideas.md` (decommissioned 2026-06-21).** The multi-deck **chord/combo** system
 (a character as a set of aspect-decks; a play as one card per aspect, combined) was **dropped**: the
 single-deck core — Form (fundamental + attachments) + Action cards over the §5 zones — plus the §4.4
-per-suit-per-round play deliver its intent, and a fused-action chord works against Charter #2 (small,
+role-card play deliver its intent, and a fused-action chord works against Charter #2 (small,
 computable tactics). `retired-ideas.md` records the full rationale and **the bar it must clear to
 return**. *(Section kept as a stable §6 anchor; the heading is referenced elsewhere.)*
 
@@ -1769,8 +1769,8 @@ bodies → specialists (one track each); few → multi-track; one → a **god** 
 **WHY.** Characters are deliberately unbalanced; coverage and challenge come from the **team and the
 scenario** (#4). Depth-vs-breadth is the uncomputable strategic fork (#2), fractally at map and build
 scale; the party-size spectrum **is** the god ≈ party-total balance budget (#4). Role-as-assigned-cards
-makes "god ≈ party" *concrete* — the **same** shared pool, distributed — and the per-role play cap
-(§4.4) is what equalizes their throughput. **A reward needs a noun of its own:** named only by its Role,
+makes "god ≈ party" *concrete* — the **same** shared pool, distributed — and **tempo-gated** role-card
+play (§4.4) is what equalizes their throughput (conserved Tempo, not a fiat cap). **A reward needs a noun of its own:** named only by its Role,
 *"a Wall treasure"* conflates what it *is* with what it *does* — the **Suit** gives identity its own
 register (#10 conceptual integrity — each concept named once, for one job).
 
