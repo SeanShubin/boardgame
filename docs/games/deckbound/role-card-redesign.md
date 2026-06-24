@@ -61,13 +61,13 @@ physical card-game format.
 There is **no "role card" concept** yet; role identity is spread across three card types, unevenly,
 with no level structure ([`booklet.ron`](../../../crates/deckbound/data/booklet.ron)):
 
-| Role | Played Action cards | Passive powers | Upgrades (stat) | Total |
-| --- | --- | --- | --- | --- |
-| **Wall** | Rally, Steel (2) | Phalanx, Bodyguard, Taunt (3) | Bulwark, Ironhide (2) | 7 |
-| **Infiltrator** | Bank (1) | Blitz, Shadowstep, Backstab (3) | Edge, Shadow (2) | 6 |
-| **Artillery** | Barrage, Suppress (2) | Longshot (1) | Volley, Munitions (2) | 5 |
-| **Controller** | Confuse, Slow, Dread (3) | — (0) | Hex, Curse (2) | 5 |
-| **Support** | Ward, Mend, Haste (3) | — (0) | Vigor, Grace (2) | 5 |
+| Role            | Played Action cards      | Passive powers                  | Upgrades (stat)       | Total |
+| --------------- | ------------------------ | ------------------------------- | --------------------- | ----- |
+| **Wall**        | Rally, Steel (2)         | Phalanx, Bodyguard, Taunt (3)   | Bulwark, Ironhide (2) | 7     |
+| **Infiltrator** | Bank (1)                 | Blitz, Shadowstep, Backstab (3) | Edge, Shadow (2)      | 6     |
+| **Artillery**   | Barrage, Suppress (2)    | Longshot (1)                    | Volley, Munitions (2) | 5     |
+| **Controller**  | Confuse, Slow, Dread (3) | — (0)                           | Hex, Curse (2)        | 5     |
+| **Support**     | Ward, Mend, Haste (3)    | — (0)                           | Vigor, Grace (2)      | 5     |
 
 Plus a generic Gold upgrade (Training) and two orphan Action cards (Cleave, Sunder). Today
 progression rewards **stat Upgrades bought with currency** (§8.3); the *playable* abilities live on
@@ -109,10 +109,10 @@ spectrum (full 25-card pool):
 
 So the constraint produces a **non-dominant tradeoff**, not a winner:
 
-| | role cards / turn | bodies | the trade |
-| --- | --- | --- | --- |
-| 5 specialists | ~5 | 5 | throughput + resilience + coverage; but each body is stuck with its 5 |
-| 1 god | ~3 (positional limit) | 1 | flexibility / quality (best-of-25 each turn), fewer bodies to keep alive; lower throughput, one fragile point of failure |
+|               | role cards / turn     | bodies | the trade                                                                                                                |
+| ------------- | --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 5 specialists | ~5                    | 5      | throughput + resilience + coverage; but each body is stuck with its 5                                                    |
+| 1 god         | ~3 (positional limit) | 1      | flexibility / quality (best-of-25 each turn), fewer bodies to keep alive; lower throughput, one fragile point of failure |
 
 Two things fall out:
 - **Positional coherence reins in the god *for free*** — no explicit "gods are nerfed" rule; a body
@@ -229,13 +229,13 @@ The one genuine constraint: a card is **bound to its provenance** (no repurposin
 
 ## 5. Computability check (must pass before adoption — Spec §0)
 
-| Spec §0.1 invariant | Does the redesign hold it? |
-| --- | --- |
-| No RNG / hidden info in the core | Yes — role cards are deterministic effects; unlock is gated by *clearing*, not a draw. |
-| Foes a fixed environment | Unaffected. |
-| Battles stateless `f(build, place)` | **Yes, iff** a set's multi-card tracking is *combat-runtime* state that resets each battle (§3.3). |
+| Spec §0.1 invariant                                | Does the redesign hold it?                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No RNG / hidden info in the core                   | Yes — role cards are deterministic effects; unlock is gated by *clearing*, not a draw.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Foes a fixed environment                           | Unaffected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Battles stateless `f(build, place)`                | **Yes, iff** a set's multi-card tracking is *combat-runtime* state that resets each battle (§3.3).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **Builds monotone / additive / order-independent** | **Holds either way.** The owned-card set only *grows* (monotone). The card→character **assignment** is fully captured by the *current* state (Markovian) regardless of history — so even **free reassignment does not break §0.1** (an earlier mis-read; corrected 2026-06-19). What §0.1's "no swap" actually forbids is a **resource-refunding** swap — sell-back / oscillation that makes a *budget* path-dependent — which this isn't (no resource is refunded; cards only accrue). If anything, free reassignment is *more* computable: the assignment stops being *carried* state (re-chosen per battle) and the campaign build collapses to the owned-set. |
-| Bounded horizon / branching | Build space grows (≤25 owns × *K* characters) but stays bounded; watch it against the §4 budget test. |
+| Bounded horizon / branching                        | Build space grows (≤25 owns × *K* characters) but stays bounded; watch it against the §4 budget test.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 **Bottom line:** the redesign is computability-safe **provided** sets are atomic and
 non-multiplicative (§3.3). The **permanent-vs-reassignable** choice is a *gameplay* call (§6), **not** a

@@ -1,0 +1,15 @@
+deck
+id Alice
+health-quantity 4
+health-magnitude 3
+speed-quantity 2
+speed-magnitude 6
+armor-magnitude 1
+
+deck
+id Bob
+health-quantity 4
+health-magnitude 3
+speed-quantity 2
+speed-magnitude 6
+armor-magnitude 0

@@ -1,0 +1,76 @@
+[Alice]
+[health magnitude][4]
+[health quantity][2][1]
+[armor magnitude][2]
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+
+[Start]
+
+[Alice]
+[health magnitude][4]
+[health quantity][2][1]
+[armor magnitude][2]
+[health][ ][ ][ ][ ]
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+[strike][ ][ ][ ]
+
+[Bob][Strike][Alice]
+
+[Alice]
+[health magnitude][4]
+[health quantity][2][1]
+[armor magnitude][2]
+[health][ ][ ][ ][ ]
+[incoming health damage] 2
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+[strike][X][ ][ ]
+
+[Bob][Strike][Alice]
+
+[Alice]
+[health magnitude][4]
+[health quantity][2][1]
+[armor magnitude][2]
+[health][ ][ ][ ][ ]
+[incoming health damage] 4
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+[strike][X][X][ ]
+
+[Bob][Strike][Alice]
+
+[Alice]
+[health magnitude][2][1]
+[health quantity][4]
+[armor magnitude][2]
+[health][ ][ ][ ][ ]
+[incoming health damage] 6
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+[strike][X][X][X]
+
+[Bob][Done]
+
+[Alice]
+[health magnitude][2][1]
+[health quantity][4]
+[armor magnitude][2]
+[health][X][X][ ][ ]
+
+[Bob]
+[strike magnitude][4]
+[strike quantity][2][1]
+[strike][X][X][X]

@@ -1,0 +1,28 @@
+I am designing a combat system.
+A character will have many stats.  A stat is a quantity and a magnitude, both default to 1.
+A character's state is completely represented with cards.
+For example, a characters "health" stat might be quantity 4 magnitude 3, represented by 4 cards, but a card does not flip over until at least 3 damage has been incurred.
+Power scaling will be by having a wider variety of stats, better gear, access to more abilities, higher quantiy stats, higher magnitue stats.
+Every state change (card flip) should be meaningful, we don't care about the difference between 98 and 99, but if you have 10 cards of 10 magnitude, flipping one is noticible.
+I want to leverage the multiplicative properties of magnitude and quality, as well as wasted damage that is not enough to flip a card, I am hoping these properties can add strategic depth.
+So state changes will have a threshold that needs to be crossed.
+I am starting with simple melee dueling, and plan to expand from there.
+I want a wide variety of interesting character builds to all be viable.
+
+I have added some ideas to my initial stats
+
+cloth/leather/mail/plate
+sword/warhammer/spear/dagger
+forcful/gentle
+fragile/durable
+precise/wide area
+pointy/edge/blunt
+rigid/flexible
+serrated/smooth
+
+speed/power/precision of body/mind/will
+
+
+what is a good customization model that is going to allow for interesting builds?
+
+

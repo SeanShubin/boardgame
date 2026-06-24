@@ -101,15 +101,15 @@ or lose a combat.
 
 ## How the promises map to the checks
 
-| Promise to the player | Enforcing invariant / property |
-| --- | --- |
-| The world is navigable and has a clear peak | reachability; one B/C per path; objective = final |
-| A gentle on-ramp | A clearable clean-slate |
-| Feel the lack, then the fix | C[p] gated on covering track *p*; bare loses / equipped wins |
-| Depth is layered | L4 clears L5; L1-only does not |
-| No dead disciplines; the finale tests completeness | Final needs full coverage; not clearable with a track missing |
-| Multiple viable builds; even ≥ god | L5 falls to 5×L4 **or** god + fodder; BI-1 |
-| Powers decide; stats survive | Charter #12 (active powers / unique passives over generic stats) |
+| Promise to the player                              | Enforcing invariant / property                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| The world is navigable and has a clear peak        | reachability; one B/C per path; objective = final                |
+| A gentle on-ramp                                   | A clearable clean-slate                                          |
+| Feel the lack, then the fix                        | C[p] gated on covering track *p*; bare loses / equipped wins     |
+| Depth is layered                                   | L4 clears L5; L1-only does not                                   |
+| No dead disciplines; the finale tests completeness | Final needs full coverage; not clearable with a track missing    |
+| Multiple viable builds; even ≥ god                 | L5 falls to 5×L4 **or** god + fodder; BI-1                       |
+| Powers decide; stats survive                       | Charter #12 (active powers / unique passives over generic stats) |
 
 **See also:** [Charter](canon/1-charter.md) (#2, #4, #5, #12) ·
 [balance-invariants.md](balance-invariants.md) (the checkable registry these feelings rest on) ·

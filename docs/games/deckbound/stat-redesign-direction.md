@@ -18,12 +18,12 @@ The stat-depth audit judged each stat on **intrinsic depth** ("deep, or just big
 changes the criterion to **role-service** ("does it give some role its distinct teeth, and is every role
 load-bearing?"). Re-running the audit through that lens **flips two verdicts and hardens two**:
 
-| Stat | Audit verdict (intrinsic) | #12 verdict (role-service) | Action |
-|---|---|---|---|
-| **Drive** | shallow — "matters in one place" | **rehabilitated** — that one place is the **Infiltrator's** slip auction; a stat serving exactly one role distinctly is the ideal | **Keep** |
-| **Pierce** | strictly dominated by Strike | **rehabilitated** — it's the **Artillery's anti-Wall key** (the triangle made stat-real); value is *being the lock-key*, not raw DPS | **Keep**, iff an armored lock scenario needs it (T2) |
-| **Spirit** | unwired / dead | **hard fail** — the **Controller's** signature offense, read by nothing → fails distinctness + no-redundant-stat (T3) | **Wire — mandatory** |
-| **Keystone** | unexercised | **hard fail** — no role needs it; never set in data | **Home it to a role, or cut** |
+| Stat         | Audit verdict (intrinsic)        | #12 verdict (role-service)                                                                                                           | Action                                               |
+| ------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Drive**    | shallow — "matters in one place" | **rehabilitated** — that one place is the **Infiltrator's** slip auction; a stat serving exactly one role distinctly is the ideal    | **Keep**                                             |
+| **Pierce**   | strictly dominated by Strike     | **rehabilitated** — it's the **Artillery's anti-Wall key** (the triangle made stat-real); value is *being the lock-key*, not raw DPS | **Keep**, iff an armored lock scenario needs it (T2) |
+| **Spirit**   | unwired / dead                   | **hard fail** — the **Controller's** signature offense, read by nothing → fails distinctness + no-redundant-stat (T3)                | **Wire — mandatory**                                 |
+| **Keystone** | unexercised                      | **hard fail** — no role needs it; never set in data                                                                                  | **Home it to a role, or cut**                        |
 
 The rest of the set is the role substrate already and stays: Body/Toughness/Armor (Wall + chassis),
 Speed (Infiltrator + chassis), Strike/Resolve (chassis). So: **the set is ~80% conformant; #12 demands a
@@ -95,10 +95,10 @@ assembles an arbitrary party and resolves win/loss via `auto_resolve(party, foes
 
 `balance.rs` already has a *Tutorial / necessity* property — **but it is the wrong shape** for #12:
 
-| | Current (`balance.rs`) | §8.6 needs (T2) |
-|---|---|---|
-| Construction | **equipped** party vs **unequipped** party (all rewards vs none) | **complete-coverage** party vs **complete-minus-one-role** party |
-| Claim it proves | "you need *some* kit" | "you need *this specific role* — its absence dooms the party" |
+|                 | Current (`balance.rs`)                                           | §8.6 needs (T2)                                                  |
+| --------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Construction    | **equipped** party vs **unequipped** party (all rewards vs none) | **complete-coverage** party vs **complete-minus-one-role** party |
+| Claim it proves | "you need *some* kit"                                            | "you need *this specific role* — its absence dooms the party"    |
 
 The current check can't fail when one role is missing but the other four carry the fight. **The
 leave-one-out construction is what captures "the absence of a single role dooms the party."**

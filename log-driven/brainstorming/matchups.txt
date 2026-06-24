@@ -1,0 +1,29 @@
+given log-driven/brainstorming/keeping-systems-interesting.md
+
+what interesting systems for melee combat can we come up with using these dimensions?
+
+cloth/leather/mail/plate
+sword/warhammer/spear/dagger
+forcful/gentle
+fragile/durable
+precise/wide area
+pointy/edge/blunt
+rigid/flexible
+serrated/smooth
+
+speed/power/precision of body/mind/will
+
+
+These dimensions are just examples, it may make sense to cut some of these out and add others in
+
+For example, for two boxers we might have something like:
+
+how much damage we deduct from every single strike
+how much damage we can take total
+how many times we can strike per turn
+how much damage each strike does
+
+
+
+How sophisticated can we get with this?  RPS is 3, can we go 5?  Why not 10?  Surely there must be a limiter, but I am also hoping we can get past 3.
+

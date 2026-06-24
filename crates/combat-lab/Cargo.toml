@@ -1,0 +1,13 @@
+[package]
+name = "combat-lab"
+version.workspace = true
+edition.workspace = true
+
+# Greenfield combat-design lab: a pure, deterministic engine that simulates melee
+# matchups and emits a directory of balance reports. No Bevy, no wall-clock, no
+# randomness — every report is a deterministic function of the roster + rules.
+# See log-driven/brainstorming/combat-engine-design.md for the model.
+
+[dependencies]
+serde = { workspace = true }
+ron = { workspace = true }

@@ -21,7 +21,7 @@ Salt — `progression §7`). The scenario is four location *sets*:
 | Set           | Count            | What it is                                                                                                                                                                            |
 | ------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A — Start** | 1                | The clean-slate entry. Clearable with **generic (Gold)** capability only — no path chosen yet.                                                                                        |
-| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **unlocks track-*p*'s role-card rewards** (§8.3) and teaches why *p* matters (the diegetic tutorial, `progression §4`).                      |
+| **B — Build** | **one per path** | A power-building location for path *p*: clearing it **unlocks track-*p*'s role-card rewards** (§8.3) and teaches why *p* matters (the diegetic tutorial, `progression §4`).           |
 | **C — Gate**  | **one per path** | A location **designed to be impossible to clear unless path *p* has been built on its B-location.** C[*p*] is the *proof* that path *p* delivers.                                     |
 | **D — Final** | 1                | One location tuned to challenge a party that has cleared **A + all B + all C**. **Near-impossible** unless the party has **covered every path thoroughly *and* plays strategically**. |
 

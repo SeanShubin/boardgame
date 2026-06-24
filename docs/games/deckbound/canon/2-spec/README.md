@@ -53,23 +53,23 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 
 ## Coverage
 
-| System                                            | Spec status | Current design source if not yet specced                                                                                                               |
-| ------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **The deterministic core** (separable balance)    | 🟡 seeded    | **§0** — determinism · separable luck layers · objective core balance — `computability-and-balance.md`                                                  |
-| **The Clash** (tactical core)                     | ✅ worked    | —                                                                                                                                                      |
-| **Defense model** (cut → bar → pool)              | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                |
-| **Card representation** (suits · base-2 · tree · clocks) | ✅ locked | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync` |
-| **Speed/Tempo** (one breadth pool)                | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                               |
-| **The battle — declare ranks, hold the line**     | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21). §4.3 actors-are-decks still pending |
-| **Zones / exhaustion**                            | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                           |
-| **Aspects / the chord**                           | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                              |
-| **Agents** (Character vs Creature)                | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                        |
-| **Strategic layer** (world/event decks)           | 🟡 seeded    | **§8** (world · clock · role-card rewards · encounters · progression) — `progression-design.md`                                                        |
-| **Skirmish victory / defeat**                     | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                             |
-| **Run victory / defeat** (across many skirmishes) | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                 |
-| **Geography & travel** (the world map + movement) | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                |
-| **Loot / role cards** (clear → reward)            | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; each reward **of a Suit** (Iron · Silver · Brass · Bone · Salt); **no currency** (role-card redesign, *in code 2026-06-19*) — `role-card-redesign.md`         |
-| **Progression** (growth between skirmishes)       | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks, each a **Suit** ↔ **Role** (identity ↔ function) + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*in code 2026-06-19*) — `role-card-redesign.md`         |
+| System                                                   | Spec status | Current design source if not yet specced                                                                                                                                                                                              |
+| -------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The deterministic core** (separable balance)           | 🟡 seeded    | **§0** — determinism · separable luck layers · objective core balance — `computability-and-balance.md`                                                                                                                                |
+| **The Clash** (tactical core)                            | ✅ worked    | —                                                                                                                                                                                                                                     |
+| **Defense model** (cut → bar → pool)                     | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                               |
+| **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                      |
+| **Speed/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                             |
+| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21). §4.3 actors-are-decks still pending                                                                         |
+| **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                          |
+| **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                             |
+| **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                       |
+| **Strategic layer** (world/event decks)                  | 🟡 seeded    | **§8** (world · clock · role-card rewards · encounters · progression) — `progression-design.md`                                                                                                                                       |
+| **Skirmish victory / defeat**                            | 🟡 seeded    | `notes/form-and-defeat.md` (eliminate the foes / the party falls; in code)                                                                                                                                                            |
+| **Run victory / defeat** (across many skirmishes)        | 🟡 seeded    | **§8.2** — victory = clear the objective, scored in Days (golf); **defeat deferred** pending reference-scenario tuning                                                                                                                |
+| **Geography & travel** (the world map + movement)        | 🟡 seeded    | **§8.1** (locations · move 1/Day · fog); travel risk deferred — `progression-design.md`                                                                                                                                               |
+| **Loot / role cards** (clear → reward)                   | 🟡 seeded    | **§8.3** — atomic 25-card role-reward pool, scarce, party-assigned permanently; each reward **of a Suit** (Iron · Silver · Brass · Bone · Salt); **no currency** (role-card redesign, *in code 2026-06-19*) — `role-card-redesign.md` |
+| **Progression** (growth between skirmishes)              | 🟡 seeded    | **§8.5** — role = assigned cards · `3+2` tracks, each a **Suit** ↔ **Role** (identity ↔ function) + bundled Stat layer · depth/breadth; play rule §4.4, taxonomy §5.6 (*in code 2026-06-19*) — `role-card-redesign.md`                |
 
 ✅ worked = full, the template to follow · 🟡 seeded = a few real rules, not
 exhaustive · ⬜ stub = headers + intent only, not yet authoritative · ⏸ deferred = parked to
@@ -1050,11 +1050,11 @@ the number you must clear without itself slipping through (an immovable line, no
 **Demise — protection comes from the line.** Each rank's vulnerability is *how much line stands between
 it and the enemy*:
 
-| Rank | Dies to | Safe from |
-| --- | --- | --- |
-| **Vanguard** (is the line) | direct engagement (enemy Vanguard); a crossed enemy Skirmisher from behind | being flanked while it holds — it faces forward |
+| Rank                           | Dies to                                                                                               | Safe from                                                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Vanguard** (is the line)     | direct engagement (enemy Vanguard); a crossed enemy Skirmisher from behind                            | being flanked while it holds — it faces forward                          |
 | **Skirmisher** (left the line) | the wall's **catch / parting hit**; the enemy **Reserve's** fire; an enemy **Skirmisher** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
-| **Reserve** (behind the line) | a Skirmisher who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through | everything, *while its line holds* |
+| **Reserve** (behind the line)  | a Skirmisher who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through           | everything, *while its line holds*                                       |
 
 So the **Skirmisher is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
 is thus both **spear and screen**: field it to assassinate the enemy Reserve *and* to kill the enemy's
@@ -1085,11 +1085,11 @@ backfield is open.
 
 **Targeting matrix.**
 
-| Chooser | May target |
-| --- | --- |
-| **Vanguard** | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Reserve or Skirmisher) |
+| Chooser        | May target                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Vanguard**   | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Reserve or Skirmisher)               |
 | **Skirmisher** | **held** → only its catcher; **crossed** → **any** enemy rank (Reserve first, then the Vanguard from behind, or an enemy Skirmisher) |
-| **Reserve** | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** the enemy Reserve |
+| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** the enemy Reserve                                               |
 
 **Edge cases.** *All-Reserve (no front):* nothing can catch, so every enemy Skirmisher slips free and
 raids the Reserve — holding everyone back only exposes you. *No Skirmishers:* the lines trade and the

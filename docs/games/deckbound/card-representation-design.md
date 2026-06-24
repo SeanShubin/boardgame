@@ -34,17 +34,17 @@ canonical, but it lands as a projection over the unchanged core.
 Each engine stat maps to exactly one `(deck, suit)` cell. **Pools** carry both suits; **flats** carry
 Power only. Suits are global: **Quantity = how many, Power = how hard** (§2.4).
 
-| Deck | Quantity (breadth) | Power (depth) | Channel / note |
-|---|---|---|---|
-| **Body** | health-card count (`body`) | Toughness (`toughness`) | the maintained pool (§2.1) |
-| **Tempo** | Speed (`speed`) | Daring (`daring`) | ephemeral per-round pool (§3) |
-| **Strike** | — | strike power (`power`) | the legacy "Power" stat ≡ Strike·Power (§2.4) |
-| **Dread** | — | Dread (`dread`) | fear-strike force (inner offense; the Controller's fear-projection) |
-| **Inspiration** | — | Inspiration (`inspiration`) | Support augment force-multiplier — each buff +Inspiration (§2.4) |
-| **Pierce** | — | Precision (`precision`) | armor bypass |
-| **Resolve** | — | Resolve (`resolve`) | the inner **bar** — no pool (§2.2), so no Quantity |
-| **Guard·⟨type⟩** | — | Armor cut for that type | one deck **per damage type** (see D-armor) |
-| **Ward·Fear** | — | Ward cut vs Fear | the inner cut |
+| Deck             | Quantity (breadth)         | Power (depth)               | Channel / note                                                      |
+| ---------------- | -------------------------- | --------------------------- | ------------------------------------------------------------------- |
+| **Body**         | health-card count (`body`) | Toughness (`toughness`)     | the maintained pool (§2.1)                                          |
+| **Tempo**        | Speed (`speed`)            | Daring (`daring`)           | ephemeral per-round pool (§3)                                       |
+| **Strike**       | —                          | strike power (`power`)      | the legacy "Power" stat ≡ Strike·Power (§2.4)                       |
+| **Dread**        | —                          | Dread (`dread`)             | fear-strike force (inner offense; the Controller's fear-projection) |
+| **Inspiration**  | —                          | Inspiration (`inspiration`) | Support augment force-multiplier — each buff +Inspiration (§2.4)    |
+| **Pierce**       | —                          | Precision (`precision`)     | armor bypass                                                        |
+| **Resolve**      | —                          | Resolve (`resolve`)         | the inner **bar** — no pool (§2.2), so no Quantity                  |
+| **Guard·⟨type⟩** | —                          | Armor cut for that type     | one deck **per damage type** (see D-armor)                          |
+| **Ward·Fear**    | —                          | Ward cut vs Fear            | the inner cut                                                       |
 
 **Quantity appears only on the two genuine pools (Body, Tempo).** Everything else is "a flat magnitude =
 Power under its deck," which is why two suit-names cover the whole stat space.
@@ -89,11 +89,11 @@ Health). The projection doesn't add a second tracked number — it *renders* the
 
 The three clocks §2.7 names are **already implemented**; this is a documentation mapping, **no code**:
 
-| Clock | Engine reality | §2.7 |
-|---|---|---|
-| **per hit** | `Defense::take` subtracts the Armor cut on every call | Armor |
-| **per round** | `Defense::end_round` zeroes `body_pile` (the sub-Toughness remainder) | Toughness |
-| **per encounter** | flipped Health cards persist; restored only on a win (§2.1) | Health |
+| Clock             | Engine reality                                                        | §2.7      |
+| ----------------- | --------------------------------------------------------------------- | --------- |
+| **per hit**       | `Defense::take` subtracts the Armor cut on every call                 | Armor     |
+| **per round**     | `Defense::end_round` zeroes `body_pile` (the sub-Toughness remainder) | Toughness |
+| **per encounter** | flipped Health cards persist; restored only on a win (§2.1)           | Health    |
 
 The only *future* §2.7 work is promoting "clock" to a **named, data-driven property** so new clocks
 (per-exchange, per-attacker) can be minted — explicitly deferred until a fourth clock is actually wanted.
@@ -158,13 +158,13 @@ The popcount totals are the per-build "card cost" the §2.5 balance tiebreaker w
 
 ## 6. Decisions for ratification
 
-| # | Decision | Recommendation | Type |
-|---|---|---|---|
-| **R1** | §2.4–§2.6 as a **generated projection** of scalar Form, vs a re-authored `.ron` tree | **Projection** (§0) — tuning-first, no migration, no engine churn | mechanics/encoding |
-| **R2** | Typed cuts = **per-type `Guard·⟨type⟩` decks**, vs one type-tagged Guard deck | **Per-type decks** (D-armor) — keeps leaf = `(suit,value)` | encoding |
-| **R3** | §2.7 = **already conformant, no code** (clock-as-data deferred), vs implement clock-as-data now | **Conformant, no code** (§3) | mechanics |
-| **R4** | "Power" field **rename** vs **coexist** with the suit name | **Coexist** (§4) — zero churn | naming |
-| **(note)** | Collapse damage types? | **Out of scope** — separate §2.2 case-3 decision | — |
+| #          | Decision                                                                                        | Recommendation                                                    | Type               |
+| ---------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------ |
+| **R1**     | §2.4–§2.6 as a **generated projection** of scalar Form, vs a re-authored `.ron` tree            | **Projection** (§0) — tuning-first, no migration, no engine churn | mechanics/encoding |
+| **R2**     | Typed cuts = **per-type `Guard·⟨type⟩` decks**, vs one type-tagged Guard deck                   | **Per-type decks** (D-armor) — keeps leaf = `(suit,value)`        | encoding           |
+| **R3**     | §2.7 = **already conformant, no code** (clock-as-data deferred), vs implement clock-as-data now | **Conformant, no code** (§3)                                      | mechanics          |
+| **R4**     | "Power" field **rename** vs **coexist** with the suit name                                      | **Coexist** (§4) — zero churn                                     | naming             |
+| **(note)** | Collapse damage types?                                                                          | **Out of scope** — separate §2.2 case-3 decision                  | —                  |
 
 ---
 

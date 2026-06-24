@@ -5,6 +5,7 @@ members = [
     "crates/tabletop",
     "crates/deckbound",
     "crates/boardgame",
+    "crates/combat-lab",
 ]
 
 [workspace.package]

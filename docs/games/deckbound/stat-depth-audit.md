@@ -26,19 +26,19 @@ the set becomes genuinely minimal-complete for the 3+2 roles.
 
 ## Per-stat verdict table
 
-| Stat (deck × suit) | Depth | Distinct? | Cost | Verdict | Why (one line) |
-|---|---|---|---|---|---|
-| **Strike** · Strike·Power | med | yes (the attack atom) | low | **KEEP** | The spine of offense; every blow's base. Currently *overloaded* — it also powers Fear (see Spirit). |
-| **Spirit** · Spirit·Power | **none (unwired)** | **no (dupes Strike)** | **pure cost** | **WIRE or REMOVE** | Summed, displayed, scaled per-level, **bought by the Bone track — yet never consumed.** The Controller's headline offense stat does nothing. |
-| **Pierce** · Pierce·Power | low | weak (anti-Armor only) | low | **REWORK / KEEP-conditional** | Point-for-point **strictly dominated by Strike**; earns a slot only if priced cheaper, as the dedicated armor-counter enabling low-Strike anti-tank builds. |
-| **Speed** · Tempo·Quantity | **high** | yes | med | **KEEP** | The deep benchmark: one pool pays offense *and* defense, so every Tempo spend is a live allocation. |
-| **Drive** · Tempo·Power | low *(today)* | yes (grade vs count) | **high (one-place stat)** | **KEEP but FLAG** | The genuine count×grade partner to Speed, but it bites in *exactly one sub-phase* (a crossing) — a comprehension tax, and shallow under the v1 single-card resolver. |
-| **Health** · Body·Quantity | high | yes (the only pool) | the budgeted meter | **KEEP** | The one maintained meter (§2.1); per-encounter attrition. Load-bearing. |
-| **Toughness** · Body·Power | high | yes (clock vs Armor) | low | **KEEP** | The bar — "few big hits" axis, per-round clock. Non-redundant with Armor by clock + with Health by suit. |
-| **Armor** · Guard·type·Power | high | yes (per-hit, typed) | **high (×8 types)** | **KEEP, note type-tax** | "Many small hits" axis + called-shots from typing. The 8 damage types are the real cost multiplier. |
-| **Ward** · Ward·type·Power | med | yes (inner cut) | med | **KEEP, simplify** | Mirrors Armor on the Fear channel, but the inner channel has ~one live type — the typed `BTreeMap` buys little; a scalar would do. |
-| **Resolve** · Power | low | yes (inner bar) | low | **KEEP, the shallow channel** | A threshold with no pool behind it → binary/swingy (Resolve 0 ⇒ any Fear is instant-lethal). The inner channel's depth gap. |
-| **Keystone** · categorical | **none (unexercised)** | n/a (marker) | latent | **ACTIVATE or SHELVE** | **Never set to anything but Body in any card/actor (0 in data).** Pure latent complexity; its `Aspect::Mind` branch is dead. |
+| Stat (deck × suit)           | Depth                  | Distinct?              | Cost                      | Verdict                       | Why (one line)                                                                                                                                                       |
+| ---------------------------- | ---------------------- | ---------------------- | ------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Strike** · Strike·Power    | med                    | yes (the attack atom)  | low                       | **KEEP**                      | The spine of offense; every blow's base. Currently *overloaded* — it also powers Fear (see Spirit).                                                                  |
+| **Spirit** · Spirit·Power    | **none (unwired)**     | **no (dupes Strike)**  | **pure cost**             | **WIRE or REMOVE**            | Summed, displayed, scaled per-level, **bought by the Bone track — yet never consumed.** The Controller's headline offense stat does nothing.                         |
+| **Pierce** · Pierce·Power    | low                    | weak (anti-Armor only) | low                       | **REWORK / KEEP-conditional** | Point-for-point **strictly dominated by Strike**; earns a slot only if priced cheaper, as the dedicated armor-counter enabling low-Strike anti-tank builds.          |
+| **Speed** · Tempo·Quantity   | **high**               | yes                    | med                       | **KEEP**                      | The deep benchmark: one pool pays offense *and* defense, so every Tempo spend is a live allocation.                                                                  |
+| **Drive** · Tempo·Power      | low *(today)*          | yes (grade vs count)   | **high (one-place stat)** | **KEEP but FLAG**             | The genuine count×grade partner to Speed, but it bites in *exactly one sub-phase* (a crossing) — a comprehension tax, and shallow under the v1 single-card resolver. |
+| **Health** · Body·Quantity   | high                   | yes (the only pool)    | the budgeted meter        | **KEEP**                      | The one maintained meter (§2.1); per-encounter attrition. Load-bearing.                                                                                              |
+| **Toughness** · Body·Power   | high                   | yes (clock vs Armor)   | low                       | **KEEP**                      | The bar — "few big hits" axis, per-round clock. Non-redundant with Armor by clock + with Health by suit.                                                             |
+| **Armor** · Guard·type·Power | high                   | yes (per-hit, typed)   | **high (×8 types)**       | **KEEP, note type-tax**       | "Many small hits" axis + called-shots from typing. The 8 damage types are the real cost multiplier.                                                                  |
+| **Ward** · Ward·type·Power   | med                    | yes (inner cut)        | med                       | **KEEP, simplify**            | Mirrors Armor on the Fear channel, but the inner channel has ~one live type — the typed `BTreeMap` buys little; a scalar would do.                                   |
+| **Resolve** · Power          | low                    | yes (inner bar)        | low                       | **KEEP, the shallow channel** | A threshold with no pool behind it → binary/swingy (Resolve 0 ⇒ any Fear is instant-lethal). The inner channel's depth gap.                                          |
+| **Keystone** · categorical   | **none (unexercised)** | n/a (marker)           | latent                    | **ACTIVATE or SHELVE**        | **Never set to anything but Body in any card/actor (0 in data).** Pure latent complexity; its `Aspect::Mind` branch is dead.                                         |
 
 ---
 
@@ -135,13 +135,13 @@ dead `is_down` arm, and `DamageType::Confusion` (0 uses in data) is now routed i
 
 The §2.2 parallel-channel table, filled in against ground truth:
 
-| layer | outer (Body) | inner (Fear) | status |
-|---|---|---|---|
-| **attack** | Strike ✅ | Spirit ⚠️ **unwired** | asymmetric *today* (Strike serves both) — see Remove §1 |
-| **cut** (per-hit) | Armor ✅ | Ward ✅ | symmetric (Ward thin in practice) |
-| **bar** (per-round) | Toughness ✅ | Resolve ✅ | symmetric |
-| **pool** (per-encounter) | Health ✅ | **— none —** | **asymmetric by design** — see below |
-| **cut-bypass** (offense) | Pierce ✅ | **— none —** | asymmetric (no Ward-bypass) — minor |
+| layer                    | outer (Body) | inner (Fear)          | status                                                  |
+| ------------------------ | ------------ | --------------------- | ------------------------------------------------------- |
+| **attack**               | Strike ✅     | Spirit ⚠️ **unwired** | asymmetric *today* (Strike serves both) — see Remove §1 |
+| **cut** (per-hit)        | Armor ✅      | Ward ✅                | symmetric (Ward thin in practice)                       |
+| **bar** (per-round)      | Toughness ✅  | Resolve ✅             | symmetric                                               |
+| **pool** (per-encounter) | Health ✅     | **— none —**          | **asymmetric by design** — see below                    |
+| **cut-bypass** (offense) | Pierce ✅     | **— none —**          | asymmetric (no Ward-bypass) — minor                     |
 
 ### Gap A — the inner channel has no pool / no per-encounter layer.
 
@@ -190,13 +190,13 @@ crossing-grade (Drive). That spans the gauntlet's actual decisions. The only off
 
 Map each stat to the role-suit that owns it:
 
-| Suit / Role | Owns (stats) | Healthy? |
-|---|---|---|
-| **Iron / Wall** | Body, Toughness, Armor, Resolve(+Rally) | ✅ the Body-pool defensive cluster — coherent |
-| **Silver / Infiltrator** | Speed, Drive | ✅ the Tempo (breadth) cluster — coherent |
-| **Brass / Artillery** | Strike, Pierce | ⚠️ Strike is the real axis; **Pierce is a thin appendage** |
-| **Bone / Controller** | **Spirit**, Resolve | ❌ **its headline offense stat (Spirit) is dead** |
-| **Salt / Support** | Resolve, Body, Speed (force-multiplier) | ✅ cross-cutting buffs — coherent |
+| Suit / Role              | Owns (stats)                            | Healthy?                                                   |
+| ------------------------ | --------------------------------------- | ---------------------------------------------------------- |
+| **Iron / Wall**          | Body, Toughness, Armor, Resolve(+Rally) | ✅ the Body-pool defensive cluster — coherent               |
+| **Silver / Infiltrator** | Speed, Drive                            | ✅ the Tempo (breadth) cluster — coherent                   |
+| **Brass / Artillery**    | Strike, Pierce                          | ⚠️ Strike is the real axis; **Pierce is a thin appendage** |
+| **Bone / Controller**    | **Spirit**, Resolve                     | ❌ **its headline offense stat (Spirit) is dead**           |
+| **Salt / Support**       | Resolve, Body, Speed (force-multiplier) | ✅ cross-cutting buffs — coherent                           |
 
 **Judgment: the set is *nearly* minimal-complete, and well-motivated** — almost every stat is the
 mechanical substrate of a role, so it passes §10 (re-derivable from the role's job, not arbitrary).
