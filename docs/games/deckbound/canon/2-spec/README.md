@@ -60,7 +60,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Defense model** (pile → bar → pool, one channel)                     | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                               |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                      |
 | **Speed/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                             |
-| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks still pending                                                                         |
+| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks brought current 2026 (bare ActorCard + Form-derived stats; code in this pass)                                                                         |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                          |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                             |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                       |
@@ -1296,21 +1296,25 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
 **RULE.** An **Actor is a deck**, not a stat-block. In `booklet.ron` the actor entry is a **bare
-identity** — `name`, `role`, `driver`, and **attack type** (§4.2) — plus a **starting deck**, and
-**carries no stat fields**. Its numbers are **read off the deck's Form cards** (§2.3 / §5.2): a
-**fundamental card** (base stats, incl. Health = count × value, §5.5) and **attachment** cards. The
-§3 / §4 economy reads stats from the deck exactly as before (Speed sizes Tempo, Mind sizes Focus) —
-only the *source* moved from the card to the deck.
+identity** — `name`, `role`, `driver`, **attack type** (§4.2) — that **carries no flat stat fields**;
+its stats live on **build cards**. Its numbers are **read off the Form** (§2.3 / §5.2): a **fundamental**
+build card (base stats, incl. Health = Vitality × Toughness, §5.5) plus any **attachment** cards, summed
+commutatively (§5.5). Per §2.3 the fundamental rides as the actor's inline **`base`** build card — *empty*
+for a bare campaign hero (its build is the clean-slate + reward cards) and *populated* for a creature or a
+fixed scenario kit. The §3 / §4 economy reads stats from the Form exactly as before (**Speed sizes
+Tempo**); only the *source* moved from flat fields to the deck.
 
-**Schema migration (the `/spec-sync §2,§4` code pass).**
-- `ActorCard`: **drop** `speed / power / precision / body / toughness / resolve / mind / weapon /
-  traits`; **keep** `name / role / driver / attack`; **add** a starting `deck`.
-- Catalog gains a **fundamental/Form card** (sets base stats + Health count × value) and **attachment**
-  cards (each modifies one dimension) — `Card` / `TraitCard`-family entries that carry stat
-  contributions.
-- The `booklet.ron` data + the Rust `ActorCard` struct + the §4 reader change land **together** in
-  the code pass; this Spec amendment is what they conform to. Until then, the running code (stat-bearing
-  actors) is a **defect to fix** (code-is-a-defect-report), not the truth.
+**Schema migration (this `/spec-sync` pass).**
+- `ActorCard`: **drop** every flat stat field (`might / vitality / toughness / speed / daring`) and
+  `weapon / traits`; **keep** `name / role / driver / attack`; carry stats **only** via the inline
+  **`base`** build card (a `StatCard`) plus reward / attachment cards.
+- A **`StatCard`** carries one card's contribution over the **five** stats and **nothing else** — no
+  channel / armor / damage-type fields (deferred with gear, §2.2). A **`Form`** = `base` + attachments,
+  summed into the `Offense` / `Defense` the engine reads.
+- The runtime **`Actor` derives `offense` / `defense` from its `Form`** at build time (commutative sum) —
+  the totals are always recomputable from the cards, never an independently-authored block.
+- The `booklet.ron` data, the Rust `ActorCard` / `StatCard` structs, and the §4 reader land **together**
+  in this pass; this Spec is what they conform to.
 
 **WHY.** One representation — the deck — for what a character *is* and *does*; the authored stat-block
 was a redundant parallel that drift could split from the cards (§2.1, #10). It also makes the Upgrade
