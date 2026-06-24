@@ -47,8 +47,8 @@ pub enum Effect {
     Rout,
     /// Turn a face-down card back up (a Recover).
     Recover,
-    /// Bank +`amount` Speed (extra tempo this round).
-    BankSpeed { amount: u32 },
+    /// Bank +`amount` Cadence (extra tempo this round).
+    BankCadence { amount: u32 },
     /// Restore `vitality` Health cards to the most-wounded ally (a Mend).
     Mend { vitality: u32 },
     /// Grant a melee attack to a defenseless ally for the round (a Ward, §4.2).
@@ -60,8 +60,8 @@ pub enum Effect {
     Empower { might: u32 },
     /// Strip `tempo` Tempo from a foe (a Suppress).
     Suppress { tempo: u32 },
-    /// Cut `speed` Speed from a foe (a Slow — cheaper to block/engage).
-    Slow { speed: u32 },
+    /// Cut `cadence` Cadence from a foe (a Slow — cheaper to block/engage).
+    Slow { cadence: u32 },
     /// Drain `tempo` from a foe (a Confuse) — scramble it so it has less initiative to act *or*
     /// defend (the merged-pool reframing of the old "can't block").
     Confuse { tempo: u32 },
@@ -149,13 +149,13 @@ impl Card {
                 Effect::Shove => "shove".into(),
                 Effect::Rout => "rout".into(),
                 Effect::Recover => "recover".into(),
-                Effect::BankSpeed { amount } => format!("+{amount} speed"),
+                Effect::BankCadence { amount } => format!("+{amount} cadence"),
                 Effect::Mend { vitality } => format!("mend +{vitality}"),
                 Effect::Ward => "ward (grant melee)".into(),
                 Effect::Haste { tempo } => format!("haste +{tempo}"),
                 Effect::Empower { might } => format!("empower +{might} might"),
                 Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
-                Effect::Slow { speed } => format!("slow -{speed} speed"),
+                Effect::Slow { cadence } => format!("slow -{cadence} cadence"),
                 Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),
             });
         }

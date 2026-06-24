@@ -8,7 +8,7 @@
 // armor / damage-types / fear channel (collapsed 2026; armor deferred with gear).
 //   attack: Melee / Ranged / Both / Neither  (§4.2 range)
 //   driver: "hero" (human) or a creature keyword; aggression 0..=10 sets its charge bias.
-//   The five stats (§2.4): might · vitality · toughness · speed · daring.
+//   The five stats (§2.4): might · vitality · toughness · cadence · finesse.
 //
 // `flavor` is evocative in-world prose (NOT rules — `text`/`blurb` carry the mechanics). All
 // flavor lives here in data, never in code; the enum content (Suits, roles) is keyed in the
@@ -31,12 +31,12 @@ Catalog(
         Card( name: "Cleave",   targets: 3, effects: [Damage(power: 0)], flavor: "One stroke, several regrets." ),
         Card( name: "Terror",    reach: (2, 2), effects: [Stagger], flavor: "A sound the body hears before the mind does." ),
         Card( name: "Suppress", reach: (2, 2), effects: [Suppress(tempo: 3)], flavor: "Pin them flat and let them spend the round flinching." ),
-        Card( name: "Slow",     reach: (2, 2), effects: [Slow(speed: 2)], flavor: "Make every step cost what a sprint should." ),
+        Card( name: "Slow",     reach: (2, 2), effects: [Slow(cadence: 2)], flavor: "Make every step cost what a sprint should." ),
         Card( name: "Confuse",  reach: (2, 2), effects: [Confuse(tempo: 3)], flavor: "Scramble the one moment they needed to think." ),
         Card( name: "Ward",     zone: Lasting, effects: [Ward], flavor: "Press a blade into the hand of the one who swore never to carry one." ),
         Card( name: "Mend",     effects: [Mend(vitality: 3)], flavor: "Close the worst of it, and send them back in." ),
         Card( name: "Haste",    effects: [Haste(tempo: 3)], flavor: "Borrow against the next breath; move twice on this one." ),
-        Card( name: "Bank",     effects: [BankSpeed(amount: 3)], flavor: "Hoard the tempo now; spend it the instant it kills." ),
+        Card( name: "Bank",     effects: [BankCadence(amount: 3)], flavor: "Hoard the tempo now; spend it the instant it kills." ),
         Card( name: "Brace",       effects: [Guard(tempo: 3)],   flavor: "Set your feet. The line begins where you decide it does." ),
         // --- passive powers (detected by name; not played as effects) ---
         // `text` is the encyclopedia's Powers entry, generated from this card data (§4 powers).
@@ -77,19 +77,19 @@ Catalog(
                 ] ),
 
         // ---- Infiltrator (Silver) — the unseen blade: slip walls, delete the backline ----
-        Reward( track: Silver, level: 1, stat: (speed: 2, daring: 2),
+        Reward( track: Silver, level: 1, stat: (cadence: 2, finesse: 2),
                 flavor: "You won't see her cross the room. You'll notice who is no longer in it.",
                 cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3), Shove], text: "Stab and shove: hits for Might and knocks the foe out of the line (no melee strike-back this round)." ) ] ),
-        Reward( track: Silver, level: 2, stat: (speed: 1, might: 1),
+        Reward( track: Silver, level: 2, stat: (cadence: 1, might: 1),
                 flavor: "The first step is always free; take it before they're set.",
                 cards: [ Card( name: "Blitz", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "The first slip each round is free — it costs no Tempo." ) ] ),
-        Reward( track: Silver, level: 3, stat: (speed: 2, daring: 2),
+        Reward( track: Silver, level: 3, stat: (cadence: 2, finesse: 2),
                 flavor: "Through the one gap the guard forgot they had.",
                 cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway." ) ] ),
         Reward( track: Silver, level: 4, stat: (might: 2),
                 flavor: "The reserve never hears the one that finds them.",
                 cards: [ Card( name: "Backstab", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve." ) ] ),
-        Reward( track: Silver, level: 5, stat: (might: 2, speed: 1),
+        Reward( track: Silver, level: 5, stat: (might: 2, cadence: 1),
                 flavor: "One name, crossed off. The rest of the field never mattered.",
                 cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6)], text: "A killing strike: when this Skirmisher hits an enemy Reserve, that foe is downed outright (M4)." ) ] ),
 
@@ -117,7 +117,7 @@ Catalog(
                 cards: [ Card( name: "Menace", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Stagger], text: "Staggers a foe: it loses its action this round (no strike, no card, no strike-back) — a Controller status, not damage." ) ] ),
         Reward( track: Bone, level: 2, stat: (might: 1),
                 flavor: "Weight the feet and foul the hands; let it watch the fight happen without it.",
-                cards: [ Card( name: "Shackle", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2), Disarm], text: "Slows a foe (−2 Speed) and fouls its hand (cannot play role cards) this round." ) ] ),
+                cards: [ Card( name: "Shackle", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(cadence: 2), Disarm], text: "Slows a foe (−2 Cadence) and fouls its hand (cannot play role cards) this round." ) ] ),
         Reward( track: Bone, level: 3, stat: (might: 1),
                 flavor: "A sound the body hears before the mind does.",
                 cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), targets: 2, effects: [Suppress(tempo: 3), Shove], text: "Strips 3 Tempo from up to two foes and shoves them out of melee this round." ) ] ),
@@ -136,7 +136,7 @@ Catalog(
         Reward( track: Salt, level: 2, stat: (vitality: 1),
                 flavor: "Put the weight of the whole line behind every blow.",
                 cards: [ Card( name: "Empower", role: Some(Salt), kind: Base, zone: Lasting, effects: [Empower(might: 3)], text: "Raises the whole party's Might by 3 this round — the Support buff's indirect offense." ) ] ),
-        Reward( track: Salt, level: 3, stat: (speed: 1, vitality: 1),
+        Reward( track: Salt, level: 3, stat: (cadence: 1, vitality: 1),
                 flavor: "Close the worst of it, and send them back in.",
                 cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(vitality: 4)], text: "Restores 4 Health cards to the most-wounded ally — the attrition floor." ) ] ),
         Reward( track: Salt, level: 4, stat: (vitality: 2),
@@ -152,7 +152,7 @@ Catalog(
     // SEPARATE Form card (its fundamental) so the identity Actor card stays bare. Numbers match the
     // old Novice base (might = former power, vitality = former body); only characters (built via
     // `build_character`) receive it. Creatures print theirs.
-    clean_slate: (name: "Human", might: 1, vitality: 5, toughness: 1, speed: 3),
+    clean_slate: (name: "Human", might: 1, vitality: 5, toughness: 1, cadence: 3),
     actors: [
         // Novice — the clean-slate character (§8.5): a BARE identity (§2.3) — a character carries NO
         // printed stats. Its baseline is the separate `clean_slate` Form card above; strength then grows
@@ -164,47 +164,47 @@ Catalog(
         // `weapon` is the base attack card. Numbers: might = former power, vitality = former body.
         // ---- the specialist cast (fresh) ----
         ActorCard( name: "Anvil", role: "Wall", flavor: "He does not advance. He does not retreat. The battle simply happens around the place he is standing.", driver: "hero", attack: Melee, weapon: "Maul",
-                   base: (might: 4, vitality: 10, toughness: 2, speed: 2),
+                   base: (might: 4, vitality: 10, toughness: 2, cadence: 2),
                    actions: ["Brace", "Phalanx", "Bulwark", "Taunt"] ),
         ActorCard( name: "Wisp", role: "Infiltrator", flavor: "You won't see her cross the room. You'll only notice, later, who is no longer in it.", driver: "hero", attack: Melee, weapon: "Blade",
-                   base: (might: 4, vitality: 4, toughness: 1, speed: 7, daring: 5),
+                   base: (might: 4, vitality: 4, toughness: 1, cadence: 7, finesse: 5),
                    actions: ["Bank", "Blitz", "Shadowstep", "Backstab"] ),
         ActorCard( name: "Sear", role: "Artillery", flavor: "Counts the range, exhales, and deletes the front rank. Keep him fed with distance.", driver: "hero", attack: Ranged, weapon: "Bow",
-                   base: (might: 6, vitality: 4, toughness: 1, speed: 3),
+                   base: (might: 6, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Barrage", "Longshot"] ),
         ActorCard( name: "Vow", role: "Support", flavor: "Carries no blade and wins anyway — by making sure the ones who do are still standing.", driver: "hero", attack: Neither, weapon: "Fist",
-                   base: (might: 0, vitality: 4, toughness: 1, speed: 3),
+                   base: (might: 0, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Ward", "Mend", "Haste"] ),
         ActorCard( name: "Hex", role: "Controller", flavor: "She speaks, and the enemy's courage develops a leak. Bodies are a formality after that.", driver: "hero", attack: Ranged, weapon: "Wand",
-                   base: (might: 2, vitality: 4, toughness: 1, speed: 3),
+                   base: (might: 2, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Confuse", "Slow", "Terror"] ),
         // simple training heroes
         ActorCard( name: "Recruit", role: "Militia", flavor: "Spear, nerve, and a week's drill. It is enough more often than anyone expects.", driver: "hero", attack: Melee, weapon: "Spear",
-                   base: (might: 3, vitality: 5, toughness: 1, speed: 3) ),
+                   base: (might: 3, vitality: 5, toughness: 1, cadence: 3) ),
         ActorCard( name: "Archer", role: "Bowman", flavor: "Plain bow, steady draw. Answers range with range and asks nothing fancier.", driver: "hero", attack: Ranged, weapon: "Bow",
-                   base: (might: 4, vitality: 4, toughness: 1, speed: 4) ),
+                   base: (might: 4, vitality: 4, toughness: 1, cadence: 4) ),
         // ---- creatures ----
         ActorCard( name: "Husk", role: "Swarmer", flavor: "What's left when something stops being a person and keeps walking. It comes in tides.", driver: "aggressor", attack: Melee, weapon: "Claw", aggression: 6,
-                   base: (might: 2, vitality: 2, toughness: 1, speed: 3) ),
+                   base: (might: 2, vitality: 2, toughness: 1, cadence: 3) ),
         ActorCard( name: "Raider", role: "Infiltrator", flavor: "Fast, lean, and pointed at whoever you most need to keep alive.", driver: "skirmisher", attack: Melee, weapon: "Claw", aggression: 8,
-                   base: (might: 3, vitality: 4, toughness: 1, speed: 6, daring: 5) ),
+                   base: (might: 3, vitality: 4, toughness: 1, cadence: 6, finesse: 5) ),
         ActorCard( name: "Brute", role: "Bruiser", flavor: "A slab of muscle that treats your front line as a suggestion.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 6,
-                   base: (might: 5, vitality: 8, toughness: 3, speed: 2) ),
+                   base: (might: 5, vitality: 8, toughness: 3, cadence: 2) ),
         ActorCard( name: "Slinger", role: "Skirmisher", flavor: "Hangs back and plinks. Annoying alone; lethal in a chorus.", driver: "aggressor", attack: Ranged, weapon: "Bow", aggression: 2,
-                   base: (might: 4, vitality: 3, toughness: 1, speed: 4) ),
+                   base: (might: 4, vitality: 3, toughness: 1, cadence: 4) ),
         ActorCard( name: "Seer", role: "Hexer", flavor: "Picks the most fragile body in your line and goes to work on it first.", driver: "aggressor", attack: Ranged, weapon: "Wand", aggression: 2,
-                   base: (might: 3, vitality: 4, toughness: 1, speed: 3), target_rule: Some(LowestBody) ),
+                   base: (might: 3, vitality: 4, toughness: 1, cadence: 3), target_rule: Some(LowestBody) ),
         ActorCard( name: "Ogre", role: "Boss", flavor: "Both fists and a thrown rock, wrapped around more body than a wall. A bad afternoon, alone.", driver: "brute", attack: Both, weapon: "Maul", aggression: 6,
-                   base: (might: 6, vitality: 16, toughness: 3, speed: 4) ),
+                   base: (might: 6, vitality: 16, toughness: 3, cadence: 4) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
-                   base: (might: 3, vitality: 8, toughness: 1, speed: 4) ),
-        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
-        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
-        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
-        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
-        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
-        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+                   base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),
+        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
     ],
     campaign: [
         ScenarioCard(
@@ -250,7 +250,7 @@ Catalog(
         ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; spend Tempo to evade it, or bring ranged (Archer) to trade back. With no Tempo, you take the hit.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
         ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Skirmishers slip to the back, Reserve fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
         ScenarioCard( name: "4. Charge & Concentration", blurb: "Concentrate your charge against one stretch of the line to break through; an even charge is caught everywhere and breaks through nowhere.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
-        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Daring) to slip the gauntlet and become a Skirmisher, or hold to block. A Wall with more hold than your advance Daring stops you cold.", flavor: "A wall is a question. Daring is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
+        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Finesse) to slip the gauntlet and become a Skirmisher, or hold to block. A Wall with more hold than your advance Finesse stops you cold.", flavor: "A wall is a question. Finesse is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Hold the front for it or the Raider slips through and assassinates it.", flavor: "The most important person on the field is the one who can't defend themselves.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
         ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", flavor: "A storm tells you it is coming. Listen, then move.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
         ScenarioCard( name: "C2. Read the Lead", blurb: "Bron leads every blow (Anticipate). Strike or Gather; never Evade.", flavor: "He is always one step ahead — so do not take the step he expects.", heroes: ["Vael"], foes: ["Bron"], clash: true ),

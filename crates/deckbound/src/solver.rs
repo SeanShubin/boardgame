@@ -136,7 +136,7 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             Haste { tempo } => 50 + *tempo as i32,
             Empower { might } => 50 + *might as i32,
             Slow { .. } | Confuse { .. } | Suppress { .. } | Stagger | Shove | Disarm | Rout => 40,
-            Guard { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
+            Guard { .. } | BankCadence { .. } | Ward | Lifeline => 20,
             // Reactive: only worth it once someone is hurt — at Muster (full health) it is a
             // wasted play, so the greedy ranks it below acting.
             Mend { .. } | Recover => 5,
@@ -162,12 +162,12 @@ fn wants_backline(a: &Actor) -> bool {
 /// line as a Vanguard.
 fn wants_flank(a: &Actor) -> bool {
     use crate::currency::Currency::Silver;
-    // An Infiltrator kit, *or* raw Daring high enough to cross (force, not fiat: stats alone make a
+    // An Infiltrator kit, *or* raw Finesse high enough to cross (force, not fiat: stats alone make a
     // flanker — this is what lets the BI-3 infinite-stat god declare as a Skirmisher and cross).
     a.actions
         .iter()
         .any(|c| !c.passive && c.role == Some(Silver))
-        || a.offense.daring >= 3
+        || a.offense.finesse >= 3
 }
 
 /// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
@@ -220,32 +220,32 @@ mod tests {
     }
 
     #[test]
-    fn tempo_refreshes_to_speed() {
-        // §3 tripwire: the Tempo pool's *count* is Speed. A freshly built/refreshed actor holds
-        // exactly Speed-many Tempo cards. If this drifts, the Speed·Daring·Tempo identity is broken.
+    fn tempo_refreshes_to_cadence() {
+        // §3 tripwire: the Tempo pool's *count* is Cadence. A freshly built/refreshed actor holds
+        // exactly Cadence-many Tempo cards. If this drifts, the Cadence·Finesse·Tempo identity is broken.
         use crate::scenarios::build_character;
         let a = build_character("Novice", &[]);
         assert_eq!(
-            a.tempo, a.offense.speed as i32,
-            "a refreshed actor must hold Speed-many Tempo cards"
+            a.tempo, a.offense.cadence as i32,
+            "a refreshed actor must hold Cadence-many Tempo cards"
         );
     }
 
     #[test]
-    fn higher_daring_crosses_an_equal_one_card_tie_is_held() {
-        // §3 tripwire: a crossing contest is decided by **Daring**, not Speed/Power. The higher
+    fn higher_finesse_crosses_an_equal_one_card_tie_is_held() {
+        // §3 tripwire: a crossing contest is decided by **Finesse**, not Cadence/Power. The higher
         // advance crosses; an equal *one-card* crossing is a tie, held by the catcher.
         use crate::combat::the_line;
         use crate::currency::Currency;
         use crate::scenarios::{build_character, rewards_for};
 
-        // Silver (Infiltrator) seeds Daring; a bare Novice floors at Daring 1. One card clears the bare
+        // Silver (Infiltrator) seeds Finesse; a bare Novice floors at Finesse 1. One card clears the bare
         // wall's hold → the Skirmisher crosses.
         let runner = build_character("Novice", &rewards_for(Currency::Silver));
         let blocker = build_character("Novice", &[]);
         assert!(
-            runner.offense.daring > blocker.offense.daring.max(1),
-            "test premise: the Silver-kitted runner must out-dare the bare blocker"
+            runner.offense.finesse > blocker.offense.finesse.max(1),
+            "test premise: the Silver-kitted runner must out-finesse the bare blocker"
         );
         let mut heroes = vec![runner];
         let mut foes = vec![blocker];
@@ -261,10 +261,10 @@ mod tests {
         );
         assert!(
             crossed[0],
-            "the higher-Daring Skirmisher crosses on one card"
+            "the higher-Finesse Skirmisher crosses on one card"
         );
 
-        // Equal Daring, one card → advance == hold → a tie, held by the catcher.
+        // Equal Finesse, one card → advance == hold → a tie, held by the catcher.
         let mut a = vec![build_character("Novice", &[])];
         a[0].tempo = 1;
         let mut b = vec![build_character("Novice", &[])];

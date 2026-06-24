@@ -5,61 +5,61 @@ FORM  each line is a card the build holds — Human baseline + treasures (abilit
 
 HEROES
   Anvil — Human · Fist [melee]  (13 cards)   cardsets: Iron
-      Human                               might 1, vitality 5, toughness 1, speed 3
+      Human                               might 1, vitality 5, toughness 1, cadence 3
       Iron L1     Brace                   vitality 2, toughness 1
       Iron L2     Phalanx                 vitality 2, toughness 1
       Iron L3     Bulwark                 vitality 3
       Iron L4     Hold Fast               vitality 2, toughness 2
       Iron L5     Last Stand · Taunt      vitality 4, toughness 2
-      Totals                              might 1, vitality 18, toughness 7, speed 3
+      Totals                              might 1, vitality 18, toughness 7, cadence 3
   Wisp — Human · Fist [melee]  (12 cards)   cardsets: Silver
-      Human                               might 1, vitality 5, toughness 1, speed 3
-      Silver L1   Slip Strike             speed 2, daring 2
-      Silver L2   Blitz                   might 1, speed 1
-      Silver L3   Shadowstep              speed 2, daring 2
+      Human                               might 1, vitality 5, toughness 1, cadence 3
+      Silver L1   Slip Strike             cadence 2, finesse 2
+      Silver L2   Blitz                   might 1, cadence 1
+      Silver L3   Shadowstep              cadence 2, finesse 2
       Silver L4   Backstab                might 2
-      Silver L5   Assassinate             might 2, speed 1
-      Totals                              might 6, vitality 5, toughness 1, speed 9, daring 4
+      Silver L5   Assassinate             might 2, cadence 1
+      Totals                              might 6, vitality 5, toughness 1, cadence 9, finesse 4
   Sear — Human · Fist [melee]  (12 cards)   cardsets: Brass
-      Human                               might 1, vitality 5, toughness 1, speed 3
+      Human                               might 1, vitality 5, toughness 1, cadence 3
       Brass L1    Bolt                    might 2
       Brass L2    Volley                  might 2
       Brass L3    Piercing Shot           might 3
       Brass L4    Longshot                might 2
       Brass L5    Bombardment             might 2
-      Totals                              might 12, vitality 5, toughness 1, speed 3
+      Totals                              might 12, vitality 5, toughness 1, cadence 3
   Hex — Human · Fist [melee]  (12 cards)   cardsets: Bone
-      Human                               might 1, vitality 5, toughness 1, speed 3
+      Human                               might 1, vitality 5, toughness 1, cadence 3
       Bone L1     Menace                  might 1
       Bone L2     Shackle                 might 1
       Bone L3     Terror                  might 1
       Bone L4     Curse                   might 1
       Bone L5     Unmake                  might 1
-      Totals                              might 6, vitality 5, toughness 1, speed 3
+      Totals                              might 6, vitality 5, toughness 1, cadence 3
   Vow — Human · Fist [melee]  (12 cards)   cardsets: Salt
-      Human                               might 1, vitality 5, toughness 1, speed 3
+      Human                               might 1, vitality 5, toughness 1, cadence 3
       Salt L1     Haste                   vitality 1
       Salt L2     Empower                 vitality 1
-      Salt L3     Mend                    vitality 1, speed 1
+      Salt L3     Mend                    vitality 1, cadence 1
       Salt L4     Bolster                 vitality 2
       Salt L5     Sanctuary               vitality 2
-      Totals                              might 1, vitality 12, toughness 1, speed 4
+      Totals                              might 1, vitality 12, toughness 1, cadence 4
 FOES
   Brute — Bruiser · Maul [melee]  (2 cards)
-      Brute (base)                        might 5, vitality 8, toughness 3, speed 2
-      Totals                              might 5, vitality 128, toughness 6, speed 2
+      Brute (base)                        might 5, vitality 8, toughness 3, cadence 2
+      Totals                              might 5, vitality 128, toughness 6, cadence 2
   Raider — Infiltrator · Claw [melee]  (2 cards)
-      Raider (base)                        might 3, vitality 4, toughness 1, speed 6, daring 5
-      Totals                              might 3, vitality 124, toughness 2, speed 6, daring 5
+      Raider (base)                        might 3, vitality 4, toughness 1, cadence 6, finesse 5
+      Totals                              might 3, vitality 124, toughness 2, cadence 6, finesse 5
   Slinger — Skirmisher · Bow [ranged]  (2 cards)
-      Slinger (base)                        might 4, vitality 3, toughness 1, speed 4
-      Totals                              might 4, vitality 123, toughness 3, speed 4
+      Slinger (base)                        might 4, vitality 3, toughness 1, cadence 4
+      Totals                              might 4, vitality 123, toughness 3, cadence 4
   Seer — Hexer · Wand [ranged]  (2 cards)
-      Seer (base)                         might 3, vitality 4, toughness 1, speed 3
-      Totals                              might 3, vitality 124, toughness 4, speed 3
+      Seer (base)                         might 3, vitality 4, toughness 1, cadence 3
+      Totals                              might 3, vitality 124, toughness 4, cadence 3
   Husk — Swarmer · Claw [melee]  (2 cards)
-      Husk (base)                         might 2, vitality 2, toughness 1, speed 3
-      Totals                              might 2, vitality 122, toughness 1, speed 3
+      Husk (base)                         might 2, vitality 2, toughness 1, cadence 3
+      Totals                              might 2, vitality 122, toughness 1, cadence 3
 
 ── round 1 ──────────────────────────────────────
   Vow plays Sanctuary.

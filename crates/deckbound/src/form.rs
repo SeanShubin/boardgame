@@ -9,7 +9,7 @@ use crate::stats::{Defense, Offense};
 use serde::Deserialize;
 
 /// One card's contribution to the Form stat block over the **five** stats (Spec §2.4): `might`,
-/// `vitality` (Health-card count), `toughness` (per-card bar), `speed` (Tempo count), `daring`
+/// `vitality` (Health-card count), `toughness` (per-card bar), `cadence` (Tempo count), `finesse`
 /// (per-Tempo-card grade). The **fundamental** (`base`) card sets the base; each **attachment** (a
 /// reward, or a bought Upgrade, §8.3) adds on top. Health pool = `vitality` (count) × `toughness`
 /// (value). No channel / armor / damage-type fields — those are deferred with gear (§2.2).
@@ -28,11 +28,11 @@ pub struct StatCard {
     pub toughness: u32,
     /// Tempo-pool **count** (§3): how many Tempo cards.
     #[serde(default)]
-    pub speed: u32,
-    /// Tempo-card **grade** (§3): Daring — the per-card magnitude weighed in a crossing or evade
+    pub cadence: u32,
+    /// Tempo-card **grade** (§3): Finesse — the per-card magnitude weighed in a crossing or evade
     /// contest.
     #[serde(default)]
-    pub daring: u32,
+    pub finesse: u32,
 }
 
 /// A character's **Form**: the fundamental (`base`) card + attachments. Sums to the Offense/Defense the
@@ -53,8 +53,8 @@ impl Form {
         let mut o = Offense::default();
         for c in &self.cards {
             o.might += c.might;
-            o.speed += c.speed;
-            o.daring += c.daring;
+            o.cadence += c.cadence;
+            o.finesse += c.finesse;
         }
         o
     }
@@ -76,8 +76,8 @@ mod tests {
         let fundamental = StatCard {
             name: "Anvil (base)".into(),
             might: 4,
-            speed: 2,
-            daring: 1,
+            cadence: 2,
+            finesse: 1,
             vitality: 10,
             toughness: 2,
         };
@@ -88,7 +88,7 @@ mod tests {
         };
         let reward_b = StatCard {
             name: "Swiften".into(),
-            speed: 1,
+            cadence: 1,
             ..Default::default()
         };
 
@@ -98,7 +98,7 @@ mod tests {
             reward_b.clone(),
         ]);
         let o = form.offense();
-        assert_eq!((o.might, o.speed, o.daring), (4, 3, 1));
+        assert_eq!((o.might, o.cadence, o.finesse), (4, 3, 1));
         let d = form.defense();
         assert_eq!(d.health.max, 10);
         assert_eq!(d.health.toughness, 3); // 2 + 1 from the reward
@@ -106,6 +106,6 @@ mod tests {
         // Commutative: reordering the attachments yields the same block.
         let reordered = Form::new(vec![reward_b, reward_a, fundamental]);
         assert_eq!(reordered.defense().health.toughness, d.health.toughness);
-        assert_eq!(reordered.offense().speed, o.speed);
+        assert_eq!(reordered.offense().cadence, o.cadence);
     }
 }

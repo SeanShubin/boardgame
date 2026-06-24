@@ -79,8 +79,8 @@ impl EncounterCard {
             might: s.might * level,
             vitality: s.vitality * level,
             toughness: s.toughness * level,
-            speed: s.speed * level,
-            daring: s.daring * level,
+            cadence: s.cadence * level,
+            finesse: s.finesse * level,
         }
     }
 }
@@ -137,7 +137,7 @@ mod tests {
     fn scaling_is_thematic_times_level() {
         let e = brute_pack();
         assert_eq!(e.scaling_at(3).vitality, 9); // Vitality = 3 × level
-        assert_eq!(e.scaling_at(3).speed, 0); // a brute does not scale Speed
+        assert_eq!(e.scaling_at(3).cadence, 0); // a brute does not scale Cadence
     }
 
     #[test]

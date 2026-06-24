@@ -243,11 +243,11 @@ impl Deckbound {
                 let up = !state.creatures[f].is_down();
                 let melee = state.creatures[f].can_contest(Range::Melee);
                 // The bold charge (aggression); ranged/support hold the Reserve. A charger **flanks** as
-                // a Skirmisher only if it is *fast* (high Daring — an Infiltrator); steady melee holds the
+                // a Skirmisher only if it is *fast* (high Finesse — an Infiltrator); steady melee holds the
                 // line as a Vanguard.
                 state.plan.foe_charging[f] = up && aggr >= 3 && melee;
                 state.plan.foe_flank[f] =
-                    up && aggr >= 3 && melee && state.creatures[f].offense.daring >= 3;
+                    up && aggr >= 3 && melee && state.creatures[f].offense.finesse >= 3;
             }
         }
         // §4 Rout / Charter #13 — a **direct Rout** (a Controller status set at Muster, §8.6: control
@@ -453,19 +453,19 @@ impl Deckbound {
         target: usize,
         range: Range,
     ) {
-        let (atk_snap, atk_name, atk_can, atk_daring) = if hero_attacker {
+        let (atk_snap, atk_name, atk_can, atk_finesse) = if hero_attacker {
             (
                 combat::snapshot(&state.heroes[attacker]),
                 state.heroes[attacker].name.clone(),
                 state.heroes[attacker].can_contest(range),
-                state.heroes[attacker].offense.daring.max(1),
+                state.heroes[attacker].offense.finesse.max(1),
             )
         } else {
             (
                 combat::snapshot(&state.creatures[attacker]),
                 state.creatures[attacker].name.clone(),
                 state.creatures[attacker].can_contest(range),
-                state.creatures[attacker].offense.daring.max(1),
+                state.creatures[attacker].offense.finesse.max(1),
             )
         };
         if !atk_can {
@@ -481,10 +481,10 @@ impl Deckbound {
         }
         // A **ranged** strike may be **evaded** (§4.2): the target spends Tempo to strictly exceed the
         // attacker's pressed volley. Default policy: the attacker presses a single card (volley =
-        // 1 × its Daring); the defender commits the minimum to exceed if it can afford to. An evaded
+        // 1 × its Finesse); the defender commits the minimum to exceed if it can afford to. An evaded
         // shot lands nothing and draws no strike-back (the defender slipped it, did not engage).
         if range == Range::Ranged {
-            let volley = atk_daring; // 1 card pressed by default
+            let volley = atk_finesse; // 1 card pressed by default
             let defender = if hero_attacker {
                 &mut state.creatures[target]
             } else {
@@ -1617,9 +1617,9 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
         .body(vec![
             format!("HP [{}]", pips(d.health.remaining, d.health.max)),
             format!(
-                "Spd {} Drv {} Mgt {} {}",
-                a.offense.speed,
-                a.offense.daring.max(1),
+                "Cad {} Fin {} Mgt {} {}",
+                a.offense.cadence,
+                a.offense.finesse.max(1),
                 a.offense.might,
                 a.attack.label()
             ),

@@ -3,7 +3,7 @@
 //! An Actor is the umbrella (see `docs/games/deckbound/notes/entities.md`): a **Character**
 //! is human-driven; a **Creature** follows a scripted `Behavior`. Both carry the full stat
 //! block — [`Offense`](crate::stats::Offense) / [`Defense`](crate::stats::Defense) — a weapon,
-//! action cards, and the round's **Tempo** pool (= Speed; the single breadth budget since the
+//! action cards, and the round's **Tempo** pool (= Cadence; the single breadth budget since the
 //! Focus/Mind merge, §3). Each Actor also has an **attack profile** (§4.2): the range(s) it can
 //! strike and contest at, plus round-scoped **status** (Stagger / Shove / Disarm) set by Controller
 //! cards and cleared at Refresh.
@@ -156,7 +156,7 @@ pub struct Actor {
     pub attack: Attack,
 
     // round-scoped budgets
-    /// The one breadth pool (§3): initiative spent to act *and* to defend. Sized by Speed; refreshes
+    /// The one breadth pool (§3): initiative spent to act *and* to defend. Sized by Cadence; refreshes
     /// each round. (Focus/Mind are merged out — defense is a Tempo spend.)
     pub tempo: i32,
     /// Round-scoped: a Lifeline (M3 *Last Stand*) — this round the Actor cannot be downed; damage
@@ -227,7 +227,7 @@ impl Actor {
 
     /// Refresh the Tempo pool and clear round-scoped defense + status state.
     pub fn refresh_round(&mut self) {
-        self.tempo = self.offense.speed as i32;
+        self.tempo = self.offense.cadence as i32;
         self.cannot_fall = false;
         self.stunned = false;
         self.shoved = false;

@@ -8,7 +8,7 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 ## Roles
 
 - **Assemble** — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Skirmisher / Reserve), commits its crossing / catch bids and which Vanguard catches which Skirmisher, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
-- **Vanguard** — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers — as many as it can pay catch-bids for (Speed = breadth, Daring = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
+- **Vanguard** — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers — as many as it can pay catch-bids for (Cadence = breadth, Finesse = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
 - **Skirmisher** — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Reserve.
 - **Reserve** — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Reserve, and is reached only by a Skirmisher who crossed or a Vanguard pouring through a broken front.
 - **The triangle** — Vanguard beats Skirmisher (catches it at the line); Skirmisher beats Reserve (crosses to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
@@ -16,22 +16,22 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 
 ## Combat
 
-- **The Line** — Tier 1: Vanguards strike across, and each crossing Skirmisher's advance Daring is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
-- **Crossing** — A Skirmisher's attempt to pass the wall: a single simultaneous Daring bid (committed cards × Daring). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
+- **The Line** — Tier 1: Vanguards strike across, and each crossing Skirmisher's advance Finesse is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
+- **Crossing** — A Skirmisher's attempt to pass the wall: a single simultaneous Finesse bid (committed cards × Finesse). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
 - **The Open** — Tier 2: crossed Skirmishers strike anything behind the line (the Reserve is the prize), a Vanguard whose foe is dead pours through, Reserves fire on the front and pick off exposed Skirmishers, and the struck strike back if they can answer the range.
 - **Open brawl** — If neither side fields a front, no line forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
 - **Group** — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Skirmisher crosses on its weakest member's Tempo. No size cap, no mixed intentions.
 - **Window tag** — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Skirmisher melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
 - **Trade** — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
-- **Evade** — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Daring) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
+- **Evade** — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **Auto-hit** — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
 - **Attack type** — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ## Resources
 
-- **Speed** — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **Daring** — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **tempo contest** — a crossing or an evade — where both sides commit Tempo cards (cards × Daring) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Daring.
-- **Tempo** — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (strike, contest a crossing, evade a ranged attack, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
+- **Cadence** — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
+- **Finesse** — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **tempo contest** — a crossing or an evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
+- **Tempo** — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, contest a crossing, evade a ranged attack, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
 
 ## Round
 

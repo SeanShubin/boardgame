@@ -104,19 +104,19 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
-/// A unit's **advance** — the per-card **Daring** it commits to *cross* the line (floor 1). A
+/// A unit's **advance** — the per-card **Finesse** it commits to *cross* the line (floor 1). A
 /// Skirmisher's total advance is `cards-bid × advance`.
-fn advance_daring(a: &Actor) -> u32 {
-    a.offense.daring.max(1)
+fn advance_finesse(a: &Actor) -> u32 {
+    a.offense.finesse.max(1)
 }
 
-/// A Vanguard's **hold** for one catch — its per-card Daring plus **Phalanx** (+2, catch strength)
+/// A Vanguard's **hold** for one catch — its per-card Finesse plus **Phalanx** (+2, catch strength)
 /// and **Bulwark** (+2 if any living ally carries it — the line anchors as one). A catch is a single
 /// committed card, so this is the grade a Skirmisher's advance must beat. Phalanx/Bulwark raise the
 /// hold only, never advance — a Wall holds; it does not slip through on a high number.
-fn hold_daring(catcher: &Actor, allies: &[Actor]) -> u32 {
+fn hold_finesse(catcher: &Actor, allies: &[Actor]) -> u32 {
     let bulwark = allies.iter().any(|x| !x.is_down() && x.has("Bulwark"));
-    advance_daring(catcher)
+    advance_finesse(catcher)
         + if catcher.has("Phalanx") { 2 } else { 0 }
         + if bulwark { 2 } else { 0 }
 }
@@ -124,7 +124,7 @@ fn hold_daring(catcher: &Actor, allies: &[Actor]) -> u32 {
 /// The fewest cards a Skirmisher must bid for `cards × advance` to beat `hold` (strictly, or `≥` with
 /// **Shadowstep**, which wins a tie). Floors at 1.
 fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
-    let adv = advance_daring(sk);
+    let adv = advance_finesse(sk);
     let b = if sk.has("Shadowstep") {
         hold.div_ceil(adv) // adv·b ≥ hold
     } else {
@@ -133,29 +133,29 @@ fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
     b.max(1)
 }
 
-/// The fewest Tempo cards a defender must commit for `cards × Daring` to **strictly exceed** a ranged
+/// The fewest Tempo cards a defender must commit for `cards × Finesse` to **strictly exceed** a ranged
 /// attacker's pressed `volley` — the evade contest (Spec §3.1 / §4.2, the same primitive as a
 /// crossing). Mirrors [`cards_to_cross`] without Shadowstep (a tie lands the strike — the avoider must
 /// strictly exceed). Floors at 1.
 fn cards_to_evade(defender: &Actor, volley: u32) -> u32 {
-    let grade = advance_daring(defender); // per-Tempo-card Daring (floor 1)
+    let grade = advance_finesse(defender); // per-Tempo-card Finesse (floor 1)
     (volley / grade + 1).max(1) // grade·b > volley
 }
 
 /// Resolve a ranged attack against `defender` (Spec §4.2): the defender may **evade** by committing the
-/// minimum Tempo to **strictly exceed** the attacker's pressed `volley` (cards × Daring) — a tie or
+/// minimum Tempo to **strictly exceed** the attacker's pressed `volley` (cards × Finesse) — a tie or
 /// less and the hit lands. Default policy: the defender evades iff it can afford the minimum cards; spent
 /// Tempo stays spent. Returns `true` if the attack was **evaded** (no hit); `false` if it **lands**
 /// (the caller then applies the strike).
 ///
-/// `volley` is the attacker's pressed bid (cards × the attacker's Daring) — by default a single card
+/// `volley` is the attacker's pressed bid (cards × the attacker's Finesse) — by default a single card
 /// (the attacker does not pre-press), but a policy/card may press harder.
 pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bool {
     if defender.stunned {
         return false; // no action to spend — takes the free hit
     }
     let need = cards_to_evade(defender, volley) as i32;
-    let grade = advance_daring(defender);
+    let grade = advance_finesse(defender);
     if need <= defender.tempo {
         defender.tempo -= need;
         log.push(format!(
@@ -178,7 +178,7 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 /// is **Reserve**. Nobody moves. From the start-of-tier state: **Vanguards strike** the opposing front
 /// (one card each), and each **Skirmisher** runs a **crossing contest** against the enemy Vanguards —
 /// **card-bound catch** (a Vanguard catches one Skirmisher per Tempo card, **Taunt** first; each catch's
-/// hold = [`hold_daring`]). A caught Skirmisher bids the fewest cards to beat the hold
+/// hold = [`hold_finesse`]). A caught Skirmisher bids the fewest cards to beat the hold
 /// ([`cards_to_cross`]); affordable (or **uncaught**) → it **slips** (the catcher lands a **parting free
 /// hit** off the same catch-card), else **held** and it trades. **Blitz** frees a Skirmisher's first
 /// slip. Returns `(hero_crossed, foe_crossed)`. Order-independent (offense is immutable here); deaths
@@ -243,7 +243,7 @@ fn clash_line(
 
 /// Resolve the crossing contests for one side's Skirmishers (`sk` in `skpool`) against the enemy
 /// Vanguards (`van` in `vanpool`). Card-bound catch: a Vanguard catches one Skirmisher per Tempo card,
-/// **Taunt** Vanguards first; the highest-Daring Skirmishers are caught first; uncaught ones slip free.
+/// **Taunt** Vanguards first; the highest-Finesse Skirmishers are caught first; uncaught ones slip free.
 fn cross_contest(
     skpool: &mut [Actor],
     sk: &[usize],
@@ -261,7 +261,7 @@ fn cross_contest(
         .copied()
         .filter(|&s| !skpool[s].is_down())
         .collect();
-    runners.sort_by_key(|&s| std::cmp::Reverse(advance_daring(&skpool[s])));
+    runners.sort_by_key(|&s| std::cmp::Reverse(advance_finesse(&skpool[s])));
 
     for s in runners {
         let catcher = catchers
@@ -274,9 +274,9 @@ fn cross_contest(
             continue;
         };
         vanpool[c].tempo -= 1; // the catch costs the Vanguard a card
-        let hold = hold_daring(&vanpool[c], vanpool);
+        let hold = hold_finesse(&vanpool[c], vanpool);
         let need = cards_to_cross(&skpool[s], hold);
-        let adv = advance_daring(&skpool[s]);
+        let adv = advance_finesse(&skpool[s]);
         let affordable = need as i32 <= skpool[s].tempo;
         log.push(format!(
             "crossing: {}(adv {adv}×{need}={}) vs {}(hold {hold}) → {}",
@@ -411,10 +411,10 @@ pub fn play_card(
                     log.push(format!("  suppresses {} (-{tempo} Tempo).", t.name));
                 }
             }
-            Effect::Slow { speed } => {
+            Effect::Slow { cadence } => {
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
-                    t.offense.speed = t.offense.speed.saturating_sub(speed);
-                    log.push(format!("  slows {} (-{speed} Speed).", t.name));
+                    t.offense.cadence = t.offense.cadence.saturating_sub(cadence);
+                    log.push(format!("  slows {} (-{cadence} Cadence).", t.name));
                 }
             }
             Effect::Confuse { tempo } => {
@@ -424,7 +424,7 @@ pub fn play_card(
                     log.push(format!("  confuses {} (-{tempo} Tempo).", t.name));
                 }
             }
-            Effect::BankSpeed { amount } => {
+            Effect::BankCadence { amount } => {
                 if let Some(i) = self_idx {
                     allies[i].tempo += amount as i32;
                 }
@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn phalanx_raises_the_hold_so_a_one_card_runner_is_held() {
-        // Runner: Silver L1 → Daring 2. One card → advance 2.
+        // Runner: Silver L1 → Finesse 2. One card → advance 2.
         // A bare Wall has hold 1 → 2 > 1, the one-card runner slips.
         let mut runner = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
         runner[0].tempo = 1;
@@ -544,28 +544,28 @@ mod tests {
             "Phalanx (hold 3) holds a one-card advance-2 runner"
         );
         assert!(
-            phalanx[0].has("Phalanx") && hold_daring(&phalanx[0], &phalanx) == 3,
+            phalanx[0].has("Phalanx") && hold_finesse(&phalanx[0], &phalanx) == 3,
             "Phalanx raises the hold to 3"
         );
     }
 
     #[test]
     fn shadowstep_wins_a_tie() {
-        // One card each, equal Daring → advance 2 vs hold 2, a tie. Without Shadowstep, a tie needs a
+        // One card each, equal Finesse → advance 2 vs hold 2, a tie. Without Shadowstep, a tie needs a
         // second card (advance 4) to win — with only one card the runner is held.
         let mut a = vec![build_character("Novice", &[])];
-        a[0].offense.daring = 2;
+        a[0].offense.finesse = 2;
         a[0].tempo = 1;
         let mut b = vec![build_character("Novice", &[])];
-        b[0].offense.daring = 2;
+        b[0].offense.finesse = 2;
         assert!(!cross(&mut a, &mut b), "an even one-card tie is held");
 
         // Shadowstep (Silver L3) wins the tie: one card (advance 2 ≥ hold 2) slips.
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 3)])];
-        a[0].offense.daring = 2;
+        a[0].offense.finesse = 2;
         a[0].tempo = 1;
         let mut b = vec![build_character("Novice", &[])];
-        b[0].offense.daring = 2;
+        b[0].offense.finesse = 2;
         assert!(
             cross(&mut a, &mut b),
             "Shadowstep wins the tie and slips through on one card"
@@ -575,10 +575,10 @@ mod tests {
     #[test]
     fn blitz_makes_the_first_slip_cost_no_tempo() {
         let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 2)])]; // owns Blitz
-        a[0].offense.daring = 5; // clearly out-advances the bare wall (hold 1) on one card
+        a[0].offense.finesse = 5; // clearly out-advances the bare wall (hold 1) on one card
         let mut b = vec![build_character("Novice", &[])];
         let tempo_before = a[0].tempo;
-        assert!(cross(&mut a, &mut b), "the high-Daring runner slips");
+        assert!(cross(&mut a, &mut b), "the high-Finesse runner slips");
         assert_eq!(
             a[0].tempo, tempo_before,
             "Blitz: the first slip each round costs no Tempo"
@@ -650,9 +650,9 @@ mod tests {
     /// the attacker's pressed volley; a tie or less lands the hit.
     #[test]
     fn evade_contest_strictly_exceeds_the_volley() {
-        // Volley 1×Daring=3; defender speed 2 / daring 2 commits 2 cards = 4 > 3 → evaded.
+        // Volley 1×Finesse=3; defender cadence 2 / finesse 2 commits 2 cards = 4 > 3 → evaded.
         let mut def = build_character("Novice", &[]);
-        def.offense.daring = 2;
+        def.offense.finesse = 2;
         def.tempo = 2;
         let mut log = Vec::new();
         assert!(
@@ -661,9 +661,9 @@ mod tests {
         );
         assert_eq!(def.tempo, 0, "the two committed cards stay spent");
 
-        // It cannot afford to exceed: daring 2, only 1 card → 2 ≤ 3, the hit lands.
+        // It cannot afford to exceed: finesse 2, only 1 card → 2 ≤ 3, the hit lands.
         let mut def = build_character("Novice", &[]);
-        def.offense.daring = 2;
+        def.offense.finesse = 2;
         def.tempo = 1;
         assert!(
             !try_evade(&mut def, 3, &mut log),

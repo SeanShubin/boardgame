@@ -174,12 +174,12 @@ The five **Suits** are the unit of design. Each Suit names a **Role** — its fu
 **Role, not the stat, is what the game is built around.** Three things follow, and they are binding:
 
 - **Stats are instruments, not first-class.** Every stat exists to give some Role its teeth — Vitality /
-  Toughness let the **Wall** hold; Speed / Daring let the **Infiltrator** slip and dodge; **Might** arms
+  Toughness let the **Wall** hold; Cadence / Finesse let the **Infiltrator** slip and dodge; **Might** arms
   the **Artillery**; the **Controller** turns the foe's own stats against it (lowering Might / Toughness /
-  Daring, draining Tempo); the **Support** line raises those same dials. A stat **no Role needs is a
+  Finesse, draining Tempo); the **Support** line raises those same dials. A stat **no Role needs is a
   defect** — cut it or re-home it. The Roles are **fixed**; the stats are **negotiable** — refactor the
   stat layer freely whenever it serves the Roles better. After the 2026 collapse the stat layer is a
-  small **shared chassis** — **Might · Vitality · Toughness · Speed · Daring** — with **no role-exclusive
+  small **shared chassis** — **Might · Vitality · Toughness · Cadence · Finesse** — with **no role-exclusive
   signature stat**: the effect Roles (Controller, Support) bend these shared dials rather than owning a
   private one, and Roles are told apart by their **card mechanics**, not by a signature stat.
 - **Each Role is uniquely valuable and load-bearing.** For every Role there is a challenge that **cannot
@@ -227,7 +227,7 @@ you die exactly one way — your health pool empties), and makes "what does this
 without numbers: Iron / Silver / Brass **kill**, Bone **disables**, Salt **sustains**. Fear that *killed*
 (the old scared-to-death) violated this and is gone; the separate fear/Dread **channel** was then
 **collapsed out entirely** (2026), and the Controller now **degrades the foe's own stats directly**
-(lowering Might / Toughness / Daring, draining Tempo) and hangs round-scoped statuses (Stagger → Shove →
+(lowering Might / Toughness / Finesse, draining Tempo) and hangs round-scoped statuses (Stagger → Shove →
 Rout), never health loss. See **Spec §2.2** (one channel; control is stat-drop, not damage) and **§8.6**
 (the damage-separation GUARANTEE).
 

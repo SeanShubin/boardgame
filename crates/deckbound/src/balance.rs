@@ -261,7 +261,7 @@ pub fn report(violations: &[Violation]) -> String {
 /// run with `--ignored`. *(Defensive / pool stats are structurally consumed by `Defense::take`.)*
 pub fn stat_necessity_report(seed: u64) -> String {
     type Zeroer = (&'static str, fn(&mut Actor));
-    // The five stats (§2.4): might, vitality, toughness, speed, daring.
+    // The five stats (§2.4): might, vitality, toughness, cadence, finesse.
     let zeroers: [Zeroer; 5] = [
         ("might", |a| a.offense.might = 0),
         ("vitality", |a| {
@@ -269,8 +269,8 @@ pub fn stat_necessity_report(seed: u64) -> String {
             a.defense.health.remaining = 1;
         }),
         ("toughness", |a| a.defense.health.toughness = 1),
-        ("speed", |a| a.offense.speed = 0),
-        ("daring", |a| a.offense.daring = 0),
+        ("cadence", |a| a.offense.cadence = 0),
+        ("finesse", |a| a.offense.finesse = 0),
     ];
     let mut out =
         String::from("stat decisiveness — zero-and-flip over the 5 suits' L5 (§8.6 T3, coarse):\n");
@@ -459,8 +459,8 @@ mod tests {
         let mut g = build_character("Novice", &[]);
         let big = 1_000_000;
         g.offense.might = big; // one-shots anything finite
-        g.offense.daring = big; // crosses any finite hold
-        g.offense.speed = big; // unlimited actions
+        g.offense.finesse = big; // crosses any finite hold
+        g.offense.cadence = big; // unlimited actions
         g.tempo = big as i32;
         g.defense.health.max = big; // survives anything finite
         g.defense.health.remaining = big;

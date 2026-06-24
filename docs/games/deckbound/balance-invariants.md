@@ -85,8 +85,8 @@ BI-1.** Anchored to the reference scenario; generalises to any coverage-demandin
 ## BI-3 — Force, not fiat (no rule forbids what stats can buy) ✅
 
 **Invariant.** A single character with **no role cards / powers** but **arbitrarily large stats**
-(Speed, Daring, Might, Vitality) **wins any finite-stat encounter in one round.** Equivalently: for every
-rank it could take and every defending formation of finite stats, enough Speed / Daring / Might / Vitality
+(Cadence, Finesse, Might, Vitality) **wins any finite-stat encounter in one round.** Equivalently: for every
+rank it could take and every defending formation of finite stats, enough Cadence / Finesse / Might / Vitality
 lets the lone god **reach and kill every enemy within round 1**.
 
 **Why.** The operational form of the §4 (`canon/2-spec/README.md`) **"force, not fiat"** guarantee, and
@@ -105,8 +105,8 @@ a god with **large-but-finite** stats (`1_000_000`, to avoid overflow) and **no 
 under a **one-round `Ruleset`** (so "wins" *is* "round-1 wipe") against adversarial finite formations —
 a deep wall (Brutes), a swarm (Husks), and a hide-in-the-back line (Seers). It runs against the
 static-ranks resolver of record. *(Wiring it surfaced and fixed a real fiat-ish gap: the solver only
-flanked units with an Infiltrator card, so a no-skills high-Daring god was stuck as a one-clash-per-round
-Vanguard; `wants_flank` now also fires on raw Daring — stats alone make a flanker.)*
+flanked units with an Infiltrator card, so a no-skills high-Finesse god was stuck as a one-clash-per-round
+Vanguard; `wants_flank` now also fires on raw Finesse — stats alone make a flanker.)*
 
 **Scope & notes.** Uses a large *finite* value, not literal infinity (overflow safety + a terminating
 "act while you have Tempo" loop). The **round-1** bar is the sharp form — overwhelming force, not merely

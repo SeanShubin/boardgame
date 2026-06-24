@@ -67,7 +67,7 @@ pub struct RewardId {
 
 /// Whether a Stat card actually grants anything (so empty bundles don't clutter a Form).
 fn stat_is_empty(s: &StatCard) -> bool {
-    s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.speed == 0 && s.daring == 0
+    s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.cadence == 0 && s.finesse == 0
 }
 
 fn five() -> u32 {
@@ -525,8 +525,8 @@ pub fn stat_grant(s: &StatCard) -> String {
         ("might", s.might),
         ("vitality", s.vitality),
         ("toughness", s.toughness),
-        ("speed", s.speed),
-        ("daring", s.daring),
+        ("cadence", s.cadence),
+        ("finesse", s.finesse),
     ]
     .iter()
     .filter(|(_, v)| *v > 0)
@@ -803,7 +803,9 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
             "Turns a face-down card back up \u{2014} Down \u{2192} Hand (a Recover, \u{00A7}5.3)."
                 .into()
         }
-        Effect::BankSpeed { amount } => format!("Banks +{amount} Speed as extra Tempo this round."),
+        Effect::BankCadence { amount } => {
+            format!("Banks +{amount} Cadence as extra Tempo this round.")
+        }
         Effect::Mend { vitality } => {
             format!("Restores {vitality} Health cards to the most-wounded ally (a Mend).")
         }
@@ -817,8 +819,8 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
             "Raises allies' Might by {might} this round (an Empower) \u{2014} the Support buff's indirect offense."
         ),
         Effect::Suppress { tempo } => format!("Strips {tempo} Tempo from a foe (a Suppress)."),
-        Effect::Slow { speed } => {
-            format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")
+        Effect::Slow { cadence } => {
+            format!("Cuts {cadence} Cadence from a foe (a Slow) \u{2014} cheaper to block or engage.")
         }
         Effect::Confuse { tempo } => {
             format!(
@@ -950,8 +952,8 @@ fn stat_grants(s: &StatCard) -> Vec<String> {
         (s.might, "Might"),
         (s.vitality, "Vitality"),
         (s.toughness, "Tough"),
-        (s.speed, "Speed"),
-        (s.daring, "Daring"),
+        (s.cadence, "Cadence"),
+        (s.finesse, "Finesse"),
     ] {
         if n > 0 {
             v.push(format!("+{n} {label}"));
@@ -1034,9 +1036,12 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let off = &actor.offense;
     let def = &actor.defense;
     let body = vec![
-        format!("Spd {} \u{00B7} Drv {}", off.speed, off.daring.max(1)),
+        format!("Cad {} \u{00B7} Fin {}", off.cadence, off.finesse.max(1)),
         format!("Mgt {} \u{00B7} Vit {}", off.might, def.health.max),
-        format!("Tgh {} \u{00B7} Tempo {}", def.health.toughness, off.speed),
+        format!(
+            "Tgh {} \u{00B7} Tempo {}",
+            def.health.toughness, off.cadence
+        ),
     ];
     let view = CardView::up(a.name.clone())
         .typed(format!(
@@ -1062,10 +1067,10 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
                 .into(),
         ),
         ProseLine::Body(format!(
-            "Stats \u{2014} Speed {} (Tempo cards) · Daring {} (contest grade), Might {}; \
+            "Stats \u{2014} Cadence {} (Tempo cards) · Finesse {} (contest grade), Might {}; \
              health pool {} (toughness {}).",
-            off.speed,
-            off.daring.max(1),
+            off.cadence,
+            off.finesse.max(1),
             off.might,
             def.health.max,
             def.health.toughness,
@@ -1165,8 +1170,8 @@ mod tests {
             "Vanguard",
             "The Line",
             "Assemble",
-            "Speed",
-            "Daring",
+            "Cadence",
+            "Finesse",
             "Tempo",
             "Trade",
             "The Clash",
@@ -1284,11 +1289,11 @@ mod tests {
             "a character's identity card must print no stats (§2.3)"
         );
         // The baseline is preserved by the separate clean-slate card: a bare-built Novice still
-        // fields the old numbers (vitality 5 / toughness 1 / speed 3 / might 1).
+        // fields the old numbers (vitality 5 / toughness 1 / cadence 3 / might 1).
         let bare = build_character("Novice", &[]);
         assert_eq!(bare.defense.health.max, 5);
         assert_eq!(bare.defense.health.toughness, 1);
-        assert_eq!(bare.offense.speed, 3);
+        assert_eq!(bare.offense.cadence, 3);
         assert_eq!(bare.offense.might, 1);
         // A creature, by contrast, still prints its base on the identity card.
         let brute = cat.actors.iter().find(|a| a.name == "Brute").unwrap();

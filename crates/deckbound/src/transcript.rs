@@ -5,7 +5,7 @@
 //! discuss one. A transcript fixes that: it runs a named scenario headlessly under the **resolver of
 //! record** (the same greedy policy + deterministic creatures as [`crate::solver::auto_resolve`]) and
 //! renders every decision **with the arithmetic that drove it** — the gauntlet's advance-vs-catch
-//! Daring comparison, each strike's damage past the cut, and the end-of-round Body table. Two readers
+//! Finesse comparison, each strike's damage past the cut, and the end-of-round Body table. Two readers
 //! (and two transcripts, before/after a change) can then point at the exact line where the rules did
 //! something unexpected — which is as often a *rules misunderstanding* as a balance bug.
 //!
@@ -241,7 +241,7 @@ fn form_block(a: &Actor) -> String {
     // A card-counted **build** (§2.3 stats-as-deck): the named cards the actor holds — its Form Stat
     // cards (the Human baseline + each treasure's stat bundle) + its ability cards + its weapon.
     let stat_empty = |s: &StatCard| {
-        s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.speed == 0 && s.daring == 0
+        s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.cadence == 0 && s.finesse == 0
     };
     let stat_count = a.form.cards.iter().filter(|s| !stat_empty(s)).count();
     let cards = stat_count + a.actions.len() + 1; // + the weapon
@@ -306,8 +306,8 @@ fn form_block(a: &Actor) -> String {
     let totals = StatCard {
         name: String::new(),
         might: a.offense.might,
-        speed: a.offense.speed,
-        daring: a.offense.daring,
+        cadence: a.offense.cadence,
+        finesse: a.offense.finesse,
         vitality: a.defense.health.max,
         toughness: a.defense.health.toughness,
     };
@@ -552,7 +552,7 @@ fn effect_keyword(e: &Effect) -> String {
         Shove => "Shove".into(),
         Rout => "Rout".into(),
         Recover => "Recover".into(),
-        BankSpeed { .. } => "Bank Speed".into(),
+        BankCadence { .. } => "Bank Cadence".into(),
         Mend { .. } => "Mend".into(),
         Ward => "Ward".into(),
         Haste { .. } => "Haste".into(),

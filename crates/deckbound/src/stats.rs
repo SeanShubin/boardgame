@@ -105,17 +105,17 @@ impl Defense {
     }
 }
 
-/// The offensive stats (Spec §2.4): the flat strike force **Might**, the Tempo **count** (Speed), and
-/// the per-Tempo-card **grade** (Daring — the magnitude weighed in a crossing or evade contest).
+/// The offensive stats (Spec §2.4): the flat strike force **Might**, the Tempo **count** (Cadence), and
+/// the per-Tempo-card **grade** (Finesse — the magnitude weighed in a crossing or evade contest).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Offense {
     /// Flat strike force (Power-only magnitude, §2.4). Formerly `power`.
     pub might: u32,
     /// The **count** of Tempo cards (§3): how many you start each round with.
-    pub speed: u32,
-    /// The **grade** of each Tempo card (§3): its Daring — the magnitude weighed in a crossing or
+    pub cadence: u32,
+    /// The **grade** of each Tempo card (§3): its Finesse — the magnitude weighed in a crossing or
     /// evade contest. Irrelevant to a strike's force.
-    pub daring: u32,
+    pub finesse: u32,
 }
 
 #[cfg(test)]
