@@ -47,3 +47,7 @@ Here I am exploring combat mechanics by vetting that the combat logs represent m
 - resolve fast range and spells
 - resolve melee (skirmishers)
 - resolve slow range and spells
+
+20 | **1. Formation** | secret → simultaneous reveal | Assign every actor an **intention** (vanguard/skirmisher/reserve); form **groups**; commit **bids** (skirmisher advance cards, vanguard catch cards + wh
+ich vanguard catches which skirmisher). Reveal together. **No blind spell casting.** |
+ 

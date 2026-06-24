@@ -60,7 +60,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **Defense model** (cut → bar → pool)                     | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                               |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                      |
 | **Speed/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                             |
-| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21). §4.3 actors-are-decks still pending                                                                         |
+| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks still pending                                                                         |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                          |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                             |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                       |
@@ -1012,9 +1012,10 @@ the exposed front.
 
 **The round.**
 
-1. **Assemble** *(the one hidden, simultaneous commit).* Each side secretly assigns ranks **and** commits
-   its **bids** — how many Tempo cards each Skirmisher throws at its crossing, how many each Vanguard
-   throws at a catch, and (defender's choice) **which Vanguard catches which Skirmisher** — and plays its
+1. **Assemble** *(the one hidden, simultaneous commit).* Each side secretly assigns ranks, **binds any
+   groups** (§4.5), **and** commits its **bids** — how many Tempo cards each Skirmisher throws at its
+   crossing, how many each Vanguard throws at a catch, and (defender's choice) **which Vanguard catches
+   which Skirmisher** — and plays its
    **standing cards** (a Wall's Brace / Last Stand, a Controller's Slow / Stagger / Disarm, a Support's
    Mend / Haste), whose effect **lasts the round** and shapes what follows. Reveal together; nobody moves
    after.
@@ -1028,7 +1029,8 @@ the exposed front.
      the catcher** unless the Skirmisher has **Shadowstep**. Each catch is a **separate bid** a Vanguard
      pays from its own Tempo, so a wall holds only as many Skirmishers as it can afford to contest; a
      Skirmisher **no Vanguard pays to catch slips free** — no contest, no parting hit.
-3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved together (tally at the boundary):
+3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved in **three ordered sub-windows — Fast ▸
+   Skirmisher melee ▸ Slow** (§4.6; tally at each boundary):
    - **Crossed Skirmishers strike** — behind the line, they may hit **any** enemy rank (Reserve first,
      the prize; the Vanguard from behind; or an enemy Skirmisher). One card per strike, **act while
      cards remain**; a melee blow on a foe that can't answer melee (a Reserve) is **free**.
@@ -1160,7 +1162,9 @@ takes a free hit. Standing and soaking cost nothing — only acting spends Tempo
 - **TERM.** `Crossing` (Combat) — A Skirmisher's attempt to pass the wall: a single simultaneous Daring bid (committed cards × Daring). Strictly more than the catcher's hold slips (taking a parting free hit); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
 - **TERM.** `The Open` (Combat) — Tier 2: crossed Skirmishers strike anything behind the line (the Reserve is the prize), a Vanguard whose foe is dead pours through, Reserves fire on the front and pick off exposed Skirmishers, and the struck strike back if they can answer the range.
 - **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
-- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + bids + standing cards) → the Line (Vanguards trade, Skirmishers contest the crossing) → the Open (breakthroughs strike, Reserves fire) → Refresh. Order-independent within each tier, strictly sequenced between.
+- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Skirmishers contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Skirmisher melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
+- **TERM.** `Group` (Combat) — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Skirmisher crosses on its weakest member's Tempo. No size cap, no mixed intentions.
+- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Skirmisher melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent buffs / debuffs are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated.
 
 **Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
 the three declared roles, targeting) is settled; these are not:
@@ -1298,39 +1302,53 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
-### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; code pending)*
+### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side conservation 2026-06-23; code pending)*
 
-**RULE.** Role cards are an **ability layer** over the physical battle (§4). A character may play
-**one role card of each role per round** — several in a round, so long as they are **different roles**.
-A god holding all five tracks fires **up to five** effects in a round; a single-role specialist fires
-**one** (and chooses which of its cards), then that role is spent until next round. Each card is played
-**when its effect fits**: a **Wall**'s standing defenses and the **Controller** / **Support** persistent
-debuffs and buffs at **Assemble** (they last the round); an **Infiltrator**'s slip and an **Artillery**'s
-fire resolve in their tier (the Line / the Open). Play is **decoupled from the body's rank**: a god fires
-its effects **across the round**, *not* from five ranks at once — its body still occupies a single rank.
-(The role labels are **thematic**, not a rank gate.)
+**RULE.** Role cards are an **ability layer** over the physical battle (§4). A **side** may discharge
+**one role card of each suit per round** — up to five effects, one per suit (Iron · Silver · Brass ·
+Bone · Salt) — **however many bodies it fields**. A god (one body holding all five tracks) fires up to
+five; a five-specialist party fires the same five across five bodies; a **2–4-body party runs multi-suit
+bodies** and still fires **at most one per suit**. Each card is played **when its effect fits**: a
+**Wall**'s standing defenses and the **Controller** / **Support** persistent debuffs and buffs at
+**Assemble** (they last the round); an **Infiltrator**'s slip and an **Artillery**'s fire resolve in
+their window (the Line / the Open, §4.6). **Casting spends a Tempo card** — it is an *action* like a
+strike or a contest (§4's budget), so a tapped-out body cannot fire even an unspent suit. Play is
+**decoupled from the body's rank**: the suit fires **across the round**, *not* from five ranks at once —
+the body still occupies a single rank. (The role labels are **thematic**, not a rank gate.)
 
-**WHY.** The per-role cap is the **god-vs-party lever** (#4: god ≈ party). A god holds every track and
-fires up to **five** effects in a round — but on **one body**, in one rank, that the enemy can
-**focus-fire**; a five-specialist party fires the same five across **five resilient bodies**. So it is a
-**concentration-vs-resilience tradeoff, not dominance** (candidate **BI-4**). The cap is **per-role, not
-per-round, on purpose**: it is what lets a god **combo across Roles** — combine *different* Roles in one
-round (Controller-degrade, then Artillery-fire, then Support-buff). Such combos are the god's distinctive
-reward for breadth, and they are valued **precisely because the Roles differ in kind** (Charter #12) —
-comboing two stat-reskins would be pointless doubling. They stay **additive / commutative**: each effect
-feeds an accumulator and **no played effect multiplies or gates another's output** (the GUARANTEE below,
-§0.1 / #11), so "combo" means *diverse effects concentrated in one round*, **never** a multiplying chain.
-Because the **Assemble commit is simultaneous**, a card is **committed up front or resolves in its
-tier** — never *held* for a more-informed moment (there is no information gradient to exploit).
+**WHY.** The per-suit cap is the **god-vs-party lever** (#4: god ≈ party), now stated as a
+**conservation law**. Treat the full card set as a **fixed pool** that party size (1–5) only
+**partitions across bodies**: **stats** conserve (bonuses ride on cardsets), **Tempo** conserves (Speed
+rides on cards), and **magic conserves the same way** — one discharge per suit per round, **five per side
+at every party size**. So the **god is simply the N=1 partition**, never a special case: one body holding
+the whole pool, all five suits, still five discharges. The only thing party size flexes is **simultaneous
+lane coverage** (fewer bodies man fewer of Vanguard / Skirmisher / Reserve per round) — the intended
+**concentration-vs-resilience** tradeoff (candidate **BI-4**), not dominance; and because casting is
+**decoupled from rank**, a small party's magic still does the artillery / control / support work remotely
+even while its few bodies hold one or two lanes. A **per-character** cap was rejected: a 2-body party of
+multi-suit bodies would fire up to **ten** effects (out-massing a five-body party — the "25-spell
+blowout"), and patched with one-suit-per-body it would instead **starve** a 2/3/4-body party of suits —
+both break conservation. Per-side closes that gap while leaving the canonical cases untouched (god = 5,
+five-specialist party = 5). The cap is **per-suit, not per-round, on purpose**: a god (one of each suit)
+still **combos across suits** in a round (Controller-degrade, then Artillery-fire, then Support-buff) —
+combos valued **precisely because the suits differ in kind** (Charter #12). They stay **additive /
+commutative**: each effect feeds an accumulator and **no played effect multiplies or gates another's
+output** (§0.1 / #11), so "combo" means *diverse effects concentrated in one round*, **never** a
+multiplying chain. Because the **Assemble commit is simultaneous**, a card is **committed up front or
+resolves in its window** — never *held* for a more-informed *hidden* moment (there is no information
+gradient to exploit; the open, face-up targeting in the Open is not hidden state).
 
 **GUARANTEES.**
-- One role card of each role, per character, per round; each played **when its effect fits** (Assemble
-  for persistent effects; the relevant tier for slips / fire), **decoupled from the body's physical
-  rank**.
+- One role card of each suit, **per side**, per round, **however many bodies it fields**; each played
+  **when its effect fits** (Assemble for persistent effects; the relevant window for slips / fire),
+  **decoupled from the body's physical rank**, and **spending a Tempo card** (casting is an action).
+- **Conservation across party size.** The card pool is fixed; party size only partitions it across
+  bodies, so **stats, Tempo, and magic output (5 / round) are all invariant to party size** — only
+  simultaneous lane coverage flexes. The god is the N=1 partition, not an exception.
 - **Order-independent effects (the simultaneity constraint).** A round's role-card effects must
   **combine commutatively**: every effect feeds an **accumulator** (damage piles, heals pile, buffs add
-  or set flags) resolved at the phase boundary, and **no played effect multiplies or gates another
-  played effect's output.** So a god firing five effects gets the **same result regardless of order**
+  or set flags) resolved at the window boundary, and **no played effect multiplies or gates another
+  played effect's output.** So a side firing five effects gets the **same result regardless of order**
   (§0.1 / #11). *(Modifiers like Curse stay safe by folding into the build — passive, not a play.)*
 - No party size dominates on raw role-card throughput (the #4 budget; candidate **BI-4**, which the
   par solver verifies).
@@ -1339,6 +1357,81 @@ tier** — never *held* for a more-informed moment (there is no information grad
 capped a god at ~3 and blocked the intended five-effect god; play is now moment-appropriate (Assemble or
 its tier) but rank-decoupled. Code/data + `TERM` lines land with the role-card migration:
 `role-card-redesign.md` §8.)*
+
+### 4.5 Groups — bind same-side Actors into one unit 🟡 *(2026-06-23)*
+
+**RULE.** At **Assemble**, a side may bind several of its Actors into a **group**. A group shares **one
+intention** (all Vanguard, or all Skirmisher, or all Reserve — never mixed) and has **no size cap**.
+Within a group:
+
+- **Shared target.** Every member points at the **same thing** at any one time.
+- **Distinct pools.** Each member keeps its own Health / Toughness and **dies individually** — the group
+  is a coordination unit, *not* a merged stat-block.
+- **Single-target blows land whole.** An assigned hit lands **entirely on one member** (a 4-damage card
+  is *not* split 2–2); the **defender allocates** each incoming single-target card to a member, against
+  the window snapshot. A **single enemy effect** aimed at the group lets the **group pick its victim**
+  (soak the debuff on whoever it hurts least).
+- **Area effects hit all.** An AoE attack strikes **every member for its full value** — clustering is the
+  group's standing risk, and the Reserve (single-targetable only one at a time) is exactly what AoE
+  punishes for bunching.
+
+**Groups × the crossing (§4).** Grouping is **asymmetric** by intention:
+
+- **A grouped Vanguard catches with combined Tempo** — members pool their catch-bid into one **stronger
+  hold**. Because the group targets one thing, a grouped pair makes **one unslippable catch**, while a
+  *split* pair catches **two** separate Skirmishers: group for a lock on the key threat, split for breadth.
+- **A grouped Skirmisher crosses on minimum Tempo** — moving in lockstep, the group's **advance** is
+  capped at its **weakest-stocked member** (apply the weakest-link to Daring too). Infiltrating as a clump
+  is thus **self-defeating** — and there is **no mechanical ban**; the min-Tempo penalty is the emergent
+  disincentive (a hard ban would be redundant *fiat*, §0.3). "Infiltrators work alone" emerges from the math.
+
+**WHY.** A group buys **focus-fire and control-resilience** (concentrate blows on one target; choose who
+eats a single debuff) at the price of **AoE-fragility**. The Tempo asymmetry makes grouping **reward
+holding and punish flanking** with no special case — the wall is stronger shoulder-to-shoulder, the
+infiltrator is only as quiet as its clumsiest member.
+
+**GUARANTEES.**
+- A group is one intention, distinct pools, shared target — no merged stat-block, no size cap.
+- AoE hits every member at full value; single-target blows land whole, defender-allocated.
+- Vanguard catch pools Tempo (combined hold); Skirmisher crossing is min-Tempo (weakest link); no ban on
+  group Skirmishers — the penalty is emergent (force, not fiat).
+
+### 4.6 Spell & ranged windows — Line, Fast, Slow 🟡 *(2026-06-23)*
+
+**RULE.** Beyond the **persistent** standing cards committed at Assemble (§4.4), an attacking spell or
+ranged shot carries a **window tag** — printed on the card (and, once gear lands, on the weapon) — that
+sets **when in resolution it lands**:
+
+- **Line** — resolves **with the Line** (Tier 1), as the vanguard clash settles.
+- **Fast** — resolves **early in the Open**, *before* the Skirmisher melee.
+- **Slow** — resolves **late in the Open**, *after* the Skirmisher melee.
+
+So the **Open (Tier 2) resolves in three ordered sub-windows — Fast ▸ Skirmisher melee ▸ Slow** — each a
+snapshot, order-independent within and strictly sequenced between (the §1.9 / §4 determinism property,
+now with two extra boundaries; deaths tally at each). A **Fast** reserve volley can pick off a Skirmisher
+*before* it strikes; a **Slow** finisher or Support mend lands *after* the dust settles.
+
+Targets for Fast / Slow effects are chosen **in the open** when the Open resolves — the same informed,
+face-up targeting the §4 Open already grants Skirmishers and Reserves, **not** a hidden held card (§4.4:
+no information gradient). **Casting spends a Tempo card** — an *action* like a strike or a contest, so it
+competes with bids and strikes. **Multi-window cards are rare** and need a clear thematic reason; most
+print exactly one window. An **untagged** shot resolves in its natural tier as before (the tag is the
+gear-system enrichment).
+
+**WHY.** Each window is a distinct battlefield moment that something can shape: the **Line** touches the
+clash itself, **Fast** softens before the flankers strike, **Slow** is the finisher / the stabilising
+heal. Splitting the Open by speed turns "when does my magic land" into a real decision **without** any
+hidden state — every choice is open and the resolution stays deterministic. Persistent buffs / debuffs are
+*not* windowed: they are Assemble standing cards (§4.4), so **§1.9's attacks-before-buffs is never
+violated** — a debuff bites the clash because it was committed a phase earlier, already standing, not
+because it "resolves first" inside a window.
+
+**GUARANTEES.**
+- Three resolution windows — Line (Tier 1), Fast and Slow (the Open's first and last sub-windows),
+  pivoting on the Skirmisher melee; each snapshot-resolved, deaths tally at each boundary.
+- The window tag is card / gear-printed; persistent buffs and debuffs are **not** windowed (Assemble
+  standing cards, §4.4), preserving §1.9.
+- Casting is an action (spends Tempo); multi-window cards are rare and thematically justified.
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
