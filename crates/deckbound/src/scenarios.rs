@@ -1,4 +1,4 @@
-//! The booklet: loads cards, traits, actors, and scenarios from `data/booklet.ron` and
+//! The booklet: loads cards, actors, and scenarios from `data/booklet.ron` and
 //! builds [`Actor`]s. All numbers live in data so they retune without recompiling the engine.
 
 use std::collections::HashMap;
@@ -14,13 +14,11 @@ use crate::currency::Currency;
 use crate::duel::Move;
 use crate::encounter::EncounterCard;
 use crate::form::{Form, StatCard};
-use crate::stats::{Channel, DamageType};
 use crate::zones::ZoneBehavior;
 
 #[derive(Debug, Deserialize)]
 struct Catalog {
     cards: Vec<Card>,
-    traits: Vec<TraitCard>,
     actors: Vec<ActorCard>,
     campaign: Vec<ScenarioCard>,
     god: Vec<ScenarioCard>,
@@ -69,29 +67,7 @@ pub struct RewardId {
 
 /// Whether a Stat card actually grants anything (so empty bundles don't clutter a Form).
 fn stat_is_empty(s: &StatCard) -> bool {
-    s.power == 0
-        && s.precision == 0
-        && s.speed == 0
-        && s.dread == 0
-        && s.inspiration == 0
-        && s.body == 0
-        && s.toughness == 0
-        && s.resolve == 0
-        && s.armor.is_empty()
-        && s.ward.is_empty()
-}
-
-#[derive(Debug, Deserialize)]
-struct TraitCard {
-    name: String,
-    #[serde(default)]
-    flavor: String,
-    #[serde(default)]
-    armor: Vec<(DamageType, u32)>,
-    #[serde(default)]
-    ward: Vec<(DamageType, u32)>,
-    #[serde(default)]
-    resolve: u32,
+    s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.speed == 0 && s.daring == 0
 }
 
 fn five() -> u32 {
@@ -117,9 +93,6 @@ struct ActorCard {
     weapon: String,
     #[serde(default)]
     actions: Vec<String>,
-    /// Attachment Form cards (armor / ward / …) — references into the trait library.
-    #[serde(default)]
-    traits: Vec<String>,
     /// Attack profile (§4.2): Melee / Ranged / Both / Neither. Defaults to Melee.
     #[serde(default = "melee")]
     attack: Attack,
@@ -354,27 +327,14 @@ fn build_actor_with(
         .find(|a| a.name == name)
         .unwrap_or_else(|| panic!("booklet has no actor named {name:?}"));
 
-    // Stats-as-deck (§2.3/§4.3): the stat block is read off the **Form** — a fundamental card plus
-    // attachments (traits), plus any `extra` attachment (encounter per-level scaling, §8.4).
+    // Stats-as-deck (§2.3/§4.3): the stat block is read off the **Form** — the inline `base`
+    // fundamental card plus any `extra` attachment (reward Stat cards, encounter per-level scaling
+    // §8.4, bought Upgrades §8.3).
     let mut fundamental = c.base.clone();
     if fundamental.name.is_empty() {
         fundamental.name = format!("{} (base)", c.name);
     }
     let mut form = Form::new(vec![fundamental]);
-    for tname in &c.traits {
-        let t = cat
-            .traits
-            .iter()
-            .find(|t| &t.name == tname)
-            .unwrap_or_else(|| panic!("booklet has no trait named {tname:?}"));
-        form.cards.push(StatCard {
-            name: t.name.clone(),
-            armor: t.armor.clone(),
-            ward: t.ward.clone(),
-            resolve: t.resolve,
-            ..Default::default()
-        });
-    }
     for extra in extras {
         form.cards.push(extra.clone());
     }
@@ -409,8 +369,9 @@ fn build_actor_with(
         stunned: false,
         shoved: false,
         disarmed: false,
+        routed: false,
         free_slip_used: false,
-        power_bonus: 0,
+        might_bonus: 0,
         fallen: false,
     };
     actor.refresh_round();
@@ -535,7 +496,7 @@ pub fn rewards_for(track: Currency) -> Vec<RewardId> {
 /// human-readable card sheets are **generated, never hand-kept**), so it cannot drift.
 #[derive(Clone)]
 pub struct LibraryRow {
-    /// The cardset: a suit track (`"Bone — Controller"`), or `Weapons` / `Pool` / `Form (traits)` / `Cast`.
+    /// The cardset: a suit track (`"Bone — Controller"`), or `Weapons` / `Pool` / `Cast`.
     pub set: String,
     pub name: String,
     pub suit: Option<Currency>,
@@ -560,31 +521,22 @@ fn card_kind(c: &Card) -> &'static str {
 /// A one-line summary of what a **Stat card** grants (its non-zero fields), for the card library
 /// and the transcript's per-treasure build breakdown.
 pub fn stat_grant(s: &StatCard) -> String {
-    let mut parts: Vec<String> = [
-        ("body", s.body),
+    [
+        ("might", s.might),
+        ("vitality", s.vitality),
         ("toughness", s.toughness),
         ("speed", s.speed),
         ("daring", s.daring),
-        ("strike", s.power),
-        ("pierce", s.precision),
-        ("dread", s.dread),
-        ("inspiration", s.inspiration),
-        ("resolve", s.resolve),
     ]
     .iter()
     .filter(|(_, v)| *v > 0)
     .map(|(l, v)| format!("{l} {v}"))
-    .collect();
-    for (d, v) in s.armor.iter().chain(&s.ward) {
-        if *v > 0 {
-            parts.push(format!("{} {v}", d.label()));
-        }
-    }
-    parts.join(", ")
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 /// Every printable card as a flat [`LibraryRow`], set by set: the five suit tracks first (booklet
-/// order, suit-major), then Weapons, the standalone Pool, Form traits, and the Cast.
+/// order, suit-major), then Weapons, the standalone Pool, and the Cast.
 pub fn card_library() -> Vec<LibraryRow> {
     let cat = catalog();
     let mut rows = Vec::new();
@@ -622,7 +574,7 @@ pub fn card_library() -> Vec<LibraryRow> {
             });
         }
     }
-    // Weapons (carry a damage type) and the standalone pool (creature / generic cards).
+    // Weapons (the base attack card) and the standalone pool (creature / generic cards).
     let weapons: std::collections::HashSet<&str> =
         cat.actors.iter().map(|a| a.weapon.as_str()).collect();
     for c in &cat.cards {
@@ -635,34 +587,14 @@ pub fn card_library() -> Vec<LibraryRow> {
             kind: if is_weapon { "weapon" } else { card_kind(c) },
             summary: if is_weapon {
                 c.primary_damage()
-                    .map(|(_, dt)| format!("{} weapon", dt.label()))
+                    .map(|p| format!("might weapon (+{p})"))
                     .unwrap_or_else(|| "weapon".into())
             } else {
                 c.summary()
             },
         });
     }
-    // Form traits (armor / ward) and the cast (characters & creatures).
-    for t in &cat.traits {
-        let mut mit: Vec<String> = t
-            .armor
-            .iter()
-            .map(|(d, v)| format!("{} {v}", d.label()))
-            .collect();
-        mit.extend(
-            t.ward
-                .iter()
-                .map(|(d, v)| format!("ward {} {v}", d.label())),
-        );
-        rows.push(LibraryRow {
-            set: "Form (traits)".into(),
-            name: t.name.clone(),
-            suit: None,
-            level: None,
-            kind: "trait",
-            summary: mit.join(", "),
-        });
-    }
+    // The cast (characters & creatures).
     for a in &cat.actors {
         rows.push(LibraryRow {
             set: "Cast".into(),
@@ -705,16 +637,6 @@ pub fn card_flavor(name: &str) -> &'static str {
         .iter()
         .find(|c| c.name == name)
         .map(|c| c.flavor.as_str())
-        .unwrap_or_default()
-}
-
-/// In-world flavor for a named trait. Empty if none authored.
-pub fn trait_flavor(name: &str) -> &'static str {
-    catalog()
-        .traits
-        .iter()
-        .find(|t| t.name == name)
-        .map(|t| t.flavor.as_str())
         .unwrap_or_default()
 }
 
@@ -773,9 +695,6 @@ fn build_catalog() -> Vec<CatalogEntry> {
     }
     for c in cat.cards.iter().filter(|c| c.passive) {
         out.push(power_entry(c));
-    }
-    for t in &cat.traits {
-        out.push(trait_entry(t));
     }
     for r in &cat.rewards {
         out.push(reward_entry(r));
@@ -859,67 +778,44 @@ pub(crate) fn zone_behavior_rule(z: ZoneBehavior) -> &'static str {
 /// keywords from the same single source of truth as the encyclopedia (no drift).
 pub(crate) fn effect_rule(e: &Effect) -> String {
     match e {
-        Effect::Damage { power, dtype } => match dtype.channel() {
-            // Outer channel: Armor cut → Toughness bar → the Body pool.
-            Channel::Body => format!(
-                "Deals {} damage (base {power}). It is reduced by the target's {} Armor, then absorbed \
-                 by its Body pool (cut \u{2192} bar \u{2192} pool, \u{00A7}2); Edge scales this.",
-                dtype.label(),
-                dtype.label()
-            ),
-            // Inner channel: Ward cut → the Resolve bar; no Body pool, no damage — the will
-            // *breaks* into a round-scoped control status (Freeze / Shaken / Rout), tiered by how
-            // far past Resolve it clears, rather than turning Health cards.
-            Channel::Fear => format!(
-                "Projects {} on the will (the inner channel): reduced by the target's Ward, then \
-                 tested against its Resolve bar \u{2014} no Body pool, no damage. The further it \
-                 clears Resolve the harder it breaks: Freeze (loses its action) \u{2192} Shaken \
-                 (also cannot defend) \u{2192} Rout (driven from the line, \u{00A7}4); Dread scales this.",
-                dtype.label()
-            ),
-        },
+        Effect::Damage { power } => format!(
+            "Deals {power} untyped Might. It accumulates into the round's pile; each time the pile \
+             clears the target's Toughness bar, one Health card turns face down (pile \u{2192} bar \
+             \u{2192} pool, \u{00A7}2.2); Force scales this.",
+        ),
         Effect::Guard { tempo } => format!(
             "Braces: +{tempo} Tempo to the holder this round — more initiative to answer incoming blows (M2)."
         ),
         Effect::Lifeline => {
             "Last Stand: this round the holder cannot be downed \u{2014} damage that would fell it \
-             leaves it at 1 Body (M3)."
+             leaves it at 1 health (M3)."
                 .into()
         }
         Effect::Stagger => "On a landed hit, the target loses its action this round.".into(),
-        Effect::Sunder { armor } => {
-            format!(
-                "Shears {armor} Armor off the target's plate (a Sunder), so later hits bite deeper."
-            )
-        }
         Effect::Disarm => "Rips a card from the target's Hand (knocks it Down).".into(),
         Effect::Shove => "Breaks the target out of its lane (a Shove).".into(),
-        Effect::Rally { resolve } => {
-            format!(
-                "Raises allies' Resolve by {resolve} (a Rally) \u{2014} a Lasting effect in the party zone."
-            )
+        Effect::Rout => {
+            "Drives the target from the line to the Reserve this round (a Rout) \u{2014} a Controller \
+             status (\u{00A7}4)."
+                .into()
         }
-        Effect::Steel => "Clears accumulated Fear and steadies the nerve (a Steel).".into(),
         Effect::Recover => {
             "Turns a face-down card back up \u{2014} Down \u{2192} Hand (a Recover, \u{00A7}5.3)."
                 .into()
         }
         Effect::BankSpeed { amount } => format!("Banks +{amount} Speed as extra Tempo this round."),
-        Effect::Mend { body } => format!("Restores {body} Body to the most-wounded ally (a Mend)."),
+        Effect::Mend { vitality } => {
+            format!("Restores {vitality} Health cards to the most-wounded ally (a Mend).")
+        }
         Effect::Ward => {
             "Grants a melee attack to a defenceless ally for the round (a Ward, \u{00A7}4.2), so a \
              ranged / support actor can self-defend."
                 .into()
         }
         Effect::Haste { tempo } => format!("Grants +{tempo} Tempo to an ally (a Haste)."),
-        Effect::Empower { power } => format!(
-            "Raises allies' Power by {power} this round (an Empower) \u{2014} the Support force-multiplier's indirect offense."
+        Effect::Empower { might } => format!(
+            "Raises allies' Might by {might} this round (an Empower) \u{2014} the Support buff's indirect offense."
         ),
-        Effect::Fortify { armor } => {
-            format!(
-                "Raises a shield wall: +{armor} Armor to the whole line this round (a Fortify)."
-            )
-        }
         Effect::Suppress { tempo } => format!("Strips {tempo} Tempo from a foe (a Suppress)."),
         Effect::Slow { speed } => {
             format!("Cuts {speed} Speed from a foe (a Slow) \u{2014} cheaper to block or engage.")
@@ -986,11 +882,11 @@ fn action_entry(c: &Card) -> CatalogEntry {
 }
 
 fn weapon_entry(c: &Card) -> CatalogEntry {
-    let (power, dtype) = c.primary_damage().unwrap_or((0, DamageType::Blunt));
+    let power = c.primary_damage().unwrap_or(0);
     let body = vec![
-        format!("{} damage", dtype.label()),
+        "might".into(),
         if power > 0 {
-            format!("+{power} Power")
+            format!("+{power} Might")
         } else {
             "base weapon".into()
         },
@@ -1004,14 +900,14 @@ fn weapon_entry(c: &Card) -> CatalogEntry {
         ProseLine::Heading(c.name.clone()),
         ProseLine::Term("Weapon".into()),
         ProseLine::Body(format!(
-            "Supplies the {} damage type to its wielder's strike; its Power ({power}) adds to the \
-             strike's magnitude (\u{00A7}4.2).",
-            dtype.label()
+            "The wielder's base attack card; its Power ({power}) adds to the strike's untyped Might \
+             magnitude (\u{00A7}4.2).",
         )),
-        ProseLine::Body(format!(
-            "Against a target, {} Armor reduces each hit before the Body pool absorbs the rest.",
-            dtype.label()
-        )),
+        ProseLine::Body(
+            "Against a target, each hit accumulates into the round's pile; every Toughness cleared \
+             turns one Health card face down (\u{00A7}2.2)."
+                .into(),
+        ),
     ];
     flavor_tail(&mut detail, card_flavor(&c.name));
     CatalogEntry {
@@ -1047,77 +943,19 @@ fn power_entry(c: &Card) -> CatalogEntry {
     }
 }
 
-fn trait_entry(t: &TraitCard) -> CatalogEntry {
-    let mut body = Vec::new();
-    for (dt, v) in &t.armor {
-        body.push(format!("Armor {} {v}", dt.label()));
-    }
-    for (dt, v) in &t.ward {
-        body.push(format!("Ward {} {v}", dt.label()));
-    }
-    if t.resolve > 0 {
-        body.push(format!("+{} Resolve", t.resolve));
-    }
-    let view = CardView::up(t.name.clone())
-        .typed("Form \u{00B7} attachment")
-        .body(body)
-        .accent(Accent::Warn);
-
-    let mut detail = vec![
-        ProseLine::Heading(t.name.clone()),
-        ProseLine::Term("Form attachment (stats-as-deck, \u{00A7}2.3)".into()),
-        ProseLine::Body(
-            "An attachment card added to an actor's Form (in the Active zone). Its stats sum into \
-             the Form's block \u{2014} Armor and Ward merge per damage type (\u{00A7}4.3)."
-                .into(),
-        ),
-    ];
-    for (dt, v) in &t.armor {
-        detail.push(ProseLine::Body(format!(
-            "Armor {} {v}: reduces each incoming {} hit by {v} before the Body pool.",
-            dt.label(),
-            dt.label()
-        )));
-    }
-    for (dt, v) in &t.ward {
-        detail.push(ProseLine::Body(format!(
-            "Ward {} {v}: blunts {} by {v} \u{2014} the defence Armor can't provide (\u{00A7}4.2).",
-            dt.label(),
-            dt.label()
-        )));
-    }
-    flavor_tail(&mut detail, trait_flavor(&t.name));
-    CatalogEntry {
-        kind: "Form",
-        name: t.name.clone(),
-        view,
-        detail,
-    }
-}
-
-/// The non-zero stat boosts of a `StatCard`, as `"+4 Body"`-style strings.
+/// The non-zero stat boosts of a `StatCard`, as `"+4 Vitality"`-style strings.
 fn stat_grants(s: &StatCard) -> Vec<String> {
     let mut v = Vec::new();
     for (n, label) in [
-        (s.power, "Power"),
-        (s.precision, "Precision"),
+        (s.might, "Might"),
+        (s.vitality, "Vitality"),
+        (s.toughness, "Tough"),
         (s.speed, "Speed"),
         (s.daring, "Daring"),
-        (s.dread, "Dread"),
-        (s.inspiration, "Inspiration"),
-        (s.body, "Body"),
-        (s.toughness, "Tough"),
-        (s.resolve, "Resolve"),
     ] {
         if n > 0 {
             v.push(format!("+{n} {label}"));
         }
-    }
-    for (dt, n) in &s.armor {
-        v.push(format!("+{n} {} Armor", dt.label()));
-    }
-    for (dt, n) in &s.ward {
-        v.push(format!("+{n} {} Ward", dt.label()));
     }
     v
 }
@@ -1197,8 +1035,8 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let def = &actor.defense;
     let body = vec![
         format!("Spd {} \u{00B7} Drv {}", off.speed, off.daring.max(1)),
-        format!("Pow {} \u{00B7} Body {}", off.power, def.body.max),
-        format!("Res {} \u{00B7} Tempo {}", def.resolve, off.speed),
+        format!("Mgt {} \u{00B7} Vit {}", off.might, def.health.max),
+        format!("Tgh {} \u{00B7} Tempo {}", def.health.toughness, off.speed),
     ];
     let view = CardView::up(a.name.clone())
         .typed(format!(
@@ -1207,7 +1045,7 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
             a.role
         ))
         .body(body)
-        .corner(def.body.max.to_string())
+        .corner(def.health.max.to_string())
         .accent(if is_hero { Accent::Ally } else { Accent::Foe });
 
     let mut detail = vec![
@@ -1218,37 +1056,21 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
             a.role
         )),
         ProseLine::Body(
-            "An actor is a bare identity plus a starting deck (stats-as-deck, \u{00A7}2.3): a \
-             fundamental Form card (its base stats), attachment cards, Action cards, and a weapon."
+            "An actor is a bare identity plus a starting deck (stats-as-deck, \u{00A7}2.3): an \
+             inline base Form card (its base stats), reward / attachment cards, Action cards, and a \
+             base attack card."
                 .into(),
         ),
         ProseLine::Body(format!(
-            "Stats \u{2014} Speed {} (Tempo cards) · Daring {} (crossing grade), Power {}, Precision {}; \
-             Body pool {} (toughness {}), Resolve {}.",
+            "Stats \u{2014} Speed {} (Tempo cards) · Daring {} (contest grade), Might {}; \
+             health pool {} (toughness {}).",
             off.speed,
             off.daring.max(1),
-            off.power,
-            off.precision,
-            def.body.max,
-            def.body.toughness,
-            def.resolve,
+            off.might,
+            def.health.max,
+            def.health.toughness,
         )),
     ];
-    if !def.armor.is_empty() {
-        let armor = def
-            .armor
-            .iter()
-            .map(|(dt, v)| format!("{} {v}", dt.label()))
-            .collect::<Vec<_>>()
-            .join(", ");
-        detail.push(ProseLine::Body(format!("Armor: {armor}.")));
-    }
-    if !a.traits.is_empty() {
-        detail.push(ProseLine::Body(format!(
-            "Form attachments: {}.",
-            a.traits.join(", ")
-        )));
-    }
     if !a.actions.is_empty() {
         detail.push(ProseLine::Body(format!(
             "Action cards: {}.",
@@ -1256,7 +1078,7 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
         )));
     }
     detail.push(ProseLine::Body(format!(
-        "Weapon: {} (supplies the strike's damage type).",
+        "Weapon: {} (the base attack card).",
         a.weapon
     )));
     flavor_tail(&mut detail, actor_flavor(&a.name));
@@ -1288,14 +1110,7 @@ mod tests {
         assert!(cat.len() >= 30, "the catalog has cards (got {})", cat.len());
 
         let kinds: std::collections::HashSet<&str> = cat.iter().map(|e| e.kind).collect();
-        for section in [
-            "Actions",
-            "Weapons",
-            "Powers",
-            "Form",
-            "Rewards",
-            "Characters",
-        ] {
+        for section in ["Actions", "Weapons", "Powers", "Rewards", "Characters"] {
             assert!(
                 kinds.contains(section),
                 "catalog missing the {section} section"
@@ -1380,8 +1195,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            20,
-            "expected 20 Spec TERM entries — a marker may have failed to parse"
+            23,
+            "expected 23 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).
@@ -1429,20 +1244,20 @@ mod tests {
                 },
             ],
             scaling: StatCard {
-                body: 3,
+                vitality: 3,
                 ..Default::default()
             },
         };
-        // L1: only Husk; its body = base 2 + scaling 3×1 = 5.
+        // L1: only Husk; its vitality = base 2 + scaling 3×1 = 5.
         let l1 = build_encounter_foes(&enc, 1);
         assert_eq!(l1.len(), 1);
         assert_eq!(l1[0].name, "Husk");
-        assert_eq!(l1[0].defense.body.max, 5);
-        // L2: Husk + Brute; Husk body = 2 + 3×2 = 8.
+        assert_eq!(l1[0].defense.health.max, 5);
+        // L2: Husk + Brute; Husk vitality = 2 + 3×2 = 8.
         let l2 = build_encounter_foes(&enc, 2);
         assert_eq!(l2.len(), 2);
         let husk = l2.iter().find(|a| a.name == "Husk").unwrap();
-        assert_eq!(husk.defense.body.max, 8);
+        assert_eq!(husk.defense.health.max, 8);
         // The encounter's strategy overrode the instinct: foes are creatures, not humans.
         assert!(l2.iter().all(|a| !a.is_human()));
     }
@@ -1452,7 +1267,7 @@ mod tests {
         let bare = build_character("Novice", &[]);
         let wall = build_character("Novice", &rewards_for(Currency::Iron));
         // The Wall track's bundled Stat cards make the character tougher; its role cards join the kit.
-        assert!(wall.defense.body.max > bare.defense.body.max);
+        assert!(wall.defense.health.max > bare.defense.health.max);
         assert!(wall.actions.len() > bare.actions.len());
         // Five levels per track (§8.3).
         assert_eq!(rewards_for(Currency::Iron).len(), 5);
@@ -1469,13 +1284,12 @@ mod tests {
             "a character's identity card must print no stats (§2.3)"
         );
         // The baseline is preserved by the separate clean-slate card: a bare-built Novice still
-        // fields the old numbers (body 5 / toughness 1 / resolve 1 / speed 3 / power 1).
+        // fields the old numbers (vitality 5 / toughness 1 / speed 3 / might 1).
         let bare = build_character("Novice", &[]);
-        assert_eq!(bare.defense.body.max, 5);
-        assert_eq!(bare.defense.body.toughness, 1);
-        assert_eq!(bare.defense.resolve, 1);
+        assert_eq!(bare.defense.health.max, 5);
+        assert_eq!(bare.defense.health.toughness, 1);
         assert_eq!(bare.offense.speed, 3);
-        assert_eq!(bare.offense.power, 1);
+        assert_eq!(bare.offense.might, 1);
         // A creature, by contrast, still prints its base on the identity card.
         let brute = cat.actors.iter().find(|a| a.name == "Brute").unwrap();
         assert!(
@@ -1488,10 +1302,10 @@ mod tests {
     fn the_card_library_accounts_for_every_catalog_card() {
         // Completeness invariant (generalizing the lesson of the silently-dropped Stat cards): every
         // card the catalog defines must appear as a library row — the **Human** baseline, each reward's
-        // ability cards **and** its Stat card, every pool / weapon card, every trait, and every cast
-        // actor. A golden snapshot can't enforce this (it locks an output, complete or not); counting
-        // the sources here means *dropping* one — a new card kind not wired into `card_library`, or a
-        // reused-but-unshown field — fails the build instead of going unnoticed until a human spots it.
+        // ability cards **and** its Stat card, every pool / weapon card, and every cast actor. A golden
+        // snapshot can't enforce this (it locks an output, complete or not); counting the sources here
+        // means *dropping* one — a new card kind not wired into `card_library`, or a reused-but-unshown
+        // field — fails the build instead of going unnoticed until a human spots it.
         let cat = catalog();
         let expected: usize = 1 // the Human baseline (clean_slate)
             + cat
@@ -1500,7 +1314,6 @@ mod tests {
                 .map(|r| r.cards.len() + usize::from(!stat_is_empty(&r.stat)))
                 .sum::<usize>()
             + cat.cards.len() // the standalone pool + weapons
-            + cat.traits.len() // Form traits
             + cat.actors.len(); // the cast
         assert_eq!(
             card_library().len(),

@@ -1,42 +1,24 @@
-//! Combat resolution helpers for the §4 **static-ranks** system: typed strikes, the **range** rule
-//! (same-range trade vs auto-hit, §4.2), **the Line** resolver ([`the_line`] — declared ranks, the
-//! card-bound crossing contest), creature AI, and card effects. The interactive four-card Clash
-//! ([`crate::duel`]) is the optional 1v1 module.
+//! Combat resolution helpers for the §4 **static-ranks** system: untyped Might strikes, the **range**
+//! rule (same-range trade, ranged evade-or-auto-hit, §4.2), **the Line** resolver ([`the_line`] —
+//! declared ranks, the card-bound crossing contest), the **evade contest** ([`try_evade`]), creature
+//! AI, and card effects. The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
 
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
-use crate::stats::{Break, Channel, DamageType, Offense};
+use crate::stats::Offense;
 
-/// The attack magnitude an actor brings to a damage type's **channel**: an outer (Body) strike scales
-/// off **Strike** (`power`), an inner (Fear) strike off **Dread** — the two channels' parallel attack
-/// stats (Spec §2.2 / §2.4). Card power and round buffs add on top.
-fn channel_attack(off: Offense, dtype: DamageType) -> u32 {
-    match dtype.channel() {
-        Channel::Body => off.power,
-        Channel::Fear => off.dread,
-    }
-}
-
-/// The base strike profile: `(raw, damage type, precision)`. The channel's attack stat is the
-/// magnitude; the weapon supplies the type; a Damage card adds its own power.
-pub fn base_strike(a: &Actor) -> (u32, DamageType, u32) {
-    let (card_pow, dtype) = a.weapon.primary_damage().unwrap_or((0, DamageType::Blunt));
-    // `power_bonus` is this round's Empower (a Support buff, §4 Salt) — indirect offense.
-    (
-        channel_attack(a.offense, dtype) + card_pow + a.power_bonus,
-        dtype,
-        a.offense.precision,
-    )
+/// The base strike raw magnitude (untyped Might, §2.2): the actor's **Might**, plus the base
+/// attack card's power, plus this round's Empower (`might_bonus`, a Support buff, §4 Salt).
+pub fn base_strike(a: &Actor) -> u32 {
+    let card_pow = a.weapon.primary_damage().unwrap_or(0);
+    a.offense.might + card_pow + a.might_bonus
 }
 
 /// A base [`Strike`] snapshot (for order-independent resolution from phase-start state).
 pub fn snapshot(a: &Actor) -> Strike {
-    let (raw, dtype, precision) = base_strike(a);
     Strike {
-        raw,
-        dtype,
-        precision,
+        raw: base_strike(a),
     }
 }
 
@@ -46,83 +28,39 @@ pub fn snapshot(a: &Actor) -> Strike {
 /// aside (no card moves), damage accumulating (not yet enough to turn a card), or **N health cards
 /// turn face down**. Defeat is narrated once, at the boundary (see `tally`), never here.
 pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mut Vec<String>) {
-    let dt = strike.dtype.label();
-    let inner = !matches!(strike.dtype.channel(), Channel::Body); // Fear breaks the will
     // Every strike is narrated — the log is how the player verifies the mechanics and learns who
     // acted, so a blow is never silently dropped. Overkill (a simultaneous-phase blow on a target
     // whose health cards are already all face down) is reported as such, not applied again.
     if target.is_down() {
         log.push(format!(
-            "  {attacker} hits {}: {} {dt} — its health cards are already all face down.",
+            "  {attacker} hits {}: {} might — its health cards are already all face down.",
             target.name, strike.raw
         ));
         return;
     }
-    let out = target
-        .defense
-        .take(strike.raw, strike.dtype, strike.precision);
+    let out = target.defense.take(strike.raw);
     let name = &target.name;
-    // The arithmetic tail, so a transcript reader can verify the cut and the result: how much got
-    // **through** the cut (Armor outer / Ward inner) and the channel's resulting meter.
-    let math = if inner {
-        format!(
-            " [{} past ward; fear {}/{}]",
-            out.through, target.defense.fear_pile, target.defense.resolve
-        )
-    } else {
-        format!(
-            " [{} past armor; Body {}/{}]",
-            out.through, target.defense.body.remaining, target.defense.body.max
-        )
-    };
+    // The arithmetic tail, so a transcript reader can verify the result: the accumulated pile and
+    // the resulting health meter (no cut today, §2.2).
+    let math = format!(
+        " [health {}/{}]",
+        target.defense.health.remaining, target.defense.health.max
+    );
     let what = if out.cards_flipped == 1 {
         " — turns a health card face down.".to_string()
     } else if out.cards_flipped > 1 {
         format!(" — turns {} health cards face down.", out.cards_flipped)
-    } else if out.through == 0 {
-        // Nothing got through the cut — no card moves.
-        if inner {
-            " — warded off.".to_string()
-        } else {
-            " — turned aside by its armor.".to_string()
-        }
-    } else if inner {
-        // Got through to the will/mind pile; the break (if any) is narrated below.
-        " — the dread mounts.".to_string()
     } else {
-        // Through the armor and accumulating, but not yet a full health card's worth.
+        // Accumulating, but not yet a full health card's worth.
         " — damage accumulates.".to_string()
     };
     log.push(format!(
-        "  {attacker} hits {name}: {} {dt}{what}{math}",
+        "  {attacker} hits {name}: {} might{what}{math}",
         strike.raw
     ));
-    if let Some(b) = out.broke {
-        log.push(format!("  {name} {}!", break_note(b)));
-    }
-    // §2.2 / Charter #13 — fear is control, not damage: the break tier applies a round-scoped status.
-    // Freeze Staggers (loses its action); Shaken adds Shove (also cannot defend); Rout adds the
-    // Vanguard→Reserve demotion — driven off the line — which the §4 charge step reads from the
-    // persisted `will_break` flag at Deploy (see `Deckbound::deploy`). Here we set the in-place flags.
-    match out.broke {
-        Some(Break::Freeze) => target.stunned = true,
-        Some(Break::Shaken | Break::Rout) => {
-            target.stunned = true;
-            target.shoved = true;
-        }
-        None => {}
-    }
     // Defeat is *not* narrated here: a phase resolves order-independently from snapshots, so several
     // strikes may land on the same target. "All health cards face down → falls" is reported once, when
     // the phase boundary finalizes it (see `tally`) — by then any same-phase healing has netted out.
-}
-
-fn break_note(b: Break) -> &'static str {
-    match b {
-        Break::Freeze => "freezes in fear — loses its action",
-        Break::Shaken => "is shaken — cannot act or defend",
-        Break::Rout => "is routed — driven from the line",
-    }
 }
 
 /// Pick a target index among `candidates` (indices into `pool`) per a target rule (§4).
@@ -132,11 +70,7 @@ pub fn pick_target(pool: &[Actor], candidates: &[usize], rule: TargetRule) -> Op
         TargetRule::LowestBody => candidates
             .iter()
             .copied()
-            .min_by_key(|&i| pool[i].defense.body.remaining),
-        TargetRule::LeastResolute => candidates
-            .iter()
-            .copied()
-            .min_by_key(|&i| pool[i].defense.resolve),
+            .min_by_key(|&i| pool[i].defense.health.remaining),
     }
 }
 
@@ -158,7 +92,7 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
         if a.is_down() && !a.fallen {
             if a.cannot_fall {
-                a.defense.body.remaining = a.defense.body.remaining.max(1);
+                a.defense.health.remaining = a.defense.health.remaining.max(1);
             } else {
                 a.fallen = true;
                 log.push(format!(
@@ -197,6 +131,46 @@ fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
         hold / adv + 1 // adv·b > hold
     };
     b.max(1)
+}
+
+/// The fewest Tempo cards a defender must commit for `cards × Daring` to **strictly exceed** a ranged
+/// attacker's pressed `volley` — the evade contest (Spec §3.1 / §4.2, the same primitive as a
+/// crossing). Mirrors [`cards_to_cross`] without Shadowstep (a tie lands the strike — the avoider must
+/// strictly exceed). Floors at 1.
+fn cards_to_evade(defender: &Actor, volley: u32) -> u32 {
+    let grade = advance_daring(defender); // per-Tempo-card Daring (floor 1)
+    (volley / grade + 1).max(1) // grade·b > volley
+}
+
+/// Resolve a ranged attack against `defender` (Spec §4.2): the defender may **evade** by committing the
+/// minimum Tempo to **strictly exceed** the attacker's pressed `volley` (cards × Daring) — a tie or
+/// less and the hit lands. Default policy: the defender evades iff it can afford the minimum cards; spent
+/// Tempo stays spent. Returns `true` if the attack was **evaded** (no hit); `false` if it **lands**
+/// (the caller then applies the strike).
+///
+/// `volley` is the attacker's pressed bid (cards × the attacker's Daring) — by default a single card
+/// (the attacker does not pre-press), but a policy/card may press harder.
+pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bool {
+    if defender.stunned {
+        return false; // no action to spend — takes the free hit
+    }
+    let need = cards_to_evade(defender, volley) as i32;
+    let grade = advance_daring(defender);
+    if need <= defender.tempo {
+        defender.tempo -= need;
+        log.push(format!(
+            "  {} evades (evade {need}×{grade}={} > volley {volley}).",
+            defender.name,
+            need as u32 * grade,
+        ));
+        true
+    } else {
+        log.push(format!(
+            "  {} cannot evade the volley ({volley}) — the shot lands.",
+            defender.name,
+        ));
+        false
+    }
 }
 
 /// Resolve **the Line** (§4 Tier 1, static-ranks). Ranks are *declared*: a charger that **flanks** is a
@@ -358,26 +332,14 @@ pub fn play_card(
     // How many foes / allies an effect touches (§4 AoE); ≥1. A Curse modifier (M5) and Sanctuary
     // (M6) raise this via the card's `targets` at build time.
     let n = (card.targets as usize).max(1);
-    // The Support's force-multiplier (§2.4): each augment gains +Inspiration on its magnitude.
-    let insp = attacker.inspiration;
     for effect in &card.effects {
         match *effect {
-            Effect::Damage { power, dtype } => {
-                // The damage type's channel selects the attack stat: outer strikes scale off Strike
-                // (`power`), inner (Fear) strikes off **Dread** (§2.2 parallel channels). Card power adds.
-                let raw = channel_attack(attacker, dtype) + power;
+            Effect::Damage { power } => {
+                // Untyped Might (§2.2): the attacker's Might plus the card's own power.
+                let raw = attacker.might + power;
                 let alive: Vec<usize> = living(foes);
                 for ti in alive.into_iter().take(n) {
-                    apply_strike(
-                        &mut foes[ti],
-                        Strike {
-                            raw,
-                            dtype,
-                            precision: attacker.precision,
-                        },
-                        actor_name,
-                        log,
-                    );
+                    apply_strike(&mut foes[ti], Strike { raw }, actor_name, log);
                 }
             }
             Effect::Guard { tempo } => {
@@ -387,15 +349,6 @@ pub fn play_card(
                     log.push(format!("  braces (+{tempo} Tempo)."));
                 }
             }
-            Effect::Fortify { armor } => {
-                // Shield Wall: the Wall raises temporary Armor over the whole line this round.
-                for t in allies.iter_mut().filter(|a| !a.is_down()) {
-                    t.defense.armor_bonus += armor;
-                }
-                log.push(format!(
-                    "  raises a shield wall (+{armor} Armor to the line)."
-                ));
-            }
             Effect::Lifeline => {
                 // M3 — this round the holder cannot fall (damage leaves it at 1 Body); resolved
                 // in `tally` at the phase boundary.
@@ -404,23 +357,16 @@ pub fn play_card(
                     log.push("  steels for a last stand — it cannot fall this round.".into());
                 }
             }
-            Effect::Rally { resolve } => {
-                let amt = resolve + insp;
-                for a in allies.iter_mut().filter(|a| !a.is_down()) {
-                    a.defense.resolve += amt;
-                }
-                log.push(format!("  +{amt} Resolve to allies."));
-            }
-            Effect::Mend { body } => {
+            Effect::Mend { vitality } => {
                 // Heal the `n` most-wounded allies (M6 Sanctuary heals all).
                 let mut order: Vec<usize> = living(allies);
-                order.sort_by_key(|&i| allies[i].defense.body.remaining);
-                let amt = body + insp;
+                order.sort_by_key(|&i| allies[i].defense.health.remaining);
+                let amt = vitality;
                 for ai in order.into_iter().take(n) {
-                    let max = allies[ai].defense.body.max;
-                    let r = &mut allies[ai].defense.body.remaining;
+                    let max = allies[ai].defense.health.max;
+                    let r = &mut allies[ai].defense.health.remaining;
                     *r = (*r + amt).min(max);
-                    log.push(format!("  mends {} (+{amt} Body).", allies[ai].name));
+                    log.push(format!("  mends {} (+{amt} health).", allies[ai].name));
                 }
             }
             Effect::Ward => {
@@ -445,19 +391,19 @@ pub fn play_card(
                 }
             }
             Effect::Haste { tempo } => {
-                let amt = tempo + insp;
+                let amt = tempo;
                 for t in allies.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.tempo += amt as i32;
                     log.push(format!("  +{amt} Tempo to {}.", t.name));
                 }
             }
-            Effect::Empower { power } => {
-                // Round-scoped +Power to allies (the §4 Salt force-multiplier — indirect offense).
-                let amt = power + insp;
+            Effect::Empower { might } => {
+                // Round-scoped +Might to allies (the §4 Salt buff — indirect offense).
+                let amt = might;
                 for t in allies.iter_mut().filter(|a| !a.is_down()) {
-                    t.power_bonus += amt;
+                    t.might_bonus += amt;
                 }
-                log.push(format!("  empowers the line (+{amt} Power)."));
+                log.push(format!("  empowers the line (+{amt} Might)."));
             }
             Effect::Suppress { tempo } => {
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
@@ -477,21 +423,6 @@ pub fn play_card(
                     t.tempo -= tempo as i32;
                     log.push(format!("  confuses {} (-{tempo} Tempo).", t.name));
                 }
-            }
-            Effect::Sunder { armor } => {
-                if let Some(t) = foes.iter_mut().find(|a| !a.is_down()) {
-                    for v in t.defense.armor.values_mut() {
-                        *v = v.saturating_sub(armor);
-                    }
-                    log.push(format!("  sunders {}'s armor.", t.name));
-                }
-            }
-            Effect::Steel => {
-                if let Some(i) = self_idx {
-                    allies[i].defense.fear_pile = 0;
-                    allies[i].defense.will_break = None;
-                }
-                log.push("  nerves settle.".into());
             }
             Effect::BankSpeed { amount } => {
                 if let Some(i) = self_idx {
@@ -515,6 +446,14 @@ pub fn play_card(
                     log.push(format!("  shoves {} out of the line.", t.name));
                 }
             }
+            Effect::Rout => {
+                // A Controller status (§4 / Charter #13): drive the foe from the line to the Reserve
+                // this round — it neither holds as a Vanguard nor crosses as a Skirmisher.
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.routed = true;
+                    log.push(format!("  routs {} — driven from the line.", t.name));
+                }
+            }
             Effect::Disarm => {
                 // Foul the foe's hand: this round it cannot play its role cards.
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
@@ -525,7 +464,7 @@ pub fn play_card(
             Effect::Recover => {
                 // Turn a face-down Health card back up on the most-wounded ally/allies (§5).
                 let mut order: Vec<usize> = living(allies);
-                order.sort_by_key(|&i| allies[i].defense.body.remaining);
+                order.sort_by_key(|&i| allies[i].defense.health.remaining);
                 for ai in order.into_iter().take(n) {
                     if allies[ai].defense.recover_card() > 0 {
                         log.push(format!(
@@ -670,23 +609,20 @@ mod tests {
         );
     }
 
-    /// T3 — no-redundant-stat (§8.6): an inner (Fear) attack scales off **Dread**. Zeroing Dread must
-    /// reduce the fear dealt — the regression guard that would have caught the old dead "Spirit".
+    /// T3 — no-redundant-stat (§8.6): a strike scales off **Might**. A Damage card with higher Might
+    /// deals more — the regression guard that the offense stat is consumed.
     #[test]
-    fn dread_is_consumed_by_fear_attacks() {
-        let card = fx(vec![Effect::Damage {
-            power: 0,
-            dtype: DamageType::Fear,
-        }]);
+    fn might_is_consumed_by_strikes() {
+        let card = fx(vec![Effect::Damage { power: 0 }]);
         let mut allies = vec![build_character("Novice", &[])];
         let mut log = Vec::new();
 
         let mut with = vec![build_character("Novice", &[])];
         play_card(
             &card,
-            "Hexer",
+            "Striker",
             Offense {
-                dread: 8,
+                might: 8,
                 ..Default::default()
             },
             &mut with,
@@ -697,7 +633,7 @@ mod tests {
         let mut without = vec![build_character("Novice", &[])];
         play_card(
             &card,
-            "Hexer",
+            "Striker",
             Offense::default(),
             &mut without,
             &mut allies,
@@ -705,51 +641,33 @@ mod tests {
             &mut log,
         );
         assert!(
-            with[0].defense.fear_pile > without[0].defense.fear_pile,
-            "Dread must scale a fear attack (no-redundant-stat, §8.6)"
+            with[0].defense.health.remaining < without[0].defense.health.remaining,
+            "Might must scale a strike (no-redundant-stat, §8.6)"
         );
     }
 
-    /// T3 — no-redundant-stat (§8.6): a Support **augment** scales off **Inspiration**. A Mend with
-    /// Inspiration restores more Body than one without — proof the Salt signature is consumed.
+    /// The **evade contest** (§3.1 / §4.2): the defender commits the minimum Tempo to strictly exceed
+    /// the attacker's pressed volley; a tie or less lands the hit.
     #[test]
-    fn inspiration_is_consumed_by_augments() {
-        let card = fx(vec![Effect::Mend { body: 1 }]);
-        let mut foes = vec![build_character("Novice", &[])];
+    fn evade_contest_strictly_exceeds_the_volley() {
+        // Volley 1×Daring=3; defender speed 2 / daring 2 commits 2 cards = 4 > 3 → evaded.
+        let mut def = build_character("Novice", &[]);
+        def.offense.daring = 2;
+        def.tempo = 2;
         let mut log = Vec::new();
-
-        let wounded = || {
-            let mut a = build_character("Novice", &[]);
-            a.defense.body.remaining = 1; // wounded but alive (a down ally isn't a Mend target)
-            a
-        };
-
-        let mut hi = vec![wounded()];
-        play_card(
-            &card,
-            "Vow",
-            Offense {
-                inspiration: 5,
-                ..Default::default()
-            },
-            &mut foes,
-            &mut hi,
-            Some(0),
-            &mut log,
-        );
-        let mut lo = vec![wounded()];
-        play_card(
-            &card,
-            "Vow",
-            Offense::default(),
-            &mut foes,
-            &mut lo,
-            Some(0),
-            &mut log,
-        );
         assert!(
-            hi[0].defense.body.remaining > lo[0].defense.body.remaining,
-            "Inspiration must scale an augment (no-redundant-stat, §8.6)"
+            try_evade(&mut def, 3, &mut log),
+            "4 > 3 strictly exceeds the volley → evaded"
+        );
+        assert_eq!(def.tempo, 0, "the two committed cards stay spent");
+
+        // It cannot afford to exceed: daring 2, only 1 card → 2 ≤ 3, the hit lands.
+        let mut def = build_character("Novice", &[]);
+        def.offense.daring = 2;
+        def.tempo = 1;
+        assert!(
+            !try_evade(&mut def, 3, &mut log),
+            "1 card (2) cannot exceed volley 3 → the hit lands"
         );
     }
 
@@ -758,10 +676,10 @@ mod tests {
         let mut allies = vec![build_character("Novice", &[])];
         let mut foes = vec![build_character("Novice", &[])];
         // Knock one Health card face down.
-        let t = allies[0].defense.body.toughness;
-        allies[0].defense.take(t, DamageType::Blunt, 0);
-        let before = allies[0].defense.body.remaining;
-        assert!(before < allies[0].defense.body.max, "a card is face down");
+        let t = allies[0].defense.health.toughness;
+        allies[0].defense.take(t);
+        let before = allies[0].defense.health.remaining;
+        assert!(before < allies[0].defense.health.max, "a card is face down");
         let mut log = Vec::new();
         play_card(
             &fx(vec![Effect::Recover]),
@@ -773,7 +691,7 @@ mod tests {
             &mut log,
         );
         assert_eq!(
-            allies[0].defense.body.remaining,
+            allies[0].defense.health.remaining,
             before + 1,
             "Recover turns one face-down Health card back up"
         );

@@ -1,191 +1,164 @@
 SCENARIO  rules-tour   seed=1   ruleset(max_rounds=5, max_unique=5)
-          all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks plate, Controller's fear ladder (resist / Freeze / Shaken / Rout + demotion), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, armour, defeat, refresh.
+          all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, evade, defeat, refresh.
 
 FORM  each line is a card the build holds — Human baseline + treasures (ability + stat grant); the grants sum to Totals (§2.3 stats-as-deck)
 
 HEROES
   Anvil — Human · Fist [melee]  (13 cards)   cardsets: Iron
-      Human                               body 5, toughness 1, speed 3, strike 1, resolve 1
-      Iron L1     Brace                   body 2, toughness 1
-      Iron L2     Phalanx                 body 2, toughness 1
-      Iron L3     Bulwark                 body 3
-      Iron L4     Shield Wall             body 2, toughness 1
-      Iron L5     Last Stand · Taunt      body 4, toughness 2
-      Totals                              body 18, toughness 6, speed 3, strike 1, resolve 1
+      Human                               might 1, vitality 5, toughness 1, speed 3
+      Iron L1     Brace                   vitality 2, toughness 1
+      Iron L2     Phalanx                 vitality 2, toughness 1
+      Iron L3     Bulwark                 vitality 3
+      Iron L4     Hold Fast               vitality 2, toughness 2
+      Iron L5     Last Stand · Taunt      vitality 4, toughness 2
+      Totals                              might 1, vitality 18, toughness 7, speed 3
   Wisp — Human · Fist [melee]  (12 cards)   cardsets: Silver
-      Human                               body 5, toughness 1, speed 3, strike 1, resolve 1
+      Human                               might 1, vitality 5, toughness 1, speed 3
       Silver L1   Slip Strike             speed 2, daring 2
-      Silver L2   Blitz                   speed 1, strike 1
+      Silver L2   Blitz                   might 1, speed 1
       Silver L3   Shadowstep              speed 2, daring 2
-      Silver L4   Backstab                strike 2
-      Silver L5   Assassinate             speed 1, strike 2
-      Totals                              body 5, toughness 1, speed 9, daring 4, strike 6, resolve 1
+      Silver L4   Backstab                might 2
+      Silver L5   Assassinate             might 2, speed 1
+      Totals                              might 6, vitality 5, toughness 1, speed 9, daring 4
   Sear — Human · Fist [melee]  (12 cards)   cardsets: Brass
-      Human                               body 5, toughness 1, speed 3, strike 1, resolve 1
-      Brass L1    Bolt                    strike 2
-      Brass L2    Volley                  strike 1, pierce 1
-      Brass L3    Sunder                  strike 2
-      Brass L4    Longshot                strike 1, pierce 1
-      Brass L5    Bombardment             strike 2
-      Totals                              body 5, toughness 1, speed 3, strike 9, pierce 2, resolve 1
+      Human                               might 1, vitality 5, toughness 1, speed 3
+      Brass L1    Bolt                    might 2
+      Brass L2    Volley                  might 2
+      Brass L3    Piercing Shot           might 3
+      Brass L4    Longshot                might 2
+      Brass L5    Bombardment             might 2
+      Totals                              might 12, vitality 5, toughness 1, speed 3
   Hex — Human · Fist [melee]  (12 cards)   cardsets: Bone
-      Human                               body 5, toughness 1, speed 3, strike 1, resolve 1
-      Bone L1     Menace                  dread 2
-      Bone L2     Shackle                 dread 1, resolve 1
-      Bone L3     Terror                  dread 2
-      Bone L4     Curse                   dread 1, resolve 1
-      Bone L5     Unmake                  dread 2
-      Totals                              body 5, toughness 1, speed 3, strike 1, dread 8, resolve 3
-  Vow — Human · Fist [melee]  (13 cards)   cardsets: Salt
-      Human                               body 5, toughness 1, speed 3, strike 1, resolve 1
-      Salt L1     Haste                   body 1, inspiration 2
-      Salt L2     Empower                 inspiration 2
-      Salt L3     Mend                    body 1, speed 1, inspiration 1
-      Salt L4     Steel · Rally           inspiration 2
-      Salt L5     Sanctuary               body 2, inspiration 2
-      Totals                              body 9, toughness 1, speed 4, strike 1, inspiration 9, resolve 1
+      Human                               might 1, vitality 5, toughness 1, speed 3
+      Bone L1     Menace                  might 1
+      Bone L2     Shackle                 might 1
+      Bone L3     Terror                  might 1
+      Bone L4     Curse                   might 1
+      Bone L5     Unmake                  might 1
+      Totals                              might 6, vitality 5, toughness 1, speed 3
+  Vow — Human · Fist [melee]  (12 cards)   cardsets: Salt
+      Human                               might 1, vitality 5, toughness 1, speed 3
+      Salt L1     Haste                   vitality 1
+      Salt L2     Empower                 vitality 1
+      Salt L3     Mend                    vitality 1, speed 1
+      Salt L4     Bolster                 vitality 2
+      Salt L5     Sanctuary               vitality 2
+      Totals                              might 1, vitality 12, toughness 1, speed 4
 FOES
-  Brute — Bruiser · Maul [melee]  (3 cards)
-      Brute (base)                        body 8, toughness 3, speed 2, strike 5
-      Heavy-Plate                         sharp 4, blunt 3
-      Totals                              body 48, toughness 6, speed 2, strike 5, resolve 8, blunt 3, sharp 4
+  Brute — Bruiser · Maul [melee]  (2 cards)
+      Brute (base)                        might 5, vitality 8, toughness 3, speed 2
+      Totals                              might 5, vitality 128, toughness 6, speed 2
   Raider — Infiltrator · Claw [melee]  (2 cards)
-      Raider (base)                        body 4, toughness 1, speed 6, daring 5, strike 3
-      Totals                              body 44, toughness 4, speed 6, daring 5, strike 3, resolve 3
+      Raider (base)                        might 3, vitality 4, toughness 1, speed 6, daring 5
+      Totals                              might 3, vitality 124, toughness 2, speed 6, daring 5
   Slinger — Skirmisher · Bow [ranged]  (2 cards)
-      Slinger (base)                        body 3, toughness 1, speed 4, strike 4
-      Totals                              body 43, toughness 4, speed 4, strike 4, resolve 5
+      Slinger (base)                        might 4, vitality 3, toughness 1, speed 4
+      Totals                              might 4, vitality 123, toughness 3, speed 4
   Seer — Hexer · Wand [ranged]  (2 cards)
-      Seer (base)                         body 4, toughness 1, speed 3, strike 3, dread 4
-      Totals                              body 44, toughness 4, speed 3, strike 3, dread 4, resolve 14
+      Seer (base)                         might 3, vitality 4, toughness 1, speed 3
+      Totals                              might 3, vitality 124, toughness 4, speed 3
   Husk — Swarmer · Claw [melee]  (2 cards)
-      Husk (base)                         body 2, toughness 1, speed 3, strike 2
-      Totals                              body 42, toughness 4, speed 3, strike 2
+      Husk (base)                         might 2, vitality 2, toughness 1, speed 3
+      Totals                              might 2, vitality 122, toughness 1, speed 3
 
 ── round 1 ──────────────────────────────────────
   Vow plays Sanctuary.
-    empowers the line (+11 Power).
-    +12 Tempo to Anvil.
-    +12 Tempo to Wisp.
-    +12 Tempo to Sear.
-    +12 Tempo to Hex.
-    +12 Tempo to Vow.
-    mends Wisp (+13 Body).
-    mends Sear (+13 Body).
-    mends Hex (+13 Body).
-    mends Vow (+13 Body).
-    mends Anvil (+13 Body).
+    empowers the line (+2 Might).
+    +3 Tempo to Anvil.
+    +3 Tempo to Wisp.
+    +3 Tempo to Sear.
+    +3 Tempo to Hex.
+    +3 Tempo to Vow.
+    mends Wisp (+4 health).
+    mends Sear (+4 health).
+    mends Hex (+4 health).
+    mends Vow (+4 health).
+    mends Anvil (+4 health).
   Hex plays Unmake.
-    Hex hits Brute: 12 fear — the dread mounts. [12 past ward; fear 12/8]
-    Brute freezes in fear — loses its action!
-    Hex hits Raider: 12 fear — the dread mounts. [12 past ward; fear 12/3]
-    Raider is routed — driven from the line!
-    Hex hits Slinger: 12 fear — the dread mounts. [12 past ward; fear 12/5]
-    Slinger is shaken — cannot act or defend!
-    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/14]
+    routs Brute — driven from the line.
+    routs Raider — driven from the line.
+    routs Slinger — driven from the line.
+    routs Seer — driven from the line.
+    staggers Brute (loses its action).
+    staggers Raider (loses its action).
+    staggers Slinger (loses its action).
+    staggers Seer (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-    nerves settle.
 RANKS    heroes — vanguard: Anvil, Vow   skirmisher: Wisp   reserve: Sear, Hex
-         foes   — vanguard: Brute, Husk   skirmisher: —   reserve: Raider, Slinger, Seer
-    Anvil hits Brute: 12 blunt — turns a health card face down. [9 past armor; Body 47/48]
-    Vow hits Brute: 12 blunt — turns 2 health cards face down. [9 past armor; Body 45/48]
-    Husk hits Anvil: 2 sharp — damage accumulates. [2 past armor; Body 18/18]
+         foes   — vanguard: Husk   skirmisher: —   reserve: Brute, Raider, Slinger, Seer
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 119/122]
+    Vow hits Husk: 3 might — turns 3 health cards face down. [health 116/122]
+    Husk hits Anvil: 2 might — damage accumulates. [health 18/18]
   crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
-    Husk hits Wisp: 2 sharp — turns 2 health cards face down. [2 past armor; Body 3/5]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 43/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 41/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 38/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 36/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 34/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 31/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 29/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 27/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 24/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 22/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 20/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 17/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 15/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 13/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 10/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 8/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 6/48]
-    Wisp hits Brute: 17 blunt — turns 3 health cards face down. [14 past armor; Body 3/48]
-    Wisp hits Brute: 17 blunt — turns 2 health cards face down. [14 past armor; Body 1/48]
-    Wisp hits Brute: 17 blunt — turns a health card face down. [14 past armor; Body 0/48]
+    Husk hits Wisp: 2 might — turns 2 health cards face down. [health 3/5]
+    Wisp hits Brute: 11 might — turns a health card face down. [health 127/128]
+  Brute is marked and executed!
   Brute — all its health cards are face down; defeated.
-    Wisp hits Raider: 20 blunt — turns 5 health cards face down. [20 past armor; Body 39/44]
+    Wisp hits Raider: 11 might — turns 5 health cards face down. [health 119/124]
   Raider is marked and executed!
   Raider — all its health cards are face down; defeated.
-  Sear plays Bombardment.
-    Sear hits Slinger: 14 sharp — turns 3 health cards face down. [14 past armor; Body 40/43]
-    Sear hits Seer: 14 sharp — turns 3 health cards face down. [14 past armor; Body 41/44]
-    Sear hits Husk: 14 sharp — turns 3 health cards face down. [14 past armor; Body 39/42]
-    Slinger hits Anvil: 5 sharp — turns a health card face down. [5 past armor; Body 17/18]
-    Seer hits Anvil: 6 fear — the dread mounts. [6 past ward; fear 6/1]
-    Anvil is routed — driven from the line!
-ENDROUND heroes: Anvil 17/18  Wisp 3/5  Sear 5/5  Hex 5/5  Vow 9/9  |  foes: Brute 0/48 down  Raider 0/44 down  Slinger 40/43  Seer 41/44  Husk 39/42
+    Wisp hits Slinger: 11 might — turns 3 health cards face down. [health 120/123]
+  Slinger is marked and executed!
+  Slinger — all its health cards are face down; defeated.
+    Wisp hits Seer: 11 might — turns 2 health cards face down. [health 122/124]
+  Seer is marked and executed!
+  Seer — all its health cards are face down; defeated.
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 108/122]
+    Husk hits Wisp: 2 might — turns 2 health cards face down. [health 1/5]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 100/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 92/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 84/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 76/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 68/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 60/122]
+    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 52/122]
+  Sear plays Piercing Shot.
+    Sear hits Husk: 18 might — turns 18 health cards face down. [health 34/122]
+ENDROUND heroes: Anvil 18/18  Wisp 1/5  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: Brute 0/128 down  Raider 0/124 down  Slinger 0/123 down  Seer 0/124 down  Husk 34/122
 
 ── round 2 ──────────────────────────────────────
   Vow plays Sanctuary.
-    empowers the line (+11 Power).
-    +12 Tempo to Anvil.
-    +12 Tempo to Wisp.
-    +12 Tempo to Sear.
-    +12 Tempo to Hex.
-    +12 Tempo to Vow.
-    mends Wisp (+13 Body).
-    mends Sear (+13 Body).
-    mends Hex (+13 Body).
-    mends Vow (+13 Body).
-    mends Anvil (+13 Body).
+    empowers the line (+2 Might).
+    +3 Tempo to Anvil.
+    +3 Tempo to Wisp.
+    +3 Tempo to Sear.
+    +3 Tempo to Hex.
+    +3 Tempo to Vow.
+    mends Wisp (+4 health).
+    mends Sear (+4 health).
+    mends Hex (+4 health).
+    mends Vow (+4 health).
+    mends Anvil (+4 health).
   Hex plays Unmake.
-    Hex hits Slinger: 12 fear — the dread mounts. [12 past ward; fear 12/5]
-    Slinger is shaken — cannot act or defend!
-    Hex hits Seer: 12 fear — the dread mounts. [12 past ward; fear 12/14]
-    Hex hits Husk: 12 fear — the dread mounts. [12 past ward; fear 12/0]
-    Husk is routed — driven from the line!
+    routs Husk — driven from the line.
+    staggers Husk (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-    nerves settle.
 RANKS    heroes — vanguard: Anvil, Vow   skirmisher: Wisp   reserve: Sear, Hex
-         foes   — vanguard: —   skirmisher: —   reserve: Slinger, Seer, Husk
+         foes   — vanguard: —   skirmisher: —   reserve: Husk
   Wisp slips an unguarded gap.
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 37/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 34/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 31/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 28/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 25/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 22/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 19/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 16/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 13/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 10/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 7/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 4/43]
-    Anvil hits Slinger: 12 blunt — turns 3 health cards face down. [12 past armor; Body 1/43]
-    Anvil hits Slinger: 12 blunt — turns a health card face down. [12 past armor; Body 0/43]
-  Slinger — all its health cards are face down; defeated.
-    Anvil hits Seer: 12 blunt — turns 3 health cards face down. [12 past armor; Body 38/44]
-    Wisp hits Seer: 20 blunt — turns 5 health cards face down. [20 past armor; Body 33/44]
-  Seer is marked and executed!
-  Seer — all its health cards are face down; defeated.
-    Wisp hits Husk: 20 blunt — turns 5 health cards face down. [20 past armor; Body 34/42]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 31/122]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 28/122]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 25/122]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 22/122]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 19/122]
+    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 16/122]
+    Wisp hits Husk: 11 might — turns 11 health cards face down. [health 5/122]
   Husk is marked and executed!
   Husk — all its health cards are face down; defeated.
   Every foe is down — victory!
-FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  Vow 9/9  |  foes: Brute 0/48 down  Raider 0/44 down  Slinger 0/43 down  Seer 0/44 down  Husk 0/42 down
+FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: Brute 0/128 down  Raider 0/124 down  Slinger 0/123 down  Seer 0/124 down  Husk 0/122 down
 
 OUTCOME  WIN (heroes) — round 2
 
 CARDS USED   (every card played, plus the chargers' weapons and powers)
-  Action  Bombardment    [Brass L5]  sharp 5, x5 targets             (played by Sear)
-  Action  Last Stand     [Iron L5]   cannot fall, steel              (played by Anvil)
-  Action  Sanctuary      [Salt L5]   empower +2 power, haste +3, mend +4, x99 targets  (played by Vow)
-  Action  Unmake         [Bone L5]   fear 4, x4 targets              (played by Hex)
-  Weapon  Claw                       sharp weapon                    (wielded by Husk)
-  Weapon  Fist                       blunt weapon                    (wielded by Anvil, Wisp, Vow)
-  Weapon  Maul                       blunt weapon                    (wielded by Brute)
+  Action  Last Stand     [Iron L5]   cannot fall                     (played by Anvil)
+  Action  Piercing Shot  [Brass L3]  might 6                         (played by Sear)
+  Action  Sanctuary      [Salt L5]   empower +2 might, haste +3, mend +4, x99 targets  (played by Vow)
+  Action  Unmake         [Bone L5]   rout, stagger, x4 targets       (played by Hex)
+  Weapon  Claw                       might weapon (+0)               (wielded by Husk)
+  Weapon  Fist                       might weapon (+0)               (wielded by Anvil, Wisp, Vow)
   Power   Backstab       [Silver L4] passive power                   (carried by Wisp)
   Power   Blitz          [Silver L2] passive power                   (carried by Wisp)
   Power   Bulwark        [Iron L3]   passive power                   (carried by Anvil)
@@ -197,15 +170,14 @@ GLOSSARY   (what the rulebook says about each keyword above)
   Backstab               Bonus damage when this Skirmisher strikes an enemy Reserve.
   Blitz                  The first slip each round is free — it costs no Tempo.
   Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
-  Damage (blunt)         Deals blunt damage (base 0). It is reduced by the target's blunt Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
-  Damage (fear)          Projects fear on the will (the inner channel): reduced by the target's Ward, then tested against its Resolve bar — no Body pool, no damage. The further it clears Resolve the harder it breaks: Freeze (loses its action) → Shaken (also cannot defend) → Rout (driven from the line, §4); Dread scales this.
-  Damage (sharp)         Deals sharp damage (base 5). It is reduced by the target's sharp Armor, then absorbed by its Body pool (cut → bar → pool, §2); Edge scales this.
-  Empower                Raises allies' Power by 2 this round (an Empower) — the Support force-multiplier's indirect offense.
+  Damage (Might)         Deals 0 untyped Might. It accumulates into the round's pile; each time the pile clears the target's Toughness bar, one Health card turns face down (pile → bar → pool, §2.2); Force scales this.
+  Empower                Raises allies' Might by 2 this round (an Empower) — the Support buff's indirect offense.
   Haste                  Grants +3 Tempo to an ally (a Haste).
-  Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 Body (M3).
-  Mend                   Restores 4 Body to the most-wounded ally (a Mend).
+  Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 health (M3).
+  Mend                   Restores 4 Health cards to the most-wounded ally (a Mend).
   Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.
+  Rout                   Drives the target from the line to the Reserve this round (a Rout) — a Controller status (§4).
   Shadowstep             Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.
-  Steel                  Clears accumulated Fear and steadies the nerve (a Steel).
+  Stagger                On a landed hit, the target loses its action this round.
   Taunt                  Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.
   Zone: Spend            Zone — Spend: the card goes face-down (Down) after use; only a Recover stands it back up. That gap is its cooldown (§5.3).

@@ -132,10 +132,8 @@ impl Script {
 pub enum TargetRule {
     /// The first reachable enemy.
     Front,
-    /// The most fragile (fewest Body cards).
+    /// The most fragile (fewest health cards).
     LowestBody,
-    /// The shakiest nerve (lowest Resolve).
-    LeastResolute,
 }
 
 /// A combatant.
@@ -149,7 +147,7 @@ pub struct Actor {
     /// from — the `Human` baseline plus each treasure's Stat card (and any trait / scaling). Retained
     /// so a build is auditable: the totals are *derivable* from these cards. Not used in resolution.
     pub form: Form,
-    /// The base strike profile (supplies the damage type).
+    /// The base strike profile (the actor's base attack card).
     pub weapon: Card,
     /// Action/power cards playable in the round (§"cards may supersede the core").
     pub actions: Vec<Card>,
@@ -173,9 +171,13 @@ pub struct Actor {
     /// Round-scoped **Disarm** (a Controller debuff): this round the Actor cannot play its role cards
     /// (its hand is fouled). Cleared at Refresh.
     pub disarmed: bool,
-    /// Round-scoped **Empower** (a Support buff): bonus Power added to this Actor's strikes this round
-    /// (§4 Salt — indirect offense; the force-multiplier amplifies allies' hits). Cleared at Refresh.
-    pub power_bonus: u32,
+    /// Round-scoped **Rout** (a Controller debuff, §4 / Charter #13): this round the Actor is driven
+    /// from the line to the Reserve — it neither holds as a Vanguard nor crosses as a Skirmisher.
+    /// Cleared at Refresh.
+    pub routed: bool,
+    /// Round-scoped **Empower** (a Support buff): bonus Might added to this Actor's strikes this round
+    /// (§4 Salt — indirect offense; amplifies allies' hits). Cleared at Refresh.
+    pub might_bonus: u32,
     /// Round-scoped bookkeeping: has this Actor already taken its one free **Blitz** slip this round
     /// (§4 Infiltrator)? Cleared at Refresh.
     pub free_slip_used: bool,
@@ -230,8 +232,9 @@ impl Actor {
         self.stunned = false;
         self.shoved = false;
         self.disarmed = false;
+        self.routed = false;
         self.free_slip_used = false;
-        self.power_bonus = 0;
+        self.might_bonus = 0;
         self.defense.end_round();
     }
 }

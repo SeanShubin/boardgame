@@ -1,5 +1,11 @@
 # Deckbound — Stats Overview
 
+> **SUPERSEDED (2026) — the stat collapse (Spec §2 / §3).** The stat set is now five —
+> **Might · Vitality · Toughness · Speed · Daring** — and combat has **one** channel (Might → the
+> health pool). The inner **Fear/Spirit** channel (Dread / Resolve / Ward) is **gone**; **Armor /
+> Precision / damage-types** are deferred to the gear system; **Inspiration** is dropped. This page's
+> "three aspects" and "every channel has a cut, Body keeps a pool" are **stale** — trust the Spec.
+
 The one page where a reader meets **every stat at once**. Each system doc expands its
 own; this is the map. The design is built so **theme tells you the mechanic** — your body
 is the only thing that *bleeds*; everything else is either a fixed *quality* or a *budget

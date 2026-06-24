@@ -1,5 +1,11 @@
 # Deckbound — Game Flow & Structure (the complete map)
 
+> **Drifted (2026) — predates the stat collapse.** Stat names and the defense model here are stale: the
+> set is now **Might · Vitality · Toughness · Speed · Daring**, combat is **one channel** (no
+> Fear / Dread / Resolve / Ward, no Armor), and ranged attacks are **evadable** (Spec §2.2 / §3.1 / §4.2).
+> The round *cycle / phase structure* is unchanged; the stat vocabulary is not. Canon + the generated
+> reference are authoritative.
+
 > **One place to find every cycle and phase in the game, largest to smallest.** This is a
 > **map / index, not a source of truth** — each level points to where it is *authoritatively*
 > defined: the **Spec** (`canon/2-spec`) for combat, the **design docs** for the still-non-canonical

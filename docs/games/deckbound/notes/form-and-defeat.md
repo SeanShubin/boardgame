@@ -1,5 +1,10 @@
 # Deckbound — Form, Capabilities & Defeat
 
+> **PARTIALLY SUPERSEDED (2026) — defense model (Spec §2.2).** Combat is now **one channel** — untyped
+> **Might** into the **health pool**, no cut (Armor deferred to gear). The inner **Fear/Spirit** channel
+> and its **Resolve / Ward** are **gone**; death is the single kill-condition (the health pool empties).
+> The Form / capabilities material is otherwise current.
+
 Your **Form** is the heart of a character: the cards in the **Form zone** define
 what you *are* and *can do*, and they are also your **health**. Where the
 [choice cycle](zones.md) (Potential / Active) is your *tactical*

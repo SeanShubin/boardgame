@@ -1,5 +1,9 @@
 # Deckbound — Speed & Tempo
 
+> **FURTHER SUPERSEDED (2026).** Beyond the note below: **Mind/Focus are fully removed** (one Tempo
+> pool), **Daring now also sizes the *evade* contest** (a ranged attack may be dodged for Tempo), not
+> just the crossing, and the Fear channel is gone. See Spec §3.1 / §4.2.
+
 > **PARTIALLY SUPERSEDED — see Spec §3.** Speed→Tempo and Mind→Focus survive as the two
 > breadth budgets, but their *roles* are rewritten
 > ([`spec/README.md` §3](../canon/2-spec/README.md)): **Tempo** = the duels you *start* (results

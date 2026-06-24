@@ -1,7 +1,7 @@
 //! The Clash — the four-card tactical core.
 //!
 //! Each beat both fighters pick one [`Move`]; [`resolve`] settles a single beat: any hit
-//! that lands (typed, routed through [`crate::stats`]), how each side's **Force** changes
+//! that lands (untyped Might, routed through [`crate::stats`]), how each side's **Force** changes
 //! (the single per-side escalation count), whether the duel **ends** (ends-on-strike), and
 //! a note. Pure and deterministic.
 //!
@@ -9,8 +9,6 @@
 //! 1. **Avoid** — every attack has a defense that negates it (Strike↦Evade, Anticipate↦Gather).
 //! 2. **Land** — every move has an answering attack.
 //! 3. **Not both, free** — landing on a committed Strike means trading a hit.
-
-use crate::stats::DamageType;
 
 /// A move in the Clash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -44,22 +42,18 @@ impl Move {
     }
 }
 
-/// One side entering a beat: base attack power + type/precision, its Force count, and a name.
+/// One side entering a beat: base attack power (Might), its Force count, and a name.
 #[derive(Clone, Copy, Debug)]
 pub struct Side<'a> {
     pub power: u32,
-    pub dtype: DamageType,
-    pub precision: u32,
     pub force: u32,
     pub name: &'a str,
 }
 
-/// A hit that landed: the caller routes `raw` of `dtype` (with `precision`) through defense.
+/// A hit that landed: the caller routes `raw` (untyped Might) through defense.
 #[derive(Clone, Copy, Debug)]
 pub struct Strike {
     pub raw: u32,
-    pub dtype: DamageType,
-    pub precision: u32,
 }
 
 /// The result of one beat of the Clash.
@@ -99,13 +93,9 @@ pub fn resolve(a: &Side, am: Move, b: &Side, bm: Move) -> Clash {
     // Hits land off the current Force.
     let on_b = connects(am, bm).then(|| Strike {
         raw: damage(a.power, a.force),
-        dtype: a.dtype,
-        precision: a.precision,
     });
     let on_a = connects(bm, am).then(|| Strike {
         raw: damage(b.power, b.force),
-        dtype: b.dtype,
-        precision: b.precision,
     });
 
     let mut a_force = a.force;
@@ -165,8 +155,6 @@ mod tests {
     fn side(power: u32, force: u32) -> Side<'static> {
         Side {
             power,
-            dtype: DamageType::Blunt,
-            precision: 0,
             force,
             name: "X",
         }

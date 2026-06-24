@@ -1,5 +1,8 @@
 # Deckbound — Scenario & Tutorial Plan (build blueprint)
 
+> **Also stale (2026) — the stat collapse:** five stats (Might / Vitality / Toughness / Speed / Daring),
+> **one** damage channel, Fear / Armor gone, ranged attacks **evadable** (Spec §2 / §3 / §4).
+
 > **Stale terms (2026-06-20).** Combat was respecced to **charge-and-gauntlet** (lanes gone, Spec §4) and
 > the breadth economy to one pool — **Tempo = Speed × Drive** (Focus/Mind merged out, Spec §3). Tutorial
 > scenarios that teach lanes / Focus / slipping need re-authoring; read this for *content intent* until then.

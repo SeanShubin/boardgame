@@ -132,20 +132,14 @@ fn play_score(card: &crate::cards::Card) -> i32 {
     card.effects
         .iter()
         .map(|e| match e {
-            Damage { power, .. } => 100 + *power as i32,
+            Damage { power } => 100 + *power as i32,
             Haste { tempo } => 50 + *tempo as i32,
-            Empower { power } => 50 + *power as i32,
-            Slow { .. }
-            | Confuse { .. }
-            | Suppress { .. }
-            | Stagger
-            | Shove
-            | Disarm
-            | Sunder { .. } => 40,
-            Rally { .. } | Guard { .. } | Fortify { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
-            // Reactive: only worth it once someone is hurt/feared — at Muster (full health) it is a
+            Empower { might } => 50 + *might as i32,
+            Slow { .. } | Confuse { .. } | Suppress { .. } | Stagger | Shove | Disarm | Rout => 40,
+            Guard { .. } | BankSpeed { .. } | Ward | Lifeline => 20,
+            // Reactive: only worth it once someone is hurt — at Muster (full health) it is a
             // wasted play, so the greedy ranks it below acting.
-            Mend { .. } | Steel | Recover => 5,
+            Mend { .. } | Recover => 5,
         })
         .sum()
 }

@@ -250,19 +250,18 @@ impl Deckbound {
                     up && aggr >= 3 && melee && state.creatures[f].offense.daring >= 3;
             }
         }
-        // §4 Rout / Charter #13 — fear's top tier (pile past 3×Resolve) **drives the unit from the
-        // line to the Reserve**: a foe Routed at Muster neither holds as a Vanguard nor crosses as a
-        // Skirmisher this round. The `will_break` flag persists from the Muster card-play to here
-        // (cleared only at round end / by Steel), so reading it now applies the demotion before the
-        // Line resolves. (Freeze/Shaken merely Stagger/Shove in place — handled by `can_contest_now`.)
+        // §4 Rout / Charter #13 — a **direct Rout** (a Controller status set at Muster, §8.6: control
+        // is round-scoped status, not damage) **drives the unit from the line to the Reserve**: a unit
+        // Routed at Muster neither holds as a Vanguard nor crosses as a Skirmisher this round. The
+        // `routed` flag is set by an `Effect::Rout` card and cleared at Refresh.
         for h in 0..state.heroes.len() {
-            if state.heroes[h].defense.will_break == Some(crate::stats::Break::Rout) {
+            if state.heroes[h].routed {
                 state.plan.hero_charging[h] = false;
                 state.plan.hero_flank[h] = false;
             }
         }
         for f in 0..state.creatures.len() {
-            if state.creatures[f].defense.will_break == Some(crate::stats::Break::Rout) {
+            if state.creatures[f].routed {
                 state.plan.foe_charging[f] = false;
                 state.plan.foe_flank[f] = false;
             }
@@ -444,7 +443,8 @@ impl Deckbound {
     }
 
     /// One actor strikes a target at `range` — a trade if the target can contest, else an
-    /// auto-hit (§4.2). `hero_attacker` selects which pool the attacker is in.
+    /// auto-hit (§4.2). A **ranged** strike may first be **evaded** by the target (the tempo
+    /// contest, §3.1 / §4.2). `hero_attacker` selects which pool the attacker is in.
     fn strike(
         &self,
         state: &mut State,
@@ -453,17 +453,19 @@ impl Deckbound {
         target: usize,
         range: Range,
     ) {
-        let (atk_snap, atk_name, atk_can) = if hero_attacker {
+        let (atk_snap, atk_name, atk_can, atk_daring) = if hero_attacker {
             (
                 combat::snapshot(&state.heroes[attacker]),
                 state.heroes[attacker].name.clone(),
                 state.heroes[attacker].can_contest(range),
+                state.heroes[attacker].offense.daring.max(1),
             )
         } else {
             (
                 combat::snapshot(&state.creatures[attacker]),
                 state.creatures[attacker].name.clone(),
                 state.creatures[attacker].can_contest(range),
+                state.creatures[attacker].offense.daring.max(1),
             )
         };
         if !atk_can {
@@ -476,6 +478,21 @@ impl Deckbound {
             state.heroes[attacker].tempo -= 1;
         } else {
             state.creatures[attacker].tempo -= 1;
+        }
+        // A **ranged** strike may be **evaded** (§4.2): the target spends Tempo to strictly exceed the
+        // attacker's pressed volley. Default policy: the attacker presses a single card (volley =
+        // 1 × its Daring); the defender commits the minimum to exceed if it can afford to. An evaded
+        // shot lands nothing and draws no strike-back (the defender slipped it, did not engage).
+        if range == Range::Ranged {
+            let volley = atk_daring; // 1 card pressed by default
+            let defender = if hero_attacker {
+                &mut state.creatures[target]
+            } else {
+                &mut state.heroes[target]
+            };
+            if !defender.is_down() && combat::try_evade(defender, volley, &mut state.log) {
+                return;
+            }
         }
         // attacker -> target. The target may **reflexively strike back** (§3) — but striking is an
         // action, so it must spend a **Tempo** card; with none to flip it just takes the hit (a free
@@ -665,21 +682,17 @@ impl Deckbound {
             .map(|b| b.pick(c.foe_force, &mut drng))
             .unwrap_or(Move::Strike);
 
-        let (hp, hd, hpre) = combat::base_strike(&state.heroes[c.hero]);
-        let (cp, cd, cpre) = combat::base_strike(&state.creatures[c.foe]);
+        let hp = combat::base_strike(&state.heroes[c.hero]);
+        let cp = combat::base_strike(&state.creatures[c.foe]);
         let hn = state.heroes[c.hero].name.clone();
         let cn = state.creatures[c.foe].name.clone();
         let a = Side {
             power: hp,
-            dtype: hd,
-            precision: hpre,
             force: c.hero_force,
             name: &hn,
         };
         let b = Side {
             power: cp,
-            dtype: cd,
-            precision: cpre,
             force: c.foe_force,
             name: &cn,
         };
@@ -1214,9 +1227,9 @@ impl Game for Deckbound {
                     state.s_pool(side)[*i].has("Backstab") && self.is_reserve(state, other, *t);
                 if backstab {
                     if side == 0 {
-                        state.heroes[*i].offense.power += 3;
+                        state.heroes[*i].offense.might += 3;
                     } else {
-                        state.creatures[*i].offense.power += 3;
+                        state.creatures[*i].offense.might += 3;
                     }
                 }
                 // Assassinate (M4): a killing strike — when an Infiltrator with the capstone hits an
@@ -1226,9 +1239,9 @@ impl Game for Deckbound {
                 self.strike(state, side == 0, *i, *t, Range::Melee);
                 if backstab {
                     if side == 0 {
-                        state.heroes[*i].offense.power -= 3;
+                        state.heroes[*i].offense.might -= 3;
                     } else {
-                        state.creatures[*i].offense.power -= 3;
+                        state.creatures[*i].offense.might -= 3;
                     }
                 }
                 if execute {
@@ -1238,7 +1251,7 @@ impl Game for Deckbound {
                         &mut state.heroes[*t]
                     };
                     if !victim.is_down() {
-                        victim.defense.body.remaining = 0;
+                        victim.defense.health.remaining = 0;
                         let vname = victim.name.clone();
                         state.log.push(format!("{vname} is marked and executed!"));
                     }
@@ -1602,12 +1615,12 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
     let d = &a.defense;
     CardView::up(format!("{} — {}", a.name, a.role))
         .body(vec![
-            format!("HP [{}]", pips(d.body.remaining, d.body.max)),
+            format!("HP [{}]", pips(d.health.remaining, d.health.max)),
             format!(
-                "Spd {} Drv {} Pow {} {}",
+                "Spd {} Drv {} Mgt {} {}",
                 a.offense.speed,
                 a.offense.daring.max(1),
-                a.offense.power,
+                a.offense.might,
                 a.attack.label()
             ),
             format!("Tempo {}", a.tempo),
@@ -2024,19 +2037,20 @@ mod tests {
     fn same_range_trades_mismatch_auto_hits() {
         let game = Deckbound;
 
-        // Mismatch: ranged attacker vs a melee-only target → auto-hit, no trade-back.
+        // Mismatch: ranged attacker vs a melee-only target that cannot evade → auto-hit, no trade-back.
         let mut s = duel_state();
         s.heroes[0].attack = crate::actor::Attack::Ranged;
         s.creatures[0].attack = crate::actor::Attack::Melee;
-        let h0 = s.heroes[0].defense.body.remaining;
-        let f0 = s.creatures[0].defense.body.remaining;
+        s.creatures[0].tempo = 0; // no Tempo to evade the volley → the shot lands
+        let h0 = s.heroes[0].defense.health.remaining;
+        let f0 = s.creatures[0].defense.health.remaining;
         game.strike(&mut s, true, 0, 0, Range::Ranged);
         assert!(
-            s.creatures[0].defense.body.remaining < f0,
+            s.creatures[0].defense.health.remaining < f0,
             "the foe is auto-hit"
         );
         assert_eq!(
-            s.heroes[0].defense.body.remaining, h0,
+            s.heroes[0].defense.health.remaining, h0,
             "no trade-back on a mismatch"
         );
 
@@ -2044,13 +2058,14 @@ mod tests {
         let mut s2 = duel_state();
         s2.heroes[0].attack = crate::actor::Attack::Melee;
         s2.creatures[0].attack = crate::actor::Attack::Melee;
-        s2.creatures[0].defense.body.remaining = 12;
-        s2.creatures[0].defense.body.max = 12;
-        let h = s2.heroes[0].defense.body.remaining;
-        let f = s2.creatures[0].defense.body.remaining;
+        s2.creatures[0].defense.health.remaining = 12;
+        s2.creatures[0].defense.health.max = 12;
+        let h = s2.heroes[0].defense.health.remaining;
+        let f = s2.creatures[0].defense.health.remaining;
         game.strike(&mut s2, true, 0, 0, Range::Melee);
         assert!(
-            s2.creatures[0].defense.body.remaining < f && s2.heroes[0].defense.body.remaining < h,
+            s2.creatures[0].defense.health.remaining < f
+                && s2.heroes[0].defense.health.remaining < h,
             "same-range melee is a trade — both are hit"
         );
     }
@@ -2096,10 +2111,10 @@ mod tests {
         );
     }
 
-    /// §4 Rout / Charter #13 (b2): the top fear tier **drives a unit from the line to the Reserve**.
-    /// A Vanguard carrying a `Rout` will-break (set at Muster, persisting via `will_break`) is pulled
-    /// off the line by `deploy` *before* the Line resolves — it ends the deploy a Reserve, not a
-    /// Vanguard. (Freeze/Shaken stay in place; only Rout relocates — that is the tier's whole point.)
+    /// §4 Rout / Charter #13: a **direct Rout** (a Controller status, set by an `Effect::Rout` card)
+    /// **drives a unit from the line to the Reserve**. A Vanguard carrying the round-scoped `routed`
+    /// flag is pulled off the line by `deploy` *before* the Line resolves — it ends the deploy a
+    /// Reserve, not a Vanguard. (Stagger/Shove stay in place; only Rout relocates.)
     #[test]
     fn a_routed_vanguard_is_driven_to_the_reserve() {
         let game = Deckbound;
@@ -2114,8 +2129,8 @@ mod tests {
             !game.is_reserve(&s, 0, 0),
             "test premise: the hero is a charging Vanguard before any Rout"
         );
-        // …but a fear attack has Routed it (pile cleared 3×Resolve), recorded on the will.
-        s.heroes[0].defense.will_break = Some(crate::stats::Break::Rout);
+        // …but a Controller has Routed it (a direct Rout status).
+        s.heroes[0].routed = true;
 
         game.deploy(&mut s);
         assert!(

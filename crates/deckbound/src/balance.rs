@@ -114,16 +114,16 @@ fn lock_encounter(role: Currency) -> EncounterCard {
         // Infiltrator — a lethal ranged **backline** (Slingers) screened by a Husk front: melee Wall
         // killers bog on the screen while the Slingers plink them down; only a **slip** reaches the back.
         Currency::Silver => vec![lock_entry("Husk", 6), lock_entry("Slinger", 12)],
-        // Artillery — an **armored** front (Heavy-Plate Brutes, Blunt-armor 3): blunt Wall fists bounce
-        // off entirely; only **sharp + Pierce** cracks the plate.
-        Currency::Brass => vec![lock_entry("Brute", 3)],
-        // Controller — **Resolve-0 bruisers** (Brutes) whose burst kills the glass cannons before they
-        // grind through the plate; **fear Routs** them (any pile clears Resolve 0) and the b2 demotion
-        // drives them off the line, so the cannons survive to crack it. (Glass baseline.)
+        // Artillery — a **high-toughness** front (Brutes): low-Might Wall fists barely flip a card; only
+        // Artillery's heavy Might bursts through the bar (§2.2).
+        Currency::Brass => vec![lock_entry("Brute", 1)],
+        // Controller — bruisers whose burst kills the glass cannons before they grind through; a
+        // **direct Rout** (a Controller status, §4) drives them off the line, so the cannons survive to
+        // crack it. (Glass baseline.)
         Currency::Bone => vec![lock_entry("Brute", 4)],
         // Support — steady **attrition** that whittles the low-Body cannons over the round horizon; only
         // a **healer** sustains them past their bare capacity. (Glass baseline.)
-        Currency::Salt => vec![lock_entry("Slinger", 18)],
+        Currency::Salt => vec![lock_entry("Slinger", 10)],
         _ => vec![lock_entry("Husk", 1)],
     };
     EncounterCard {
@@ -261,12 +261,16 @@ pub fn report(violations: &[Violation]) -> String {
 /// run with `--ignored`. *(Defensive / pool stats are structurally consumed by `Defense::take`.)*
 pub fn stat_necessity_report(seed: u64) -> String {
     type Zeroer = (&'static str, fn(&mut Actor));
+    // The five stats (§2.4): might, vitality, toughness, speed, daring.
     let zeroers: [Zeroer; 5] = [
-        ("power (Strike)", |a| a.offense.power = 0),
-        ("precision (Pierce)", |a| a.offense.precision = 0),
+        ("might", |a| a.offense.might = 0),
+        ("vitality", |a| {
+            a.defense.health.max = 1;
+            a.defense.health.remaining = 1;
+        }),
+        ("toughness", |a| a.defense.health.toughness = 1),
+        ("speed", |a| a.offense.speed = 0),
         ("daring", |a| a.offense.daring = 0),
-        ("dread", |a| a.offense.dread = 0),
-        ("inspiration", |a| a.offense.inspiration = 0),
     ];
     let mut out =
         String::from("stat decisiveness — zero-and-flip over the 5 suits' L5 (§8.6 T3, coarse):\n");
@@ -454,13 +458,13 @@ mod tests {
     fn infinite_god() -> Actor {
         let mut g = build_character("Novice", &[]);
         let big = 1_000_000;
-        g.offense.power = big; // one-shots anything finite
+        g.offense.might = big; // one-shots anything finite
         g.offense.daring = big; // crosses any finite hold
         g.offense.speed = big; // unlimited actions
         g.tempo = big as i32;
-        g.defense.body.max = big; // survives anything finite
-        g.defense.body.remaining = big;
-        g.defense.body.toughness = 1;
+        g.defense.health.max = big; // survives anything finite
+        g.defense.health.remaining = big;
+        g.defense.health.toughness = 1;
         g
     }
 

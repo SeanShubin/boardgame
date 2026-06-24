@@ -1,5 +1,10 @@
 # Deckbound — Reference Scenario (the balance harness)
 
+> **Re-seeded (2026) — the stat collapse.** This fixture predates the 5-stat / single-channel model; the
+> lock encounters and combat-band numbers were **AI-re-seeded** during the collapse code pass and **need
+> human ratification for feel**. Stat names (might / vitality / toughness / speed / daring) and the
+> removal of Fear / Armor apply throughout (Spec §2 / §3 / §4).
+
 > **Status: living, non-authoritative — a test fixture.** This is a **generic full-game
 > scenario** whose purpose is to **detect imbalance anywhere in the game**, and which is
 > **maintained as a test** so it keeps catching regressions as the Spec evolves. It is

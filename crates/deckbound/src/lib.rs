@@ -46,7 +46,7 @@ pub use scenarios::{
 };
 pub use solver::auto_resolve;
 pub use state::{Clash, Menu, Phase, Round, State};
-pub use stats::{DamageType, Defense, Health, Offense};
+pub use stats::{Defense, Health, Offense};
 pub use transcript::{TranscriptScenario, transcribe, transcript_scenarios};
 pub use world::{Coord, Layout, Location, Run};
 pub use zones::{Zone, ZoneBehavior};

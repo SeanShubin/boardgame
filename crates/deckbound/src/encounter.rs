@@ -70,20 +70,17 @@ impl EncounterCard {
             .collect()
     }
 
-    /// The stat scaling to attach to **each** foe's Form at `level`: the coefficients × level
-    /// (only the scalar stats scale; armor/ward are not level-scaled).
+    /// The stat scaling to attach to **each** foe's Form at `level`: the five stats' coefficients ×
+    /// level (§8.4).
     pub fn scaling_at(&self, level: u32) -> StatCard {
         let s = &self.scaling;
         StatCard {
             name: format!("{} +L{level}", self.name),
-            power: s.power * level,
-            precision: s.precision * level,
-            speed: s.speed * level,
-            dread: s.dread * level,
-            body: s.body * level,
+            might: s.might * level,
+            vitality: s.vitality * level,
             toughness: s.toughness * level,
-            resolve: s.resolve * level,
-            ..Default::default()
+            speed: s.speed * level,
+            daring: s.daring * level,
         }
     }
 }
@@ -112,9 +109,9 @@ mod tests {
                 entry("C", 2, 1, 0), // adds at L2
                 entry("D", 3, 2, 1), // D × (level − 1) from L3
             ],
-            // thematic: a brute scales Body — Body = level × 3.
+            // thematic: a brute scales Vitality — Vitality = level × 3.
             scaling: StatCard {
-                body: 3,
+                vitality: 3,
                 ..Default::default()
             },
         }
@@ -139,7 +136,7 @@ mod tests {
     #[test]
     fn scaling_is_thematic_times_level() {
         let e = brute_pack();
-        assert_eq!(e.scaling_at(3).body, 9); // Body = 3 × level
+        assert_eq!(e.scaling_at(3).vitality, 9); // Vitality = 3 × level
         assert_eq!(e.scaling_at(3).speed, 0); // a brute does not scale Speed
     }
 
@@ -148,6 +145,6 @@ mod tests {
         let e = brute_pack();
         let foes_at = |lvl| e.roster(lvl).iter().map(|(_, n)| *n).sum::<u32>();
         assert!(foes_at(5) > foes_at(1)); // deeper = more bodies
-        assert!(e.scaling_at(5).body > e.scaling_at(1).body); // ...and tougher
+        assert!(e.scaling_at(5).vitality > e.scaling_at(1).vitality); // ...and tougher
     }
 }

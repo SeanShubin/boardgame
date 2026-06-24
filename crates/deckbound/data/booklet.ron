@@ -1,44 +1,43 @@
-// Deckbound booklet — cards, traits, actors, and scenarios, as data.
+// Deckbound booklet — cards, actors, and scenarios, as data.
 //
 // NUMBERS ARE FIRST-PASS, meant to be rebalanced by playtest. See
 // docs/games/deckbound/scenario-plan.md for the content blueprint and
-// canon/2-spec/README.md §1/§3/§4 for the rules. Combat is the §4 charge-and-gauntlet system:
-// same-range = trade, mismatch = auto-hit; the optional Clash module (clash: true) runs the duel.
+// canon/2-spec/README.md §2/§3/§4 for the rules. Combat is the §4 static-ranks system:
+// same-range = trade, ranged may be evaded (the tempo contest) else auto-hit; the optional Clash
+// module (clash: true) runs the duel. Damage is UNTYPED Might into the health pile (§2.2) — no
+// armor / damage-types / fear channel (collapsed 2026; armor deferred with gear).
 //   attack: Melee / Ranged / Both / Neither  (§4.2 range)
 //   driver: "hero" (human) or a creature keyword; aggression 0..=10 sets its charge bias.
+//   The five stats (§2.4): might · vitality · toughness · speed · daring.
 //
 // `flavor` is evocative in-world prose (NOT rules — `text`/`blurb` carry the mechanics). All
 // flavor lives here in data, never in code; the enum content (Suits, roles) is keyed in the
 // `currency_flavor` / `role_flavor` maps at the bottom.
 Catalog(
     cards: [
-        // --- weapons (supply the damage TYPE; Power is magnitude) ---
-        Card( name: "Fist",   effects: [Damage(power: 0, dtype: Blunt)], flavor: "No edge, no excuse — the one weapon you can't be disarmed of." ),
-        Card( name: "Blade",  effects: [Damage(power: 0, dtype: Sharp)], flavor: "A clean argument, quickly made." ),
-        Card( name: "Maul",   effects: [Damage(power: 1, dtype: Blunt)], flavor: "It doesn't cut. It doesn't need to." ),
-        Card( name: "Claw",   effects: [Damage(power: 0, dtype: Sharp)], flavor: "What the beasts bring instead of manners." ),
-        Card( name: "Spear",  effects: [Damage(power: 0, dtype: Sharp)], flavor: "Reach is its own kind of courage." ),
-        Card( name: "Staff",  effects: [Damage(power: 0, dtype: Blunt)], flavor: "Discipline, with two ends." ),
-        Card( name: "Bash",   effects: [Damage(power: 0, dtype: Blunt)], flavor: "The shield, offered as an opinion." ),
-        Card( name: "Bow",    effects: [Damage(power: 1, dtype: Sharp)], flavor: "Death that arrives ahead of the sound of it." ),
-        Card( name: "Flame",  effects: [Damage(power: 3, dtype: Heat)],  flavor: "It does not ask which armor. It asks how long." ),
-        Card( name: "Wand",   effects: [Damage(power: 2, dtype: Fear)],  flavor: "It points, and something in the target quietly gives up." ),
+        // --- weapons (the base attack card; power adds to the strike's untyped Might) ---
+        Card( name: "Fist",   effects: [Damage(power: 0)], flavor: "No edge, no excuse — the one weapon you can't be disarmed of." ),
+        Card( name: "Blade",  effects: [Damage(power: 0)], flavor: "A clean argument, quickly made." ),
+        Card( name: "Maul",   effects: [Damage(power: 1)], flavor: "It doesn't cut. It doesn't need to." ),
+        Card( name: "Claw",   effects: [Damage(power: 0)], flavor: "What the beasts bring instead of manners." ),
+        Card( name: "Spear",  effects: [Damage(power: 0)], flavor: "Reach is its own kind of courage." ),
+        Card( name: "Staff",  effects: [Damage(power: 0)], flavor: "Discipline, with two ends." ),
+        Card( name: "Bash",   effects: [Damage(power: 0)], flavor: "The shield, offered as an opinion." ),
+        Card( name: "Bow",    effects: [Damage(power: 1)], flavor: "Death that arrives ahead of the sound of it." ),
+        Card( name: "Flame",  effects: [Damage(power: 3)], flavor: "It does not ask which armor. It asks how long." ),
+        Card( name: "Wand",   effects: [Damage(power: 2)], flavor: "It points, and something in the target quietly gives up." ),
         // --- power cards (wired effects) ---
-        Card( name: "Barrage",  targets: 3, reach: (2, 2), effects: [Damage(power: 3, dtype: Sharp)], flavor: "The sky, rationed evenly across the whole front rank." ),
-        Card( name: "Cleave",   targets: 3, effects: [Damage(power: 0, dtype: Sharp)], flavor: "One stroke, several regrets." ),
-        Card( name: "Terror",    reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)], flavor: "A sound the body hears before the mind does." ),
+        Card( name: "Barrage",  targets: 3, reach: (2, 2), effects: [Damage(power: 3)], flavor: "The sky, rationed evenly across the whole front rank." ),
+        Card( name: "Cleave",   targets: 3, effects: [Damage(power: 0)], flavor: "One stroke, several regrets." ),
+        Card( name: "Terror",    reach: (2, 2), effects: [Stagger], flavor: "A sound the body hears before the mind does." ),
         Card( name: "Suppress", reach: (2, 2), effects: [Suppress(tempo: 3)], flavor: "Pin them flat and let them spend the round flinching." ),
         Card( name: "Slow",     reach: (2, 2), effects: [Slow(speed: 2)], flavor: "Make every step cost what a sprint should." ),
         Card( name: "Confuse",  reach: (2, 2), effects: [Confuse(tempo: 3)], flavor: "Scramble the one moment they needed to think." ),
         Card( name: "Ward",     zone: Lasting, effects: [Ward], flavor: "Press a blade into the hand of the one who swore never to carry one." ),
-        Card( name: "Mend",     effects: [Mend(body: 3)], flavor: "Close the worst of it, and send them back in." ),
+        Card( name: "Mend",     effects: [Mend(vitality: 3)], flavor: "Close the worst of it, and send them back in." ),
         Card( name: "Haste",    effects: [Haste(tempo: 3)], flavor: "Borrow against the next breath; move twice on this one." ),
-        Card( name: "Rally",    zone: Lasting, effects: [Rally(resolve: 4)], flavor: "A word that puts the spine back into a wavering line." ),
-        Card( name: "Steel",    effects: [Steel], flavor: "Swallow the fear whole, before it has the chance to spread." ),
         Card( name: "Bank",     effects: [BankSpeed(amount: 3)], flavor: "Hoard the tempo now; spend it the instant it kills." ),
-        Card( name: "Sunder",   effects: [Sunder(armor: 2)], flavor: "Open the can. The meat is the next problem." ),
         Card( name: "Brace",       effects: [Guard(tempo: 3)],   flavor: "Set your feet. The line begins where you decide it does." ),
-        Card( name: "Shield Wall", effects: [Fortify(armor: 2)], flavor: "Shields up, edge to edge — for one breath nothing gets through the line." ),
         // --- passive powers (detected by name; not played as effects) ---
         // `text` is the encyclopedia's Powers entry, generated from this card data (§4 powers).
         Card( name: "Phalanx",    passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.", flavor: "Shields locked, the wall holds as one." ),
@@ -49,170 +48,163 @@ Catalog(
         Card( name: "Backstab",   passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve.", flavor: "The reserve never hears the one that finds them." ),
         Card( name: "Longshot",   passive: true, text: "Lets this Reserve's ranged fire reach the enemy Reserve — the sanctioned sniper exception.", flavor: "Far enough back to be safe — from everything but this." ),
     ],
-    traits: [
-        TraitCard( name: "Plate",       armor: [(Sharp, 3), (Blunt, 1), (Heat, 0)], flavor: "Honest steel, shaped to turn an edge. It doesn't save you; it lets you be saved." ),
-        TraitCard( name: "Heavy-Plate", armor: [(Sharp, 4), (Blunt, 3), (Heat, 0)], flavor: "A walking wall — slow as a verdict, and about as easy to argue with." ),
-        TraitCard( name: "Shield",      armor: [(Blunt, 1)], flavor: "A door you carry. Most blows are an opinion; this is the answer." ),
-        TraitCard( name: "Ward-charm",  ward: [(Fear, 2)], flavor: "Salt, sigil, and a knot of someone's prayer — it blunts the fears that armor can't touch." ),
-    ],
     // Role-card rewards (§8.3): the 25-set pool — 5 tracks × 5 levels (role-card-redesign.md §10).
     // Clearing (track, level) unlocks this atomic set: its role `cards` (Base / Modifier / Mode) plus
     // a bundled `stat` Form attachment (stats-as-deck). One physical copy each (scarce). NUMBERS ARE
     // SEEDS — human-tuned by playtest. `role` keys the §4.4 per-role cap; `positional: true` (Wall /
-    // Infiltrator / Artillery) means the card is playable only from its §4 position.
+    // Infiltrator / Artillery) means the card is playable only from its §4 position. Damage is untyped
+    // Might (§2.2); Controller cards deal NO damage (debuff/status only) and Support NO damage
+    // (buff/heal only) — §8.6 / Charter #13.
     rewards: [
         // ---- Wall (Iron) — the immovable line: hold the front, protect the backline ----
-        Reward( track: Iron, level: 1, stat: (body: 2, toughness: 1),
+        Reward( track: Iron, level: 1, stat: (vitality: 2, toughness: 1),
                 flavor: "Set your feet. The line begins where you decide it does.",
                 cards: [ Card( name: "Brace", role: Some(Iron), kind: Base, positional: true, effects: [Guard(tempo: 3)] ) ] ),
-        Reward( track: Iron, level: 2, stat: (body: 2, toughness: 1),
+        Reward( track: Iron, level: 2, stat: (vitality: 2, toughness: 1),
                 flavor: "Shields locked, the wall holds as one.",
                 cards: [ Card( name: "Phalanx", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one." ) ] ),
-        Reward( track: Iron, level: 3, stat: (body: 3),
+        Reward( track: Iron, level: 3, stat: (vitality: 3),
                 flavor: "One shield is a man; a line of them is a wall.",
                 cards: [ Card( name: "Bulwark", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's." ) ] ),
-        Reward( track: Iron, level: 4, stat: (body: 2, toughness: 1),
-                flavor: "Shields up, edge to edge — for one breath nothing gets through the line.",
-                cards: [ Card( name: "Shield Wall", role: Some(Iron), kind: Base, positional: true, zone: Lasting, effects: [Fortify(armor: 2)], text: "Raises a shield wall: +2 Armor to the whole front line this round — the Wall's active mitigation against a heavy assault." ) ] ),
-        Reward( track: Iron, level: 5, stat: (body: 4, toughness: 2),
+        Reward( track: Iron, level: 4, stat: (vitality: 2, toughness: 2),
+                flavor: "Brace as one — for one breath the line gives nothing.",
+                cards: [ Card( name: "Hold Fast", role: Some(Iron), kind: Base, positional: true, zone: Lasting, effects: [Guard(tempo: 3)], text: "Braces the holder: +3 Tempo this round — more initiative to catch runners and answer blows (the Wall's active mitigation)." ) ] ),
+        Reward( track: Iron, level: 5, stat: (vitality: 4, toughness: 2),
                 flavor: "Here, and no further. Not while I am standing — and I am not going down.",
                 cards: [
-                    Card( name: "Last Stand", role: Some(Iron), kind: Base, positional: true, zone: Spend, effects: [Lifeline, Steel] ),
+                    Card( name: "Last Stand", role: Some(Iron), kind: Base, positional: true, zone: Spend, effects: [Lifeline] ),
                     Card( name: "Taunt", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line." ),
                 ] ),
 
         // ---- Infiltrator (Silver) — the unseen blade: slip walls, delete the backline ----
         Reward( track: Silver, level: 1, stat: (speed: 2, daring: 2),
                 flavor: "You won't see her cross the room. You'll notice who is no longer in it.",
-                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3, dtype: Sharp), Shove], text: "Stab and shove: hits for sharp damage and knocks the foe out of the line (no melee strike-back this round)." ) ] ),
-        Reward( track: Silver, level: 2, stat: (speed: 1, power: 1),
+                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 3), Shove], text: "Stab and shove: hits for Might and knocks the foe out of the line (no melee strike-back this round)." ) ] ),
+        Reward( track: Silver, level: 2, stat: (speed: 1, might: 1),
                 flavor: "The first step is always free; take it before they're set.",
                 cards: [ Card( name: "Blitz", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "The first slip each round is free — it costs no Tempo." ) ] ),
         Reward( track: Silver, level: 3, stat: (speed: 2, daring: 2),
                 flavor: "Through the one gap the guard forgot they had.",
                 cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway." ) ] ),
-        Reward( track: Silver, level: 4, stat: (power: 2),
+        Reward( track: Silver, level: 4, stat: (might: 2),
                 flavor: "The reserve never hears the one that finds them.",
                 cards: [ Card( name: "Backstab", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve." ) ] ),
-        Reward( track: Silver, level: 5, stat: (power: 2, speed: 1),
+        Reward( track: Silver, level: 5, stat: (might: 2, speed: 1),
                 flavor: "One name, crossed off. The rest of the field never mattered.",
-                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6, dtype: Sharp)], text: "A killing strike: when this Skirmisher hits an enemy Reserve, that foe is downed outright (M4)." ) ] ),
+                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6)], text: "A killing strike: when this Skirmisher hits an enemy Reserve, that foe is downed outright (M4)." ) ] ),
 
         // ---- Artillery (Brass) — the long reach: ranged burst & AoE ----
-        Reward( track: Brass, level: 1, stat: (power: 2),
+        Reward( track: Brass, level: 1, stat: (might: 2),
                 flavor: "Death that arrives ahead of the sound of it.",
-                cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
-        Reward( track: Brass, level: 2, stat: (power: 1, precision: 1),
+                cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
+        Reward( track: Brass, level: 2, stat: (might: 2),
                 flavor: "The sky, rationed evenly across the whole front rank.",
-                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, targets: 3, reach: (2, 2), effects: [Damage(power: 3, dtype: Sharp)] ) ] ),
-        Reward( track: Brass, level: 3, stat: (power: 2),
-                flavor: "Open the can. The meat is the next problem.",
-                cards: [ Card( name: "Sunder", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Sunder(armor: 2)], text: "A shot that cracks plate: shears 2 Armor (all types) off a foe so the line's fire bites — Artillery's answer to a heavy front." ) ] ),
-        Reward( track: Brass, level: 4, stat: (power: 1, precision: 1),
+                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, targets: 3, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
+        Reward( track: Brass, level: 3, stat: (might: 3),
+                flavor: "Aim for the seam. The big ones fall the same as the small once you find it.",
+                cards: [ Card( name: "Piercing Shot", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Damage(power: 6)], text: "A heavy shot whose Might bursts through a tough front (§2.2) — Artillery's answer to a high-Toughness wall." ) ] ),
+        Reward( track: Brass, level: 4, stat: (might: 2),
                 flavor: "Far enough back to be safe — from everything but this.",
                 cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Reserve's ranged fire reach the enemy Reserve — the sanctioned sniper exception." ) ] ),
-        Reward( track: Brass, level: 5, stat: (power: 2),
+        Reward( track: Brass, level: 5, stat: (might: 2),
                 flavor: "It does not ask which armor. It asks how much of the field you would like erased.",
-                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, zone: Spend, targets: 5, reach: (2, 2), effects: [Damage(power: 5, dtype: Sharp)] ) ] ),
+                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, zone: Spend, targets: 5, reach: (2, 2), effects: [Damage(power: 5)] ) ] ),
 
-        // ---- Controller (Bone) — the unmaker: fear that controls (Freeze→Shaken→Rout), plus one
-        //      Resolve-proof hard-lock for the fearless. Fear escalates Menace→Terror→Unmake. ----
-        Reward( track: Bone, level: 1, stat: (dread: 2),
+        // ---- Controller (Bone) — the unmaker: round-scoped DEBUFFS / status, never damage (§8.6).
+        //      Strips Tempo, Slows, Disarms, Staggers, Shoves, and Routs the foe off the line. ----
+        Reward( track: Bone, level: 1, stat: (might: 1),
                 flavor: "Dread arrives early and uninvited — the first cold finger laid on the nerve.",
-                cards: [ Card( name: "Menace", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 2, dtype: Fear)] ) ] ),
-        Reward( track: Bone, level: 2, stat: (dread: 1, resolve: 1),
+                cards: [ Card( name: "Menace", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Stagger], text: "Staggers a foe: it loses its action this round (no strike, no card, no strike-back) — a Controller status, not damage." ) ] ),
+        Reward( track: Bone, level: 2, stat: (might: 1),
                 flavor: "Weight the feet and foul the hands; let it watch the fight happen without it.",
-                cards: [ Card( name: "Shackle", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2), Disarm] ) ] ),
-        Reward( track: Bone, level: 3, stat: (dread: 2),
+                cards: [ Card( name: "Shackle", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Slow(speed: 2), Disarm], text: "Slows a foe (−2 Speed) and fouls its hand (cannot play role cards) this round." ) ] ),
+        Reward( track: Bone, level: 3, stat: (might: 1),
                 flavor: "A sound the body hears before the mind does.",
-                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
-        Reward( track: Bone, level: 4, stat: (dread: 1, resolve: 1),
+                cards: [ Card( name: "Terror", role: Some(Bone), kind: Base, reach: (2, 2), targets: 2, effects: [Suppress(tempo: 3), Shove], text: "Strips 3 Tempo from up to two foes and shoves them out of melee this round." ) ] ),
+        Reward( track: Bone, level: 4, stat: (might: 1),
                 flavor: "A whisper that follows the foe home and unmakes the courage it finds there.",
                 cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (M5)." ) ] ),
-        Reward( track: Bone, level: 5, stat: (dread: 2),
+        Reward( track: Bone, level: 5, stat: (might: 1),
                 flavor: "She speaks, and the enemy front simply forgets how to be brave.",
-                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Damage(power: 4, dtype: Fear)] ) ] ),
+                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Rout, Stagger], text: "Routs up to three foes — driven from the line to the Reserve — and Staggers them this round (a Controller status, no damage)." ) ] ),
 
-        // ---- Support (Salt) — the force multiplier: amplify the line, then outlast (§4 redesign) ----
-        // Proactive-first: the early cards are buffs that bite from Muster (race-positive — Salt's
-        // action becomes ally damage/actions); the heal is the attrition floor; Sanctuary is the
-        // mass-amplification capstone. (No standalone Ward here — its niche lives on the pool card the
-        // scenario casters carry.)
-        Reward( track: Salt, level: 1, stat: (inspiration: 2, body: 1),
+        // ---- Support (Salt) — the force multiplier: BUFFS / heal, never damage (§8.6). Magnitudes are
+        //      the card's own printed values (no Inspiration stat). Amplify the line, then outlast. ----
+        Reward( track: Salt, level: 1, stat: (vitality: 1),
                 flavor: "Borrow against the next breath; move twice on this one.",
-                cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 2)], text: "Grants an ally +2 Tempo (plus the caster's Inspiration) — extra actions this round (indirect offense)." ) ] ),
-        Reward( track: Salt, level: 2, stat: (inspiration: 2),
+                cards: [ Card( name: "Haste", role: Some(Salt), kind: Base, effects: [Haste(tempo: 3)], text: "Grants an ally +3 Tempo — extra actions this round (indirect offense)." ) ] ),
+        Reward( track: Salt, level: 2, stat: (vitality: 1),
                 flavor: "Put the weight of the whole line behind every blow.",
-                cards: [ Card( name: "Empower", role: Some(Salt), kind: Base, zone: Lasting, effects: [Empower(power: 2)], text: "Raises the whole party's Power by 2 (plus the caster's Inspiration) this round — the Support force-multiplier's indirect offense." ) ] ),
-        Reward( track: Salt, level: 3, stat: (speed: 1, body: 1, inspiration: 1),
+                cards: [ Card( name: "Empower", role: Some(Salt), kind: Base, zone: Lasting, effects: [Empower(might: 3)], text: "Raises the whole party's Might by 3 this round — the Support buff's indirect offense." ) ] ),
+        Reward( track: Salt, level: 3, stat: (speed: 1, vitality: 1),
                 flavor: "Close the worst of it, and send them back in.",
-                cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(body: 4)], text: "Restores 4 Body (plus the caster's Inspiration) to the most-wounded ally — the attrition floor." ) ] ),
-        Reward( track: Salt, level: 4, stat: (inspiration: 2),
-                flavor: "Swallow the fear whole and put the spine back in the line — cure what spread, steel what hasn't.",
+                cards: [ Card( name: "Mend", role: Some(Salt), kind: Base, effects: [Mend(vitality: 4)], text: "Restores 4 Health cards to the most-wounded ally — the attrition floor." ) ] ),
+        Reward( track: Salt, level: 4, stat: (vitality: 2),
+                flavor: "Put the spine back in the line — turn the fallen back up and steady the rest.",
                 cards: [
-                    Card( name: "Steel", role: Some(Salt), kind: Base, effects: [Steel, Recover], text: "Steady mind and body: clears accumulated fear and turns one face-down health card back up on the most-wounded ally (returns a lost action)." ),
-                    Card( name: "Rally", role: Some(Salt), kind: Base, zone: Lasting, effects: [Rally(resolve: 4)], text: "Puts the spine back into the line: raises allies' Resolve by 4 (plus the caster's Inspiration) this round — steeling them against fear before it lands." ),
+                    Card( name: "Bolster", role: Some(Salt), kind: Base, effects: [Recover, Empower(might: 2)], text: "Turns one face-down health card back up on the most-wounded ally (returns a lost action) and raises the party's Might by 2 this round." ),
                 ] ),
-        Reward( track: Salt, level: 5, stat: (body: 2, inspiration: 2),
+        Reward( track: Salt, level: 5, stat: (vitality: 2),
                 flavor: "For one held breath, the whole line strikes as one — empowered, hastened, whole.",
-                cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Empower(power: 2), Haste(tempo: 3), Mend(body: 4)], text: "Mass amplification: empowers and hastens the whole party and heals the most-wounded — the Support capstone." ) ] ),
+                cards: [ Card( name: "Sanctuary", role: Some(Salt), kind: Base, zone: Spend, targets: 99, effects: [Empower(might: 2), Haste(tempo: 3), Mend(vitality: 4)], text: "Mass amplification: empowers and hastens the whole party and heals the most-wounded — the Support capstone." ) ] ),
     ],
     // §2.3 (locked 2026-06-21) — the clean-slate baseline a *character* starts from, held as a
     // SEPARATE Form card (its fundamental) so the identity Actor card stays bare. Numbers match the
-    // old Novice `base`; only characters (built via `build_character`) receive it. Creatures print theirs.
-    clean_slate: (name: "Human", speed: 3, power: 1, body: 5, toughness: 1, resolve: 1),
+    // old Novice base (might = former power, vitality = former body); only characters (built via
+    // `build_character`) receive it. Creatures print theirs.
+    clean_slate: (name: "Human", might: 1, vitality: 5, toughness: 1, speed: 3),
     actors: [
         // Novice — the clean-slate character (§8.5): a BARE identity (§2.3) — a character carries NO
-        // printed stats. Its baseline is the separate `clean_slate` Form card above; power then grows
+        // printed stats. Its baseline is the separate `clean_slate` Form card above; strength then grows
         // only by adding reward cards. (Creatures keep a printed `base`.)
         ActorCard( name: "Novice", role: "Human", flavor: "Nothing yet but nerve and a fist. Everything it becomes, it has to buy.", driver: "hero", attack: Melee, weapon: "Fist",
                    base: () ),
-        // An Actor is a bare identity + a starting deck (stats-as-deck, §2.3/§4.3): `base` is the
-        // fundamental Form card (its stat block); `traits` are attachment Form cards; `actions` are
-        // its Action cards; `weapon` supplies the strike's damage type.
+        // An Actor is a bare identity + a starting deck (stats-as-deck, §2.3/§4.3): `base` is the inline
+        // fundamental Form card (its stat block over the five stats); `actions` are its Action cards;
+        // `weapon` is the base attack card. Numbers: might = former power, vitality = former body.
         // ---- the specialist cast (fresh) ----
         ActorCard( name: "Anvil", role: "Wall", flavor: "He does not advance. He does not retreat. The battle simply happens around the place he is standing.", driver: "hero", attack: Melee, weapon: "Maul",
-                   base: (speed: 2, power: 4, precision: 1, body: 10, toughness: 2, resolve: 5),
-                   actions: ["Brace", "Shield Wall", "Phalanx", "Bulwark", "Taunt"], traits: ["Heavy-Plate"] ),
+                   base: (might: 4, vitality: 10, toughness: 2, speed: 2),
+                   actions: ["Brace", "Phalanx", "Bulwark", "Taunt"] ),
         ActorCard( name: "Wisp", role: "Infiltrator", flavor: "You won't see her cross the room. You'll only notice, later, who is no longer in it.", driver: "hero", attack: Melee, weapon: "Blade",
-                   base: (speed: 7, power: 4, precision: 2, body: 4, toughness: 1, resolve: 3, daring: 5),
+                   base: (might: 4, vitality: 4, toughness: 1, speed: 7, daring: 5),
                    actions: ["Bank", "Blitz", "Shadowstep", "Backstab"] ),
         ActorCard( name: "Sear", role: "Artillery", flavor: "Counts the range, exhales, and deletes the front rank. Keep him fed with distance.", driver: "hero", attack: Ranged, weapon: "Bow",
-                   base: (speed: 3, power: 6, precision: 2, body: 4, toughness: 1, resolve: 3),
-                   actions: ["Barrage", "Sunder", "Longshot"] ),
+                   base: (might: 6, vitality: 4, toughness: 1, speed: 3),
+                   actions: ["Barrage", "Longshot"] ),
         ActorCard( name: "Vow", role: "Support", flavor: "Carries no blade and wins anyway — by making sure the ones who do are still standing.", driver: "hero", attack: Neither, weapon: "Fist",
-                   base: (speed: 3, power: 0, body: 4, toughness: 1, resolve: 2, inspiration: 3),
+                   base: (might: 0, vitality: 4, toughness: 1, speed: 3),
                    actions: ["Ward", "Mend", "Haste"] ),
         ActorCard( name: "Hex", role: "Controller", flavor: "She speaks, and the enemy's courage develops a leak. Bodies are a formality after that.", driver: "hero", attack: Ranged, weapon: "Wand",
-                   base: (speed: 3, power: 2, dread: 4, body: 4, toughness: 1, resolve: 3),
+                   base: (might: 2, vitality: 4, toughness: 1, speed: 3),
                    actions: ["Confuse", "Slow", "Terror"] ),
         // simple training heroes
         ActorCard( name: "Recruit", role: "Militia", flavor: "Spear, nerve, and a week's drill. It is enough more often than anyone expects.", driver: "hero", attack: Melee, weapon: "Spear",
-                   base: (speed: 3, power: 3, body: 5, toughness: 1, resolve: 3) ),
+                   base: (might: 3, vitality: 5, toughness: 1, speed: 3) ),
         ActorCard( name: "Archer", role: "Bowman", flavor: "Plain bow, steady draw. Answers range with range and asks nothing fancier.", driver: "hero", attack: Ranged, weapon: "Bow",
-                   base: (speed: 4, power: 4, precision: 2, body: 4, toughness: 1, resolve: 3) ),
+                   base: (might: 4, vitality: 4, toughness: 1, speed: 4) ),
         // ---- creatures ----
         ActorCard( name: "Husk", role: "Swarmer", flavor: "What's left when something stops being a person and keeps walking. It comes in tides.", driver: "aggressor", attack: Melee, weapon: "Claw", aggression: 6,
-                   base: (speed: 3, power: 2, body: 2, toughness: 1) ),
+                   base: (might: 2, vitality: 2, toughness: 1, speed: 3) ),
         ActorCard( name: "Raider", role: "Infiltrator", flavor: "Fast, lean, and pointed at whoever you most need to keep alive.", driver: "skirmisher", attack: Melee, weapon: "Claw", aggression: 8,
-                   base: (speed: 6, power: 3, body: 4, toughness: 1, daring: 5) ),
-        ActorCard( name: "Brute", role: "Bruiser", flavor: "A slab of muscle and plate that treats your front line as a suggestion.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 6,
-                   base: (speed: 2, power: 5, body: 8, toughness: 3), traits: ["Heavy-Plate"] ),
+                   base: (might: 3, vitality: 4, toughness: 1, speed: 6, daring: 5) ),
+        ActorCard( name: "Brute", role: "Bruiser", flavor: "A slab of muscle that treats your front line as a suggestion.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 6,
+                   base: (might: 5, vitality: 8, toughness: 3, speed: 2) ),
         ActorCard( name: "Slinger", role: "Skirmisher", flavor: "Hangs back and plinks. Annoying alone; lethal in a chorus.", driver: "aggressor", attack: Ranged, weapon: "Bow", aggression: 2,
-                   base: (speed: 4, power: 4, body: 3, toughness: 1) ),
-        ActorCard( name: "Seer", role: "Hexer", flavor: "Picks the steadiest nerve in your line and goes to work on it first.", driver: "aggressor", attack: Ranged, weapon: "Wand", aggression: 2,
-                   base: (speed: 3, power: 3, dread: 4, body: 4, toughness: 1), target_rule: Some(LeastResolute) ),
+                   base: (might: 4, vitality: 3, toughness: 1, speed: 4) ),
+        ActorCard( name: "Seer", role: "Hexer", flavor: "Picks the most fragile body in your line and goes to work on it first.", driver: "aggressor", attack: Ranged, weapon: "Wand", aggression: 2,
+                   base: (might: 3, vitality: 4, toughness: 1, speed: 3), target_rule: Some(LowestBody) ),
         ActorCard( name: "Ogre", role: "Boss", flavor: "Both fists and a thrown rock, wrapped around more body than a wall. A bad afternoon, alone.", driver: "brute", attack: Both, weapon: "Maul", aggression: 6,
-                   base: (speed: 4, power: 6, body: 16, toughness: 3, resolve: 6), traits: ["Plate"] ),
+                   base: (might: 6, vitality: 16, toughness: 3, speed: 4) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
-                   base: (speed: 4, power: 3, precision: 3, body: 8, toughness: 1, resolve: 4) ),
-        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
-        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
-        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
-        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
-        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
-        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  attack: Melee, weapon: "Claw", base: (speed: 2, power: 1, body: 8, toughness: 1) ),
+                   base: (might: 3, vitality: 8, toughness: 1, speed: 4) ),
+        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
+        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, speed: 2) ),
     ],
     campaign: [
         ScenarioCard(
@@ -231,7 +223,7 @@ Catalog(
         ),
         ScenarioCard(
             name: "The Five (cascade)",
-            blurb: "All five specialists. Coordinated: Anvil holds the front for Vow, Hex confuses and slows, Vow wards Sear, Sear and Hex delete the front, Wisp slips the gauntlet to kill their Seer. Uncoordinated: your Vow is assassinated and the deck unravels.",
+            blurb: "All five specialists. Coordinated: Anvil holds the front for Vow, Hex staggers and slows, Vow wards Sear, Sear and Hex break the front, Wisp slips the gauntlet to kill their Seer. Uncoordinated: your Vow is assassinated and the deck unravels.",
             flavor: "Five crafts, one breath. Out of step, it is just five people dying in order.",
             heroes: ["Anvil", "Wisp", "Sear", "Vow", "Hex"],
             foes: ["Brute", "Raider", "Raider", "Seer", "Husk", "Husk"],
@@ -240,7 +232,7 @@ Catalog(
     god: [
         ScenarioCard(
             name: "The Ogre",
-            blurb: "A both-range boss with deep Body. Coordinate focus-fire: wall it, strip its armor, and rain.",
+            blurb: "A both-range boss with deep health. Coordinate focus-fire: wall it, control it, and rain.",
             flavor: "It is not a fight so much as a demolition you are all invited to.",
             heroes: ["Anvil", "Sear", "Hex"],
             foes: ["Ogre"],
@@ -254,8 +246,8 @@ Catalog(
         ),
     ],
     tutorials: [
-        ScenarioCard( name: "1. The Trade", blurb: "Same-range melee is a simultaneous trade — both deal base through armor. Bring more effective power; armor matters.", flavor: "Two blades, one heartbeat. Whoever brought more, keeps standing.", heroes: ["Recruit"], foes: ["Husk"] ),
-        ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; a melee hero can't answer (auto-hit). Bring ranged (Archer) to trade back.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
+        ScenarioCard( name: "1. The Trade", blurb: "Same-range melee is a simultaneous trade — both deal their Might. Bring more Might; Toughness gates each card.", flavor: "Two blades, one heartbeat. Whoever brought more, keeps standing.", heroes: ["Recruit"], foes: ["Husk"] ),
+        ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; spend Tempo to evade it, or bring ranged (Archer) to trade back. With no Tempo, you take the hit.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
         ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Skirmishers slip to the back, Reserve fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
         ScenarioCard( name: "4. Charge & Concentration", blurb: "Concentrate your charge against one stretch of the line to break through; an even charge is caught everywhere and breaks through nowhere.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Daring) to slip the gauntlet and become a Skirmisher, or hold to block. A Wall with more hold than your advance Daring stops you cold.", flavor: "A wall is a question. Daring is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
@@ -290,7 +282,7 @@ Catalog(
         "Infiltrator": "Slips the line and ends things quietly. Trades in silver, and is paid in the same.",
         "Artillery":   "Deals death across the field and never lets the range close. Founded in brass, like the cannon.",
         "Support":     "Keeps the others standing — heals, wards, and aids. Its coin is salt: missed only once it's gone.",
-        "Controller":  "Breaks wills before bodies — strips the foe and trades in fear. It coins the very dead it makes.",
+        "Controller":  "Breaks the foe before it can act — strips, slows, and routs. It coins the very dead it makes.",
     },
     // The in-app rules reference (encyclopedia) is NOT authored here any more: rule entries are
     // generated by parsing the Spec's `**TERM.**` lines (canon/2-spec/README.md), and the Powers

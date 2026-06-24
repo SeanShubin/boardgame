@@ -53,8 +53,8 @@ pub struct TranscriptScenario {
 
 /// The catalogue of transcribable scenarios. Starts deliberately small: a single **rules tour** that
 /// exercises the core machinery (rank allocation, Muster, the gauntlet's slip / hold / parting-hit, the
-/// Skirmish and Reserve strikes, armour and Fear, defeat, refresh, outcome). The per-skill and
-/// power-scaling scenarios are later additions.
+/// Skirmish and Reserve strikes, evade, defeat, refresh, outcome). The per-skill and power-scaling
+/// scenarios are later additions.
 pub fn transcript_scenarios() -> Vec<TranscriptScenario> {
     vec![rules_tour()]
 }
@@ -82,30 +82,29 @@ fn rules_tour() -> TranscriptScenario {
         named("Hex", Currency::Bone),   // Controller: fears the line into the control ladder
         named("Vow", Currency::Salt),   // Support: heals the line through the attrition
     ];
-    // A combined threat that gives every Role its job: an **armored front** (Brute — Heavy-Plate, only
-    // the Artillery's pierce cracks it), a **fast charger** (Raider — the Wall holds it), a **ranged
-    // backfield** (Slinger / Seer — the Infiltrator slips to reach them), and a **swarm** (Husks — the
-    // attrition the Support heals through). Each is reinforced in Body / Toughness so the fight runs
-    // several rounds, and their **Resolve is varied on purpose** so Hex's fear shows the whole control
-    // ladder at once — higher Resolve, milder break: resist → Freeze → Shaken → Rout. Seeds; tune to taste.
-    let threat = |name: &str, resolve: u32| {
+    // A combined threat that gives every Role its job: a **tough front** (Brute — the Wall holds it,
+    // the Artillery cracks it), a **fast charger** (Raider — the Wall holds it), a **ranged backfield**
+    // (Slinger / Seer — the Infiltrator slips to reach them), and a **swarm** (Husks — the attrition the
+    // Support heals through). Each is reinforced in Vitality / Toughness so the fight runs several
+    // rounds, and a Controller's **Rout** drives a unit off the line (a round-scoped status, §4).
+    // Seeds; tune to taste.
+    let threat = |name: &str, tough: u32| {
         let mut a = build_creature(name);
-        a.defense.resolve = resolve;
-        a.defense.body.max += 40;
-        a.defense.body.remaining += 40;
-        a.defense.body.toughness += 3;
+        a.defense.health.max += 120;
+        a.defense.health.remaining += 120;
+        a.defense.health.toughness += tough;
         a
     };
     let foes = vec![
-        threat("Brute", 8), // armored front — only Artillery's pierce cracks the plate; fear Freezes it
-        threat("Raider", 3), // fast charger — the Wall holds it; fear Routs it off the line (b2)
-        threat("Slinger", 5), // ranged backfield — the Infiltrator slips to it; fear Shakes it
-        threat("Seer", 14), // ranged backfield — brave: it shrugs the dread off (fear resisted)
-        threat("Husk", 0),  // swarm — attrition the Support heals through; fear Routs it
+        threat("Brute", 3),   // tough front — the Wall holds it, the Artillery cracks it
+        threat("Raider", 1), // fast charger — the Wall holds it; a Controller Routs it off the line
+        threat("Slinger", 2), // ranged backfield — the Infiltrator slips to it
+        threat("Seer", 3),   // ranged backfield
+        threat("Husk", 0),   // swarm — attrition the Support heals through
     ];
     TranscriptScenario {
         name: "rules-tour",
-        blurb: "all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks plate, Controller's fear ladder (resist / Freeze / Shaken / Rout + demotion), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, armour, defeat, refresh.",
+        blurb: "all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, evade, defeat, refresh.",
         heroes,
         foes,
         ruleset: Ruleset::analysis(),
@@ -242,17 +241,7 @@ fn form_block(a: &Actor) -> String {
     // A card-counted **build** (§2.3 stats-as-deck): the named cards the actor holds — its Form Stat
     // cards (the Human baseline + each treasure's stat bundle) + its ability cards + its weapon.
     let stat_empty = |s: &StatCard| {
-        s.power == 0
-            && s.precision == 0
-            && s.speed == 0
-            && s.daring == 0
-            && s.dread == 0
-            && s.inspiration == 0
-            && s.body == 0
-            && s.toughness == 0
-            && s.resolve == 0
-            && s.armor.is_empty()
-            && s.ward.is_empty()
+        s.might == 0 && s.vitality == 0 && s.toughness == 0 && s.speed == 0 && s.daring == 0
     };
     let stat_count = a.form.cards.iter().filter(|s| !stat_empty(s)).count();
     let cards = stat_count + a.actions.len() + 1; // + the weapon
@@ -316,17 +305,11 @@ fn form_block(a: &Actor) -> String {
     // Totals — the grants above sum to exactly these (nothing else feeds the stat block, §2.3).
     let totals = StatCard {
         name: String::new(),
-        power: a.offense.power,
-        precision: a.offense.precision,
+        might: a.offense.might,
         speed: a.offense.speed,
         daring: a.offense.daring,
-        dread: a.offense.dread,
-        inspiration: a.offense.inspiration,
-        body: a.defense.body.max,
-        toughness: a.defense.body.toughness,
-        resolve: a.defense.resolve,
-        armor: a.defense.armor.iter().map(|(d, v)| (*d, *v)).collect(),
-        ward: a.defense.ward.iter().map(|(d, v)| (*d, *v)).collect(),
+        vitality: a.defense.health.max,
+        toughness: a.defense.health.toughness,
     };
     out.push_str(&format!("      {:<36}{}\n", "Totals", stat_grant(&totals)));
     out
@@ -384,7 +367,7 @@ fn hp_table(state: &State, label: &str) -> String {
                 let mark = if a.fallen || a.is_down() { " down" } else { "" };
                 format!(
                     "{} {}/{}{mark}",
-                    a.name, a.defense.body.remaining, a.defense.body.max
+                    a.name, a.defense.health.remaining, a.defense.health.max
                 )
             })
             .collect::<Vec<_>>()
@@ -541,7 +524,7 @@ fn card_list(out: &mut String, used: &[CardUse]) {
             let summary = match kind {
                 "Power" => "passive power".to_string(),
                 "Weapon" => match u.card.primary_damage() {
-                    Some((_, dt)) => format!("{} weapon", dt.label()),
+                    Some(p) => format!("might weapon (+{p})"),
                     None => "weapon".to_string(),
                 },
                 _ => u.card.summary(),
@@ -561,16 +544,13 @@ fn card_list(out: &mut String, used: &[CardUse]) {
 fn effect_keyword(e: &Effect) -> String {
     use Effect::*;
     match e {
-        Damage { dtype, .. } => format!("Damage ({})", dtype.label()),
+        Damage { .. } => "Damage (Might)".into(),
         Guard { .. } => "Guard (Brace)".into(),
-        Fortify { .. } => "Fortify (Shield Wall)".into(),
         Lifeline => "Lifeline (Last Stand)".into(),
         Stagger => "Stagger".into(),
-        Sunder { .. } => "Sunder".into(),
         Disarm => "Disarm".into(),
         Shove => "Shove".into(),
-        Rally { .. } => "Rally".into(),
-        Steel => "Steel".into(),
+        Rout => "Rout".into(),
         Recover => "Recover".into(),
         BankSpeed { .. } => "Bank Speed".into(),
         Mend { .. } => "Mend".into(),

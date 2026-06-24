@@ -4,12 +4,11 @@
 //! round. Each card declares a **zone behavior** ([`ZoneBehavior`], §5.3: Return / Spend / Lasting)
 //! and optional **tags** (charge/combo interaction, §5.4). Cards are loaded from
 //! `data/booklet.ron`, so numbers retune without recompiling; a card's magnitude flows through the
-//! [`crate::stats`] cut→bar→pool pipeline.
+//! [`crate::stats`] pile→bar→pool pipeline (untyped Might, §2.2).
 
 use serde::Deserialize;
 
 use crate::currency::Currency;
-use crate::stats::DamageType;
 use crate::zones::ZoneBehavior;
 
 /// The §5.6 role-card taxonomy kind. `Stat` cards are [`crate::form::StatCard`]s (Form
@@ -26,46 +25,39 @@ pub enum RoleKind {
     Mode,
 }
 
-/// A single effect a card can carry. Edge scales the **primary** (first) effect's
-/// natural unit (+1 per Edge); see [`Card::primary_damage`].
+/// A single effect a card can carry. Magnitudes are the card's own printed values (§2.4) — there is
+/// no signature force-multiplier stat.
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub enum Effect {
-    /// Deal `power` damage of `dtype` (Edge adds on top, per target).
-    Damage { power: u32, dtype: DamageType },
+    /// Deal `power` untyped **Might** damage (§2.2 — no type, no cut), per target.
+    Damage { power: u32 },
     /// Add `tempo` to the holder this round — a defensive Guard boost (more initiative to answer
     /// blows) (M2, Wall L1 *Brace*).
     Guard { tempo: u32 },
-    /// Grant `armor` round-scoped flat Armor to the whole line (a **Shield Wall** — the Wall's active
-    /// mitigation; cut from every outer hit, bypassed by Precision, cleared at round end).
-    Fortify { armor: u32 },
-    /// This round the holder **cannot fall**: damage that would down it leaves it at 1 Body
+    /// This round the holder **cannot fall**: damage that would down it leaves it at 1 health
     /// (M3, Wall L5 *Last Stand*).
     Lifeline,
     /// On a landed hit, the target loses its action this round.
     Stagger,
-    /// Shear `armor` off the target's plate (a Sunder).
-    Sunder { armor: u32 },
     /// Rip a card from the target's hand.
     Disarm,
     /// Break the target out of the line (a Shove).
     Shove,
-    /// Raise allies' Resolve by `resolve` (a Rally; lives in the party zone).
-    Rally { resolve: u32 },
-    /// Clear accumulated fear / steady the nerve (a Steel).
-    Steel,
+    /// Drive the target from the line to the Reserve this round (a Rout — a Controller status, §4).
+    Rout,
     /// Turn a face-down card back up (a Recover).
     Recover,
     /// Bank +`amount` Speed (extra tempo this round).
     BankSpeed { amount: u32 },
-    /// Restore `body` Health to the most-wounded ally (a Mend).
-    Mend { body: u32 },
+    /// Restore `vitality` Health cards to the most-wounded ally (a Mend).
+    Mend { vitality: u32 },
     /// Grant a melee attack to a defenseless ally for the round (a Ward, §4.2).
     Ward,
     /// Grant +`tempo` Tempo to an ally (a Haste).
     Haste { tempo: u32 },
-    /// Raise allies' **Power** by `power` this round (an Empower — the Support force-multiplier's
-    /// indirect offense; round-scoped, §4 Salt).
-    Empower { power: u32 },
+    /// Raise allies' **Might** by `might` this round (an Empower — the Support buff's indirect
+    /// offense; round-scoped, §4 Salt).
+    Empower { might: u32 },
     /// Strip `tempo` Tempo from a foe (a Suppress).
     Suppress { tempo: u32 },
     /// Cut `speed` Speed from a foe (a Slow — cheaper to block/engage).
@@ -131,11 +123,11 @@ fn melee() -> [u32; 2] {
 }
 
 impl Card {
-    /// The card's primary damage (power, type), if it deals damage. This is what
-    /// Edge scales when the card is Unleashed/Overwhelmed.
-    pub fn primary_damage(&self) -> Option<(u32, DamageType)> {
+    /// The card's primary damage (untyped Might power), if it deals damage. This is what
+    /// Force scales when the card is Unleashed/Overwhelmed.
+    pub fn primary_damage(&self) -> Option<u32> {
         self.effects.iter().find_map(|e| match e {
-            Effect::Damage { power, dtype } => Some((*power, *dtype)),
+            Effect::Damage { power } => Some(*power),
             _ => None,
         })
     }
@@ -149,22 +141,19 @@ impl Card {
         let mut parts: Vec<String> = Vec::new();
         for e in &self.effects {
             parts.push(match e {
-                Effect::Damage { power, dtype } => format!("{} {power}", dtype.label()),
+                Effect::Damage { power } => format!("might {power}"),
                 Effect::Guard { tempo } => format!("brace +{tempo} tempo"),
-                Effect::Fortify { armor } => format!("fortify +{armor} armor"),
                 Effect::Lifeline => "cannot fall".into(),
                 Effect::Stagger => "stagger".into(),
-                Effect::Sunder { armor } => format!("sunder -{armor}"),
                 Effect::Disarm => "disarm".into(),
                 Effect::Shove => "shove".into(),
-                Effect::Rally { resolve } => format!("rally +{resolve}"),
-                Effect::Steel => "steel".into(),
+                Effect::Rout => "rout".into(),
                 Effect::Recover => "recover".into(),
                 Effect::BankSpeed { amount } => format!("+{amount} speed"),
-                Effect::Mend { body } => format!("mend +{body}"),
+                Effect::Mend { vitality } => format!("mend +{vitality}"),
                 Effect::Ward => "ward (grant melee)".into(),
                 Effect::Haste { tempo } => format!("haste +{tempo}"),
-                Effect::Empower { power } => format!("empower +{power} power"),
+                Effect::Empower { might } => format!("empower +{might} might"),
                 Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
                 Effect::Slow { speed } => format!("slow -{speed} speed"),
                 Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),
@@ -191,10 +180,7 @@ mod tests {
             zone: ZoneBehavior::Spend,
             tags: vec![],
             passive: false,
-            effects: vec![Effect::Damage {
-                power: 5,
-                dtype: DamageType::Heat,
-            }],
+            effects: vec![Effect::Damage { power: 5 }],
             role: None,
             kind: RoleKind::Base,
             positional: false,
@@ -204,9 +190,8 @@ mod tests {
 
     #[test]
     fn primary_damage_reads_the_first_damage_effect() {
-        let (p, t) = firestorm().primary_damage().unwrap();
+        let p = firestorm().primary_damage().unwrap();
         assert_eq!(p, 5);
-        assert_eq!(t, DamageType::Heat);
     }
 
     #[test]
