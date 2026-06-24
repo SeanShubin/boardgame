@@ -62,7 +62,7 @@ BI-1** (which only asserts the last clause).
 team). Solo viability tracks **how much of a role's kit fires without allies**: Wall is self-contained
 (hold + sustain), the glass cannons (Artillery, then Infiltrator — whose slip-keyed kit is almost
 entirely *relational*) work alone but fragile, and the effect roles produce *modifiers* with no base
-of their own — Support is **power-0 / attack Neither**, pure amplification. Crucially this order is
+of their own — Support is **Might-0 / attack Neither**, pure amplification. Crucially this order is
 **inverse to synergy**: the role weakest alone (Support) is the strongest *multiplier*, which is
 precisely *why* a team exceeds its parts (Spec §8.5's `3 + 2`). Pinning the order keeps each role's
 identity — "doomed alone, devastating combined" for Support/Controller — intact under tuning, and is
@@ -85,8 +85,8 @@ BI-1.** Anchored to the reference scenario; generalises to any coverage-demandin
 ## BI-3 — Force, not fiat (no rule forbids what stats can buy) ✅
 
 **Invariant.** A single character with **no role cards / powers** but **arbitrarily large stats**
-(Speed, Daring, Power, Body) **wins any finite-stat encounter in one round.** Equivalently: for every
-rank it could take and every defending formation of finite stats, enough Speed / Daring / Power / Body
+(Speed, Daring, Might, Vitality) **wins any finite-stat encounter in one round.** Equivalently: for every
+rank it could take and every defending formation of finite stats, enough Speed / Daring / Might / Vitality
 lets the lone god **reach and kill every enemy within round 1**.
 
 **Why.** The operational form of the §4 (`canon/2-spec/README.md`) **"force, not fiat"** guarantee, and

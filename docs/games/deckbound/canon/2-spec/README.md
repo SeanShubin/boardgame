@@ -57,9 +57,9 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | -------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **The deterministic core** (separable balance)           | 🟡 seeded    | **§0** — determinism · separable luck layers · objective core balance — `computability-and-balance.md`                                                                                                                                |
 | **The Clash** (tactical core)                            | ✅ worked    | —                                                                                                                                                                                                                                     |
-| **Defense model** (cut → bar → pool)                     | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                               |
+| **Defense model** (pile → bar → pool, one channel)                     | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                               |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                      |
-| **Speed/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense; **Focus/Mind merged out** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                             |
+| **Speed/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                             |
 | **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks still pending                                                                         |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                          |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                             |
@@ -284,7 +284,7 @@ adds +1. The **only** way Force changes hands is **Strike into Evade**: you comm
 they slip it, and your Force **goes to them** — your own momentum turned against you — and the
 evader **always gains at least 1** Force from the slip, even when the Striker had none (a clean
 dodge always buys momentum). Force is
-**per-duel** (it resets each duel); only **Body** persists between duels. There is **no Force
+**per-duel** (it resets each duel); only **health** persists between duels. There is **no Force
 cap** (unlimited) — building is bounded in practice by ends-on-strike (the duel ends the
 instant a blow connects), not by a ceiling. The kit is **infinite-replay**: every card is
 always available each beat (no finite hand or discard yet).
@@ -606,62 +606,59 @@ determinism without manufacturing a contest the design does not need.
 
 ---
 
-## 2. Defense model — *cut → bar → pool* 🟡
+## 2. Defense model — *pile → bar → pool* 🟡
 
 Design source: [`notes/form-and-defeat.md`](../notes/form-and-defeat.md),
 [`notes/stats.md`](../notes/stats.md). Seeded below; not yet exhaustive.
 
-> **Naming.** The defensive dimensions — **Body · Spirit** — are the **channels** (outer physical,
-> inner fear/will). *(The **Mind / Confusion** channel was **removed** 2026-06-20 with the Tempo/Focus
-> merge — see §3.2.)* The word *aspect* is **reserved** for the retired deck-chord combo layer (§6) and
-> is **not** used for these. *(The frozen `notes/` still call the channels "aspects" — read that as
-> "channels".)*
+> **Naming.** Combat has **one damage channel** — **Might** into the **health** pool. *(The old inner
+> **Fear/Spirit** channel and the **Mind/Confusion** channel were both **collapsed out** — Mind
+> 2026-06-20, Fear 2026 — so there is no per-channel split; control is the Controller's **stat-drop**,
+> not a second damage track, §4 / Charter #13.)* The word *aspect* stays **reserved** for the retired
+> deck-chord combo layer (§6). **Armor** and damage *types* are **deferred** to the later gear system
+> (`future-possibilities.md` §7) — until then a hit has no cut.
 
 ### 2.1 One maintained meter
 
-**RULE.** Exactly **one** quantity is a maintained, depleting track: the **Body
-Health pool** (face-down cards, per-combat, restored on a win). Every other
-defensive quantity — **Armor, Ward, Toughness, Resolve** — is a
-**passive stat read off the table**, never spent. **Tempo** is an
-ephemeral per-round pool, re-derived each round, not maintained.
+**RULE.** Exactly **one** quantity is a maintained, depleting track: the **health pool** (face-down
+cards, per-combat, restored on a win). The other defensive quantity — **Toughness** — is a **passive
+stat read off the table**, never spent. **Tempo** is an ephemeral per-round pool, re-derived each round,
+not maintained.
 
 **WHY.** "You maintain exactly one meter" is the load-bearing comprehensibility
 rule (Charter §7, §9): a human can hold the whole game because only one number is
 ever in flux.
 
 **GUARANTEES.**
-- Nothing besides Body Health is ever "tracked" between rounds.
+- Nothing besides the health pool is ever "tracked" between rounds.
 - Every other defensive number can be reconstructed from the cards on the table.
 
-### 2.2 Every channel is cut → bar, and only Body has a pool
+### 2.2 The one channel — pile → bar → pool
 
-**RULE.** Each attack is **outer** (physical/elemental → Body) or **inner**
-(fear → Spirit); its **base magnitude is the channel's attack stat — Strike for outer, Dread for
-inner** (the Controller's fear-projection), plus any card power. It resolves: **subtract the cut**
-(Armor for outer, Ward for
-inner; per source, typed, never depletes) → **accumulate the remainder into the
-round's pile** → **compare the pile to the bar** (Toughness for Body, Resolve for
-Spirit). Only the **outer** channel has a **pool** (Health cards) behind the bar — so it is the **only
-channel that deals damage**. The **inner** (fear) channel has **no pool and deals no damage**: when the
-pile exceeds the bar it **breaks the will into a round-scoped control status**, tiered by how far past
-Resolve it clears (Freeze / Shaken / Rout — §4 Controller status). **Fear never touches Body.**
-Cross-immunity: outer ignores Ward; inner ignores Armor.
+**RULE.** Every attack deals **Might** (its base magnitude — the attacker's Might plus any card power),
+resolved in one path: **accumulate the Might into the round's pile → compare the pile to the bar
+(Toughness) → each time the pile clears Toughness, flip one health card** face-down. Empty the health
+pool and the Actor is **down**. There is **no cut** today — **Armor** and damage *types* are deferred to
+the later gear system (they will reinsert a pre-pile subtract). This is the game's **single
+kill-condition** (Charter #13): you die exactly one way — your health pool empties.
 
-**WHY.** A per-source cut answers *many small hits*; a high bar answers *any one
-big hit* — non-redundant, so you want both. Typing the cut makes "called shots"
-fall out for free (choosing a damage type chooses which channel you attack).
+**WHY.** One channel, one bar, one pool keeps defense readable (#7, #9): a human tracks exactly one
+number (the health pool) and re-derives the rest. A high bar (Toughness) answers *any one big hit*; the
+pool's count (Vitality) answers *many small ones* — non-redundant, so you want both. **Control is not a
+second channel:** the Controller degrades the foe's own stats and hangs round-scoped statuses (§4), never
+a parallel damage track (Charter #13).
 
 **GUARANTEES.**
-- Both channels are structurally parallel (offense · cut · bar), but only the **outer** has a **pool** —
-  and that pool is what makes it the **only damaging channel**.
-- An inner break is a this-round **control status** that clears at Refresh; it **never reduces Body**.
-  The inner channel deals **no direct damage** — death is the outer channel's alone. *(Proposed
-  2026-06-21; supersedes the former scared-to-death Body-bleed.)*
-- **Fear is the Controller's control, not its damage** — consistent with §8.6's damage-separation law.
+- Exactly one channel and one pool — **Might → health** — is the only way the Body is lost; there is no
+  inner / fear track. *(The Fear channel and its Dread / Resolve / Ward stats were collapsed out, 2026.)*
+- The Controller's **control is stat-drop, not damage** — consistent with §8.6's damage-separation law
+  (Charter #13).
 - Accumulation is always cards in a zone, never a number in the head.
+- Armor / damage-types are **deferred, not deleted by accident** — they return as the gear system's
+  pre-pile cut (`future-possibilities.md` §7).
 
-*(SEEDED — the damage formula, scaling, and the Resolve break threshold are not
-yet specced. Numbers live in `booklet.ron`.)*
+*(SEEDED — the damage formula and scaling live in `booklet.ron`. The armor / type cut returns with
+gear.)*
 
 ### 2.3 Stats live in the deck — *stats-as-deck*
 
@@ -672,8 +669,8 @@ yet specced. Numbers live in `booklet.ron`.)*
 
 **RULE.** An actor's **identity card** is **bare** — a name, a role, a map token (§8.1), nothing more —
 for **every** actor, hero or creature. All of its stats live on separate **build cards**, read as the
-**Form** (§5.2 / §2.4–§2.6): so §2.1's "passive stats read off the table" — **Armor, Ward, Toughness,
-Resolve**, and likewise **Speed, Daring, Power** — are **build-card-derived**, never authored on the
+**Form** (§5.2 / §2.4–§2.6): so §2.1's "passive stats read off the table" — **Toughness**, and likewise
+**Speed, Daring, Might** — are **build-card-derived**, never authored on the
 identity. A build card encodes one build's stats; two kinds behave identically but differ in
 **lifecycle**:
 
@@ -684,7 +681,7 @@ identity. A build card encodes one build's stats; two kinds behave identically b
 - **Monster build card** — encodes a creature's **fixed core stats**. It **persists** in play as the
   creature's stat representation, because a creature never progresses (the build *is* the creature).
 
-Changeable, maintained state — the **Body Health pool**, **Tempo** — is tracked **as normal** (§2.1),
+Changeable, maintained state — the **health pool**, **Tempo** — is tracked **as normal** (§2.1),
 separate from the build cards. *(Numbers live in `booklet.ron`.)*
 
 **WHY.** "The deck *is* the character" (#8), generalised: an identity is *who*, a build is *what*, and
@@ -716,38 +713,38 @@ cards* — and the hero/creature difference falls out of **lifecycle**, not of w
 > vocabulary; learn them once, read them everywhere.
 
 **RULE.** A Form card carries a **suit** and a value, and is one of exactly **two** suits:
-- **Quantity** — *breadth*: how many cards (a count). Only **pooled** stats have a Quantity — **Body**
+- **Quantity** — *breadth*: how many cards (a count). Only **pooled** stats have a Quantity — **Vitality**
   (Health cards) and **Speed** (Tempo cards).
-- **Power** — *depth*: how much each card is worth (a per-card magnitude). **Every** stat has a Power:
-  **Toughness** (per Health card), **Daring** (per Tempo card), and the flat magnitudes — the strike
-  stat, **Dread**, **Inspiration**, **Precision**, **Resolve**, **Armor**, **Ward**.
+- **Power** — *depth*: how much each card is worth (a per-card magnitude). The Powers are **Toughness**
+  (per Health card), **Daring** (per Tempo card), and the lone flat magnitude **Might** (strike force).
 
-The suit classifies; the **deck** (§2.6) names the stat. So each existing stat is a **(deck × suit)**
-cell: Body·Quantity = health count, Body·Power = Toughness, Tempo·Quantity = Speed, Tempo·Power = Daring,
-Strike·Power = the strike stat. A pooled stat has **both** suits; a flat stat has **Power only**. A leaf
-card itself prints only *(suit, value)* — which stat it feeds is fixed by the deck it sits in.
+The suit classifies; the **deck** (§2.6) names the stat. So each stat is a **(deck × suit)** cell:
+Health·Quantity = Vitality, Health·Power = Toughness, Tempo·Quantity = Speed, Tempo·Power = Daring, and
+**Might** is the lone flat (Power-only) magnitude. A pooled stat has **both** suits; a flat stat has
+**Power only**. A leaf card itself prints only *(suit, value)* — which stat it feeds is fixed by the deck
+it sits in.
 
-**Inspiration scales augments.** The Salt force-multiplier: a Support buff's magnitude gains the
-augmenter's **Inspiration** — Mend +Inspiration Body, Rally +Inspiration Resolve, Empower +Inspiration
-Power, Haste +Inspiration Tempo — exactly as an attack's magnitude gains its channel's attack stat
-(Strike / Dread, §2.2). It is the augment axis's magnitude dial and the **Support** role's signature
-(#12); flat buffs with no magnitude (Steel, Ward) do not scale.
+**Support buffs are card-driven.** With the stat collapse there is **no Inspiration stat**: a Support
+augment's magnitude is printed on its card (Mend / Haste / Empower / Brace raise Vitality / Tempo /
+Might / Toughness / Daring by the card's own value). Support scales by **breadth of kit**, not by a
+signature magnitude (#12: the effect Roles bend shared dials, they don't own a private one).
 
 **WHY.** Two suits are the entire stat vocabulary, so a player learns "**Quantity = how many, Power = how
 hard**" once and reads it on every stat — §2.1's count×value shape generalised from defense to all of
 them, and §2.3's "the deck is the character" (#8) made addressable. **Power is the quantum of meaning**:
-it sets the smallest difference the game will represent (a Body·Power-4 Health card flips only after 4
+it sets the smallest difference the game will represent (a Toughness-4 Health card flips only after 4
 damage banks), so the power-fantasy scaling pours into **Power** — huge effect, card count flat — while
-**Quantity** stays small and every card on the table stays a meaningful state. The collision with the
-legacy strike stat *"Power"* is intentional, not a clash: that stat simply **is** Strike·Power, the
-canonical flat instance of the suit — Power is the magnitude atom.
+**Quantity** stays small and every card on the table stays a meaningful state. The lone flat magnitude —
+**Might** (strike force) — is the canonical Power-only instance of the suit: Power is the magnitude atom,
+and Might is it standing alone with no Quantity.
 
 **GUARANTEES.**
 - No stat exists outside the two suits **{Quantity, Power}**.
-- **Quantity** appears only on pooled stats (Body, Speed); **every** stat has a Power.
+- **Quantity** appears only on pooled stats (Vitality, Speed); **every** stat has a Power.
 - Suit meaning is **global** — Quantity is always a count, Power always a per-card magnitude; a suit is
   never rebound to a different role under a different deck.
-- The legacy **"Power" stat = Strike·Power**; the shared name is the same concept, not two.
+- The five stats are **Might · Vitality · Toughness · Speed · Daring** — Vitality / Speed carry both
+  suits (pooled); Might / Toughness / Daring are Power magnitudes.
 
 ### 2.5 Base-2 denominations
 
@@ -768,7 +765,7 @@ their sparse sums — an intentional binary aesthetic, and a ready cost metric (
 **GUARANTEES.**
 - One copy max of each denomination, per suit per deck → the canonical (binary) form is unique.
 - A stat's card-cost is **popcount(value)**; doubling a stat is **+1 card** (one new denomination).
-- **Consumable interaction:** decrementing a consumed Quantity pool (Body Health) past a high denomination
+- **Consumable interaction:** decrementing a consumed Quantity pool (the Health pool) past a high denomination
   "makes change" — the digital UI re-renders the canonical form; a printed edition may instead hold a
   *consumed* pool at unit denomination. Read-once Power stats are always free to denominate.
 - The popcount cost is a **tiebreaker only** — it never overrides a balance target, and it never collapses
@@ -779,13 +776,13 @@ their sparse sums — an intentional binary aesthetic, and a ready cost metric (
 > **Locked 2026-06-21.** A character's Form is a tree of decks; a card's meaning is its path.
 
 **RULE.** A character's Form is a **tree of decks**, and a leaf card's **meaning is its path**. The root
-is the bare identity card (§2.3); its children are the **stat decks** (Body, Tempo, Strike, …); a stat
+is the bare identity card (§2.3); its children are the **stat decks** (Health, Tempo, Might, …); a stat
 deck's children are its **suit decks** (Quantity, Power); the **leaves** are the base-2 denomination
 cards. A deck's **face shows its rolled-up total**; opening it reveals the addends that sum to it. **Only
 leaves carry values** — an intermediate deck is pure position, never a number.
 
 **WHY.** Positional notation is what lets the **generic** denomination cards (§2.5) be reused across every
-stat: a "Power 4" leaf means Toughness under Body and Daring under Tempo — meaning comes from the **path**,
+stat: a "Power 4" leaf means Toughness under Health and Daring under Tempo — meaning comes from the **path**,
 not the card, so the print vocabulary collapses to *{denomination × suit}*. The tree also **enforces
 position for free** (a card can't be orphaned — it lives inside its deck) and **maps to physical
 containment** (nested banded bundles). Deck-face = sum is §2.1's "read it off the table" made navigable:
@@ -803,7 +800,7 @@ the total you act on, the addends you audit.
 > **Locked 2026-06-21.** A mitigation layer is defined by *when* it discards, not only how much.
 
 **RULE.** A defensive layer carries a **reset clock** — when the damage it absorbs is discarded — and the
-clock is part of the stat. The Body channel stacks three:
+clock is part of the stat. The Health channel stacks three:
 - **Armor** — **per hit**: the cut applies to each blow independently; sub-cut damage is discarded at once.
 - **Toughness** — **per round**: damage banks into the round's pile and flips a Health card each Toughness;
   the sub-Toughness remainder clears at round end (§2.2).
@@ -843,7 +840,7 @@ Design source: [`notes/speed-and-tempo.md`](../notes/speed-and-tempo.md).
 > are the tripwires).
 
 Two permanent **Form** stats size one round-scoped **pool of cards** — the same shape as Health
-(Body × Toughness → Health):
+(Vitality × Toughness → Health):
 
 - **Speed** — *count*: how many **Tempo** cards you start each combat round with.
 - **Daring** — *grade*: the magnitude printed on each of those cards.
@@ -853,51 +850,57 @@ Two permanent **Form** stats size one round-scoped **pool of cards** — the sam
 ### 3.1 What Tempo and Daring do
 
 **RULE.** **Flipping a Tempo card gates every *action*** — a strike, a crossing contest (slip or catch),
-a strike back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are free** — Tempo is
-the currency of acting on the enemy, not of mere presence. Run out of face-up Tempo and you can take no
-more actions this round (you still hold your rank and soak with Body).
+an evade, a strike back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are free** —
+Tempo is the currency of acting on the enemy, not of mere presence. Run out of face-up Tempo and you can
+take no more actions this round (you still hold your rank and soak with health).
 
-**Daring's magnitude does real work in exactly one place — a *crossing contest* (§4).** When a Skirmisher
-tries to cross a Vanguard, the two hold a **single simultaneous Daring bid**: each commits some Tempo
-cards, worth (cards × Daring); **the higher total wins, ties to the catcher** (Shadowstep overrides) —
-strictly higher → slips by; equal-or-less → held. The bid cards are spent (they do **not** return until
-refresh), so crossing *more* walls, or *harder* ones, drains more Tempo. A **held** Skirmisher and its
-catcher **trade** (each deals Power) on the cards they committed — you never pay twice.
+**Daring's magnitude does real work in two places — a *crossing contest* and an *evade contest* — and
+nowhere else.** Both are the **same primitive, the tempo contest:** each side commits Tempo cards worth
+(cards × Daring), and **the side trying to *avoid* the strike must *strictly exceed* the other; a tie
+lands the strike.** The bid cards are spent (they do **not** return until refresh), so contesting *more*,
+or *harder*, drains more Tempo.
+- **Crossing** (melee positioning, §4): a Skirmisher's **advance** vs a Vanguard's **hold** — strictly
+  higher → slips by (and the bypassed wall may free-hit it, §4); equal-or-less → **held**, and the
+  Skirmisher and catcher **trade** (each deals Might) on the cards committed — you never pay twice. Ties
+  to the catcher (Shadowstep overrides).
+- **Evade** (ranged defense, §4.2): a defender spends Tempo to dodge a ranged attack — Artillery damage
+  **or** a Controller debuff. The attacker may **press** with extra cards (its **volley**); the
+  defender's **evade** must strictly exceed the volley to avoid it — a tie or less and the attack lands.
 
-**Everywhere else, Daring's number is irrelevant — only the flip counts.** An **exchange** (a strike) is
+**Everywhere else, Daring's number is irrelevant — only the flip counts.** A **strike** is
 **single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Daring
-(Daring sizes a crossing, never a blow). An enemy can only attack you by **spending a Tempo card**, and
-that attack is Daring-independent. You may **reflexively strike back** at anyone who strikes you in melee
-(position is irrelevant — they came to you), but striking back is an action: it costs **one** Tempo
-card, and with none to flip you simply **take the hit** (a free hit). *(Ranged fire is one-sided — you
-cannot strike back at a Reserve that did not come to you — except in the no-front open brawl, where two
-ranged foes exchange if both spend a card, or where a card grants an exception, §4.2.)*
+(Daring sizes a **contest** — a crossing or an evade — never a blow). An enemy can only attack you by
+**spending a Tempo card**, and the blow's force is Daring-independent. Against a **melee** strike you may
+**reflexively strike back** (position is irrelevant — they came to you) for **one** Tempo card; against a
+**ranged** strike you may **evade** it (the tempo contest above) or strike back **if you carry the
+range** — with no Tempo to spend you simply **take the hit** (a free hit).
 
 **WHY.** One pool for act-and-defend makes the cannon/wall axis a live **allocation** (spend it
 attacking and you cannot answer a skirmisher) rather than a second stat. Splitting the pool into
 **count (Speed)** and **grade (Daring)** gives two clean power dimensions that mean different things:
-**Speed = how many crossings/actions you get; Daring = how cheaply you win each crossing.** Confining
-Daring to the crossing keeps a strike's force on Power (not on how hard you shoved through the line), and
-the per-round depletion is the tension — press the crossings hard and you are spent for the strikes (#2
-opportunity cost).
+**Speed = how many actions you get; Daring = how cheaply you win each contest.** Confining
+Daring to *contests* (crossing and evade) keeps a strike's force on Might (not on how hard you shoved
+through the line or slipped a volley), and the per-round depletion is the tension — press your contests
+hard and you are spent for striking (#2 opportunity cost).
 
 **GUARANTEES.** *(the tripwires — break one and the concept no longer holds)*
 - **Speed = count**, **Daring = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
   Speed-many at Daring each, spent within a round and refreshed between rounds.
-- **Daring's magnitude affects only a crossing contest** (a single simultaneous bid, ties to the
-  catcher); it never scales a strike, an attack, or anything outside a crossing.
-- **Every action is one Tempo card** (strike, contest, strike back); **standing and soaking are free**;
-  a strike is single-card and Daring-blind.
-- **Spent Tempo does not return until the round refresh** — cards bid on a crossing are unavailable for
+- **Daring's magnitude affects only a *tempo contest*** — a crossing or an evade (a single simultaneous
+  bid; the avoider must strictly exceed, a tie lands the strike); it never scales a strike or anything
+  outside a contest.
+- **Every action is one Tempo card** (strike, contest, evade, strike back); **standing and soaking are
+  free**; a strike is single-card and Daring-blind.
+- **Spent Tempo does not return until the round refresh** — cards bid on a contest are unavailable for
   later strikes (the depletion tension); the bid is per-contest, the pool does not refill mid-round.
-- **Reflexive strike-back is always available against a melee attacker** for one Tempo card; no card → a
-  free hit. Ranged is one-sided save the no-front open brawl / a card exception.
+- **Against a melee strike, reflexive strike-back** is available for one Tempo card; **against a ranged
+  strike, evade** (the contest) or strike-back if in range; no Tempo → a free hit.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Speed` (Resources) — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **TERM.** `Daring` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters in exactly one place — a crossing contest, where both sides commit Tempo cards (cards × Daring) and the higher total wins (ties to the catcher). A strike is the same whatever its Daring.
-- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (strike, contest a crossing, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
+- **TERM.** `Daring` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **tempo contest** — a crossing or an evade — where both sides commit Tempo cards (cards × Daring) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Daring.
+- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Speed**-many, each worth **Daring**. Flip one to take any action (strike, contest a crossing, evade a ranged attack, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
 
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
@@ -986,16 +989,16 @@ phase.
 
 **The budget (one pool).** **Tempo** is the action economy (§3): a `count × value` pool of
 **Speed**-many cards, each worth **Daring**, flipped to spend (§5). **A flipped card buys exactly one
-action — of any kind:** strike, contest a crossing (slip or catch), or strike back. **Standing in a
-rank, letting a foe slip by, and *absorbing* a blow are all free** — Tempo is the currency of *acting
-on the enemy*, not of mere presence. **Run out and you can no longer act** (you still hold your rank and
-soak hits with Body). **Tempo refreshes each round.** **Daring's magnitude is read in exactly one
-place — a crossing contest** (below); every other action is one Daring-blind card whose damage is set by
-**Power**.
+action — of any kind:** strike, contest a crossing (slip or catch), evade a ranged attack, or strike
+back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are all free** — Tempo is the
+currency of *acting on the enemy*, not of mere presence. **Run out and you can no longer act** (you still
+hold your rank and soak hits with health). **Tempo refreshes each round.** **Daring's magnitude is read
+only in a *tempo contest* — a crossing or an evade** (below); every other action is one Daring-blind card
+whose damage is set by **Might**.
 
 Because the **same pool pays for offense and defense**, the cannon/wall axis is an **allocation
 choice**, not a second stat: spend Tempo catching runners and striking and you have none left to strike
-back; hold it and you survive but do less. Both pools share the `count × value` form: **Health = Body ×
+back; hold it and you survive but do less. Both pools share the `count × value` form: **Health = Vitality ×
 Toughness** (persists), **Tempo = Speed × Daring** (refreshes). *(No Focus/Mind pool — merged 2026-06-20.)*
 
 **RULE — three declared ranks.** Each side secretly assigns every Actor a rank, then both reveal:
@@ -1016,19 +1019,21 @@ the exposed front.
    groups** (§4.5), **and** commits its **bids** — how many Tempo cards each Skirmisher throws at its
    crossing, how many each Vanguard throws at a catch, and (defender's choice) **which Vanguard catches
    which Skirmisher** — and plays its
-   **standing cards** (a Wall's Brace / Last Stand, a Controller's Slow / Stagger / Disarm, a Support's
-   Mend / Haste), whose effect **lasts the round** and shapes what follows. Reveal together; nobody moves
-   after.
+   **standing cards** (a Wall's Brace / Last Stand, a Support's Mend / Haste), whose effect **lasts the
+   round** and shapes what follows — Controller debuffs are *not* standing cards; they are evadable ranged
+   attacks resolved in the Open (§4.2). Reveal together; nobody moves after.
 2. **Tier 1 — the Line.** From the start-of-round snapshot, resolved together (deaths tally at the tier
    boundary — a unit mortally wounded here still lands every blow it committed, §1.3):
    - **Vanguards strike** the opposing Vanguard (a card per blow).
    - **Crossing contests** *(the only place Daring is read)*: each Skirmisher's committed **advance**
      (cards × Daring) vs its assigned Vanguard's committed **hold** (cards × Daring + Phalanx).
-     Strictly greater → **slips** (the bypassed Vanguard lands a **parting free hit**, Power); ≤ →
-     **held** (Skirmisher and catcher **trade**, both Power; the Skirmisher does not cross). **Ties to
+     Strictly greater → **slips** (the bypassed Vanguard may then spend **any of its remaining Tempo**
+     to land **one free Power hit per card — no cap**; spends none → the Skirmisher passes untouched); ≤ →
+     **held** (Skirmisher and catcher **trade**, both Might; the Skirmisher does not cross). **Ties to
      the catcher** unless the Skirmisher has **Shadowstep**. Each catch is a **separate bid** a Vanguard
      pays from its own Tempo, so a wall holds only as many Skirmishers as it can afford to contest; a
-     Skirmisher **no Vanguard pays to catch slips free** — no contest, no parting hit.
+     Skirmisher **no Vanguard pays to catch slips free** — no contest, and (no wall having spent Tempo
+     on it) no free hits.
 3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved in **three ordered sub-windows — Fast ▸
    Skirmisher melee ▸ Slow** (§4.6; tally at each boundary):
    - **Crossed Skirmishers strike** — behind the line, they may hit **any** enemy rank (Reserve first,
@@ -1037,17 +1042,21 @@ the exposed front.
    - **A Vanguard whose opposite is dead pours through** and strikes the now-undefended enemy Reserve /
      Skirmisher (free).
    - **Reserves fire** ranged at the enemy Vanguard + Skirmisher (never the enemy Reserve) — picking off
-     exposed Skirmishers; auto-hits any target with no ranged answer.
-   - **Strike-backs:** a struck unit that can answer the range and has a card left strikes back (Power);
-     otherwise it eats a free hit.
+     exposed Skirmishers; lands on any target that does not **evade** (the tempo contest, §3.1) or answer.
+   - **Evades & strike-backs:** a struck unit may **evade** a ranged attack (spend Tempo, §3.1) or, if it
+     carries the range, **strike back** (Might); with no Tempo it eats a free hit.
 4. **Refresh.** Clear round-scoped status; refill Tempo to Speed; round++. (A battle not closed by the
    ruleset round cap is a draw — §0.4.)
 
-**The crossing contest (the only Daring read).** A single **simultaneous Daring bid**, *not* an iterated
+**The crossing contest (a Daring read; the other is the evade, §4.2).** A single **simultaneous Daring bid**, *not* an iterated
 auction: each side has committed *k* cards at Assemble, worth *k ×* Daring; the higher total crosses /
 holds, tie to the catcher (Shadowstep overrides); bid cards are spent. A Skirmisher's **advance** is
 weighed against the Vanguard's **hold**: Wall powers feed **hold only**, never advance — a Wall raises
-the number you must clear without itself slipping through (an immovable line, not a runner).
+the number you must clear without itself slipping through (an immovable line, not a runner). A Skirmisher
+that **slips** has won only the *right of way*, not safe passage: the bypassed Vanguard may convert **any
+remaining Tempo** into **free Might hits — one per card, no cap** — on the passer. You can always out-bid
+a wall and get through (force, not fiat — §0.3 / BI-3), but you **cannot** stop a wall with Tempo to
+spare from striking you on the way past: **a mechanic never overrides superior force.**
 
 **Demise — protection comes from the line.** Each rank's vulnerability is *how much line stands between
 it and the enemy*:
@@ -1055,7 +1064,7 @@ it and the enemy*:
 | Rank                           | Dies to                                                                                               | Safe from                                                                |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | **Vanguard** (is the line)     | direct engagement (enemy Vanguard); a crossed enemy Skirmisher from behind                            | being flanked while it holds — it faces forward                          |
-| **Skirmisher** (left the line) | the wall's **catch / parting hit**; the enemy **Reserve's** fire; an enemy **Skirmisher** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
+| **Skirmisher** (left the line) | the wall's **catch**, or its **free hits on a slip** (one per Tempo card the wall spends, uncapped); the enemy **Reserve's** fire; an enemy **Skirmisher** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
 | **Reserve** (behind the line)  | a Skirmisher who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through           | everything, *while its line holds*                                       |
 
 So the **Skirmisher is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
@@ -1068,17 +1077,21 @@ the first catch),
 **Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
 / Assassinate** (a crossed Skirmisher hits an enemy Reserve harder / executes it — the §10 prize).
 
-**Persistent status (Controller debuffs).** A Controller card hangs a round-scoped status, cleared at
-Refresh: **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee — cannot
-contest a melee blow), **Disarm** (cannot play role cards), **Rout** (driven from the Vanguard to the
-Reserve — removed from the front *before* the charge resolves, so it cannot hold the line or trade this
-round). Played at **Assemble**, they degrade the foe's whole round.
+**Controller debuffs — evadable ranged attacks.** A Controller fires debuffs from the Reserve as
+**ranged attacks** (§4.2): the target may **evade** them (the tempo contest, §3.1) or eat them, exactly
+like Artillery fire — but they deal **no damage** (Charter #13), they **degrade**. A landed debuff hangs
+a round-scoped status (cleared at Refresh) or drops a stat for the round:
+- **Status:** **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee —
+  cannot contest a melee blow), **Disarm** (cannot play role cards), **Rout** (driven from the Vanguard
+  to the Reserve — off the line for the round).
+- **Stat-drop:** **lower Might / Toughness / Daring**, or **drain Tempo** — softening the foe for the
+  rest of the round (a lowered Daring weakens its slips *and* its evades at once).
 
-**Fear applies these by tier (§2.2), not damage.** Fear cleared past **Resolve / 2·Resolve / 3·Resolve**
-escalates: **Freeze** = Stagger (loses its action) → **Shaken** = Stagger + Shove (also cannot defend) →
-**Rout** = Stagger + Shove + driven to the Reserve (helpless and off the line). This is the Controller's
-*control* in place of direct damage (§8.6). *(Tier→effect mapping and the Assemble-time Rout are seeded
-2026-06-21 — tune to taste.)*
+**Force, not fiat** holds here too: enough volley always lands (you can only evade what your Tempo
+affords) and no foe is immune — a debuff is *cost*, never *impossibility*. *(The old fear/Dread channel
+that produced these via a Resolve-bar break is **gone**; the Controller now applies them directly as
+evadable ranged attacks. Each debuff's window, and whether a pre-Line Rout is possible, are seeded — tune
+to taste.)*
 
 **Bypass = open season.** Once a unit is *behind the enemy line* — a Skirmisher that **slipped** past a
 Vanguard, or a Vanguard that **killed** the one it faced — **every enemy rank is fair game to it**. The
@@ -1112,17 +1125,19 @@ raise-war), so it stays computable. The hidden, simultaneous mind-game is the op
 
 **What is hidden.** Only the **Assemble commit** — ranks + bids + catch-assignments — and only until the
 simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend. Always public: stats
-(Speed / Body) and the spent/unspent pool.
+(Speed / Vitality) and the spent/unspent pool.
 
 **WHY.** The triangle survives on a single physical picture — a battle line with a front, flankers, and
 a rear — but the **threading gauntlet is gone**: roles are declared, nobody moves, and a Skirmisher's
 fate is one **Daring contest** against the wall, not a walk through a column. **Tempo as one pool spent
 only on *acting*** (striking, contesting, answering) makes the core decision crisp — *where do I spend
 my initiative?* — while standing and soaking stay free, so a spent wall is still a wall. **Daring read
-in one place** keeps the three stats orthogonal: **Speed** = how many actions, **Daring** = whether you
-cross, **Power** = how hard you hit. **Force, not fiat:** nothing is forbidden by rule — a low-Daring
+in contests** keeps the stats orthogonal: **Speed** = how many actions, **Daring** = whether you
+cross or evade, **Might** = how hard you hit. **Force, not fiat:** nothing is forbidden by rule — a low-Daring
 Skirmisher can still cross by overspending, an out-numbered wall is overwhelmed, an over-powered lone
-hero wipes a weaker party — opposition is always *cost*, never *impossibility*.
+hero wipes a weaker party — opposition is always *cost*, never *impossibility*. The converse holds too:
+out-bidding a wall buys **passage, not safety** — a wall with Tempo to spare still free-hits the passer
+(uncapped, one per card), so a **mechanic never overrides superior force.**
 
 **GUARANTEES.**
 
@@ -1135,21 +1150,23 @@ hero wipes a weaker party — opposition is always *cost*, never *impossibility*
 - **Two ordered tiers, snapshot-resolved:** order-independent within a tier, strictly sequenced between;
   a mortally-wounded unit still lands its committed blows (§1.3).
 - **Two pools, both `count × value`:** Health (persists) and Tempo (refreshes). **Tempo buys actions
-  only** (strike / contest / strike-back); standing and soaking are free. **Daring bites only in a
-  crossing**; a strike is Daring-blind (Power sets damage).
+  only** (strike / contest / evade / strike-back); standing and soaking are free. **Daring bites only in
+  a tempo contest** (crossing or evade); a strike is Daring-blind (Might sets damage).
 - **Force, not fiat:** every rank is killable by enough force — no immunity, no hard cap, no skill-gate.
-  A no-skills, infinite-stat character wipes any finite party in one round (BI-3).
+  A no-skills, infinite-stat character wipes any finite party in one round (BI-3). Symmetrically,
+  **slipping a wall grants right of way, not immunity:** the bypassed wall converts remaining Tempo into
+  **uncapped** free hits (one per card), so no crossing mechanic shields the passer from superior force.
 
 **MANUAL.** *Secretly assign each Actor a rank — Vanguard (front), Skirmisher (flanker), Reserve
 (rear) — and commit your bids: how many Tempo cards each Skirmisher throws at its crossing, each
-Vanguard at a catch, and which Vanguard catches which Skirmisher; play your standing cards (braces,
-debuffs, buffs — they last the round) in the same commit. Reveal together; no one moves. **The Line:**
+Vanguard at a catch, and which Vanguard catches which Skirmisher; play your standing cards (Wall braces,
+Support buffs — they last the round) in the same commit. Reveal together; no one moves. **The Line:**
 Vanguards strike across (a card a blow); each Skirmisher's advance (cards × Daring) meets its catcher's
-hold — strictly more slips (and takes the wall's parting hit), equal-or-less is held and trades; an
+hold — strictly more slips (and the bypassed wall may free-hit it once per Tempo card it spends), equal-or-less is held and trades; an
 uncaught Skirmisher slips free. **The Open:** Skirmishers who crossed strike anything behind the line
 (the Reserve is the prize); a Vanguard whose foe is dead pours through; Reserves fire at the enemy front
-and pick off Skirmishers in the open; anyone struck at a range it can answer strikes back (a card), else
-takes a free hit. Standing and soaking cost nothing — only acting spends Tempo. Refresh and go again.*
+(and Controllers fire debuffs); anyone hit by ranged may **evade** (a card) or strike back if in range,
+else takes a free hit. Standing and soaking cost nothing — only acting spends Tempo. Refresh and go again.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
@@ -1159,12 +1176,12 @@ takes a free hit. Standing and soaking cost nothing — only acting spends Tempo
 - **TERM.** `Reserve` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Reserve, and is reached only by a Skirmisher who crossed or a Vanguard pouring through a broken front.
 - **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (catches it at the line); Skirmisher beats Reserve (crosses to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
 - **TERM.** `The Line` (Combat) — Tier 1: Vanguards strike across, and each crossing Skirmisher's advance Daring is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
-- **TERM.** `Crossing` (Combat) — A Skirmisher's attempt to pass the wall: a single simultaneous Daring bid (committed cards × Daring). Strictly more than the catcher's hold slips (taking a parting free hit); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
+- **TERM.** `Crossing` (Combat) — A Skirmisher's attempt to pass the wall: a single simultaneous Daring bid (committed cards × Daring). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
 - **TERM.** `The Open` (Combat) — Tier 2: crossed Skirmishers strike anything behind the line (the Reserve is the prize), a Vanguard whose foe is dead pours through, Reserves fire on the front and pick off exposed Skirmishers, and the struck strike back if they can answer the range.
 - **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
 - **TERM.** `Phases` (Round) — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Skirmishers contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Skirmisher melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
 - **TERM.** `Group` (Combat) — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Skirmisher crosses on its weakest member's Tempo. No size cap, no mixed intentions.
-- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Skirmisher melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent buffs / debuffs are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated.
+- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Skirmisher melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
 
 **Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
 the three declared roles, targeting) is settled; these are not:
@@ -1179,7 +1196,7 @@ the three declared roles, targeting) is settled; these are not:
 > is the remaining enrichment, dial 1.)*
 
 1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
-   cards × Daring, ties to the catcher, Shadowstep overrides); the **numbers** (the parting-hit weight,
+   cards × Daring, ties to the catcher, Shadowstep overrides); the **numbers** (the slip free-hit weight,
    strike Power) live in `booklet.ron`, human-tuned.
 2. **Catch capacity — locked (card-bound).** A Vanguard catches as many Skirmishers as it pays
    catch-bids for (Speed = breadth, Daring = strength); **Bodyguard is retired** (its old +1 niche is
@@ -1188,10 +1205,10 @@ the three declared roles, targeting) is settled; these are not:
    switching targets costs extra.
 4. **Reserve aid kit** — the buffs / heals / debuffs a Reserve delivers — Action cards over the §5 zone
    layer (the aspect/combo layer is retired — `retired-ideas.md`).
-5. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Body × Toughness**
+5. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Vitality × Toughness**
    (persists) and **Tempo = Speed × Daring** (refreshes). **Focus and Mind are removed.** Speed = count
    (how many Tempo cards), **Daring = grade** (per-card magnitude). **Daring is read only in a crossing
-   contest**; every other action is one Daring-blind card (Power sets damage), and **standing / soaking
+   contest**; every other action is one Daring-blind card (Might sets damage), and **standing / soaking
    cost no card at all**.
 
 *(Range/attack dials are resolved by §4.2: "Reserve self-defense" = whether it carries melee; "strike
@@ -1227,15 +1244,14 @@ current head-count.
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
 **position-determined**, never chosen: **crossing contests and Skirmisher strikes are melee;
-Reserve fire is ranged.** A strike lands at its range; whether the target can **contest** it depends
-on owning an attack of that same range:
+Reserve fire is ranged.** A strike lands at its range; how the target may answer depends on the range:
 
-- **Same range (target can contest)** → in the **deterministic base**, a **simultaneous trade**
-  (both deal their base through armor/toughness, §2). When the **optional Clash module** (§1.0)
-  is on, the trade is replaced by the four-card Clash + Force.
-- **Range mismatch (target cannot contest)** → an **auto-hit**: uncontested, no mix-up, no Force,
-  but still through the target's armor/toughness. Armor blunts an auto-hit; **a Tempo defense cannot**
-  (spending Tempo turns a *melee* blow into a clash; it does not answer off-range fire).
+- **Melee, same range (target can strike back)** → a **simultaneous trade** (both deal their base through
+  toughness, §2). With the **optional Clash module** (§1.0) on, the trade becomes the four-card Clash + Force.
+- **Ranged** → the target may **evade** (the tempo contest, §3.1 — spend Tempo, strictly beat the
+  attacker's pressed volley; a tie lands the hit) **whatever its own range**, and may additionally
+  **strike back** if it carries the range. A blow neither evaded nor answered is an **auto-hit** (through
+  toughness).
 
 The **Clash is a module, not the floor** — the game is fully playable with same-range = trade
 (see `future-possibilities.md` Entry 3: the strategic layer is rich without RPS).
@@ -1251,9 +1267,10 @@ What follows from it:
   (assassinated).
 - A **melee-less Vanguard or Skirmisher is legal but a very bad idea** — it is auto-hit when it meets
   melee and cannot answer. (Emergent positioning, not a banned move.)
-- **Neither** = pure support (heal / buff / area-control): it makes no attacks and is **always
-  auto-hit** when reached — the most decisive-yet-fragile Reserve piece, wholly dependent on the
-  wall. Its kit is Action cards over the §5 zone layer.
+- **Neither** = pure support (heal / buff / area-control): it makes no attacks, so it is **auto-hit in
+  melee** when reached — though it may still **evade ranged fire** with Tempo (§3.1). The most
+  decisive-yet-fragile Reserve piece, wholly dependent on the wall. Its kit is Action cards over the §5
+  zone layer.
 
 **WHY.** Range turns the **role triangle** from intent into mechanics: *Skirmisher ▸ Reserve* and
 *Reserve ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
@@ -1262,17 +1279,19 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 "neither" kits — each re-derivable from "do you have the attack for this range?".
 
 **GUARANTEES.**
-- A strike is a **Clash** iff attacker and target **share the range**; otherwise an **auto-hit**
-  (armor-gated, no Force, no Focus contest).
+- A **melee** strike at the same range is a trade/Clash; a **ranged** strike may be **evaded** with Tempo
+  (§3.1) by any target and **struck back** only by a same-range answerer; a blow neither evaded nor
+  answered **auto-hits** (through toughness).
 - Range is **position-determined** (the Line / Skirmisher = melee, Reserve = ranged) — never the
   attacker's free pick.
 - Core: **only melee Actors skirmish**; a card may explicitly supersede.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Trade` (Combat) — A same-range engagement: both sides deal their base damage through armor/toughness. In the optional Clash module, the trade is replaced by the four-card mix-up.
-- **TERM.** `Auto-hit` (Combat) — A range mismatch: the attacker lands uncontested (the target can't answer at that range). Armor still blunts it; Focus cannot.
-- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you're auto-hit.
+- **TERM.** `Trade` (Combat) — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
+- **TERM.** `Evade` (Combat) — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Daring) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
+- **TERM.** `Auto-hit` (Combat) — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
@@ -1523,7 +1542,7 @@ unbounded; a small tag vocabulary is re-derivable (#6/#10).
 ### 5.5 Resources — Health · Tempo 🟡
 
 **RULE.** Permanent **Form stats size a fluctuating pool** — you spend the pool, never the stats
-(§3.1). There are **two** `count × value` pools in Active: **Health = Body × Toughness** (the value
+(§3.1). There are **two** `count × value` pools in Active: **Health = Vitality × Toughness** (the value
 gates damage) and **Tempo = Speed × Daring** (Speed-many cards, each worth Daring). *(Focus and Mind are
 removed — merged 2026-06-20; defense is a Tempo spend.)* Spending moves cards to **Down**; they return
 by **Recover** (or the round refresh). A gauntlet-crossing contest compares the **total Daring each side
@@ -1580,13 +1599,13 @@ resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
 - **M2 — `Guard`** (Wall L1 *Brace*): a played effect that adds **+Focus to the holder this round** — a
   defensive boost to the wall's block vs slips (§4.2 Focus). Seed +3.
 - **M3 — "cannot fall" this round** (Wall L5 *Last Stand*): while active, damage that would down the
-  holder leaves it at **1 Body** instead — it cannot be downed for the round.
+  holder leaves it at **1 health** instead — it cannot be downed for the round.
 - **M4 — execute** (Infiltrator L5 *Assassinate*): a Damage card that, on hitting an enemy **Reserve**,
-  **downs** that foe regardless of remaining Body.
+  **downs** that foe regardless of remaining health.
 - **M5 — `Curse` Modifier** (Controller L4): a passive that makes the owner's debuff cards
-  (Slow / Confuse / Dread) each hit **+1 additional foe** — the one instance of the Modifier mechanic
+  (Slow / Confuse / Stagger) each hit **+1 additional foe** — the one instance of the Modifier mechanic
   in the draft (lean-new-effect dial, §9.1).
-- **M6 — `targets: all`** (Support L5 *Sanctuary*): a buff effect (Mend / Ward / Haste) may target
+- **M6 — `targets: all`** (Support L5 *Sanctuary*): a buff effect (Mend / Brace / Haste) may target
   **all allies** — a party-wide target mode.
 
 ## 6. Aspects / the chord — *retired*
@@ -1598,8 +1617,8 @@ per-suit-per-round play deliver its intent, and a fused-action chord works again
 computable tactics). `retired-ideas.md` records the full rationale and **the bar it must clear to
 return**. *(Section kept as a stable §6 anchor; the heading is referenced elsewhere.)*
 
-*(Terminology note: the two **defense channels** Body / Spirit (§2) are unaffected — they are damage
-types / thresholds, not the retired deck-chord, despite the shared word "aspect.")*
+*(Terminology note: the single **defense channel** (§2) is unaffected — it is a damage track, not the
+retired deck-chord, despite the shared word "aspect.")*
 
 ## 7. Agents — Character vs Creature ⬜
 
@@ -1758,7 +1777,7 @@ so the count is re-derivable, not arbitrary (#10):
   safety).
   Three is the *minimal* counter-cycle — RPS needs exactly three.
 - **Two effect roles = the complete duality of state-bending:** **Support** *augments* your side (`+`:
-  heal / ward / haste), **Controller** *degrades* theirs (`−`: slow / confuse / fear). Two is the
+  heal / brace / haste), **Controller** *degrades* theirs (`−`: slow / confuse / weaken). Two is the
   whole of that duality.
 
 So **5 = a complete engagement cycle (3) + a complete effect pair (2).** **Four** would break one —
@@ -1823,7 +1842,7 @@ slogan; the leave-one-out check turns it into a regression test.
   Role **fails the build**.
 - **Damage belongs to the triangle.** Only the three §4-triangle Roles — **Wall, Infiltrator,
   Artillery** — deal **direct damage**. The two effect Roles never do: **Controller** *degrades*
-  (round-scoped status, no damage — §2.2 fear is pure control) and **Support** *augments* (buff / heal,
+  (round-scoped status or stat-drop, no damage — §2.2 control is stat-drop, not damage) and **Support** *augments* (buff / heal,
   no damage). A Controller or Support card that dealt direct damage would collapse the 3+2 distinction
   (**Charter #13**). *(Locked 2026-06-21.)*
 - **Necessity is emergent, not by fiat.** A lock scenario makes its Role necessary through the foe's

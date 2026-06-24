@@ -173,14 +173,15 @@ clock.**
 The five **Suits** are the unit of design. Each Suit names a **Role** — its function in combat — and the
 **Role, not the stat, is what the game is built around.** Three things follow, and they are binding:
 
-- **Stats are instruments, not first-class.** Every stat exists to give some Role its teeth — Body /
-  Toughness / Armor let the **Wall** hold; Speed / Drive let the **Infiltrator** slip; Strike / Pierce
-  arm the **Artillery**; **Dread** powers the **Controller**'s fear; the buffs ride the **Support**
-  line. A stat **no Role needs is a defect** — cut it or re-home it. The Roles are **fixed**; the stats
-  are **negotiable** — refactor the stat layer freely whenever it serves the Roles better. And a Role's
-  **signature stat is named *for* the Role** — evocative of its function (a Controller projects
-  **Dread**, not a clinical "fear-power"); only the shared **chassis** (Body · Speed · Strike · Resolve)
-  stays role-neutral.
+- **Stats are instruments, not first-class.** Every stat exists to give some Role its teeth — Vitality /
+  Toughness let the **Wall** hold; Speed / Daring let the **Infiltrator** slip and dodge; **Might** arms
+  the **Artillery**; the **Controller** turns the foe's own stats against it (lowering Might / Toughness /
+  Daring, draining Tempo); the **Support** line raises those same dials. A stat **no Role needs is a
+  defect** — cut it or re-home it. The Roles are **fixed**; the stats are **negotiable** — refactor the
+  stat layer freely whenever it serves the Roles better. After the 2026 collapse the stat layer is a
+  small **shared chassis** — **Might · Vitality · Toughness · Speed · Daring** — with **no role-exclusive
+  signature stat**: the effect Roles (Controller, Support) bend these shared dials rather than owning a
+  private one, and Roles are told apart by their **card mechanics**, not by a signature stat.
 - **Each Role is uniquely valuable and load-bearing.** For every Role there is a challenge that **cannot
   be met without it**, so a party whose collective coverage **omits a Role is doomed**. The measure is
   the **campaign**, not a single fight: an individual conflict may be winnable by one Role alone — indeed
@@ -191,8 +192,8 @@ The five **Suits** are the unit of design. Each Suit names a **Role** — its fu
   **bans** them. The other Roles are **outpaced, not forbidden** — without R they still act, they just
   cannot clear the challenge within par. Manufacturing need by fiat-immunity is a design cheat: it fails
   **#6** (emergence over scripted exceptions) and **#10** (a memorized exception, not a re-derivable
-  system) — and it is exactly why an *incorporeal, only-fear-kills* foe is **not** how the Controller
-  earns its slot.
+  system) — and it is exactly why a foe **arbitrarily immune to damage so that only debuffs "work"** is
+  **not** how the Controller earns its slot.
 - **The Roles differ in kind, not degree.** Each owns a **distinct decision and mechanic** — hold the
   front / break through / fire from safety / **degrade** the foe / **augment** the ally — never a
   stat-reskin of another. This is also what makes a **god's role-combos** worth their concentration risk:
@@ -214,7 +215,7 @@ a Role *feels* distinct or *fun* stays the human's ratification, as with every b
 ## 13. Damage is the triangle's; control and augment are the effect Roles'
 
 **Direct damage belongs to the three §4-triangle Roles — Wall, Infiltrator, Artillery.** The two effect
-Roles never deal it: the **Controller degrades** (a round-scoped status — fear is *pure control*, never
+Roles never deal it: the **Controller degrades** (a round-scoped status or stat-drop — never
 damage) and the **Support augments** (buff / heal). A Controller or Support card that dealt direct damage
 is a **defect**.
 
@@ -222,11 +223,13 @@ This is the hard edge of **#12**'s "differ in kind, not degree": the cleanest po
 `3 + 2` is that one axis — the triangle — **removes Body**, and the other — the effect pair — **never
 does**; it bends the fight instead. It keeps each effect Role un-blurrable (a Controller cannot quietly
 become a fifth damage-dealer), gives the game a **single, legible kill-condition** (#7 *playable by hand*:
-you die exactly one way — your Body pool empties), and makes "what does this Suit *do*?" answerable
+you die exactly one way — your health pool empties), and makes "what does this Suit *do*?" answerable
 without numbers: Iron / Silver / Brass **kill**, Bone **disables**, Salt **sustains**. Fear that *killed*
-(the old scared-to-death) violated this and is gone — the Controller's **Dread** now drives a tiered
-control status (Freeze → Shaken → Rout), never Body loss. See **Spec §2.2** (inner channel = control, no
-damage) and **§8.6** (the damage-separation GUARANTEE).
+(the old scared-to-death) violated this and is gone; the separate fear/Dread **channel** was then
+**collapsed out entirely** (2026), and the Controller now **degrades the foe's own stats directly**
+(lowering Might / Toughness / Daring, draining Tempo) and hangs round-scoped statuses (Stagger → Shove →
+Rout), never health loss. See **Spec §2.2** (one channel; control is stat-drop, not damage) and **§8.6**
+(the damage-separation GUARANTEE).
 
 ---
 
