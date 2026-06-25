@@ -138,6 +138,42 @@ relative to a combat resolver `P`, so every par number must be stamped **"par un
   **ground truth**. Bound the fast policy's error against it on a *sample* of `(build, place)`
   pairs, then run the fast policy at scale. That gives purpose #5 a known error bar.
 
+### 5.1 Deterministic-proxy fidelity — when "par under `P`" equals the human answer (and when it can't)
+
+A natural hope: tune the game against a **100% deterministic** `P` and trust it matches what skilled,
+theory-of-mind humans would find. The precise statement: **"par under `P`" differs from the true
+human / equilibrium value by exactly the *value of unpredictability* in the game.** Where mixing is worth
+nothing, the deterministic number is **not an approximation — it is the answer.**
+
+- **PvE balance is a maximization, so the deterministic answer is *exact*, not approximate.** Against
+  fixed, non-reading instinct foes (§7 / Spec §7), the player's best line **is** the value — there is no
+  equilibrium to approximate, no mixed strategy a human could add. So for **raw / resource balance** (an
+  over-efficient card, a dominant role, a degenerate build) `P` is a faithful detector, full stop. This is
+  the bulk of balance, and the hope holds *exactly* there.
+- **Faithful to raw strength; blind to the mind-game layer.** Residual unpredictability-value lives in
+  exactly two places: the **Clash** (already quarantined off, §7) and — in the *base* game — the
+  **per-round blind bid of positions** (Spec §4: a hidden, simultaneous sub-game). A deterministic,
+  predictable `P` is exploitable there, and the mis-rating is **option-dependent, not a constant offset**:
+  an option whose value is *being unreadable* (a feint, a bluffed position) is **under-rated**, while a
+  pure counter to a predictable foe is **over-rated**. So the blind-bid layer is the one place imbalance
+  can hide from `P`, and it distorts *relative* balance — not just the absolute number.
+- **"Non-degenerate `P`" means *near-optimal*, not merely rule-complete (cf. §5).** Using every rule a
+  human could only guarantees `P` can *reach* a state — not that it *finds* the exploiting line. A weak `P`
+  gives **false negatives** (real imbalance, undetected). Same rules ≠ same skill; **certify**
+  near-optimality (§5), don't assume it.
+
+**Don't assume the gap is negligible — measure it, and tune it.**
+
+- **Solve the blind-bid sub-game in isolation.** It is tiny and finite (positions × group assignments).
+  Compute its equilibrium value and compare to what `P` scores: a small gap *certifies* the deterministic
+  proxy; a large one localises where mixing matters.
+- **The mispredict penalty is a tuning dial.** If guessing the enemy's positions wrong is a *modest* swing
+  (the front still functions, the back isn't instantly lost), unpredictability is worth little and `P`
+  stays faithful; if a wrong read is *catastrophic*, the game **demands** mixing and `P` diverges. Keep the
+  swing modest to keep the proxy honest.
+- **Audit unpredictability-dependent options against a *reading* opponent**, not just the deterministic
+  foe — that small set is exactly what `P` mis-rates.
+
 ---
 
 ## 6. The balancing method — human taste in, objective measurement out
