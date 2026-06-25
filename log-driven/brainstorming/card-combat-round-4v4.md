@@ -18,8 +18,13 @@ is one Tempo bid (`cards × Finesse`); the defender must **strictly beat** it to
 
 ## The battle
 
-**4v4.** `Bram · Torvald · Garrick · Corvin` **vs** `Garrick · Sable · Wren · Robin`
-(3 copies of every identity card exist, so **Garrick is legally on both sides**).
+**4v4.** `Bram · Torvald · Garrick · Corvin` **vs** `Vesper · Sable · Wren · Robin`.
+
+Each identity has **3 copies** — but they are the *same* character in **different
+contexts**, never two of one character in a single battle. The three are functional:
+one marks the character's **location** on the overworld map (laid on its location
+card), one is committed in the **formation blind bid**, and one tracks **which state
+belongs to whom** during combat.
 
 **Overworld.** I drop my four identity cards onto the enemy's map space → combat
 triggers; the log starts.
@@ -35,7 +40,7 @@ can stand.
 
 ```
 SIDE A                                          SIDE B
-  Bram     M2 V6 T4 C2 F3   melee               Garrick  M3 V4 T3 C2 F3   melee
+  Bram     M2 V6 T4 C2 F3   melee               Vesper   M3 V4 T3 C2 F3   melee
   Torvald  M5 V4 T3 C2 F2   melee               Sable    M4 V3 T3 C3 F4   melee
   Garrick  M3 V4 T3 C3 F4   melee               Wren     M3 V5 T3 C2 F3   ranged
   Corvin   M4 V3 T2 C4 F5   ranged              Robin    M4 V3 T2 C3 F5   ranged
@@ -52,7 +57,7 @@ self-sorts to the front, ranged to the back. Reveal together; nobody moves.
 ```
 SIDE A bids                  SIDE B bids
   [Vanguard]                   [Vanguard]
-  Bram [Join] Torvald          Garrick [Join] Sable
+  Bram [Join] Torvald          Vesper [Join] Sable
   Garrick                      [Rearguard]
   [Rearguard]                  Wren
   Corvin                       Robin
@@ -64,7 +69,7 @@ Reveal — the 2-D table:
                  VANGUARD (front, exposed)        REARGUARD (back, shielded)
   SIDE A    [Bram]=[Torvald]   [Garrick]               [Corvin]
   ─────────────────────────────  the line  ───────────────────────────────
-  SIDE B    [Garrick]=[Sable]                          [Wren]   [Robin]
+  SIDE B    [Vesper]=[Sable]                           [Wren]   [Robin]
 ```
 
 Side A fields a 3-body front + 1 cannon. Side B fields a 2-body **grouped** front
@@ -82,7 +87,7 @@ SIDE A
   Garrick   M3  T3  health [ ][ ][ ][ ]         F4  tempo [ ][ ][ ]
   Corvin    M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ][ ]
 SIDE B
-  Garrick   M3  T3  health [ ][ ][ ][ ]         F3  tempo [ ][ ]
+  Vesper    M3  T3  health [ ][ ][ ][ ]         F3  tempo [ ][ ]
   Sable     M4  T3  health [ ][ ][ ]            F4  tempo [ ][ ][ ]
   Wren      M3  T3  health [ ][ ][ ][ ][ ]      F3  tempo [ ][ ]
   Robin     M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ]
@@ -93,16 +98,16 @@ SIDE B
 ## Round 1 — Phase 1 (the front holds)
 
 Both backs are protected, so **every attack lands on an enemy Vanguard.** A's three
-front bodies and Corvin pound B's `[Garrick=Sable]` group; B's two cannons (Wren,
+front bodies and Corvin pound B's `[Vesper=Sable]` group; B's two cannons (Wren,
 Robin) fire over their line at A's front. All bids are committed simultaneously;
 resolved together (order-independent, §1.9). Notation: `bid vs block → result`.
 
-**A → B's front** (target the `[Garrick=Sable]` group; single-target damage **spills**
-to Garrick first):
+**A → B's front** (target the `[Vesper=Sable]` group; single-target damage **spills**
+to Vesper first):
 
 ```
-  Corvin → group   bid 1×F5 = 5   group SUM-blocks: Garrick 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
-  Garrick(A) → grp bid 1×F4 = 4   group is low on Tempo, EATS → Might 3 ▸ Garrick pile 3 ≥ T3 → FLIP
+  Corvin → group   bid 1×F5 = 5   group SUM-blocks: Vesper 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
+  Garrick(A) → grp bid 1×F4 = 4   group is low on Tempo, EATS → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
   Torvald → group  bid 1×F2 = 2   Sable blocks 1×F4 = 4 > 2  → BLOCKED  (Might 5 stopped by one cheap card —
                                   low Finesse means a big blow is easy to turn until the defender runs dry)
 ```
@@ -114,12 +119,12 @@ to Garrick first):
   Wren  → [Bram=Torvald]    bid 1×F3 = 3   group SUM-blocks: Bram 1×3 + Torvald 1×2 = 5 > 3  → BLOCKED
 ```
 
-Board after Phase 1 (only Garrick-B took damage; everyone else blocked, bleeding
+Board after Phase 1 (only Vesper took damage; everyone else blocked, bleeding
 Tempo to do it):
 
 ```
 SIDE A   Bram   h[......] t[X.]   Torvald h[....] t[X.]   Garrick h[....] t[XX.] (tapped)   Corvin h[...] t[X...]
-SIDE B   Garrick h[X...] t[X.]    Sable  h[...] t[X..]    Wren h[.....] t[X.]    Robin h[...] t[X..]
+SIDE B   Vesper h[X...] t[X.]     Sable  h[...] t[X..]    Wren h[.....] t[X.]    Robin h[...] t[X..]
 ```
 
 **No Vanguard fell → no Phase 2 this round.** B's front is intact but down a Health
@@ -129,7 +134,7 @@ it's bleeding — and **Health doesn't heal.**
 
 ### Refresh
 
-All `[X]` **Tempo** cards flip back up (refills). **Health stays flipped** (Garrick-B
+All `[X]` **Tempo** cards flip back up (refills). **Health stays flipped** (Vesper
 keeps `[X][ ][ ][ ]`). Round 2 begins; the battle runs to **5 rounds or a dead side.**
 
 ---
@@ -137,7 +142,7 @@ keeps `[X][ ][ ][ ]`). Round 2 begins; the battle runs to **5 rounds or a dead s
 ## Phase 2 — when a front falls (a later round)
 
 Skip ahead: across rounds 2–3 A keeps grinding the grouped front; with no healing,
-**Garrick-B's pool empties, then Sable's** (spillover) — **B's Vanguard is gone.** The
+**Vesper's pool empties, then Sable's** (spillover) — **B's Vanguard is gone.** The
 instant it falls, **B's Rearguard `{Wren, Robin}` is exposed** for the rest of that
 round (no Tempo refresh between phases — A attacks the back on whatever it has left):
 
