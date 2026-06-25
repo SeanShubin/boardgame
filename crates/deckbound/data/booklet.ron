@@ -45,8 +45,8 @@ Catalog(
         Card( name: "Taunt",      passive: true, text: "Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.", flavor: "Be the loudest problem on the field — on purpose." ),
         Card( name: "Blitz",      passive: true, text: "The first slip each round is free — it costs no Tempo.", flavor: "The first step is always free; take it before they're set." ),
         Card( name: "Shadowstep", passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.", flavor: "Through the one gap the guard forgot they had." ),
-        Card( name: "Backstab",   passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve.", flavor: "The reserve never hears the one that finds them." ),
-        Card( name: "Longshot",   passive: true, text: "Lets this Reserve's ranged fire reach the enemy Reserve — the sanctioned sniper exception.", flavor: "Far enough back to be safe — from everything but this." ),
+        Card( name: "Backstab",   passive: true, text: "Bonus damage when this Outrider strikes an enemy Rearguard.", flavor: "The rearguard never hears the one that finds them." ),
+        Card( name: "Longshot",   passive: true, text: "Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception.", flavor: "Far enough back to be safe — from everything but this." ),
     ],
     // Role-card rewards (§8.3): the 25-set pool — 5 tracks × 5 levels (role-card-redesign.md §10).
     // Clearing (track, level) unlocks this atomic set: its role `cards` (Base / Modifier / Mode) plus
@@ -87,11 +87,11 @@ Catalog(
                 flavor: "Through the one gap the guard forgot they had.",
                 cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway." ) ] ),
         Reward( track: Silver, level: 4, stat: (might: 2),
-                flavor: "The reserve never hears the one that finds them.",
-                cards: [ Card( name: "Backstab", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Bonus damage when this Skirmisher strikes an enemy Reserve." ) ] ),
+                flavor: "The rearguard never hears the one that finds them.",
+                cards: [ Card( name: "Backstab", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Bonus damage when this Outrider strikes an enemy Rearguard." ) ] ),
         Reward( track: Silver, level: 5, stat: (might: 2, cadence: 1),
                 flavor: "One name, crossed off. The rest of the field never mattered.",
-                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6)], text: "A killing strike: when this Skirmisher hits an enemy Reserve, that foe is downed outright (M4)." ) ] ),
+                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, effects: [Damage(power: 6)], text: "A killing strike: when this Outrider hits an enemy Rearguard, that foe is downed outright (M4)." ) ] ),
 
         // ---- Artillery (Brass) — the long reach: ranged burst & AoE ----
         Reward( track: Brass, level: 1, stat: (might: 2),
@@ -105,7 +105,7 @@ Catalog(
                 cards: [ Card( name: "Piercing Shot", role: Some(Brass), kind: Base, positional: true, reach: (2, 2), effects: [Damage(power: 6)], text: "A heavy shot whose Might bursts through a tough front (§2.2) — Artillery's answer to a high-Toughness wall." ) ] ),
         Reward( track: Brass, level: 4, stat: (might: 2),
                 flavor: "Far enough back to be safe — from everything but this.",
-                cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Reserve's ranged fire reach the enemy Reserve — the sanctioned sniper exception." ) ] ),
+                cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception." ) ] ),
         Reward( track: Brass, level: 5, stat: (might: 2),
                 flavor: "It does not ask which armor. It asks how much of the field you would like erased.",
                 cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, zone: Spend, targets: 5, reach: (2, 2), effects: [Damage(power: 5)] ) ] ),
@@ -126,7 +126,7 @@ Catalog(
                 cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (M5)." ) ] ),
         Reward( track: Bone, level: 5, stat: (might: 1),
                 flavor: "She speaks, and the enemy front simply forgets how to be brave.",
-                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Rout, Stagger], text: "Routs up to three foes — driven from the line to the Reserve — and Staggers them this round (a Controller status, no damage)." ) ] ),
+                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, zone: Spend, targets: 3, reach: (2, 2), effects: [Rout, Stagger], text: "Routs up to three foes — driven from the line to the Rearguard — and Staggers them this round (a Controller status, no damage)." ) ] ),
 
         // ---- Support (Salt) — the force multiplier: BUFFS / heal, never damage (§8.6). Magnitudes are
         //      the card's own printed values (no Inspiration stat). Amplify the line, then outlast. ----
@@ -248,9 +248,9 @@ Catalog(
     tutorials: [
         ScenarioCard( name: "1. The Trade", blurb: "Same-range melee is a simultaneous trade — both deal their Might. Bring more Might; Toughness gates each card.", flavor: "Two blades, one heartbeat. Whoever brought more, keeps standing.", heroes: ["Recruit"], foes: ["Husk"] ),
         ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; spend Tempo to evade it, or bring ranged (Archer) to trade back. With no Tempo, you take the hit.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
-        ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Skirmishers slip to the back, Reserve fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
+        ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Outriders slip to the back, Rearguard fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
         ScenarioCard( name: "4. Charge & Concentration", blurb: "Concentrate your charge against one stretch of the line to break through; an even charge is caught everywhere and breaks through nowhere.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
-        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Finesse) to slip the gauntlet and become a Skirmisher, or hold to block. A Wall with more hold than your advance Finesse stops you cold.", flavor: "A wall is a question. Finesse is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
+        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Finesse) to slip the gauntlet and become an Outrider, or hold to block. A Wall with more hold than your advance Finesse stops you cold.", flavor: "A wall is a question. Finesse is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Hold the front for it or the Raider slips through and assassinates it.", flavor: "The most important person on the field is the one who can't defend themselves.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
         ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", flavor: "A storm tells you it is coming. Listen, then move.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
         ScenarioCard( name: "C2. Read the Lead", blurb: "Bron leads every blow (Anticipate). Strike or Gather; never Evade.", flavor: "He is always one step ahead — so do not take the step he expects.", heroes: ["Vael"], foes: ["Bron"], clash: true ),

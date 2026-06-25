@@ -2,8 +2,8 @@
 //!
 //! A round is a phase machine: **Assemble** (declare who charges, and **Muster** standing/persistent
 //! cards before the gauntlet) → on Deploy the **gauntlet** resolves (the two charge-columns thread
-//! through each other, producing Skirmishers who broke through and Vanguard who stopped) → **Skirmish**
-//! (skirmishers strike the enemy Reserve) → **Reserve** (reserves fire ranged) → refresh. A same-range
+//! through each other, producing Outriders who broke through and Vanguard who stopped) → **Outrider**
+//! (outriders strike the enemy Rearguard) → **Rearguard** (rearguards fire ranged) → refresh. A same-range
 //! engagement is a **trade** unless the optional **Clash** module is on (then the four-card mix-up
 //! runs, [`Phase::Clash`]). Resolution is order-independent within each phase.
 
@@ -34,18 +34,18 @@ pub enum Menu {
 
 /// Where the round is (§4 charge-and-gauntlet). `Assemble` selects who charges **and** is the
 /// **Muster** window (play standing/persistent cards before the gauntlet); on Deploy the **gauntlet**
-/// resolves automatically (the two charge-columns thread through each other), producing Skirmishers
-/// (broke through) and Vanguard (stopped); then the Skirmish and Reserve phases.
+/// resolves automatically (the two charge-columns thread through each other), producing Outriders
+/// (broke through) and Vanguard (stopped); then the Outrider and Rearguard phases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Menu(Menu),
-    /// Select which heroes charge (vs. hold back as Reserve) and **Muster** standing cards, then
+    /// Select which heroes charge (vs. hold back as Rearguard) and **Muster** standing cards, then
     /// Deploy to run the gauntlet.
     Assemble,
-    /// Skirmishers (broke through the gauntlet) strike the enemy Reserve, then Vanguard.
-    Skirmish,
-    /// Reserves fire ranged at the enemy front.
-    Reserve,
+    /// Outriders (broke through the gauntlet) strike the enemy Rearguard, then Vanguard.
+    Outrider,
+    /// Rearguards fire ranged at the enemy front.
+    Rearguard,
     /// An interactive four-card Clash (the optional module) for a 1v1 same-range duel.
     Clash,
 }
@@ -64,21 +64,21 @@ pub struct Clash {
 /// The per-round working plan for the §4 charge-and-gauntlet system.
 #[derive(Clone, Debug, Default)]
 pub struct Round {
-    /// Per hero: did it **charge** (commit to the front)? `false` = held back (Reserve). A charger is a
-    /// Vanguard unless it also **flanks** (then a Skirmisher). Sized to heroes.
+    /// Per hero: did it **charge** (commit to the front)? `false` = held back (Rearguard). A charger is a
+    /// Vanguard unless it also **flanks** (then an Outrider). Sized to heroes.
     pub hero_charging: Vec<bool>,
     /// Per creature: same.
     pub foe_charging: Vec<bool>,
-    /// Per hero: does this charger **flank** — declare itself a **Skirmisher** (attempt to cross) rather
+    /// Per hero: does this charger **flank** — declare itself an **Outrider** (attempt to cross) rather
     /// than hold as a Vanguard? Only meaningful when charging. Sized to heroes.
     pub hero_flank: Vec<bool>,
     /// Per creature: same.
     pub foe_flank: Vec<bool>,
-    /// Heroes / creatures who **broke through** the gauntlet and became Skirmishers. A charger that
-    /// did *not* break through is a Vanguard (stopped at the front); a non-charger is a Reserve.
+    /// Heroes / creatures who **broke through** the gauntlet and became Outriders. A charger that
+    /// did *not* break through is a Vanguard (stopped at the front); a non-charger is a Rearguard.
     pub hero_skirmisher: Vec<bool>,
     pub foe_skirmisher: Vec<bool>,
-    /// Actors who have already acted in the current target phase (Skirmish / Reserve).
+    /// Actors who have already acted in the current target phase (Outrider / Rearguard).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
     /// §4.4 per-role-per-round cap: the role tracks each actor has already played a card of this

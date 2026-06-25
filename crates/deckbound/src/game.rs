@@ -1,7 +1,7 @@
 //! Deckbound as an [`engine::Game`] — the §4 lane commitment system.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
-//! §4.2) run through the lane round (Assemble → Slip → Vanguard resolve → Skirmish → Reserve),
+//! §4.2) run through the lane round (Assemble → Slip → Vanguard resolve → Outrider → Rearguard),
 //! or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All numbers
 //! live in `data/booklet.ron`.
 
@@ -45,10 +45,10 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// Assemble: put this hero in the Vanguard / Reserve, then deploy.
+    /// Assemble: put this hero in the Vanguard / Rearguard, then deploy.
     SetVanguard(usize),
-    SetSkirmisher(usize),
-    SetReserve(usize),
+    SetOutrider(usize),
+    SetRearguard(usize),
     Deploy,
     /// Assign phase: place this Vanguard hero into this lane.
     AssignLane(usize, usize),
@@ -56,7 +56,7 @@ pub enum Action {
     Hold(usize),
     Slip(usize),
     ResolveFront,
-    /// Skirmish/Reserve phase: this actor strikes that enemy, plays a card, or passes.
+    /// Outrider/Rearguard phase: this actor strikes that enemy, plays a card, or passes.
     Target(usize, usize),
     PlayCard(usize, usize),
     Pass(usize),
@@ -228,12 +228,12 @@ impl Deckbound {
     // ---- base-mode lane round ------------------------------------------------
 
     /// Deploy: read the declared ranks (human + AI), resolve **the Line** (§4 Tier 1, static-ranks),
-    /// then open the **Open** (Skirmish + Reserve). Skirmishers who **crossed** — plus Vanguards who
-    /// **pour through** a wiped enemy front — are flagged as `skirmisher` so the Open lets them strike
+    /// then open the **Open** (Outrider + Rearguard). Outriders who **crossed** — plus Vanguards who
+    /// **pour through** a wiped enemy front — are flagged as `outrider` so the Open lets them strike
     /// the backfield.
     fn deploy(&self, state: &mut State) {
         // PvP: side B's ranks are set by hand; PvE: creatures declare by aggression — the bold charge
-        // and flank (Skirmisher), the steady charge and hold (Vanguard), the timid hold back (Reserve).
+        // and flank (Outrider), the steady charge and hold (Vanguard), the timid hold back (Rearguard).
         if !state.pvp {
             for f in 0..state.creatures.len() {
                 let aggr = state.creatures[f]
@@ -242,8 +242,8 @@ impl Deckbound {
                     .unwrap_or(0);
                 let up = !state.creatures[f].is_down();
                 let melee = state.creatures[f].can_contest(Range::Melee);
-                // The bold charge (aggression); ranged/support hold the Reserve. A charger **flanks** as
-                // a Skirmisher only if it is *fast* (high Finesse — an Infiltrator); steady melee holds the
+                // The bold charge (aggression); ranged/support hold the Rearguard. A charger **flanks** as
+                // an Outrider only if it is *fast* (high Finesse — an Infiltrator); steady melee holds the
                 // line as a Vanguard.
                 state.plan.foe_charging[f] = up && aggr >= 3 && melee;
                 state.plan.foe_flank[f] =
@@ -251,8 +251,8 @@ impl Deckbound {
             }
         }
         // §4 Rout / Charter #13 — a **direct Rout** (a Controller status set at Muster, §8.6: control
-        // is round-scoped status, not damage) **drives the unit from the line to the Reserve**: a unit
-        // Routed at Muster neither holds as a Vanguard nor crosses as a Skirmisher this round. The
+        // is round-scoped status, not damage) **drives the unit from the line to the Rearguard**: a unit
+        // Routed at Muster neither holds as a Vanguard nor crosses as an Outrider this round. The
         // `routed` flag is set by an `Effect::Rout` card and cleared at Refresh.
         for h in 0..state.heroes.len() {
             if state.heroes[h].routed {
@@ -282,7 +282,7 @@ impl Deckbound {
             &mut state.log,
         );
         // Pour-through: once a side has no living Vanguard, the enemy Vanguards break through to the
-        // backfield in the Open — flagged as skirmishers so they may strike anything.
+        // backfield in the Open — flagged as outriders so they may strike anything.
         let f_van_alive =
             (0..creatures.len()).any(|i| f_charging[i] && !f_flank[i] && !creatures[i].is_down());
         if !f_van_alive {
@@ -318,14 +318,14 @@ impl Deckbound {
         state.plan.committing = 0;
         state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
         state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
-        state.phase = Phase::Skirmish;
+        state.phase = Phase::Outrider;
         if self.pending_targets(state, 0, false).is_empty() {
             self.skirmish_done(state);
         }
     }
 
-    /// Actors of `side` that must still act this target phase. `reserve = false` → Skirmishers
-    /// (slipped a lane); `reserve = true` → Reserves (not in a lane, not a Skirmisher).
+    /// Actors of `side` that must still act this target phase. `reserve = false` → Outriders
+    /// (slipped a lane); `reserve = true` → Rearguards (not in a lane, not an Outrider).
     fn pending_targets(&self, state: &State, side: u8, reserve: bool) -> Vec<usize> {
         (0..state.s_len(side))
             .filter(|&i| {
@@ -341,8 +341,8 @@ impl Deckbound {
             .collect()
     }
 
-    /// The committing side's Skirmishers are done. PvP: hand to side B, then advance; PvE: run
-    /// the creature-AI Skirmishers, then the Reserve phase.
+    /// The committing side's Outriders are done. PvP: hand to side B, then advance; PvE: run
+    /// the creature-AI Outriders, then the Rearguard phase.
     fn skirmish_done(&self, state: &mut State) {
         if state.pvp {
             if state.plan.committing == 0 {
@@ -377,14 +377,14 @@ impl Deckbound {
         state.plan.committing = 0;
         state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
         state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
-        state.phase = Phase::Reserve;
+        state.phase = Phase::Rearguard;
         if self.pending_targets(state, 0, true).is_empty() {
             self.reserve_done(state);
         }
     }
 
-    /// The committing side's Reserves are done. PvP: hand to side B, then next round; PvE: run
-    /// the creature-AI Reserves (ranged fire), then refresh.
+    /// The committing side's Rearguards are done. PvP: hand to side B, then next round; PvE: run
+    /// the creature-AI Rearguards (ranged fire), then refresh.
     fn reserve_done(&self, state: &mut State) {
         if state.pvp {
             if state.plan.committing == 0 {
@@ -532,13 +532,13 @@ impl Deckbound {
         }
     }
 
-    /// Is actor `i` of `side` currently a Reserve (it did not charge)?
+    /// Is actor `i` of `side` currently a Rearguard (it did not charge)?
     fn is_reserve(&self, state: &State, side: u8, i: usize) -> bool {
         !state.s_charging(side)[i]
     }
 
-    /// Actor `i`'s current §4 position (0 = Vanguard, 1 = Skirmisher, 2 = Reserve). A charger that
-    /// broke through is a Skirmisher; a charger that stopped is a Vanguard; a non-charger is Reserve.
+    /// Actor `i`'s current §4 position (0 = Vanguard, 1 = Outrider, 2 = Rearguard). A charger that
+    /// broke through is an Outrider; a charger that stopped is a Vanguard; a non-charger is Rearguard.
     fn position_of(&self, state: &State, side: u8, i: usize) -> u8 {
         if state.s_skirm(side)[i] {
             1
@@ -581,8 +581,8 @@ impl Deckbound {
         if card.positional {
             let need = match card.role {
                 Some(Currency::Iron) => 0u8,   // Wall → Vanguard
-                Some(Currency::Silver) => 1u8, // Infiltrator → Skirmisher
-                Some(Currency::Brass) => 2u8,  // Artillery → Reserve
+                Some(Currency::Silver) => 1u8, // Infiltrator → Outrider
+                Some(Currency::Brass) => 2u8,  // Artillery → Rearguard
                 _ => return true,              // positional flag without a positional role
             };
             return self.position_of(state, side, i) == need;
@@ -644,8 +644,8 @@ impl Deckbound {
         }
     }
 
-    /// The enemies a Reserve of `side` may target (§4 matrix): the enemy front (Vanguard +
-    /// Skirmishers). **Longshot** (or an empty front) extends the reach to enemy Reserves.
+    /// The enemies a Rearguard of `side` may target (§4 matrix): the enemy front (Vanguard +
+    /// Outriders). **Longshot** (or an empty front) extends the reach to enemy Rearguards.
     fn reserve_targets(&self, state: &State, side: u8, actor: usize) -> Vec<usize> {
         let other = 1 - side;
         let front: Vec<usize> = combat::living(state.s_pool(other))
@@ -788,8 +788,8 @@ impl Deckbound {
                 "Round {} — charge: pick who runs the gauntlet, then Deploy. (Esc: menu)",
                 state.round
             ),
-            (None, Phase::Skirmish) => "Skirmishers pick targets. (Esc: menu)".to_string(),
-            (None, Phase::Reserve) => "Reserve: fire or aid. (Esc: menu)".to_string(),
+            (None, Phase::Outrider) => "Outriders pick targets. (Esc: menu)".to_string(),
+            (None, Phase::Rearguard) => "Rearguard: fire or aid. (Esc: menu)".to_string(),
             (None, Phase::Clash) => match state.clash {
                 Some(c) => format!(
                     "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
@@ -805,7 +805,7 @@ impl Deckbound {
             && state.outcome.is_none()
             && matches!(
                 state.phase,
-                Phase::Assemble | Phase::Skirmish | Phase::Reserve
+                Phase::Assemble | Phase::Outrider | Phase::Rearguard
             )
         {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
@@ -885,7 +885,7 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
-            // Charge selection + the Muster window: each hero charges or holds back (Reserve), and may
+            // Charge selection + the Muster window: each hero charges or holds back (Rearguard), and may
             // play standing/persistent cards (Wall defenses, Controller debuffs, Support buffs) before
             // Deploy resolves the gauntlet (§4).
             Phase::Assemble => {
@@ -895,7 +895,7 @@ impl Game for Deckbound {
                     if state.s_pool(side)[i].fallen {
                         continue;
                     }
-                    // Offer the ranks this unit is not already in (Skirmisher needs a melee attack).
+                    // Offer the ranks this unit is not already in (Outrider needs a melee attack).
                     let charging = state.s_charging(side)[i];
                     let flank = state.s_flank(side)[i];
                     let melee = state.s_pool(side)[i].can_contest(Range::Melee);
@@ -903,10 +903,10 @@ impl Game for Deckbound {
                         a.push(Action::SetVanguard(i));
                     }
                     if melee && (!charging || !flank) {
-                        a.push(Action::SetSkirmisher(i));
+                        a.push(Action::SetOutrider(i));
                     }
                     if charging {
-                        a.push(Action::SetReserve(i));
+                        a.push(Action::SetRearguard(i));
                     }
                     for idx in 0..state.s_pool(side)[i].actions.len() {
                         if self.muster_card_playable(
@@ -923,7 +923,7 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
-            Phase::Skirmish => {
+            Phase::Outrider => {
                 let side = state.plan.committing;
                 let other = 1 - side;
                 let mut a = Vec::new();
@@ -931,7 +931,7 @@ impl Game for Deckbound {
                     for t in combat::living(state.s_pool(other)) {
                         a.push(Action::Target(i, t));
                     }
-                    // A Skirmisher may also play its role cards (Infiltrator / effect cards, §4.4).
+                    // An Outrider may also play its role cards (Infiltrator / effect cards, §4.4).
                     for idx in 0..state.s_pool(side)[i].actions.len() {
                         if self.role_card_playable(
                             state,
@@ -947,7 +947,7 @@ impl Game for Deckbound {
                 a.push(Action::ToMenu);
                 a
             }
-            Phase::Reserve => {
+            Phase::Rearguard => {
                 let side = state.plan.committing;
                 let mut a = Vec::new();
                 if let Some(&i) = self.pending_targets(state, side, true).first() {
@@ -1037,8 +1037,8 @@ impl Game for Deckbound {
                 _ => "?".into(),
             },
             Action::SetVanguard(h) => format!("Send {} to the Vanguard", hname(*h)),
-            Action::SetSkirmisher(h) => format!("Send {} to flank as a Skirmisher", hname(*h)),
-            Action::SetReserve(h) => format!("Pull {} back to the Reserve", hname(*h)),
+            Action::SetOutrider(h) => format!("Send {} to flank as an Outrider", hname(*h)),
+            Action::SetRearguard(h) => format!("Pull {} back to the Rearguard", hname(*h)),
             Action::Deploy => "Deploy — start the round".into(),
             Action::AssignLane(h, lane) => format!("Place {} in lane {}", hname(*h), lane + 1),
             Action::Hold(h) => format!("{}: hold the lane", hname(*h)),
@@ -1155,12 +1155,12 @@ impl Game for Deckbound {
                 state.s_charging_mut(side)[*i] = true;
                 state.s_flank_mut(side)[*i] = false;
             }
-            (Phase::Assemble, Action::SetSkirmisher(i)) => {
+            (Phase::Assemble, Action::SetOutrider(i)) => {
                 let side = state.plan.committing;
                 state.s_charging_mut(side)[*i] = true;
                 state.s_flank_mut(side)[*i] = true;
             }
-            (Phase::Assemble, Action::SetReserve(i)) => {
+            (Phase::Assemble, Action::SetRearguard(i)) => {
                 let side = state.plan.committing;
                 state.s_charging_mut(side)[*i] = false;
                 state.s_flank_mut(side)[*i] = false;
@@ -1219,10 +1219,10 @@ impl Game for Deckbound {
                 check_outcome(state);
             }
 
-            (Phase::Skirmish, Action::Target(i, t)) => {
+            (Phase::Outrider, Action::Target(i, t)) => {
                 let side = state.plan.committing;
                 let other = 1 - side;
-                // Backstab: a Skirmisher hits an enemy Reserve harder.
+                // Backstab: an Outrider hits an enemy Rearguard harder.
                 let backstab =
                     state.s_pool(side)[*i].has("Backstab") && self.is_reserve(state, other, *t);
                 if backstab {
@@ -1233,7 +1233,7 @@ impl Game for Deckbound {
                     }
                 }
                 // Assassinate (M4): a killing strike — when an Infiltrator with the capstone hits an
-                // enemy Reserve, that foe is downed outright (the §10 execute).
+                // enemy Rearguard, that foe is downed outright (the §10 execute).
                 let execute =
                     state.s_pool(side)[*i].has("Assassinate") && self.is_reserve(state, other, *t);
                 self.strike(state, side == 0, *i, *t, Range::Melee);
@@ -1256,7 +1256,7 @@ impl Game for Deckbound {
                         state.log.push(format!("{vname} is marked and executed!"));
                     }
                 }
-                // Act while you have Tempo (§4 the Open): a crossed Skirmisher keeps striking the
+                // Act while you have Tempo (§4 the Open): a crossed Outrider keeps striking the
                 // backfield until its cards run out.
                 if state.s_pool(side)[*i].tempo <= 0 {
                     state.s_acted_mut(side)[*i] = true;
@@ -1268,7 +1268,7 @@ impl Game for Deckbound {
                     self.skirmish_done(state);
                 }
             }
-            (Phase::Skirmish, Action::PlayCard(i, idx)) => {
+            (Phase::Outrider, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;
                 let card = state.s_pool(side)[*i]
                     .actions
@@ -1314,17 +1314,17 @@ impl Game for Deckbound {
                     self.skirmish_done(state);
                 }
             }
-            (Phase::Skirmish, Action::Pass(i)) => {
+            (Phase::Outrider, Action::Pass(i)) => {
                 let side = state.plan.committing;
                 state.s_acted_mut(side)[*i] = true;
                 if self.pending_targets(state, side, false).is_empty() {
                     self.skirmish_done(state);
                 }
             }
-            (Phase::Reserve, Action::Target(i, t)) => {
+            (Phase::Rearguard, Action::Target(i, t)) => {
                 let side = state.plan.committing;
                 self.strike(state, side == 0, *i, *t, Range::Ranged);
-                // Act while you have Tempo (§4 the Open): a Reserve keeps firing until its cards run out.
+                // Act while you have Tempo (§4 the Open): a Rearguard keeps firing until its cards run out.
                 if state.s_pool(side)[*i].tempo <= 0 {
                     state.s_acted_mut(side)[*i] = true;
                 }
@@ -1335,7 +1335,7 @@ impl Game for Deckbound {
                     self.reserve_done(state);
                 }
             }
-            (Phase::Reserve, Action::PlayCard(i, idx)) => {
+            (Phase::Rearguard, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;
                 let card = state.s_pool(side)[*i]
                     .actions
@@ -1381,7 +1381,7 @@ impl Game for Deckbound {
                     self.reserve_done(state);
                 }
             }
-            (Phase::Reserve, Action::Pass(i)) => {
+            (Phase::Rearguard, Action::Pass(i)) => {
                 let side = state.plan.committing;
                 state.s_acted_mut(side)[*i] = true;
                 if self.pending_targets(state, side, true).is_empty() {
@@ -1541,7 +1541,7 @@ impl Game for Deckbound {
                 }
             }
             // Charge selection reads as **card placement**: the enemy on top, then your Charge and
-            // Reserve zones, each character card clickable to move it between them (§4). The action
+            // Rearguard zones, each character card clickable to move it between them (§4). The action
             // rides on the card itself, so dropping the card in a zone *is* the choice.
             Phase::Assemble => {
                 let side = state.plan.committing;
@@ -1562,7 +1562,7 @@ impl Game for Deckbound {
                     let is_charging = state.s_charging(side)[i];
                     // Clicking a card sends it to the *other* zone (the charge toggle as placement).
                     let toggle = if is_charging {
-                        Action::SetReserve(i)
+                        Action::SetRearguard(i)
                     } else {
                         Action::SetVanguard(i)
                     };
@@ -1583,7 +1583,7 @@ impl Game for Deckbound {
                     cards: charging,
                 });
                 zones.push(ZoneView {
-                    label: "Reserve — hold back, fire from the rear".into(),
+                    label: "Rearguard — hold back, fire from the rear".into(),
                     layout: Layout::Row,
                     owner: None,
                     cards: reserve,
@@ -1777,14 +1777,14 @@ fn scenario_zone(menu: Menu) -> ZoneView {
     }
 }
 
-/// The role triangle (Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard) as a small chart.
+/// The role triangle (Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard) as a small chart.
 fn append_triangle_chart(prose: &mut Vec<engine::ProseLine>) {
     prose.push(engine::ProseLine::Gap);
     prose.push(engine::ProseLine::Heading("The triangle".into()));
     for line in [
-        "Vanguard ▸ beats Skirmisher (holds the wall, strikes first)",
-        "Skirmisher ▸ beats Reserve (slips in to assassinate)",
-        "Reserve ▸ beats Vanguard (fires from safety, untouchable in melee)",
+        "Vanguard ▸ beats Outrider (holds the wall, strikes first)",
+        "Outrider ▸ beats Rearguard (slips in to assassinate)",
+        "Rearguard ▸ beats Vanguard (fires from safety, untouchable in melee)",
     ] {
         prose.push(engine::ProseLine::Body(line.into()));
     }
@@ -1855,7 +1855,7 @@ mod tests {
                     }
                 }
                 Phase::Assemble => Action::Deploy,
-                Phase::Skirmish | Phase::Reserve => acts
+                Phase::Outrider | Phase::Rearguard => acts
                     .iter()
                     .find(|a| matches!(a, Action::Target(..)))
                     .or_else(|| acts.iter().find(|a| matches!(a, Action::Pass(_))))
@@ -2112,9 +2112,9 @@ mod tests {
     }
 
     /// §4 Rout / Charter #13: a **direct Rout** (a Controller status, set by an `Effect::Rout` card)
-    /// **drives a unit from the line to the Reserve**. A Vanguard carrying the round-scoped `routed`
+    /// **drives a unit from the line to the Rearguard**. A Vanguard carrying the round-scoped `routed`
     /// flag is pulled off the line by `deploy` *before* the Line resolves — it ends the deploy a
-    /// Reserve, not a Vanguard. (Stagger/Shove stay in place; only Rout relocates.)
+    /// Rearguard, not a Vanguard. (Stagger/Shove stay in place; only Rout relocates.)
     #[test]
     fn a_routed_vanguard_is_driven_to_the_reserve() {
         let game = Deckbound;
@@ -2135,7 +2135,7 @@ mod tests {
         game.deploy(&mut s);
         assert!(
             game.is_reserve(&s, 0, 0),
-            "a Routed unit is driven from the Vanguard to the Reserve before the Line"
+            "a Routed unit is driven from the Vanguard to the Rearguard before the Line"
         );
     }
 

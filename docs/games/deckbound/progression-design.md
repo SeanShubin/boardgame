@@ -189,7 +189,7 @@ per level — going deeper means the *same* foes, escalated:
 - **Tactical (live every fight):** the creatures' §7 instinct decks pick moves each turn — you
   learn the behaviour *distribution*, never a fixed script. Exactly §7's Creature.
 
-The resolved roster then **assembles into the §4 battle** (Vanguard / lanes / Reserve) like
+The resolved roster then **assembles into the §4 battle** (Vanguard / lanes / Rearguard) like
 any party; its commitment and Clash choices are driven by the strategy deck.
 
 **One dial, both sides.** The **level** you opt into scales the **reward** (currency value,
@@ -260,7 +260,7 @@ character's one encounter for the day** (it retreats, §2), so "keep trying" pla
 days** — exactly the time cost the golf score measures.
 
 **Time vocabulary (largest → smallest):** **Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, and within a
-Clash, **Beat**. A *Round* is one Deploy→Vanguard→Skirmisher→Reserve pass (§4); a *Day* holds **one
+Clash, **Beat**. A *Round* is one Deploy→Vanguard→Outrider→Rearguard pass (§4); a *Day* holds **one
 Encounter per character**; **Tempo/Focus refresh each Round**, while **Health and every pool reset
 at the Day boundary** (zones-exhaustion §7). *"Turn" is **not** a unit — combat has no turn order
 (§3.1).* The complete cycle/phase map is [`game-flow.md`](game-flow.md).
@@ -292,13 +292,13 @@ banking. From there it **specializes** by spending that currency (depth) or **br
 **The five roles = the five non-generic currencies.** Not a chosen list — they fall out of the
 §4 triangle and its sub-axes:
 
-| Role            | Falls out of                                           | Currency   | (cast) |
-| --------------- | ------------------------------------------------------ | ---------- | ------ |
-| **Wall**        | Vanguard that **holds** — Mind→Focus block, Body tank  | **Iron**   | Anvil  |
-| **Infiltrator** | Vanguard that **slips** — Speed→Tempo, melee assassin  | **Silver** | Wisp   |
-| **Artillery**   | Reserve **ranged damage**                              | **Brass**  | Sear   |
-| **Controller**  | Reserve that **strips foes** — Tempo/Focus/Speed, Fear | **Bone**   | Hex    |
-| **Support**     | Reserve that **aids allies** — heal/ward/haste/rally   | **Salt**   | Vow    |
+| Role            | Falls out of                                             | Currency   | (cast) |
+| --------------- | -------------------------------------------------------- | ---------- | ------ |
+| **Wall**        | Vanguard that **holds** — Mind→Focus block, Body tank    | **Iron**   | Anvil  |
+| **Infiltrator** | Vanguard that **slips** — Speed→Tempo, melee assassin    | **Silver** | Wisp   |
+| **Artillery**   | Rearguard **ranged damage**                              | **Brass**  | Sear   |
+| **Controller**  | Rearguard that **strips foes** — Tempo/Focus/Speed, Fear | **Bone**   | Hex    |
+| **Support**     | Rearguard that **aids allies** — heal/ward/haste/rally   | **Salt**   | Vow    |
 
 Plus the **generic** currency, **Gold** (role-independent utility) → **6 currencies / 6 threat
 decks** (§4); the Gold deck is the **clean-slate / early** flavor you fight *before* choosing.

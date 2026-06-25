@@ -16,8 +16,8 @@ use crate::duel::Move;
 use crate::form::Form;
 use crate::stats::{Defense, Offense};
 
-/// The range of an engagement (§4.2). Position-determined: lanes and Skirmisher strikes are
-/// melee; Reserve fire is ranged.
+/// The range of an engagement (§4.2). Position-determined: lanes and Outrider strikes are
+/// melee; Rearguard fire is ranged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Range {
     Melee,
@@ -172,7 +172,7 @@ pub struct Actor {
     /// (its hand is fouled). Cleared at Refresh.
     pub disarmed: bool,
     /// Round-scoped **Rout** (a Controller debuff, §4 / Charter #13): this round the Actor is driven
-    /// from the line to the Reserve — it neither holds as a Vanguard nor crosses as a Skirmisher.
+    /// from the line to the Rearguard — it neither holds as a Vanguard nor crosses as an Outrider.
     /// Cleared at Refresh.
     pub routed: bool,
     /// Round-scoped **Empower** (a Support buff): bonus Might added to this Actor's strikes this round

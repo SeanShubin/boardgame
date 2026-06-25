@@ -43,7 +43,7 @@ pub enum Effect {
     Disarm,
     /// Break the target out of the line (a Shove).
     Shove,
-    /// Drive the target from the line to the Reserve this round (a Rout — a Controller status, §4).
+    /// Drive the target from the line to the Rearguard this round (a Rout — a Controller status, §4).
     Rout,
     /// Turn a face-down card back up (a Recover).
     Recover,

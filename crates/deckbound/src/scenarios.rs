@@ -743,8 +743,8 @@ fn reach_label(reach: [u32; 2]) -> String {
 
 fn reach_sentence(reach: [u32; 2]) -> String {
     match reach {
-        [1, 1] => "Played at melee range (the front / a Skirmisher).".into(),
-        [a, _] if a >= 2 => "Played at range — a Reserve firing on the enemy front (§4).".into(),
+        [1, 1] => "Played at melee range (the front / an Outrider).".into(),
+        [a, _] if a >= 2 => "Played at range — a Rearguard firing on the enemy front (§4).".into(),
         [a, b] => format!("Reach {a}\u{2013}{b} jumps."),
     }
 }
@@ -795,7 +795,7 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
         Effect::Disarm => "Rips a card from the target's Hand (knocks it Down).".into(),
         Effect::Shove => "Breaks the target out of its lane (a Shove).".into(),
         Effect::Rout => {
-            "Drives the target from the line to the Reserve this round (a Rout) \u{2014} a Controller \
+            "Drives the target from the line to the Rearguard this round (a Rout) \u{2014} a Controller \
              status (\u{00A7}4)."
                 .into()
         }

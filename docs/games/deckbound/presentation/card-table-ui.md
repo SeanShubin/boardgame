@@ -82,8 +82,8 @@ set and collapse the rest** for that moment, and to make clear *where to look*.
   Form cards become a deck**, and **only my face-down deck is fanned out, shown face-up** (I "picked
   it up"). Every other card is still on screen — collapsed — so nothing vanished.
 - **Assemble / placement.** Several decks are fanned at once because I'm **moving cards between zones**:
-  I pick my **character card** up into my hand and place it into the **Vanguard** or **Reserve** zone.
-  So I see, together: **what's in my hand**, the **Vanguard zone card**, the **Reserve zone card**, and
+  I pick my **character card** up into my hand and place it into the **Vanguard** or **Rearguard** zone.
+  So I see, together: **what's in my hand**, the **Vanguard zone card**, the **Rearguard zone card**, and
   the **character cards other players have already placed** there. *(This is the §4.4 "place the
   character card into a zone" model the current assemble already moves toward — see
   [`game-flow`](../game-flow.md) and the role-card play rule.)*
@@ -129,7 +129,7 @@ card state transitions** — the textual twin of the physical table. Every line 
 *changing face*, not an abstract event. The transition vocabulary:
 
 - a card moves **between zones** (Hand → board, board → Spend/Down, deck → in play);
-- a **character card** moves into the **Vanguard / Reserve** zone (assemble);
+- a **character card** moves into the **Vanguard / Rearguard** zone (assemble);
 - a **health card turns face down** (damage); a creature is **defeated** when all its health cards are
   face down (resolved at the phase boundary);
 - a **damage card moves from the damage deck onto a creature's deck** (§5), and the pile is totalled at
@@ -156,7 +156,7 @@ model** in §1 to exist first, so the log can name real card moves rather than d
 
 - **Canon it serves:** Charter **#7** (cards only), **#9 / #10** (rules ride on a metaphor / are
   re-derivable), the **§5 zone machine** (Hand / Active / Down — a card's physical state), **§4**
-  positions (Vanguard / Reserve as zones you place into), **§2.3** stats-as-deck (the Form cards), and
+  positions (Vanguard / Rearguard as zones you place into), **§2.3** stats-as-deck (the Form cards), and
   the **order-independent resolution** (§4 / `tally`).
 - **Code today:** the renderer already has cards ([`CardView`]), zones ([`ZoneView`]), a world
   [`MapView`], the event feed, the suggested-action highlight, and per-card hover/animation — the raw
@@ -210,7 +210,7 @@ while the UI renderer keeps working.
 **If we ever do go 3D, the recommended shape is hybrid, not all-3D:** keep `bevy_ui` for the
 **HUD** (action buttons, the event feed, status, encyclopedia, card-detail reading panes — documents
 and lists, text-heavy, miserable as meshes) and use **3D only for the physical table** (locations,
-character cards, decks, the Vanguard / Reserve zones). That keeps the text crisp where it's read and
+character cards, decks, the Vanguard / Rearguard zones). That keeps the text crisp where it's read and
 makes the table physical where it's handled — and it is exactly what the deck/zoom/orbit vision wants.
 
 **Decision criteria to settle it later:** do we actually want to *rotate/orbit* the table (→ 3D), or is

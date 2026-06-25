@@ -143,31 +143,31 @@ mainly hurts making many *distinct* foe/hero feels.
 ### The idea
 
 Replace spatial lines with a **commitment order**. Roles become *when you commit*, not
-*where you stand* — which is what finally earns the Vanguard/Skirmisher/Reserve names (an
+*where you stand* — which is what finally earns the Vanguard/Outrider/Rearguard names (an
 **information gradient**: commit blind → choose with partial info → choose with full info).
 
 Each round:
 
 1. **Declare Vanguard, in order, secretly** — a face-down stack with **bluff/decoy cards**,
    so the opponent can't read how many Vanguard you committed or in what order.
-2. **Anyone not Vanguard is Reserve.**
+2. **Anyone not Vanguard is Rearguard.**
 3. **Pair off the Vanguard by Speed** — the two front lines clash (tough units meeting tough
    units).
 4. **Unpaired Vanguard, or Vanguard who refuse their pairing (take a free hit), become
-   Skirmishers.**
-5. **Skirmishers choose targets** (they slip past to hit the vulnerable).
-6. **Reserve choose targets** *with knowledge of the Skirmishers' choices.*
+   Outriders.**
+5. **Outriders choose targets** (they slip past to hit the vulnerable).
+6. **Rearguard choose targets** *with knowledge of the Outriders' choices.*
 7. All duels are now fixed → **resolve order-independently** (§1.9 property preserved).
 
-So targets are chosen in info order: **Vanguard (blind) → Skirmishers → Reserve (informed).**
+So targets are chosen in info order: **Vanguard (blind) → Outriders → Rearguard (informed).**
 
 ### Hard invariant — keep the gradient at the *round* scale
 
 The gradient must never leak reveal-first into the **Clash**. "Later = more info" may only
 mean *more of the already-public, resolved board* — never "I saw the opponent's choice this
 phase before making mine." Keep each phase **cross-side simultaneous** (both sides' Vanguard
-declare at once; both sides' Skirmishers at once; both sides' Reserve at once). Within a side
-your Reserve naturally acts after your Skirmishers — that's the point — but between opponents
+declare at once; both sides' Outriders at once; both sides' Rearguard at once). Within a side
+your Rearguard naturally acts after your Outriders — that's the point — but between opponents
 no phase reveals first. The Clash itself stays hidden-simultaneous.
 
 ### Q1 resolution — keep Tempo / Focus **split**
@@ -175,13 +175,13 @@ no phase reveals first. The Clash itself stays hidden-simultaneous.
 This system makes the split *cleaner*, with new crisp meanings:
 
 - **Tempo** = engagements you **initiate** — target-picks spent across
-  Vanguard/Skirmisher/Reserve (offense breadth, ordered along the gradient).
+  Vanguard/Outrider/Rearguard (offense breadth, ordered along the gradient).
 - **Focus** = incoming targetings you can **answer** as a real (defensive, survive-only)
   duel; overflow resolves as **free hits** (the "refuse → take a hit" valve generalized).
 
 The decisive argument is information-theoretic: in this design **Tempo is hidden and
 bluffable** (the face-down Vanguard stack) while **Focus is public** (a defensive capacity
-the Reserve's informed choice depends on being known). You cannot merge a hidden stat with a
+the Rearguard's informed choice depends on being known). You cannot merge a hidden stat with a
 public one without incoherence — so **keep them split.** Merge only if you also flatten the
 initiate-vs-answer asymmetry (make every answered duel able to *kill*, not just survive);
 today defensive duels are survive-only, so the asymmetry — and the split — stays.
@@ -192,8 +192,8 @@ Model an extra action as an extra engagement, allocated across the three phases.
 one; a god has many, and the gradient is the **value curve**:
 
 - Vanguard action — cheap, blind, but *forces* a Speed-pairing on the enemy.
-- Skirmisher action — mid, partial info, free target choice.
-- Reserve action — premium, full info, but only leftover/exposed targets remain.
+- Outrider action — mid, partial info, free target choice.
+- Rearguard action — premium, full info, but only leftover/exposed targets remain.
 
 A single fast hero can flow through phases (commit one blow blind, then read the board and
 pick more targets later). The "lone god engages the swarm" fantasy falls out of the
@@ -201,18 +201,18 @@ structure, and stays balanced because the god still needs **Focus** to survive e
 that targets it back — big Tempo *and* big Focus = Kael's current profile. Powerscaling is
 preserved without a new subsystem.
 
-### Open question (under active discussion) — *why be Vanguard? how does Vanguard protect Reserve?*
+### Open question (under active discussion) — *why be Vanguard? how does Vanguard protect Rearguard?*
 
-Reserve has strictly more information, so without a forcing function everyone bluffs an
-empty Vanguard and holds for Reserve. The intended fiction resolves this: **the Vanguard
-protects the Reserve.** Reserve are the high-impact, fragile pieces (support buffers,
-debuffers, ranged glass cannons — *vulnerable but decisive*); Skirmishers are what slips in
-to assassinate them; Vanguard is what stops the Skirmishers. A party that surrenders target
-choice — too few/too fragile Vanguard — lets the opponent freely pick which Reserve to
+Rearguard has strictly more information, so without a forcing function everyone bluffs an
+empty Vanguard and holds for Rearguard. The intended fiction resolves this: **the Vanguard
+protects the Rearguard.** Rearguard are the high-impact, fragile pieces (support buffers,
+debuffers, ranged glass cannons — *vulnerable but decisive*); Outriders are what slips in
+to assassinate them; Vanguard is what stops the Outriders. A party that surrenders target
+choice — too few/too fragile Vanguard — lets the opponent freely pick which Rearguard to
 assassinate and is annihilated; a party that fields **durable units who can take a hit to
-protect the Reserve** prevails. The mechanical representation of "Vanguard protects Reserve"
+protect the Rearguard** prevails. The mechanical representation of "Vanguard protects Rearguard"
 is the part still being designed (see chat: candidate is *pairing occupies enemy attackers*
-+ *interposition redirects a Skirmisher's blow onto a durable Vanguard*, paid in Focus).
++ *interposition redirects an Outrider's blow onto a durable Vanguard*, paid in Focus).
 
 ---
 
@@ -319,7 +319,7 @@ attended to. Two primitives: **cards** (exist) and **decks** (new). **Click a de
 focus the camera; click the table to zoom out one level** (recursive; dead-zone around cards).
 Focusing one set **collapses everything else into decks**, so nothing is lost and nothing crowds.
 Several decks fan at once when an action spans them (e.g. placing a character card into Vanguard /
-Reserve shows hand + both zone cards + others' placements). A **damage deck** of 1-damage cards piles
+Rearguard shows hand + both zone cards + others' placements). A **damage deck** of 1-damage cards piles
 onto a target through a phase and resolves **once at the phase boundary** (the physical image of the
 order-independent `tally`).
 
@@ -479,7 +479,7 @@ thematic rule for who dies how:
 So the **Flank is the exposed rank**: it bought reach by giving up cover, and dies in the open. Two
 consequences: (1) **Drive is read in exactly one interaction** — Flank vs the Front's catch; the
 front-clash, parting hits, gap-fights, and volleys are all **Power**. (2) the Flank is **both spear and
-screen** — you field Skirmishers to assassinate the enemy Back *and* to kill the enemy's Skirmishers in
+screen** — you field Outriders to assassinate the enemy Back *and* to kill the enemy's Outriders in
 the open before they reach yours, giving the Back a third line of defense (hold the wall · screen with
 flanks · shoot the crossers).
 

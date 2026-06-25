@@ -104,15 +104,15 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
-/// A unit's **advance** — the per-card **Finesse** it commits to *cross* the line (floor 1). A
-/// Skirmisher's total advance is `cards-bid × advance`.
+/// A unit's **advance** — the per-card **Finesse** it commits to *cross* the line (floor 1). An
+/// Outrider's total advance is `cards-bid × advance`.
 fn advance_finesse(a: &Actor) -> u32 {
     a.offense.finesse.max(1)
 }
 
 /// A Vanguard's **hold** for one catch — its per-card Finesse plus **Phalanx** (+2, catch strength)
 /// and **Bulwark** (+2 if any living ally carries it — the line anchors as one). A catch is a single
-/// committed card, so this is the grade a Skirmisher's advance must beat. Phalanx/Bulwark raise the
+/// committed card, so this is the grade an Outrider's advance must beat. Phalanx/Bulwark raise the
 /// hold only, never advance — a Wall holds; it does not slip through on a high number.
 fn hold_finesse(catcher: &Actor, allies: &[Actor]) -> u32 {
     let bulwark = allies.iter().any(|x| !x.is_down() && x.has("Bulwark"));
@@ -121,7 +121,7 @@ fn hold_finesse(catcher: &Actor, allies: &[Actor]) -> u32 {
         + if bulwark { 2 } else { 0 }
 }
 
-/// The fewest cards a Skirmisher must bid for `cards × advance` to beat `hold` (strictly, or `≥` with
+/// The fewest cards an Outrider must bid for `cards × advance` to beat `hold` (strictly, or `≥` with
 /// **Shadowstep**, which wins a tie). Floors at 1.
 fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
     let adv = advance_finesse(sk);
@@ -173,14 +173,14 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
     }
 }
 
-/// Resolve **the Line** (§4 Tier 1, static-ranks). Ranks are *declared*: a charger that **flanks** is a
-/// **Skirmisher** attempting to cross; a charger that does not is a **Vanguard** holding; a non-charger
-/// is **Reserve**. Nobody moves. From the start-of-tier state: **Vanguards strike** the opposing front
-/// (one card each), and each **Skirmisher** runs a **crossing contest** against the enemy Vanguards —
-/// **card-bound catch** (a Vanguard catches one Skirmisher per Tempo card, **Taunt** first; each catch's
-/// hold = [`hold_finesse`]). A caught Skirmisher bids the fewest cards to beat the hold
+/// Resolve **the Line** (§4 Tier 1, static-ranks). Ranks are *declared*: a charger that **flanks** is an
+/// **Outrider** attempting to cross; a charger that does not is a **Vanguard** holding; a non-charger
+/// is **Rearguard**. Nobody moves. From the start-of-tier state: **Vanguards strike** the opposing front
+/// (one card each), and each **Outrider** runs a **crossing contest** against the enemy Vanguards —
+/// **card-bound catch** (a Vanguard catches one Outrider per Tempo card, **Taunt** first; each catch's
+/// hold = [`hold_finesse`]). A caught Outrider bids the fewest cards to beat the hold
 /// ([`cards_to_cross`]); affordable (or **uncaught**) → it **slips** (the catcher lands a **parting free
-/// hit** off the same catch-card), else **held** and it trades. **Blitz** frees a Skirmisher's first
+/// hit** off the same catch-card), else **held** and it trades. **Blitz** frees an Outrider's first
 /// slip. Returns `(hero_crossed, foe_crossed)`. Order-independent (offense is immutable here); deaths
 /// finalize at the boundary (`tally`).
 pub fn the_line(
@@ -213,7 +213,7 @@ pub fn the_line(
     clash_line(heroes, &h_van, foes, &f_van, log);
     clash_line(foes, &f_van, heroes, &h_van, log);
 
-    // 2. Crossing contests — the defender's Vanguards catch the crossing Skirmishers.
+    // 2. Crossing contests — the defender's Vanguards catch the crossing Outriders.
     cross_contest(heroes, &h_sk, foes, &f_van, &mut h_crossed, log);
     cross_contest(foes, &f_sk, heroes, &h_van, &mut f_crossed, log);
 
@@ -241,9 +241,9 @@ fn clash_line(
     }
 }
 
-/// Resolve the crossing contests for one side's Skirmishers (`sk` in `skpool`) against the enemy
-/// Vanguards (`van` in `vanpool`). Card-bound catch: a Vanguard catches one Skirmisher per Tempo card,
-/// **Taunt** Vanguards first; the highest-Finesse Skirmishers are caught first; uncaught ones slip free.
+/// Resolve the crossing contests for one side's Outriders (`sk` in `skpool`) against the enemy
+/// Vanguards (`van` in `vanpool`). Card-bound catch: a Vanguard catches one Outrider per Tempo card,
+/// **Taunt** Vanguards first; the highest-Finesse Outriders are caught first; uncaught ones slip free.
 fn cross_contest(
     skpool: &mut [Actor],
     sk: &[usize],
@@ -447,8 +447,8 @@ pub fn play_card(
                 }
             }
             Effect::Rout => {
-                // A Controller status (§4 / Charter #13): drive the foe from the line to the Reserve
-                // this round — it neither holds as a Vanguard nor crosses as a Skirmisher.
+                // A Controller status (§4 / Charter #13): drive the foe from the line to the Rearguard
+                // this round — it neither holds as a Vanguard nor crosses as an Outrider.
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.routed = true;
                     log.push(format!("  routs {} — driven from the line.", t.name));
@@ -514,7 +514,7 @@ mod tests {
         }
     }
 
-    /// A Skirmisher (charges + flanks) crossing a Vanguard (charges, holds). Returns `crossed[0]`.
+    /// An Outrider (charges + flanks) crossing a Vanguard (charges, holds). Returns `crossed[0]`.
     fn cross(runner: &mut [Actor], wall: &mut [Actor]) -> bool {
         let mut log = Vec::new();
         let (crossed, _) = the_line(runner, &[true], &[true], wall, &[true], &[false], &mut log);

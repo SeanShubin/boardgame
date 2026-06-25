@@ -357,7 +357,7 @@ mod tests {
 
     /// Tuning probe for a **five-suit** encounter (the rules-tour example): a combined threat that
     /// should need *every* role — an armored front (Brutes: only Pierce cracks; Resolve-0 so fear
-    /// disables), a lethal ranged backline (Slingers: only a slip reaches the Reserve), and an
+    /// disables), a lethal ranged backline (Slingers: only a slip reaches the Rearguard), and an
     /// attrition swarm (Husks). Sweep counts and print which roles' removal flips a win to a loss.
     /// `cargo test -p deckbound probe_five_suit_necessity -- --ignored --nocapture`.
     #[test]

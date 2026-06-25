@@ -25,13 +25,13 @@
 
 Numbers are first-pass (AI-seeded, human-tuned). Attack = melee / ranged / both / neither.
 
-| Name      | Role                     | Attack  | Profile (seed)                                   | Signature cards             |
-| --------- | ------------------------ | ------- | ------------------------------------------------ | --------------------------- |
-| **Anvil** | Wall (Vanguard)          | melee   | Body 10 · armor heavy · Mind 5 (Focus) · Speed 2 | Phalanx, Bodyguard, Taunt   |
-| **Wisp**  | Infiltrator (Skirmisher) | melee   | Body 4 · Speed 7 · Power 4                       | Blitz, Shadowstep, Backstab |
-| **Sear**  | Artillery (Reserve)      | ranged  | Body 4 · Power 6 · Speed 3                       | Barrage, Longshot, Suppress |
-| **Vow**   | Support (Reserve)        | neither | Body 4 · Mind 4 · Speed 3                        | Ward, Mend, Haste           |
-| **Hex**   | Controller (Reserve)     | ranged  | Body 4 · Power 2 · Speed 3                       | Confuse, Slow, Dread        |
+| Name      | Role                   | Attack  | Profile (seed)                                   | Signature cards             |
+| --------- | ---------------------- | ------- | ------------------------------------------------ | --------------------------- |
+| **Anvil** | Wall (Vanguard)        | melee   | Body 10 · armor heavy · Mind 5 (Focus) · Speed 2 | Phalanx, Bodyguard, Taunt   |
+| **Wisp**  | Infiltrator (Outrider) | melee   | Body 4 · Speed 7 · Power 4                       | Blitz, Shadowstep, Backstab |
+| **Sear**  | Artillery (Rearguard)  | ranged  | Body 4 · Power 6 · Speed 3                       | Barrage, Longshot, Suppress |
+| **Vow**   | Support (Rearguard)    | neither | Body 4 · Mind 4 · Speed 3                        | Ward, Mend, Haste           |
+| **Hex**   | Controller (Rearguard) | ranged  | Body 4 · Power 2 · Speed 3                       | Confuse, Slow, Dread        |
 
 **Card sketches** (each names the one core rule it bends, §"Cards may supersede the core"):
 - **Phalanx** — a stacked lane shares one Focus pool when blocking.
@@ -39,9 +39,9 @@ Numbers are first-pass (AI-seeded, human-tuned). Attack = melee / ranged / both 
 - **Taunt** — enemy slips in adjacent lanes must come through Anvil's lane.
 - **Blitz** — first slip each round is free (Tempo 0).
 - **Shadowstep** — slip a *stacked* lane (ignore one extra blocker).
-- **Backstab** — bonus damage vs a Reserve target.
+- **Backstab** — bonus damage vs a Rearguard target.
 - **Barrage** — one ranged attack hits several front targets.
-- **Longshot** — ranged may reach an enemy *Reserve* this round (sanctioned sniper exception).
+- **Longshot** — ranged may reach an enemy *Rearguard* this round (sanctioned sniper exception).
 - **Suppress** — reduce a target's Tempo next round.
 - **Ward** — grant an ally a *melee* attack this round (lets a caster self-defend, §4.2).
 - **Mend** — restore Body to an ally.
@@ -63,11 +63,11 @@ Each is one lesson, algorithmic.
    power; armor matters.*
 2. **Right Tool, Right Range** — melee/ranged/auto-hit. A ranged foe auto-hits a melee hero who
    can't answer. *Match the range or just eat hits.*
-3. **The Triangle** — Vanguard ▸ Skirmisher ▸ Reserve. *Pick the role that counters the threat.*
+3. **The Triangle** — Vanguard ▸ Outrider ▸ Rearguard. *Pick the role that counters the threat.*
 4. **Lanes & Concentration** — commit a count, assign, **stack** to overwhelm. *Concentrate; an
    even spread loses the stacked lane.*
 5. **Slip & Wall** — Tempo to slip vs Focus to block. *Overwhelm a thin wall; hold to deny.*
-6. **Guard the Caster** — your fragile Reserve is assassinated if unwalled. *Protect the
+6. **Guard the Caster** — your fragile Rearguard is assassinated if unwalled. *Protect the
    keystone.*
 7. **Clash module** (optional track) — the six existing Clash lessons (Interrupt the Wind-Up,
    Read the Lead, Catch the Dodger, Survive the Brawler, The Feint, The Duelist), now taught with
@@ -87,18 +87,18 @@ Each is one lesson, algorithmic.
 
 ## Implementation status (this build)
 
-- ✅ Engine on the §4 lane system (Assemble → **Assign** → Slip → Vanguard → Skirmish → Reserve),
+- ✅ Engine on the §4 lane system (Assemble → **Assign** → Slip → Vanguard → Outrider → Rearguard),
   same-range trade + range auto-hit (§4.2), optional 1v1 Clash module, count-adaptive.
 - ✅ **Manual lane assignment** (stacking) — offered when ≥2 lanes and ≥2 Vanguard.
 - ✅ **All seven powers wired as passive abilities** (detected by card name): Phalanx (combined
   block), Bodyguard/Taunt (guardian lends Focus to other lanes), Blitz (free slip), Shadowstep
-  (ignore one blocker), Backstab (bonus vs a foe Reserve), Longshot (Reserve may target foe
-  Reserves). Plus the played effects: Ward/Mend/Haste/Rally/Steel/Confuse/Slow/Suppress/
+  (ignore one blocker), Backstab (bonus vs a foe Rearguard), Longshot (Rearguard may target foe
+  Rearguards). Plus the played effects: Ward/Mend/Haste/Rally/Steel/Confuse/Slow/Suppress/
   Barrage/Dread/Cleave/Sunder/Bank.
-- ✅ Foe-side **reserve targeting matrix** enforced (heroes' Reserve fire hits the foe front;
-  Longshot or an empty front reaches foe Reserves).
+- ✅ Foe-side **rearguard targeting matrix** enforced (heroes' Rearguard fire hits the foe front;
+  Longshot or an empty front reaches foe Rearguards).
 - ✅ **Hotseat PvP lane driver** — both sides human, pass-and-play, hidden commit per phase
-  (Assemble → **Assign** → Slip → Skirmish → Reserve, committing side alternates). Versus holds
+  (Assemble → **Assign** → Slip → Outrider → Rearguard, committing side alternates). Versus holds
   3v3/2v2 PvP lane battles plus a 1v1 Clash duel.
 - ✅ **PvP manual lane stacking** — with ≥2 lanes and ≥2 Vanguard, *each* side now places its own
   lanes by hand (the device passes A → B for the Assign phase) and may stack a lane, the same
@@ -109,7 +109,7 @@ Each is one lesson, algorithmic.
 - Actor gains an **attack profile** (melee/ranged/both/neither) and a declared **role
   intent**; lanes/phases/roles per §4; resolution = trade / auto-hit (§4.2), with the Clash
   (§1.0) as a switchable same-range resolver.
-- Round = §4 declaration cycles (count → assignment → hold/slip → skirmisher targets → reserve
+- Round = §4 declaration cycles (count → assignment → hold/slip → outrider targets → rearguard
   targets) interleaved with the three resolution phases; order-independent per phase.
 - Count-adaptivity (§4.1): present a choice only when it has ≥2 legal options, so 1 v 1 is the
   plain engagement.

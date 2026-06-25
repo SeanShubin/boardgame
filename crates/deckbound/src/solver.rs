@@ -52,21 +52,21 @@ pub fn auto_resolve_with(
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // Rank declaration (§4 static-ranks): melee **Infiltrators** flank as **Skirmishers** (cross to
+        // Rank declaration (§4 static-ranks): melee **Infiltrators** flank as **Outriders** (cross to
         // the backfield); other melee fighters hold as **Vanguards**; back-line casters / shooters
-        // (Artillery / Controller / Support) stay in the **Reserve** to fire / cast from the rear. Then
+        // (Artillery / Controller / Support) stay in the **Rearguard** to fire / cast from the rear. Then
         // Muster standing cards and Deploy.
         Phase::Assemble => {
-            // 1a. Melee Infiltrators flank as Skirmishers.
+            // 1a. Melee Infiltrators flank as Outriders.
             for a in actions {
-                if let SetSkirmisher(i) = a
+                if let SetOutrider(i) = a
                     && state.heroes[*i].can_contest(Range::Melee)
                     && wants_flank(&state.heroes[*i])
                 {
                     return *a;
                 }
             }
-            // 1b. Other melee front-liners hold as Vanguards (casters/shooters keep to the Reserve).
+            // 1b. Other melee front-liners hold as Vanguards (casters/shooters keep to the Rearguard).
             for a in actions {
                 if let SetVanguard(i) = a
                     && state.heroes[*i].can_contest(Range::Melee)
@@ -81,14 +81,14 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
             best_play(state, actions).unwrap_or(Deploy)
         }
         // Strike a reachable foe; else play a role card (a damaging one first); else pass.
-        Phase::Skirmish => actions
+        Phase::Outrider => actions
             .iter()
             .copied()
             .find(|a| matches!(a, Target(..)))
             .or_else(|| best_play(state, actions))
             .unwrap_or_else(|| first_attack_or_pass(actions)),
-        // Reserve: fire on the front, else play a power (a damaging one first), else pass.
-        Phase::Reserve => actions
+        // Rearguard: fire on the front, else play a power (a damaging one first), else pass.
+        Phase::Rearguard => actions
             .iter()
             .copied()
             .find(|a| matches!(a, Target(..)))
@@ -144,11 +144,11 @@ fn play_score(card: &crate::cards::Card) -> i32 {
         .sum()
 }
 
-/// A hero whose strength is **ranged fire from the Reserve**: it carries a non-passive Artillery /
+/// A hero whose strength is **ranged fire from the Rearguard**: it carries a non-passive Artillery /
 /// Controller card (Brass / Bone) — cards that *attack the enemy* from range, so it holds back to cast
 /// rather than trading weakly up front. **Support (Salt) does *not* want the back line**: its cards are
 /// ally **buffs** (Empower / Haste / Mend) that work from anywhere, played at Muster — so a Salt member
-/// should **charge and fight in melee** (a Reserve full of buff-only melee actors deals no damage and
+/// should **charge and fight in melee** (a Rearguard full of buff-only melee actors deals no damage and
 /// is simply raided).
 fn wants_backline(a: &Actor) -> bool {
     use crate::currency::Currency::{Bone, Brass};
@@ -158,12 +158,12 @@ fn wants_backline(a: &Actor) -> bool {
 }
 
 /// A hero whose strength is **crossing to the enemy backfield** — it carries a non-passive
-/// **Infiltrator** (Silver) card, so it declares as a **Skirmisher** and flanks rather than holding the
+/// **Infiltrator** (Silver) card, so it declares as an **Outrider** and flanks rather than holding the
 /// line as a Vanguard.
 fn wants_flank(a: &Actor) -> bool {
     use crate::currency::Currency::Silver;
     // An Infiltrator kit, *or* raw Finesse high enough to cross (force, not fiat: stats alone make a
-    // flanker — this is what lets the BI-3 infinite-stat god declare as a Skirmisher and cross).
+    // flanker — this is what lets the BI-3 infinite-stat god declare as an Outrider and cross).
     a.actions
         .iter()
         .any(|c| !c.passive && c.role == Some(Silver))
@@ -240,7 +240,7 @@ mod tests {
         use crate::scenarios::{build_character, rewards_for};
 
         // Silver (Infiltrator) seeds Finesse; a bare Novice floors at Finesse 1. One card clears the bare
-        // wall's hold → the Skirmisher crosses.
+        // wall's hold → the Outrider crosses.
         let runner = build_character("Novice", &rewards_for(Currency::Silver));
         let blocker = build_character("Novice", &[]);
         assert!(
@@ -261,7 +261,7 @@ mod tests {
         );
         assert!(
             crossed[0],
-            "the higher-Finesse Skirmisher crosses on one card"
+            "the higher-Finesse Outrider crosses on one card"
         );
 
         // Equal Finesse, one card → advance == hold → a tie, held by the catcher.

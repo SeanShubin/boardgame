@@ -47,7 +47,7 @@ authored.
 **explicitly override** a specific core rule — and it says so on its face, naming the
 rule it bends. This keeps the core small and learnable while letting variety live on the
 cards (e.g. the core says only melee Actors skirmish, §4.2; a card can grant a ranged
-Skirmisher). A card never *silently* contradicts the core; an unstated conflict is a defect.
+Outrider). A card never *silently* contradicts the core; an unstated conflict is a defect.
 
 ---
 
@@ -59,7 +59,7 @@ Skirmisher). A card never *silently* contradicts the core; an unstated conflict 
 | **The Clash** (tactical core)                            | ✅ worked    | —                                                                                                                                                                                                                                                                                                                                                     |
 | **Defense model** (pile → bar → pool, one channel)       | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                                                                                                                                               |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                                                                                                                                      |
-| **Cadence/Tempo** (one breadth pool)                       | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                  |
+| **Cadence/Tempo** (one breadth pool)                     | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                  |
 | **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks brought current 2026 (bare ActorCard + Form-derived stats; code in this pass) |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                                                                                                                                          |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                                                                                                                                             |
@@ -859,9 +859,9 @@ nowhere else.** Both are the **same primitive, the tempo contest:** each side co
 (cards × Finesse), and **the side trying to *avoid* the strike must *strictly exceed* the other; a tie
 lands the strike.** The bid cards are spent (they do **not** return until refresh), so contesting *more*,
 or *harder*, drains more Tempo.
-- **Crossing** (melee positioning, §4): a Skirmisher's **advance** vs a Vanguard's **hold** — strictly
+- **Crossing** (melee positioning, §4): an Outrider's **advance** vs a Vanguard's **hold** — strictly
   higher → slips by (and the bypassed wall may free-hit it, §4); equal-or-less → **held**, and the
-  Skirmisher and catcher **trade** (each deals Might) on the cards committed — you never pay twice. Ties
+  Outrider and catcher **trade** (each deals Might) on the cards committed — you never pay twice. Ties
   to the catcher (Shadowstep overrides).
 - **Evade** (ranged defense, §4.2): a defender spends Tempo to dodge a ranged attack — Artillery damage
   **or** a Controller debuff. The attacker may **press** with extra cards (its **volley**); the
@@ -905,7 +905,7 @@ hard and you are spent for striking (#2 opportunity cost).
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
 > **MERGED.** Focus is no longer a separate pool. Defense-in-place — turning an incoming melee blow into
-> a **clash** rather than a **free hit** (§4 Skirmish) — is now **paid from Tempo** (§3.1). The **Mind**
+> a **clash** rather than a **free hit** (§4 skirmish) — is now **paid from Tempo** (§3.1). The **Mind**
 > stat and the separate Focus pool are **removed**; the cannon/wall split becomes a Tempo *allocation*
 > (spend it all attacking and you cannot answer a skirmisher). The old separate-defense-pool rules
 > (defense resets the attacker; per-target Focus cost) retire with it. *(Original text in git history.)*
@@ -978,9 +978,9 @@ phase.
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
 > **charge-and-gauntlet** (secret charge + threading columns, roles *emergent*). All replaced by the
-> **static-ranks** model below. The *spine survives* — three roles (Vanguard / Skirmisher / Reserve),
+> **static-ranks** model below. The *spine survives* — three roles (Vanguard / Outrider / Rearguard),
 > hidden commitment, "the front protects the back" — but the **threading gauntlet is gone**: roles are
-> now **declared, not emergent**, nobody moves, and each Skirmisher's crossing is a single **Finesse
+> now **declared, not emergent**, nobody moves, and each Outrider's crossing is a single **Finesse
 > contest** against the wall, resolved in two ordered tiers. Motivation: the gauntlet's threading
 > (column pairing, surplus loops, interception-across) was the one genuinely complex construct and
 > bought nothing the static model can't express more cleanly. Rationale + decision trail:
@@ -1003,46 +1003,46 @@ Toughness** (persists), **Tempo = Cadence × Finesse** (refreshes). *(No Focus/M
 
 **RULE — three declared ranks.** Each side secretly assigns every Actor a rank, then both reveal:
 
-- **Vanguard** — the melee front line; holds, and may spend Tempo to **catch** crossing Skirmishers —
+- **Vanguard** — the melee front line; holds, and may spend Tempo to **catch** crossing Outriders —
   **as many as it can pay catch-bids for** (Cadence = catch breadth, Finesse = catch strength).
-- **Skirmisher** — the flankers; each attempts to **cross** the enemy line to reach the backfield.
-- **Reserve** — the ranged / support line behind the front; fires over it, and can be reached only by a
-  Skirmisher who crossed (or once the front is broken).
+- **Outrider** — the flankers; each attempts to **cross** the enemy line to reach the backfield.
+- **Rearguard** — the ranged / support line behind the front; fires over it, and can be reached only by an
+  Outrider who crossed (or once the front is broken).
 
-The counter-triangle holds — **Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard**: a Vanguard catches
-Skirmishers; a Skirmisher who crosses reaches the otherwise-untouchable Reserve; the Reserve fires on
+The counter-triangle holds — **Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard**: a Vanguard catches
+Outriders; an Outrider who crosses reaches the otherwise-untouchable Rearguard; the Rearguard fires on
 the exposed front.
 
 **The round.**
 
 1. **Assemble** *(the one hidden, simultaneous commit).* Each side secretly assigns ranks, **binds any
-   groups** (§4.5), **and** commits its **bids** — how many Tempo cards each Skirmisher throws at its
+   groups** (§4.5), **and** commits its **bids** — how many Tempo cards each Outrider throws at its
    crossing, how many each Vanguard throws at a catch, and (defender's choice) **which Vanguard catches
-   which Skirmisher** — and plays its
+   which Outrider** — and plays its
    **standing cards** (a Wall's Brace / Last Stand, a Support's Mend / Haste), whose effect **lasts the
    round** and shapes what follows — Controller debuffs are *not* standing cards; they are evadable ranged
    attacks resolved in the Open (§4.2). Reveal together; nobody moves after.
 2. **Tier 1 — the Line.** From the start-of-round snapshot, resolved together (deaths tally at the tier
    boundary — a unit mortally wounded here still lands every blow it committed, §1.3):
    - **Vanguards strike** the opposing Vanguard (a card per blow).
-   - **Crossing contests** *(the only place Finesse is read)*: each Skirmisher's committed **advance**
+   - **Crossing contests** *(the only place Finesse is read)*: each Outrider's committed **advance**
      (cards × Finesse) vs its assigned Vanguard's committed **hold** (cards × Finesse + Phalanx).
      Strictly greater → **slips** (the bypassed Vanguard may then spend **any of its remaining Tempo**
-     to land **one free Power hit per card — no cap**; spends none → the Skirmisher passes untouched); ≤ →
-     **held** (Skirmisher and catcher **trade**, both Might; the Skirmisher does not cross). **Ties to
-     the catcher** unless the Skirmisher has **Shadowstep**. Each catch is a **separate bid** a Vanguard
-     pays from its own Tempo, so a wall holds only as many Skirmishers as it can afford to contest; a
-     Skirmisher **no Vanguard pays to catch slips free** — no contest, and (no wall having spent Tempo
+     to land **one free Power hit per card — no cap**; spends none → the Outrider passes untouched); ≤ →
+     **held** (Outrider and catcher **trade**, both Might; the Outrider does not cross). **Ties to
+     the catcher** unless the Outrider has **Shadowstep**. Each catch is a **separate bid** a Vanguard
+     pays from its own Tempo, so a wall holds only as many Outriders as it can afford to contest; an
+     Outrider **no Vanguard pays to catch slips free** — no contest, and (no wall having spent Tempo
      on it) no free hits.
 3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved in **three ordered sub-windows — Fast ▸
-   Skirmisher melee ▸ Slow** (§4.6; tally at each boundary):
-   - **Crossed Skirmishers strike** — behind the line, they may hit **any** enemy rank (Reserve first,
-     the prize; the Vanguard from behind; or an enemy Skirmisher). One card per strike, **act while
-     cards remain**; a melee blow on a foe that can't answer melee (a Reserve) is **free**.
-   - **A Vanguard whose opposite is dead pours through** and strikes the now-undefended enemy Reserve /
-     Skirmisher (free).
-   - **Reserves fire** ranged at the enemy Vanguard + Skirmisher (never the enemy Reserve) — picking off
-     exposed Skirmishers; lands on any target that does not **evade** (the tempo contest, §3.1) or answer.
+   Outrider melee ▸ Slow** (§4.6; tally at each boundary):
+   - **Crossed Outriders strike** — behind the line, they may hit **any** enemy rank (Rearguard first,
+     the prize; the Vanguard from behind; or an enemy Outrider). One card per strike, **act while
+     cards remain**; a melee blow on a foe that can't answer melee (a Rearguard) is **free**.
+   - **A Vanguard whose opposite is dead pours through** and strikes the now-undefended enemy Rearguard /
+     Outrider (free).
+   - **Rearguards fire** ranged at the enemy Vanguard + Outrider (never the enemy Rearguard) — picking off
+     exposed Outriders; lands on any target that does not **evade** (the tempo contest, §3.1) or answer.
    - **Evades & strike-backs:** a struck unit may **evade** a ranged attack (spend Tempo, §3.1) or, if it
      carries the range, **strike back** (Might); with no Tempo it eats a free hit.
 4. **Refresh.** Clear round-scoped status; refill Tempo to Cadence; round++. (A battle not closed by the
@@ -1050,9 +1050,9 @@ the exposed front.
 
 **The crossing contest (a Finesse read; the other is the evade, §4.2).** A single **simultaneous Finesse bid**, *not* an iterated
 auction: each side has committed *k* cards at Assemble, worth *k ×* Finesse; the higher total crosses /
-holds, tie to the catcher (Shadowstep overrides); bid cards are spent. A Skirmisher's **advance** is
+holds, tie to the catcher (Shadowstep overrides); bid cards are spent. An Outrider's **advance** is
 weighed against the Vanguard's **hold**: Wall powers feed **hold only**, never advance — a Wall raises
-the number you must clear without itself slipping through (an immovable line, not a runner). A Skirmisher
+the number you must clear without itself slipping through (an immovable line, not a runner). An Outrider
 that **slips** has won only the *right of way*, not safe passage: the bypassed Vanguard may convert **any
 remaining Tempo** into **free Might hits — one per card, no cap** — on the passer. You can always out-bid
 a wall and get through (force, not fiat — §0.3 / BI-3), but you **cannot** stop a wall with Tempo to
@@ -1061,29 +1061,29 @@ spare from striking you on the way past: **a mechanic never overrides superior f
 **Demise — protection comes from the line.** Each rank's vulnerability is *how much line stands between
 it and the enemy*:
 
-| Rank                           | Dies to                                                                                                                                                                | Safe from                                                                |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **Vanguard** (is the line)     | direct engagement (enemy Vanguard); a crossed enemy Skirmisher from behind                                                                                             | being flanked while it holds — it faces forward                          |
-| **Skirmisher** (left the line) | the wall's **catch**, or its **free hits on a slip** (one per Tempo card the wall spends, uncapped); the enemy **Reserve's** fire; an enemy **Skirmisher** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
-| **Reserve** (behind the line)  | a Skirmisher who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through                                                                            | everything, *while its line holds*                                       |
+| Rank                            | Dies to                                                                                                                                                                | Safe from                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Vanguard** (is the line)      | direct engagement (enemy Vanguard); a crossed enemy Outrider from behind                                                                                               | being flanked while it holds — it faces forward                          |
+| **Outrider** (left the line)    | the wall's **catch**, or its **free hits on a slip** (one per Tempo card the wall spends, uncapped); the enemy **Rearguard's** fire; an enemy **Outrider** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
+| **Rearguard** (behind the line) | an Outrider who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through                                                                             | everything, *while its line holds*                                       |
 
-So the **Skirmisher is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
-is thus both **spear and screen**: field it to assassinate the enemy Reserve *and* to kill the enemy's
-Skirmishers before they reach yours.
+So the **Outrider is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
+is thus both **spear and screen**: field it to assassinate the enemy Rearguard *and* to kill the enemy's
+Outriders before they reach yours.
 
 **Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold — more catch strength),
 **Bulwark** (+hold to *every* allied Vanguard — the line anchors as one), **Taunt** (must be assigned
 the first catch),
 **Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
-/ Assassinate** (a crossed Skirmisher hits an enemy Reserve harder / executes it — the §10 prize).
+/ Assassinate** (a crossed Outrider hits an enemy Rearguard harder / executes it — the §10 prize).
 
-**Controller debuffs — evadable ranged attacks.** A Controller fires debuffs from the Reserve as
+**Controller debuffs — evadable ranged attacks.** A Controller fires debuffs from the Rearguard as
 **ranged attacks** (§4.2): the target may **evade** them (the tempo contest, §3.1) or eat them, exactly
 like Artillery fire — but they deal **no damage** (Charter #13), they **degrade**. A landed debuff hangs
 a round-scoped status (cleared at Refresh) or drops a stat for the round:
 - **Status:** **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee —
   cannot contest a melee blow), **Disarm** (cannot play role cards), **Rout** (driven from the Vanguard
-  to the Reserve — off the line for the round).
+  to the Rearguard — off the line for the round).
 - **Stat-drop:** **lower Might / Toughness / Finesse**, or **drain Tempo** — softening the foe for the
   rest of the round (a lowered Finesse weakens its slips *and* its evades at once).
 
@@ -1093,27 +1093,27 @@ that produced these via a Resolve-bar break is **gone**; the Controller now appl
 evadable ranged attacks. Each debuff's window, and whether a pre-Line Rout is possible, are seeded — tune
 to taste.)*
 
-**Bypass = open season.** Once a unit is *behind the enemy line* — a Skirmisher that **slipped** past a
+**Bypass = open season.** Once a unit is *behind the enemy line* — an Outrider that **slipped** past a
 Vanguard, or a Vanguard that **killed** the one it faced — **every enemy rank is fair game to it**. The
 line only protects what is still in front of it; bypass it (by slipping or by killing it) and the
 backfield is open.
 
 **Targeting matrix.**
 
-| Chooser        | May target                                                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Vanguard**   | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Reserve or Skirmisher)               |
-| **Skirmisher** | **held** → only its catcher; **crossed** → **any** enemy rank (Reserve first, then the Vanguard from behind, or an enemy Skirmisher) |
-| **Reserve**    | enemy **Vanguard & Skirmishers**, and **aid own allies** — **never** the enemy Reserve                                               |
+| Chooser       | May target                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Vanguard**  | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Rearguard or Outrider)               |
+| **Outrider**  | **held** → only its catcher; **crossed** → **any** enemy rank (Rearguard first, then the Vanguard from behind, or an enemy Outrider) |
+| **Rearguard** | enemy **Vanguard & Outriders**, and **aid own allies** — **never** the enemy Rearguard                                               |
 
-**Edge cases.** *All-Reserve (no front):* nothing can catch, so every enemy Skirmisher slips free and
-raids the Reserve — holding everyone back only exposes you. *No Skirmishers:* the lines trade and the
-Reserves fire — attrition the heavier line wins. *Neither side fields a front:* the "Reserve is safe"
+**Edge cases.** *All-Rearguard (no front):* nothing can catch, so every enemy Outrider slips free and
+raids the Rearguard — holding everyone back only exposes you. *No Outriders:* the lines trade and the
+Rearguards fire — attrition the heavier line wins. *Neither side fields a front:* the "Rearguard is safe"
 privilege (paid for by fielding a front) lifts — open brawl, anyone may target anyone in range.
 
-**Protection is the wall's, this round.** Only catching a Skirmisher at the line — or screening it with
-your own Skirmisher, or shooting it with the Reserve — saves the backfield this round; a wiped Vanguard
-stops protecting its Reserve immediately. **No rank is ever permanently safe** — every unit is reachable
+**Protection is the wall's, this round.** Only catching an Outrider at the line — or screening it with
+your own Outrider, or shooting it with the Rearguard — saves the backfield this round; a wiped Vanguard
+stops protecting its Rearguard immediately. **No rank is ever permanently safe** — every unit is reachable
 by enough force (the **force-not-fiat** invariant, §0.3 / balance-invariants BI-3).
 
 **Determinism (two ordered tiers).** Each tier resolves from a snapshot, **order-independent within**
@@ -1128,22 +1128,22 @@ simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend
 (Cadence / Vitality) and the spent/unspent pool.
 
 **WHY.** The triangle survives on a single physical picture — a battle line with a front, flankers, and
-a rear — but the **threading gauntlet is gone**: roles are declared, nobody moves, and a Skirmisher's
+a rear — but the **threading gauntlet is gone**: roles are declared, nobody moves, and an Outrider's
 fate is one **Finesse contest** against the wall, not a walk through a column. **Tempo as one pool spent
 only on *acting*** (striking, contesting, answering) makes the core decision crisp — *where do I spend
 my initiative?* — while standing and soaking stay free, so a spent wall is still a wall. **Finesse read
 in contests** keeps the stats orthogonal: **Cadence** = how many actions, **Finesse** = whether you
 cross or evade, **Might** = how hard you hit. **Force, not fiat:** nothing is forbidden by rule — a low-Finesse
-Skirmisher can still cross by overspending, an out-numbered wall is overwhelmed, an over-powered lone
+Outrider can still cross by overspending, an out-numbered wall is overwhelmed, an over-powered lone
 hero wipes a weaker party — opposition is always *cost*, never *impossibility*. The converse holds too:
 out-bidding a wall buys **passage, not safety** — a wall with Tempo to spare still free-hits the passer
 (uncapped, one per card), so a **mechanic never overrides superior force.**
 
 **GUARANTEES.**
 
-- **The role triangle holds:** Vanguard ▸ Skirmisher ▸ Reserve ▸ Vanguard; roles are **declared**.
-- **The Reserve is reachable only by crossing the line** — a Skirmisher who beats the wall, or a
-  Vanguard pouring through a broken front — never by enemy Reserve (except the no-front open brawl).
+- **The role triangle holds:** Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard; roles are **declared**.
+- **The Rearguard is reachable only by crossing the line** — an Outrider who beats the wall, or a
+  Vanguard pouring through a broken front — never by enemy Rearguard (except the no-front open brawl).
 - **One hidden commit:** only the Assemble commit (ranks + bids + assignment) is hidden + simultaneous;
   all resolution is open. Base combat is perfect-information and deterministic (#11); the hidden
   mind-game is the optional Clash.
@@ -1157,38 +1157,38 @@ out-bidding a wall buys **passage, not safety** — a wall with Tempo to spare s
   **slipping a wall grants right of way, not immunity:** the bypassed wall converts remaining Tempo into
   **uncapped** free hits (one per card), so no crossing mechanic shields the passer from superior force.
 
-**MANUAL.** *Secretly assign each Actor a rank — Vanguard (front), Skirmisher (flanker), Reserve
-(rear) — and commit your bids: how many Tempo cards each Skirmisher throws at its crossing, each
-Vanguard at a catch, and which Vanguard catches which Skirmisher; play your standing cards (Wall braces,
+**MANUAL.** *Secretly assign each Actor a rank — Vanguard (front), Outrider (flanker), Rearguard
+(rear) — and commit your bids: how many Tempo cards each Outrider throws at its crossing, each
+Vanguard at a catch, and which Vanguard catches which Outrider; play your standing cards (Wall braces,
 Support buffs — they last the round) in the same commit. Reveal together; no one moves. **The Line:**
-Vanguards strike across (a card a blow); each Skirmisher's advance (cards × Finesse) meets its catcher's
+Vanguards strike across (a card a blow); each Outrider's advance (cards × Finesse) meets its catcher's
 hold — strictly more slips (and the bypassed wall may free-hit it once per Tempo card it spends), equal-or-less is held and trades; an
-uncaught Skirmisher slips free. **The Open:** Skirmishers who crossed strike anything behind the line
-(the Reserve is the prize); a Vanguard whose foe is dead pours through; Reserves fire at the enemy front
+uncaught Outrider slips free. **The Open:** Outriders who crossed strike anything behind the line
+(the Rearguard is the prize); a Vanguard whose foe is dead pours through; Rearguards fire at the enemy front
 (and Controllers fire debuffs); anyone hit by ranged may **evade** (a card) or strike back if in range,
 else takes a free hit. Standing and soaking cost nothing — only acting spends Tempo. Refresh and go again.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Assemble` (Roles) — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Skirmisher / Reserve), commits its crossing / catch bids and which Vanguard catches which Skirmisher, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
-- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Skirmishers — as many as it can pay catch-bids for (Cadence = breadth, Finesse = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Reserve.
-- **TERM.** `Skirmisher` (Roles) — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Reserve.
-- **TERM.** `Reserve` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Reserve, and is reached only by a Skirmisher who crossed or a Vanguard pouring through a broken front.
-- **TERM.** `The triangle` (Roles) — Vanguard beats Skirmisher (catches it at the line); Skirmisher beats Reserve (crosses to assassinate); Reserve beats Vanguard (fires from safety, untouchable in melee).
-- **TERM.** `The Line` (Combat) — Tier 1: Vanguards strike across, and each crossing Skirmisher's advance Finesse is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
-- **TERM.** `Crossing` (Combat) — A Skirmisher's attempt to pass the wall: a single simultaneous Finesse bid (committed cards × Finesse). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Skirmisher slips free. Wall powers raise the hold only.
-- **TERM.** `The Open` (Combat) — Tier 2: crossed Skirmishers strike anything behind the line (the Reserve is the prize), a Vanguard whose foe is dead pours through, Reserves fire on the front and pick off exposed Skirmishers, and the struck strike back if they can answer the range.
-- **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Reserve's safety lifts: everyone may target anyone with whatever range they carry.
-- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Skirmishers contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Skirmisher melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
-- **TERM.** `Group` (Combat) — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Skirmisher crosses on its weakest member's Tempo. No size cap, no mixed intentions.
-- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Skirmisher melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
+- **TERM.** `Assemble` (Roles) — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Outrider / Rearguard), commits its crossing / catch bids and which Vanguard catches which Outrider, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
+- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Outriders — as many as it can pay catch-bids for (Cadence = breadth, Finesse = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Rearguard.
+- **TERM.** `Outrider` (Roles) — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Rearguard.
+- **TERM.** `Rearguard` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Rearguard, and is reached only by an Outrider who crossed or a Vanguard pouring through a broken front.
+- **TERM.** `The triangle` (Roles) — Vanguard beats Outrider (catches it at the line); Outrider beats Rearguard (crosses to assassinate); Rearguard beats Vanguard (fires from safety, untouchable in melee).
+- **TERM.** `The Line` (Combat) — Tier 1: Vanguards strike across, and each crossing Outrider's advance Finesse is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
+- **TERM.** `Crossing` (Combat) — An Outrider's attempt to pass the wall: a single simultaneous Finesse bid (committed cards × Finesse). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Outrider slips free. Wall powers raise the hold only.
+- **TERM.** `The Open` (Combat) — Tier 2: crossed Outriders strike anything behind the line (the Rearguard is the prize), a Vanguard whose foe is dead pours through, Rearguards fire on the front and pick off exposed Outriders, and the struck strike back if they can answer the range.
+- **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Rearguard's safety lifts: everyone may target anyone with whatever range they carry.
+- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Outriders contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Outrider melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
+- **TERM.** `Group` (Combat) — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Outrider crosses on its weakest member's Tempo. No size cap, no mixed intentions.
+- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Outrider melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
 
 **Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
 the three declared roles, targeting) is settled; these are not:
 
 > **RATIFICATION (2026-06-21).** §4 is the **static-ranks** model, and the **code is synced** —
 > `combat.rs::the_line` is the **resolver-of-record** the balance work (§0.3) measures against:
-> card-bound catch (one card per catch, defender-assigned, Taunt first), the Skirmisher bids the fewest
+> card-bound catch (one card per catch, defender-assigned, Taunt first), the Outrider bids the fewest
 > cards to beat the hold, two snapshot tiers, ties to the catcher, Shadowstep / Phalanx / Bulwark / Blitz
 > riders. The **bid is a single simultaneous commitment** (not an iterated auction), so base PvE combat
 > stays a maximizer, not an equilibrium-solver — par stays well-defined. *(v1 prices a catch at one card;
@@ -1198,12 +1198,12 @@ the three declared roles, targeting) is settled; these are not:
 1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
    cards × Finesse, ties to the catcher, Shadowstep overrides); the **numbers** (the slip free-hit weight,
    strike Power) live in `booklet.ron`, human-tuned.
-2. **Catch capacity — locked (card-bound).** A Vanguard catches as many Skirmishers as it pays
+2. **Catch capacity — locked (card-bound).** A Vanguard catches as many Outriders as it pays
    catch-bids for (Cadence = breadth, Finesse = strength); **Bodyguard is retired** (its old +1 niche is
    now just the card budget).
-3. **Skirmish strike cost** — one Tempo per strike (a unit acts while it holds cards); confirm whether
+3. **Outrider strike cost** — one Tempo per strike (a unit acts while it holds cards); confirm whether
    switching targets costs extra.
-4. **Reserve aid kit** — the buffs / heals / debuffs a Reserve delivers — Action cards over the §5 zone
+4. **Rearguard aid kit** — the buffs / heals / debuffs a Rearguard delivers — Action cards over the §5 zone
    layer (the aspect/combo layer is retired — `retired-ideas.md`).
 5. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Vitality × Toughness**
    (persists) and **Tempo = Cadence × Finesse** (refreshes). **Focus and Mind are removed.** Cadence = count
@@ -1211,21 +1211,21 @@ the three declared roles, targeting) is settled; these are not:
    contest**; every other action is one Finesse-blind card (Might sets damage), and **standing / soaking
    cost no card at all**.
 
-*(Range/attack dials are resolved by §4.2: "Reserve self-defense" = whether it carries melee; "strike
+*(Range/attack dials are resolved by §4.2: "Rearguard self-defense" = whether it carries melee; "strike
 shape" = a Clash when attacker and target share the range, an auto-hit when they don't.)*
 
 ### 4.1 Count-adaptivity — the system degrades to the choices that exist
 
 **RULE.** The commitment layer is **count-adaptive**: any choice with a **single legal option
 resolves automatically**, presenting no decision. Rank assignment, the crossing bids, catch
-assignment, and Skirmisher / Reserve targeting appear only when party size makes more than one option
+assignment, and Outrider / Rearguard targeting appear only when party size makes more than one option
 legal. Concretely:
 
 - **1 v 1** — each side has one Actor; ranks are moot (front meets front), so the two simply **trade**
   (or fight a **Clash** with the module on). No rank bluff, no crossing (one unit can't both hold and
-  flank), no Reserve, no Skirmisher — it is exactly the plain duel (the tutorial case).
+  flank), no Rearguard, no Outrider — it is exactly the plain duel (the tutorial case).
 - **Small parties (2–3)** — only live choices surface: **rank assignment** becomes real once a second
-  body makes a front-vs-flank split meaningful; a **crossing bid** only where a Skirmisher faces a
+  body makes a front-vs-flank split meaningful; a **crossing bid** only where an Outrider faces a
   catcher both can afford; **targeting** only with a surviving target and a legal line to it.
 - **Larger parties** — the full machinery (a bluffed formation, several crossings, breakthroughs,
   pour-throughs, and screening).
@@ -1243,8 +1243,8 @@ current head-count.
 ### 4.2 Range & attack type — melee, ranged, both, or neither
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
-**position-determined**, never chosen: **crossing contests and Skirmisher strikes are melee;
-Reserve fire is ranged.** A strike lands at its range; how the target may answer depends on the range:
+**position-determined**, never chosen: **crossing contests and Outrider strikes are melee;
+Rearguard fire is ranged.** A strike lands at its range; how the target may answer depends on the range:
 
 - **Melee, same range (target can strike back)** → a **simultaneous trade** (both deal their base through
   toughness, §2). With the **optional Clash module** (§1.0) on, the trade becomes the four-card Clash + Force.
@@ -1258,22 +1258,22 @@ The **Clash is a module, not the floor** — the game is fully playable with sam
 
 What follows from it:
 
-- **Skirmishers are melee** (they cross a melee line), so the **only core route to an
-  enemy Reserve is a melee assassin.** Ranged Actors do **not** skirmish in the core. *(A card may
-  explicitly supersede this — e.g. grant a ranged Skirmisher; see "Cards may supersede the
+- **Outriders are melee** (they cross a melee line), so the **only core route to an
+  enemy Rearguard is a melee assassin.** Ranged Actors do **not** skirmish in the core. *(A card may
+  explicitly supersede this — e.g. grant a ranged Outrider; see "Cards may supersede the
   core.")*
-- **Reserve self-defense = whether it carries melee.** A Reserve with a melee attack **trades/Clashes**
+- **Rearguard self-defense = whether it carries melee.** A Rearguard with a melee attack **trades/Clashes**
   an assassin (fends it off by spending Tempo to clash); a pure caster (no melee) is **auto-hit**
   (assassinated).
-- A **melee-less Vanguard or Skirmisher is legal but a very bad idea** — it is auto-hit when it meets
+- A **melee-less Vanguard or Outrider is legal but a very bad idea** — it is auto-hit when it meets
   melee and cannot answer. (Emergent positioning, not a banned move.)
 - **Neither** = pure support (heal / buff / area-control): it makes no attacks, so it is **auto-hit in
   melee** when reached — though it may still **evade ranged fire** with Tempo (§3.1). The most
-  decisive-yet-fragile Reserve piece, wholly dependent on the wall. Its kit is Action cards over the §5
+  decisive-yet-fragile Rearguard piece, wholly dependent on the wall. Its kit is Action cards over the §5
   zone layer.
 
-**WHY.** Range turns the **role triangle** from intent into mechanics: *Skirmisher ▸ Reserve* and
-*Reserve ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
+**WHY.** Range turns the **role triangle** from intent into mechanics: *Outrider ▸ Rearguard* and
+*Rearguard ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
 fire vs no-ranged tank → auto-hits), while same-range meetings are Clashes. It also opens clean
 power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids, and pure-support
 "neither" kits — each re-derivable from "do you have the attack for this range?".
@@ -1282,7 +1282,7 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 - A **melee** strike at the same range is a trade/Clash; a **ranged** strike may be **evaded** with Tempo
   (§3.1) by any target and **struck back** only by a same-range answerer; a blow neither evaded nor
   answered **auto-hits** (through toughness).
-- Range is **position-determined** (the Line / Skirmisher = melee, Reserve = ranged) — never the
+- Range is **position-determined** (the Line / Outrider = melee, Rearguard = ranged) — never the
   attacker's free pick.
 - Core: **only melee Actors skirmish**; a card may explicitly supersede.
 
@@ -1291,7 +1291,7 @@ power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids
 - **TERM.** `Trade` (Combat) — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **TERM.** `Evade` (Combat) — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **TERM.** `Auto-hit` (Combat) — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
-- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Skirmisher strikes are melee; Reserve fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Outrider strikes are melee; Rearguard fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
@@ -1325,7 +1325,7 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
-### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Reserve-cast 2026**; code pending)*
+### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Rearguard-cast 2026**; code pending)*
 
 **RULE.** Role cards are an **ability layer** over the physical battle (§4). **Casting is an action:**
 each role card spends a **Tempo card** (§3) — it competes with strikes, contests, and evades for the one
@@ -1335,7 +1335,7 @@ bounded only by its **Tempo** (a conserved, party-size-invariant pool), its **di
 foe's **evade**.
 
 **Position gates *offensive* casting.** A **Controller** debuff or an **Artillery** shot is a **ranged
-attack** (§4.2), so it is **cast from the Reserve** and may be **evaded** (the tempo contest, §3.1).
+attack** (§4.2), so it is **cast from the Rearguard** and may be **evaded** (the tempo contest, §3.1).
 **Ally buffs** (Support) and a **Wall**'s standing defenses target your own side, are **not** attacks,
 and stay **rank-free Assemble standing cards** that last the round; an **Infiltrator**'s slip resolves at
 the Line. Each effect plays **when it fits** — Assemble for persistent buffs / braces, the relevant
@@ -1351,7 +1351,7 @@ counterplay. Dropping it is **force, not fiat**: a side may **concentrate** (mor
 or **spread**, paying Tempo either way — opportunity cost, never prohibition (#2; emergence over fiat,
 #6 / #12).
 
-Making **offensive casting Reserve-only** is the replacement god-vs-party lever, and a *positional* one: a
+Making **offensive casting Rearguard-only** is the replacement god-vs-party lever, and a *positional* one: a
 god cannot both **hold the Vanguard** and **rain offensive spells** in one round — it must **hold back** to
 cast, paying a real lane-coverage cost (the concentration-vs-resilience tradeoff, candidate **BI-4**).
 Buffs stay rank-free because they are not attacks — Support mends the line from any rank. **Cross-suit
@@ -1369,8 +1369,8 @@ more-informed hidden moment.
 - **Conservation across party size via Tempo.** Total Tempo is party-size-invariant (fixed Cadence-card
   pool), so total casting output is too — **god ≈ party** is the N=1 partition, not an exception. No party
   size dominates role-card throughput (candidate **BI-4**, par-solver-verified).
-- **Offensive spells are Reserve-cast ranged attacks** (evadable, §3.1 / §4.2); a body **cannot** cast one
-  from the Vanguard / Skirmish line. **Ally buffs / Wall braces are rank-free Assemble standing cards.**
+- **Offensive spells are Rearguard-cast ranged attacks** (evadable, §3.1 / §4.2); a body **cannot** cast one
+  from the Vanguard / Outrider line. **Ally buffs / Wall braces are rank-free Assemble standing cards.**
 - **Order-independent effects.** Every effect feeds an accumulator at its window boundary; **no played
   effect multiplies or gates another's output** (§0.1 / #11) — the result is order-independent however many
   a side fires.
@@ -1378,13 +1378,13 @@ more-informed hidden moment.
 *(History: the original **matching-position gate** (a card required its own rank) was removed 2026-06-20;
 the **per-suit / per-side cap** that replaced it is now removed too (2026) in favour of tempo-gating. The
 surviving position rule is narrower and **emergent** — only *offensive* spells are gated, and only because
-they are **ranged attacks** from the Reserve (§4.2). Code/data + `TERM` lines land with the role-card
+they are **ranged attacks** from the Rearguard (§4.2). Code/data + `TERM` lines land with the role-card
 migration; §4.4 was already code-pending — `role-card-redesign.md` §8.)*
 
 ### 4.5 Groups — bind same-side Actors into one unit 🟡 *(2026-06-23)*
 
 **RULE.** At **Assemble**, a side may bind several of its Actors into a **group**. A group shares **one
-intention** (all Vanguard, or all Skirmisher, or all Reserve — never mixed) and has **no size cap**.
+intention** (all Vanguard, or all Outrider, or all Rearguard — never mixed) and has **no size cap**.
 Within a group:
 
 - **Shared target.** Every member points at the **same thing** at any one time.
@@ -1395,15 +1395,15 @@ Within a group:
   the window snapshot. A **single enemy effect** aimed at the group lets the **group pick its victim**
   (soak the debuff on whoever it hurts least).
 - **Area effects hit all.** An AoE attack strikes **every member for its full value** — clustering is the
-  group's standing risk, and the Reserve (single-targetable only one at a time) is exactly what AoE
+  group's standing risk, and the Rearguard (single-targetable only one at a time) is exactly what AoE
   punishes for bunching.
 
 **Groups × the crossing (§4).** Grouping is **asymmetric** by intention:
 
 - **A grouped Vanguard catches with combined Tempo** — members pool their catch-bid into one **stronger
   hold**. Because the group targets one thing, a grouped pair makes **one unslippable catch**, while a
-  *split* pair catches **two** separate Skirmishers: group for a lock on the key threat, split for breadth.
-- **A grouped Skirmisher crosses on minimum Tempo** — moving in lockstep, the group's **advance** is
+  *split* pair catches **two** separate Outriders: group for a lock on the key threat, split for breadth.
+- **A grouped Outrider crosses on minimum Tempo** — moving in lockstep, the group's **advance** is
   capped at its **weakest-stocked member** (apply the weakest-link to Finesse too). Infiltrating as a clump
   is thus **self-defeating** — and there is **no mechanical ban**; the min-Tempo penalty is the emergent
   disincentive (a hard ban would be redundant *fiat*, §0.3). "Infiltrators work alone" emerges from the math.
@@ -1416,8 +1416,8 @@ infiltrator is only as quiet as its clumsiest member.
 **GUARANTEES.**
 - A group is one intention, distinct pools, shared target — no merged stat-block, no size cap.
 - AoE hits every member at full value; single-target blows land whole, defender-allocated.
-- Vanguard catch pools Tempo (combined hold); Skirmisher crossing is min-Tempo (weakest link); no ban on
-  group Skirmishers — the penalty is emergent (force, not fiat).
+- Vanguard catch pools Tempo (combined hold); Outrider crossing is min-Tempo (weakest link); no ban on
+  group Outriders — the penalty is emergent (force, not fiat).
 
 ### 4.6 Spell & ranged windows — Line, Fast, Slow 🟡 *(2026-06-23)*
 
@@ -1426,16 +1426,16 @@ ranged shot carries a **window tag** — printed on the card (and, once gear lan
 sets **when in resolution it lands**:
 
 - **Line** — resolves **with the Line** (Tier 1), as the vanguard clash settles.
-- **Fast** — resolves **early in the Open**, *before* the Skirmisher melee.
-- **Slow** — resolves **late in the Open**, *after* the Skirmisher melee.
+- **Fast** — resolves **early in the Open**, *before* the Outrider melee.
+- **Slow** — resolves **late in the Open**, *after* the Outrider melee.
 
-So the **Open (Tier 2) resolves in three ordered sub-windows — Fast ▸ Skirmisher melee ▸ Slow** — each a
+So the **Open (Tier 2) resolves in three ordered sub-windows — Fast ▸ Outrider melee ▸ Slow** — each a
 snapshot, order-independent within and strictly sequenced between (the §1.9 / §4 determinism property,
-now with two extra boundaries; deaths tally at each). A **Fast** reserve volley can pick off a Skirmisher
+now with two extra boundaries; deaths tally at each). A **Fast** Rearguard volley can pick off an Outrider
 *before* it strikes; a **Slow** finisher or Support mend lands *after* the dust settles.
 
 Targets for Fast / Slow effects are chosen **in the open** when the Open resolves — the same informed,
-face-up targeting the §4 Open already grants Skirmishers and Reserves, **not** a hidden held card (§4.4:
+face-up targeting the §4 Open already grants Outriders and Rearguards, **not** a hidden held card (§4.4:
 no information gradient). **Casting spends a Tempo card** — an *action* like a strike or a contest, so it
 competes with bids and strikes. **Multi-window cards are rare** and need a clear thematic reason; most
 print exactly one window. An **untagged** shot resolves in its natural tier as before (the tag is the
@@ -1451,7 +1451,7 @@ because it "resolves first" inside a window.
 
 **GUARANTEES.**
 - Three resolution windows — Line (Tier 1), Fast and Slow (the Open's first and last sub-windows),
-  pivoting on the Skirmisher melee; each snapshot-resolved, deaths tally at each boundary.
+  pivoting on the Outrider melee; each snapshot-resolved, deaths tally at each boundary.
 - The window tag is card / gear-printed; persistent buffs and debuffs are **not** windowed (Assemble
   standing cards, §4.4), preserving §1.9.
 - Casting is an action (spends Tempo); multi-window cards are rare and thematically justified.
@@ -1604,7 +1604,7 @@ resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
   defensive boost to the wall's block vs slips (§4.2 Focus). Seed +3.
 - **M3 — "cannot fall" this round** (Wall L5 *Last Stand*): while active, damage that would down the
   holder leaves it at **1 health** instead — it cannot be downed for the round.
-- **M4 — execute** (Infiltrator L5 *Assassinate*): a Damage card that, on hitting an enemy **Reserve**,
+- **M4 — execute** (Infiltrator L5 *Assassinate*): a Damage card that, on hitting an enemy **Rearguard**,
   **downs** that foe regardless of remaining health.
 - **M5 — `Curse` Modifier** (Controller L4): a passive that makes the owner's debuff cards
   (Slow / Confuse / Stagger) each hit **+1 additional foe** — the one instance of the Modifier mechanic
@@ -1777,7 +1777,7 @@ register (#10 conceptual integrity — each concept named once, for one job).
 **Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
 so the count is re-derivable, not arbitrary (#10):
 - **Three positional roles = the §4 counter-triangle's vertices:** **Wall = Vanguard** (hold the
-  front), **Infiltrator = Skirmisher** (break through the gauntlet), **Artillery = Reserve** (fire from
+  front), **Infiltrator = Outrider** (break through the gauntlet), **Artillery = Rearguard** (fire from
   safety).
   Three is the *minimal* counter-cycle — RPS needs exactly three.
 - **Two effect roles = the complete duality of state-bending:** **Support** *augments* your side (`+`:
@@ -1791,7 +1791,7 @@ and *how you bend state*) or an over-granular *split* of an existing role (refin
 against #6 / the small core).
 
 **GUARANTEES.**
-- The five roles are **`3 + 2`**: the §4 triangle's three positions (Vanguard / Skirmisher / Reserve =
+- The five roles are **`3 + 2`**: the §4 triangle's three positions (Vanguard / Outrider / Rearguard =
   Wall / Infiltrator / Artillery) plus the two effect directions (augment = Support, degrade =
   Controller) — *minimal-complete on both axes*, not an arbitrary list.
 - A character's roles = its assigned role-card tracks; they **accrete** (monotone, §0.1).

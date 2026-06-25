@@ -14,20 +14,20 @@
 > - **Per-role cap** is an *upper bound*: each character acts in **one** phase per round (the engine's
 >   one-action-per-round), so it naturally plays ≤1 role card/round — the cap is satisfied, not yet
 >   binding. The richer "god plays ~3/round" (§3.2) awaits a multi-play combat step (future work).
-> - **Card play** rides the phases, plus the **Muster** window (added 2026-06-20, Spec §4). Reserve and
->   Skirmish play their positional attack cards; **Muster** (at charge declaration, before the gauntlet)
+> - **Card play** rides the phases, plus the **Muster** window (added 2026-06-20, Spec §4). Rearguard and
+>   Outrider play their positional attack cards; **Muster** (at charge declaration, before the gauntlet)
 >   is where the persistent cards fire — a charging Wall's *Base* defenses (Brace/Rally/Last Stand), the
 >   Controller debuffs, and the Support buffs — so they shape the whole round. This closed the
 >   Vanguard-play gap (Wall Base cards now fire) and made the Controller suite bite (debuffs land *before*
->   the foe acts). The combat guide still routes Artillery/Controller/Support kits to the **Reserve** for
+>   the foe acts). The combat guide still routes Artillery/Controller/Support kits to the **Rearguard** for
 >   their post-gauntlet attacks.
 > - **Role passives are now live in the gauntlet/strike** (2026-06-20): Phalanx (+catch Drive),
 >   Shadowstep (win slip ties), Blitz (first slip free), Bodyguard (intercept a surplus charger), Taunt
->   (drawn to the front), Backstab/Assassinate (Reserve-strike riders). The four previously-inert effects
+>   (drawn to the front), Backstab/Assassinate (Rearguard-strike riders). The four previously-inert effects
 >   — Stagger, Shove, Disarm, Recover — are wired onto real cards (Dread, Slip Strike, Confuse, Steel)
 >   and carry round-scoped status (Spec §4 "Persistent status").
 > - **New effects** (Spec §5.6 M2–M6): `Guard` (Brace), `Lifeline`/cannot-fall (Last Stand, via
->   `combat::tally`), execute-on-Reserve (Assassinate, via the strike path like Backstab), the `Curse`
+>   `combat::tally`), execute-on-Rearguard (Assassinate, via the strike path like Backstab), the `Curse`
 >   Modifier (+1 debuff target, folded at `build_character`), and `targets: all` buffs (Sanctuary).
 > - **Reference scenario** (`reference.rs`) re-expressed in **role-track coverage** (no currency
 >   balances); the combat-band probe builds specialists from `rewards_for(track)`.
@@ -102,8 +102,8 @@ spectrum (full 25-card pool):
 - **5 specialists:** each holds its one role's 5 cards, plays ≤1/turn → **≈5 role cards/turn**, spread
   across **5 bodies / 5 positions** (resilience + coverage).
 - **1 god (holds all 25):** ≤1 *per role* → a ceiling of 5/turn — **but one body sits in one
-  position.** The three **positional** roles (Wall = Vanguard, Infiltrator = Skirmisher,
-  Artillery = Reserve, §8.5's `3 + 2`) are **mutually exclusive for a single body**, so the god can
+  position.** The three **positional** roles (Wall = Vanguard, Infiltrator = Outrider,
+  Artillery = Rearguard, §8.5's `3 + 2`) are **mutually exclusive for a single body**, so the god can
   realistically play **one positional + the two position-agnostic effect roles (Support, Controller)
   ≈ 3 role cards/turn**, chosen as the best 3 of 25.
 
@@ -325,7 +325,7 @@ together; and **permanent** assignment, if chosen for gameplay reasons, is at wo
   each role per lane round** (§4).
 - **D2 — positional coherence = *positional cards require their position*** (for now). ✅ Wall /
   Infiltrator / Artillery cards are playable only from the matching §4 position (Vanguard /
-  Skirmisher / Reserve); Support / Controller cards are position-agnostic — capping the god
+  Outrider / Rearguard); Support / Controller cards are position-agnostic — capping the god
   *emergently* (one body, one position). *Flagged for later exploration* (alternatives: an explicit
   cap, or no coherence) → [future-possibilities](future-possibilities.md) when revisited.
 
@@ -500,24 +500,24 @@ fn build_character(base, rewards) -> Actor {
 ```
 
 - **Play model (SD1 = Option 2 — distributed):** `PlayCard` legality extends to the **Slip**
-  (Vanguard) and **Skirmish** phases (Reserve already has it). A character plays its role cards in the
+  (Vanguard) and **Outrider** phases (Rearguard already has it). A character plays its role cards in the
   phase where it acts — positional cards gated by that phase = position; effect cards anywhere it acts.
   This **preserves the §4 information gradient**.
 - **Per-role-per-round cap (§4.4):** `Round` gains, per member, `roles_played: set<Track>` (reset each
   round). A role card is playable only if its `role` is not already in that member's `roles_played`.
 - **Positional coherence (§4.4):** a positional role card (role ∈ {Wall, Infiltrator, Artillery}) is
-  playable only when the member's current position matches (Vanguard / Skirmisher / Reserve); effect
+  playable only when the member's current position matches (Vanguard / Outrider / Rearguard); effect
   cards (Support / Controller) are position-agnostic. *(Falls out of the play model above.)*
 
 ### 9.5 Sub-decisions — all settled (2026-06-19)
 
 - **SD1 — card-play model = Option 2 (distributed; *cards ride the existing phases*).** ✅ A role card
   is played in the phase where its character **acts** — a holding Vanguard plays its **Wall** card in
-  the Vanguard step, a Skirmisher its **Infiltrator** card in Skirmish, a Reserve its **Artillery**
-  card in Reserve; **effect** cards (Support/Controller) play in whatever phase that character acts.
+  the Vanguard step, an Outrider its **Infiltrator** card in the Outrider phase, a Rearguard its **Artillery**
+  card in the Rearguard phase; **effect** cards (Support/Controller) play in whatever phase that character acts.
   Each character acts in one phase per round, so the per-role cap + positional gating fall out for
   free, **and the §4 information gradient is preserved** (the deciding factor over a single flattened
-  step). *Churn:* extend `PlayCard` legality to the Slip & Skirmish phases (Reserve already has it).
+  step). *Churn:* extend `PlayCard` legality to the Slip & Outrider phases (Rearguard already has it).
   → graduated to **Spec §4.4**.
 - **SD2 — assignment timing = Option A (*assign at unlock*).** ✅ On clearing track Y to level N, the
   newly-unlocked rewards `(Y, 1..N)` are assigned to characters **then**, permanently — the
@@ -568,18 +568,18 @@ is unchanged — clearing still unlocks; it just yields role cards, not currency
 - **L4** — Base·Lasting **Rally** : +Resolve to all allies (existing) | Stat(+2 body, +1 tough)
 - **L5** — Mode **Last Stand** (capstone, 2 cards) : *this round you cannot fall* + Taunt all + Steel the party | Stat(+4 body, +2 tough)
 
-### Infiltrator — *the unseen blade* (Skirmisher · slips walls, deletes the backline)
+### Infiltrator — *the unseen blade* (Outrider · slips walls, deletes the backline)
 - **L1** — Base **Slip Strike** : a mobile melee Damage | Stat(+2 speed)
 - **L2** — Passive **Blitz** : first slip each round is free (existing) | Stat(+1 speed, +1 power)
 - **L3** — Passive **Shadowstep** : ignore one blocker when slipping (existing) | Stat(+2 speed)
-- **L4** — Passive **Backstab** : bonus damage vs enemy Reserve (existing) | Stat(+2 power)
-- **L5** — Base **Assassinate** (capstone) : heavy Damage, *lethal to a Reserve target* | Stat(+2 power, +1 speed)
+- **L4** — Passive **Backstab** : bonus damage vs enemy Rearguard (existing) | Stat(+2 power)
+- **L5** — Base **Assassinate** (capstone) : heavy Damage, *lethal to a Rearguard target* | Stat(+2 power, +1 speed)
 
-### Artillery — *the long reach* (Reserve · ranged burst & AoE)
+### Artillery — *the long reach* (Rearguard · ranged burst & AoE)
 - **L1** — Base **Bolt** : ranged single-target Damage | Stat(+2 power)
 - **L2** — Base **Volley** : ranged AoE — Damage `targets:3` (existing) | Stat(+1 power, +1 precision)
 - **L3** — Base **Suppress** : strip enemy Tempo (existing) | Stat(+2 power)
-- **L4** — Passive **Longshot** : reach the enemy Reserve (existing) | Stat(+1 power, +1 precision)
+- **L4** — Passive **Longshot** : reach the enemy Rearguard (existing) | Stat(+1 power, +1 precision)
 - **L5** — Mode **Bombardment** (capstone) : heavy AoE — Damage `targets:5`, high power | Stat(+2 power)
 
 ### Controller — *the unmaker* (effect `−` · strips, slows, fears)
@@ -604,7 +604,7 @@ Backstab / Longshot) — just redistributed and re-statted. Genuinely **new** pi
 - **`Guard`** — a defensive "hold harder" effect (Wall L1).
 - **"cannot fall" this round** + the **Mode** mechanic generally (Wall L5 / Artillery L5 / Support L5 /
   Controller L5) — a played, mutually-exclusive-with-Base "charged" card.
-- **`lethal-to-Reserve`** on a Damage card (Infiltrator L5).
+- **`lethal-to-Rearguard`** on a Damage card (Infiltrator L5).
 - **Modifier** application — a passive that upgrades a named Base (Controller's **Curse**; the §3.4
   scaling option). *(This draft uses Modifiers sparingly — only Curse — per the "lean new-effect"
   dial stance, §9.1.)*

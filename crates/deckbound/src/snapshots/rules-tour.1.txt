@@ -1,5 +1,5 @@
 SCENARIO  rules-tour   seed=1   ruleset(max_rounds=5, max_unique=5)
-          all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, evade, defeat, refresh.
+          all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, rearguard fire, evade, defeat, refresh.
 
 FORM  each line is a card the build holds — Human baseline + treasures (ability + stat grant); the grants sum to Totals (§2.3 stats-as-deck)
 
@@ -85,8 +85,8 @@ FOES
     staggers Seer (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-RANKS    heroes — vanguard: Anvil, Vow   skirmisher: Wisp   reserve: Sear, Hex
-         foes   — vanguard: Husk   skirmisher: —   reserve: Brute, Raider, Slinger, Seer
+RANKS    heroes — vanguard: Anvil, Vow   outrider: Wisp   rearguard: Sear, Hex
+         foes   — vanguard: Husk   outrider: —   rearguard: Brute, Raider, Slinger, Seer
     Anvil hits Husk: 3 might — turns 3 health cards face down. [health 119/122]
     Vow hits Husk: 3 might — turns 3 health cards face down. [health 116/122]
     Husk hits Anvil: 2 might — damage accumulates. [health 18/18]
@@ -135,8 +135,8 @@ ENDROUND heroes: Anvil 18/18  Wisp 1/5  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: B
     staggers Husk (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-RANKS    heroes — vanguard: Anvil, Vow   skirmisher: Wisp   reserve: Sear, Hex
-         foes   — vanguard: —   skirmisher: —   reserve: Husk
+RANKS    heroes — vanguard: Anvil, Vow   outrider: Wisp   rearguard: Sear, Hex
+         foes   — vanguard: —   outrider: —   rearguard: Husk
   Wisp slips an unguarded gap.
     Anvil hits Husk: 3 might — turns 3 health cards face down. [health 31/122]
     Anvil hits Husk: 3 might — turns 3 health cards face down. [health 28/122]
@@ -167,7 +167,7 @@ CARDS USED   (every card played, plus the chargers' weapons and powers)
   Power   Taunt          [Iron L5]   passive power                   (carried by Anvil)
 
 GLOSSARY   (what the rulebook says about each keyword above)
-  Backstab               Bonus damage when this Skirmisher strikes an enemy Reserve.
+  Backstab               Bonus damage when this Outrider strikes an enemy Rearguard.
   Blitz                  The first slip each round is free — it costs no Tempo.
   Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
   Damage (Might)         Deals 0 untyped Might. It accumulates into the round's pile; each time the pile clears the target's Toughness bar, one Health card turns face down (pile → bar → pool, §2.2); Force scales this.
@@ -176,7 +176,7 @@ GLOSSARY   (what the rulebook says about each keyword above)
   Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 health (M3).
   Mend                   Restores 4 Health cards to the most-wounded ally (a Mend).
   Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.
-  Rout                   Drives the target from the line to the Reserve this round (a Rout) — a Controller status (§4).
+  Rout                   Drives the target from the line to the Rearguard this round (a Rout) — a Controller status (§4).
   Shadowstep             Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.
   Stagger                On a landed hit, the target loses its action this round.
   Taunt                  Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.

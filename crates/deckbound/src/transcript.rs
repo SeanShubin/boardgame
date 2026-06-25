@@ -53,7 +53,7 @@ pub struct TranscriptScenario {
 
 /// The catalogue of transcribable scenarios. Starts deliberately small: a single **rules tour** that
 /// exercises the core machinery (rank allocation, Muster, the gauntlet's slip / hold / parting-hit, the
-/// Skirmish and Reserve strikes, evade, defeat, refresh, outcome). The per-skill and power-scaling
+/// Outrider and Rearguard strikes, evade, defeat, refresh, outcome). The per-skill and power-scaling
 /// scenarios are later additions.
 pub fn transcript_scenarios() -> Vec<TranscriptScenario> {
     vec![rules_tour()]
@@ -78,7 +78,7 @@ fn rules_tour() -> TranscriptScenario {
     let heroes = vec![
         named("Anvil", Currency::Iron), // Wall: holds the armored front against the chargers
         named("Wisp", Currency::Silver), // Infiltrator: slips past the line to the ranged backfield
-        named("Sear", Currency::Brass), // Artillery: cracks plate and fires from the Reserve
+        named("Sear", Currency::Brass), // Artillery: cracks plate and fires from the Rearguard
         named("Hex", Currency::Bone),   // Controller: fears the line into the control ladder
         named("Vow", Currency::Salt),   // Support: heals the line through the attrition
     ];
@@ -104,7 +104,7 @@ fn rules_tour() -> TranscriptScenario {
     ];
     TranscriptScenario {
         name: "rules-tour",
-        blurb: "all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, reserve fire, evade, defeat, refresh.",
+        blurb: "all five Suits in one fight — Wall holds the front, Infiltrator slips to the backfield, Artillery cracks the tough front, Controller debuffs (Stagger / Shove / Rout), Support heals — over ranks, Muster, slip/hold/parting-hit, rearguard fire, evade, defeat, refresh.",
         heroes,
         foes,
         ruleset: Ruleset::analysis(),
@@ -318,8 +318,8 @@ fn form_block(a: &Actor) -> String {
 /// Who ran the gauntlet vs held back, per side (read after Deploy resolves it).
 fn ranks_summary(state: &State) -> String {
     // The §4 Assemble declares **three** ranks (Spec §4): a charger that holds is a **Vanguard**, a
-    // charger that flanks is a **Skirmisher**, a non-charger is a **Reserve**. (A unit Routed at Muster
-    // is driven to the Reserve — its charge flag is cleared, b2.) Show all three, not a charged/held
+    // charger that flanks is an **Outrider**, a non-charger is a **Rearguard**. (A unit Routed at Muster
+    // is driven to the Rearguard — its charge flag is cleared, b2.) Show all three, not a charged/held
     // binary, so the line matches the rank the rules assign.
     let split = |pool: &[Actor], charging: &[bool], flank: &[bool]| {
         let pick = |f: &dyn Fn(usize) -> bool| {
@@ -331,17 +331,17 @@ fn ranks_summary(state: &State) -> String {
         };
         // A charger was *declared* this round (the plan resets each round and only living units are
         // assigned), so show it in its rank even if it then fell in the gauntlet — that keeps the line
-        // consistent with the crossing/clash log below it. Only the Reserve filters the dead, to drop
+        // consistent with the crossing/clash log below it. Only the Rearguard filters the dead, to drop
         // prior-round casualties (which carry the reset all-false flags).
         let vanguard = pick(&|i| charging[i] && !flank[i]);
-        let skirmisher = pick(&|i| charging[i] && flank[i]);
-        let reserve = pick(&|i| !charging[i] && !pool[i].fallen);
+        let outrider = pick(&|i| charging[i] && flank[i]);
+        let rearguard = pick(&|i| !charging[i] && !pool[i].fallen);
         let cell = |s: String| if s.is_empty() { "—".to_string() } else { s };
         format!(
-            "vanguard: {}   skirmisher: {}   reserve: {}",
+            "vanguard: {}   outrider: {}   rearguard: {}",
             cell(vanguard),
-            cell(skirmisher),
-            cell(reserve),
+            cell(outrider),
+            cell(rearguard),
         )
     };
     format!(
@@ -619,10 +619,10 @@ mod tests {
         // The rules tour must exercise the machinery it claims to, and carry its reference sections.
         for marker in [
             "SCENARIO",
-            "RANKS", // the §4 Assemble rank allocation (Vanguard / Skirmisher / Reserve)
-            "skirmisher:", // the rank line names all three ranks, not a charged/held binary
-            "crossing:", // a Skirmisher's card-bound crossing contest (§4 the Line)
-            "ENDROUND", // at least two rounds — refresh happened
+            "RANKS",     // the §4 Assemble rank allocation (Vanguard / Outrider / Rearguard)
+            "outrider:", // the rank line names all three ranks, not a charged/held binary
+            "crossing:", // an Outrider's card-bound crossing contest (§4 the Line)
+            "ENDROUND",  // at least two rounds — refresh happened
             "OUTCOME",
             "CARDS USED",
             "GLOSSARY",
