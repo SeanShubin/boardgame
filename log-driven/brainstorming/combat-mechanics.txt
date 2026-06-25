@@ -1,0 +1,16 @@
+Working on another simplication pass on the combat system, see if you can puzzle out what I am getting at here.  I think it has a lot of the same consequences of the current combat system, just with simpler mechancis.
+First we choose who is grouped up
+Then we choose which groups start in Vanguard and which start in Rearguard
+Then simultaneous reveal
+Start phase 1:
+Then we just grind down an everybody vs. everybody targeting free for all with the following rules
+Nobody can target enemy rearguard.
+Friendlys can target any friendly with automatic success (buffs only, we are not introducing mechanics that harm own team)
+Groups can evade attacks automatically via the slip/range defense mechancis
+Accumulated effects of a group are locked when everyone decides no more intractions will happen with them (usually because one side is dead and can't be healed, or everyone involved ran out of tempo).
+End of phase 1: resovle all effects
+Start of phase 2:
+Same free for all except now enemy rearguard is fair game.
+
+
+Groups no loger take damage per card that caused, it.  Accumulated damage is applied in order point by point, spilling over to the next in group when previous can no longer absorb it.

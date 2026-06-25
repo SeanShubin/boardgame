@@ -76,13 +76,13 @@ A counter system is a set of elements with defined win/loss relationships betwee
 
 **What it is:** The number of distinct pairwise relationships a player must internalize. For n elements with no ties and no symmetry shortcuts, this is n(n-1)/2.
 
-| Elements (n) | Matchups to learn |
-|---|---|
-| 3 (RPS) | 3 |
-| 5 (RPSLS) | 10 |
-| 7 | 21 |
-| 9 | 36 |
-| 18 (Pokémon types) | 153 |
+| Elements (n)       | Matchups to learn |
+| ------------------ | ----------------- |
+| 3 (RPS)            | 3                 |
+| 5 (RPSLS)          | 10                |
+| 7                  | 21                |
+| 9                  | 36                |
+| 18 (Pokémon types) | 153               |
 
 **Why it is last:** Cognitive load does not affect mathematical balance at all. A 101-element regular tournament is perfectly balanced. But players cannot engage with a system they cannot learn. There is a hard tradeoff: more elements increases strategic richness but increases learning cost quadratically.
 
@@ -92,14 +92,14 @@ A counter system is a set of elements with defined win/loss relationships betwee
 
 ## Summary Table
 
-| # | Concern | Violation Consequence | Measurable As |
-|---|---|---|---|
-| 1 | No Condorcet Winner | System collapses to one element | Copeland score distribution |
-| 2 | Regularity | Some elements strictly better | Out-degree variance |
-| 3 | Uniform Nash Equilibrium | Dominant strategies exist | Distance of p* from uniform |
-| 4 | Strong Connectivity | System fragments into sub-games | SCC count |
-| 5 | Hamiltonian Cycle | Harder to learn, less elegant | Cycle existence check |
-| 6 | Cognitive Load | Players cannot engage | n(n-1)/2 |
+| #   | Concern                  | Violation Consequence           | Measurable As               |
+| --- | ------------------------ | ------------------------------- | --------------------------- |
+| 1   | No Condorcet Winner      | System collapses to one element | Copeland score distribution |
+| 2   | Regularity               | Some elements strictly better   | Out-degree variance         |
+| 3   | Uniform Nash Equilibrium | Dominant strategies exist       | Distance of p* from uniform |
+| 4   | Strong Connectivity      | System fragments into sub-games | SCC count                   |
+| 5   | Hamiltonian Cycle        | Harder to learn, less elegant   | Cycle existence check       |
+| 6   | Cognitive Load           | Players cannot engage           | n(n-1)/2                    |
 
 ---
 

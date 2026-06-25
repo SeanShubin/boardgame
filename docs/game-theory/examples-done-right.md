@@ -196,13 +196,13 @@ Healthy formats show all three archetypes represented roughly equally at top lev
 
 ## Common Properties of the Done-Right Examples
 
-| Property | RPS | RPSLS | Fire Emblem | StarCraft | Magic |
-|---|---|---|---|---|---|
-| No Condorcet Winner | ✓ | ✓ | ✓ | ✓ (empirical) | ✓ (approximate) |
-| Regular | ✓ | ✓ | ✓ | ✓ (empirical) | ✓ (approximate) |
-| Uniform Nash | ✓ exact | ✓ exact | ✓ (symmetric bonus) | ✓ (empirical) | ✓ (approximate) |
-| Odd n | ✓ (3) | ✓ (5) | ✓ (3) | ✓ (3) | ✓ (3) |
-| Hamiltonian Cycle | ✓ | ✓ | ✓ | N/A — goal is equality, not a cycle | at archetype level only |
-| Nested counter systems | n/a | n/a | partial | ✓ (strategic + unit levels) | ✓ (archetype + deck levels) |
+| Property               | RPS     | RPSLS   | Fire Emblem         | StarCraft                           | Magic                       |
+| ---------------------- | ------- | ------- | ------------------- | ----------------------------------- | --------------------------- |
+| No Condorcet Winner    | ✓       | ✓       | ✓                   | ✓ (empirical)                       | ✓ (approximate)             |
+| Regular                | ✓       | ✓       | ✓                   | ✓ (empirical)                       | ✓ (approximate)             |
+| Uniform Nash           | ✓ exact | ✓ exact | ✓ (symmetric bonus) | ✓ (empirical)                       | ✓ (approximate)             |
+| Odd n                  | ✓ (3)   | ✓ (5)   | ✓ (3)               | ✓ (3)                               | ✓ (3)                       |
+| Hamiltonian Cycle      | ✓       | ✓       | ✓                   | N/A — goal is equality, not a cycle | at archetype level only     |
+| Nested counter systems | n/a     | n/a     | partial             | ✓ (strategic + unit levels)         | ✓ (archetype + deck levels) |
 
 The odd-n requirement shows up in every clean example. The two empirical examples (StarCraft, Magic) both use 3 archetypes — designers converging on the same mathematical constraint independently. Notably, StarCraft and Magic do not aim for a Hamiltonian cycle at the top level; their RPS structure lives at nested levels beneath faction/archetype identity, where equality (not a counter cycle) is the correct goal. See `nested-counter-systems.md` for the full analysis of this distinction.

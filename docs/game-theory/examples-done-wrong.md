@@ -16,18 +16,18 @@ The Gen 9 system has 18 types. Each attacking type has a multiplier against each
 
 For each type, count how many types it hits super-effectively (>1x) vs. how many resist or are immune:
 
-| Type | Super-effective vs. | Resisted/Immune by | Net |
-|---|---|---|---|
-| Ground | 5 | 3 + 1 immune | +1 |
-| Fighting | 5 | 3 + 1 immune | +1 |
-| Fire | 6 | 4 | +2 |
-| Normal | 0 | 1 + 1 immune | -2 |
-| Bug | 3 | 7 | -4 |
-| Rock | 5 | 4 | +1 |
-| Ice | 4 | 1 | +3 |
-| Dragon | 1 | 1 | 0 |
-| Fairy | 3 | 1 | +2 |
-| Steel | 3 | 10 | -7 |
+| Type     | Super-effective vs. | Resisted/Immune by | Net |
+| -------- | ------------------- | ------------------ | --- |
+| Ground   | 5                   | 3 + 1 immune       | +1  |
+| Fighting | 5                   | 3 + 1 immune       | +1  |
+| Fire     | 6                   | 4                  | +2  |
+| Normal   | 0                   | 1 + 1 immune       | -2  |
+| Bug      | 3                   | 7                  | -4  |
+| Rock     | 5                   | 4                  | +1  |
+| Ice      | 4                   | 1                  | +3  |
+| Dragon   | 1                   | 1                  | 0   |
+| Fairy    | 3                   | 1                  | +2  |
+| Steel    | 3                   | 10                 | -7  |
 
 *Selected types for illustration; full analysis requires the complete matrix.*
 
@@ -351,14 +351,14 @@ The correct way to increase variety without diluting depth is to keep faction co
 
 ## Common Properties of the Done-Wrong Examples
 
-| Property | Pokémon Types | Brawl Meta Knight | MTG Urza's | Yu-Gi-Oh | Warcraft III | Soulstorm |
-|---|---|---|---|---|---|---|
-| Condorcet Winner | Near (Dragon) | Yes | Yes (Combo) | Yes (per format) | No | No |
-| Regular | No | No | No | No | No (even n) | No (in practice) |
-| Uniform Nash | No | No | No | No | No | No |
-| Primary failure | Irregularity + immunities | Single dominant character | Archetype imbalance | No structural cycle | Even-n floor | Budget dilution |
-| Fix Required | Fairy type added | Community ban | Emergency bans | Perpetual ban list | Unsolvable | Sustained investment |
-| Fix Type | Structural (new element) | Social/rule | Card bans | Card bans | None available | Economic |
-| Structural fix? | Yes | No | Partial | No | No | Partial (patches) |
+| Property         | Pokémon Types             | Brawl Meta Knight         | MTG Urza's          | Yu-Gi-Oh            | Warcraft III   | Soulstorm            |
+| ---------------- | ------------------------- | ------------------------- | ------------------- | ------------------- | -------------- | -------------------- |
+| Condorcet Winner | Near (Dragon)             | Yes                       | Yes (Combo)         | Yes (per format)    | No             | No                   |
+| Regular          | No                        | No                        | No                  | No                  | No (even n)    | No (in practice)     |
+| Uniform Nash     | No                        | No                        | No                  | No                  | No             | No                   |
+| Primary failure  | Irregularity + immunities | Single dominant character | Archetype imbalance | No structural cycle | Even-n floor   | Budget dilution      |
+| Fix Required     | Fairy type added          | Community ban             | Emergency bans      | Perpetual ban list  | Unsolvable     | Sustained investment |
+| Fix Type         | Structural (new element)  | Social/rule               | Card bans           | Card bans           | None available | Economic             |
+| Structural fix?  | Yes                       | No                        | Partial             | No                  | No             | Partial (patches)    |
 
 Warcraft III and Soulstorm represent a different category of failure from the others. Pokémon, Brawl, MTG, and Yu-Gi-Oh all had balance problems that were in principle correctable (even if some required external enforcement). Warcraft III's four-faction structure guarantees a non-zero Copeland variance floor that no patch can reduce to zero — the best achievable outcome is managing the degree of imbalance, not eliminating it. Soulstorm's failure is economic: the system is theoretically balanced at n=9 odd, but achieving that balance in practice required a development investment that was not available.

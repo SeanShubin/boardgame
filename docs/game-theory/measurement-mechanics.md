@@ -300,11 +300,11 @@ Ideal = 0. Each immunity is a hard-counter relationship that breaks tournament s
 
 ## Quick Reference: Which Measure for Which Question
 
-| Question | Measure |
-|---|---|
-| "Is one element dominating play?" | Copeland scores |
-| "Are all elements equally viable?" | Nash distance from uniform |
-| "Is the system structurally balanced?" | Out-degree variance |
-| "Does the system hang together as one game?" | SCC count |
-| "Can a player learn this system efficiently?" | Hamiltonian cycle + cognitive load |
+| Question                                              | Measure                                 |
+| ----------------------------------------------------- | --------------------------------------- |
+| "Is one element dominating play?"                     | Copeland scores                         |
+| "Are all elements equally viable?"                    | Nash distance from uniform              |
+| "Is the system structurally balanced?"                | Out-degree variance                     |
+| "Does the system hang together as one game?"          | SCC count                               |
+| "Can a player learn this system efficiently?"         | Hamiltonian cycle + cognitive load      |
 | "How bad are the hard counters in a weighted system?" | Immunity count + attack/defense balance |

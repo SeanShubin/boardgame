@@ -1,0 +1,75 @@
+I want to focus on the combat logs representing the card system.
+Lets say I have 3 copies of each card with only a name on it, this represents the character identity.
+The names I am going with are Bram,Torvald,Garrick,Vesper,Sable,Corvin,Lyle,Wren,Robin
+Let's say I have a 4v4 battle
+It is Bram,Torvald,Garrick,Corvin vs Garrick,Sable,Wren,Robin.
+On the overworld map, I pick up the 4 identity cards and put them in the same place as the other 4 identity cards.
+Then on my side of the table, I have a character deck that looks like this
+
+Bram
+Might 3
+Vitality 4
+Toughness 3
+Cadence 2
+Finesse 5
+Torvald
+Might 3
+Vitality 4
+Toughness 3
+Cadence 2
+Finesse 5
+Vesper
+Might 3
+Vitality 4
+Toughness 3
+Cadence 2
+Finesse 5
+Lyle
+Might 3
+Vitality 4
+Toughness 3
+Cadence 2
+Finesse 5
+
+And i have my identity deck that looks like this
+
+Bram
+Torvald
+Garrick
+Corvin
+
+Lets assume for now we have a physical card for every number.   In the actual game I might use a base 2 system for number cards.
+Now we enter combat.  At this point the combat log starts.  Let's also assume I have generic cards for the combat positions and joining characters into groups.  The combat position terms I am using are Vanguard · Outrider · Rearguard
+
+
+I arrange my identity deck like so
+
+
+Vanguard
+Garrick
+Join
+Sable
+Outrider
+Wren
+Rearguard
+Robin
+
+
+Then during simultaneous reveal, we go from 1 dimensional decks to the 2 dimensional table, the "-" indciate the cards are flush with each other
+
+Vanguard   Garrick-Sable
+Outrider   Wren
+Rearguard  Robin
+
+So here I have 7 physical cards on the table.
+
+
+Assemble: Assign cards to ranks, in order
+Pair off: First vanguard group on each side matches up with each other, then second, and so on.  Groups without pairing partner are moved to the Outrider rank, preserve order, append to end
+
+
+  2. Tier 1 — the Line — resolved from the start-of-round snapshot: Vanguards strike across, and each Skirmisher's crossing contest (advance vs hold) resolves. Deaths tally at the tier boundary.
+  3. Tier 2 — the Open — resolved from the post-Line snapshot, in three ordered sub-windows:
+    - Fast (fast-tagged spells/ranged — can soften before the melee)
+    - Skirmisher melee (crossed skirmishers strike; a Vanguard whose foe is dead pours through)
+    - Slow (slow-tagged spells/ranged — finishers, Support mends)

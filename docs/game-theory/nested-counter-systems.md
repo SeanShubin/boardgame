@@ -167,11 +167,11 @@ The result is not just weak inter-faction balance. It is shallow intra-faction d
 
 ## Design Principle Summary
 
-| Level | Goal | If Done Right | If Done Wrong |
-|---|---|---|---|
-| Macro (faction) | Equality — uniform Nash, no Condorcet | Faction is personal expression; skill dominates | Faction becomes a strategic calculation; meta collapses |
-| Mid (strategy) | RPS cycle within each matchup | Every game feels fresh; reads are rewarded | Dominant build exists; games become rote |
-| Micro (unit) | Explicit counter chains | Tactical decisions are meaningful | Either trivially clear or chaotic; micro skill doesn't matter |
+| Level           | Goal                                  | If Done Right                                   | If Done Wrong                                                 |
+| --------------- | ------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| Macro (faction) | Equality — uniform Nash, no Condorcet | Faction is personal expression; skill dominates | Faction becomes a strategic calculation; meta collapses       |
+| Mid (strategy)  | RPS cycle within each matchup         | Every game feels fresh; reads are rewarded      | Dominant build exists; games become rote                      |
+| Micro (unit)    | Explicit counter chains               | Tactical decisions are meaningful               | Either trivially clear or chaotic; micro skill doesn't matter |
 
 The key principle: **the RPS structure belongs at the strategic and unit levels, not the faction level.** Factions should be different, not countering. The depth comes from what happens inside the game, not from which faction you chose before it started.
 
