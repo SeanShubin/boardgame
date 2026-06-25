@@ -118,37 +118,42 @@ Toughness, Finesse, Vitality, Cadence) go back into the **character deck**.
 Both backs are protected, so **every attack lands on an enemy Vanguard.** A's three
 front bodies and Corvin pound B's `[Vesper=Sable]` group; B's two cannons (Wren,
 Robin) fire over their line at A's front. All bids are committed simultaneously;
-resolved together (order-independent, §1.9). Notation: `bid vs block → result`.
+resolved together (order-independent, §1.9).
+
+**Each defender picks one of three responses** (Spec §3.4), labelled in the log:
+- **AVOID** — spend Tempo to **beat** the bid; the blow whiffs, nobody's hurt (block / dodge / slip / evade).
+- **STRIKE-BACK** — spend Tempo to **counter**: a mutual trade — the blow still lands *and* you deal your Might back.
+- **EAT** — spend nothing; take the Might, deal nothing back (conserve Tempo).
 
 **A → B's front** (target the `[Vesper=Sable]` group; single-target damage **spills**
 to Vesper first):
 
 ```
-  Corvin → (Vesper=Sable)   bid 1×F5 = 5   (Vesper=Sable) SUM-blocks: Vesper 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
-  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   the pair is low on Tempo, EATS → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
-  Torvald → (Vesper=Sable)     bid 1×F2 = 2   Sable blocks 1×F4 = 4 > 2  → BLOCKED  (Might 5 stopped by one cheap card —
-                                  low Finesse means a big blow is easy to turn until the defender runs dry)
+  Corvin → (Vesper=Sable)      bid 1×F5 = 5   AVOID        sum-block 3+4 = 7 > 5 → whiffs, no damage
+  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   EAT          conserve Tempo → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
+  Torvald → (Vesper=Sable)     bid 1×F2 = 2   STRIKE-BACK  Sable counters → Torvald's Might 5 ▸ Vesper → FLIP,
+                                              and Sable's Might 4 ▸ Torvald pile 4 ≥ T3 → FLIP  (both lose a card)
 ```
 
-**B → A's front** (cannons fire; A blocks):
+**B → A's front** (cannons fire; melee can't strike back at range — A only eats or evades):
 
 ```
-  Robin → Garrick(A)        bid 1×F5 = 5   Garrick(A) blocks 2×F4 = 8 > 5  → BLOCKED (Garrick(A) now tapped)
-  Wren  → [Bram=Torvald]    bid 1×F3 = 3   they SUM-block: Bram 1×3 + Torvald 1×2 = 5 > 3  → BLOCKED
+  Robin → Garrick(A)        bid 1×F5 = 5   AVOID  Garrick(A) evades 2×F4 = 8 > 5 → no damage (now tapped)
+  Wren  → [Bram=Torvald]    bid 1×F3 = 3   EAT    Might 3 ▸ Bram pile 3 < T4 → no flip (the tank shrugs it)
 ```
 
-Board after Phase 1 (only Vesper took damage; everyone else blocked, bleeding
-Tempo to do it):
+Board after Phase 1 (the trade cost Torvald a card too; everyone else evaded, ate, or
+shrugged it — all bleeding Tempo):
 
 ```
-SIDE A   Bram   h[......] t[X.]   Torvald h[....] t[X.]   Garrick h[....] t[XX.] (tapped)   Corvin h[...] t[X...]
-SIDE B   Vesper h[X...] t[X.]     Sable  h[...] t[X..]    Wren h[.....] t[X.]    Robin h[...] t[X..]
+SIDE A   Bram   h[......] t[..]   Torvald h[X...] t[X.]   Garrick h[....] t[XXX] (tapped)   Corvin h[...] t[X...]
+SIDE B   Vesper h[XX..] t[X.]     Sable  h[...] t[XX.]    Wren h[.....] t[X.]    Robin h[...] t[X..]
 ```
 
-**No Vanguard fell → no Phase 2 this round.** B's front is intact but down a Health
-card and low on Tempo; A spent most of its Tempo *defending* and lands only a chip.
-This is the attrition: a thin, grouped front holds *one* round by sum-blocking, but
-it's bleeding — and **Health doesn't heal.**
+**No Vanguard fell → no Phase 2 this round.** Both fronts are chipped (Vesper −2,
+Torvald −1) and Tempo's been bled all round — Garrick(A) tapped, the pair down to its
+last card. Nobody's back opened; but the Health that's gone **doesn't heal**, and the
+thin grouped front is bleeding fastest.
 
 ### Refresh
 
@@ -183,6 +188,16 @@ shield broke first — and a cannon with no shield and no Tempo is **just a targ
 A had instead arrived at the open back with an **empty tank** (all its Tempo spent
 breaking the line), Robin would have evaded and lived to fire next round. *That* tension
 — breaking the front vs. having anything left to cash it in — is the whole model.
+
+**On reaching the back — your note, checked against §4.** The spec is **all-or-nothing,
+not per-attacker:** a side's Rearguard is untargetable *while **any** of its Vanguard
+lives*, so the back opens only once the **entire** enemy front is gone — and at that point
+no living front unit is left to keep an attacker "stuck." Phase 1 is an explicit
+**free-for-all** with **no** persistent engagement lock, so the spec has **no** rule that
+an attacker who finished its own Phase-1 fight may slip to the back while *other* enemy
+front units still stand. Your "B is stuck unless its own engagements are resolved" model
+is **stricter / more granular** — it would let a *partial* front-break leak some attackers
+through. A real fork (flagged below).
 
 ---
 
@@ -220,3 +235,8 @@ layer is next touched:
   pools) stay **visible** on the table; it's the **Vitality & Cadence stat cards** that
   tuck **under the identity card** (the digital version reveals them on click). After the
   battle, state cards return to the generic pile; the stat cards go back to the deck.
+- **Per-unit Phase-2 access (open fork)** — the spec opens the back **all-or-nothing**
+  (untargetable while *any* enemy Vanguard lives). Alternative raised here: a *partial*
+  front-break lets an attacker reach the back **iff its own Phase-1 engagements are
+  resolved** (never engaged, or all its engaged foes dead), else it's stuck. More
+  granular; decide whether partial breaks should leak attackers through before §4 locks.
