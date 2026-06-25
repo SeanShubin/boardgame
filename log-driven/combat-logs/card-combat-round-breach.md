@@ -40,7 +40,7 @@ SIDE B
 
 ---
 
-## Phase 0 — Blind bid (1-D decks, hidden)
+## Blind bid — the hidden commit (1-D decks)
 
 Each side stacks its identity deck with position + Join cards, and queues any slow
 spell face-down. Hidden until the Standoff.
@@ -55,7 +55,7 @@ SIDE A deck            SIDE B deck
   Corvin                 Robin  (+ slow AoE spell card, face-down)
 ```
 
-## Phase 1 — The Standoff (reveal; Standing effects land)
+## The Standoff (reveal; Standing effects land)
 
 Decks reveal into the 2-D table; positions lock. No Standing buffs are bid this round,
 so nothing auto-lands — the lines simply face off.
@@ -75,7 +75,7 @@ Wren's quick arrows (instant, can fire every phase) and Robin's slow area spell.
 
 ---
 
-## Phase 2 — The Fray (front clash: melee + instant ranged, simultaneous)
+## The Fray (front clash: melee + instant ranged, simultaneous)
 
 **Before:** the Standoff table above (all pools fresh).
 
@@ -113,7 +113,7 @@ Breach    FREE: Garrick (Vesper dead)     LOCKED: Bram, Torvald (→ Sable, aliv
 
 ---
 
-## Phase 3 — The Volley (free Vanguards charge; the rear answers *first* — pre-empt)
+## The Volley (free Vanguards charge; the rear answers *first* — pre-empt)
 
 **At the start of the Volley, B commits its slow spell:** Robin casts its **AoE at A's
 Vanguard line**, paying **2 Tempo** up front — the card goes face-up to the **Deferred**
@@ -156,7 +156,7 @@ Charge    Garrick → Robin  (survived the Volley → strikes in the Breach)
 
 ---
 
-## Phase 4 — The Breach (survivors land their blows)
+## The Breach (survivors land their blows)
 
 **Before:** the Volley "after" — Garrick weathered the pre-empt; Robin's dodge failed and
 it is out of Tempo.
@@ -181,7 +181,7 @@ Deferred  Robin → A-Vanguard (slow AoE)   ⚠ caster dead
 
 ---
 
-## Phase 5 — The Reckoning (deferred spells resolve last)
+## The Reckoning (deferred spells resolve last)
 
 **Before:** the Breach "after" — the Deferred queue still holds Robin's AoE, but its
 caster is gone.
@@ -205,7 +205,7 @@ Deferred  (resolved → fizzled, empty)
 
 ---
 
-## Phase 6 — The Lull (refresh)
+## The Lull (refresh)
 
 **Actions:** every spent `tempo` card flips back up (Tempo refills); **Health stays
 flipped** (persists); round++.

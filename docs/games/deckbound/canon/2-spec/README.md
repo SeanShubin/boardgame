@@ -1491,6 +1491,14 @@ surviving enemy Vanguard (legal, expected rare). A **locked** Vanguard stays pin
 it, **strike back** (if it carries melee), or **counter-fire** a ranged shot — any §3.4 response — all from
 the shared pool, all in the **Volley**, so all **pre-empt** the charger's Breach blow.
 
+**RULE — flanking intercepts.** A **free** Vanguard may, in the **Volley**, **flank** a surviving enemy
+Vanguard instead of charging a rear (legal, expected rare). A flank is **adjacent melee, not a charge across
+a gap**, so flanker and target **trade** — both land, no pre-empt between them (the PRINCIPLE: same phase =
+trade). But because the flank sits in the **Volley — before the Breach —** a flank that **kills** its target
+**intercepts:** if that target was itself **charging**, it is dead at the Volley boundary, so its Breach
+charge is **precluded**. So a freed Vanguard can **gang a survivor** *or* **cut down an enemy breakthrough
+before it lands**. (Supersedes "resolves like any charge.")
+
 **RULE — disrupt.** Default disrupt = **kill the caster in the Breach before the Reckoning** (no caster, no
 spell). Beyond that, dedicated **non-lethal disruption** effects (stagger / silence / unseat) may **cancel
 or delay** a deferred spell **without** a kill. Both routes cash out in the same place: a deferred spell
@@ -1517,6 +1525,9 @@ rear that dumps Tempo answering the Volley has less left for the spell, and vice
   locker; nothing after the Fray changes who may charge.
 - **Pre-empt:** in the Volley the rear's answer (counter-fire / strike-back / dodge) resolves **before** the
   charger's Breach blow — it can stop the charge cold.
+- **Flank intercepts:** a flank *trades* (both land), but resolving in the Volley means a flank-**kill**
+  silences the target's own Breach charge — a freed Vanguard can intercept a breakthrough, not just gang a
+  survivor.
 - **Instant in both engagements:** a card usable in the Fray is usable again in the Volley (shared Tempo).
 - **Disrupt window:** a breacher's Breach damage resolves **before** the Reckoning, so killing (or
   non-lethally disrupting) a caster fizzles its deferred spell.
@@ -1531,11 +1542,6 @@ rear that dumps Tempo answering the Volley has less left for the spell, and vice
   reads too ranged.
 - **When deferred spells are *committed*** — assumed paid up front (in the Fray, or at the start of the
   Volley) so the charge can threaten them; confirm the exact commit moment.
-- **Flank resolution (settled by the PRINCIPLE above).** A flank is **adjacent melee, not a charge across a
-  gap**, so by the principle it resolves as a **same-phase trade** — flanker and target both land,
-  order-independent — **not** a Volley pre-empt. (Supersedes the earlier "resolves like any charge.")
-  Remaining tidiness-only detail: whether that trade is bookkept in the Volley or the Breach is immaterial
-  (both land regardless); pick one.
 
 *(Worked round exercising all six phases: `log-driven/combat-logs/card-combat-round-breach.md`.)*
 

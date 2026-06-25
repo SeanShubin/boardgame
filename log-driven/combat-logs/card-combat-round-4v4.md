@@ -1,9 +1,12 @@
-# Card-system combat log — a 4v4 round (attrition model)
+# Card-system combat log — a 4v4 round (the front holds)
 
-A worked physical-card walkthrough on the **two-position attrition model** (Spec §4,
-2026 — supersedes static ranks). Overworld pickup → decks → blind-bid reveal →
-flippable pools → a full round (blind bid → Phase 1 → refresh), then a Phase-2
-illustration once a front falls. Cards only; every number is a card.
+A worked physical-card walkthrough on the **six-phase round** (Spec §4 / §4.6, 2026 —
+supersedes static ranks). This is the **front-holds / attrition** case: overworld pickup →
+decks → blind-bid reveal → flippable pools → a full round whose front does **not** break
+(**Standoff → Fray → empty Volley / Breach → Lull**), then an illustration of a later round
+where a front *does* fall and the **per-unit lock** opens the back. Its focus is **groups**
+(sum-block, weakest-link evade, spillover) and the **three defender responses**; the breach
+mechanics get their own log (`card-combat-round-breach.md`). Cards only; every number is a card.
 
 Legend: `[ ]` fresh · `[X]` flipped (spent Tempo / lost Health) · `=` joined group ·
 *pile* = damage accumulating toward the Toughness bar.
@@ -52,7 +55,7 @@ SIDE A                                          SIDE B
 
 ---
 
-## Blind bid → reveal
+## Blind bid → reveal (the Standoff)
 
 Each round opens with a **hidden, simultaneous** commit: group your Actors, assign
 each group **Vanguard** (front) or **Rearguard** (back), play standing buffs. Melee
@@ -85,7 +88,8 @@ The two Vanguards face across the line; each Rearguard sits behind its own front
 
 Side A fields a 3-body front + 1 cannon. Side B fields a 2-body **grouped** front
 shielding **two** cannons (the glass-cannon lean — more back-line fire, a thinner
-shield). **While each Vanguard lives, neither back can be touched.**
+shield). **A back stays shielded until its own front falls and the per-unit lock releases the
+killers (§4.6); with a single front group per side, that means the whole group.**
 
 ---
 
@@ -113,7 +117,7 @@ Toughness, Finesse, Vitality, Cadence) go back into the **character deck**.
 
 ---
 
-## Round 1 — Phase 1 (the front holds)
+## Round 1 — the Fray (the front holds)
 
 Both backs are protected, so **every attack lands on an enemy Vanguard.** A's three
 front bodies and Corvin pound B's `[Vesper=Sable]` group; B's two cannons (Wren,
@@ -132,7 +136,7 @@ to Vesper first):
   Corvin → (Vesper=Sable)      bid 1×F5 = 5   AVOID (evade) — WEAKEST-LINK: each must beat 5 alone →
                                               Vesper 2×F3 = 6 ✓ and Sable 2×F4 = 8 ✓ → evaded, but it costs the
                                               pair 4 cards (a soloist spends 2): possible, just dear — and it taps them
-  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   EAT — drained by that evade, the pair lets it in → Might 3 ▸
+  Garrick → (Vesper=Sable)  bid 1×F4 = 4   EAT — drained by that evade, the pair lets it in → Might 3 ▸
                                               Vesper pile 3 ≥ T3 → FLIP
   Torvald → (Vesper=Sable)     bid 1×F2 = 2   STRIKE-BACK — Sable spends its last to counter → Torvald's Might 5
                                               ▸ Vesper → FLIP, and Sable's Might 4 ▸ Torvald pile 4 ≥ T3 → FLIP
@@ -145,11 +149,11 @@ guards than a lone body, but never impossible (force-not-fiat, §4.5).*
 **B → A's front** (cannons fire; melee can't strike back at range — A only eats or evades):
 
 ```
-  Robin → Garrick(A)        bid 1×F5 = 5   AVOID  Garrick(A) evades 2×F4 = 8 > 5 → no damage (now tapped)
+  Robin → Garrick        bid 1×F5 = 5   AVOID  Garrick evades 2×F4 = 8 > 5 → no damage (now tapped)
   Wren  → [Bram=Torvald]    bid 1×F3 = 3   EAT    Might 3 ▸ Bram pile 3 < T4 → no flip (the tank shrugs it)
 ```
 
-Board after Phase 1 (the weakest-link evade gutted B's Tempo; the strike-back cost
+Board after the Fray (the weakest-link evade gutted B's Tempo; the strike-back cost
 Torvald a card; Bram shrugged a sub-Toughness hit):
 
 ```
@@ -157,28 +161,29 @@ SIDE A   Bram   h[......] t[..]   Torvald h[X...] t[X.]   Garrick h[....] t[XXX]
 SIDE B   Vesper h[XX..] t[XX] (tapped)   Sable h[...] t[XXX] (tapped)   Wren h[.....] t[X.]   Robin h[...] t[X..]
 ```
 
-**No Vanguard fell → no Phase 2 this round.** Both fronts are chipped (Vesper −2,
+**No front fell → no one is freed, so the Volley and Breach are empty; nothing was deferred, so
+the Reckoning is empty too.** Both fronts are chipped (Vesper −2,
 Torvald −1), and that weakest-link evade gutted B's Tempo — **both** of the pair are
-tapped (Garrick(A) too). Nobody's back opened; but the Health that's gone **doesn't
+tapped (Garrick too). Nobody's back opened; but the Health that's gone **doesn't
 heal**, and the thin grouped front — a poor dodger — is bleeding fastest.
 
 
-### Refresh
+### The Lull (refresh)
 
 All `[X]` **Tempo** cards flip back up (refills). **Health stays flipped** (Vesper
 keeps `[X][ ][ ][ ]`). Round 2 begins; the battle runs to **5 rounds or a dead side.**
 
 ---
 
-## Phase 2 — the back opens (when a front has fallen)
+## A later round — the front falls, the Volley opens the back
 
-**Every round *has* a Phase 2** (§4: "a round is two phases") — it's simply **empty**
-when no front fell, as in Round 1 above. Phase 2 is the window where a *fallen* front's
-back becomes fair game and any leftover Tempo is spent on it. Skip ahead to a later
-round where the grind finally breaks B's line: across rounds 2–3, with no healing,
-**Vesper's pool empties, then Sable's** (spillover) — **B's Vanguard is gone.** The
-instant it falls, **B's Rearguard `{Wren, Robin}` is exposed** for the rest of that
-round (no Tempo refresh between phases — A attacks the back on whatever it has left):
+A front *holds* in the **Fray**; the back opens only once a front *falls* and the **per-unit
+lock** releases its killers (§4.6). Skip ahead to a later round where the grind finally breaks
+B's line: across rounds 2–3, with no healing, **Vesper's pool empties, then Sable's**
+(spillover) — **B's Vanguard group is gone.** Every A unit that was attacking it is now **free**
+(the enemy Vanguard it struck is dead), so in the **Volley** the back is fair game — B's
+Rearguard `{Wren, Robin}` is reachable, on whatever Tempo the round has left (one pool, no
+refresh between phases):
 
 ```
 [Side A]
@@ -186,39 +191,38 @@ round (no Tempo refresh between phases — A attacks the back on whatever it has
   Rearguard  Corvin
 
 [Side B]
-  Vanguard   (down)
-  Rearguard  Wren   Robin        ← now exposed!
+  Vanguard   (down — the lock releases A's front)
+  Rearguard  Wren   Robin        ← now reachable
 
-  Corvin → Robin   bid 1×F5 = 5   Robin out of Tempo this round → cannot evade → EATS
-                                  Might 4 ▸ Robin pile 4 ≥ T2 twice → FLIP ×2   Robin h[X][X][ ]
-  Corvin → Robin   bid 1×F5 = 5   Robin h[ ] left → FLIP → Robin DOWN
+  Volley — A reaches the back; the rear would answer FIRST (pre-empt), but Robin is dry:
+  Corvin → Robin   instant fire, bid 1×F5 = 5   Robin out of Tempo → cannot pre-empt / dodge → EATS
+                                                Might 4 ▸ Robin pile 4 ≥ T2 (twice) → FLIP ×2   Robin h[X][X][ ]
+  Corvin → Robin   instant fire, bid 1×F5 = 5   Robin h[ ] left → FLIP → ROBIN DOWN
 ```
 
-The glass-cannon's gamble settles: B out-fired A's front for two rounds, but the thin
-shield broke first — and a cannon with no shield and no Tempo is **just a target.** If
-A had instead arrived at the open back with an **empty tank** (all its Tempo spent
-breaking the line), Robin would have evaded and lived to fire next round. *That* tension
-— breaking the front vs. having anything left to cash it in — is the whole model.
+The glass-cannon's gamble settles: B out-fired A's front for two rounds, but the thin shield
+broke first — and a cannon with **no shield and no Tempo to pre-empt** is just a target. The
+**pre-empt** is exactly what Robin lacked: with Tempo it could have answered the incoming fire
+(or a charger) *first*; dry, it can only eat. Had A instead reached the open back with an
+**empty tank** (all its Tempo spent breaking the line), the back would have answered and lived.
+*That* tension — breaking the front vs. having anything left to cash it in — is the whole model.
 
-**On reaching the back — your note, checked against §4.** The spec is **all-or-nothing,
-not per-attacker:** a side's Rearguard is untargetable *while **any** of its Vanguard
-lives*, so the back opens only once the **entire** enemy front is gone — and at that point
-no living front unit is left to keep an attacker "stuck." Phase 1 is an explicit
-**free-for-all** with **no** persistent engagement lock, so the spec has **no** rule that
-an attacker who finished its own Phase-1 fight may slip to the back while *other* enemy
-front units still stand. Your "B is stuck unless its own engagements are resolved" model
-is **stricter / more granular** — it would let a *partial* front-break leak some attackers
-through. A real fork (flagged below).
+**Per-unit lock (now canon, §4.6).** Here B's front is a **single group**, so killing it frees
+*everyone* at once — the shape the old "all-or-nothing" draft described. The current rule is
+**per-unit:** an attacker is free the instant **the enemy Vanguard *it* struck is dead**, even
+while *other* enemy Vanguards stand — so a **multi-body** front leaks its dead foes' killers
+through on a *partial* break while the rest stay locked. (That earlier "open fork" is decided;
+the breach log works the multi-body case.)
 
 ---
 
 ## Notes / what's locked vs. open
 
-- **Locked (Spec §4):** two positions; back untargetable while its front lives;
-  one simultaneous Tempo bid, defender must **beat not match** (ties land); per-round
-  Tempo shared across both phases; Health persists; 5-round cap; groups
-  sum-to-block / weakest-link-to-slip, damage spills in declared order, one Tempo per
-  member to act.
+- **Locked (Spec §4 / §4.6):** the **six phases** (Standoff → Fray → Volley → Breach →
+  Reckoning → Lull); **per-unit lock** (a killer is freed when the Vanguard it struck dies);
+  one simultaneous Tempo bid, defender must **beat not match** (ties land); per-round Tempo
+  shared across **all** phases; Health persists; 5-round cap; groups sum-to-block /
+  weakest-link-to-evade, damage spills in declared order, one Tempo per member to act.
 - **No armor / damage-types** — deferred to gear (§2.2); this is the bare
   `Might → pile → flip per Toughness` core.
 - **My liberties (flag any):** the exact bids both sides chose are *a* legal line, not
@@ -226,28 +230,21 @@ through. A real fork (flagged below).
   Rout-off-the-line) are open dials I left out; "a tie lands the hit" is the single
   contest rule most worth confirming feels right at the table.
 
-## To promote to the spec (surfaced this pass)
+## Promoted to the spec (these have since landed)
 
-Design points raised while building this log — fold into the spec when the gear/combat
-layer is next touched:
+Design points surfaced while building this log — now folded into canon:
 
-- **Unified defense verb** — the one contest's defender action wants a single canonical
-  term: *avoid* (umbrella) over the context words *block / dodge / slip / evade*. §4
-  currently names them per context; "blocking" alone misreads for a ranged dodge.
-- **Attack-type cards** — melee / ranged are **cards** an Actor carries, not just a flag.
-  They set **reach** (where you may attack from), which *influences* placement without
-  dictating it (you may stand a melee body in the back; it's idle until the line breaks).
-  A character may carry **both** a melee and a ranged card (multi-reach) — §4.2 already
-  allows "both"; the card representation is the new part.
-- **Side cards** — a card marks each side's formation; the table is laid out **per side**
-  in two labelled rows (Vanguard / Rearguard) — the player's-eye view, not a single
-  facing grid.
-- **Pool stacking (presentation)** — the **state cards** (the flippable Health/Tempo
-  pools) stay **visible** on the table; it's the **Vitality & Cadence stat cards** that
-  tuck **under the identity card** (the digital version reveals them on click). After the
-  battle, state cards return to the generic pile; the stat cards go back to the deck.
-- **Per-unit Phase-2 access (open fork)** — the spec opens the back **all-or-nothing**
-  (untargetable while *any* enemy Vanguard lives). Alternative raised here: a *partial*
-  front-break lets an attacker reach the back **iff its own Phase-1 engagements are
-  resolved** (never engaged, or all its engaged foes dead), else it's stuck. More
-  granular; decide whether partial breaks should leak attackers through before §4 locks.
+- **Unified defense verb** — *avoid* as the umbrella over the context words *block / dodge /
+  slip / evade*. ✓
+- **Attack-type cards** — melee / ranged as **cards** an Actor carries that set **reach**;
+  a body may carry **both** (multi-reach, §4.2). ✓
+- **Side cards / per-side layout** — each formation laid out per side in two labelled rows
+  (Vanguard / Rearguard), the player's-eye view rather than one facing grid. ✓
+- **Pool stacking** — the flippable Health/Tempo **state cards** stay **visible**; the
+  **Vitality & Cadence stat cards** tuck **under the identity card** (revealed on click). ✓
+- **Per-unit back access** — the old "all-or-nothing vs partial-break" fork is **decided:
+  per-unit lock** (§4.6) — a killer is freed the instant the Vanguard it struck dies, so a
+  partial front-break leaks the freed killers through while the rest stay locked. ✓
+
+Still bare here, by design (out of scope for this log): armor / damage-types (gear, §2.2),
+Standing buffs / braces, role powers, and the breach/Volley mechanics (their own log).

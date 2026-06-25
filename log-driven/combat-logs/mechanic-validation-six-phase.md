@@ -162,12 +162,12 @@ Sable — piling onto the foe Bram is locked to:
 [B]  Vanguard  Sable h[XX.] t[X.]     (ganged across the Fray + the flank: 2 of 3 down)
 ```
 
-**To confirm (what IS):** a freed unit is **not forced to the rear** — it may flank a
-surviving front. **Open question this surfaces:** does a flank resolve as a **simultaneous
-trade** (like the Fray — both blows land) or as a **pre-empt charge** (like the Volley vs a
-rear — the target answers first)? A flank on an already-engaged front body is an *adjacent
-melee*, not a charge across open ground, so **trade** reads right — but §4.6 currently says
-flanks "resolve like any charge." Pick one.
+**Confirmed (what IS):** a freed unit is **not forced to the rear** — it may flank a
+surviving front. **Resolved:** a flank is a **trade** (adjacent melee — flanker and target
+both land, no pre-empt between them), but it resolves **in the Volley**, so a flank that
+**kills** its target **intercepts** — if that target was itself charging, its Breach charge
+is precluded. Flanking can *gang a survivor* **or** *cut down a breakthrough*. (§4.6 RULE —
+flanking intercepts.)
 
 ---
 
@@ -187,4 +187,5 @@ committed action is **spent before it's resolved**. From that, all three fall ou
    across the boundary.
 2. **Doomed evade** — every member's evade bid is **committed up front** (order-independent), so the Tempo
    is **spent even when the weakest link dooms it** — no take-backs.
-3. **Flank** — adjacent melee, no gap to cross → **same-phase trade** (both land), **not** a pre-empt.
+3. **Flank** — adjacent melee → a **trade** (both land), but resolved **in the Volley**, so a flank-**kill**
+   *intercepts*: it silences a flanked charger's own Breach charge.
