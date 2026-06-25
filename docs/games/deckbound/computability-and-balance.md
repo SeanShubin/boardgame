@@ -240,6 +240,41 @@ numbers must satisfy — each an instance of "interesting beats boring" or "inte
 catalogued in [balance-invariants.md](balance-invariants.md). When the solver lands, each becomes an
 assertion it runs (§4), so a retune that breaks one fails the build.
 
+### 6.1 The necessity test — every mechanic must earn a scenario it is required to win
+
+The **closure check** (step 3 above) is one half of "the rules are right": it proves **no unintended
+*strategy* wins**. The **necessity test** is the other half — it proves **every intended *mechanic*
+matters** — and it is just as executable.
+
+**RULE.** For each mechanic `M`, build a scenario with two lines: a **naive line** that ignores `M` and a
+**keyed line** that uses it. The scenario is valid iff the naive line **provably loses** and the keyed
+line **wins**. Run both through the solver / combat-lab and assert `naive = loss ∧ keyed = win`.
+
+**Why it is the dual of the closure check.** Closure: *no unnamed strategy beats the intended set* —
+catches degenerate **strategies**. Necessity: *every mechanic has a scenario unwinnable without it* —
+catches fiat / redundant **mechanics**. Together they bound the design from both sides: nothing
+unintended wins, and nothing intended is dead weight.
+
+**Necessity as an audit (the removal test, made runnable).** A mechanic for which **no** such scenario can
+be built is **suspect** — either **fiat** (it "wins" only by banning the alternative, not by being
+out-played) or **redundant** (another mechanic already forces the same line). Delete `M`: if some scenario
+flips from forced-loss to winnable, `M` was load-bearing there; if none does, `M` earns nothing. This is
+the emergent-not-fiat removal test executed, not argued.
+
+**The double payoff — one artifact, three uses.**
+
+- a **regression assertion** (like the §4 budget / BI checks): a retune that lets a naive line win
+  **breaks the build**, flagging that a mechanic silently stopped mattering;
+- a **player tutorial**: the same forced scenario teaches `M` with clean **credit assignment** (you cannot
+  win without the insight) — the deferred tutorial-series plan
+  ([tutorial-design](../../../log-driven/brainstorming/tutorial-design.md)) *is* this suite, read for
+  teaching instead of testing;
+- a **coverage ledger**: the mechanics with **no** passing scenario are the live audit / cut list.
+
+**Ordering.** Mechanics compose, so the scenarios form a **dependency graph**: a scenario may *use*
+already-tested mechanics as prerequisites but must **force exactly one new** one. A topological sort gives
+both the test order and the tutorial order at once.
+
 ---
 
 ## 7. What is allowed to break the rules (quarantined modes)

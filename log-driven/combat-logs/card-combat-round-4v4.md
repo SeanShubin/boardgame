@@ -162,6 +162,7 @@ Torvald −1), and that weakest-link evade gutted B's Tempo — **both** of the 
 tapped (Garrick(A) too). Nobody's back opened; but the Health that's gone **doesn't
 heal**, and the thin grouped front — a poor dodger — is bleeding fastest.
 
+
 ### Refresh
 
 All `[X]` **Tempo** cards flip back up (refills). **Health stays flipped** (Vesper
@@ -169,9 +170,12 @@ keeps `[X][ ][ ][ ]`). Round 2 begins; the battle runs to **5 rounds or a dead s
 
 ---
 
-## Phase 2 — when a front falls (a later round)
+## Phase 2 — the back opens (when a front has fallen)
 
-Skip ahead: across rounds 2–3 A keeps grinding the grouped front; with no healing,
+**Every round *has* a Phase 2** (§4: "a round is two phases") — it's simply **empty**
+when no front fell, as in Round 1 above. Phase 2 is the window where a *fallen* front's
+back becomes fair game and any leftover Tempo is spent on it. Skip ahead to a later
+round where the grind finally breaks B's line: across rounds 2–3, with no healing,
 **Vesper's pool empties, then Sable's** (spillover) — **B's Vanguard is gone.** The
 instant it falls, **B's Rearguard `{Wren, Robin}` is exposed** for the rest of that
 round (no Tempo refresh between phases — A attacks the back on whatever it has left):

@@ -1029,6 +1029,13 @@ or until a side is dead.** Each round:
 4. **Refresh.** All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved battle
    is a draw, §0.4).
 
+> **REFINED (2026) — see §4.6.** Two parts of the picture below are sharpened by **§4.6**: (a) back-access
+> is **per-unit lock**, not all-or-nothing — a **free** Vanguard (the enemy Vanguard it attacked is dead, or
+> it attacked none) breaches the enemy Rearguard in Phase 2 **even while other enemy Vanguards still
+> stand**; a **locked** one cannot. (b) Ranged/spell attacks resolve in **windows** — Standing (blind bid) /
+> Fast (end of Phase 1) / Slow (last) — on the one shared Tempo pool, in a fixed **resolution order**. Read
+> the all-or-nothing phrasing below as the base intuition; **§4.6 is the operative rule.**
+
 The front's whole job is **within-round attrition**: make the enemy *spend the round's Tempo* to break
 through, so whoever reaches the exposed back this round arrives with an empty tank — or not at all.
 
@@ -1137,8 +1144,10 @@ and Might never become decorative.
 
 - **Two declared positions:** Vanguard (front, exposed shield) and Rearguard (back, safe cannon);
   positions **self-sort by reach** (melee front, ranged back).
-- **The back is reachable only after the front falls** — by fire or by crossed melee — never while a
-  living Vanguard shields it; a back's safety is *paid for*, never decreed (force-not-fiat).
+- **The back is reachable by any *free* (unlocked) enemy Vanguard** — the enemy Vanguard it attacked is
+  dead, or it attacked none — **even while *other* enemy Vanguards still stand** (per-unit lock, **§4.6**);
+  a **locked** Vanguard cannot reach it. A back's safety is *paid for* (you breach by winning your front),
+  never decreed (force-not-fiat).
 - **One unified Tempo contest:** a single simultaneous bid; the defender must **beat, not match** (ties
   land); **no iterated auction**, so combat stays a maximizer (§0.4). Defending is Tempo-negative → blows
   always connect in the end → Health / Might stay load-bearing.
@@ -1424,6 +1433,111 @@ The sum-vs-min asymmetry then sorts roles with **no special case** — groups **
   per member**.
 - **Block = summed Tempo; slip / evade = every member beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
+
+### 4.6 The six phases — lock, breach & the pre-empt 🟡 *(2026 — refines §4 back-access from **all-or-nothing** to **per-unit lock**, names the round's **six phases**, and orders the breach so the rear's fire **pre-empts** the charger; code pending)*
+
+> **Supersedes** the "back opens only when the whole front falls" phrasing in §4 *and* the earlier
+> Fast/Slow "windows" sketch. The *spine* holds — a front shields a back, you reach the back by **winning**,
+> force-not-fiat — but the shield is now **per engagement**, not per-front, and the round resolves in **six
+> named phases**.
+
+**PRINCIPLE — why there are phases at all (re-derive timing questions from this).** *Within* a single phase,
+damage is applied **order-independently** (§1.9): every strike and defense is **committed up front** and the
+whole phase resolves together — *including the blows of a body that dies in that same phase* (§1.3: a
+mortally-wounded unit still lands every blow it committed). The **only** reason to split combat into
+separate phases is to impose a **timing order between them:** a unit **dead at a phase boundary takes no
+further action**, so a death can **preclude** what happens in a *later* phase but can never reach back into
+an *earlier* one. Every phase rule below is a corollary — the **Volley pre-empts the Breach** (a charger
+killed in the Volley never strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the
+Reckoning), and a **committed defense is spent whether or not it succeeds** (it was locked before
+resolution). When a new timing question arises, decide it from this one rule: **put two effects in the same
+phase if they should *trade* (both land); in ordered phases if one death should *silence* the other.**
+
+**RULE — the six phases.** A combat round runs this fixed sequence; each phase is a §1.9 boundary
+(accumulate, then lock; deaths finalize, §1.3). All Tempo across all phases is paid from **one shared
+per-round pool** (Tempo does **not** refresh between phases, §4):
+
+1. **The Standoff** — the blind bid is revealed; positions lock; **Standing** effects (buffs / braces, bid
+   face-down) auto-land. *Setup, no clash.*
+2. **The Fray** — the fronts engage: **melee and instant ("fast") ranged and their defenses resolve
+   simultaneously.** Deaths here — by melee *or* by fast ranged — **fix the breach list** (below).
+3. **The Volley** — free Vanguards **charge** declared enemy Rearguard targets across the open ground, and
+   **the rear answers *first*:** counter-fire, melee strike-back, or dodge — all resolving **before** the
+   charger's blow, so a defender can **drop or turn back the charger before it lands.** *(Pre-empt.)*
+4. **The Breach** — chargers who **survived the Volley** land their blows on the rear. This is where a
+   breacher **kills a slow caster and disrupts its spell.**
+5. **The Reckoning** — **deferred ("slow") spells** from survivors resolve **last** (a caster killed in the
+   Breach never casts — its spell fizzles).
+6. **The Lull** — **Refresh:** Tempo resets, **Health persists**, round++.
+
+**RULE — the breach list (who may charge).** The **Fray** fixes it. A Vanguard is **locked** for the round
+**only** while an **enemy Vanguard *it attacked* in the Fray is still alive** — *attacking* means it spent
+an action striking a body **standing in its way.** **Only attacking locks.** Being **struck**, **blocking**,
+or **evading a ranged shot** never locks you (you answered the *shot*, not a blocker). A Vanguard that
+**attacked no enemy Vanguard**, or for whom **every** Vanguard it struck is now **dead** (by melee *or* by a
+Fray fast shot), is **free** — and in the **Volley** may **charge** the enemy Rearguard, or **flank** a
+surviving enemy Vanguard (legal, expected rare). A **locked** Vanguard stays pinned. *A line breaks in
+**sections**: whoever drops his own front-foe pours into the gap, even while other enemy Vanguards stand.*
+
+**RULE — instant vs deferred (the old Fast/Slow).** An attack/spell is one of:
+
+- **Instant** — resolves **in the phase it is used**, alongside that phase's combat. **The same instant
+  card may fire in *both* the Fray and the Volley** (Tempo permitting): an archer looses at the enemy front
+  in the Fray, then looses again at a charging breacher in the Volley. Instant is the default.
+- **Deferred ("slow")** — committed earlier (Tempo paid up front) but **resolves only in the Reckoning**,
+  after the Breach. That deferral is the **only** reason a breacher can disrupt it.
+
+**RULE — breachers are defended normally.** A charger is **not** special: the rear spends Tempo to **dodge**
+it, **strike back** (if it carries melee), or **counter-fire** a ranged shot — any §3.4 response — all from
+the shared pool, all in the **Volley**, so all **pre-empt** the charger's Breach blow.
+
+**RULE — disrupt.** Default disrupt = **kill the caster in the Breach before the Reckoning** (no caster, no
+spell). Beyond that, dedicated **non-lethal disruption** effects (stagger / silence / unseat) may **cancel
+or delay** a deferred spell **without** a kill. Both routes cash out in the same place: a deferred spell
+resolves only if its caster reaches the Reckoning able to cast.
+
+**WHY.** The front's real job is the **lock**, and it is **personal**: you are pinned by the foe you
+committed to, and only **dropping him** (or never committing) frees you to pour through the gap behind.
+All-or-nothing erased that texture; the per-unit lock restores it while keeping **force-not-fiat** (you
+reach the back by **winning**, never by rule). The **Volley-before-Breach** order is the theme made
+mechanical: the front is an engaged melee with no gap, so its blows trade **simultaneously** (the Fray);
+the breach is a **charge across open ground**, so the defender **shoots first** (the Volley pre-empts) — you
+suffer their quick fire to reach them, and it is worth it only if you survive to **disrupt** the slow doom
+they were winding up. Deferring slow spells to the **Reckoning** is the caster's own bet — *dear and late*:
+a big effect that lands **only if it survives the charge** it provoked. And **one shared pool** keeps every
+strike, defense, charge, counter-shot, and spell a single **allocation** — never a free extra action: the
+rear that dumps Tempo answering the Volley has less left for the spell, and vice-versa.
+
+**GUARANTEES.**
+
+- **Per-unit lock, not all-or-nothing:** the back is reachable by any **free** enemy Vanguard — its struck
+  front-foe dead, or it struck none — *even while other enemy Vanguards live*; a **locked** Vanguard cannot
+  charge. (Supersedes "untargetable while any Vanguard lives.")
+- **The Fray fixes the list:** deaths in the Fray — melee **or** fast ranged — both count toward freeing a
+  locker; nothing after the Fray changes who may charge.
+- **Pre-empt:** in the Volley the rear's answer (counter-fire / strike-back / dodge) resolves **before** the
+  charger's Breach blow — it can stop the charge cold.
+- **Instant in both engagements:** a card usable in the Fray is usable again in the Volley (shared Tempo).
+- **Disrupt window:** a breacher's Breach damage resolves **before** the Reckoning, so killing (or
+  non-lethally disrupting) a caster fizzles its deferred spell.
+- **One pool:** every action across all six phases is paid from the single per-round Tempo budget.
+- **Force-not-fiat preserved:** you breach by winning your front (or never engaging), never by decree; every
+  position still dies to enough Tempo.
+
+**Open dials (human-ratify).**
+
+- **"Volley" naming** — the Volley is the rear's *whole* pre-emptive answer (counter-fire **and** melee
+  strike-back **and** dodge), not only arrows; **"The Answer"** is the inclusive alternative if "Volley"
+  reads too ranged.
+- **When deferred spells are *committed*** — assumed paid up front (in the Fray, or at the start of the
+  Volley) so the charge can threaten them; confirm the exact commit moment.
+- **Flank resolution (settled by the PRINCIPLE above).** A flank is **adjacent melee, not a charge across a
+  gap**, so by the principle it resolves as a **same-phase trade** — flanker and target both land,
+  order-independent — **not** a Volley pre-empt. (Supersedes the earlier "resolves like any charge.")
+  Remaining tidiness-only detail: whether that trade is bookkept in the Volley or the Breach is immaterial
+  (both land regardless); pick one.
+
+*(Worked round exercising all six phases: `log-driven/combat-logs/card-combat-round-breach.md`.)*
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
