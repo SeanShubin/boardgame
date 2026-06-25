@@ -244,26 +244,26 @@ it **flanks Fross**:
 
 ## Coverage — every mechanic, and where it shows
 
-| Mechanic | Where |
-|----------|-------|
-| Health / Tempo pools, bid = cards×Finesse | throughout |
-| **Accumulator pile** (`P n/T`), sub-threshold banking | F1, F4, F5c, V3 |
-| Flip at Toughness + **wasted overflow** | F2, F4, F5b |
-| Pile **carries within a round, wipes at the Lull** | F5b→Lull |
-| **Strictly-beat / TIE LANDS** | B1 (dodge ties → lands) |
-| Three responses: **EAT / AVOID(block) / STRIKE-BACK** | F1 / F3 / F5a |
-| Positions & reach (Vanguard/Rearguard, melee/ranged) | formation |
-| **Six phases** Standoff→Fray→Volley→Breach→Reckoning→Lull | section order |
-| **Standing** effect (brace, auto-lands) | Standoff → used F3 |
-| **Per-unit lock**, partial break | F2/F5c breach list |
-| **Pre-empt** (Volley before Breach) | V3 |
-| **Instant in both** Fray & Volley | Corin F4 + V2 |
-| **Multi-reach** (one body, melee then ranged) | Brand F3 + V1 |
-| **Deferred** spell + **Reckoning** + **disrupt by kill** | Volley/B2/Reckoning |
-| **Groups**: sum-block / weakest-link evade / spillover / one-Tempo-per-member | F3 / F4 / F4,V1 / F3 |
-| **Hoard** (n one-Health bodies attacking) | F5a–c |
-| **§1.3** dying body still lands its blow (within a phase) | F5a |
-| Order-independence (resolved one at a time) | whole Fray |
-| **Health persists; Tempo refreshes; 5-round cap** | Lull |
-| **Flanking intercepts** (kill in Volley precludes a charge) | Inset |
-| Force-not-fiat (every position dies to enough Might/Tempo) | Vesk, Gale, Orin all fall |
+| Mechanic                                                                      | Where                     |
+| ----------------------------------------------------------------------------- | ------------------------- |
+| Health / Tempo pools, bid = cards×Finesse                                     | throughout                |
+| **Accumulator pile** (`P n/T`), sub-threshold banking                         | F1, F4, F5c, V3           |
+| Flip at Toughness + **wasted overflow**                                       | F2, F4, F5b               |
+| Pile **carries within a round, wipes at the Lull**                            | F5b→Lull                  |
+| **Strictly-beat / TIE LANDS**                                                 | B1 (dodge ties → lands)   |
+| Three responses: **EAT / AVOID(block) / STRIKE-BACK**                         | F1 / F3 / F5a             |
+| Positions & reach (Vanguard/Rearguard, melee/ranged)                          | formation                 |
+| **Six phases** Standoff→Fray→Volley→Breach→Reckoning→Lull                     | section order             |
+| **Standing** effect (brace, auto-lands)                                       | Standoff → used F3        |
+| **Per-unit lock**, partial break                                              | F2/F5c breach list        |
+| **Pre-empt** (Volley before Breach)                                           | V3                        |
+| **Instant in both** Fray & Volley                                             | Corin F4 + V2             |
+| **Multi-reach** (one body, melee then ranged)                                 | Brand F3 + V1             |
+| **Deferred** spell + **Reckoning** + **disrupt by kill**                      | Volley/B2/Reckoning       |
+| **Groups**: sum-block / weakest-link evade / spillover / one-Tempo-per-member | F3 / F4 / F4,V1 / F3      |
+| **Hoard** (n one-Health bodies attacking)                                     | F5a–c                     |
+| **§1.3** dying body still lands its blow (within a phase)                     | F5a                       |
+| Order-independence (resolved one at a time)                                   | whole Fray                |
+| **Health persists; Tempo refreshes; 5-round cap**                             | Lull                      |
+| **Flanking intercepts** (kill in Volley precludes a charge)                   | Inset                     |
+| Force-not-fiat (every position dies to enough Might/Tempo)                    | Vesk, Gale, Orin all fall |
