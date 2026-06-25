@@ -1398,6 +1398,26 @@ than X.
 The sum-vs-min asymmetry then sorts roles with **no special case** — groups **wall**, lone fast units
 **slip** — reproducing the old Vanguard-vs-Outrider distinction emergently.
 
+**Why the fiction forces these asymmetries** *(documented so interpretation can't drift):*
+
+- **Sum to block, min (weakest-link) to slip / evade.** Holding a line *pools*: shields abreast make one
+  stronger wall, so blocking **sums** every member's Tempo. Sneaking past or dodging does **not** pool — a
+  sentry foils a crowd by catching **any one** of them, so a group is only as unseen as its **most-spotted**
+  member, and a slip is gated by the **weakest** link. One infiltrator need only slip *himself*; a band must
+  each slip, unseen, at once — far harder, but **never barred** (force-not-fiat: if every member out-bids,
+  the whole group slips, just at brutal cost). The mistake to avoid: a group **cannot** pool a dodge the way
+  it pools a block — you can't combine ten clumsy sneaks into one quiet one.
+- **A cluster is target-rich — *easier* to hit, not harder.** Packed bodies are a **fat, dense** target:
+  anything with **width** — a fireball, a cleave, a loosed volley — cannot whiff against a crowd and need not
+  *pick* a victim; it lands on **all** at full value (bypassing the spillover queue). Only single, **aimed**
+  fire still strikes one body (and spills in declared order). So bunching up trades **evasion for exposure**
+  — the exact mirror of the slip penalty, and the standing price of the durability a group buys.
+- **Hoard X is this taken to the limit.** A swarm is the group dialed to the extreme — many one-Health
+  bodies — so it is **maximally** target-rich (one AoE shreds X at once) and **maximally** un-slippable (each
+  tiny body must win its *own* race, and one card each is a hopeless weakest-link). Its cheap mass and summed
+  wall, and its AoE-death and nil infiltration, are **not new rules** — they are these same group tradeoffs
+  at their maximum, which is exactly why a swarm is authored as **one card**, not X.
+
 **GUARANTEES.**
 - One position, distinct pools, one shared target; no merged stat-block, no size cap, no mixed positions.
 - Single-target damage **spills** in declared order; **AoE hits every member**; **acting costs one Tempo

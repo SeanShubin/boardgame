@@ -123,17 +123,24 @@ resolved together (order-independent, §1.9).
 **Each defender picks one of three responses** (Spec §3.4), labelled in the log:
 - **AVOID** — spend Tempo to **beat** the bid; the blow whiffs, nobody's hurt (block / dodge / slip / evade).
 - **STRIKE-BACK** — spend Tempo to **counter**: a mutual trade — the blow still lands *and* you deal your Might back.
-- **EAT** — spend nothing; take the Might, deal nothing back (conserve Tempo).
+- **EAT** — spend nothing; take the Might, deal nothing back (conserve Tempo, avoid being locked from striking reserve).
 
 **A → B's front** (target the `[Vesper=Sable]` group; single-target damage **spills**
 to Vesper first):
 
 ```
-  Corvin → (Vesper=Sable)      bid 1×F5 = 5   AVOID        sum-block 3+4 = 7 > 5 → whiffs, no damage
-  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   EAT          conserve Tempo → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
-  Torvald → (Vesper=Sable)     bid 1×F2 = 2   STRIKE-BACK  Sable counters → Torvald's Might 5 ▸ Vesper → FLIP,
-                                              and Sable's Might 4 ▸ Torvald pile 4 ≥ T3 → FLIP  (both lose a card)
+  Corvin → (Vesper=Sable)      bid 1×F5 = 5   AVOID (evade) — WEAKEST-LINK: each must beat 5 alone →
+                                              Vesper 2×F3 = 6 ✓ and Sable 2×F4 = 8 ✓ → evaded, but it costs the
+                                              pair 4 cards (a soloist spends 2): possible, just dear — and it taps them
+  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   EAT — drained by that evade, the pair lets it in → Might 3 ▸
+                                              Vesper pile 3 ≥ T3 → FLIP
+  Torvald → (Vesper=Sable)     bid 1×F2 = 2   STRIKE-BACK — Sable spends its last to counter → Torvald's Might 5
+                                              ▸ Vesper → FLIP, and Sable's Might 4 ▸ Torvald pile 4 ≥ T3 → FLIP
 ```
+*A group **blocks** a melee blow by **pooling** Tempo (sum — a strong wall), but to **evade**
+ranged fire or **slip** toward the back it's **weakest-link**: every member must beat the bid
+**alone**. So a blob is a great shield and a poor dodger — much harder to sneak a group past
+guards than a lone body, but never impossible (force-not-fiat, §4.5).*
 
 **B → A's front** (cannons fire; melee can't strike back at range — A only eats or evades):
 
@@ -142,18 +149,18 @@ to Vesper first):
   Wren  → [Bram=Torvald]    bid 1×F3 = 3   EAT    Might 3 ▸ Bram pile 3 < T4 → no flip (the tank shrugs it)
 ```
 
-Board after Phase 1 (the trade cost Torvald a card too; everyone else evaded, ate, or
-shrugged it — all bleeding Tempo):
+Board after Phase 1 (the weakest-link evade gutted B's Tempo; the strike-back cost
+Torvald a card; Bram shrugged a sub-Toughness hit):
 
 ```
 SIDE A   Bram   h[......] t[..]   Torvald h[X...] t[X.]   Garrick h[....] t[XXX] (tapped)   Corvin h[...] t[X...]
-SIDE B   Vesper h[XX..] t[X.]     Sable  h[...] t[XX.]    Wren h[.....] t[X.]    Robin h[...] t[X..]
+SIDE B   Vesper h[XX..] t[XX] (tapped)   Sable h[...] t[XXX] (tapped)   Wren h[.....] t[X.]   Robin h[...] t[X..]
 ```
 
 **No Vanguard fell → no Phase 2 this round.** Both fronts are chipped (Vesper −2,
-Torvald −1) and Tempo's been bled all round — Garrick(A) tapped, the pair down to its
-last card. Nobody's back opened; but the Health that's gone **doesn't heal**, and the
-thin grouped front is bleeding fastest.
+Torvald −1), and that weakest-link evade gutted B's Tempo — **both** of the pair are
+tapped (Garrick(A) too). Nobody's back opened; but the Health that's gone **doesn't
+heal**, and the thin grouped front — a poor dodger — is bleeding fastest.
 
 ### Refresh
 
