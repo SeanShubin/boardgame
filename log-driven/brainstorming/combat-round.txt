@@ -31,25 +31,22 @@ Toughness 3
 Cadence 2
 Finesse 5
 
-And i have my identity deck that looks like this
+And I have my identity deck that looks like this
 
 Bram
 Torvald
 Garrick
 Corvin
 
-Lets assume for now we have a physical card for every number.   In the actual game I might use a base 2 system for number cards.
-Now we enter combat.  At this point the combat log starts.  Let's also assume I have generic cards for the combat positions and joining characters into groups.  The combat position terms I am using are Vanguard · Outrider · Rearguard
-
+Let's assume for now we have a physical card for every number.   In the actual game I might use a base 2 system for number cards.
+Now we enter combat.  At this point the combat log starts.  Let's also assume I have generic cards for the combat positions and joining characters into groups.  The combat position terms I am using are Vanguard · Rearguard
 
 I arrange my identity deck like so
-
 
 Vanguard
 Garrick
 Join
 Sable
-Outrider
 Wren
 Rearguard
 Robin
@@ -57,19 +54,20 @@ Robin
 
 Then during simultaneous reveal, we go from 1 dimensional decks to the 2 dimensional table, the "-" indciate the cards are flush with each other
 
-Vanguard   Garrick-Sable
-Outrider   Wren
+Vanguard   Garrick-Sable Wren
 Rearguard  Robin
 
-So here I have 7 physical cards on the table.
+So here I have 6 physical cards on the table showing the formation
 
 
-Assemble: Assign cards to ranks, in order
-Pair off: First vanguard group on each side matches up with each other, then second, and so on.  Groups without pairing partner are moved to the Outrider rank, preserve order, append to end
+Now for each character I pull out the Vitality and its number, plus Candence and its number, and set them aside.
+Then I pull in generic flippable cards, and lay them out like this, vitality and cadance determine how many flippable cards I use
+
+Bram
+Might 3
+Toughness 3 [ ][ ][ ][ ]
+Finesse 5   [ ][ ]
 
 
-  2. Tier 1 — the Line — resolved from the start-of-round snapshot: Vanguards strike across, and each Skirmisher's crossing contest (advance vs hold) resolves. Deaths tally at the tier boundary.
-  3. Tier 2 — the Open — resolved from the post-Line snapshot, in three ordered sub-windows:
-    - Fast (fast-tagged spells/ranged — can soften before the melee)
-    - Skirmisher melee (crossed skirmishers strike; a Vanguard whose foe is dead pours through)
-    - Slow (slow-tagged spells/ranged — finishers, Support mends)
+So using this as a basis, build me a full combat round 4v4.  Don't use these stats, I just put random numbers in and copy pasted.
+Generate this to a file so I can look at it

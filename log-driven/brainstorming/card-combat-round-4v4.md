@@ -1,0 +1,175 @@
+# Card-system combat log — a 4v4 round (attrition model)
+
+A worked physical-card walkthrough on the **two-position attrition model** (Spec §4,
+2026 — supersedes static ranks). Overworld pickup → decks → blind-bid reveal →
+flippable pools → a full round (blind bid → Phase 1 → refresh), then a Phase-2
+illustration once a front falls. Cards only; every number is a card.
+
+Legend: `[ ]` fresh · `[X]` flipped (spent Tempo / lost Health) · `=` joined group ·
+*pile* = damage accumulating toward the Toughness bar.
+
+Rules in one breath: **Health = Vitality × Toughness** (persists all 5 rounds),
+**Tempo = Cadence × Finesse** (refills each round, **shared across the round's two
+phases**). **Standing and soaking are free; only acting spends Tempo.** Every attack
+is one Tempo bid (`cards × Finesse`); the defender must **strictly beat** it to block
+(a **tie lands the hit**). A landed hit deals **Might** (Finesse-blind) into the pile.
+
+---
+
+## The battle
+
+**4v4.** `Bram · Torvald · Garrick · Corvin` **vs** `Garrick · Sable · Wren · Robin`
+(3 copies of every identity card exist, so **Garrick is legally on both sides**).
+
+**Overworld.** I drop my four identity cards onto the enemy's map space → combat
+triggers; the log starts.
+
+---
+
+## The decks — stats + attack type
+
+`Might / Toughness / Finesse` stay as numbers; **Vitality** and **Cadence** are set
+aside and become **counts of flippable cards** at setup. Each Actor is also **melee**
+(fights from the front) or **ranged** (fires from the back) — that decides where it
+can stand.
+
+```
+SIDE A                                          SIDE B
+  Bram     M2 V6 T4 C2 F3   melee               Garrick  M3 V4 T3 C2 F3   melee
+  Torvald  M5 V4 T3 C2 F2   melee               Sable    M4 V3 T3 C3 F4   melee
+  Garrick  M3 V4 T3 C3 F4   melee               Wren     M3 V5 T3 C2 F3   ranged
+  Corvin   M4 V3 T2 C4 F5   ranged              Robin    M4 V3 T2 C3 F5   ranged
+```
+
+---
+
+## Blind bid → reveal
+
+Each round opens with a **hidden, simultaneous** commit: group your Actors, assign
+each group **Vanguard** (front) or **Rearguard** (back), play standing buffs. Melee
+self-sorts to the front, ranged to the back. Reveal together; nobody moves.
+
+```
+SIDE A bids                  SIDE B bids
+  [Vanguard]                   [Vanguard]
+  Bram [Join] Torvald          Garrick [Join] Sable
+  Garrick                      [Rearguard]
+  [Rearguard]                  Wren
+  Corvin                       Robin
+```
+
+Reveal — the 2-D table:
+
+```
+                 VANGUARD (front, exposed)        REARGUARD (back, shielded)
+  SIDE A    [Bram]=[Torvald]   [Garrick]               [Corvin]
+  ─────────────────────────────  the line  ───────────────────────────────
+  SIDE B    [Garrick]=[Sable]                          [Wren]   [Robin]
+```
+
+Side A fields a 3-body front + 1 cannon. Side B fields a 2-body **grouped** front
+shielding **two** cannons (the glass-cannon lean — more back-line fire, a thinner
+shield). **While each Vanguard lives, neither back can be touched.**
+
+---
+
+## Setup — pull Vitality & Cadence into flippable pools
+
+```
+SIDE A
+  Bram      M2  T4  health [ ][ ][ ][ ][ ][ ]   F3  tempo [ ][ ]
+  Torvald   M5  T3  health [ ][ ][ ][ ]         F2  tempo [ ][ ]
+  Garrick   M3  T3  health [ ][ ][ ][ ]         F4  tempo [ ][ ][ ]
+  Corvin    M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ][ ]
+SIDE B
+  Garrick   M3  T3  health [ ][ ][ ][ ]         F3  tempo [ ][ ]
+  Sable     M4  T3  health [ ][ ][ ]            F4  tempo [ ][ ][ ]
+  Wren      M3  T3  health [ ][ ][ ][ ][ ]      F3  tempo [ ][ ]
+  Robin     M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ]
+```
+
+---
+
+## Round 1 — Phase 1 (the front holds)
+
+Both backs are protected, so **every attack lands on an enemy Vanguard.** A's three
+front bodies and Corvin pound B's `[Garrick=Sable]` group; B's two cannons (Wren,
+Robin) fire over their line at A's front. All bids are committed simultaneously;
+resolved together (order-independent, §1.9). Notation: `bid vs block → result`.
+
+**A → B's front** (target the `[Garrick=Sable]` group; single-target damage **spills**
+to Garrick first):
+
+```
+  Corvin → group   bid 1×F5 = 5   group SUM-blocks: Garrick 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
+  Garrick(A) → grp bid 1×F4 = 4   group is low on Tempo, EATS → Might 3 ▸ Garrick pile 3 ≥ T3 → FLIP
+  Torvald → group  bid 1×F2 = 2   Sable blocks 1×F4 = 4 > 2  → BLOCKED  (Might 5 stopped by one cheap card —
+                                  low Finesse means a big blow is easy to turn until the defender runs dry)
+```
+
+**B → A's front** (cannons fire; A blocks):
+
+```
+  Robin → Garrick(A)        bid 1×F5 = 5   Garrick(A) blocks 2×F4 = 8 > 5  → BLOCKED (Garrick(A) now tapped)
+  Wren  → [Bram=Torvald]    bid 1×F3 = 3   group SUM-blocks: Bram 1×3 + Torvald 1×2 = 5 > 3  → BLOCKED
+```
+
+Board after Phase 1 (only Garrick-B took damage; everyone else blocked, bleeding
+Tempo to do it):
+
+```
+SIDE A   Bram   h[......] t[X.]   Torvald h[....] t[X.]   Garrick h[....] t[XX.] (tapped)   Corvin h[...] t[X...]
+SIDE B   Garrick h[X...] t[X.]    Sable  h[...] t[X..]    Wren h[.....] t[X.]    Robin h[...] t[X..]
+```
+
+**No Vanguard fell → no Phase 2 this round.** B's front is intact but down a Health
+card and low on Tempo; A spent most of its Tempo *defending* and lands only a chip.
+This is the attrition: a thin, grouped front holds *one* round by sum-blocking, but
+it's bleeding — and **Health doesn't heal.**
+
+### Refresh
+
+All `[X]` **Tempo** cards flip back up (refills). **Health stays flipped** (Garrick-B
+keeps `[X][ ][ ][ ]`). Round 2 begins; the battle runs to **5 rounds or a dead side.**
+
+---
+
+## Phase 2 — when a front falls (a later round)
+
+Skip ahead: across rounds 2–3 A keeps grinding the grouped front; with no healing,
+**Garrick-B's pool empties, then Sable's** (spillover) — **B's Vanguard is gone.** The
+instant it falls, **B's Rearguard `{Wren, Robin}` is exposed** for the rest of that
+round (no Tempo refresh between phases — A attacks the back on whatever it has left):
+
+```
+                 VANGUARD                         REARGUARD (now exposed!)
+  SIDE A    [Bram]=[Torvald]   [Garrick]               [Corvin]
+  ──────────────────────────────  the line  ──────────────────────────
+  SIDE B    (Vanguard down)                            [Wren]   [Robin]
+
+  Corvin → Robin   bid 1×F5 = 5   Robin out of Tempo this round → cannot evade → EATS
+                                  Might 4 ▸ Robin pile 4 ≥ T2 twice → FLIP ×2   Robin h[X][X][ ]
+  Corvin → Robin   bid 1×F5 = 5   Robin h[ ] left → FLIP → Robin DOWN
+```
+
+The glass-cannon's gamble settles: B out-fired A's front for two rounds, but the thin
+shield broke first — and a cannon with no shield and no Tempo is **just a target.** If
+A had instead arrived at the open back with an **empty tank** (all its Tempo spent
+breaking the line), Robin would have evaded and lived to fire next round. *That* tension
+— breaking the front vs. having anything left to cash it in — is the whole model.
+
+---
+
+## Notes / what's locked vs. open
+
+- **Locked (Spec §4):** two positions; back untargetable while its front lives;
+  one simultaneous Tempo bid, defender must **beat not match** (ties land); per-round
+  Tempo shared across both phases; Health persists; 5-round cap; groups
+  sum-to-block / weakest-link-to-slip, damage spills in declared order, one Tempo per
+  member to act.
+- **No armor / damage-types** — deferred to gear (§2.2); this is the bare
+  `Might → pile → flip per Toughness` core.
+- **My liberties (flag any):** the exact bids both sides chose are *a* legal line, not
+  a solver-optimal one; standing buffs/braces and role powers (Bulwark, Assassinate,
+  Rout-off-the-line) are open dials I left out; "a tie lands the hit" is the single
+  contest rule most worth confirming feels right at the table.
