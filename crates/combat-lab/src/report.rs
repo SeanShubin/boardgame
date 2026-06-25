@@ -225,15 +225,15 @@ fn render_breach(chars: &[Character], m: &Matrix) -> String {
     let mut s = String::new();
     let _ = writeln!(
         s,
-        "# Breach table — how much Strike flips a losing matchup\n"
+        "# Breach table — how much Might flips a losing matchup\n"
     );
     let _ = writeln!(
         s,
-        "For every leg the row does **not** win, the minimum uniform `+Strike` it must \
+        "For every leg the row does **not** win, the minimum `+Might` it must \
          gain to win. A finite number proves the wall is overcomable by vertical scaling; \
          its size is how god-like you must be.\n"
     );
-    let _ = writeln!(s, "| loser | vs | needs +Strike |");
+    let _ = writeln!(s, "| loser | vs | needs +Might |");
     let _ = writeln!(s, "|---|---|--:|");
     for i in 0..n {
         for j in 0..n {
@@ -257,37 +257,19 @@ fn render_roster(chars: &[Character]) -> String {
     for c in chars {
         let _ = writeln!(s, "## {}\n", c.name);
         let _ = writeln!(s, "```");
+        let _ = writeln!(s, "might         {}", c.might);
+        let _ = writeln!(s, "weapon        {}", weapon_list(c));
         let _ = writeln!(
             s,
-            "health        {} × Toughness {}",
-            c.health_quantity, c.health_magnitude
+            "vitality      {} × toughness {}",
+            c.vitality, c.toughness
         );
+        let _ = writeln!(s, "speed         {} actions · daring {}", c.speed, c.daring);
         let _ = writeln!(
             s,
-            "armor         {}{}",
-            c.armor.name(),
-            if c.keywords.brittle {
-                format!(" (brittle ×{})", c.armor_quantity)
-            } else {
-                String::new()
-            }
+            "resistance    pierce {} slash {} crush {}",
+            c.resistance[0], c.resistance[1], c.resistance[2]
         );
-        let _ = writeln!(
-            s,
-            "speed         {} actions · init {}",
-            c.speed_quantity, c.speed_magnitude
-        );
-        if c.pierce_magnitude > 0 {
-            let _ = writeln!(s, "pierce        {}", c.pierce_magnitude);
-        }
-        for w in &c.weapons {
-            let _ = writeln!(
-                s,
-                "weapon        {}-{}",
-                channel_name(w.channel),
-                w.strike_magnitude
-            );
-        }
         let kw = keyword_list(c);
         if !kw.is_empty() {
             let _ = writeln!(s, "keywords      {kw}");
@@ -295,6 +277,15 @@ fn render_roster(chars: &[Character]) -> String {
         let _ = writeln!(s, "```\n");
     }
     s
+}
+
+/// The weapon's damage-types, space-joined (a god lists all).
+fn weapon_list(c: &Character) -> String {
+    c.weapon
+        .iter()
+        .map(|t| t.name())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn channel_name(t: DamageType) -> &'static str {
@@ -312,9 +303,6 @@ fn keyword_list(c: &Character) -> String {
     }
     if c.keywords.cleave {
         v.push("cleave");
-    }
-    if c.keywords.brittle {
-        v.push("brittle");
     }
     v.join(", ")
 }
@@ -353,46 +341,30 @@ fn render_one_way(s: &mut String, attacker: &Character, defender: &Character) {
     };
     let _ = writeln!(s, "## {} → {}   ({kills})\n", attacker.name, defender.name);
 
-    let toughness = defender.health_magnitude.max(1);
-    let weapons = attacker
-        .weapons
-        .iter()
-        .map(|w| format!("{}-{}", channel_name(w.channel), w.strike_magnitude))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let pen = if attacker.pierce_magnitude > 0 {
-        " pen"
-    } else {
-        ""
-    };
-    let brittle = if defender.keywords.brittle {
-        format!(" armor-quantity-{} brittle", defender.armor_quantity)
-    } else {
-        String::new()
-    };
+    let toughness = defender.toughness.max(1);
 
     let _ = writeln!(s, "```");
     let _ = writeln!(
         s,
-        "{:9} {weapons} speed-{}{pen}{}",
+        "{:9} might-{} {} speed-{} daring-{}{}",
         attacker.name,
-        attacker.speed_quantity,
+        attacker.might,
+        weapon_list(attacker),
+        attacker.speed,
+        attacker.daring,
         keyword_suffix(attacker),
     );
     let _ = writeln!(
         s,
-        "{:9} health-{} toughness-{} armor-{}{brittle}",
+        "{:9} vitality-{} toughness-{} resist-pierce-{} resist-slash-{} resist-crush-{}",
         defender.name,
-        defender.health_quantity,
+        defender.vitality,
         toughness,
-        defender.armor.name(),
+        defender.resistance[0],
+        defender.resistance[1],
+        defender.resistance[2],
     );
-    let _ = writeln!(
-        s,
-        "{:9} {}",
-        "start",
-        cards_vis(0, defender.health_quantity)
-    );
+    let _ = writeln!(s, "{:9} {}", "start", cards_vis(0, defender.vitality));
 
     let mut shown = 0usize;
     let mut last_round = 0u32;
@@ -412,7 +384,7 @@ fn render_one_way(s: &mut String, attacker: &Character, defender: &Character) {
                 } else if r.flips == 0 {
                     format!(
                         "acc {}+{}={} / toughness-{toughness}  no flip",
-                        r.acc_before, r.bite, r.acc_after
+                        r.acc_before, r.damage, r.acc_after
                     )
                 } else if r.flips == 1 {
                     let w = if r.waste > 0 {
@@ -423,30 +395,26 @@ fn render_one_way(s: &mut String, attacker: &Character, defender: &Character) {
                     format!(
                         "acc {}+{}={} / toughness-{toughness}  FLIP{w}",
                         r.acc_before,
-                        r.bite,
-                        r.acc_before + r.bite
+                        r.damage,
+                        r.acc_before + r.damage
                     )
                 } else {
                     format!(
                         "acc {}+{}={} / toughness-{toughness}  FLIP×{} (cleave)",
                         r.acc_before,
-                        r.bite,
-                        r.acc_before + r.bite,
+                        r.damage,
+                        r.acc_before + r.damage,
                         r.flips
                     )
                 };
-                let armor = r
-                    .armor_left
-                    .map(|n| format!("  armor-quantity-{n}"))
-                    .unwrap_or_default();
                 let _ = writeln!(
                     s,
-                    "  action {}  {}-{} {} = damage-{}   {body}   {}{armor}",
+                    "  action {}  {} might-{} − resist-{} = damage-{}   {body}   {}",
                     r.action,
                     channel_name(r.channel),
-                    r.power,
-                    r.effect.label(),
-                    r.bite,
+                    r.might,
+                    r.resist,
+                    r.damage,
                     cards_vis(r.flipped_total, r.cards_total),
                 );
                 shown += 1;

@@ -1,141 +1,144 @@
 # Roster (as loaded)
 
-## Bulwark
+## Lancer
 
 ```
-health        5 × Toughness 6
-armor         plate
-speed         2 actions · init 2
-weapon        slash-3
-```
-
-## Warden
-
-```
-health        5 × Toughness 6
-armor         mail
-speed         2 actions · init 2
-weapon        pierce-3
-```
-
-## Aegis
-
-```
-health        5 × Toughness 6
-armor         padded
-speed         2 actions · init 2
-weapon        crush-3
-```
-
-## Maul
-
-```
-health        4 × Toughness 4
-armor         mail
-speed         2 actions · init 2
-weapon        crush-6
-```
-
-## Lance
-
-```
-health        4 × Toughness 4
-armor         padded
-speed         3 actions · init 3
-weapon        pierce-5
-```
-
-## Cleaver
-
-```
-health        4 × Toughness 4
-armor         plate
-speed         2 actions · init 2
-weapon        slash-6
-```
-
-## Gnat
-
-```
-health        6 × Toughness 2
-armor         cloth
-speed         5 actions · init 5
-weapon        pierce-2
-```
-
-## Hail
-
-```
-health        6 × Toughness 2
-armor         cloth
-speed         5 actions · init 4
-weapon        slash-2
-```
-
-## Sandstorm
-
-```
-health        6 × Toughness 2
-armor         cloth
-speed         5 actions · init 4
-weapon        crush-2
-```
-
-## Pike
-
-```
-health        4 × Toughness 3
-armor         mail
-speed         3 actions · init 6
-weapon        pierce-3
+might         6
+weapon        pierce
+vitality      4 × toughness 4
+speed         2 actions · daring 2
+resistance    pierce 0 slash 3 crush 0
 ```
 
 ## Saber
 
 ```
-health        4 × Toughness 3
-armor         plate
-speed         3 actions · init 5
-weapon        slash-4
+might         6
+weapon        slash
+vitality      4 × toughness 4
+speed         2 actions · daring 2
+resistance    pierce 0 slash 0 crush 3
 ```
 
-## Stiletto
+## Maul
 
 ```
-health        3 × Toughness 2
-armor         cloth
-speed         4 actions · init 9
-pierce        6
-weapon        pierce-3
+might         6
+weapon        crush
+vitality      4 × toughness 4
+speed         2 actions · daring 2
+resistance    pierce 3 slash 0 crush 0
+```
+
+## Pike
+
+```
+might         8
+weapon        pierce
+vitality      3 × toughness 4
+speed         1 actions · daring 2
+resistance    pierce 0 slash 3 crush 0
+```
+
+## Cleaver
+
+```
+might         8
+weapon        slash
+vitality      3 × toughness 4
+speed         1 actions · daring 2
+resistance    pierce 0 slash 0 crush 3
+```
+
+## Hammer
+
+```
+might         8
+weapon        crush
+vitality      3 × toughness 4
+speed         1 actions · daring 2
+resistance    pierce 3 slash 0 crush 0
+```
+
+## Gnat
+
+```
+might         4
+weapon        pierce
+vitality      6 × toughness 2
+speed         5 actions · daring 4
+resistance    pierce 0 slash 2 crush 0
+```
+
+## Hail
+
+```
+might         4
+weapon        slash
+vitality      6 × toughness 2
+speed         5 actions · daring 4
+resistance    pierce 0 slash 0 crush 2
+```
+
+## Sand
+
+```
+might         4
+weapon        crush
+vitality      6 × toughness 2
+speed         5 actions · daring 4
+resistance    pierce 2 slash 0 crush 0
+```
+
+## Warden
+
+```
+might         4
+weapon        pierce
+vitality      6 × toughness 5
+speed         2 actions · daring 2
+resistance    pierce 0 slash 3 crush 0
+```
+
+## Bulwark
+
+```
+might         4
+weapon        slash
+vitality      6 × toughness 5
+speed         2 actions · daring 2
+resistance    pierce 0 slash 0 crush 3
 ```
 
 ## Reaver
 
 ```
-health        4 × Toughness 3
-armor         mail
-speed         3 actions · init 4
-weapon        slash-3
+might         3
+weapon        slash
+vitality      4 × toughness 3
+speed         3 actions · daring 3
+resistance    pierce 0 slash 0 crush 3
 keywords      persist
 ```
 
 ## Render
 
 ```
-health        4 × Toughness 4
-armor         padded
-speed         2 actions · init 3
-weapon        crush-5
+might         6
+weapon        crush
+vitality      4 × toughness 3
+speed         2 actions · daring 2
+resistance    pierce 3 slash 0 crush 0
 keywords      cleave
 ```
 
-## Sentinel
+## Paragon
 
 ```
-health        5 × Toughness 6
-armor         plate (brittle ×3)
-speed         2 actions · init 1
-weapon        slash-3
-keywords      brittle
+might         6
+weapon        pierce slash crush
+vitality      5 × toughness 4
+speed         2 actions · daring 4
+resistance    pierce 2 slash 2 crush 2
 ```
 

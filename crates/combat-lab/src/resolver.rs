@@ -1,17 +1,16 @@
 //! The per-round combat simulation and duel resolution.
 //!
-//! Resolution (per the design doc, multiplicative-armor revision):
-//! 1. Each round, the attacker spends `speed_quantity` actions; each is a Strike
-//!    of the best available weapon vs the defender's armor type.
-//! 2. Stage 1 — Armor (type chart, soft): `bite = power × effectiveness`, where
-//!    the multiplier is ×2 / ×1 / ×½. `Half` never zeroes, so the chart adds no
-//!    immunity.
-//! 3. Stage 2 — Toughness (accumulates within the round): bites pile onto the
-//!    active card; at `>= toughness` it flips. Overflow discarded (unless
-//!    `cleave`, which cascades). This Toughness floor is the *only* wall source.
+//! Resolution (canon-aligned, Spec §2.2 with the deferred gear cut):
+//! 1. Each round the attacker spends `speed` actions; each is one strike of
+//!    magnitude **might**, on the weapon type the defender resists least.
+//! 2. **Pre-pile subtract (gear):** `damage = max(0, might − resistance[type])`.
+//!    Resistance is capped at 3, so `might > 3` always lands — no immunity.
+//! 3. **Bar (accumulate within the round):** add `damage` to the active health
+//!    card's pile; at `>= toughness` flip one card; overflow discarded (unless
+//!    `cleave`, which cascades).
 //! 4. End of round: un-flipped accumulation is wiped (unless `persist`).
 
-use crate::{ArmorType, Character, DamageType, Effect, effectiveness};
+use crate::{Character, DamageType};
 
 /// Hard cap on simulated rounds; reaching it means "never" (∞).
 pub const ROUND_CAP: u32 = 1000;
@@ -21,36 +20,29 @@ pub const ROUND_CAP: u32 = 1000;
 pub struct StrikeRow {
     pub round: u32,
     pub action: u32,
+    /// The type chosen this strike (the defender's least-resisted).
     pub channel: DamageType,
-    /// Raw weapon magnitude.
-    pub power: u32,
-    /// Type-chart effectiveness this strike landed at.
-    pub effect: Effect,
-    /// Post-multiplier damage this strike delivers.
-    pub bite: u32,
+    pub might: u32,
+    /// Resistance faced on the chosen type.
+    pub resist: u32,
+    /// Post-cut damage delivered.
+    pub damage: u32,
     pub acc_before: u32,
     pub acc_after: u32,
     pub flips: u32,
-    /// Overflow discarded on a (non-cleave) flip.
     pub waste: u32,
-    /// Total cards flipped so far (for the card visual).
     pub flipped_total: u32,
     pub cards_total: u32,
     pub bounced: bool,
-    /// Remaining armor cards if the defender is `brittle`.
-    pub armor_left: Option<u32>,
 }
 
 /// A trace step: a strike, or a round boundary.
 #[derive(Debug, Clone)]
 pub enum Step {
     Strike(StrikeRow),
-    /// End of a round that did not finish the fight.
     RoundEnd {
         round: u32,
-        /// Un-flipped accumulation at round end.
         leftover: u32,
-        /// True if `persist` carried it; false if it was wiped.
         carried: bool,
     },
 }
@@ -58,48 +50,29 @@ pub enum Step {
 /// Result of a one-way grind.
 #[derive(Debug, Clone)]
 pub struct Grind {
-    /// Rounds for the attacker to kill the defender, or `None` for ∞.
     pub rounds: Option<u32>,
     pub steps: Vec<Step>,
 }
 
-struct Hit {
-    bite: u32,
-    channel: DamageType,
-    power: u32,
-    effect: Effect,
-}
-
-/// Pick the weapon with the largest bite against the armor. `shattered` brittle
-/// armor is treated as neutral Cloth.
-fn best_strike(attacker: &Character, armor: ArmorType, shattered: bool, pierce: bool) -> Hit {
-    let armor = if shattered { ArmorType::Cloth } else { armor };
+/// The best strike against a resistance vector: the weapon type the defender
+/// resists least (coverage). Returns `(chosen type, resistance faced, damage)`.
+fn best_strike(attacker: &Character, resistance: &[u32; 3]) -> (DamageType, u32, u32) {
     attacker
-        .weapons
+        .weapon
         .iter()
-        .map(|w| {
-            let effect = effectiveness(w.channel, armor, pierce);
-            Hit {
-                bite: effect.apply(w.strike_magnitude),
-                channel: w.channel,
-                power: w.strike_magnitude,
-                effect,
-            }
+        .map(|&t| {
+            let r = resistance[t.index()];
+            (t, r, attacker.might.saturating_sub(r))
         })
-        .max_by_key(|h| h.bite)
-        .unwrap_or(Hit {
-            bite: 0,
-            channel: DamageType::Pierce,
-            power: 0,
-            effect: Effect::Normal,
-        })
+        .max_by_key(|&(_, _, dmg)| dmg)
+        .unwrap_or((DamageType::Pierce, 0, attacker.might))
 }
 
-/// Simulate the attacker grinding the defender down. `record` controls whether a
-/// strike-by-strike trace is built (skip it for the bulk matchup matrix).
+/// Simulate the attacker grinding the defender down. `record` builds a
+/// strike-by-strike trace (skip it for the bulk matchup matrix).
 pub fn grind(attacker: &Character, defender: &Character, record: bool) -> Grind {
-    let toughness = defender.health_magnitude.max(1);
-    let cards_total = defender.health_quantity;
+    let toughness = defender.toughness.max(1);
+    let cards_total = defender.vitality;
     let mut cards = cards_total;
     let mut steps = Vec::new();
     if cards == 0 {
@@ -109,24 +82,14 @@ pub fn grind(attacker: &Character, defender: &Character, record: bool) -> Grind 
         };
     }
 
-    let pierce = attacker.pierce_magnitude > 0;
-    let armor_type = defender.armor;
-    let mut armor_cards = defender.armor_quantity; // brittle pool
+    let (_, _, per_strike) = best_strike(attacker, &defender.resistance);
     let mut acc: u32 = 0;
 
     for round in 1..=ROUND_CAP {
-        for action in 1..=attacker.speed_quantity {
-            let shattered = defender.keywords.brittle && armor_cards == 0;
-            let hit = best_strike(attacker, armor_type, shattered, pierce);
-
-            // Brittle: each strike erodes the armor pool; once spent, the armor
-            // type stops applying (treated as neutral Cloth thereafter).
-            if defender.keywords.brittle && armor_cards > 0 {
-                armor_cards -= 1;
-            }
-
+        for action in 1..=attacker.speed {
+            let (channel, resist, damage) = best_strike(attacker, &defender.resistance);
             let acc_before = acc;
-            acc += hit.bite;
+            acc += damage;
             let mut flips = 0u32;
             let mut waste = 0u32;
             if attacker.keywords.cleave {
@@ -146,18 +109,17 @@ pub fn grind(attacker: &Character, defender: &Character, record: bool) -> Grind 
                 steps.push(Step::Strike(StrikeRow {
                     round,
                     action,
-                    channel: hit.channel,
-                    power: hit.power,
-                    effect: hit.effect,
-                    bite: hit.bite,
+                    channel,
+                    might: attacker.might,
+                    resist,
+                    damage,
                     acc_before,
                     acc_after: acc,
                     flips,
                     waste,
                     flipped_total: cards_total - cards,
                     cards_total,
-                    bounced: hit.bite == 0,
-                    armor_left: defender.keywords.brittle.then_some(armor_cards),
+                    bounced: damage == 0,
                 }));
             }
 
@@ -181,21 +143,14 @@ pub fn grind(attacker: &Character, defender: &Character, record: bool) -> Grind 
             acc = 0;
         }
 
-        // Early exits to ∞ — but never while the situation can still change:
-        // `persist` keeps accumulating across rounds, and `brittle` armor erodes.
-        let armor_can_erode = defender.keywords.brittle && armor_cards > 0;
-        let shattered = defender.keywords.brittle && armor_cards == 0;
-        let cur_bite = best_strike(attacker, armor_type, shattered, pierce).bite;
-        if cur_bite == 0 && !armor_can_erode {
+        // Early exits to ∞ (resistance is static, so per-strike damage is fixed):
+        if per_strike == 0 {
             return Grind {
                 rounds: None,
                 steps,
-            };
+            }; // never penetrates
         }
-        if !attacker.keywords.persist
-            && !armor_can_erode
-            && attacker.speed_quantity.saturating_mul(cur_bite) < toughness
-        {
+        if !attacker.keywords.persist && attacker.speed.saturating_mul(per_strike) < toughness {
             return Grind {
                 rounds: None,
                 steps,
@@ -222,7 +177,6 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    /// Win > Draw > Loss, for dominance comparisons.
     pub fn score(self) -> u8 {
         match self {
             Outcome::Win => 2,
@@ -236,12 +190,11 @@ impl Outcome {
 pub struct Duel {
     pub rtk_ab: Option<u32>,
     pub rtk_ba: Option<u32>,
-    /// From A's perspective.
     pub outcome: Outcome,
 }
 
 /// Resolve a duel as two one-way grinds: the faster kill wins; equal rounds break
-/// on initiative; mutual ∞ is a draw.
+/// on **daring**; mutual ∞ is a draw.
 pub fn duel(a: &Character, b: &Character) -> Duel {
     let rtk_ab = rounds_to_kill(a, b);
     let rtk_ba = rounds_to_kill(b, a);
@@ -254,9 +207,9 @@ pub fn duel(a: &Character, b: &Character) -> Duel {
                 Outcome::Win
             } else if x > y {
                 Outcome::Loss
-            } else if a.speed_magnitude > b.speed_magnitude {
+            } else if a.daring > b.daring {
                 Outcome::Win
-            } else if a.speed_magnitude < b.speed_magnitude {
+            } else if a.daring < b.daring {
                 Outcome::Loss
             } else {
                 Outcome::Draw
@@ -284,130 +237,97 @@ pub fn margin(d: &Duel) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Keywords, Weapon};
+    use crate::Keywords;
 
     fn ch(name: &str) -> Character {
         Character {
             name: name.into(),
-            health_quantity: 4,
-            health_magnitude: 2,
-            armor: ArmorType::Cloth,
-            armor_quantity: 1,
-            speed_quantity: 1,
-            speed_magnitude: 1,
-            pierce_magnitude: 0,
-            weapons: vec![Weapon {
-                strike_magnitude: 3,
-                channel: DamageType::Slash,
-            }],
+            might: 5,
+            weapon: vec![DamageType::Slash],
+            vitality: 4,
+            toughness: 4,
+            speed: 2,
+            daring: 1,
+            resistance: [0, 0, 0],
             keywords: Keywords::default(),
         }
     }
 
     #[test]
-    fn chart_is_a_regular_latin_square() {
-        use DamageType::*;
-        let armors = [ArmorType::Plate, ArmorType::Mail, ArmorType::Padded];
-        let channels = [Pierce, Slash, Crush];
-        // Each row (channel) and each column (armor) has one of each multiplier.
-        for c in channels {
-            let row: Vec<Effect> = armors.iter().map(|&a| effectiveness(c, a, false)).collect();
-            assert!(
-                row.contains(&Effect::Double)
-                    && row.contains(&Effect::Normal)
-                    && row.contains(&Effect::Half)
-            );
-        }
-        for a in armors {
-            let col: Vec<Effect> = channels
-                .iter()
-                .map(|&c| effectiveness(c, a, false))
-                .collect();
-            assert!(
-                col.contains(&Effect::Double)
-                    && col.contains(&Effect::Normal)
-                    && col.contains(&Effect::Half)
-            );
-        }
-        // Specific signature matchups.
-        assert_eq!(
-            effectiveness(Pierce, ArmorType::Mail, false),
-            Effect::Double
-        );
-        assert_eq!(
-            effectiveness(Crush, ArmorType::Plate, false),
-            Effect::Double
-        );
-        assert_eq!(
-            effectiveness(Slash, ArmorType::Padded, false),
-            Effect::Double
-        );
-        // Cloth is always neutral.
-        assert_eq!(
-            effectiveness(Crush, ArmorType::Cloth, false),
-            Effect::Normal
-        );
-    }
-
-    #[test]
-    fn pierce_upgrades_resisted_to_neutral() {
-        // Slash is resisted by Mail (×½); armor-piercing makes it neutral.
-        assert_eq!(
-            effectiveness(DamageType::Slash, ArmorType::Mail, false),
-            Effect::Half
-        );
-        assert_eq!(
-            effectiveness(DamageType::Slash, ArmorType::Mail, true),
-            Effect::Normal
-        );
-        // It does not turn a ×2 into anything more.
-        assert_eq!(
-            effectiveness(DamageType::Pierce, ArmorType::Mail, true),
-            Effect::Double
-        );
-    }
-
-    #[test]
-    fn toughness_floor_is_the_only_wall() {
-        // bite 1 per strike, one action, Toughness 5 → never reaches it.
+    fn resistance_subtracts_per_strike() {
         let mut att = ch("att");
-        att.weapons[0].strike_magnitude = 1;
-        att.speed_quantity = 1;
+        att.might = 5;
         let mut def = ch("def");
-        def.health_magnitude = 5;
-        assert_eq!(rounds_to_kill(&att, &def), None);
-        // Enough actions to cross Toughness in a round → finite.
-        att.speed_quantity = 5;
+        def.resistance[DamageType::Slash.index()] = 3; // 5 − 3 = 2 lands
+        let (_, r, dmg) = best_strike(&att, &def.resistance);
+        assert_eq!(r, 3);
+        assert_eq!(dmg, 2);
+    }
+
+    #[test]
+    fn capped_resistance_never_immunises_a_real_hit() {
+        // might > 3 always penetrates a ≤3 cut — no stalemate.
+        let mut att = ch("att");
+        att.might = 4;
+        let mut def = ch("def");
+        def.resistance = [3, 3, 3];
+        def.vitality = 1;
+        def.toughness = 1;
         assert!(rounds_to_kill(&att, &def).is_some());
     }
 
     #[test]
-    fn double_damage_against_weak_armor() {
-        // Crush vs Padded is ×½; crush vs Plate is ×2.
+    fn weak_hit_into_full_resistance_is_walled() {
         let mut att = ch("att");
-        att.weapons[0] = Weapon {
-            strike_magnitude: 3,
-            channel: DamageType::Crush,
+        att.might = 3;
+        let mut def = ch("def");
+        def.resistance[DamageType::Slash.index()] = 3; // 3 − 3 = 0
+        assert_eq!(rounds_to_kill(&att, &def), None);
+    }
+
+    #[test]
+    fn multi_type_picks_the_gap() {
+        let mut god = ch("god");
+        god.might = 5;
+        god.weapon = vec![DamageType::Pierce, DamageType::Slash, DamageType::Crush];
+        let resistance = [3, 0, 3]; // slash is the gap
+        let (t, r, dmg) = best_strike(&god, &resistance);
+        assert_eq!(t, DamageType::Slash);
+        assert_eq!(r, 0);
+        assert_eq!(dmg, 5);
+    }
+
+    #[test]
+    fn emergent_rps_from_rotated_resistance() {
+        // Single-type specialists, rotated resistance — no counter table written.
+        let base = |name: &str, t: DamageType, r: [u32; 3]| Character {
+            name: name.into(),
+            might: 6,
+            weapon: vec![t],
+            vitality: 4,
+            toughness: 4,
+            speed: 2,
+            daring: 1,
+            resistance: r,
+            keywords: Keywords::default(),
         };
-        att.speed_quantity = 1;
-        let mut tanky = ch("def");
-        tanky.health_quantity = 2;
-        tanky.health_magnitude = 5;
-        tanky.armor = ArmorType::Plate; // crush ×2 → bite 6 ≥ 5, one flip/round
-        assert_eq!(rounds_to_kill(&att, &tanky), Some(2));
-        tanky.armor = ArmorType::Padded; // crush ×½ → bite 1 < 5 → walled
-        assert_eq!(rounds_to_kill(&att, &tanky), None);
+        let p = base("P", DamageType::Pierce, [0, 3, 0]); // resists slash
+        let s = base("S", DamageType::Slash, [0, 0, 3]); // resists crush
+        let c = base("C", DamageType::Crush, [3, 0, 0]); // resists pierce
+        assert_eq!(duel(&p, &s).outcome, Outcome::Win); // P > S
+        assert_eq!(duel(&s, &c).outcome, Outcome::Win); // S > C
+        assert_eq!(duel(&c, &p).outcome, Outcome::Win); // C > P
     }
 
     #[test]
     fn cleave_cascades_overflow() {
         let mut att = ch("att");
-        att.weapons[0].strike_magnitude = 6; // ×1 vs cloth → bite 6, toughness 2 → 3 flips
-        att.speed_quantity = 1;
+        att.might = 6;
+        att.speed = 1;
         att.keywords.cleave = true;
         let mut def = ch("def");
-        def.health_quantity = 4;
-        def.health_magnitude = 2;
+        def.vitality = 4;
+        def.toughness = 2;
         assert_eq!(rounds_to_kill(&att, &def), Some(2));
         att.keywords.cleave = false;
         assert_eq!(rounds_to_kill(&att, &def), Some(4));
@@ -416,43 +336,22 @@ mod tests {
     #[test]
     fn persist_defeats_the_per_round_reset() {
         let mut att = ch("att");
-        att.weapons[0].strike_magnitude = 2;
-        att.speed_quantity = 1;
+        att.might = 2;
+        att.speed = 1;
         let mut def = ch("def");
-        def.health_quantity = 1;
-        def.health_magnitude = 5; // 2 < 5 per round → never, without persist
+        def.vitality = 1;
+        def.toughness = 5;
         assert_eq!(rounds_to_kill(&att, &def), None);
-        att.keywords.persist = true; // 2,4,6 → flips round 3
+        att.keywords.persist = true; // 2,4,6 → flip round 3
         assert_eq!(rounds_to_kill(&att, &def), Some(3));
     }
 
     #[test]
-    fn brittle_armor_shatters_to_neutral() {
-        // pierce ×½ vs Plate gives bite 1 (2 actions = 2 < Toughness 3) → walled
-        // while intact; after the pool shatters it's ×1 (bite 2, 2×2=4 ≥ 3).
-        let mut att = ch("att");
-        att.weapons[0] = Weapon {
-            strike_magnitude: 2,
-            channel: DamageType::Pierce,
-        };
-        att.speed_quantity = 2;
-        let mut def = ch("def");
-        def.armor = ArmorType::Plate;
-        def.health_quantity = 1;
-        def.health_magnitude = 3;
-        assert_eq!(rounds_to_kill(&att, &def), None); // intact forever → walled
-        def.keywords.brittle = true;
-        def.armor_quantity = 2;
-        assert!(rounds_to_kill(&att, &def).is_some()); // shatters → breaks through
-    }
-
-    #[test]
-    fn initiative_breaks_round_ties() {
+    fn daring_breaks_round_ties() {
         let mut a = ch("a");
         let mut b = ch("b");
-        a.speed_magnitude = 5;
-        b.speed_magnitude = 1;
-        // Identical kill speed (both cloth, same stats) → initiative decides.
+        a.daring = 5;
+        b.daring = 1;
         assert_eq!(duel(&a, &b).outcome, Outcome::Win);
     }
 }

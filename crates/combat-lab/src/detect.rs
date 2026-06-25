@@ -344,9 +344,7 @@ pub fn breach_by_strike(i: &Character, j: &Character) -> Breach {
     }
     for delta in 1..=BREACH_MAX {
         let mut scaled = i.clone();
-        for w in &mut scaled.weapons {
-            w.strike_magnitude += delta;
-        }
+        scaled.might += delta;
         if duel(&scaled, j).outcome == Outcome::Win {
             return Breach::Needs(delta);
         }

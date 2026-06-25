@@ -1,125 +1,33 @@
-// Melee archetype catalog — rebalanced for the multiplicative type chart.
-// All stat numbers capped at 9, favouring low values (pre-god balancing).
-// Goal: maximise distinct, viable, non-broken archetypes.
-// Type chart: pierce>mail, slash>padded, crush>plate (×2); ×½ around the wheel.
-// Regenerate: cargo run -p combat-lab --bin combat_report
+// Melee archetype catalog — five-stat chassis (might/vitality/toughness/speed/daring)
+// + the deferred GEAR layer: per-type resistance (subtractive pre-pile cut, capped ≤3)
+// and typed weapons. RPS is EMERGENT: each specialist resists its prey's damage type
+// (pierce>slash>crush>pierce) — no counter table is written. A god carries all types
+// and always strikes the defender's least-resisted (covers every weakness).
+// All stats ≤9, resistance ≤3. Regenerate: cargo run -p combat-lab --bin combat_report
 [
-    // --- Tanks: high Toughness wall, low offense; differ by armor/channel ---
-    (
-        name: "Bulwark",
-        health_quantity: 5, health_magnitude: 6,
-        armor: Plate,
-        speed_quantity: 2, speed_magnitude: 2,
-        weapons: [ (strike_magnitude: 3, channel: Slash) ],
-    ),
-    (
-        name: "Warden",
-        health_quantity: 5, health_magnitude: 6,
-        armor: Mail,
-        speed_quantity: 2, speed_magnitude: 2,
-        weapons: [ (strike_magnitude: 3, channel: Pierce) ],
-    ),
-    (
-        name: "Aegis",
-        health_quantity: 5, health_magnitude: 6,
-        armor: Padded,
-        speed_quantity: 2, speed_magnitude: 2,
-        weapons: [ (strike_magnitude: 3, channel: Crush) ],
-    ),
+    // --- Core trio: the emergent cycle, equal chassis ---
+    ( name: "Lancer", might: 6, weapon: [Pierce], vitality: 4, toughness: 4, speed: 2, daring: 2, resistance: (0, 3, 0) ),
+    ( name: "Saber",  might: 6, weapon: [Slash],  vitality: 4, toughness: 4, speed: 2, daring: 2, resistance: (0, 0, 3) ),
+    ( name: "Maul",   might: 6, weapon: [Crush],  vitality: 4, toughness: 4, speed: 2, daring: 2, resistance: (3, 0, 0) ),
 
-    // --- Bruisers: big hits that crack high-Toughness tanks; slow ---
-    (
-        name: "Maul",
-        health_quantity: 4, health_magnitude: 4,
-        armor: Mail,
-        speed_quantity: 2, speed_magnitude: 2,
-        weapons: [ (strike_magnitude: 6, channel: Crush) ],
-    ),
-    (
-        name: "Lance",
-        health_quantity: 4, health_magnitude: 4,
-        armor: Padded,
-        speed_quantity: 3, speed_magnitude: 3,
-        weapons: [ (strike_magnitude: 5, channel: Pierce) ],
-    ),
-    (
-        name: "Cleaver",
-        health_quantity: 4, health_magnitude: 4,
-        armor: Plate,
-        speed_quantity: 2, speed_magnitude: 2,
-        weapons: [ (strike_magnitude: 6, channel: Slash) ],
-    ),
+    // --- Bruisers: big might, one slow action ---
+    ( name: "Pike",    might: 8, weapon: [Pierce], vitality: 3, toughness: 4, speed: 1, daring: 2, resistance: (0, 3, 0) ),
+    ( name: "Cleaver", might: 8, weapon: [Slash],  vitality: 3, toughness: 4, speed: 1, daring: 2, resistance: (0, 0, 3) ),
+    ( name: "Hammer",  might: 8, weapon: [Crush],  vitality: 3, toughness: 4, speed: 1, daring: 2, resistance: (3, 0, 0) ),
 
-    // --- Swarms: many fast weak hits; fragile cloth; differ by channel ---
-    (
-        name: "Gnat",
-        health_quantity: 6, health_magnitude: 2,
-        armor: Cloth,
-        speed_quantity: 5, speed_magnitude: 5,
-        weapons: [ (strike_magnitude: 2, channel: Pierce) ],
-    ),
-    (
-        name: "Hail",
-        health_quantity: 6, health_magnitude: 2,
-        armor: Cloth,
-        speed_quantity: 5, speed_magnitude: 4,
-        weapons: [ (strike_magnitude: 2, channel: Slash) ],
-    ),
-    (
-        name: "Sandstorm",
-        health_quantity: 6, health_magnitude: 2,
-        armor: Cloth,
-        speed_quantity: 5, speed_magnitude: 4,
-        weapons: [ (strike_magnitude: 2, channel: Crush) ],
-    ),
+    // --- Swarms: many fast weak hits, fragile ---
+    ( name: "Gnat", might: 4, weapon: [Pierce], vitality: 6, toughness: 2, speed: 5, daring: 4, resistance: (0, 2, 0) ),
+    ( name: "Hail", might: 4, weapon: [Slash],  vitality: 6, toughness: 2, speed: 5, daring: 4, resistance: (0, 0, 2) ),
+    ( name: "Sand", might: 4, weapon: [Crush],  vitality: 6, toughness: 2, speed: 5, daring: 4, resistance: (2, 0, 0) ),
 
-    // --- Skirmishers: mid throughput, high initiative ---
-    (
-        name: "Pike",
-        health_quantity: 4, health_magnitude: 3,
-        armor: Mail,
-        speed_quantity: 3, speed_magnitude: 6,
-        weapons: [ (strike_magnitude: 3, channel: Pierce) ],
-    ),
-    (
-        name: "Saber",
-        health_quantity: 4, health_magnitude: 3,
-        armor: Plate,
-        speed_quantity: 3, speed_magnitude: 5,
-        weapons: [ (strike_magnitude: 4, channel: Slash) ],
-    ),
-    (
-        name: "Stiletto",
-        health_quantity: 3, health_magnitude: 2,
-        armor: Cloth,
-        speed_quantity: 4, speed_magnitude: 9,
-        pierce_magnitude: 6,
-        weapons: [ (strike_magnitude: 3, channel: Pierce) ],
-    ),
+    // --- Tanks: high vitality/toughness, low might ---
+    ( name: "Warden",  might: 4, weapon: [Pierce], vitality: 6, toughness: 5, speed: 2, daring: 2, resistance: (0, 3, 0) ),
+    ( name: "Bulwark", might: 4, weapon: [Slash],  vitality: 6, toughness: 5, speed: 2, daring: 2, resistance: (0, 0, 3) ),
 
-    // --- Specialists: keyword identities ---
-    (
-        name: "Reaver",
-        health_quantity: 4, health_magnitude: 3,
-        armor: Mail,
-        speed_quantity: 3, speed_magnitude: 4,
-        weapons: [ (strike_magnitude: 3, channel: Slash) ],
-        keywords: (persist: true),
-    ),
-    (
-        name: "Render",
-        health_quantity: 4, health_magnitude: 4,
-        armor: Padded,
-        speed_quantity: 2, speed_magnitude: 3,
-        weapons: [ (strike_magnitude: 5, channel: Crush) ],
-        keywords: (cleave: true),
-    ),
-    (
-        name: "Sentinel",
-        health_quantity: 5, health_magnitude: 6,
-        armor: Plate, armor_quantity: 3,
-        speed_quantity: 2, speed_magnitude: 1,
-        weapons: [ (strike_magnitude: 3, channel: Slash) ],
-        keywords: (brittle: true),
-    ),
+    // --- Keyword specialists ---
+    ( name: "Reaver", might: 3, weapon: [Slash], vitality: 4, toughness: 3, speed: 3, daring: 3, resistance: (0, 0, 3), keywords: (persist: true) ),
+    ( name: "Render", might: 6, weapon: [Crush], vitality: 4, toughness: 3, speed: 2, daring: 2, resistance: (3, 0, 0), keywords: (cleave: true) ),
+
+    // --- The god: all damage types, balanced resistance (intended 1v1 outlier) ---
+    ( name: "Paragon", might: 6, weapon: [Pierce, Slash, Crush], vitality: 5, toughness: 4, speed: 2, daring: 4, resistance: (2, 2, 2) ),
 ]

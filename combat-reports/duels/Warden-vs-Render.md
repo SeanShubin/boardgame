@@ -1,55 +1,37 @@
 # Warden vs Render
 
-## Warden → Render   (kills in 4 round(s))
+## Warden → Render   (never (∞))
 
 ```
-Warden    pierce-3 speed-2
-Render    health-4 toughness-4 armor-padded
+Warden    might-4 pierce speed-2 daring-2
+Render    vitality-4 toughness-3 resist-pierce-3 resist-slash-0 resist-crush-0
 start     [ ][ ][ ][ ]
 round 1
-  action 1  pierce-3 ×1 = damage-3   acc 0+3=3 / toughness-4  no flip   [ ][ ][ ][ ]
-  action 2  pierce-3 ×1 = damage-3   acc 3+3=6 / toughness-4  FLIP (waste-2)   [#][ ][ ][ ]
-  -- end round 1: acc clear
-round 2
-  action 1  pierce-3 ×1 = damage-3   acc 0+3=3 / toughness-4  no flip   [#][ ][ ][ ]
-  action 2  pierce-3 ×1 = damage-3   acc 3+3=6 / toughness-4  FLIP (waste-2)   [#][#][ ][ ]
-  -- end round 2: acc clear
-round 3
-  action 1  pierce-3 ×1 = damage-3   acc 0+3=3 / toughness-4  no flip   [#][#][ ][ ]
-  action 2  pierce-3 ×1 = damage-3   acc 3+3=6 / toughness-4  FLIP (waste-2)   [#][#][#][ ]
-  -- end round 3: acc clear
-round 4
-  action 1  pierce-3 ×1 = damage-3   acc 0+3=3 / toughness-4  no flip   [#][#][#][ ]
-  action 2  pierce-3 ×1 = damage-3   acc 3+3=6 / toughness-4  FLIP (waste-2)   [#][#][#][#]
+  action 1  pierce might-4 − resist-3 = damage-1   acc 0+1=1 / toughness-3  no flip   [ ][ ][ ][ ]
+  action 2  pierce might-4 − resist-3 = damage-1   acc 1+1=2 / toughness-3  no flip   [ ][ ][ ][ ]
+  -- end round 1: acc 2 WASTED (round reset)
+  -- walled: no path to a kill
 ```
 
-## Render → Warden   (kills in 5 round(s))
+## Render → Warden   (kills in 3 round(s))
 
 ```
-Render    crush-5 speed-2 cleave
-Warden    health-5 toughness-6 armor-mail
-start     [ ][ ][ ][ ][ ]
+Render    might-6 crush speed-2 daring-2 cleave
+Warden    vitality-6 toughness-5 resist-pierce-0 resist-slash-3 resist-crush-0
+start     [ ][ ][ ][ ][ ][ ]
 round 1
-  action 1  crush-5 ×1 = damage-5   acc 0+5=5 / toughness-6  no flip   [ ][ ][ ][ ][ ]
-  action 2  crush-5 ×1 = damage-5   acc 5+5=10 / toughness-6  FLIP   [#][ ][ ][ ][ ]
-  -- end round 1: acc 4 WASTED (round reset)
+  action 1  crush might-6 − resist-0 = damage-6   acc 0+6=6 / toughness-5  FLIP   [#][ ][ ][ ][ ][ ]
+  action 2  crush might-6 − resist-0 = damage-6   acc 1+6=7 / toughness-5  FLIP   [#][#][ ][ ][ ][ ]
+  -- end round 1: acc 2 WASTED (round reset)
 round 2
-  action 1  crush-5 ×1 = damage-5   acc 0+5=5 / toughness-6  no flip   [#][ ][ ][ ][ ]
-  action 2  crush-5 ×1 = damage-5   acc 5+5=10 / toughness-6  FLIP   [#][#][ ][ ][ ]
-  -- end round 2: acc 4 WASTED (round reset)
+  action 1  crush might-6 − resist-0 = damage-6   acc 0+6=6 / toughness-5  FLIP   [#][#][#][ ][ ][ ]
+  action 2  crush might-6 − resist-0 = damage-6   acc 1+6=7 / toughness-5  FLIP   [#][#][#][#][ ][ ]
+  -- end round 2: acc 2 WASTED (round reset)
 round 3
-  action 1  crush-5 ×1 = damage-5   acc 0+5=5 / toughness-6  no flip   [#][#][ ][ ][ ]
-  action 2  crush-5 ×1 = damage-5   acc 5+5=10 / toughness-6  FLIP   [#][#][#][ ][ ]
-  -- end round 3: acc 4 WASTED (round reset)
-round 4
-  action 1  crush-5 ×1 = damage-5   acc 0+5=5 / toughness-6  no flip   [#][#][#][ ][ ]
-  action 2  crush-5 ×1 = damage-5   acc 5+5=10 / toughness-6  FLIP   [#][#][#][#][ ]
-  -- end round 4: acc 4 WASTED (round reset)
-round 5
-  action 1  crush-5 ×1 = damage-5   acc 0+5=5 / toughness-6  no flip   [#][#][#][#][ ]
-  action 2  crush-5 ×1 = damage-5   acc 5+5=10 / toughness-6  FLIP   [#][#][#][#][#]
+  action 1  crush might-6 − resist-0 = damage-6   acc 0+6=6 / toughness-5  FLIP   [#][#][#][#][#][ ]
+  action 2  crush might-6 − resist-0 = damage-6   acc 1+6=7 / toughness-5  FLIP   [#][#][#][#][#][#]
 ```
 
 ## Verdict
 
-**Warden** wins — kills in 4 vs 5.
+**Render** wins — kills in 3 vs ∞.
