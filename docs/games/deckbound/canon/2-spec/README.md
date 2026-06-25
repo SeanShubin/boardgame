@@ -46,8 +46,8 @@ authored.
 **Cards may supersede the core.** Every rule here is a **default**. A card may
 **explicitly override** a specific core rule — and it says so on its face, naming the
 rule it bends. This keeps the core small and learnable while letting variety live on the
-cards (e.g. the core says only melee Actors skirmish, §4.2; a card can grant a ranged
-Outrider). A card never *silently* contradicts the core; an unstated conflict is a defect.
+cards (e.g. the core says melee Actors fight only from the front, §4.2; a card can grant a ranged
+front-liner). A card never *silently* contradicts the core; an unstated conflict is a defect.
 
 ---
 
@@ -60,7 +60,7 @@ Outrider). A card never *silently* contradicts the core; an unstated conflict is
 | **Defense model** (pile → bar → pool, one channel)       | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                                                                                                                                               |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                                                                                                                                      |
 | **Cadence/Tempo** (one breadth pool)                     | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                  |
-| **The battle — declare ranks, hold the line**            | 🟡 seeded    | §4 **respecced** to the static-ranks model (the threading gauntlet removed) and **code synced** (`the_line`, 2026-06-21); **§4.4 cap → per-side conservation, §4.5 groups, §4.6 spell windows (Line/Fast/Slow)** added 2026-06-23 (code pending). §4.3 actors-are-decks brought current 2026 (bare ActorCard + Form-derived stats; code in this pass) |
+| **The battle — hold the front, expose the back**            | 🟡 seeded    | §4 **respecced to the attrition model 2026** — two positions, one Tempo contest, a five-round battle on a per-round Tempo budget (supersedes the static-ranks model); **code pending**. §4.5 groups (spillover · sum-vs-min · Hoard) and §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current (bare ActorCard + Form-derived stats) |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                                                                                                                                          |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                                                                                                                                             |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                                                                                                                                       |
@@ -238,7 +238,7 @@ mix-up played with cards. Design background:
 
 > **The Clash is an optional module.** The canonical floor (§4.2) resolves a same-range
 > engagement as a **simultaneous trade**; the Clash below *replaces* that trade with a four-card
-> mix-up + Force when a scenario enables it. Everything in §3–§4 (roles, phases, the gauntlet,
+> mix-up + Force when a scenario enables it. Everything in §3–§4 (roles, phases, positions,
 > Tempo) runs identically either way.
 >
 > **Reconciliation pending (2026-06-20).** This section still uses the old **Focus / Mind** vocabulary
@@ -246,7 +246,7 @@ mix-up played with cards. Design background:
 > one **Tempo** pool now (§3.1), and the Clash is **off in the base game** (the campaign uses the §4.2
 > trade). A full §1 reconciliation (re-expressing the Clash's read/commit layer in Tempo terms, or
 > confirming the Clash keeps its own internal currency) is **deferred** — it is not on the
-> base-gauntlet code path. Where §1 conflicts with §2–§4, **§2–§4 win.**
+> base-combat code path. Where §1 conflicts with §2–§4, **§2–§4 win.**
 
 ### 1.0 The Clash — four cards, Force, ends-on-strike
 
@@ -849,58 +849,59 @@ Two permanent **Form** stats size one round-scoped **pool of cards** — the sam
 
 ### 3.1 What Tempo and Finesse do
 
-**RULE.** **Flipping a Tempo card gates every *action*** — a strike, a crossing contest (slip or catch),
-an evade, a strike back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are free** —
-Tempo is the currency of acting on the enemy, not of mere presence. Run out of face-up Tempo and you can
-take no more actions this round (you still hold your rank and soak with health).
+**RULE.** **Flipping a Tempo card gates every *action*** — a strike, a block / slip / evade, a strike
+back. **Standing in a position, letting a foe slip by, and *absorbing* a blow are free** — Tempo is the
+currency of acting on the enemy, not of mere presence. Tempo **refills each round** (§4), but a round's two
+phases **share it**: run dry within a round and you can take no more actions that round (you still hold your
+position and soak with health).
 
-**Finesse's magnitude does real work in two places — a *crossing contest* and an *evade contest* — and
-nowhere else.** Both are the **same primitive, the tempo contest:** each side commits Tempo cards worth
-(cards × Finesse), and **the side trying to *avoid* the strike must *strictly exceed* the other; a tie
-lands the strike.** The bid cards are spent (they do **not** return until refresh), so contesting *more*,
-or *harder*, drains more Tempo.
-- **Crossing** (melee positioning, §4): an Outrider's **advance** vs a Vanguard's **hold** — strictly
-  higher → slips by (and the bypassed wall may free-hit it, §4); equal-or-less → **held**, and the
-  Outrider and catcher **trade** (each deals Might) on the cards committed — you never pay twice. Ties
-  to the catcher (Shadowstep overrides).
-- **Evade** (ranged defense, §4.2): a defender spends Tempo to dodge a ranged attack — Artillery damage
-  **or** a Controller debuff. The attacker may **press** with extra cards (its **volley**); the
-  defender's **evade** must strictly exceed the volley to avoid it — a tie or less and the attack lands.
+**Finesse's magnitude does real work in exactly one place — the *Tempo contest* — and nowhere else.** The
+contest is one primitive: each side commits Tempo cards worth (cards × Finesse), and **the side trying to
+*avoid* the strike must *strictly exceed* the other; a tie lands the strike.** It covers every defense —
+**slipping** past a melee blocker and **evading** a ranged shot are the same race (§4 / §4.2). Bid cards
+are spent and do **not** return, so contesting *more*, or *harder*, drains more Tempo — the attrition that
+decides the battle.
+- **Block / slip** (melee, §4): a defender out-bids a melee attacker to hold or avoid the blow. A **group**
+  **sums** its Tempo to block, but needs **every** member to beat the attacker to slip (§4.5).
+- **Evade** (ranged defense, §4.2): a defender out-bids a ranged attack — Artillery damage **or** a
+  Controller debuff. The attacker may **press** with extra cards (its **volley**); the defender's bid must
+  strictly exceed the volley — a tie or less and the attack lands.
 
 **Everywhere else, Finesse's number is irrelevant — only the flip counts.** A **strike** is
 **single-card**: flip *one* Tempo card to strike, and the blow is the same whatever the card's Finesse
-(Finesse sizes a **contest** — a crossing or an evade — never a blow). An enemy can only attack you by
+(Finesse sizes a **contest**, never a blow). An enemy can only attack you by
 **spending a Tempo card**, and the blow's force is Finesse-independent. Against a **melee** strike you may
 **reflexively strike back** (position is irrelevant — they came to you) for **one** Tempo card; against a
-**ranged** strike you may **evade** it (the tempo contest above) or strike back **if you carry the
+**ranged** strike you may **evade** it (the Tempo contest above) or strike back **if you carry the
 range** — with no Tempo to spend you simply **take the hit** (a free hit).
 
 **WHY.** One pool for act-and-defend makes the cannon/wall axis a live **allocation** (spend it
-attacking and you cannot answer a skirmisher) rather than a second stat. Splitting the pool into
+attacking and you cannot answer an attacker) rather than a second stat. Splitting the pool into
 **count (Cadence)** and **grade (Finesse)** gives two clean power dimensions that mean different things:
 **Cadence = how many actions you get; Finesse = how cheaply you win each contest.** Confining
-Finesse to *contests* (crossing and evade) keeps a strike's force on Might (not on how hard you shoved
-through the line or slipped a volley), and the per-round depletion is the tension — press your contests
-hard and you are spent for striking (#2 opportunity cost).
+Finesse to the **contest** keeps a strike's force on Might (not on how hard you slipped or held), and the
+**within-round** depletion is the tension — press your contests hard and you are spent for striking
+(#2 opportunity cost).
 
 **GUARANTEES.** *(the tripwires — break one and the concept no longer holds)*
 - **Cadence = count**, **Finesse = grade** — both permanent Form stats, never spent; **Tempo = the cards**,
-  Cadence-many at Finesse each, spent within a round and refreshed between rounds.
-- **Finesse's magnitude affects only a *tempo contest*** — a crossing or an evade (a single simultaneous
+  Cadence-many at Finesse each, **spent within a round and refreshed between rounds** (the round's two
+  phases share one pool, §4).
+- **Finesse's magnitude affects only a *Tempo contest*** — block / slip / evade (a single simultaneous
   bid; the avoider must strictly exceed, a tie lands the strike); it never scales a strike or anything
   outside a contest.
 - **Every action is one Tempo card** (strike, contest, evade, strike back); **standing and soaking are
   free**; a strike is single-card and Finesse-blind.
-- **Spent Tempo does not return until the round refresh** — cards bid on a contest are unavailable for
-  later strikes (the depletion tension); the bid is per-contest, the pool does not refill mid-round.
+- **Spent Tempo does not return until the round refresh** — cards bid on a contest are unavailable for the
+  rest of the round (within-round attrition); a **Recover** verb (§5) can return one mid-round.
 - **Against a melee strike, reflexive strike-back** is available for one Tempo card; **against a ranged
   strike, evade** (the contest) or strike-back if in range; no Tempo → a free hit.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Cadence` (Resources) — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **TERM.** `Finesse` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **tempo contest** — a crossing or an evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
-- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, contest a crossing, evade a ranged attack, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
+- **TERM.** `Finesse` (Resources) — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **Tempo contest** — block / slip / evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
+- **TERM.** `Tempo` (Resources) — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, block / slip / evade, strike back) — standing and soaking are free; spent cards stay spent until the round refresh (shared across the round's two phases; a **Recover** verb can return one mid-round, §5).
 
 ### 3.2 Focus — *merged into Tempo (2026-06-20)*
 
@@ -921,9 +922,9 @@ hard and you are spent for striking (#2 opportunity cost).
 
 ### 3.4 The round — orchestration (PvE & PvP)
 
-> **SUPERSEDED by §4 (static ranks).** The round is no longer a player-phase/foe-phase loop over
-> formation; it is the **Assemble → the Line → the Open → Refresh** model in §4. **Tempo is now the single
-> currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per tier*. The
+> **SUPERSEDED by §4 (attrition model).** The round is no longer a player-phase/foe-phase loop over
+> formation; it is the **blind bid → Phase 1 → Phase 2 → refresh** round-loop model in §4. **Tempo is now the single
+> currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per phase*. The
 > PvE/PvP text below (and its Focus-defend modes) is kept for design history; where it conflicts with
 > §4, §4 wins.
 
@@ -974,261 +975,244 @@ phase.
 
 ---
 
-## 4. The battle — declare ranks, hold the line 🟡 *(static-ranks model; **code synced 2026-06-21** — `combat.rs::the_line`. Remaining enrichments: the per-contest bid-magnitude escalation (dial 1) and the BI-3 force-not-fiat test.)*
+## 4. The battle — hold the front, expose the back 🟡 *(**attrition model**, 2026 — supersedes the static-ranks model; **code pending**. Two positions, one Tempo contest, a five-round battle on a per-round Tempo budget.)*
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
-> **charge-and-gauntlet** (secret charge + threading columns, roles *emergent*). All replaced by the
-> **static-ranks** model below. The *spine survives* — three roles (Vanguard / Outrider / Rearguard),
-> hidden commitment, "the front protects the back" — but the **threading gauntlet is gone**: roles are
-> now **declared, not emergent**, nobody moves, and each Outrider's crossing is a single **Finesse
-> contest** against the wall, resolved in two ordered tiers. Motivation: the gauntlet's threading
-> (column pairing, surplus loops, interception-across) was the one genuinely complex construct and
-> bought nothing the static model can't express more cleanly. Rationale + decision trail:
-> `future-possibilities.md` entry 8. *(Earlier code implemented the gauntlet; the static-ranks code
-> lands in the §4 spec-sync.)*
+> **charge-and-gauntlet** → the **static-ranks** model (three ranks — Vanguard / Outrider / Rearguard —
+> two ordered tiers, a Finesse **crossing contest**, catch / slip / parting hits, Fast / Slow
+> sub-windows). All replaced by the **attrition** model below. The *spine survives* — a front that
+> shields a back, "the front protects the back," **declared** positions, force-not-fiat — but a
+> **simplification pass** collapses the rest: **three ranks → two** (the Outrider is gone), the **two
+> tiers and the crossing contest → one universal Tempo contest**, and **reaching the protected back
+> becomes a matter of *time* (the front falling)** rather than a flanker winning a crossing. Motivation:
+> the Outrider rank, the catch / slip machinery, and the Fast / Slow windows were the costly constructs,
+> and the two-position / one-contest model reproduces the same consequences — the playstyle triangle, the
+> glass-cannon back, force-not-fiat (the WHY, below) — with far less to track.
 
-**The budget (one pool).** **Tempo** is the action economy (§3): a `count × value` pool of
-**Cadence**-many cards, each worth **Finesse**, flipped to spend (§5). **A flipped card buys exactly one
-action — of any kind:** strike, contest a crossing (slip or catch), evade a ranged attack, or strike
-back. **Standing in a rank, letting a foe slip by, and *absorbing* a blow are all free** — Tempo is the
-currency of *acting on the enemy*, not of mere presence. **Run out and you can no longer act** (you still
-hold your rank and soak hits with health). **Tempo refreshes each round.** **Finesse's magnitude is read
-only in a *tempo contest* — a crossing or an evade** (below); every other action is one Finesse-blind card
-whose damage is set by **Might**.
+**The budget (one per-round pool, shared by the round's two phases).** **Tempo** is the action economy
+(§3): a `count × value` pool of **Cadence**-many cards, each worth **Finesse**, that **refills at the end
+of every round.** **Acting on the enemy spends Tempo** — *every* attack, and *every* defense (block or
+slip), is a Tempo bid; **standing in a position and *absorbing* a blow are free.** A round's **two phases
+share the one budget — it does *not* refresh between them**, so Phase 1's contests can leave you **spent
+for Phase 2** (the front's whole job: make you burn the round's Tempo before the back opens). **Health does
+*not* reset** — it is the **cross-round** meter that decides the **five-round** battle. **Finesse is read
+only in a Tempo contest** (a bid); a strike's *damage* is set by **Might**.
 
-Because the **same pool pays for offense and defense**, the cannon/wall axis is an **allocation
-choice**, not a second stat: spend Tempo catching runners and striking and you have none left to strike
-back; hold it and you survive but do less. Both pools share the `count × value` form: **Health = Vitality ×
-Toughness** (persists), **Tempo = Cadence × Finesse** (refreshes). *(No Focus/Mind pool — merged 2026-06-20.)*
+**RULE — two declared positions.** Each side secretly **groups** its Actors (§4.5) and places each group,
+then both reveal:
 
-**RULE — three declared ranks.** Each side secretly assigns every Actor a rank, then both reveal:
+- **Vanguard** — the **front**. The position that **can be hit**, and the **shield**: *while a side's
+  Vanguard lives, its Rearguard cannot be targeted.*
+- **Rearguard** — the **back**. **Untargetable while its own front lives;** from safety it fires on the
+  enemy front (ranged), buffs allies, and degrades foes.
 
-- **Vanguard** — the melee front line; holds, and may spend Tempo to **catch** crossing Outriders —
-  **as many as it can pay catch-bids for** (Cadence = catch breadth, Finesse = catch strength).
-- **Outrider** — the flankers; each attempts to **cross** the enemy line to reach the backfield.
-- **Rearguard** — the ranged / support line behind the front; fires over it, and can be reached only by an
-  Outrider who crossed (or once the front is broken).
+**Reach = where you can attack from.** Range is **position-determined** (§4.2): a **melee** Actor can only
+strike from the **Vanguard** (it must be at the front); a **ranged** Actor strikes from the **Rearguard**,
+reaching over its own line. So melee belongs up front (it is also your shield) and ranged belongs in back
+(safe damage) — positions **self-sort by attack type**, no rule needed; a melee unit parked in the
+Rearguard is dead weight until the front breaks and the distance closes.
 
-The counter-triangle holds — **Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard**: a Vanguard catches
-Outriders; an Outrider who crosses reaches the otherwise-untouchable Rearguard; the Rearguard fires on
-the exposed front.
+**The structure — a round is two phases; the battle is up to five rounds.** The battle runs **five rounds,
+or until a side is dead.** Each round:
 
-**The round.**
+1. **Blind bid** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors (§4.5)
+   and assigns each group **Vanguard** or **Rearguard** (re-bid each round), and plays **standing buffs /
+   braces** (Support mends, Wall braces — ally-targeted, last the round). Reveal together; nobody moves.
+2. **Phase 1 — the front holds.** A free-for-all: anyone may strike the **enemy Vanguard**; **no one may
+   target an enemy Rearguard.** Friendly **buffs auto-land** (no friendly harm). Every attack is contested
+   (the one Tempo contest, below); effects **accumulate** and **lock at the boundary** (§1.9; deaths tally,
+   §1.3).
+3. **Phase 2 — the front falls (per side).** The instant a side's **Vanguard is gone, its Rearguard is
+   fair game** — to ranged fire and to any melee that crossed. Each side flips **independently**. **No
+   Tempo refresh between the phases:** the round's budget carries over, so a side that spent Phase 1
+   breaking the line may reach the open back **empty-handed**.
+4. **Refresh.** All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved battle
+   is a draw, §0.4).
 
-1. **Assemble** *(the one hidden, simultaneous commit).* Each side secretly assigns ranks, **binds any
-   groups** (§4.5), **and** commits its **bids** — how many Tempo cards each Outrider throws at its
-   crossing, how many each Vanguard throws at a catch, and (defender's choice) **which Vanguard catches
-   which Outrider** — and plays its
-   **standing cards** (a Wall's Brace / Last Stand, a Support's Mend / Haste), whose effect **lasts the
-   round** and shapes what follows — Controller debuffs are *not* standing cards; they are evadable ranged
-   attacks resolved in the Open (§4.2). Reveal together; nobody moves after.
-2. **Tier 1 — the Line.** From the start-of-round snapshot, resolved together (deaths tally at the tier
-   boundary — a unit mortally wounded here still lands every blow it committed, §1.3):
-   - **Vanguards strike** the opposing Vanguard (a card per blow).
-   - **Crossing contests** *(the only place Finesse is read)*: each Outrider's committed **advance**
-     (cards × Finesse) vs its assigned Vanguard's committed **hold** (cards × Finesse + Phalanx).
-     Strictly greater → **slips** (the bypassed Vanguard may then spend **any of its remaining Tempo**
-     to land **one free Power hit per card — no cap**; spends none → the Outrider passes untouched); ≤ →
-     **held** (Outrider and catcher **trade**, both Might; the Outrider does not cross). **Ties to
-     the catcher** unless the Outrider has **Shadowstep**. Each catch is a **separate bid** a Vanguard
-     pays from its own Tempo, so a wall holds only as many Outriders as it can afford to contest; an
-     Outrider **no Vanguard pays to catch slips free** — no contest, and (no wall having spent Tempo
-     on it) no free hits.
-3. **Tier 2 — the Open.** From the post-Tier-1 snapshot, resolved in **three ordered sub-windows — Fast ▸
-   Outrider melee ▸ Slow** (§4.6; tally at each boundary):
-   - **Crossed Outriders strike** — behind the line, they may hit **any** enemy rank (Rearguard first,
-     the prize; the Vanguard from behind; or an enemy Outrider). One card per strike, **act while
-     cards remain**; a melee blow on a foe that can't answer melee (a Rearguard) is **free**.
-   - **A Vanguard whose opposite is dead pours through** and strikes the now-undefended enemy Rearguard /
-     Outrider (free).
-   - **Rearguards fire** ranged at the enemy Vanguard + Outrider (never the enemy Rearguard) — picking off
-     exposed Outriders; lands on any target that does not **evade** (the tempo contest, §3.1) or answer.
-   - **Evades & strike-backs:** a struck unit may **evade** a ranged attack (spend Tempo, §3.1) or, if it
-     carries the range, **strike back** (Might); with no Tempo it eats a free hit.
-4. **Refresh.** Clear round-scoped status; refill Tempo to Cadence; round++. (A battle not closed by the
-   ruleset round cap is a draw — §0.4.)
+The front's whole job is **within-round attrition**: make the enemy *spend the round's Tempo* to break
+through, so whoever reaches the exposed back this round arrives with an empty tank — or not at all.
 
-**The crossing contest (a Finesse read; the other is the evade, §4.2).** A single **simultaneous Finesse bid**, *not* an iterated
-auction: each side has committed *k* cards at Assemble, worth *k ×* Finesse; the higher total crosses /
-holds, tie to the catcher (Shadowstep overrides); bid cards are spent. An Outrider's **advance** is
-weighed against the Vanguard's **hold**: Wall powers feed **hold only**, never advance — a Wall raises
-the number you must clear without itself slipping through (an immovable line, not a runner). An Outrider
-that **slips** has won only the *right of way*, not safe passage: the bypassed Vanguard may convert **any
-remaining Tempo** into **free Might hits — one per card, no cap** — on the passer. You can always out-bid
-a wall and get through (force, not fiat — §0.3 / BI-3), but you **cannot** stop a wall with Tempo to
-spare from striking you on the way past: **a mechanic never overrides superior force.**
+**The one contest — attack vs. block / slip.** Every attack is a **single simultaneous Tempo bid**; the
+defender answers by spending Tempo to **beat it — strictly (a tie lands the hit).** *One* mechanic covers
+**slipping** past a melee blocker (pushing toward the back) and **evading** a ranged shot (§4.2) — melee
+or ranged, it is the same race. Both sides spend what they commit (the attrition). Because the defender
+must spend **more** to win, **defending is Tempo-negative** — a pure defender bleeds faster than its
+attacker, runs dry first, then **eats the hit**, so blows always connect in the end and **Health / Might
+stay load-bearing.** There is **no iterated raise-war** — one committed bid each, higher wins (§0.4:
+combat stays a *maximizer*, not an equilibrium-solver). **Force, not fiat:** out-bid any defender and the
+hit lands; spend past what your foe can answer and nothing is immune — opposition is always *cost*.
 
-**Demise — protection comes from the line.** Each rank's vulnerability is *how much line stands between
-it and the enemy*:
+**Groups — sum to block, weakest-link to slip.** A group that **blocks** pools its members' Tempo into one
+summed bid (a strong hold); a group that **slips or evades** needs **every member to individually beat the
+attacker** (weakest-link). So a group is a superb **wall** and a hopeless **slipper** — the unit that
+reaches an exposed back is a **lone, high-Tempo** body, not a blob (§4.5). *This is the old
+Vanguard-vs-Outrider distinction, now emergent from sum-vs-min.*
 
-| Rank                            | Dies to                                                                                                                                                                | Safe from                                                                |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **Vanguard** (is the line)      | direct engagement (enemy Vanguard); a crossed enemy Outrider from behind                                                                                               | being flanked while it holds — it faces forward                          |
-| **Outrider** (left the line)    | the wall's **catch**, or its **free hits on a slip** (one per Tempo card the wall spends, uncapped); the enemy **Rearguard's** fire; an enemy **Outrider** in the open | the committed enemy **Vanguard** — a holding line cannot wheel and chase |
-| **Rearguard** (behind the line) | an Outrider who **crossed**; its own **Vanguard wiped**, then enemy Vanguards pour through                                                                             | everything, *while its line holds*                                       |
+**Demise — protection is the front's, and only while it stands.**
 
-So the **Outrider is the exposed rank** — it bought reach by giving up cover, and dies in the open. It
-is thus both **spear and screen**: field it to assassinate the enemy Rearguard *and* to kill the enemy's
-Outriders before they reach yours.
+| Position | Dies to | Safe from |
+| --- | --- | --- |
+| **Vanguard** (the front / shield) | the enemy front it fights — and anything else once engaged; it is the **exposed** position by design | nothing — being the shield *is* its job |
+| **Rearguard** (the back) | once **its own Vanguard falls** — enemy ranged fire, and any melee that crosses the open distance | **everything, while its front holds** |
 
-**Role powers (re-homed).** Each bites a concrete step: **Phalanx** (+hold — more catch strength),
-**Bulwark** (+hold to *every* allied Vanguard — the line anchors as one), **Taunt** (must be assigned
-the first catch),
-**Blitz** (the first slip each round is a free card), **Shadowstep** (win the tied contest), **Backstab
-/ Assassinate** (a crossed Outrider hits an enemy Rearguard harder / executes it — the §10 prize).
+So the **front is spent to keep the back alive**: a glass-cannon Rearguard is safe *and* deadly while
+shielded, and dies the moment the shield drops. The core decision is the **allocation** — load the
+**front** (outlast the enemy to *their* Phase 2) or the **back** (burn from safety, but lose it when
+*your* front breaks).
 
-**Controller debuffs — evadable ranged attacks.** A Controller fires debuffs from the Rearguard as
-**ranged attacks** (§4.2): the target may **evade** them (the tempo contest, §3.1) or eat them, exactly
-like Artillery fire — but they deal **no damage** (Charter #13), they **degrade**. A landed debuff hangs
-a round-scoped status (cleared at Refresh) or drops a stat for the round:
-- **Status:** **Stagger** (no action — no strike, contest, or strike-back), **Shove** (out of melee —
-  cannot contest a melee blow), **Disarm** (cannot play role cards), **Rout** (driven from the Vanguard
-  to the Rearguard — off the line for the round).
-- **Stat-drop:** **lower Might / Toughness / Finesse**, or **drain Tempo** — softening the foe for the
-  rest of the round (a lowered Finesse weakens its slips *and* its evades at once).
+**Role powers (re-homed to the one contest).** With no crossing or catch, powers now bite the **Tempo
+bid** or the **exposed-back strike** instead: e.g. **Bulwark** (+block bid for every allied Vanguard — the
+line holds as one), **Assassinate** (a strike on an exposed Rearguard hits harder / executes it — the §10
+prize). The crossing-only riders (Phalanx-hold, Taunt-first-catch, Blitz-free-slip, Shadowstep-win-ties)
+**retire** with the crossing contest; where still wanted they re-express as Tempo-bid modifiers. *(The
+exact power list is an open dial.)*
 
-**Force, not fiat** holds here too: enough volley always lands (you can only evade what your Tempo
-affords) and no foe is immune — a debuff is *cost*, never *impossibility*. *(The old fear/Dread channel
-that produced these via a Resolve-bar break is **gone**; the Controller now applies them directly as
-evadable ranged attacks. Each debuff's window, and whether a pre-Line Rout is possible, are seeded — tune
-to taste.)*
+**Controller debuffs — evadable ranged attacks.** A Controller fires debuffs from the **Rearguard** as
+**ranged attacks** (§4.2): the target may **evade** them (the Tempo contest) or eat them, exactly like
+Artillery fire — but they deal **no damage** (Charter #13), they **degrade**. A landed debuff hangs a
+round-scoped status or drops a stat:
+- **Status:** **Stagger** (cannot act), **Disarm** (cannot play role cards), **Rout** (driven **out of the
+  Vanguard** — it stops shielding, so its own Rearguard is exposed: the front-breaker *without* a kill).
+- **Stat-drop:** lower **Might / Toughness / Finesse**, or **drain Tempo** — a lowered Finesse weakens both
+  its slips *and* its evades; drained Tempo hastens its bleed-out.
 
-**Bypass = open season.** Once a unit is *behind the enemy line* — an Outrider that **slipped** past a
-Vanguard, or a Vanguard that **killed** the one it faced — **every enemy rank is fair game to it**. The
-line only protects what is still in front of it; bypass it (by slipping or by killing it) and the
-backfield is open.
+**Force, not fiat** holds: enough volley always lands (you evade only what your Tempo affords), no foe is
+immune. *(The old fear/Dread channel is **gone**; the Controller applies these directly as evadable ranged
+attacks. Each debuff's strength, and whether Rout can fire before contact, are seeded — tune to taste.)*
+
+**The back opens by attrition, not by slipping.** There is no flanker that *slips* to the back; a
+Rearguard becomes reachable only when **its own front is gone** — killed outright, or **Routed off the
+line.** Until then the line protects everything behind it; once it falls, the backfield is open to fire
+and to any melee that crosses.
 
 **Targeting matrix.**
 
-| Chooser       | May target                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Vanguard**  | the enemy Vanguard it faces; once that is dead, it **pours through** to **any** rank behind it (Rearguard or Outrider)               |
-| **Outrider**  | **held** → only its catcher; **crossed** → **any** enemy rank (Rearguard first, then the Vanguard from behind, or an enemy Outrider) |
-| **Rearguard** | enemy **Vanguard & Outriders**, and **aid own allies** — **never** the enemy Rearguard                                               |
+| Chooser | May target |
+| --- | --- |
+| **Vanguard** (melee) | the **enemy Vanguard**; once the enemy front is gone, the **enemy Rearguard** (crossing the open distance) |
+| **Rearguard** (ranged) | the **enemy Vanguard** (firing over its own line); once the enemy front is gone, the **enemy Rearguard**; and it may **aid its own allies** (auto-success buffs) |
 
-**Edge cases.** *All-Rearguard (no front):* nothing can catch, so every enemy Outrider slips free and
-raids the Rearguard — holding everyone back only exposes you. *No Outriders:* the lines trade and the
-Rearguards fire — attrition the heavier line wins. *Neither side fields a front:* the "Rearguard is safe"
-privilege (paid for by fielding a front) lifts — open brawl, anyone may target anyone in range.
+No one may target an enemy **Rearguard** while that side's **Vanguard** lives. Friendly fire does not
+exist — ally-targeted effects are **buffs only**, and they auto-land.
 
-**Protection is the wall's, this round.** Only catching an Outrider at the line — or screening it with
-your own Outrider, or shooting it with the Rearguard — saves the backfield this round; a wiped Vanguard
-stops protecting its Rearguard immediately. **No rank is ever permanently safe** — every unit is reachable
-by enough force (the **force-not-fiat** invariant, §0.3 / balance-invariants BI-3).
+**Edge cases.** *No Vanguard (all-Rearguard):* with no front to shield it, **your Rearguard is exposed
+from the start** (the "while its front lives" clause never holds), and the enemy front closes untouched —
+holding everyone back only exposes you. *No Rearguard (all-Vanguard):* a pure front — durable, with
+nothing to expose, but short on the safe damage cannons give; it wins by out-lasting, not out-gunning.
 
-**Determinism (two ordered tiers).** Each tier resolves from a snapshot, **order-independent within**
-(permuting the units yields the identical end-state — the §1.9 property), **strictly sequenced between**
-(the Line, then the Open); deaths finalize at each tier boundary, so a mortally-wounded unit still lands
-every blow it committed (§1.3). The base battle is **perfect-information and deterministic given the
-Assemble commit** (#11); the crossing's **bid** is a single simultaneous commitment (not an iterated
-raise-war), so it stays computable. The hidden, simultaneous mind-game is the optional **Clash** (§1.0).
+**Protection is the front's, and momentary.** Only a **living Vanguard** shields the back; the instant it
+falls — killed or Routed — the back is reachable. **No position is ever permanently safe** — every unit
+dies to enough Tempo (the **force-not-fiat** invariant, §0.3 / BI-3): a back is safe *because* a front is
+paying for it, never by rule.
 
-**What is hidden.** Only the **Assemble commit** — ranks + bids + catch-assignments — and only until the
-simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend. Always public: stats
-(Cadence / Vitality) and the spent/unspent pool.
+**Determinism.** Each phase resolves from a snapshot, **order-independent within** (permuting the units
+yields the identical end-state — the §1.9 property); effects **accumulate to a boundary** where deaths
+finalize (§1.3: a mortally-wounded unit still lands every blow it committed). The Tempo contest is a
+**single simultaneous bid** (not an iterated raise-war) and the battle is **capped at five rounds**, so
+it is **bounded and perfect-information given each round's blind bid** (#11) — a maximizer, par
+well-defined (§0.4). The only hidden, simultaneous mind-game is the optional **Clash** (§1.0).
 
-**WHY.** The triangle survives on a single physical picture — a battle line with a front, flankers, and
-a rear — but the **threading gauntlet is gone**: roles are declared, nobody moves, and an Outrider's
-fate is one **Finesse contest** against the wall, not a walk through a column. **Tempo as one pool spent
-only on *acting*** (striking, contesting, answering) makes the core decision crisp — *where do I spend
-my initiative?* — while standing and soaking stay free, so a spent wall is still a wall. **Finesse read
-in contests** keeps the stats orthogonal: **Cadence** = how many actions, **Finesse** = whether you
-cross or evade, **Might** = how hard you hit. **Force, not fiat:** nothing is forbidden by rule — a low-Finesse
-Outrider can still cross by overspending, an out-numbered wall is overwhelmed, an over-powered lone
-hero wipes a weaker party — opposition is always *cost*, never *impossibility*. The converse holds too:
-out-bidding a wall buys **passage, not safety** — a wall with Tempo to spare still free-hits the passer
-(uncapped, one per card), so a **mechanic never overrides superior force.**
+**What is hidden.** Only each round's **blind bid** — groups, positions, and standing cards — and only
+until the simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend. Always public:
+stats (Cadence / Vitality) and the spent / unspent pool.
+
+**WHY.** One physical picture — a front that shields a back — collapsed to **two knobs:** *where each unit
+stands* (front = exposed shield, back = safe cannon) and *how a finite Tempo budget is spent* (attack vs.
+block / slip). The old three-rank triangle survives as a **playstyle** rock-paper-scissors, mediated by
+that economy:
+
+- **Aggressor** (spend Tempo breaking the front to expose the back) **beats Glass-Cannon** — cracks the
+  thin shield before the cannons win.
+- **Glass-Cannon** (all Rearguard, fire from safety) **beats Turtle** — out-guns a passive defender it
+  never has to reach.
+- **Turtle / Guard** (spend Tempo on block / slip) **beats Aggressor** — drains the pusher dry, so it
+  reaches the back with nothing left.
+
+`Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor`. The Vanguard is recast from "catch flankers" to **tempo
+sponge** — make the enemy too poor to cash in Phase 2. **Force, not fiat:** out-bid any defender, over-power
+any wall — opposition is always *cost*; and "beat, not match" guarantees blows eventually land, so Health
+and Might never become decorative.
 
 **GUARANTEES.**
 
-- **The role triangle holds:** Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard; roles are **declared**.
-- **The Rearguard is reachable only by crossing the line** — an Outrider who beats the wall, or a
-  Vanguard pouring through a broken front — never by enemy Rearguard (except the no-front open brawl).
-- **One hidden commit:** only the Assemble commit (ranks + bids + assignment) is hidden + simultaneous;
-  all resolution is open. Base combat is perfect-information and deterministic (#11); the hidden
-  mind-game is the optional Clash.
-- **Two ordered tiers, snapshot-resolved:** order-independent within a tier, strictly sequenced between;
-  a mortally-wounded unit still lands its committed blows (§1.3).
-- **Two pools, both `count × value`:** Health (persists) and Tempo (refreshes). **Tempo buys actions
-  only** (strike / contest / evade / strike-back); standing and soaking are free. **Finesse bites only in
-  a tempo contest** (crossing or evade); a strike is Finesse-blind (Might sets damage).
-- **Force, not fiat:** every rank is killable by enough force — no immunity, no hard cap, no skill-gate.
-  A no-skills, infinite-stat character wipes any finite party in one round (BI-3). Symmetrically,
-  **slipping a wall grants right of way, not immunity:** the bypassed wall converts remaining Tempo into
-  **uncapped** free hits (one per card), so no crossing mechanic shields the passer from superior force.
+- **Two declared positions:** Vanguard (front, exposed shield) and Rearguard (back, safe cannon);
+  positions **self-sort by reach** (melee front, ranged back).
+- **The back is reachable only after the front falls** — by fire or by crossed melee — never while a
+  living Vanguard shields it; a back's safety is *paid for*, never decreed (force-not-fiat).
+- **One unified Tempo contest:** a single simultaneous bid; the defender must **beat, not match** (ties
+  land); **no iterated auction**, so combat stays a maximizer (§0.4). Defending is Tempo-negative → blows
+  always connect in the end → Health / Might stay load-bearing.
+- **Per-round Tempo, shared by the round's two phases:** it refills each round but does **not** refresh
+  between Phase 1 and Phase 2 — within-round attrition is the front's job. **Health persists**; the battle
+  is capped at **five rounds**.
+- **Groups:** sum-to-block, weakest-link-to-slip; single-target damage **spills** in declared order, **AoE
+  hits all**, acting costs **one Tempo per member**; **Hoard X** is a one-card group of X bodies (§4.5).
+- **Force, not fiat:** every position is killable by enough Tempo — no immunity, no hard cap. A no-skills,
+  infinite-Tempo character wipes any finite party (BI-3).
 
-**MANUAL.** *Secretly assign each Actor a rank — Vanguard (front), Outrider (flanker), Rearguard
-(rear) — and commit your bids: how many Tempo cards each Outrider throws at its crossing, each
-Vanguard at a catch, and which Vanguard catches which Outrider; play your standing cards (Wall braces,
-Support buffs — they last the round) in the same commit. Reveal together; no one moves. **The Line:**
-Vanguards strike across (a card a blow); each Outrider's advance (cards × Finesse) meets its catcher's
-hold — strictly more slips (and the bypassed wall may free-hit it once per Tempo card it spends), equal-or-less is held and trades; an
-uncaught Outrider slips free. **The Open:** Outriders who crossed strike anything behind the line
-(the Rearguard is the prize); a Vanguard whose foe is dead pours through; Rearguards fire at the enemy front
-(and Controllers fire debuffs); anyone hit by ranged may **evade** (a card) or strike back if in range,
-else takes a free hit. Standing and soaking cost nothing — only acting spends Tempo. Refresh and go again.*
+**MANUAL.** *Group your Actors and place each group in the **Vanguard** (front) or **Rearguard** (back);
+play standing buffs / braces in the same hidden commit. Reveal; no one moves. **Phase 1 — the front
+holds:** everyone may strike the enemy front; nobody may touch an enemy back; friendly buffs auto-land.
+Every attack is one Tempo bid the defender must **strictly beat** to block or slip (a tie lands; a group
+**pools** Tempo to block, but must have **every** member beat it to slip). Both sides spend what they bid;
+**the round's two phases share one Tempo pool** (no refresh between them). **Phase 2 — a front falls:** that
+side's back is now fair game to fire and to melee that crosses; grind on the round's remaining Tempo.
+Standing and soaking are free — only acting spends Tempo. At round end Tempo refreshes; the battle runs
+**five rounds** or until a side is dead.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Assemble` (Roles) — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Outrider / Rearguard), commits its crossing / catch bids and which Vanguard catches which Outrider, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
-- **TERM.** `Vanguard` (Roles) — The declared melee front line. Holds, and may spend Tempo to catch crossing Outriders — as many as it can pay catch-bids for (Cadence = breadth, Finesse = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Rearguard.
-- **TERM.** `Outrider` (Roles) — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Rearguard.
-- **TERM.** `Rearguard` (Roles) — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Rearguard, and is reached only by an Outrider who crossed or a Vanguard pouring through a broken front.
-- **TERM.** `The triangle` (Roles) — Vanguard beats Outrider (catches it at the line); Outrider beats Rearguard (crosses to assassinate); Rearguard beats Vanguard (fires from safety, untouchable in melee).
-- **TERM.** `The Line` (Combat) — Tier 1: Vanguards strike across, and each crossing Outrider's advance Finesse is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
-- **TERM.** `Crossing` (Combat) — An Outrider's attempt to pass the wall: a single simultaneous Finesse bid (committed cards × Finesse). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Outrider slips free. Wall powers raise the hold only.
-- **TERM.** `The Open` (Combat) — Tier 2: crossed Outriders strike anything behind the line (the Rearguard is the prize), a Vanguard whose foe is dead pours through, Rearguards fire on the front and pick off exposed Outriders, and the struck strike back if they can answer the range.
-- **TERM.** `Open brawl` (Combat) — If neither side fields a front, no line forms and the Rearguard's safety lifts: everyone may target anyone with whatever range they carry.
-- **TERM.** `Phases` (Round) — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Outriders contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Outrider melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
-- **TERM.** `Group` (Combat) — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Outrider crosses on its weakest member's Tempo. No size cap, no mixed intentions.
-- **TERM.** `Window tag` (Combat) — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Outrider melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
+- **TERM.** `Blind bid` (Roles) — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group to the Vanguard (front) or Rearguard (back), and plays its standing buffs / braces. Positions are re-bid every round. Revealed together; everything after resolves in the open, nobody moves.
+- **TERM.** `Vanguard` (Roles) — The declared front. The position that can be hit and the shield: while a side's Vanguard lives, its Rearguard cannot be targeted. Melee Actors fight from here.
+- **TERM.** `Rearguard` (Roles) — The declared back. Untargetable while its own Vanguard lives; from safety it fires on the enemy front (ranged), buffs allies, and degrades foes. Reached only once its own front falls.
+- **TERM.** `Phase 1 / Phase 2` (Combat) — The two phases of a round. Phase 1: both backs protected — strike the enemy front only. Phase 2 (per side): a side's back is fair game the instant its Vanguard falls. Both phases share one Tempo pool (no refresh between them); Tempo refills at round end. Effects accumulate and lock at the boundary.
+- **TERM.** `Tempo contest` (Combat) — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
+- **TERM.** `Reach` (Combat) — Where you can attack from: melee strikes only from the Vanguard, ranged only from the Rearguard. Positions self-sort by attack type; a melee unit in the back is idle until the front breaks.
+- **TERM.** `Group` (Combat) — Same-side Actors bound at form-up into one unit: one position, one shared target, distinct Health. Single-target damage spills in declared order; AoE hits every member; acting costs one Tempo per member; blocking sums member Tempo, slipping needs every member to beat the attacker. No size cap, no mixed positions.
+- **TERM.** `Hoard X` (Combat) — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
+- **TERM.** `Spillover` (Combat) — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member when the current can no longer absorb it.
 
-**Open dials (pin with implementation).** The structure (Assemble, the two tiers, the crossing contest,
-the three declared roles, targeting) is settled; these are not:
+**Open dials (pin with implementation).** The structure (the per-round blind bid, the two phases, the one
+Tempo contest, the two declared positions, reach, targeting, the five-round cap) is settled; these are not:
 
-> **RATIFICATION (2026-06-21).** §4 is the **static-ranks** model, and the **code is synced** —
-> `combat.rs::the_line` is the **resolver-of-record** the balance work (§0.3) measures against:
-> card-bound catch (one card per catch, defender-assigned, Taunt first), the Outrider bids the fewest
-> cards to beat the hold, two snapshot tiers, ties to the catcher, Shadowstep / Phalanx / Bulwark / Blitz
-> riders. The **bid is a single simultaneous commitment** (not an iterated auction), so base PvE combat
-> stays a maximizer, not an equilibrium-solver — par stays well-defined. *(v1 prices a catch at one card;
-> the per-contest **bid-magnitude escalation** — a Vanguard committing several cards to raise one hold —
-> is the remaining enrichment, dial 1.)*
+> **SUPERSESSION (2026).** The static-ranks ratification (2026-06-21) — three ranks, two tiers, the
+> crossing contest, card-bound catch, Shadowstep / Phalanx / Bulwark / Blitz riders — is **retired** by
+> the attrition model above. The **resolver-of-record changes accordingly** (`combat.rs` is code-pending,
+> no longer `the_line`). What carries over: a **single simultaneous bid** (not an iterated auction), so
+> base PvE stays a **maximizer**, not an equilibrium-solver — par well-defined (§0.4).
 
-1. **Bid & free-hit magnitudes** — the contest *rule* is locked (single simultaneous bid, committed
-   cards × Finesse, ties to the catcher, Shadowstep overrides); the **numbers** (the slip free-hit weight,
-   strike Power) live in `booklet.ron`, human-tuned.
-2. **Catch capacity — locked (card-bound).** A Vanguard catches as many Outriders as it pays
-   catch-bids for (Cadence = breadth, Finesse = strength); **Bodyguard is retired** (its old +1 niche is
-   now just the card budget).
-3. **Outrider strike cost** — one Tempo per strike (a unit acts while it holds cards); confirm whether
-   switching targets costs extra.
-4. **Rearguard aid kit** — the buffs / heals / debuffs a Rearguard delivers — Action cards over the §5 zone
-   layer (the aspect/combo layer is retired — `retired-ideas.md`).
-5. **Pool model — locked (§3, 2026-06-20).** Two `count × value` pools: **Health = Vitality × Toughness**
-   (persists) and **Tempo = Cadence × Finesse** (refreshes). **Focus and Mind are removed.** Cadence = count
-   (how many Tempo cards), **Finesse = grade** (per-card magnitude). **Finesse is read only in a crossing
-   contest**; every other action is one Finesse-blind card (Might sets damage), and **standing / soaking
-   cost no card at all**.
+1. **Bid & damage magnitudes** — the contest *rule* is locked (single simultaneous Tempo bid; the defender
+   must **beat, not match**; ties land); the **numbers** (bid grades, strike Might) live in `booklet.ron`,
+   human-tuned.
+2. **The Tempo budget** — its size per Actor (Cadence) sets how much each round affords; **per-round refresh
+   and the two-phase shared pool are locked**; the **five-round cap** is the master length dial.
+3. **Role-power list** — which crossing-era powers re-express as Tempo-bid modifiers, plus the new
+   block-bid / exposed-back powers (Bulwark, Assassinate, …).
+4. **Rout's reach** — whether a Controller can Rout a Vanguard *off the line* (exposing its back) before
+   contact, and how strongly.
+5. **Group action-cost** — **one Tempo per member to act** is the price of grouping (§4.5); confirm it
+   against the par solver alongside AoE-vulnerability and target-lock.
+6. **Pool model — locked (§3):** **Health = Vitality × Toughness** (persists cross-round), **Tempo =
+   Cadence × Finesse** (refreshes each round, shared across the round's two phases). Finesse reads only in a
+   Tempo contest; a strike is Finesse-blind (Might sets damage); **standing / soaking cost no card at all**.
 
-*(Range/attack dials are resolved by §4.2: "Rearguard self-defense" = whether it carries melee; "strike
-shape" = a Clash when attacker and target share the range, an auto-hit when they don't.)*
+*(Range/attack dials remain resolved by §4.2: melee fights from the front, ranged from the back; a
+same-range meeting is a trade / Clash, an off-range or unanswered blow auto-hits.)*
 
 ### 4.1 Count-adaptivity — the system degrades to the choices that exist
 
 **RULE.** The commitment layer is **count-adaptive**: any choice with a **single legal option
-resolves automatically**, presenting no decision. Rank assignment, the crossing bids, catch
-assignment, and Outrider / Rearguard targeting appear only when party size makes more than one option
-legal. Concretely:
+resolves automatically**, presenting no decision. **Position assignment**, **grouping**, and **targeting**
+appear only when party size makes more than one option legal. Concretely:
 
-- **1 v 1** — each side has one Actor; ranks are moot (front meets front), so the two simply **trade**
-  (or fight a **Clash** with the module on). No rank bluff, no crossing (one unit can't both hold and
-  flank), no Rearguard, no Outrider — it is exactly the plain duel (the tutorial case).
-- **Small parties (2–3)** — only live choices surface: **rank assignment** becomes real once a second
-  body makes a front-vs-flank split meaningful; a **crossing bid** only where an Outrider faces a
-  catcher both can afford; **targeting** only with a surviving target and a legal line to it.
-- **Larger parties** — the full machinery (a bluffed formation, several crossings, breakthroughs,
-  pour-throughs, and screening).
+- **1 v 1** — each side has one Actor; positions are moot (front meets front), so the two simply **trade**
+  (or fight a **Clash** with the module on). No position bluff, no group, no back to shield — it is exactly
+  the plain duel (the tutorial case).
+- **Small parties (2–3)** — only live choices surface: **position assignment** becomes real once a second
+  body makes a front-vs-back split meaningful; **grouping** once two same-position bodies can bind; and
+  **targeting** only with a surviving target and a legal line to it.
+- **Larger parties** — the full picture (a bluffed formation, groups walling and lone units slipping,
+  fronts falling and backs opening).
 
 **WHY.** Complexity should scale with the number of bodies. The protection layer only *means*
 something when you have an ally to protect, so it must be invisible until then — keeping 1 v 1
@@ -1243,12 +1227,13 @@ current head-count.
 ### 4.2 Range & attack type — melee, ranged, both, or neither
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
-**position-determined**, never chosen: **crossing contests and Outrider strikes are melee;
-Rearguard fire is ranged.** A strike lands at its range; how the target may answer depends on the range:
+**position-determined** (§4): a **melee** Actor strikes only from the **Vanguard** (it must be at the
+front); a **ranged** Actor strikes from the **Rearguard**, over its own line. A strike lands at its range;
+how the target may answer depends on the range:
 
 - **Melee, same range (target can strike back)** → a **simultaneous trade** (both deal their base through
   toughness, §2). With the **optional Clash module** (§1.0) on, the trade becomes the four-card Clash + Force.
-- **Ranged** → the target may **evade** (the tempo contest, §3.1 — spend Tempo, strictly beat the
+- **Ranged** → the target may **evade** (the Tempo contest, §3.1 — spend Tempo, strictly beat the
   attacker's pressed volley; a tie lands the hit) **whatever its own range**, and may additionally
   **strike back** if it carries the range. A blow neither evaded nor answered is an **auto-hit** (through
   toughness).
@@ -1258,40 +1243,36 @@ The **Clash is a module, not the floor** — the game is fully playable with sam
 
 What follows from it:
 
-- **Outriders are melee** (they cross a melee line), so the **only core route to an
-  enemy Rearguard is a melee assassin.** Ranged Actors do **not** skirmish in the core. *(A card may
-  explicitly supersede this — e.g. grant a ranged Outrider; see "Cards may supersede the
-  core.")*
-- **Rearguard self-defense = whether it carries melee.** A Rearguard with a melee attack **trades/Clashes**
-  an assassin (fends it off by spending Tempo to clash); a pure caster (no melee) is **auto-hit**
-  (assassinated).
-- A **melee-less Vanguard or Outrider is legal but a very bad idea** — it is auto-hit when it meets
-  melee and cannot answer. (Emergent positioning, not a banned move.)
+- **Melee belongs in the Vanguard, ranged in the Rearguard.** A melee unit can only fight from the front
+  (where it is also the shield); a ranged unit fires from the safe back. Positions **self-sort by attack
+  type**; a melee unit parked in the back is dead weight until the front breaks and the distance closes.
+- **Rearguard self-defense = whether it carries melee.** Once its front has fallen, a Rearguard with a
+  melee attack can **trade / Clash** a melee attacker that reaches it; a pure caster (no melee) is
+  **auto-hit** (assassinated).
+- A **melee-less Vanguard is legal but a very bad idea** — it is the front, it takes the blows, and it
+  cannot answer in melee. (Emergent positioning, not a banned move.)
 - **Neither** = pure support (heal / buff / area-control): it makes no attacks, so it is **auto-hit in
-  melee** when reached — though it may still **evade ranged fire** with Tempo (§3.1). The most
-  decisive-yet-fragile Rearguard piece, wholly dependent on the wall. Its kit is Action cards over the §5
+  melee** once reached — though it may still **evade ranged fire** with Tempo (§3.1). The most
+  decisive-yet-fragile Rearguard piece, wholly dependent on the front. Its kit is Action cards over the §5
   zone layer.
 
-**WHY.** Range turns the **role triangle** from intent into mechanics: *Outrider ▸ Rearguard* and
-*Rearguard ▸ Vanguard* are both **range mismatches** (melee assassin vs no-melee caster; ranged
-fire vs no-ranged tank → auto-hits), while same-range meetings are Clashes. It also opens clean
-power-design space: keep-at-range tricks, strong-at-ideal/weak-off-range hybrids, and pure-support
-"neither" kits — each re-derivable from "do you have the attack for this range?".
+**WHY.** Range turns the **front/back split** from intent into mechanics: a melee unit must be up front to
+act (and is the shield); ranged fires from safety; an exposed caster with no melee is auto-hit once
+reached. It also opens clean power-design space: keep-at-range tricks, strong-at-ideal / weak-off-range
+hybrids, and pure-support "neither" kits — each re-derivable from "do you have the attack for this range?".
 
 **GUARANTEES.**
-- A **melee** strike at the same range is a trade/Clash; a **ranged** strike may be **evaded** with Tempo
+- A **melee** strike at the same range is a trade / Clash; a **ranged** strike may be **evaded** with Tempo
   (§3.1) by any target and **struck back** only by a same-range answerer; a blow neither evaded nor
   answered **auto-hits** (through toughness).
-- Range is **position-determined** (the Line / Outrider = melee, Rearguard = ranged) — never the
-  attacker's free pick.
-- Core: **only melee Actors skirmish**; a card may explicitly supersede.
+- Range is **position-determined** (Vanguard = melee, Rearguard = ranged) — never the attacker's free pick.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
 - **TERM.** `Trade` (Combat) — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **TERM.** `Evade` (Combat) — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **TERM.** `Auto-hit` (Combat) — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
-- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Outrider strikes are melee; Rearguard fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
@@ -1337,9 +1318,9 @@ foe's **evade**.
 **Position gates *offensive* casting.** A **Controller** debuff or an **Artillery** shot is a **ranged
 attack** (§4.2), so it is **cast from the Rearguard** and may be **evaded** (the tempo contest, §3.1).
 **Ally buffs** (Support) and a **Wall**'s standing defenses target your own side, are **not** attacks,
-and stay **rank-free Assemble standing cards** that last the round; an **Infiltrator**'s slip resolves at
-the Line. Each effect plays **when it fits** — Assemble for persistent buffs / braces, the relevant
-window (§4.6) for ranged fire and slips.
+and stay **rank-free standing cards** that last the engagement; an **Infiltrator**'s push past the front
+resolves in the Tempo contest (§4). Each effect plays **when it fits** — at the blind bid for persistent
+buffs / braces, in the contest for ranged fire and slips.
 
 **WHY.** The old **per-suit cap** (≤1/suit, ≤5/side, any party size) was a *fiat* conservation lever. The
 stat collapse makes it **redundant**: casting now spends **Tempo**, and Tempo is **already conserved**
@@ -1358,8 +1339,8 @@ Buffs stay rank-free because they are not attacks — Support mends the line fro
 combos** (degrade → fire → buff) are still *rewarded* — the suits differ in kind (#12) — just no longer
 *required* by a one-per-suit rule. Effects stay **additive / commutative**: each feeds an accumulator
 resolved at its window boundary and **no played effect multiplies or gates another's output** (§0.1 /
-#11), so a "combo" is diverse effects in a round, never a multiplying chain. Because the **Assemble commit
-is simultaneous**, a card is committed up front or resolves in its window — never *held* for a
+#11), so a "combo" is diverse effects in a round, never a multiplying chain. Because the **blind-bid commit
+is simultaneous**, a card is committed up front or resolves in the contest — never *held* for a
 more-informed hidden moment.
 
 **GUARANTEES.**
@@ -1370,7 +1351,7 @@ more-informed hidden moment.
   pool), so total casting output is too — **god ≈ party** is the N=1 partition, not an exception. No party
   size dominates role-card throughput (candidate **BI-4**, par-solver-verified).
 - **Offensive spells are Rearguard-cast ranged attacks** (evadable, §3.1 / §4.2); a body **cannot** cast one
-  from the Vanguard / Outrider line. **Ally buffs / Wall braces are rank-free Assemble standing cards.**
+  from the **Vanguard** (the front). **Ally buffs / Wall braces are rank-free standing cards.**
 - **Order-independent effects.** Every effect feeds an accumulator at its window boundary; **no played
   effect multiplies or gates another's output** (§0.1 / #11) — the result is order-independent however many
   a side fires.
@@ -1381,80 +1362,48 @@ surviving position rule is narrower and **emergent** — only *offensive* spells
 they are **ranged attacks** from the Rearguard (§4.2). Code/data + `TERM` lines land with the role-card
 migration; §4.4 was already code-pending — `role-card-redesign.md` §8.)*
 
-### 4.5 Groups — bind same-side Actors into one unit 🟡 *(2026-06-23)*
+### 4.5 Groups — bind same-side Actors into one unit 🟡 *(attrition model, 2026)*
 
-**RULE.** At **Assemble**, a side may bind several of its Actors into a **group**. A group shares **one
-intention** (all Vanguard, or all Outrider, or all Rearguard — never mixed) and has **no size cap**.
-Within a group:
+**RULE.** At **form-up** (§4), a side may bind several Actors into a **group**. A group shares **one
+position** (all Vanguard or all Rearguard — never mixed) and **one target** at a time, with **no size
+cap**. Within a group:
 
-- **Shared target.** Every member points at the **same thing** at any one time.
-- **Distinct pools.** Each member keeps its own Health / Toughness and **dies individually** — the group
-  is a coordination unit, *not* a merged stat-block.
-- **Single-target blows land whole.** An assigned hit lands **entirely on one member** (a 4-damage card
-  is *not* split 2–2); the **defender allocates** each incoming single-target card to a member, against
-  the window snapshot. A **single enemy effect** aimed at the group lets the **group pick its victim**
-  (soak the debuff on whoever it hurts least).
-- **Area effects hit all.** An AoE attack strikes **every member for its full value** — clustering is the
-  group's standing risk, and the Rearguard (single-targetable only one at a time) is exactly what AoE
-  punishes for bunching.
+- **Distinct pools, spillover damage.** Each member keeps its own Health and **dies individually**.
+  Accumulated **single-target** damage is applied **point-by-point in declared order**, **spilling over**
+  to the next member once the current can no longer absorb it (a tank in front soaks for the squishies
+  behind).
+- **AoE hits every member at full value** — the standing risk of clustering; it bypasses the spillover
+  queue and strikes each body.
+- **Acting costs one Tempo per member.** A group attacks, or makes a contested defense, only when **every**
+  member spends a Tempo card — so a big group is durable but **tempo-hungry**, and bleeds its own budget
+  fast.
 
-**Groups × the crossing (§4).** Grouping is **asymmetric** by intention:
+**Groups in the Tempo contest (§4) — sum to block, weakest-link to slip.**
 
-- **A grouped Vanguard catches with combined Tempo** — members pool their catch-bid into one **stronger
-  hold**. Because the group targets one thing, a grouped pair makes **one unslippable catch**, while a
-  *split* pair catches **two** separate Outriders: group for a lock on the key threat, split for breadth.
-- **A grouped Outrider crosses on minimum Tempo** — moving in lockstep, the group's **advance** is
-  capped at its **weakest-stocked member** (apply the weakest-link to Finesse too). Infiltrating as a clump
-  is thus **self-defeating** — and there is **no mechanical ban**; the min-Tempo penalty is the emergent
-  disincentive (a hard ban would be redundant *fiat*, §0.3). "Infiltrators work alone" emerges from the math.
+- **Blocking pools Tempo:** members combine their bids into one **summed hold** — a group is a superb
+  **wall**.
+- **Slipping / evading takes the minimum:** **every member must individually beat** the attacker
+  (weakest-link), so a group is a **hopeless slipper**. The unit that reaches an exposed back is a **lone,
+  high-Tempo** body, not a blob.
 
-**WHY.** A group buys **focus-fire and control-resilience** (concentrate blows on one target; choose who
-eats a single debuff) at the price of **AoE-fragility**. The Tempo asymmetry makes grouping **reward
-holding and punish flanking** with no special case — the wall is stronger shoulder-to-shoulder, the
-infiltrator is only as quiet as its clumsiest member.
+**Hoard X.** A creature whose **X Health cards each act as a separate entity** is mechanically a **built-in
+group of X one-Health bodies** — a swarm. It sums those X to block, can essentially never slip (each tiny
+body must win its own race), **melts to AoE** (X× hits), and **loses one attack per body killed**. So the
+swarm archetype falls straight out of the group rules, and a swarm can be authored as **one card** rather
+than X.
 
-**GUARANTEES.**
-- A group is one intention, distinct pools, shared target — no merged stat-block, no size cap.
-- AoE hits every member at full value; single-target blows land whole, defender-allocated.
-- Vanguard catch pools Tempo (combined hold); Outrider crossing is min-Tempo (weakest link); no ban on
-  group Outriders — the penalty is emergent (force, not fiat).
-
-### 4.6 Spell & ranged windows — Line, Fast, Slow 🟡 *(2026-06-23)*
-
-**RULE.** Beyond the **persistent** standing cards committed at Assemble (§4.4), an attacking spell or
-ranged shot carries a **window tag** — printed on the card (and, once gear lands, on the weapon) — that
-sets **when in resolution it lands**:
-
-- **Line** — resolves **with the Line** (Tier 1), as the vanguard clash settles.
-- **Fast** — resolves **early in the Open**, *before* the Outrider melee.
-- **Slow** — resolves **late in the Open**, *after* the Outrider melee.
-
-So the **Open (Tier 2) resolves in three ordered sub-windows — Fast ▸ Outrider melee ▸ Slow** — each a
-snapshot, order-independent within and strictly sequenced between (the §1.9 / §4 determinism property,
-now with two extra boundaries; deaths tally at each). A **Fast** Rearguard volley can pick off an Outrider
-*before* it strikes; a **Slow** finisher or Support mend lands *after* the dust settles.
-
-Targets for Fast / Slow effects are chosen **in the open** when the Open resolves — the same informed,
-face-up targeting the §4 Open already grants Outriders and Rearguards, **not** a hidden held card (§4.4:
-no information gradient). **Casting spends a Tempo card** — an *action* like a strike or a contest, so it
-competes with bids and strikes. **Multi-window cards are rare** and need a clear thematic reason; most
-print exactly one window. An **untagged** shot resolves in its natural tier as before (the tag is the
-gear-system enrichment).
-
-**WHY.** Each window is a distinct battlefield moment that something can shape: the **Line** touches the
-clash itself, **Fast** softens before the flankers strike, **Slow** is the finisher / the stabilising
-heal. Splitting the Open by speed turns "when does my magic land" into a real decision **without** any
-hidden state — every choice is open and the resolution stays deterministic. Persistent buffs / debuffs are
-*not* windowed: they are Assemble standing cards (§4.4), so **§1.9's attacks-before-buffs is never
-violated** — a debuff bites the clash because it was committed a phase earlier, already standing, not
-because it "resolves first" inside a window.
+**WHY.** A group buys **durability** (shared spillover Health behind a front member) and **focus-fire**
+(its members' attacks concentrate on one target). It pays threefold: **AoE-fragility** (every member hit),
+**target-lock** (one target at a time), and **per-member Tempo** (it bleeds the attrition budget faster).
+The sum-vs-min asymmetry then sorts roles with **no special case** — groups **wall**, lone fast units
+**slip** — reproducing the old Vanguard-vs-Outrider distinction emergently.
 
 **GUARANTEES.**
-- Three resolution windows — Line (Tier 1), Fast and Slow (the Open's first and last sub-windows),
-  pivoting on the Outrider melee; each snapshot-resolved, deaths tally at each boundary.
-- The window tag is card / gear-printed; persistent buffs and debuffs are **not** windowed (Assemble
-  standing cards, §4.4), preserving §1.9.
-- Casting is an action (spends Tempo); multi-window cards are rare and thematically justified.
+- One position, distinct pools, one shared target; no merged stat-block, no size cap, no mixed positions.
+- Single-target damage **spills** in declared order; **AoE hits every member**; **acting costs one Tempo
+  per member**.
+- **Block = summed Tempo; slip / evade = every member beats the attacker** (weakest-link).
+- **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
@@ -1549,7 +1498,7 @@ unbounded; a small tag vocabulary is re-derivable (#6/#10).
 (§3.1). There are **two** `count × value` pools in Active: **Health = Vitality × Toughness** (the value
 gates damage) and **Tempo = Cadence × Finesse** (Cadence-many cards, each worth Finesse). *(Focus and Mind are
 removed — merged 2026-06-20; defense is a Tempo spend.)* Spending moves cards to **Down**; they return
-by **Recover** (or the round refresh). A gauntlet-crossing contest compares the **total Finesse each side
+by **Recover** (or the round refresh). A **Tempo contest** compares the **total Finesse each side
 commits** (§3); any other action just spends one card.
 - **Round refresh** *(Tempo)* — at Round end all spent Tempo flips up (re-derived each Round, §2.1) — a
   per-Round budget, not cross-Round attrition.
@@ -1776,24 +1725,26 @@ register (#10 conceptual integrity — each concept named once, for one job).
 
 **Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
 so the count is re-derivable, not arbitrary (#10):
-- **Three positional roles = the §4 counter-triangle's vertices:** **Wall = Vanguard** (hold the
-  front), **Infiltrator = Outrider** (break through the gauntlet), **Artillery = Rearguard** (fire from
-  safety).
-  Three is the *minimal* counter-cycle — RPS needs exactly three.
+- **Three damage roles = the §4 *playstyle* triangle's vertices:** **Wall = Turtle** (hold / block the
+  front), **Infiltrator = Aggressor** (a **Vanguard sub-type** that pushes through to the exposed back),
+  **Artillery = Glass-Cannon = Rearguard** (fire from safety). Three is the *minimal* counter-cycle — the
+  `Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor` RPS needs exactly three. (Two *positions*, three
+  *styles*: Wall and Infiltrator both stand in the Vanguard.)
 - **Two effect roles = the complete duality of state-bending:** **Support** *augments* your side (`+`:
   heal / brace / haste), **Controller** *degrades* theirs (`−`: slow / confuse / weaken). Two is the
   whole of that duality.
 
 So **5 = a complete engagement cycle (3) + a complete effect pair (2).** **Four** would break one —
-drop a position and the triangle is no longer a counter-cycle, or drop an effect and the `+/−` pair is
+drop a vertex and the triangle is no longer a counter-cycle, or drop an effect and the `+/−` pair is
 lopsided. **Six** would need a new orthogonal axis (there isn't an obvious one beyond *where you fight*
 and *how you bend state*) or an over-granular *split* of an existing role (refinement, not a new role —
 against #6 / the small core).
 
 **GUARANTEES.**
-- The five roles are **`3 + 2`**: the §4 triangle's three positions (Vanguard / Outrider / Rearguard =
-  Wall / Infiltrator / Artillery) plus the two effect directions (augment = Support, degrade =
-  Controller) — *minimal-complete on both axes*, not an arbitrary list.
+- The five roles are **`3 + 2`**: the §4 playstyle triangle's three vertices (Turtle / Aggressor /
+  Glass-Cannon = Wall / Infiltrator / Artillery — across two positions, Wall & Infiltrator in the Vanguard)
+  plus the two effect directions (augment = Support, degrade = Controller) — *minimal-complete on both
+  axes*, not an arbitrary list.
 - A character's roles = its assigned role-card tracks; they **accrete** (monotone, §0.1).
 - **Stats are bundled with role rewards** — the survivability to *use* a role grows *with* the role;
   there is no free-floating generic stat pool (no "stat-mule").
