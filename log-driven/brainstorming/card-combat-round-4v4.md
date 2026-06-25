@@ -11,8 +11,9 @@ Legend: `[ ]` fresh · `[X]` flipped (spent Tempo / lost Health) · `=` joined g
 Rules in one breath: **Health = Vitality × Toughness** (persists all 5 rounds),
 **Tempo = Cadence × Finesse** (refills each round, **shared across the round's two
 phases**). **Standing and soaking are free; only acting spends Tempo.** Every attack
-is one Tempo bid (`cards × Finesse`); the defender must **strictly beat** it to block
-(a **tie lands the hit**). A landed hit deals **Might** (Finesse-blind) into the pile.
+is one Tempo bid (`cards × Finesse`); the defender must **strictly beat** it to **avoid**
+the hit — *block, dodge, slip, or evade* by context (a **tie lands the hit**). A landed
+hit deals **Might** (Finesse-blind) into the pile.
 
 ---
 
@@ -34,9 +35,12 @@ triggers; the log starts.
 ## The decks — stats + attack type
 
 `Might / Toughness / Finesse` stay as numbers; **Vitality** and **Cadence** are set
-aside and become **counts of flippable cards** at setup. Each Actor is also **melee**
-(fights from the front) or **ranged** (fires from the back) — that decides where it
-can stand.
+aside and become **counts of flippable cards** at setup. Each Actor also carries an
+**attack-type card** — **melee** or **ranged** — that sets its **reach**: melee strikes
+from the front, ranged from the back. Reach *influences* where it's wise to stand but
+does not dictate it (a melee body parked in the back is just idle until the line breaks).
+*(For clarity this example gives each character a single type; some characters carry
+both a melee and a ranged card.)*
 
 ```
 SIDE A                                          SIDE B
@@ -63,14 +67,21 @@ SIDE A bids                  SIDE B bids
   Corvin                       Robin
 ```
 
-Reveal — the 2-D table:
+Reveal — each side lays its formation behind a **side card** in two labelled rows
+(Vanguard front, Rearguard back) — the 2-D table as each player sees it:
 
 ```
-                 VANGUARD (front, exposed)        REARGUARD (back, shielded)
-  SIDE A    [Bram]=[Torvald]   [Garrick]               [Corvin]
-  ─────────────────────────────  the line  ───────────────────────────────
-  SIDE B    [Vesper]=[Sable]                           [Wren]   [Robin]
+[Side A]
+  Vanguard   Bram=Torvald   Garrick
+  Rearguard  Corvin
+
+[Side B]
+  Vanguard   Vesper=Sable
+  Rearguard  Wren   Robin
 ```
+
+The two Vanguards face across the line; each Rearguard sits behind its own front
+(front exposed, back shielded).
 
 Side A fields a 3-body front + 1 cannon. Side B fields a 2-body **grouped** front
 shielding **two** cannons (the glass-cannon lean — more back-line fire, a thinner
@@ -92,6 +103,9 @@ SIDE B
   Wren      M3  T3  health [ ][ ][ ][ ][ ]      F3  tempo [ ][ ]
   Robin     M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ]
 ```
+
+In play these flippable pools tuck **under the identity card** so they don't eat table
+space; the digital version reveals them when you click the identity card.
 
 ---
 
@@ -147,10 +161,13 @@ instant it falls, **B's Rearguard `{Wren, Robin}` is exposed** for the rest of t
 round (no Tempo refresh between phases — A attacks the back on whatever it has left):
 
 ```
-                 VANGUARD                         REARGUARD (now exposed!)
-  SIDE A    [Bram]=[Torvald]   [Garrick]               [Corvin]
-  ──────────────────────────────  the line  ──────────────────────────
-  SIDE B    (Vanguard down)                            [Wren]   [Robin]
+[Side A]
+  Vanguard   Bram=Torvald   Garrick
+  Rearguard  Corvin
+
+[Side B]
+  Vanguard   (down)
+  Rearguard  Wren   Robin        ← now exposed!
 
   Corvin → Robin   bid 1×F5 = 5   Robin out of Tempo this round → cannot evade → EATS
                                   Might 4 ▸ Robin pile 4 ≥ T2 twice → FLIP ×2   Robin h[X][X][ ]
@@ -178,3 +195,23 @@ breaking the line), Robin would have evaded and lived to fire next round. *That*
   a solver-optimal one; standing buffs/braces and role powers (Bulwark, Assassinate,
   Rout-off-the-line) are open dials I left out; "a tie lands the hit" is the single
   contest rule most worth confirming feels right at the table.
+
+## To promote to the spec (surfaced this pass)
+
+Design points raised while building this log — fold into the spec when the gear/combat
+layer is next touched:
+
+- **Unified defense verb** — the one contest's defender action wants a single canonical
+  term: *avoid* (umbrella) over the context words *block / dodge / slip / evade*. §4
+  currently names them per context; "blocking" alone misreads for a ranged dodge.
+- **Attack-type cards** — melee / ranged are **cards** an Actor carries, not just a flag.
+  They set **reach** (where you may attack from), which *influences* placement without
+  dictating it (you may stand a melee body in the back; it's idle until the line breaks).
+  A character may carry **both** a melee and a ranged card (multi-reach) — §4.2 already
+  allows "both"; the card representation is the new part.
+- **Side cards** — a card marks each side's formation; the table is laid out **per side**
+  in two labelled rows (Vanguard / Rearguard) — the player's-eye view, not a single
+  facing grid.
+- **Pool stacking (presentation)** — the Vitality & Cadence flippable pools tuck **under
+  the identity card** to save table space; the digital version reveals them on a click
+  of the identity card.
