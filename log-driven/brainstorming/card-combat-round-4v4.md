@@ -104,8 +104,12 @@ SIDE B
   Robin     M4  T2  health [ ][ ][ ]            F5  tempo [ ][ ][ ]
 ```
 
-In play these flippable pools tuck **under the identity card** so they don't eat table
-space; the digital version reveals them when you click the identity card.
+The generic **state cards** — the `[ ]`/`[X]` flippables that record Health and Tempo —
+stay **visible and distinct** on the table all fight. What tucks **under the identity
+card** is the pair of **Vitality and Cadence** stat cards (their values already spent
+into the flippable counts); the digital version reveals them on a click. When the battle
+ends, the state cards return to their **generic pile**, and the stat cards (Might,
+Toughness, Finesse, Vitality, Cadence) go back into the **character deck**.
 
 ---
 
@@ -120,9 +124,9 @@ resolved together (order-independent, §1.9). Notation: `bid vs block → result
 to Vesper first):
 
 ```
-  Corvin → group   bid 1×F5 = 5   group SUM-blocks: Vesper 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
-  Garrick(A) → grp bid 1×F4 = 4   group is low on Tempo, EATS → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
-  Torvald → group  bid 1×F2 = 2   Sable blocks 1×F4 = 4 > 2  → BLOCKED  (Might 5 stopped by one cheap card —
+  Corvin → (Vesper=Sable)   bid 1×F5 = 5   (Vesper=Sable) SUM-blocks: Vesper 1×3 + Sable 1×4 = 7 > 5  → BLOCKED
+  Garrick(A) → (Vesper=Sable)  bid 1×F4 = 4   the pair is low on Tempo, EATS → Might 3 ▸ Vesper pile 3 ≥ T3 → FLIP
+  Torvald → (Vesper=Sable)     bid 1×F2 = 2   Sable blocks 1×F4 = 4 > 2  → BLOCKED  (Might 5 stopped by one cheap card —
                                   low Finesse means a big blow is easy to turn until the defender runs dry)
 ```
 
@@ -130,7 +134,7 @@ to Vesper first):
 
 ```
   Robin → Garrick(A)        bid 1×F5 = 5   Garrick(A) blocks 2×F4 = 8 > 5  → BLOCKED (Garrick(A) now tapped)
-  Wren  → [Bram=Torvald]    bid 1×F3 = 3   group SUM-blocks: Bram 1×3 + Torvald 1×2 = 5 > 3  → BLOCKED
+  Wren  → [Bram=Torvald]    bid 1×F3 = 3   they SUM-block: Bram 1×3 + Torvald 1×2 = 5 > 3  → BLOCKED
 ```
 
 Board after Phase 1 (only Vesper took damage; everyone else blocked, bleeding
@@ -212,6 +216,7 @@ layer is next touched:
 - **Side cards** — a card marks each side's formation; the table is laid out **per side**
   in two labelled rows (Vanguard / Rearguard) — the player's-eye view, not a single
   facing grid.
-- **Pool stacking (presentation)** — the Vitality & Cadence flippable pools tuck **under
-  the identity card** to save table space; the digital version reveals them on a click
-  of the identity card.
+- **Pool stacking (presentation)** — the **state cards** (the flippable Health/Tempo
+  pools) stay **visible** on the table; it's the **Vitality & Cadence stat cards** that
+  tuck **under the identity card** (the digital version reveals them on click). After the
+  battle, state cards return to the generic pile; the stat cards go back to the deck.
