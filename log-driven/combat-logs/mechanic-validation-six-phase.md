@@ -173,11 +173,11 @@ flanks "resolve like any charge." Pick one.
 
 ## Summary — what each scenario asks you to confirm
 
-| # | Mechanic | The thing to confirm IS what you meant |
-|---|----------|----------------------------------------|
-| 1 | **Pre-empt** | The Volley kills a charger **before** its Breach blow — and overrides §1.3's "dying body still strikes" **across** the phase boundary. The cast-vs-defend dilemma is one shared Tempo pool. |
-| 2 | **Groups** | Sum-to-block (melee) vs **weakest-link**-to-evade (ranged) + spillover. Open: does a doomed evade still cost **every** member Tempo? |
-| 3 | **Flanking** | A freed Vanguard may hit a surviving front instead of the rear. Open: flank = **trade** (Fray-like) or **pre-empt** (charge-like)? |
+| #   | Mechanic     | The thing to confirm IS what you meant                                                                                                                                                      |
+| --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Pre-empt** | The Volley kills a charger **before** its Breach blow — and overrides §1.3's "dying body still strikes" **across** the phase boundary. The cast-vs-defend dilemma is one shared Tempo pool. |
+| 2   | **Groups**   | Sum-to-block (melee) vs **weakest-link**-to-evade (ranged) + spillover. Open: does a doomed evade still cost **every** member Tempo?                                                        |
+| 3   | **Flanking** | A freed Vanguard may hit a surviving front instead of the rear. Open: flank = **trade** (Fray-like) or **pre-empt** (charge-like)?                                                          |
 
 **Resolved (2026) by one principle** — now the §4.6 *"why there are phases at all"* PRINCIPLE: separate
 phases exist only to impose **death-timing**; *within* a phase, resolution is **order-independent** and a
