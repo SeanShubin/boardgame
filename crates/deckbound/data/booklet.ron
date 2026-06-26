@@ -105,8 +105,8 @@ Catalog(
                 flavor: "Death that arrives ahead of the sound of it.",
                 cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
         Reward( track: Brass, level: 2, stat: (might: 2),
-                flavor: "The sky, rationed evenly across the whole front rank.",
-                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
+                flavor: "The sky, rationed evenly across the whole front rank — and the front keeps its head down.",
+                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Damage(power: 3), Pin], text: "Anti-group AoE Might to a rank (§4.5), with suppressive fire: a free enemy Vanguard is Pinned — denied its charge this round (Artillery space-control, §10)." ) ] ),
         Reward( track: Brass, level: 3, stat: (might: 3),
                 flavor: "It does not ask which armor. It asks how long.",
                 cards: [ Card( name: "Incendiary", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Burn(stacks: 3, power: 3)], text: "Places 3 Burn tokens (3 Might each): at each Reckoning one ticks into the bearer's pile and is removed (Artillery DoT, §10)." ) ] ),
@@ -114,26 +114,29 @@ Catalog(
                 flavor: "Far enough back to be safe — from everything but this.",
                 cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception." ) ] ),
         Reward( track: Brass, level: 5, stat: (might: 2),
-                flavor: "The slow shell. It is already falling before they hear it leave the tube.",
-                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: Reckoning, targets: 5, reach: (2, 2), effects: [Damage(power: 5)], text: "A deferred AoE shell (resolve: Reckoning) — disruptable, charge-gated (NOT one-shot); lands on the whole enemy rank at the Reckoning." ) ] ),
+                flavor: "The slow shell. It is already falling before they hear it leave the tube — and where it lands, the line scatters.",
+                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: Reckoning, targets: 5, reach: (2, 2), effects: [Damage(power: 5), Rout], text: "A deferred AoE shell (resolve: Reckoning) — disruptable, charge-gated (NOT one-shot); lands on the whole enemy rank at the Reckoning and scatters it (Rout — driven off the line, the area-CC rider, §10)." ) ] ),
 
         // ---- Controller (Bone) — the unmaker: ranged STAT-DROPS, never damage (§8.6) (axes: Breadth + Duration).
-        //      Marks (−Finesse), Mires (−Cadence), and Silences/Routs the foe off the line. ----
+        //      Sunders (−Toughness, the amp), Mires (−Cadence), Hexes a rank, and Unmakes the enemy force. ----
+        //      Re-authored 2026-06-26 (role-redesign): pure stat-control — the signature is −Toughness
+        //      (Sunder), the per-phase wall, so a Controller-amped party cracks a foe it can't out-burst
+        //      (necessity-provable in the kill-fight harness, no resolver change). No damage; min-1 floors.
         Reward( track: Bone, level: 1, stat: (might: 1),
-                flavor: "A finger laid on the nerve; the hand it belongs to forgets how to be quick.",
-                cards: [ Card( name: "Mark", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Mark(finesse: 2)], text: "Places a Mark token: −2 Finesse (floor 1, §2.2) while present — a Controller stat-drop, not damage." ) ] ),
+                flavor: "A word against the joint of the armor, and the plate forgets it was ever proof.",
+                cards: [ Card( name: "Sunder", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Sunder(toughness: 2)], text: "Places a Sunder token: −2 Toughness (floor 1, §2.2) while present — lowers the foe's per-phase wall so the party cracks it. A Controller stat-drop, not damage (the amp)." ) ] ),
         Reward( track: Bone, level: 2, stat: (might: 1),
                 flavor: "Weight the feet; let it spend the round arriving where it already was.",
                 cards: [ Card( name: "Mire", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Mire(cadence: 2)], text: "Places a Mire token: −2 Cadence (floor 1) — a smaller Tempo pool next refresh (a Controller stat-drop, §10)." ) ] ),
         Reward( track: Bone, level: 3, stat: (might: 1),
-                flavor: "The same cold word, spoken over a whole rank at once.",
-                cards: [ Card( name: "Hex", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Mark(finesse: 2)], text: "Marks every body in a rank (§4.5): −2 Finesse each (floor 1) — Controller AoE stat-drop, no damage." ) ] ),
+                flavor: "The same cold word, spoken over a whole rank at once — and the whole rank softens.",
+                cards: [ Card( name: "Hex", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Sunder(toughness: 2)], text: "Sunders every body in a rank (§4.5): −2 Toughness each (floor 1) — Controller AoE stat-drop (breadth × amp), no damage." ) ] ),
         Reward( track: Bone, level: 4, stat: (might: 1),
                 flavor: "A whisper that follows the foe home and unmakes the courage it finds there.",
                 cards: [ Card( name: "Curse", role: Some(Bone), kind: Modifier, passive: true, modifies: Some("(debuffs)"), text: "Your debuffs bite wider: each Controller card you play strikes one extra foe (the Breadth axis as a passive, M5)." ) ] ),
         Reward( track: Bone, level: 5, stat: (might: 1),
-                flavor: "She speaks, and the held spell forgets itself — and the front forgets to stand.",
-                cards: [ Card( name: "Silence", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, one_shot: true, targets: 3, reach: (2, 2), effects: [Silence, Rout], text: "Non-lethal disrupt: cancels a foe's held (deferred) spell (§4.6) and Routs up to three foes off the line — a Controller status, no damage." ) ] ),
+                flavor: "She speaks the long unmaking, and the enemy force softens and forgets how to bite.",
+                cards: [ Card( name: "Unmake", role: Some(Bone), kind: Base, cast: Strike, resolve: OnCast, one_shot: true, targets: 3, reach: (2, 2), effects: [Sunder(toughness: 3), Defang(might: 3)], text: "Mass softening: Sunders (−3 Toughness, floor 1) AND Defangs (−3 Might, floor 1) up to three foes — softens and de-fangs the enemy force. A Controller stat-drop, no damage (§10)." ) ] ),
 
         // ---- Support (Salt) — the hand that holds the line: BUFFS / heal, never damage (§8.6) (axes: Magnitude + Breadth).
         //      Magnitudes are the card's own printed values. Amplify the line, then outlast. ----
@@ -201,6 +204,12 @@ Catalog(
                    base: (might: 3, vitality: 4, toughness: 1, cadence: 3), target_rule: Some(LowestBody) ),
         ActorCard( name: "Ogre", role: "Boss", flavor: "Both fists and a thrown rock, wrapped around more body than a wall. A bad afternoon, alone.", driver: "brute", attack: Both, weapon: "Maul", aggression: 6,
                    base: (might: 6, vitality: 16, toughness: 3, cadence: 4) ),
+        // A living wall: Toughness so high that blunt blows shatter against it (no card flips) — the
+        // Controller's necessity foe. Only a Sunder (−Toughness) drops the per-phase wall low enough for
+        // the party's strikes to land (role-redesign 2026-06-26). Modest Might/Vitality so the fight is
+        // won by cracking the wall, not by out-lasting damage.
+        ActorCard( name: "Golem", role: "Bulwark", flavor: "Old siege-stone given legs and a grudge. You do not wound it; you take it apart.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 5,
+                   base: (might: 3, vitality: 12, toughness: 5, cadence: 2) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),

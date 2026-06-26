@@ -121,6 +121,12 @@ pub struct Round {
     /// boundary. A Vanguard that is not locked is **free** and may charge/flank in the Volley.
     pub hero_locked: Vec<bool>,
     pub foe_locked: Vec<bool>,
+    /// §10 **Pin** (Artillery space-control): per unit, has it been **pinned** by suppressive fire this
+    /// round? A pinned Vanguard is denied its charge — `fix_breach_list` ORs this into the computed lock
+    /// (so a Fray-cast Pin survives the boundary recompute) and a charge declaration skips it. Cleared
+    /// each round with the rest of the plan.
+    pub hero_pinned: Vec<bool>,
+    pub foe_pinned: Vec<bool>,
     /// §4.6 **attacked-map**: per actor, the **enemy-Vanguard indices it struck in the Fray** — the
     /// exact input to [`crate::combat::compute_locks`]. Recorded as each Fray melee strike resolves
     /// (interactive *and* foe-AI), so a Vanguard whose struck foe died is **free** even while other
@@ -154,6 +160,8 @@ impl Round {
             foe_vanguard: vec![true; foes],
             hero_locked: vec![false; heroes],
             foe_locked: vec![false; foes],
+            hero_pinned: vec![false; heroes],
+            foe_pinned: vec![false; foes],
             hero_attacked: vec![Vec::new(); heroes],
             foe_attacked: vec![Vec::new(); foes],
             hero_acted: vec![false; heroes],
@@ -242,6 +250,21 @@ impl State {
             &mut self.plan.hero_locked
         } else {
             &mut self.plan.foe_locked
+        }
+    }
+    /// Per-unit §10 Pin flag of `side` (`true` = pinned this round, charge denied).
+    pub fn s_pinned(&self, side: u8) -> &[bool] {
+        if side == 0 {
+            &self.plan.hero_pinned
+        } else {
+            &self.plan.foe_pinned
+        }
+    }
+    pub fn s_pinned_mut(&mut self, side: u8) -> &mut Vec<bool> {
+        if side == 0 {
+            &mut self.plan.hero_pinned
+        } else {
+            &mut self.plan.foe_pinned
         }
     }
     /// Per-actor §4.6 attacked-map of `side` (the enemy-Vanguard indices each struck in the Fray).

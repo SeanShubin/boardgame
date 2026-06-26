@@ -15,8 +15,8 @@
 | Salt — Support | 10 |
 | Weapons | 7 |
 | Pool | 21 |
-| Cast | 21 |
-| **Total** | **101** |
+| Cast | 22 |
+| **Total** | **102** |
 
 ## Baseline (1 cards)
 
@@ -61,28 +61,28 @@
 | ---: | --- | --- | --- |
 | 1 | Bolt | action | might 3 |
 | 1 | Brass L1 | stat | might 2 |
-| 2 | Volley | action | might 3, x3 targets |
+| 2 | Volley | action | might 3, pin (deny a charge), x3 targets |
 | 2 | Brass L2 | stat | might 2 |
 | 3 | Incendiary | action | burn 3x3 |
 | 3 | Brass L3 | stat | might 3 |
 | 4 | Longshot | passive | — |
 | 4 | Brass L4 | stat | might 2 |
-| 5 | Bombardment | action | might 5, x5 targets |
+| 5 | Bombardment | action | might 5, rout, x5 targets |
 | 5 | Brass L5 | stat | might 2 |
 
 ## Bone — Controller (10 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
-| 1 | Mark | action | mark -2 finesse |
+| 1 | Sunder | action | sunder -2 tough |
 | 1 | Bone L1 | stat | might 1 |
 | 2 | Mire | action | mire -2 cadence |
 | 2 | Bone L2 | stat | might 1 |
-| 3 | Hex | action | mark -2 finesse, x3 targets |
+| 3 | Hex | action | sunder -2 tough, x3 targets |
 | 3 | Bone L3 | stat | might 1 |
 | 4 | Curse | passive | — |
 | 4 | Bone L4 | stat | might 1 |
-| 5 | Silence | action | silence, rout, x3 targets |
+| 5 | Unmake | action | sunder -3 tough, defang -3 might, x3 targets |
 | 5 | Bone L5 | stat | might 1 |
 
 ## Salt — Support (10 cards)
@@ -138,7 +138,7 @@
 | — | Backstab | passive | — |
 | 4 | Longshot | passive | — |
 
-## Cast (21 cards)
+## Cast (22 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -156,6 +156,7 @@
 | — | Slinger | character | Skirmisher · Bow |
 | — | Seer | character | Hexer · Wand |
 | — | Ogre | character | Boss · Maul |
+| — | Golem | character | Bulwark · Maul |
 | — | Vael | character | Duelist · Blade |
 | — | Pell | character | Charger · Claw |
 | — | Bron | character | Leader · Claw |

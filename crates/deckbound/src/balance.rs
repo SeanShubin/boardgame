@@ -61,21 +61,23 @@ fn party(n: usize, rewards: &[RewardId]) -> Vec<Actor> {
 /// flips back). (Charter #13: the §4 triangle kills; the effect roles enable — so an enabler's
 /// necessity is only legible *paired* with a killer.)
 ///
-/// **TWO roles are excluded** from this kill-fight harness:
+/// **ONE role is excluded** from this kill-fight harness:
 /// - The **Wall** (Iron) — proven *solo* (it *holds the line*; see `the_wall_is_the_one_role_proven_solo`);
 ///   here it doubles as the baseline **killer** the reach/penetration locks pit against the foe.
-/// - The **Controller** (Bone) — **re-scoped for §4.6 (2026-06-26).** Under the six-phase model the
-///   Controller deals no damage and its levers are stat-drops (Mark −Finesse / Mire −Cadence), a
-///   reposition (Rout), and a deferred-spell disrupt (Silence). In the *kill-fight* auto-resolver none
-///   of these tips a win/loss: Rout is not read by the resolver, Silence has no PvE target (creatures
-///   cast no deferred spells), and Mark/Mire only shave a foe's contest grade / Tempo — never decisive
-///   in a damage race (swapping a damage dealer for a no-damage debuffer strictly *lowers* party DPS).
-///   So the "flip a kill-fight" form genuinely does not hold for the Controller; its modeled mechanics
-///   are proven by the focused unit tests instead — `combat::mire_reduces_cadence_floor_1`,
-///   `mark_reduces_finesse_floor_1`, `silence_cancels_a_deferred_spell`, and
-///   `breach_kill_disrupts_a_deferred_spell`. (Folding the Controller back in awaits a resolver that
-///   reads Rout / fields deferred-casting foes — future work.)
-const PAIRED_ROLES: [Currency; 3] = [Currency::Silver, Currency::Brass, Currency::Salt];
+///
+/// The **Controller** (Bone) is now **folded back in** (role-redesign, 2026-06-26): re-authored as pure
+/// **stat-control**, its signature is **−Toughness (Sunder)**. Toughness is the per-phase wall (§2.2),
+/// so dropping it lets a baseline killer party crack a high-Toughness foe it otherwise *cannot* out-burst
+/// — necessity-provable in the kill-fight resolver with **no resolver change** (Sunder is read by the
+/// existing per-phase Toughness path in `combat::apply_strike` via `Actor::eff_toughness`). The
+/// stat-drops min-1 floor keeps it force-not-fiat (a Sundered foe still walls at Toughness 1). See
+/// [`lock_encounter`] for the Bone band.
+const PAIRED_ROLES: [Currency; 4] = [
+    Currency::Silver,
+    Currency::Brass,
+    Currency::Salt,
+    Currency::Bone,
+];
 
 /// The baseline party member a role's lock is measured against — chosen to be **exactly the capability
 /// the lock denies**, so the gap is structural (force, not fiat):
@@ -133,7 +135,16 @@ fn lock_encounter(role: Currency) -> EncounterCard {
         // re-tuned for §4.6 (2026-06-26): Slinger 4 is the band where the cannons die without the heal
         // and survive (out-damaging the foe) with it.
         Currency::Salt => vec![lock_entry("Slinger", 4)],
-        // (Controller/Bone is re-scoped out of the kill-fight harness — see `PAIRED_ROLES`.)
+        // Controller — a **high-Toughness wall** (Golems, Toughness 5): the blunt Wall-killer baseline's
+        // hardest blow (Shield Sweep, 3 Might) is *below the bar*, so it banks sub-threshold and flips
+        // **no** card — the baseline literally cannot crack the wall within the horizon and loses. Only
+        // the Controller's **Sunder** (−Toughness, Unmake −3 / Hex −2, floored at 1) drops the per-phase
+        // wall under the party's Might so its strikes land — the amp that flips the fight, force-not-fiat
+        // (role-redesign 2026-06-26). Seed: one deep-Vitality Golem is the band where the Wall baseline
+        // loses (can't crack the wall) and adding the Controller wins — and it is **Bone-exclusive** in the
+        // probe (the wall blunts a single high-Might damage swap too; only Sunder + the Wall pair clears
+        // it within the horizon).
+        Currency::Bone => vec![lock_entry("Golem", 1)],
         _ => vec![lock_entry("Husk", 1)],
     };
     EncounterCard {

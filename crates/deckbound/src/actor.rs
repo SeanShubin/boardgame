@@ -45,6 +45,11 @@ pub enum Token {
     Mark { finesse: u32 },
     /// **Mire** (Controller): −`cadence` Cadence (floor 1) while present (fewer Tempo cards).
     Mire { cadence: u32 },
+    /// **Sunder** (Controller): −`toughness` Toughness (floor 1) while present — lowers the per-phase
+    /// wall this body presents, so the party cracks it with less Might.
+    Sunder { toughness: u32 },
+    /// **Defang** (Controller): −`might` Might (floor 1) to this body's strike magnitude while present.
+    Defang { might: u32 },
     /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's Reckoning-phase
     /// pile and remove one stack. Caster-independent once placed.
     Burn { power: u32 },
@@ -298,6 +303,47 @@ impl Actor {
             self.offense.cadence
         } else {
             self.offense.cadence.saturating_sub(drop).max(1)
+        }
+    }
+
+    /// The **effective Toughness** read as the per-phase wall: base Toughness minus all **Sunder**
+    /// tokens, floored at 1 when sundered (§2.2 — Sunder can never drop the wall to 0, which would flip
+    /// every card at once). With no Sunder present the base value passes through unchanged (a genuine
+    /// Toughness-0 body is not floored up — only the *debuff* is clamped, like [`eff_cadence`]). The
+    /// per-round **Guard** token bonus is folded in by the strike path (`apply_strike`), not here.
+    pub fn eff_toughness(&self) -> u32 {
+        let drop: u32 = self
+            .tokens
+            .iter()
+            .map(|t| match t {
+                Token::Sunder { toughness } => *toughness,
+                _ => 0,
+            })
+            .sum();
+        if drop == 0 {
+            self.defense.health.toughness
+        } else {
+            self.defense.health.toughness.saturating_sub(drop).max(1)
+        }
+    }
+
+    /// The **effective Might** of this Actor's strikes: base Might minus all **Defang** tokens, floored
+    /// at 1 when defanged (§2.2 — Defang can never silence a foe to a 0 blow). With no Defang present the
+    /// base value passes through unchanged (a genuine Might-0 body is not floored up — only the *debuff*
+    /// is clamped, like [`eff_cadence`]). The strike path (`base_strike`) reads this.
+    pub fn eff_might(&self) -> u32 {
+        let drop: u32 = self
+            .tokens
+            .iter()
+            .map(|t| match t {
+                Token::Defang { might } => *might,
+                _ => 0,
+            })
+            .sum();
+        if drop == 0 {
+            self.offense.might
+        } else {
+            self.offense.might.saturating_sub(drop).max(1)
         }
     }
 

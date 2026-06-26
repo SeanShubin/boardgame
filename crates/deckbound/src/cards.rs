@@ -73,6 +73,14 @@ pub enum Effect {
     /// **Mire** (Controller): place a Mire token on each target — **−`cadence` Cadence (floor 1)**,
     /// shrinking the foe's Tempo pool (persistent for the combat).
     Mire { cadence: u32 },
+    /// **Sunder** (Controller): place a Sunder token on each target — **−`toughness` Toughness
+    /// (floor 1)** while present (persistent for the combat). Lowers the per-phase wall so the party's
+    /// strikes crack a foe they otherwise could not out-burst — the amp / necessity-maker (§10).
+    Sunder { toughness: u32 },
+    /// **Defang** (Controller): place a Defang token on each target — **−`might` Might (floor 1 when
+    /// defanged)** to its strike magnitude while present (persistent for the combat). Softens the foe's
+    /// blows without dealing damage (§10).
+    Defang { might: u32 },
     /// **Burn** (Artillery DoT): place `stacks` Burn tokens (each carrying `power` Might) on each
     /// target — at every Reckoning a token deals `power` into the bearer's Reckoning pile and is
     /// removed (caster-independent once placed).
@@ -96,6 +104,11 @@ pub enum Effect {
     /// **Silence** (Controller): cancel one enemy **deferred** (`resolve: Reckoning`) spell — a
     /// non-lethal disrupt (§4.6). Handled at [`crate::game`] (removes a `Deferred` entry).
     Silence,
+    /// **Pin** (Artillery): suppressive fire that **denies a free enemy Vanguard its charge** this round
+    /// — sets the target's lock so [`crate::combat::resolve_volley`] / charge declaration skips it (the
+    /// space-control rider on the area cards, §10). Handled at [`crate::game`] (touches the round plan's
+    /// lock list, not [`play_card`]) — like [`Silence`](Effect::Silence).
+    Pin,
 }
 
 /// §4.6 — the **cast window**: where an ability may be used (Tempo paid & committed). Abilities are
@@ -225,6 +238,8 @@ impl Card {
                 Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),
                 Effect::Mark { finesse } => format!("mark -{finesse} finesse"),
                 Effect::Mire { cadence } => format!("mire -{cadence} cadence"),
+                Effect::Sunder { toughness } => format!("sunder -{toughness} tough"),
+                Effect::Defang { might } => format!("defang -{might} might"),
                 Effect::Burn { stacks, power } => format!("burn {stacks}x{power}"),
                 Effect::Brace { toughness } => format!("brace +{toughness} tough"),
                 Effect::Cover => "cover an ally".into(),
@@ -232,6 +247,7 @@ impl Card {
                 Effect::Charge { amount } => format!("charge +{amount}"),
                 Effect::Smoke => "smoke".into(),
                 Effect::Silence => "silence".into(),
+                Effect::Pin => "pin (deny a charge)".into(),
             });
         }
         if self.targets > 1 {

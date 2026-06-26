@@ -56,13 +56,15 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
         // holds back), which is what the greedy wants — so it only casts any beneficial `Standing`
         // buffs, then advances to the Fray.
         Phase::Standoff => best_play(state, actions).unwrap_or(Deploy),
-        // §4.6 #2 Fray: strike a reachable foe (front clash / instant ranged); else cast a `Strike`
-        // ability (a damaging one first); else pass.
-        Phase::Fray => actions
-            .iter()
-            .copied()
-            .find(|a| matches!(a, Target(..)))
+        // §4.6 #2 Fray: cast a **setup** ability first (a foe stat-drop / amp — e.g. the Controller's
+        // Sunder lowers the wall *before* allies strike this phase, the whole point of the role); else
+        // play the **best `Strike` card** (a damage AoE / DoT — a unit's once-per-round role card is its
+        // strongest blow, well above a plain weapon poke); else strike a reachable foe with the weapon;
+        // else pass. A debuff is read at strike time, so the setup leads (resolution is order-independent
+        // within the phase, but the token must be on the target before the blow snapshots it).
+        Phase::Fray => setup_play(state, actions)
             .or_else(|| best_play(state, actions))
+            .or_else(|| actions.iter().copied().find(|a| matches!(a, Target(..))))
             .unwrap_or_else(|| first_attack_or_pass(actions)),
         // §4.6 #3 Volley: a free Vanguard charges the enemy rear (or flanks); a Rearguard fires again;
         // else cast; else pass. Prefer a charge (reach the back) over a flank.
@@ -105,6 +107,43 @@ fn best_play(state: &State, actions: &[Action]) -> Option<Action> {
         .map(|(a, _)| a)
 }
 
+/// A **setup** play to fire before striking this phase: the highest-scoring playable card that is a
+/// foe **stat-drop** (Sunder / Mark / Mire / Defang — the Controller's amp/soften) or an own-side
+/// **amp** (Empower / Haste). These shape the phase's strikes (a Sunder lowers the wall the allies are
+/// about to hit), so the greedy casts one *before* it attacks. Returns `None` if the best play is not a
+/// setup effect (then the greedy attacks, then falls back to any other play).
+fn setup_play(state: &State, actions: &[Action]) -> Option<Action> {
+    use crate::cards::Effect::*;
+    let side = state.plan.committing;
+    let is_setup = |c: &crate::cards::Card| {
+        c.effects.iter().any(|e| {
+            matches!(
+                e,
+                Sunder { .. }
+                    | Mark { .. }
+                    | Mire { .. }
+                    | Defang { .. }
+                    | Empower { .. }
+                    | Haste { .. }
+            )
+        })
+    };
+    actions
+        .iter()
+        .copied()
+        .filter_map(|a| match a {
+            Action::PlayCard(i, idx) => state
+                .s_pool(side)
+                .get(i)
+                .and_then(|act| act.actions.get(idx))
+                .filter(|c| is_setup(c))
+                .map(|c| (a, play_score(c))),
+            _ => None,
+        })
+        .max_by_key(|&(_, score)| score)
+        .map(|(a, _)| a)
+}
+
 /// A heuristic value for playing `card` now (greedy policy). Damage ≫ amplification ≫ proactive debuff
 /// ≫ minor buff ≫ reactive heal. The magnitude terms give a mild preference for the deeper (stronger)
 /// card of a track. Used only by the greedy resolver — not a rule.
@@ -121,7 +160,12 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             // proactive debuff tokens (Mark/Mire) with the other debuffs; Smoke/Silence as enablers.
             Burn { stacks, power } => 80 + (*stacks * *power) as i32,
             Charge { amount } => 60 + *amount as i32,
-            Mark { .. } | Mire { .. } | Silence | Smoke => 40,
+            Mark { .. } | Mire { .. } | Silence | Smoke | Pin => 40,
+            // Sunder/Defang (Controller stat-drops). Sunder lowers the foe's per-phase wall — it is the
+            // amp that lets the party crack a foe it can't out-burst, so rank it above the other debuffs
+            // (a Sunder this Fray makes this round's strikes land). Defang softens incoming blows.
+            Sunder { toughness } => 70 + *toughness as i32,
+            Defang { might } => 45 + *might as i32,
             Guard { .. }
             | BankCadence { .. }
             | Ward

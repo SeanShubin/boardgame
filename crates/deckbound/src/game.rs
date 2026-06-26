@@ -277,7 +277,9 @@ impl Deckbound {
     fn can_act_in_volley(&self, state: &State, side: u8, i: usize) -> bool {
         let a = &state.s_pool(side)[i];
         if state.s_vanguard(side)[i] {
-            !state.s_locked(side)[i] && a.can_contest_now(Range::Melee) && a.tempo > 0
+            // §10 Rout: a routed Vanguard is driven off the line — it cannot charge/flank (neither holds
+            // the front nor crosses). A pinned/locked Vanguard likewise stays put.
+            !state.s_locked(side)[i] && !a.routed && a.can_contest_now(Range::Melee) && a.tempo > 0
         } else {
             a.can_contest(Range::Ranged) && a.tempo > 0
         }
@@ -349,6 +351,25 @@ impl Deckbound {
     fn fix_breach_list(&self, state: &mut State) {
         state.plan.hero_locked = combat::compute_locks(&state.plan.hero_attacked, &state.creatures);
         state.plan.foe_locked = combat::compute_locks(&state.plan.foe_attacked, &state.heroes);
+        // §10 **Pin** (Artillery): a Vanguard pinned by suppressive fire is locked regardless of the Fray
+        // breach list — OR it in here so a Fray-cast Pin survives this boundary recompute (it denies the
+        // pinned unit its Volley charge).
+        for (l, &p) in state
+            .plan
+            .hero_locked
+            .iter_mut()
+            .zip(state.plan.hero_pinned.iter())
+        {
+            *l |= p;
+        }
+        for (l, &p) in state
+            .plan
+            .foe_locked
+            .iter_mut()
+            .zip(state.plan.foe_pinned.iter())
+        {
+            *l |= p;
+        }
     }
 
     /// End the Volley: resolve the rear's pre-emptive answers (already applied as charges were
@@ -455,10 +476,13 @@ impl Deckbound {
             }
             if state.plan.foe_vanguard[f]
                 && !state.plan.foe_locked[f]
+                && !state.creatures[f].routed
                 && state.creatures[f].can_contest_now(Range::Melee)
                 && state.creatures[f].tempo > 0
             {
-                // Charge a hero Rearguard if one exists; else flank a surviving hero Vanguard.
+                // §10 Rout refinement: a routed foe is driven off the line and **cannot charge** as a
+                // Vanguard (it neither holds the front nor crosses). Charge a hero Rearguard if one
+                // exists; else flank a surviving hero Vanguard.
                 if let Some(t) = self.rear_target(state, 0) {
                     state.plan.charges.push(crate::state::Charge {
                         side: 1,
@@ -671,6 +695,39 @@ impl Deckbound {
                     "{name} silences {}'s held {}.",
                     d.name, d.card.name
                 ));
+            }
+        }
+        // §10 Pin (Artillery): suppressive fire denies a free enemy Vanguard its charge. Resolved here
+        // (the lock/charge lists live in the round plan); the `play_card` effect arm only narrates. We
+        // pin up to `targets` free enemy Vanguards — set the pinned flag (so `fix_breach_list` keeps the
+        // lock across the Fray boundary), lock it now, and drop any charge it has already declared.
+        if card
+            .effects
+            .iter()
+            .any(|e| matches!(e, crate::cards::Effect::Pin))
+        {
+            let enemy: u8 = 1 - side;
+            let want = (card.targets as usize).max(1);
+            let victims: Vec<usize> = (0..state.s_len(enemy))
+                .filter(|&t| {
+                    state.s_vanguard(enemy)[t]
+                        && !state.s_pool(enemy)[t].is_down()
+                        && !state.s_pinned(enemy)[t]
+                })
+                .take(want)
+                .collect();
+            for t in victims {
+                state.s_pinned_mut(enemy)[t] = true;
+                state.s_locked_mut(enemy)[t] = true;
+                let vname = state.s_pool(enemy)[t].name.clone();
+                // Drop a charge/flank this pinned unit may have already declared (e.g. a Volley cast).
+                state
+                    .plan
+                    .charges
+                    .retain(|c| !(c.side == enemy && c.attacker == t));
+                state
+                    .log
+                    .push(format!("{name} pins {vname} — its charge is denied."));
             }
         }
         if side == 0 {
@@ -2269,6 +2326,113 @@ mod tests {
         assert!(
             s.plan.hero_locked[1],
             "hero 1 stays LOCKED — its struck foe still stands"
+        );
+    }
+
+    /// A bare melee fighter with explicit stats and ample Tempo (shared by the Pin/Rout game tests).
+    fn fighter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
+        use crate::actor::Attack;
+        let mut a = scenarios::build_character("Novice", &[]);
+        a.name = name.into();
+        a.attack = Attack::Melee;
+        a.offense.might = might;
+        a.offense.finesse = a.offense.finesse.max(1);
+        a.defense = crate::stats::Defense::new(vit, tough);
+        a.weapon = {
+            let mut w = a.weapon.clone();
+            w.effects.clear();
+            w
+        };
+        a.tempo = 10;
+        a
+    }
+
+    /// §10 **Pin** (Artillery space-control): a free enemy Vanguard pinned by suppressive fire is
+    /// **denied its charge** this round. We pin a foe that *would* have charged the hero Rearguard and
+    /// confirm the rear is untouched (the pinned foe declares no charge in the foe Volley).
+    #[test]
+    fn pin_denies_a_charge() {
+        let game = Deckbound;
+        // A foe Vanguard (would charge) + a hero front-holder so the foe is free, and a hero rear it
+        // would gut. Foe Might 5; hero rear V1/T1 so an un-pinned charge would clearly hurt it.
+        let heroes = vec![fighter("Front", 0, 8, 5), fighter("Caster", 0, 1, 1)];
+        let foes = vec![fighter("Breaker", 5, 8, 5)];
+        let mut s = battle_state(heroes, foes, false, 1);
+        s.plan.hero_vanguard = vec![true, false]; // Front holds; Caster is the rear
+        s.plan.foe_vanguard = vec![true];
+
+        // Pin the foe Vanguard (the round-plan surgery Effect::Pin performs at `do_play_card`).
+        s.plan.foe_pinned[0] = true;
+
+        let rear0 = s.heroes[1].defense.health.remaining;
+        // Run the round: Standoff → Fray (foe strikes the front, harmless to the rear) → Volley. The
+        // foe Volley must skip the pinned Breaker (no charge declared), so the Breach touches no one.
+        game.apply(&mut s, &Action::Deploy).unwrap(); // → Fray (foe_fray runs)
+        // Close the Fray (front trades; pin survives `fix_breach_list` via the pinned OR).
+        while s.phase == Phase::Fray {
+            if let Some(&i) = game.pending(&s, 0).first() {
+                game.apply(&mut s, &Action::Pass(i)).unwrap();
+            } else {
+                break;
+            }
+        }
+        assert!(
+            s.plan.foe_locked[0],
+            "the pinned foe is locked across the Fray boundary (Pin's lock survives fix_breach_list)"
+        );
+        assert!(
+            !s.plan.charges.iter().any(|c| c.side == 1),
+            "the pinned foe declared no charge"
+        );
+        // Carry the Volley through to the Breach.
+        while matches!(s.phase, Phase::Volley) {
+            if let Some(&i) = game.pending(&s, 0).first() {
+                game.apply(&mut s, &Action::Pass(i)).unwrap();
+            } else {
+                game.apply(&mut s, &Action::Deploy).unwrap();
+            }
+        }
+        assert_eq!(
+            s.heroes[1].defense.health.remaining, rear0,
+            "the rear is untouched — the pinned charge never crossed (Pin denied it)"
+        );
+    }
+
+    /// §10 **Rout** (the area-CC rider): a **routed** foe Vanguard is driven off the line and **cannot
+    /// charge** — the foe Volley skips it, so the hero rear is spared.
+    #[test]
+    fn a_routed_foe_cannot_charge() {
+        let game = Deckbound;
+        let heroes = vec![fighter("Front", 0, 8, 5), fighter("Caster", 0, 1, 1)];
+        let foes = vec![fighter("Breaker", 5, 8, 5)];
+        let mut s = battle_state(heroes, foes, false, 1);
+        s.plan.hero_vanguard = vec![true, false];
+        s.plan.foe_vanguard = vec![true];
+        s.creatures[0].routed = true; // displaced off the line (a Rout)
+
+        let rear0 = s.heroes[1].defense.health.remaining;
+        game.apply(&mut s, &Action::Deploy).unwrap(); // → Fray
+        while s.phase == Phase::Fray {
+            if let Some(&i) = game.pending(&s, 0).first() {
+                game.apply(&mut s, &Action::Pass(i)).unwrap();
+            } else {
+                break;
+            }
+        }
+        assert!(
+            !s.plan.charges.iter().any(|c| c.side == 1),
+            "a routed foe declares no charge (it neither holds the front nor crosses)"
+        );
+        while matches!(s.phase, Phase::Volley) {
+            if let Some(&i) = game.pending(&s, 0).first() {
+                game.apply(&mut s, &Action::Pass(i)).unwrap();
+            } else {
+                game.apply(&mut s, &Action::Deploy).unwrap();
+            }
+        }
+        assert_eq!(
+            s.heroes[1].defense.health.remaining, rear0,
+            "the routed foe could not charge — the hero rear is spared"
         );
     }
 

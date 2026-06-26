@@ -23,7 +23,9 @@ use crate::stats::Offense;
 /// attack card's power, plus this round's Empower (`might_bonus`, a Support buff, §4 Salt).
 pub fn base_strike(a: &Actor) -> u32 {
     let card_pow = a.weapon.primary_damage().unwrap_or(0);
-    a.offense.might + card_pow + a.might_bonus
+    // §10 Defang: a Defang token lowers the body's Might (floor 1 when defanged) — a Controller
+    // softening, not damage. `eff_might` passes the base through unchanged when not defanged.
+    a.eff_might() + card_pow + a.might_bonus
 }
 
 /// A base [`Strike`] snapshot (for order-independent resolution from phase-start state).
@@ -80,9 +82,10 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
         ));
         return;
     }
-    // §10: a **Guard** token raises the per-phase wall (Toughness) this round — a braced body is harder
-    // to crack. Folded in here so every strike path (melee/ranged/charge/spell) respects it.
-    let bar = target.defense.health.toughness + target.guard_toughness();
+    // §10: the per-phase wall (Toughness). A **Sunder** token lowers it (−Toughness, floor 1) — the
+    // Controller's amp — and a **Guard** token raises it (+Toughness this round, a Wall's brace). Folded
+    // in here so every strike path (melee/ranged/charge/spell) respects both.
+    let bar = target.eff_toughness() + target.guard_toughness();
     let out = target.defense.take_with_toughness(strike.raw, bar);
     let name = &target.name;
     // The arithmetic tail, so a transcript reader can verify the result: the accumulated pile and
@@ -350,17 +353,23 @@ pub fn fray_clash(
 }
 
 /// §4.6 **breach list / per-unit lock.** A Vanguard is **locked** for the round iff *some enemy
-/// Vanguard it attacked in the Fray is still alive* — **only attacking locks** (being struck,
-/// blocking, or evading never does). `attacked[a]` is the enemy-Vanguard indices `a` struck (from
-/// [`fray_clash`]); `enemy` is that enemy pool **after** the Fray's deaths are finalized. Returns the
-/// lock flag per attacker: `true` = locked (pinned), `false` = **free** (may charge/flank).
+/// Vanguard it attacked in the Fray is still **standing in the front*** — **only attacking locks**
+/// (being struck, blocking, or evading never does). `attacked[a]` is the enemy-Vanguard indices `a`
+/// struck (from [`fray_clash`]); `enemy` is that enemy pool **after** the Fray's deaths are finalized.
+/// Returns the lock flag per attacker: `true` = locked (pinned), `false` = **free** (may charge/flank).
+///
+/// §4.6 **Rout/position refinement (2026-06-26).** You reach the back by clearing the front — by death
+/// **or displacement**. A struck enemy Vanguard that is **routed** (driven off the line to the
+/// Rearguard) no longer holds the front, so it **does not lock** its attacker: a hero whose front-foe is
+/// routed is **freed to charge**, even though that foe is still alive. (A `routed` foe is also barred
+/// from charging itself — enforced at the charge-declaration site in [`crate::game`].)
 pub fn compute_locks(attacked: &[Vec<usize>], enemy: &[Actor]) -> Vec<bool> {
     attacked
         .iter()
         .map(|targets| {
             targets
                 .iter()
-                .any(|&t| !enemy[t].fallen && !enemy[t].is_down())
+                .any(|&t| !enemy[t].fallen && !enemy[t].is_down() && !enemy[t].routed)
         })
         .collect()
 }
@@ -710,6 +719,22 @@ pub fn play_card(
                     log.push(format!("  mires {} (-{cadence} Cadence).", t.name));
                 }
             }
+            Effect::Sunder { toughness } => {
+                // §10 Controller — place a Sunder token (−Toughness, floor 1) on each target (persists):
+                // the per-phase wall drops, so the party cracks the foe with less Might. No damage.
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.tokens.push(crate::actor::Token::Sunder { toughness });
+                    log.push(format!("  sunders {} (-{toughness} Toughness).", t.name));
+                }
+            }
+            Effect::Defang { might } => {
+                // §10 Controller — place a Defang token (−Might, floor 1) on each target (persists):
+                // the foe's blows soften. No damage.
+                for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
+                    t.tokens.push(crate::actor::Token::Defang { might });
+                    log.push(format!("  defangs {} (-{might} Might).", t.name));
+                }
+            }
             Effect::Burn { stacks, power } => {
                 // §10 Artillery DoT — place `stacks` Burn tokens (each `power` Might) on each target;
                 // they tick into the Reckoning pile (see `tick_burn`), one removed per Reckoning.
@@ -786,6 +811,14 @@ pub fn play_card(
                 // deferred list lives in the round plan, not here, so the removal is performed by
                 // `crate::game` before/at play; this arm only narrates (caster-independent no-op here).
                 log.push("  silences a held enemy spell (a deferred effect is cancelled).".into());
+            }
+            Effect::Pin => {
+                // §10 Artillery — suppressive fire that denies a free enemy Vanguard its charge. The lock
+                // list lives in the round plan, not here, so the lock is set by `crate::game` at play;
+                // this arm only narrates (the round-plan surgery is the actual effect).
+                log.push(
+                    "  pins an enemy Vanguard with suppressive fire (its charge is denied).".into(),
+                );
             }
             Effect::Recover => {
                 // Turn a face-down Health card back up on the most-wounded ally/allies (§5).
@@ -907,6 +940,45 @@ mod tests {
         assert!(
             foes[2].defense.health.remaining < rear0,
             "the freed charger breaches the Rearguard"
+        );
+    }
+
+    /// §10 **Rout/position refinement**: a struck enemy Vanguard that is **routed** (displaced off the
+    /// line) no longer locks its attacker — the hero is freed to charge *even though that foe lives*. You
+    /// reach the back by clearing the front, by death **or displacement**.
+    #[test]
+    fn rout_frees_a_charger_whose_front_foe_is_displaced() {
+        // Hero 0 struck foe 0; foe 0 is alive but routed → hero 0 is FREE. Hero 1 struck foe 1, alive and
+        // holding → hero 1 stays LOCKED. (compute_locks is the §4.6 lock primitive.)
+        let mut foes = vec![fighter("Routed", 0, 3, 2), fighter("Holding", 0, 3, 2)];
+        foes[0].routed = true; // driven off the line (a Controller/Artillery Rout)
+        let attacked = vec![vec![0usize], vec![1usize]];
+        let locks = compute_locks(&attacked, &foes);
+        assert!(
+            !locks[0],
+            "a routed front-foe does not lock — the attacker is freed to charge (even though it lives)"
+        );
+        assert!(locks[1], "a foe still holding the front locks its attacker");
+        // And the freed hero can then breach the enemy rear: drive a charge for hero 0.
+        let mut heroes = vec![fighter("Freed", 5, 3, 2), fighter("Pinned", 1, 3, 2)];
+        let mut foes2 = vec![
+            fighter("Routed", 0, 3, 2),
+            fighter("Holding", 0, 3, 2),
+            fighter("Rear", 0, 2, 2),
+        ];
+        let charges = [Charge {
+            side: 0,
+            attacker: 0,
+            target: 2,
+            flank: false,
+        }];
+        let rear0 = foes2[2].defense.health.remaining;
+        let mut log = Vec::new();
+        resolve_volley(&mut heroes, &mut foes2, &charges, &mut log);
+        resolve_breach(&mut heroes, &mut foes2, &charges, &mut log);
+        assert!(
+            foes2[2].defense.health.remaining < rear0,
+            "the rout-freed hero breaches the enemy Rearguard"
         );
     }
 
@@ -1255,6 +1327,103 @@ mod tests {
             &mut log,
         );
         assert_eq!(foes[0].eff_cadence(), 1, "Mire floors at 1");
+    }
+
+    /// **Sunder** drops effective Toughness — the per-phase wall — floored at 1 (§2.2 — never zero), so
+    /// a strike that banked sub-threshold against the bar now flips a card (the Controller amp).
+    #[test]
+    fn sunder_lowers_toughness_floor_1() {
+        // Foe Toughness 5: a Might-3 hit banks 3 (< 5) → no flip. Sunder −3 → wall 2; the same 3-Might hit
+        // now flips a card. The drop floors at 1, never zero (force-not-fiat).
+        let mut foes = vec![fighter("Foe", 0, 5, 5)];
+        let mut allies = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+        // Pre-Sunder: a sub-bar hit banks but does not flip.
+        assert_eq!(
+            foes[0].eff_toughness(),
+            5,
+            "base Toughness reads 5 with no Sunder"
+        );
+        apply_strike(&mut foes[0], Strike { raw: 3 }, "Striker", &mut log);
+        assert_eq!(
+            foes[0].defense.health.remaining, foes[0].defense.health.max,
+            "3 < wall 5 → no flip"
+        );
+        foes[0].defense.clear_pile();
+        // Sunder −3 → effective wall 2.
+        play_card(
+            &fx(vec![Effect::Sunder { toughness: 3 }]),
+            "Bone",
+            Offense::default(),
+            &mut foes,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        assert_eq!(foes[0].eff_toughness(), 2, "Toughness 5 − Sunder 3 = 2");
+        // Now the identical 3-Might hit flips a card (3 ≥ wall 2).
+        let before = foes[0].defense.health.remaining;
+        apply_strike(&mut foes[0], Strike { raw: 3 }, "Striker", &mut log);
+        assert_eq!(
+            foes[0].defense.health.remaining,
+            before - 1,
+            "3 ≥ Sundered wall 2 → one card flips"
+        );
+        // An overwhelming second Sunder cannot push the wall below the floor.
+        play_card(
+            &fx(vec![Effect::Sunder { toughness: 9 }]),
+            "Bone",
+            Offense::default(),
+            &mut foes,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        assert_eq!(
+            foes[0].eff_toughness(),
+            1,
+            "Sunder floors at 1 — never zero (§2.2)"
+        );
+    }
+
+    /// **Defang** drops a body's effective Might (its strike magnitude), floored at 1 (§2.2 — never zero).
+    #[test]
+    fn defang_lowers_might_floor_1() {
+        let mut foes = vec![fighter("Brute", 5, 5, 5)];
+        let mut allies = vec![build_character("Novice", &[])];
+        let mut log = Vec::new();
+        assert_eq!(foes[0].eff_might(), 5, "base Might reads 5 with no Defang");
+        play_card(
+            &fx(vec![Effect::Defang { might: 3 }]),
+            "Bone",
+            Offense::default(),
+            &mut foes,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        assert_eq!(foes[0].eff_might(), 2, "Might 5 − Defang 3 = 2");
+        // base_strike reads eff_might (weapon power 0 here), so the softened blow is weaker.
+        assert_eq!(
+            base_strike(&foes[0]),
+            2,
+            "the Defanged body's strike is its effective Might"
+        );
+        // A second, overwhelming Defang cannot push it below the floor.
+        play_card(
+            &fx(vec![Effect::Defang { might: 9 }]),
+            "Bone",
+            Offense::default(),
+            &mut foes,
+            &mut allies,
+            None,
+            &mut log,
+        );
+        assert_eq!(
+            foes[0].eff_might(),
+            1,
+            "Defang floors at 1 — never zero (§2.2)"
+        );
     }
 
     /// **Burn** ticks `power` into the bearer's pile at the Reckoning and drops one stack.

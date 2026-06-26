@@ -836,6 +836,14 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
             "Places a Mire token on each target: \u{2212}{cadence} Cadence (floor 1, \u{00A7}2.2) \
              \u{2014} a smaller Tempo pool next refresh (a Controller stat-drop, \u{00A7}10)."
         ),
+        Effect::Sunder { toughness } => format!(
+            "Places a Sunder token on each target: \u{2212}{toughness} Toughness (floor 1, \u{00A7}2.2) \
+             \u{2014} lowers the foe's per-phase wall so the party cracks it (the Controller amp, \u{00A7}10)."
+        ),
+        Effect::Defang { might } => format!(
+            "Places a Defang token on each target: \u{2212}{might} Might (floor 1, \u{00A7}2.2) \
+             \u{2014} softens the foe's blows (a Controller stat-drop, \u{00A7}10)."
+        ),
         Effect::Burn { stacks, power } => format!(
             "Places {stacks} Burn token(s) ({power} Might each): at each Reckoning one ticks {power} \
              into the bearer's pile and is removed (Artillery DoT, \u{00A7}10)."
@@ -865,6 +873,11 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
         Effect::Silence => {
             "Cancels one enemy deferred (resolve: Reckoning) spell \u{2014} a non-lethal disrupt \
              (\u{00A7}4.6)."
+                .into()
+        }
+        Effect::Pin => {
+            "Suppressive fire: denies a free enemy Vanguard its charge this round \u{2014} the target \
+             is pinned (locked) and cannot cross to the backline (Artillery space-control, \u{00A7}10)."
                 .into()
         }
     }
