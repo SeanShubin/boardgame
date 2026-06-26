@@ -61,14 +61,14 @@ A combat round runs the §4.6 fixed sequence. For ability authoring, read it as 
 **gates**: at each gate some abilities **choose targets** and inject effects; the gate then
 **resolves** (flips, then finalizes deaths).
 
-| # | Phase | New targeting here? | What accumulates | Resolution **at the boundary** | What the gate **orders** |
-|---|-------|---------------------|------------------|--------------------------------|--------------------------|
-| 1 | **Standoff** | **Yes** — buffs/braces pick **own side** (auto-land, no contest); bid revealed, positions lock | buff effects (temp Tempo, +stat) | buffs take hold | braces/buffs active **before** the Fray |
-| 2 | **Fray** | **Yes** — front picks **enemy front**; instant ranged picks enemy front | Might → each target's Fray pile; Tempo contests | flips at Toughness; **deaths finalize → breach list fixed** | **who is freed** to charge |
-| 3 | **Volley** | **Yes** — free Vanguards pick **enemy rear** (charge) or flank; rear picks the **chargers** (answer); instant ranged re-fires | charge/answer Might → Volley piles; Tempo contests | rear's answers resolve; **deaths finalize** | **pre-empt** — a charger can die before it lands |
-| 4 | **Breach** | **No** — chargers land on targets chosen in the Volley | surviving charge Might → rear's Breach pile | flips; **deaths finalize → casters killed before Reckoning** | **disrupt** — no caster, no spell |
-| 5 | **Reckoning** | **No** — deferred / DoT resolve on targets chosen at cast | deferred-area Might & DoT ticks → Reckoning pile | flips; deaths finalize | last damage of the round |
-| 6 | **Lull** | **No** | — | refresh: Tempo resets, temp Tempo expires, Health persists, round++ | round boundary |
+| #   | Phase         | New targeting here?                                                                                                           | What accumulates                                   | Resolution **at the boundary**                                      | What the gate **orders**                         |
+| --- | ------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
+| 1   | **Standoff**  | **Yes** — buffs/braces pick **own side** (auto-land, no contest); bid revealed, positions lock                                | buff effects (temp Tempo, +stat)                   | buffs take hold                                                     | braces/buffs active **before** the Fray          |
+| 2   | **Fray**      | **Yes** — front picks **enemy front**; instant ranged picks enemy front                                                       | Might → each target's Fray pile; Tempo contests    | flips at Toughness; **deaths finalize → breach list fixed**         | **who is freed** to charge                       |
+| 3   | **Volley**    | **Yes** — free Vanguards pick **enemy rear** (charge) or flank; rear picks the **chargers** (answer); instant ranged re-fires | charge/answer Might → Volley piles; Tempo contests | rear's answers resolve; **deaths finalize**                         | **pre-empt** — a charger can die before it lands |
+| 4   | **Breach**    | **No** — chargers land on targets chosen in the Volley                                                                        | surviving charge Might → rear's Breach pile        | flips; **deaths finalize → casters killed before Reckoning**        | **disrupt** — no caster, no spell                |
+| 5   | **Reckoning** | **No** — deferred / DoT resolve on targets chosen at cast                                                                     | deferred-area Might & DoT ticks → Reckoning pile   | flips; deaths finalize                                              | last damage of the round                         |
+| 6   | **Lull**      | **No**                                                                                                                        | —                                                  | refresh: Tempo resets, temp Tempo expires, Health persists, round++ | round boundary                                   |
 
 **Three targeting moments, five resolution gates.** Targets are chosen only in the **Standoff,
 Fray, and Volley**. After the Volley **no new target is ever chosen** — the **Breach and Reckoning
@@ -173,14 +173,14 @@ it would otherwise duplicate.
 
 **Common abilities under the schema.**
 
-| Ability | reach | cast | resolve | note |
-|---------|-------|------|---------|------|
-| Punch / Throw Rock (plain attack) | melee / ranged | strike | on-cast | the default |
-| Charge (melee breakthrough) | melee | strike | breach | Volley-only via *freed* state |
-| Throw Bomb (deferred area) | ranged | strike | reckoning | disrupt window = Breach |
-| Hunter's Mark (apply) | ranged | strike | on-cast | then persists via token |
-| Poison (apply) | ranged | strike | on-cast | then ticks in the Reckoning pile |
-| Rallying Cry (one-shot buff) | — | standing | on-cast | flips face-down for the combat |
+| Ability                           | reach          | cast     | resolve   | note                             |
+| --------------------------------- | -------------- | -------- | --------- | -------------------------------- |
+| Punch / Throw Rock (plain attack) | melee / ranged | strike   | on-cast   | the default                      |
+| Charge (melee breakthrough)       | melee          | strike   | breach    | Volley-only via *freed* state    |
+| Throw Bomb (deferred area)        | ranged         | strike   | reckoning | disrupt window = Breach          |
+| Hunter's Mark (apply)             | ranged         | strike   | on-cast   | then persists via token          |
+| Poison (apply)                    | ranged         | strike   | on-cast   | then ticks in the Reckoning pile |
+| Rallying Cry (one-shot buff)      | —              | standing | on-cast   | flips face-down for the combat   |
 
 ---
 
