@@ -1499,18 +1499,26 @@ named **cast windows** and named **resolution gates**:
 - **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Standoff — own-side buffs /
   braces, auto-land) or **`strike`** (the **Strike window** = the **Fray *and* the Volley**; a card
   usable in one strike window is usable in both). Default `strike`.
-- **`resolve`** — which phase's pile the effect lands in (the per-phase accumulator above): **`on-cast`**
-  (the phase it was used — the old *instant*; an archer may loose at the enemy front in the Fray *and*
-  again at a charging breacher in the Volley), **`breach`** (the old charge — paid in the Volley, lands
-  next phase), or **`reckoning`** (the old *deferred* — paid up front, lands last; that deferral is the
-  **only** reason a breacher can disrupt it). Default `on-cast`.
+- **`resolve`** — which phase's pile the effect lands in (the per-phase accumulator above). A card
+  **authors one of two** values: **`on-cast`** (the phase it was used — the old *instant*; an archer may
+  loose at the enemy front in the Fray *and* again at a charging breacher in the Volley; the default) or
+  **`reckoning`** (the old *deferred* — paid up front, lands last; that deferral is the **only** reason a
+  breacher can disrupt it).
+  - **`breach` is *derived-only* — never authored on a card.** It is the resolve a **melee** attack takes
+    when used as a **charge**: a *freed* Vanguard targeting the enemy **rear**, paid in the Volley and
+    landing in the **Breach** (so the rear can pre-empt the crosser). It follows from **reach + breach
+    state** (below), belongs to the **charge action** rather than the card, and is shared by **every**
+    melee ability. *(The same melee used as a **flank** — a surviving enemy front, no gap — stays
+    `on-cast`, a trade.)*
 
 **Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* in a
 phase comes from **reach** (§4.2) + breach state (the front shields the rear until cracked; the rear is
 reachable only by a **freed** charger). The **disruption window is `resolve − cast`** counted in gates —
 `on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); a later `resolve` ⇒ the gates in between are exactly where a
-death can silence it. **Author's dial:** choose `on-cast` for a guaranteed effect (a trade), a later gate
-to make it disruptable — the further out, the longer it is exposed.
+death can silence it. **Author's dial (the two authorable values):** choose `on-cast` for a guaranteed
+effect (a trade) or `reckoning` to make it disruptable and land last. `breach` is **not** an authoring
+choice — it is the charge action's derived timing (a melee charging the rear), exposed to the Volley
+pre-empt by construction.
 
 **RULE — breachers are defended normally.** A charger is **not** special: the rear spends Tempo to **dodge**
 it, **strike back** (if it carries melee), or **counter-fire** a ranged shot — any §3.4 response — all from

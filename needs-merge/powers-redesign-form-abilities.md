@@ -247,6 +247,9 @@ the instant/deferred enum — replaced by cast/resolve; the per-round-vs-per-pha
 - **Necessity test (§6.1)** — each new power must ship with a scenario it is **required** to win
   (naive line provably loses, keyed line wins). A power with no such scenario is **fiat or
   redundant** — cut it.
+- **Power scaling (§8)** — *"all powers scale to level"* via typed axes (Magnitude / Breadth /
+  Duration / Cost); curve granularity **decided 2026-06-25**: shared-per-axis default + per-power
+  override on demand, on the base-2 rail.
 
 ---
 
@@ -266,5 +269,48 @@ the instant/deferred enum — replaced by cast/resolve; the per-round-vs-per-pha
 - **`card-combat-all-mechanics.md` and other logs:** re-express `instant`/`deferred` as
   `cast/resolve`, and the per-round pile as **per-phase** (the legend's "carries within a round,
   wipes at the Lull" line in particular).
-</content>
-</invoke>
+
+---
+
+## 8. Power scaling — the level axes 🟡 *(direction 2026-06-25; curve granularity **decided** 2026-06-25)*
+
+**Direction.** Every power **scales to level**, but along a **small set of typed axes** — *not* one
+universal magnitude curve. A power is tagged with a **primary scaling axis**; its level picks a point
+on that axis's curve.
+
+**The axes.**
+- **Magnitude** — Might per hit (damage powers). Gated by the **per-phase Toughness wall** (§3): a
+  step function — `base × f(L)` must clear Toughness *within its resolve phase* to flip, so leveling
+  buys **breakpoints**, not smooth growth.
+- **Breadth** — targets / tokens / extra foes (Mark's marks, AoE rank, a Curse's +1 foe). The
+  **debuff axis** — forced here because the **`min 1` floor** (force-not-fiat) caps magnitude, so a
+  debuff can only grow by hitting *more bodies*, never *harder toward a lock*.
+- **Duration** — ticks / rounds (DoT markers, lingering zones). The time axis.
+- **Cost / efficiency** — the **Tempo** paid (or effect-per-Tempo). Must move with the others, or
+  leveling just inflates the one-pool economy (§4.4).
+
+*(Binary effects — execute, "cannot fall," disrupt — scale on **availability / breadth**, never
+magnitude.)*
+
+**Why this makes the rewrite/rebalance easier.**
+- **Fewer free parameters** — tune a base + a curve per axis, not N loose numbers per power → a far
+  smaller space for the par-solver (`computability-and-balance.md` §10 / §0.3).
+- **Monotonicity for free** — level-scaling makes every power monotone, so **dominance pruning**
+  ("higher level dominates lower, all else equal") is valid — the very §0.1 invariant the computable
+  core already relies on.
+- **Progression is one atom** — a level rides the **base-2 denomination** encoding (§2.5): "level up
+  a power" = "add a denomination card," the same rail stats use (§8.5). No new machinery.
+- **Comparable units** — a common level scale lets the **closure check** and the **necessity test**
+  (§6.1) compare powers on one axis instead of bespoke per-power judgment.
+
+**DECIDED 2026-06-25 — curve granularity: shared curve per axis (default) + per-power override on demand.**
+- **Shared-per-axis** *(the default)* — all Magnitude powers ride one `f_mag(L)`, all Breadth powers
+  one `f_brd(L)`, etc. Fewest dials, maximal comparability, trivially monotone; a power's identity
+  lives in its **traits + Cost**, never a private damage number (extends the stat-collapse philosophy).
+- **Per-power override** *(deliberate exception)* — a power may name its own curve **only where its
+  identity genuinely demands it**. The extra dial is **paid for on purpose, never taken by default**;
+  when used, its monotonicity is re-checked individually.
+- **Encoding:** rides the **base-2 denomination** rail (§2.5) — the shared structure is "level adds a
+  denomination"; the default is a uniform per-level increment per axis, an override sets a power-specific
+  base/increment. This is the parameterization the eventual par-solver consumes
+  (`computability-and-balance.md` §10).
