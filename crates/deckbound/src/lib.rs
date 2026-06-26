@@ -1,13 +1,14 @@
 //! Deckbound — the cooperative card-combat game, as an [`engine::Game`].
 //!
-//! Combat is a sequence of **rounds** built on the documented model: two defense channels —
-//! outer **Body** and inner **Fear/Spirit** — each resolved cut→bar→pool, only Body with a pool
-//! (`stats`); data-driven action/effect cards (`cards`); the **charge-and-gauntlet** battle on a
-//! single **Tempo** budget, with overflow free-hits, the gauntlet, and AoE (`combat`); and an
-//! optional four-card **Clash** mix-up (Strike/Anticipate/Gather/Evade + Force) that replaces a
-//! same-range trade (`duel`). Actors are Characters (human) or Creatures (scripted). No Bevy
-//! dependency, so it's unit-testable and seed-reproducible; the `tabletop` plugin renders it. All
-//! numbers live in `data/booklet.ron`.
+//! Combat is a sequence of **rounds** on the §4.6 **six-phase** model: one damage channel —
+//! untyped **Might** into the **health** pool, resolved pile→bar→pool (`stats`, §2.2); stats read off
+//! the **Form** deck (`form`, stats-as-deck §2.3); data-driven action/effect cards (`cards`); the
+//! six-phase battle (Standoff → Fray → Volley → Breach → Reckoning → Lull) on a single per-round
+//! **Tempo** budget, with the one Tempo contest, charges/flanks, the breach pre-empt, and AoE
+//! (`combat`); and an optional four-card **Clash** mix-up (Strike/Anticipate/Gather/Evade + Force)
+//! that replaces a same-range trade (`duel`). Actors are Characters (human) or Creatures (scripted).
+//! No Bevy dependency, so it's unit-testable and seed-reproducible; the `tabletop` plugin renders it.
+//! All numbers live in `data/booklet.ron`.
 
 pub mod actor;
 pub mod balance;
@@ -15,10 +16,12 @@ pub mod campaign;
 pub mod cards;
 pub mod combat;
 pub mod currency;
+pub mod decktree;
 pub mod duel;
 pub mod encounter;
 pub mod form;
 pub mod game;
+pub mod groups;
 pub mod handbook;
 pub mod reference;
 pub mod ruleset;
@@ -34,6 +37,7 @@ pub use actor::{Actor, Attack, Behavior, Driver, Instinct, Range, Script, Target
 pub use campaign::{CampAction, Campaign, CampaignState, reference_campaign};
 pub use cards::{Card, Effect, RoleKind};
 pub use currency::{Currency, Track};
+pub use decktree::{Deck, FormTree, Stat, Suit, SuitDeck};
 pub use duel::{Move, Side, resolve};
 pub use encounter::{EncounterCard, RosterEntry};
 pub use form::{Form, StatCard};

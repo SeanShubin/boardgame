@@ -51,71 +51,72 @@ Catalog(
     // Role-card rewards (§8.3): the 25-set pool — 5 tracks × 5 levels (role-card-redesign.md §10).
     // Clearing (track, level) unlocks this atomic set: its role `cards` (Base / Modifier / Mode) plus
     // a bundled `stat` Form attachment (stats-as-deck). One physical copy each (scarce). NUMBERS ARE
-    // SEEDS — human-tuned by playtest. `role` keys the §4.4 per-role cap; `positional: true` (Wall /
-    // Infiltrator / Artillery) means the card is playable only from its §4 position. Damage is untyped
-    // Might (§2.2); Controller cards deal NO damage (debuff/status only) and Support NO damage
-    // (buff/heal only) — §8.6 / Charter #13.
+    // SEEDS — human-tuned by playtest. `role` keys the track (no per-suit/per-side cap — §4.4: casting is
+    // bounded only by Tempo + evade). Offensive (foe-targeting) cards are positioned by `reach` (§4.2):
+    // a ranged offensive ability is Rearguard-cast + evadable, a melee one Vanguard-cast; support
+    // (ally/self) cards are rank-free `cast: Standing`. Damage is untyped Might (§2.2); Controller cards
+    // deal NO damage (debuff/status only) and Support NO damage (buff/heal only) — §8.6 / Charter #13.
     // §10 catalog (REWRITTEN 2026-06-25, role-card-redesign.md §10): cast/resolve + per-phase + the
     // utility-token effects. Each reward's role `cards` carry `cast` (Standing|Strike) / `resolve`
     // (OnCast|Breach|Reckoning) / `one_shot` (the tempo-gated replacement for `zone: Spend`), plus the
     // token effects (Brace/Cover/Mark/Mire/Burn/Thorns/Charge/Smoke/Silence). NUMBERS ARE SEEDS —
-    // human-tuned by playtest. `role` keys the §4.4 per-role cap; `positional: true` (Wall / Infiltrator
-    // / Artillery) means the card is playable only from its §4 position. Controller deals NO damage
-    // (debuff/status only); Support NO damage (buff/heal only) — §8.6 / Charter #13.
+    // human-tuned by playtest. Offensive = foe-targeting (classified by target, positioned by reach);
+    // support = ally/self, rank-free. Controller deals NO damage (debuff/status only); Support NO damage
+    // (buff/heal only) — §8.6 / Charter #13.
     rewards: [
         // ---- Wall (Iron) — the immovable line: hold the front, shield the back (axes: Cost + Breadth) ----
         Reward( track: Iron, level: 1, stat: (vitality: 2, toughness: 1),
                 flavor: "Set your feet. The line begins where you decide it does.",
-                cards: [ Card( name: "Brace", role: Some(Iron), kind: Base, positional: true, cast: Standing, resolve: OnCast, effects: [Brace(toughness: 3)] ) ] ),
+                cards: [ Card( name: "Brace", role: Some(Iron), kind: Base, cast: Standing, resolve: OnCast, effects: [Brace(toughness: 3)] ) ] ),
         Reward( track: Iron, level: 2, stat: (vitality: 2, toughness: 1),
                 flavor: "Shields locked, the wall holds as one.",
-                cards: [ Card( name: "Phalanx", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one." ) ] ),
+                cards: [ Card( name: "Phalanx", role: Some(Iron), kind: Modifier, passive: true, text: "Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one." ) ] ),
         Reward( track: Iron, level: 3, stat: (vitality: 3),
                 flavor: "One shield is a man; a line of them is a wall.",
-                cards: [ Card( name: "Aegis", role: Some(Iron), kind: Base, positional: true, cast: Standing, resolve: OnCast, effects: [Cover], text: "Assigns a Cover token to an ally — single-target damage aimed at it spills to this Wall first (§4.5)." ) ] ),
+                cards: [ Card( name: "Aegis", role: Some(Iron), kind: Base, cast: Standing, resolve: OnCast, effects: [Cover], text: "Assigns a Cover token to an ally — single-target damage aimed at it spills to this Wall first (§4.5)." ) ] ),
         Reward( track: Iron, level: 4, stat: (vitality: 2, toughness: 2),
                 flavor: "One sweep of the shield-line, and the whole front rank reels.",
-                cards: [ Card( name: "Shield Sweep", role: Some(Iron), kind: Base, positional: true, cast: Strike, resolve: OnCast, targets: 3, reach: (1, 1), effects: [Damage(power: 2)], text: "Melee AoE: Might to every enemy front body (§4.5) — the Wall's answer to a pressing rank." ) ] ),
+                cards: [ Card( name: "Shield Sweep", role: Some(Iron), kind: Base, cast: Strike, resolve: OnCast, targets: 3, reach: (1, 1), effects: [Damage(power: 2)], text: "Melee AoE: Might to every enemy front body (§4.5) — the Wall's answer to a pressing rank." ) ] ),
         Reward( track: Iron, level: 5, stat: (vitality: 4, toughness: 2),
                 flavor: "Here, and no further. Not while I am standing — and I am not going down.",
                 cards: [
-                    Card( name: "Last Stand", role: Some(Iron), kind: Base, positional: true, cast: Standing, resolve: OnCast, one_shot: true, effects: [Lifeline] ),
-                    Card( name: "Taunt", role: Some(Iron), kind: Modifier, positional: true, passive: true, text: "Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line." ),
+                    Card( name: "Last Stand", role: Some(Iron), kind: Base, cast: Standing, resolve: OnCast, one_shot: true, effects: [Lifeline] ),
+                    Card( name: "Taunt", role: Some(Iron), kind: Modifier, passive: true, text: "Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line." ),
                 ] ),
 
         // ---- Infiltrator (Silver) — the unseen blade: slip the wall, gut the back (axes: Magnitude + Breadth) ----
         Reward( track: Silver, level: 1, stat: (cadence: 2, finesse: 2),
                 flavor: "You won't see her cross the room. You'll notice who is no longer in it.",
-                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, positional: true, cast: Strike, resolve: Breach, effects: [Damage(power: 3), Shove], text: "The charge blow: Might + a shove that knocks the foe out of the line (no melee strike-back this round)." ) ] ),
+                cards: [ Card( name: "Slip Strike", role: Some(Silver), kind: Base, cast: Strike, resolve: Breach, effects: [Damage(power: 3), Shove], text: "The charge blow: Might + a shove that knocks the foe out of the line (no melee strike-back this round)." ) ] ),
         Reward( track: Silver, level: 2, stat: (cadence: 1, might: 1),
                 flavor: "A breath of grey, and the wall is suddenly somewhere you are not.",
-                cards: [ Card( name: "Smoke", role: Some(Silver), kind: Base, positional: true, cast: Strike, resolve: OnCast, effects: [Smoke], text: "Places a Smoke token: the next charge slips uncontested — the rear cannot pre-empt it (§10)." ) ] ),
+                cards: [ Card( name: "Smoke", role: Some(Silver), kind: Base, cast: Strike, resolve: OnCast, effects: [Smoke], text: "Places a Smoke token: the next charge slips uncontested — the rear cannot pre-empt it (§10)." ) ] ),
         Reward( track: Silver, level: 3, stat: (cadence: 2, finesse: 2),
                 flavor: "Through the one gap the guard forgot they had.",
-                cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, positional: true, passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway." ) ] ),
+                cards: [ Card( name: "Shadowstep", role: Some(Silver), kind: Modifier, passive: true, text: "Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway." ) ] ),
         Reward( track: Silver, level: 4, stat: (might: 2),
                 flavor: "Wind the blade back a full turn; let it loose on the next.",
-                cards: [ Card( name: "Coiled Strike", role: Some(Silver), kind: Base, positional: true, cast: Strike, resolve: OnCast, effects: [Charge(amount: 3)], text: "Banks 3 Charge tokens: the next damage strike consumes them for +1 Might each (§5.4)." ) ] ),
+                cards: [ Card( name: "Coiled Strike", role: Some(Silver), kind: Base, cast: Strike, resolve: OnCast, effects: [Charge(amount: 3)], text: "Banks 3 Charge tokens: the next damage strike consumes them for +1 Might each (§5.4)." ) ] ),
         Reward( track: Silver, level: 5, stat: (might: 2, cadence: 1),
                 flavor: "One name, crossed off. The rest of the field never mattered.",
-                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, positional: true, cast: Strike, resolve: Breach, one_shot: true, effects: [Damage(power: 9)], text: "An overwhelming burst at an enemy Rearguard — kills by sheer Might, not a bypass (single kill-condition, §2.2)." ) ] ),
+                cards: [ Card( name: "Assassinate", role: Some(Silver), kind: Base, cast: Strike, resolve: Breach, one_shot: true, effects: [Damage(power: 9)], text: "An overwhelming burst at an enemy Rearguard — kills by sheer Might, not a bypass (single kill-condition, §2.2)." ) ] ),
 
         // ---- Artillery (Brass) — the long reach: ranged burst, AoE, the slow shell (axes: Magnitude + Breadth) ----
         Reward( track: Brass, level: 1, stat: (might: 2),
                 flavor: "Death that arrives ahead of the sound of it.",
-                cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
+                cards: [ Card( name: "Bolt", role: Some(Brass), kind: Base, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Damage(power: 3)] ) ] ),
         Reward( track: Brass, level: 2, stat: (might: 2),
                 flavor: "The sky, rationed evenly across the whole front rank — and the front keeps its head down.",
-                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Damage(power: 3), Pin], text: "Anti-group AoE Might to a rank (§4.5), with suppressive fire: a free enemy Vanguard is Pinned — denied its charge this round (Artillery space-control, §10)." ) ] ),
+                cards: [ Card( name: "Volley", role: Some(Brass), kind: Base, cast: Strike, resolve: OnCast, targets: 3, reach: (2, 2), effects: [Damage(power: 3), Pin], text: "Anti-group AoE Might to a rank (§4.5), with suppressive fire: a free enemy Vanguard is Pinned — denied its charge this round (Artillery space-control, §10)." ) ] ),
         Reward( track: Brass, level: 3, stat: (might: 3),
                 flavor: "It does not ask which armor. It asks how long.",
-                cards: [ Card( name: "Incendiary", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Burn(stacks: 3, power: 3)], text: "Places 3 Burn tokens (3 Might each): at each Reckoning one ticks into the bearer's pile and is removed (Artillery DoT, §10)." ) ] ),
+                cards: [ Card( name: "Incendiary", role: Some(Brass), kind: Base, cast: Strike, resolve: OnCast, reach: (2, 2), effects: [Burn(stacks: 3, power: 3)], text: "Places 3 Burn tokens (3 Might each): at each Reckoning one ticks into the bearer's pile and is removed (Artillery DoT, §10)." ) ] ),
         Reward( track: Brass, level: 4, stat: (might: 2),
                 flavor: "Far enough back to be safe — from everything but this.",
-                cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, positional: true, passive: true, text: "Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception." ) ] ),
+                cards: [ Card( name: "Longshot", role: Some(Brass), kind: Modifier, passive: true, text: "Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception." ) ] ),
         Reward( track: Brass, level: 5, stat: (might: 2),
                 flavor: "The slow shell. It is already falling before they hear it leave the tube — and where it lands, the line scatters.",
-                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, positional: true, cast: Strike, resolve: Reckoning, targets: 5, reach: (2, 2), effects: [Damage(power: 5), Rout], text: "A deferred AoE shell (resolve: Reckoning) — disruptable, charge-gated (NOT one-shot); lands on the whole enemy rank at the Reckoning and scatters it (Rout — driven off the line, the area-CC rider, §10)." ) ] ),
+                cards: [ Card( name: "Bombardment", role: Some(Brass), kind: Base, cast: Strike, resolve: Reckoning, targets: 5, reach: (2, 2), effects: [Damage(power: 5), Rout], text: "A deferred AoE shell (resolve: Reckoning) — disruptable, charge-gated (NOT one-shot); lands on the whole enemy rank at the Reckoning and scatters it (Rout — driven off the line, the area-CC rider, §10)." ) ] ),
 
         // ---- Controller (Bone) — the unmaker: ranged STAT-DROPS, never damage (§8.6) (axes: Breadth + Duration).
         //      Sunders (−Toughness, the amp), Mires (−Cadence), Hexes a rank, and Unmakes the enemy force. ----
@@ -262,9 +263,9 @@ Catalog(
     tutorials: [
         ScenarioCard( name: "1. The Trade", blurb: "Same-range melee is a simultaneous trade — both deal their Might. Bring more Might; Toughness gates each card.", flavor: "Two blades, one heartbeat. Whoever brought more, keeps standing.", heroes: ["Recruit"], foes: ["Husk"] ),
         ScenarioCard( name: "2. Right Tool, Right Range", blurb: "A Slinger fires from range; spend Tempo to evade it, or bring ranged (Archer) to trade back. With no Tempo, you take the hit.", flavor: "Bringing a sword to an arrow is a short, instructive lesson.", heroes: ["Recruit", "Archer"], foes: ["Slinger"] ),
-        ScenarioCard( name: "3. The Triangle", blurb: "Vanguard holds the wall, Outriders slip to the back, Rearguard fires from safety. Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
+        ScenarioCard( name: "3. The Triangle", blurb: "The playstyle triangle: the Wall holds the front (Turtle), the Infiltrator charges through to the back (Aggressor), the Artillery fires from safety (Glass-Cannon). Each beats the next.", flavor: "Wall, knife, and arrow — a wheel where every spoke eats the one ahead.", heroes: ["Anvil", "Wisp", "Sear"], foes: ["Brute", "Raider", "Seer"] ),
         ScenarioCard( name: "4. Charge & Concentration", blurb: "Concentrate your charge against one stretch of the line to break through; an even charge is caught everywhere and breaks through nowhere.", flavor: "Spread thin and you are strong nowhere. Pick a door and break it.", heroes: ["Anvil", "Recruit", "Wisp"], foes: ["Brute", "Husk"] ),
-        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Finesse) to slip the gauntlet and become an Outrider, or hold to block. A Wall with more hold than your advance Finesse stops you cold.", flavor: "A wall is a question. Finesse is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
+        ScenarioCard( name: "5. Slip & Wall", blurb: "Out-pace a thin wall (higher Finesse) to slip past it and breach the back as an Infiltrator, or hold to block. A Wall with more hold than your advance Finesse stops you cold.", flavor: "A wall is a question. Finesse is how you decline to answer it.", heroes: ["Wisp", "Recruit"], foes: ["Brute", "Husk"] ),
         ScenarioCard( name: "6. Guard the Caster", blurb: "Your Vow is decisive but defenseless. Hold the front for it or the Raider slips through and assassinates it.", flavor: "The most important person on the field is the one who can't defend themselves.", heroes: ["Anvil", "Vow", "Sear"], foes: ["Raider", "Husk"] ),
         ScenarioCard( name: "C1. Interrupt the Wind-Up", blurb: "Pell winds up Force then unloads. Strike while it Gathers, or Evade the killshot.", flavor: "A storm tells you it is coming. Listen, then move.", heroes: ["Vael"], foes: ["Pell"], clash: true ),
         ScenarioCard( name: "C2. Read the Lead", blurb: "Bron leads every blow (Anticipate). Strike or Gather; never Evade.", flavor: "He is always one step ahead — so do not take the step he expects.", heroes: ["Vael"], foes: ["Bron"], clash: true ),

@@ -137,10 +137,6 @@ pub struct Round {
     /// Actors who have already acted in the current interactive phase (Standoff / Fray / Volley).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
-    /// §4.4 per-role-per-round cap: the role tracks each actor has already played a card of this
-    /// round. (Retained from the old model; tempo-gating is the §4.6 limiter, but the cap stays.)
-    pub hero_roles_played: Vec<Vec<crate::currency::Currency>>,
-    pub foe_roles_played: Vec<Vec<crate::currency::Currency>>,
     /// §4.6 #3 — charges/flanks declared in the Volley, resolved at the Volley/Breach boundary.
     pub charges: Vec<Charge>,
     /// §4.6 #5 — deferred (`resolve: Reckoning`) spells wound up this round.
@@ -166,8 +162,6 @@ impl Round {
             foe_attacked: vec![Vec::new(); foes],
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
-            hero_roles_played: vec![Vec::new(); heroes],
-            foe_roles_played: vec![Vec::new(); foes],
             charges: Vec::new(),
             deferred: Vec::new(),
             committing: 0,

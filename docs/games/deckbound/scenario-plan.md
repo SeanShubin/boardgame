@@ -1,11 +1,20 @@
 # Deckbound — Scenario & Tutorial Plan (build blueprint)
 
-> **Also stale (2026) — the stat collapse:** five stats (Might / Vitality / Toughness / Speed / Daring),
-> **one** damage channel, Fear / Armor gone, ranged attacks **evadable** (Spec §2 / §3 / §4).
-
-> **Stale terms (2026-06-20).** Combat was respecced to **charge-and-gauntlet** (lanes gone, Spec §4) and
-> the breadth economy to one pool — **Tempo = Speed × Drive** (Focus/Mind merged out, Spec §3). Tutorial
-> scenarios that teach lanes / Focus / slipping need re-authoring; read this for *content intent* until then.
+> **STALE — read for content *intent* only (re-sync banner 2026-06-26).** This blueprint predates the
+> current model on several axes; **canon (`canon/2-spec` §4 / §4.6) + `booklet.ron` are authoritative**:
+> - **Stats:** the five are **Might · Vitality · Toughness · Cadence · Finesse** (not Speed / Drive /
+>   Daring / Power / Mind); one damage channel (untyped Might → health); Fear / Armor gone; ranged
+>   attacks **evadable** (§2 / §3).
+> - **Combat:** the §4.6 **six-phase** model (Standoff → Fray → Volley → Breach → Reckoning → Lull) —
+>   **lanes / stacking / the Outrider rank / the gauntlet / the crossing contest are retired**; the back
+>   is reached by a **per-unit-lock breach** (a free Vanguard charges in the Volley), not a lane crossing.
+> - **Tempo:** one pool, **Cadence × Finesse**, shared across the round's phases (Focus / Mind merged out).
+> - **Role cards (in code):** no per-suit/per-side cap — casting is **tempo-gated**; offensive (foe-
+>   targeting) cards are positioned by reach, support is rank-free (§4.4). The "seven crossing powers"
+>   below (Phalanx / Taunt / Blitz / Shadowstep / Backstab / Longshot / Bodyguard) are **retired flavor**
+>   pending the §4 role-power **open dial**.
+> The tutorial / scenario *intent* below (what each lesson teaches) still guides authoring; the
+> mechanics vocabulary does not.
 
 > **Status: the authored target for the new combat.** This is the blueprint the code and
 > `booklet.ron` are being rebuilt to match (spec-first: rules in `canon/2-spec/README.md` §1,

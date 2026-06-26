@@ -1,9 +1,9 @@
-//! Deckbound as an [`engine::Game`] — the §4 lane commitment system.
+//! Deckbound as an [`engine::Game`] — the §4.6 six-phase battle.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
-//! §4.2) run through the lane round (Assemble → Slip → Vanguard resolve → Outrider → Rearguard),
-//! or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All numbers
-//! live in `data/booklet.ron`.
+//! §4.2) run through the six-phase round (Standoff → Fray → Volley → Breach → Reckoning → Lull,
+//! §4.6), or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All
+//! numbers live in `data/booklet.ron`.
 
 use engine::{
     Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
@@ -49,8 +49,8 @@ pub enum Action {
     SetVanguard(usize),
     SetRearguard(usize),
     /// Volley (§4.6 #3): declare a **flank** — this freed Vanguard attacks a surviving enemy
-    /// Vanguard (a trade in the Volley). `SetOutrider(actor)` flanks the first enemy Vanguard.
-    SetOutrider(usize),
+    /// Vanguard (a trade in the Volley). `Flank(actor)` flanks the first enemy Vanguard.
+    Flank(usize),
     /// Advance the current phase (Standoff → Fray → Volley → Breach → Reckoning → next round).
     Deploy,
     /// Fray (§4.6 #2) strike / Volley (§4.6 #3) **flank**: this actor attacks that enemy.
@@ -435,29 +435,20 @@ impl Deckbound {
                 continue;
             }
             if state.plan.foe_vanguard[f] {
-                // Front clash: strike the first living hero Vanguard.
-                while state.creatures[f].tempo > 0
+                // Front clash: strike the first living hero Vanguard. One committed strike per foe
+                // Vanguard in the Fray (keeps the trade clean).
+                if state.creatures[f].tempo > 0
                     && state.creatures[f].can_contest_now(Range::Melee)
-                {
-                    let Some(t) = (0..state.heroes.len())
+                    && let Some(t) = (0..state.heroes.len())
                         .find(|&h| state.plan.hero_vanguard[h] && !state.heroes[h].is_down())
-                    else {
-                        break;
-                    };
+                {
                     self.fray_strike(state, false, f, t);
-                    if state.creatures[f].tempo <= 0 {
-                        break;
-                    }
-                    // Only one committed strike per foe Vanguard in the Fray (keeps the trade clean).
-                    break;
                 }
-            } else if state.creatures[f].can_contest(Range::Ranged) {
-                while state.creatures[f].tempo > 0 {
-                    let Some(t) = self.front_target(state, 0) else {
-                        break;
-                    };
+            } else if state.creatures[f].can_contest(Range::Ranged) && state.creatures[f].tempo > 0
+            {
+                // One instant shot at the hero front this Fray.
+                if let Some(t) = self.front_target(state, 0) {
                     self.fray_shot(state, false, f, t);
-                    break;
                 }
             }
         }
@@ -503,10 +494,9 @@ impl Deckbound {
             } else if !state.plan.foe_vanguard[f]
                 && state.creatures[f].can_contest(Range::Ranged)
                 && state.creatures[f].tempo > 0
+                && let Some(t) = self.front_target(state, 0)
             {
-                if let Some(t) = self.front_target(state, 0) {
-                    self.fray_shot(state, false, f, t);
-                }
+                self.fray_shot(state, false, f, t);
             }
         }
     }
@@ -602,9 +592,12 @@ impl Deckbound {
             .push(format!("-- Round {}: the Standoff --", state.round));
     }
 
-    /// §4.4 — may actor `i` of `side` play this `card` right now? Enforces the per-role-per-round cap,
-    /// Disarm, and (for offensive ranged spells) that the caster holds a Rearguard position. A
-    /// `cast: Standing` card is only legal in the Standoff; a `cast: Strike` card in the Fray/Volley.
+    /// §4.4 — may actor `i` of `side` play this `card` right now? There is **no per-suit/per-side cap**
+    /// (casting is bounded only by Tempo + evade). It enforces Disarm, the §4.6 cast window, and the
+    /// **target-classification position rule**: an **offensive** (foe-targeting) card is positioned by
+    /// reach (§4.2) — a **ranged** one needs the **Rearguard**, a **melee** one the **Vanguard**;
+    /// **support** (ally/self) cards are rank-free. A `cast: Standing` card is only legal in the Standoff;
+    /// a `cast: Strike` card in the Fray/Volley.
     fn card_playable_now(
         &self,
         state: &State,
@@ -619,46 +612,42 @@ impl Deckbound {
         if state.s_pool(side)[i].disarmed {
             return false;
         }
+        // §4.4 — casting spends a Tempo card; with no per-suit/per-side cap, **Tempo is the limiter**.
+        // A unit with no Tempo cannot cast (consistent with strikes, which also need `tempo > 0`).
+        if state.s_pool(side)[i].tempo <= 0 {
+            return false;
+        }
         // §4.6 cast window.
-        let window_ok = match (state.phase, card.cast) {
-            (Phase::Standoff, Cast::Standing) => true,
-            (Phase::Fray, Cast::Strike) | (Phase::Volley, Cast::Strike) => true,
-            _ => false,
-        };
+        let window_ok = matches!(
+            (state.phase, card.cast),
+            (Phase::Standoff, Cast::Standing)
+                | (Phase::Fray, Cast::Strike)
+                | (Phase::Volley, Cast::Strike)
+        );
         if !window_ok {
             return false;
         }
-        if let Some(track) = card.role {
-            let played = if side == 0 {
-                &state.plan.hero_roles_played
-            } else {
-                &state.plan.foe_roles_played
-            };
-            if played[i].contains(&track) {
-                return false;
+        // §4.4 — offensive casting is positioned by reach (§4.2). A foe-targeting card has its casting
+        // position fixed by whether it is ranged: an offensive *ranged* spell fires only from the
+        // Rearguard (so a Vanguard cannot rain ranged spells); an offensive *melee* ability is cast from
+        // the front. Support (ally/self) is rank-free (the "a Vanguard can't rain spells" gate falls out
+        // of §4.2 — it is not a separate mechanism).
+        if card.is_offensive() {
+            let in_vanguard = state.s_vanguard(side)[i];
+            let ranged = card.is_ranged();
+            if ranged && in_vanguard {
+                return false; // an offensive ranged spell needs the Rearguard
+            }
+            if !ranged && !in_vanguard {
+                return false; // an offensive melee ability needs the Vanguard
             }
         }
         true
     }
 
-    /// Record that actor `i` of `side` played a card of `card`'s role this round (the §4.4 cap).
-    fn note_role_played(&self, state: &mut State, side: u8, i: usize, card: &crate::cards::Card) {
-        if let Some(track) = card.role {
-            let played = if side == 0 {
-                &mut state.plan.hero_roles_played
-            } else {
-                &mut state.plan.foe_roles_played
-            };
-            if !played[i].contains(&track) {
-                played[i].push(track);
-            }
-        }
-    }
-
     /// Play `card` from actor `i` of `side`. A `resolve: Reckoning` card is **wound up** (deferred to
     /// the Reckoning, disruptable); everything else resolves immediately (`resolve: OnCast`).
     fn do_play_card(&self, state: &mut State, side: u8, i: usize, card: crate::cards::Card) {
-        self.note_role_played(state, side, i, &card);
         let off = state.s_pool(side)[i].offense;
         let name = state.s_pool(side)[i].name.clone();
         // Casting spends a Tempo card (§4.4) — pay-after.
@@ -1010,6 +999,10 @@ impl Game for Deckbound {
                     } else {
                         a.push(Action::SetVanguard(i));
                     }
+                    // One Standing cast per unit per Standoff: skip a unit that has already cast.
+                    if state.s_acted(side)[i] {
+                        continue;
+                    }
                     for idx in 0..state.s_pool(side)[i].actions.len() {
                         if self.card_playable_now(
                             state,
@@ -1175,7 +1168,7 @@ impl Game for Deckbound {
                 _ => "?".into(),
             },
             Action::SetVanguard(h) => format!("Send {} to the Vanguard (front)", hname(*h)),
-            Action::SetOutrider(h) => format!("{} flanks the enemy front", hname(*h)),
+            Action::Flank(h) => format!("{} flanks the enemy front", hname(*h)),
             Action::SetRearguard(h) => format!("Pull {} back to the Rearguard", hname(*h)),
             Action::Deploy => "Advance the phase".into(),
             Action::Charge(a, f) => format!("{} → charge the {}", hname(*a), fname(*f)),
@@ -1305,6 +1298,10 @@ impl Game for Deckbound {
                     return Err(GameError::new("that card can't be cast in the Standoff"));
                 }
                 self.do_play_card(state, side, *i, card);
+                // One Standing cast per unit per Standoff (the same one-action-per-phase discipline the
+                // Fray/Volley use via `pending`); the unit may still act again in later phases. Without
+                // this the greedy would replay a returning buff until its Tempo drained (§4.4).
+                state.s_acted_mut(side)[*i] = true;
             }
             (Phase::Standoff, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
@@ -1386,7 +1383,7 @@ impl Game for Deckbound {
                 state.s_acted_mut(side)[*i] = true;
                 self.after_combat_action(state);
             }
-            (Phase::Volley, Action::SetOutrider(i)) => {
+            (Phase::Volley, Action::Flank(i)) => {
                 // Convenience: flank the first surviving enemy Vanguard.
                 let side = state.plan.committing;
                 let other = 1 - side;
@@ -1810,14 +1807,15 @@ fn scenario_zone(menu: Menu) -> ZoneView {
     }
 }
 
-/// The role triangle (Vanguard ▸ Outrider ▸ Rearguard ▸ Vanguard) as a small chart.
+/// The §4 / §8.5 **playstyle triangle** (Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor) as a small
+/// chart — the three damage Roles mediated by the Tempo economy.
 fn append_triangle_chart(prose: &mut Vec<engine::ProseLine>) {
     prose.push(engine::ProseLine::Gap);
     prose.push(engine::ProseLine::Heading("The triangle".into()));
     for line in [
-        "Vanguard ▸ beats Outrider (holds the wall, strikes first)",
-        "Outrider ▸ beats Rearguard (slips in to assassinate)",
-        "Rearguard ▸ beats Vanguard (fires from safety, untouchable in melee)",
+        "Aggressor (Infiltrator) ▸ beats Glass-Cannon — cracks the thin shield before the cannons win",
+        "Glass-Cannon (Artillery) ▸ beats Turtle — out-guns a passive defender it never has to reach",
+        "Turtle (Wall) ▸ beats Aggressor — drains the pusher dry, so it reaches the back empty",
     ] {
         prose.push(engine::ProseLine::Body(line.into()));
     }
@@ -2081,14 +2079,16 @@ mod tests {
         assert!(matches!(s.phase, Phase::Fray | Phase::Standoff) || s.outcome.is_some());
     }
 
-    /// §4.6 cast window: a `cast: Standing` card (Wall's Brace) **is** offered in the Standoff, while a
-    /// `cast: Strike` card (Artillery's Bolt) is **not** (wrong window) — and the Strike card flips to
-    /// legal once the Fray opens. (Rewritten for §4.6, replacing the retired Muster/positional test.)
+    /// §4.6 cast window **and** §4.4 target-classification position gate. A `cast: Standing` support card
+    /// (Wall's Brace) is offered in the Standoff (rank-free); a `cast: Strike` offensive card (Artillery's
+    /// Bolt) is not (wrong window) — and once the Fray opens, the ranged offensive Bolt is castable **only
+    /// from the Rearguard** (a Vanguard cannot rain ranged spells, §4.2), never the front.
     #[test]
-    fn standoff_offers_standing_casts_but_not_strike_casts() {
+    fn cast_window_and_position_gate_role_cards() {
         use crate::currency::Currency;
         let game = Deckbound;
-        // A hero holding both a Standing card (Iron L1 Brace) and a Strike card (Brass L1 Bolt).
+        // A hero holding both a Standing support card (Iron L1 Brace) and a Strike ranged-offensive card
+        // (Brass L1 Bolt).
         let hero = scenarios::build_character(
             "Novice",
             &[
@@ -2118,28 +2118,37 @@ mod tests {
             .position(|c| c.name == "Bolt")
             .expect("Brass L1 grants Bolt");
 
-        // In the Standoff: the Standing Brace is playable, the Strike Bolt is not (wrong window).
+        // In the Standoff: the Standing (support) Brace is playable, the Strike Bolt is not (wrong window).
         let brace_card = s.heroes[0].actions[brace].clone();
         let bolt_card = s.heroes[0].actions[bolt].clone();
+        assert!(!brace_card.is_offensive());
+        assert!(bolt_card.is_offensive() && bolt_card.is_ranged());
         assert!(
             game.card_playable_now(&s, 0, 0, &brace_card),
-            "a cast:Standing card is offered in the Standoff"
+            "a cast:Standing support card is offered in the Standoff (rank-free)"
         );
         assert!(
             !game.card_playable_now(&s, 0, 0, &bolt_card),
             "a cast:Strike card is NOT offered in the Standoff (wrong window)"
         );
 
-        // Advance to the Fray; now the Strike card is castable (and the Standing one is not).
+        // Advance to the Fray; the Standing card is now out of window.
         game.apply(&mut s, &Action::Deploy).unwrap();
         if s.phase == Phase::Fray {
             assert!(
-                game.card_playable_now(&s, 0, 0, &bolt_card),
-                "a cast:Strike card is offered once the Fray opens"
-            );
-            assert!(
                 !game.card_playable_now(&s, 0, 0, &brace_card),
                 "a cast:Standing card is not castable in the Fray (wrong window)"
+            );
+            // §4.4 position gate: the ranged offensive Bolt fires only from the Rearguard.
+            s.plan.hero_vanguard[0] = true; // at the front
+            assert!(
+                !game.card_playable_now(&s, 0, 0, &bolt_card),
+                "an offensive ranged spell cannot be cast from the Vanguard (§4.2)"
+            );
+            s.plan.hero_vanguard[0] = false; // holding the back
+            assert!(
+                game.card_playable_now(&s, 0, 0, &bolt_card),
+                "an offensive ranged spell fires from the Rearguard"
             );
         }
     }

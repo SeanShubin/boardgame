@@ -1069,7 +1069,7 @@ shielded, and dies the moment the shield drops. The core decision is the **alloc
 
 **Role powers (re-homed to the one contest).** With no crossing or catch, powers now bite the **Tempo
 bid** or the **exposed-back strike** instead: e.g. **Bulwark** (+block bid for every allied Vanguard — the
-line holds as one), **Assassinate** (a strike on an exposed Rearguard hits harder / executes it — the §10
+line holds as one), **Assassinate** (a strike on an exposed Rearguard hits hard enough to empty its pool — the §10
 prize). The crossing-only riders (Phalanx-hold, Taunt-first-catch, Blitz-free-slip, Shadowstep-win-ties)
 **retire** with the crossing contest; where still wanted they re-express as Tempo-bid modifiers. *(The
 exact power list is an open dial.)*
@@ -1327,12 +1327,24 @@ this is how a once-per-combat capstone is built, §5.6 M1). There is **no per-su
 much magic a side throws is bounded only by its **Tempo** (a conserved, party-size-invariant pool) and
 the foe's **evade**.
 
-**Position gates *offensive* casting.** A **Controller** debuff or an **Artillery** shot is a **ranged
-attack** (§4.2), so it is **cast from the Rearguard** and may be **evaded** (the tempo contest, §3.1).
-**Ally buffs** (Support) and a **Wall**'s standing defenses target your own side, are **not** attacks,
-and stay **rank-free standing cards** that last the engagement; an **Infiltrator**'s push past the front
-resolves in the Tempo contest (§4). Each effect plays **when it fits** — at the blind bid for persistent
-buffs / braces, in the contest for ranged fire and slips.
+**Target classifies; reach positions.** An ability is **offensive** or **support** by **what it
+targets**, not by its reach:
+- **Offensive** = a **foe-targeting** effect (a Damage strike, and every Controller debuff / status —
+  Mark · Mire · Sunder · Defang · Burn · Shove · Rout · Stagger · Disarm · Suppress · Slow · Confuse ·
+  Silence · Pin). It is `cast: Strike`, **contested**, and its **casting position and defense come from
+  its `reach` (§4.2)**: a **ranged** offensive ability is **cast from the Rearguard** and **evaded** (the
+  tempo contest, §3.1); a **melee** offensive ability is **cast from the Vanguard** (the front), a
+  **trade**.
+- **Support** = an **ally-or-self** effect (Brace · Cover · Haste · Empower · Mend · Thorns · Ward, and
+  the like). It is **not an attack**: `cast: Standing`, **rank-free**, **auto-lands** (uncontested),
+  castable from **any** position, and lasts the engagement.
+
+So the "a Vanguard cannot rain offensive spells" gate is **not a separate mechanism** — it **falls out of
+§4.2** (ranged fires only from the back): an offensive *ranged* ability needs the Rearguard because *all*
+ranged attacks do. **Reach only *positions* an attack within the offensive/support split; it never
+*classifies* it** — a melee strike and a ranged shot are both attacks, and a melee offensive ability
+(Shield Sweep, Slip Strike) is correctly Vanguard-cast, not Rearguard-gated. A foe-debuff and an
+ally-buff are different in kind even at the same reach; the *target* is the robust axis.
 
 **WHY.** The old **per-suit cap** (≤1/suit, ≤5/side, any party size) was a *fiat* conservation lever. The
 stat collapse makes it **redundant**: casting now spends **Tempo**, and Tempo is **already conserved**
@@ -1344,9 +1356,10 @@ prices same-ability repetition (every use costs a Tempo card — no exhaust cloc
 or **spread**, paying Tempo either way — opportunity cost, never prohibition (#2; emergence over fiat,
 #6 / #12).
 
-Making **offensive casting Rearguard-only** is the replacement god-vs-party lever, and a *positional* one: a
-god cannot both **hold the Vanguard** and **rain offensive spells** in one round — it must **hold back** to
-cast, paying a real lane-coverage cost (the concentration-vs-resilience tradeoff, candidate **BI-4**).
+Making **offensive *ranged* casting Rearguard-only** is the replacement god-vs-party lever, and a
+*positional* one: a god cannot both **hold the Vanguard** and **rain offensive ranged spells** in one round
+— it must **hold back** to cast, paying a real lane-coverage cost (the concentration-vs-resilience
+tradeoff, candidate **BI-4**).
 Buffs stay rank-free because they are not attacks — Support mends the line from any rank. **Cross-suit
 combos** (degrade → fire → buff) are still *rewarded* — the suits differ in kind (#12) — just no longer
 *required* by a one-per-suit rule. Effects stay **additive / commutative**: each feeds an accumulator
@@ -1362,17 +1375,21 @@ more-informed hidden moment.
 - **Conservation across party size via Tempo.** Total Tempo is party-size-invariant (fixed Cadence-card
   pool), so total casting output is too — **god ≈ party** is the N=1 partition, not an exception. No party
   size dominates role-card throughput (candidate **BI-4**, par-solver-verified).
-- **Offensive spells are Rearguard-cast ranged attacks** (evadable, §3.1 / §4.2); a body **cannot** cast one
-  from the **Vanguard** (the front). **Ally buffs / Wall braces are rank-free standing cards.**
+- **The offensive/support split is by *target*, never by reach.** **Offensive** (foe-targeting) abilities
+  are **positioned by reach** (§4.2): a **ranged** one is **Rearguard-cast and evadable** (so a body
+  **cannot** rain offensive ranged spells from the **Vanguard**); a **melee** one is **Vanguard-cast, a
+  trade**. **Support** (ally/self) abilities are **rank-free standing cards** (`cast: Standing`, auto-land,
+  any position).
 - **Order-independent effects.** Every effect feeds an accumulator at its window boundary; **no played
   effect multiplies or gates another's output** (§0.1 / #11) — the result is order-independent however many
   a side fires.
 
 *(History: the original **matching-position gate** (a card required its own rank) was removed 2026-06-20;
 the **per-suit / per-side cap** that replaced it is now removed too (2026) in favour of tempo-gating. The
-surviving position rule is narrower and **emergent** — only *offensive* spells are gated, and only because
-they are **ranged attacks** from the Rearguard (§4.2). Code/data + `TERM` lines land with the role-card
-migration; §4.4 was already code-pending — `role-card-redesign.md` §8.)*
+surviving position rule is narrower and **emergent** — abilities are classified **by target** (offensive =
+foe-targeting; support = ally/self), and only an offensive *ranged* one is positioned, because *all* ranged
+attacks fire from the Rearguard (§4.2). Code/data + `TERM` lines land with the role-card migration; §4.4
+was already code-pending — `role-card-redesign.md` §8.)*
 
 ### 4.5 Groups — bind same-side Actors into one unit 🟡 *(attrition model, 2026)*
 
@@ -1744,8 +1761,11 @@ resolved at the §4.4/§5.6 spec-sync and pinned here so code follows spec:
   defensive boost to the wall's block vs slips (§4.2 Focus). Seed +3.
 - **M3 — "cannot fall" this round** (Wall L5 *Last Stand*): while active, damage that would down the
   holder leaves it at **1 health** instead — it cannot be downed for the round.
-- **M4 — execute** (Infiltrator L5 *Assassinate*): a Damage card that, on hitting an enemy **Rearguard**,
-  **downs** that foe regardless of remaining health.
+- **M4 — overwhelming burst** (Infiltrator L5 *Assassinate*): a high-Might Damage card that, on hitting
+  an exposed enemy **Rearguard**, deals enough to empty its pool in one phase — it kills by Magnitude
+  through the normal pile→pool path (§2.2), not a second kill-condition. (Reframed from the original
+  "downs regardless of health" execute, which contradicted the §2.2 single kill-condition / Charter #13;
+  the finisher identity is preserved via raw burst.)
 - **M5 — `Curse` Modifier** (Controller L4): a passive that makes the owner's debuff cards
   (Slow / Confuse / Stagger) each hit **+1 additional foe** — the one instance of the Modifier mechanic
   in the draft (lean-new-effect dial, §9.1).

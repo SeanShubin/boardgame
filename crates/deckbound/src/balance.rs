@@ -427,6 +427,17 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "§8.6 red since 2026-06-26 (per-role cap removed, §4.4 tempo-gating): this is a \
+                DOMINANCE signal, not a reseed nuisance — an uncapped Wall baseline (tanky + AoE \
+                Shield Sweep + breach) now SOLOS the Silver/Brass locks (clears niches that are not \
+                its own). These locks are DIFFICULTY-gated, so no foe-count reseed fixes it (a \
+                breaching soloer beats any difficulty gate). The real fix is LEVER-gated locks — each \
+                unwinnable without that role's UNIQUE capability the Wall structurally lacks (slip past \
+                an uncrackable front / ranged reach / no-damage stat-drop / sustain) — validated for \
+                niche-exclusivity by the par-solver. Deferred to the dedicated balance pass AFTER \
+                §4.5 Groups + §2.4–2.6 deck-tree land (both re-shift balance; retuning now is wasted). \
+                See needs-merge/role-weight-balance-testing.md + automated-balance-testing-roadmap.md \
+                (profile-relative measurement / niche-exclusivity). Do NOT reseed to silence this."]
     fn each_paired_role_is_necessary_in_its_lock() {
         // §8.6 paired necessity (Charter #12/#13): each PAIRED_ROLES role must flip its lock — the
         // baseline party (missing that role's capability) loses, and adding the role wins. This

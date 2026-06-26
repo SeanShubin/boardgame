@@ -184,10 +184,6 @@ pub struct Card {
     /// Which taxonomy kind (§5.6).
     #[serde(default)]
     pub kind: RoleKind,
-    /// A **positional** role card (Wall / Infiltrator / Artillery) — playable only from the
-    /// matching §4 position (§4.4 D2). Effect cards (Support / Controller) are position-agnostic.
-    #[serde(default)]
-    pub positional: bool,
     /// A `Modifier` names the Base it auto-applies to when both are owned (§5.6); folded at
     /// build time (e.g. Curse → +1 debuff target).
     #[serde(default)]
@@ -201,7 +197,49 @@ fn melee() -> [u32; 2] {
     [1, 1]
 }
 
+impl Effect {
+    /// §4.4 — is this a **foe-targeting** effect (an attack)? Offensive effects are the Damage strike
+    /// and every Controller debuff / status; everything else targets an ally or self (Support). This is
+    /// the axis that classifies a card offensive-vs-support (target, not reach): an offensive card is
+    /// `cast: Strike`, contested, and positioned by its reach (§4.2); a support card is rank-free
+    /// `cast: Standing`. Silence / Pin touch enemy *plans* (a deferred spell, a charge) rather than a
+    /// body, but they are still **at the foe** — offensive.
+    pub fn is_offensive(&self) -> bool {
+        matches!(
+            self,
+            Effect::Damage { .. }
+                | Effect::Stagger
+                | Effect::Disarm
+                | Effect::Shove
+                | Effect::Rout
+                | Effect::Suppress { .. }
+                | Effect::Slow { .. }
+                | Effect::Confuse { .. }
+                | Effect::Mark { .. }
+                | Effect::Mire { .. }
+                | Effect::Sunder { .. }
+                | Effect::Defang { .. }
+                | Effect::Burn { .. }
+                | Effect::Silence
+                | Effect::Pin
+        )
+    }
+}
+
 impl Card {
+    /// §4.4 — does this card **target a foe** (an attack)? `true` if any of its effects is offensive.
+    /// Offensive cards cast in the Strike window, contested, positioned by reach; support (ally/self)
+    /// cards are rank-free `cast: Standing` (§4.2 / §4.4 target-classification).
+    pub fn is_offensive(&self) -> bool {
+        self.effects.iter().any(Effect::is_offensive)
+    }
+
+    /// Is this a **ranged** card (reach ≥ 2)? A ranged offensive ability fires from the Rearguard and is
+    /// evadable; a melee offensive ability is cast from the Vanguard, a trade (§4.2).
+    pub fn is_ranged(&self) -> bool {
+        self.reach[1] >= 2
+    }
+
     /// The card's primary damage (untyped Might power), if it deals damage. This is what
     /// Force scales when the card is Unleashed/Overwhelmed.
     pub fn primary_damage(&self) -> Option<u32> {
@@ -277,7 +315,6 @@ mod tests {
             one_shot: false,
             role: None,
             kind: RoleKind::Base,
-            positional: false,
             modifies: None,
         }
     }

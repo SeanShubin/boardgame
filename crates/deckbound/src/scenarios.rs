@@ -744,7 +744,7 @@ fn reach_label(reach: [u32; 2]) -> String {
 
 fn reach_sentence(reach: [u32; 2]) -> String {
     match reach {
-        [1, 1] => "Played at melee range (the front / an Outrider).".into(),
+        [1, 1] => "Played at melee range (the Vanguard front, or a charge).".into(),
         [a, _] if a >= 2 => "Played at range — a Rearguard firing on the enemy front (§4).".into(),
         [a, b] => format!("Reach {a}\u{2013}{b} jumps."),
     }
@@ -794,7 +794,7 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
         }
         Effect::Stagger => "On a landed hit, the target loses its action this round.".into(),
         Effect::Disarm => "Rips a card from the target's Hand (knocks it Down).".into(),
-        Effect::Shove => "Breaks the target out of its lane (a Shove).".into(),
+        Effect::Shove => "Breaks the target out of the line (a Shove).".into(),
         Effect::Rout => {
             "Drives the target from the line to the Rearguard this round (a Rout) \u{2014} a Controller \
              status (\u{00A7}4)."
@@ -984,8 +984,8 @@ fn power_entry(c: &Card) -> CatalogEntry {
         ProseLine::Term("Power (passive)".into()),
         ProseLine::Body(c.text.clone()),
         ProseLine::Body(
-            "A \u{00A7}4 power \u{2014} always on, detected by name; it shapes the lane round rather \
-             than being played as a card."
+            "A \u{00A7}4 power \u{2014} always on, detected by name; it shapes the six-phase round \
+             rather than being played as a card."
                 .into(),
         ),
     ];

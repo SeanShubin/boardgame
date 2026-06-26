@@ -692,7 +692,7 @@ pub fn play_card(
             }
             Effect::Rout => {
                 // A Controller status (§4 / Charter #13): drive the foe from the line to the Rearguard
-                // this round — it neither holds as a Vanguard nor crosses as an Outrider.
+                // this round — it neither holds as a Vanguard nor charges across the gap.
                 for t in foes.iter_mut().filter(|a| !a.is_down()).take(n) {
                     t.routed = true;
                     log.push(format!("  routs {} — driven from the line.", t.name));
@@ -866,7 +866,6 @@ mod tests {
             one_shot: false,
             role: None,
             kind: RoleKind::Base,
-            positional: false,
             modifies: None,
         }
     }

@@ -1,10 +1,11 @@
 # Deckbound — Game Flow & Structure (the complete map)
 
-> **Drifted (2026) — predates the stat collapse.** Stat names and the defense model here are stale: the
-> set is now **Might · Vitality · Toughness · Speed · Daring**, combat is **one channel** (no
+> **Re-synced (2026-06-26) to the §4.6 six-phase model.** The stat set is **Might · Vitality ·
+> Toughness · Cadence · Finesse**, combat is **one channel** (untyped Might → health; no
 > Fear / Dread / Resolve / Ward, no Armor), and ranged attacks are **evadable** (Spec §2.2 / §3.1 / §4.2).
-> The round *cycle / phase structure* is unchanged; the stat vocabulary is not. Canon + the generated
-> reference are authoritative.
+> The round *cycle* was **replaced** by the §4.6 six phases — the old Charge / Muster / Gauntlet /
+> Outrider / Rearguard model is retired. Canon (`canon/2-spec` §4 / §4.6) + the generated reference are
+> authoritative; this is a map, not truth.
 
 > **One place to find every cycle and phase in the game, largest to smallest.** This is a
 > **map / index, not a source of truth** — each level points to where it is *authoritatively*
@@ -17,19 +18,20 @@
 Run                     the whole scenario (many Days); goal = clear the final location
 └─ Day                  the strategic clock tick ("1 day passes"); FULL reset at its end
    └─ Encounter         one fight — one per character per Day; a sequence of Rounds
-      └─ Round  (§4)     one combat cycle:
-         ├─ Charge                     pick who runs the gauntlet — hidden, simultaneous reveal
-         ├─ Muster                     play standing/persistent cards (Wall defenses, Controller
-         │                             debuffs, Support buffs) before the gauntlet — they last the round
-         ├─ Gauntlet                   the charge-columns thread through; breakthroughs → Outriders,
-         │                             stops → Vanguard (a crossing = advance Drive vs catch Drive, §3)
-         ├─ Outrider phase             Outriders strike the enemy Rearguard, then Vanguard
-         ├─ Rearguard phase            Rearguards fire ranged on the enemy front
-         └─ Refresh                    Tempo refills FULLY (= Speed × Drive); status clears; round++
+      └─ Round  (§4.6)   one combat cycle — six phases, one shared per-round Tempo pool:
+         ├─ Standoff                   reveal the blind bid; lock positions (Vanguard / Rearguard);
+         │                             cast Standing buffs/braces (auto-land)
+         ├─ Fray                       the fronts engage — melee + instant ranged + defenses resolve
+         │                             simultaneously; deaths here fix the breach list (per-unit lock)
+         ├─ Volley                     free Vanguards charge the enemy Rearguard (or flank a survivor);
+         │                             the rear answers FIRST (pre-empt)
+         ├─ Breach                     chargers who survived the Volley land their blows; a kill here
+         │                             disrupts a deferred (Reckoning) spell
+         ├─ Reckoning                  deferred (slow) spells from survivors resolve last
+         └─ Lull                       Refresh: Tempo refills (= Cadence × Finesse); Health persists; round++
 ```
 
-Inside **any resolution phase** (Vanguard / Outrider / Rearguard), a same-range engagement resolves
-as one of:
+Inside the **Fray / Volley / Breach**, a same-range engagement resolves as one of:
 
 ```
 • a Trade   — the deterministic base: both deal base damage at once  (§4.2)
@@ -48,8 +50,8 @@ the optional module is on; otherwise a same-range engagement is a single Trade.
 | **Run**       | the whole scenario; **win = clear the final location** (placeholder golf goal); run victory/defeat undefined                                                      | `progression §6`, `reference-scenario.md`; Spec §8 ⬜ |
 | **Day**       | each character may **move 1 space**, use a **per-day ability** (deferred), and attempt **one Encounter**; all act in parallel; **full reset at the Day boundary** | `progression §6`                                     |
 | **Encounter** | one fight; a sequence of **Rounds** until clear or retreat; foes drawn from the **threat deck** (a deck recipe scaled by level)                                   | `progression §2 / §4.1`                              |
-| **Round**     | one **Charge → Muster → Gauntlet → Outrider → Rearguard** pass, ending in **Refresh**                                                                             | **Spec §4**                                          |
-| **Phase**     | Charge (hidden) · Muster · Gauntlet · Outrider · Rearguard · Refresh — confluent within each                                                                      | **Spec §4** (TERM *Phases*)                          |
+| **Round**     | one **Standoff → Fray → Volley → Breach → Reckoning** pass, ending in the **Lull** (refresh)                                                                       | **Spec §4 / §4.6**                                   |
+| **Phase**     | Standoff (reveal) · Fray · Volley · Breach · Reckoning · Lull — order-independent *within* each                                                                    | **Spec §4.6** (TERM *Phase 1 / Phase 2*)             |
 | **Trade**     | a same-range engagement's deterministic resolution: simultaneous mutual base damage                                                                               | **Spec §4.2**                                        |
 | **Clash**     | the **optional** 1v1 mix-up that replaces a Trade; a sequence of **Beats**; ends-on-strike; builds **Force**                                                      | **Spec §1.0**                                        |
 | **Beat**      | the single RPS matchup: both pick a card, reveal at once, resolve                                                                                                 | **Spec §1.0**                                        |
@@ -59,7 +61,7 @@ the optional module is on; otherwise a same-range engagement is a single Trade.
 | Boundary            | What resets                                                                                                                            |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Beat**            | the duel continues, or **ends on a connecting strike**; **Force** builds during the non-connecting dance (§1.0)                        |
-| **Round → Refresh** | **Tempo refills *fully*** (= Speed × Drive); downs finalize; charge/gauntlet state clears (§4)                                         |
+| **Round → Lull**    | **Tempo refills *fully*** (= Cadence × Finesse); downs finalize; charge/breach state clears; Health persists (§4.6)                    |
 | **Encounter end**   | **win →** Health restored (§2.1); **retreat →** state carried to the Day reset                                                         |
 | **Day boundary**    | **everything**: Health and all Resource pools, all Action cards Recover to their start zones (`zones-exhaustion §7`; `progression §6`) |
 | **Run**             | victory / defeat — **undefined** (placeholder: clear the final location in the fewest Days)                                            |
@@ -67,7 +69,7 @@ the optional module is on; otherwise a same-range engagement is a single Trade.
 ## Two things that are *not* part of the flow
 
 - **No turn order.** Within any phase, all sides **commit simultaneously** and resolve
-  **confluently** — Speed sizes the Tempo pool, never initiative (§3). **"Turn" is not a
+  **order-independently** — Cadence sizes the Tempo pool, never initiative (§3). **"Turn" is not a
   unit** in this game.
 - **Card zones are *state*, not a cycle.** Hand / Active / Down describe where a card *is*, not when
   things happen — see [`zones-exhaustion-design.md`](zones-exhaustion-design.md).
