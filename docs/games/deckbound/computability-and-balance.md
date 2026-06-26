@@ -136,14 +136,17 @@ relative to a combat resolver `P`, so every par number must be stamped **"par un
 - **Certify, don't assert, "near-optimal."** Build a slow but exact per-battle search (the
   hero's decision tree vs the fixed foes — single-agent, so a plain memoizable search) as
   **ground truth**. Bound the fast policy's error against it on a *sample* of `(build, place)`
-  pairs, then run the fast policy at scale. That gives purpose #5 a known error bar.
+  pairs, then run the fast policy at scale. That gives purpose #5 a known error bar. (The detailed
+  plan for this exact search is §10.7.)
 
 ### 5.1 Deterministic-proxy fidelity — when "par under `P`" equals the human answer (and when it can't)
 
 A natural hope: tune the game against a **100% deterministic** `P` and trust it matches what skilled,
 theory-of-mind humans would find. The precise statement: **"par under `P`" differs from the true
 human / equilibrium value by exactly the *value of unpredictability* in the game.** Where mixing is worth
-nothing, the deterministic number is **not an approximation — it is the answer.**
+nothing, the deterministic number is **not an approximation — it is the answer.** *(The game-agnostic
+form of this — pure vs mixed play, and when a deterministic solver is exact — is
+[`docs/game-theory/solution-concepts.md`](../../game-theory/solution-concepts.md) §4.)*
 
 - **PvE balance is a maximization, so the deterministic answer is *exact*, not approximate.** Against
   fixed, non-reading instinct foes (§7 / Spec §7), the player's best line **is** the value — there is no
@@ -343,7 +346,7 @@ Build the instrument before its consumers.
    **exact** per-battle search (the hero's decision tree vs the fixed foes — single-agent,
    memoizable per `(build, encounter)`) as ground truth; then a **fast, certified** near-optimal
    policy, error-bounded against the exact search on a sample. Fix this as the canonical resolver
-   `P`; every par is **"par under `P`."**
+   `P`; every par is **"par under `P`."** **Detailed runbook: §10.7 (the exact battle solver).**
 3. **Tuning — the balance loop (§6).** With trustworthy par: express each strategy as a solver
    **constraint**, then tune `booklet.ron` numbers so *interesting* strategies tie near par, *boring*
    ones are strictly worse, and the **closure check** passes (no unnamed dominator). Verify the
@@ -408,6 +411,112 @@ Build the instrument before its consumers.
 - **Do not tune numbers until the designer says the mechanics are vetted.** The measurement tools and
   the algorithms (Steps 1–2) are mechanics-agnostic and *may* be built earlier on request; **Step 3
   (tuning) waits for the explicit go.**
+
+### 10.7 The exact battle solver — perfect PvE combat play (the §10.1-step-2 oracle, detailed)
+
+**Ratified 2026-06-26.** The detailed runbook for **step 2** above: replace the greedy combat oracle
+(`solver::auto_resolve`) with one that computes **exact optimal battle play** (no heuristic). It *is* the
+"slow but exact per-battle search" §5 calls for as ground truth — and because the **analysis envelope**
+(Spec §0.4) bounds the battle, it is *exactly searchable*, so the same search doubles as the **certified
+canonical resolver `P`** at analysis scale. It is also the **strong policy** the role-weight /
+marginal-contribution measurement depends on: it closes the **policy-relativity** pitfall (§5 / §5.1) — the
+thing that once made the Controller read as dead weight under greedy (same cards, weak policy, wrong
+verdict).
+
+**Why it's tractable — PvE is a finite-horizon single-agent MDP, not a game.** A PvE battle is *not* a
+two-player game: creatures run a **fixed, non-adaptive instinct** (Spec §0.1) — a fixed-policy
+*environment*, not a best-responder. So perfect play is **exact backward induction over a finite
+horizon**: no equilibrium, no heuristic. The **blind bid** (Spec §4) is therefore *benign* — a fixed foe
+cannot react to your hidden commit, so you never need to randomize to stay unexploitable ⇒ **the optimal
+PvE policy is pure (deterministic)**. True minimax / mixed-Nash hardness returns **only in PvP** (both
+sides adaptive), quarantined (§7) and out of scope. Two modes:
+
+- **Luck OFF** (open creature commit, deterministic — Spec §0.2): collapses to **reachability** — "does
+  there exist a player line to a win-leaf within the round cap?" Pure existential search (no adversary
+  nodes), the Spec §0.4 "winnable within the horizon?" boolean. Optimal policy = the winning line.
+- **Luck ON** (creature bid/decks hidden, RNG on): a finite-horizon **MDP** — the creature's *known fixed*
+  distribution + RNG draws are **chance nodes**; solve for **max expected value** by expectimax / value
+  iteration over the bounded horizon. Exact *iff* the distributions are finite/enumerable (they are —
+  Spec §0.1). Still pure, still single-agent (no strategic uncertainty — just an expectation).
+
+Operating envelope: run under **`Ruleset::analysis()`** (Spec §0.4 — 5-round horizon, ≤5 roster types,
+swarm-as-one). That bound is what makes the state space finite and exactly searchable; live play's
+unbounded `Ruleset` is not the solver's concern.
+
+**Decision points (what the search branches on).** Per round the player commits at three nodes;
+everything else (Breach / Reckoning / Lull) resolves automatically (Spec §4.6):
+
+1. **Standoff bid** — positioning (each hero Vanguard/Rearguard) × group partition × which `Standing`
+   abilities to cast. (The creature's bid is a fixed/known input or a known distribution — not a
+   co-decision.)
+2. **Fray commit** — the *set* of (actor → ability → target) plays + defensive responses, bounded by Tempo.
+3. **Volley commit** — free Vanguards' charges/flanks + targets, instant re-fires, the rear's pre-empt answers.
+
+**Spec §1.9 order-independence is the key lever:** within a phase the player commits a *set*, not a
+sequence — so the search branches on *subsets of commitments*, not permutations (a factorial reduction).
+
+**State / transition / leaf.**
+
+- **State** = the `State` struct's combat fields (per-actor Health, Tempo, tokens, position, lock/charge/
+  deferred status, per-phase pile, phase, round). Needs a **canonical, hashable encoding** for a
+  **transposition table** (combat is a memoizable oracle — Spec §0.1).
+- **Transition** = the existing resolver (`combat.rs`: `fray_clash` / `resolve_volley` / `resolve_breach`
+  / `resolve_reckoning` / `tally` / `clear_phase_piles`). The solver *applies committed actions and reads
+  the next state* — it does not reimplement combat.
+- **Leaf** = terminal by rule (foes dead → win; party dead or round cap → loss/draw). **Exact value, no
+  evaluation heuristic** (Spec §0.4) — the whole point of the bounded horizon.
+
+**Objective (lexicographic; configurable).** Primary **win/loss** (reachability), tiebroken by **fewer
+rounds** (the battle-par metric), then **fewest party characters downed** (losing a whole unit ≫ chip
+damage), then **most Health remaining** (survival margin). So the "optimal line" is also the battle-par
+line, and among par lines keeps the most bodies standing. Swap the leaf value for the **graded balance
+metrics** (rounds-to-clear, difficulty frontier) the role-weight measurement needs — same search,
+different leaf value. *(This is **battle** par; the **campaign** objective — min Days — is the separate
+§10.3 open question for step 1.)*
+
+**The one real risk — branching factor.** Finiteness is guaranteed (Spec §0.4); **speed** is the risk
+(per-phase commitment sets are a power-set of legal plays). Levers, all **exactness-preserving**:
+
+- **order-independence** (Spec §1.9) — commit sets, not sequences;
+- **Tempo budget** — bounds actions/actor/round;
+- **transposition table** — memoize canonical states (collapses transpositions);
+- **dominance pruning** (Spec §0.1 monotonicity) — prune *provably* dominated commitments only (e.g. a
+  superset of beneficial buffs / a strictly-stronger target), so it stays perfect;
+- **symmetry** — swarm-as-one + identical-unit canonical ordering (Spec §0.4);
+- **greedy as a move-ordering oracle** — try greedy's move first to find a winning line early (boolean
+  cutoff); speed only, never correctness.
+
+**Validate width empirically on real encounters in Phase B** — the reference campaign resolves in ~3
+rounds under greedy (Spec §0.4 note), so depth is small in practice; confirm width is too.
+
+**Build phases (incremental, each verifiable).**
+
+- **A — legal-action enumerator + canonical state hash.** Reuse `game.rs` action routing for legality;
+  add a per-phase commitment-set generator and a hashable state key. (No search yet.)
+- **B — reachability search, luck-off, boolean objective** + transposition table. Validate on **toy
+  known-answer scenarios** (hand-computed winnable/unwinnable battles). Invariant: **optimal ≥ greedy**
+  always.
+- **C — graded objectives** (rounds-to-clear / frontier) via backward induction with the lexicographic value.
+- **D — luck-on expectimax** — chance nodes over creature fixed distributions + RNG; exact value iteration
+  over the finite horizon.
+- **E — perf + wiring** — dominance/symmetry pruning if B/C show width pressure; expose the API to the
+  par-tooling and the role-weight measurement (this *is* their strong policy).
+
+**API (sketch).** `solve(party, encounter, ruleset, objective) -> { value, optimal_line }` in
+`deckbound::solver` (replaces/augments `greedy`). `optimal_line` = the perfect-play trace (the battle-par
+line; also a readable transcript and the strong policy for role-weight).
+
+**Correctness.** Toy known-answer scenarios; determinism (seeded → identical); the **optimal ≥ greedy**
+invariant; and (later) mutual cross-check with the encounter suite (the suite stress-tests the solver, the
+solver validates the suite's niches).
+
+**Ratified design calls (2026-06-26) — do not re-litigate.**
+
+1. **Objective** — lexicographic **win → fewer rounds → fewest characters downed → most Health remaining**
+   (downs outrank Health: losing a whole unit ≫ chip damage).
+2. **First cut** — **luck-off deterministic only** (Phases A–C); defer luck-on expectimax (D).
+3. **Pruning** — start with **provably-exact** levers only (transposition + order-independence); add
+   dominance pruning **only if** Phase B shows width pressure.
 
 ---
 
@@ -477,4 +586,6 @@ frees you from playtesting to find what's **broken**; not from playing to feel w
 
 **See also:** [Charter](canon/1-charter.md) (#2, #4, #11) · the
 [Spec](canon/2-spec/README.md) · [reference-scenario](reference-scenario.md) (the par
-target) · [future-possibilities](future-possibilities.md) (the deferred combo layer, and why).
+target) · [future-possibilities](future-possibilities.md) (the deferred combo layer, and why) · the
+general game theory in [`docs/game-theory/`](../../game-theory/README.md) (single-agent planning,
+solution concepts, the value of unpredictability, cooperative/Shapley).

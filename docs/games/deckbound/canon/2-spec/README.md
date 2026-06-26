@@ -91,6 +91,30 @@ method are in [`computability-and-balance.md`](../../computability-and-balance.m
 #11**). *(This is the **whole-game** core for tuning; not to be confused with the **Clash**, the
 **tactical** core of §1.)*
 
+> **Game-theoretic placement (the general theory is in [`docs/game-theory/`](../../../../game-theory/README.md)).**
+> Deckbound deliberately occupies the *easy* cells of the game-theory map, and reserves the hard ones for
+> optional modes. The general concepts live in the game-theory directory; here is how each maps to this
+> Spec:
+> - **Single-agent planning, not a game** — PvE foes run a fixed policy, so "optimal play" is a *plan*
+>   (`∃ a winning sequence`), not a minimax equilibrium ([`game-classification.md`](../../../../game-theory/game-classification.md)). This is §0.1.
+> - **Exact bounded solving** — reachability (luck-off) and expectimax over fixed creature distributions
+>   (luck-on), via backward induction over the bounded horizon
+>   ([`solution-concepts.md`](../../../../game-theory/solution-concepts.md)). This is §0.4 (the analysis
+>   envelope) and `computability-and-balance.md` §10.7 (the battle solver).
+> - **Counter systems** — the Clash (§1.0) and the Aggressor ▸ Glass-Cannon ▸ Turtle playstyle RPS (§4)
+>   are counter systems; balance them against the counter-system hierarchy
+>   ([`hierarchy-of-concerns.md`](../../../../game-theory/hierarchy-of-concerns.md),
+>   [`measurement-mechanics.md`](../../../../game-theory/measurement-mechanics.md)).
+> - **Mixed strategies live only in the hidden-simultaneous layer** — the per-round **blind bid** (§4)
+>   and the optional Clash are the only places randomization (and a *value of unpredictability*) matters;
+>   the open PvE skeleton stays a pure **maximizer** (`solution-concepts.md` §4; the fidelity rule is
+>   `computability-and-balance.md` §5.1). True minimax/mixed-Nash hardness returns only in **Versus**
+>   (§3.4), quarantined out of the core.
+> - **Cooperative value** — "does each role pull its weight" is a marginal-contribution / Shapley
+>   question, not a solo-strength one
+>   ([`cooperative-and-marginal-value.md`](../../../../game-theory/cooperative-and-marginal-value.md);
+>   `computability-and-balance.md` §10).
+
 ### 0.1 The core is computable
 
 **RULE.** With the **Clash module off** and creature decks and locations **open**, the game is
@@ -297,6 +321,13 @@ vector is re-derivable from one idea — *only an active dodge (Evade) of a comm
 reverses; the passive build (Gather) never steals* — and it is the Gandalf-vs-Balrog engine:
 a weak fighter can heist a loaded Strike, but reaching for the win is where the trade kills
 them (north stars #2 computable, #4 asymmetry, #10 re-derivable).
+
+> **Analyze as a counter system.** The Clash is a (Force-weighted) counter system — balance it with the
+> counter-system tools in [`docs/game-theory/`](../../../../game-theory/hierarchy-of-concerns.md)
+> ([measurement-mechanics](../../../../game-theory/measurement-mechanics.md)). And because each beat is a
+> **hidden, simultaneous** commit against an adaptive opponent, equilibrium play *here* is **mixed**
+> ([`solution-concepts.md`](../../../../game-theory/solution-concepts.md) §4) — this is exactly the
+> quarantined mind-game layer the open PvE skeleton (a pure maximizer, §0.1 / §0.4) excludes.
 
 **GUARANTEES** — under perfect guessing (the analytical lens: *"I happened to guess right"*):
 1. **Avoid.** You can pass a duel **un-hit** — every attack has a defense that negates it
@@ -1139,6 +1170,14 @@ that economy:
 sponge** — make the enemy too poor to cash in Phase 2. **Force, not fiat:** out-bid any defender, over-power
 any wall — opposition is always *cost*; and "beat, not match" guarantees blows eventually land, so Health
 and Might never become decorative.
+
+> This three-cycle is a **counter system** — a clean 3-element RPS, so the counter-system hierarchy
+> applies directly (no Condorcet winner, regular, uniform Nash):
+> [`docs/game-theory/`](../../../../game-theory/hierarchy-of-concerns.md). It is a *playstyle* cycle
+> *inside* the matchup, **not** a faction-level RPS — the distinction in
+> [`nested-counter-systems.md`](../../../../game-theory/nested-counter-systems.md). Note the cycle only
+> *bites* under the hidden **blind bid** (the simultaneous, adaptive layer where reads pay off); with bids
+> open it folds back into the pure maximizer (§0.1 / §0.4).
 
 **GUARANTEES.**
 

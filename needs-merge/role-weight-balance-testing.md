@@ -74,39 +74,43 @@ always "do these cards improve the outcome," party-size-agnostic.
 - **Specialist** ⟺ low average, high max (the team game working as intended).
 - **Over-tuned / dominant** ⟂ always-include / lifts *every* coalition's frontier (the closure-check flag).
 
-## Profile-relative measurement — soloable vs synergy roles (the *intended* asymmetry)
-Some roles are **meant** to solo (the Wall holds a line alone); others are **meant** to be
-force-multipliers worth ~nothing solo (Support, Controller). This asymmetry is a **design choice**, so a
-**raw cross-role value scale** — or raw Shapley averaged over *all* coalitions — **mis-measures it**: it
-over-ranks soloable roles and penalizes synergy roles for being exactly what they're designed to be. The
-metric would be reading design intent as imbalance. Fixes:
+## Profile-relative measurement — roles have different *structural functions*
+Roles aren't fungible: the **Anchor** *holds the front / shields the back* (Wall); the **Striker** *reaches
+and kills the target* (Infiltrator/Artillery); the **Multiplier** *amplifies the party, with no kill of its
+own* (Support/Controller). A **raw cross-role value scale** — or raw Shapley over *all* coalitions —
+**mis-measures this** two ways: (1) it penalizes Multipliers, which contribute ~nothing outside synergy **by
+design** (no damage); and (2) it rewards raw "power," including a role's ability to **overpower a weak
+encounter alone** — which is **not the metric** (soloing a weak fight is *power-vs-encounter*, a consequence,
+**never a goal** — parties always beat solos). Fixes:
 
-- **Declare a structural profile per role** (a *design input*, not derived): **Anchor** (soloable — Wall),
-  **Striker** (soloable damage — Infiltrator/Artillery), **Multiplier** (synergy-only — Support/Controller),
-  each with an **intended-context domain** (the coalitions/encounters where it's *meant* to function).
-  Measure contribution **within that domain** — never average a Multiplier over the solo coalitions where
-  it's intentionally useless.
-- **Conformance, not magnitude.** Each role is checked against **its own** profile — an Anchor must solo
-  its scenarios; a Multiplier must have a **decisive niche**. **Never compare raw value across profiles**
-  (Wall-value vs Support-value is a category error — different structural slots; a team fields *both*).
-- **Soloable ≠ overvalued.** The Wall is not overvalued for soloing — that's its job. Overvaluation =
-  **dominance**: it crowds out other roles (drives their marginal toward zero) or **wins in a slot it
-  shouldn't own**. Concrete test: a role is over-tuned iff it **clears another role's niche-encounter**
-  (the Wall soloing Support's *attrition* lock or the Controller's *high-Toughness* lock). So the suite's
-  per-role niches double as **cross-role dominance checks** — only the keyed role's lever should flip its
-  niche (**niche-exclusivity**).
+- **Declare a structural profile per role** (a *design input*, not derived): **Anchor** (holds/shields —
+  Wall), **Striker** (reaches + kills — Infiltrator/Artillery), **Multiplier** (amplifies, no kill —
+  Support/Controller), each with an **intended-context domain** (where it's *meant* to be decisive). Measure
+  contribution **within that domain** — never average a Multiplier over the coalitions where it's
+  intentionally idle.
+- **Conformance, not magnitude.** Each role is checked against **its own** profile — an Anchor decisive in a
+  **protect** niche, a Striker in a **reach/kill** niche, a Multiplier in an **amplify** niche. **Never
+  compare raw value across profiles** (Wall-value vs Support-value is a category error — different structural
+  slots; a team fields *both*).
+- **Overpowering a weak fight ≠ overvalued.** The real overvaluation signal is **dominance /
+  role-substitution**: a role that **clears another role's niche-encounter** (the Wall melting a crowd =
+  Artillery's job, or reaching the back = the Striker's). Concrete test: a role is over-tuned iff it clears a
+  niche that isn't its own. So the suite's per-role niches double as **cross-role dominance checks** — only
+  the keyed role's lever may flip its niche (**niche-exclusivity**).
 - **Cop-out guard:** "it's a synergy role" is a valid profile **only** if backed by a decisive niche
   (§6.1); else it's dead weight excused as synergy.
 
-**Already in the harness:** `balance.rs` encodes this split — the Wall is **solo-proven**
-(`the_wall_is_the_one_role_proven_solo`) while the others are **niche-proven**
-(`each_paired_role_is_necessary_in_its_lock`), and `probe_role_necessity` checks each lock is
-**role-exclusive** (only the keyed role flips it — the dominance guard). The marginal/Shapley layer must
-**preserve this profile segmentation, not flatten it** into one comparable number.
+**In the harness (needs rework):** `balance.rs` splits the Wall (`the_wall_is_the_one_role_proven_solo`)
+from the others (`each_paired_role_is_necessary_in_its_lock`), and `probe_role_necessity` checks each lock is
+**role-exclusive** (the dominance guard). The *split* and the *exclusivity check* are right, but the
+**"solo-proven" framing is the conflation to fix** — the Wall's necessity should come from its **protect
+niche**, not from soloing a grind (soloing is power-vs-encounter, not the Anchor's defining property).
+Re-cast that test around the protect niche. The marginal/Shapley layer must **preserve the profile
+segmentation, not flatten it** into one comparable number.
 
-**Net per-role verdict (profile-relative, no scalar to mis-compare):** **necessary within its domain**
-(∃ decisive niche) **∧ non-dominant outside it** (∄ context where it crowds out / substitutes for other
-roles). The intended "Wall solos, Support can't" asymmetry then never reads as imbalance.
+**Net per-role verdict (profile-relative, no scalar to mis-compare):** **decisive within its domain**
+(∃ niche) **∧ non-dominant outside it** (∄ niche it clears that isn't its own). The intended differences
+between Anchor / Striker / Multiplier then never read as imbalance.
 
 ## Relation to what exists
 `check_role_necessity` + the hand-crafted `lock_encounter` per role is the **binary, single-context,

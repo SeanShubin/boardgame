@@ -21,8 +21,8 @@ harder just means the universal soloer wins a harder fight. The fix is to requir
 other non-keyed roles) **cannot perform at all**, so they fail *structurally*, not for lack of stats.
 
 Each role's structural gaps (what makes exclusivity possible):
-- **Wall** — no ranged reach; can't slip; low burst (Shield Sweep Might 3, but **N Walls sum** in one phase);
-  no heal; no stat-drop.
+- **Wall** — no ranged reach; can't slip; **no proactive offense** (only the reactive §4.2 trade-back —
+  Shield Sweep dropped, so nothing sums across N Walls); no heal; no stat-drop.
 - **Infiltrator** — fragile; little AoE; no heal/buff/debuff.
 - **Artillery** — fragile; weak melee; no heal/buff/stat-drop.
 - **Controller** — **no damage**; fragile; no heal.
@@ -39,7 +39,12 @@ Numbers are **par-solver-tuned** (below); these fix the *structure* + the lever-
 - **Iron / Wall — "escort the glass cannon"** *(Anchor)*. A **fragile, decisive ally** (e.g. the Artillery
   whose fire is the only kill) is under **focused fire that downs it round 1** unless the Wall **holds +
   Cover-redirects** the killing blow to itself. *Lever:* protect (Cover/Guard/Phalanx). *Excludes others:*
-  no other role can soak/redirect a killing blow. *Plus the Anchor solo-check* (`the_wall_is_the_one_role_proven_solo` — the Wall alone holds a line).
+  no other role can soak/redirect a killing blow. **Wall offense (decided 2026-06-26):** the Wall has **no
+  proactive dedicated attack** — its only damage is the reactive §4.2 **trade-back** (punish whoever crashes
+  the line), the one form immune to *both* sins (no AoE; reactive, so it can't sum across N Walls under
+  focus-fire). **Shield Sweep is dropped**; the freed L4 becomes another defensive lever. *(Soloability is
+  not a criterion — it's power-vs-encounter; the Wall's necessity is this protect niche.)* Implement in the
+  balance pass, with the lock redesign — not during the spec-sync.
 - **Silver / Infiltrator — "the shielded caster"** *(Striker)*. An enemy **Rearguard caster about to fire**
   (a deferred bomb at the Reckoning / lethal backliner) behind a front **too tough to clear in the rounds
   available**. Must be **killed THIS round**. *Lever:* slip (Smoke, uncontested) **+** one-phase burst
@@ -51,10 +56,10 @@ Numbers are **par-solver-tuned** (below); these fix the *structure* + the lever-
   Controller/Support no damage. *(Contrast Silver: there the kill is **urgent + burst**; here it's
   **reach-only + patient** — distinct levers.)*
 - **Bone / Controller — "the unbreakable wall"** *(Multiplier)*. A foe whose **Toughness sits above any
-  non-Controller party's max *single-phase* burst** (incl. **N Walls' summed Shield Sweep** — per-phase pile
-  wipes, so you can't chip across phases), but **below it after Sunder/Hex** (−Toughness). *Lever:* −Toughness.
-  *Excludes:* no raw-damage party crosses the wall in one phase. *(Refines the existing Golem lock: tune
-  Toughness above the **3× Wall sum**, not just one Wall.)*
+  non-Controller party's max *single-phase* burst** (per-phase pile wipes, so you can't chip across phases),
+  but **below it after Sunder/Hex** (−Toughness). *Lever:* −Toughness. *Excludes:* no raw-damage party crosses
+  the wall in one phase. *(With Shield Sweep dropped the Wall adds no proactive burst here, so the old
+  "tune above the 3× Wall sum" worry is gone — tune above the **Strikers'** max single-phase burst.)*
 - **Salt / Support — "the war of attrition"** *(Multiplier)*. A threat that **out-lasts the party's
   durability** — steady damage that grinds the party down before it can kill the foe, **unless sustained**
   (Mend/Sanctuary). *Lever:* heal/sustain. *Excludes:* no non-Support party survives the grind (the Wall
