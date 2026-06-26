@@ -1471,7 +1471,8 @@ per-round pool** (Tempo does **not** refresh between phases, §4):
    breacher **kills a slow caster and disrupts its spell.**
 5. **The Reckoning** — **deferred ("slow") spells** from survivors resolve **last** (a caster killed in the
    Breach never casts — its spell fizzles).
-6. **The Lull** — **Refresh:** Tempo resets, **Health persists**, round++.
+6. **The Lull** — **Refresh:** Tempo is **re-derived from the Form** (borrowed/temporary Tempo does not
+   return — §5.5), **Health persists**, round++.
 
 **RULE — the accumulator is per-phase.** Each phase owns a **per-target pile**; a landed hit adds
 **Might** to the pile of its **`resolve`** phase, and when the pile clears **Toughness** one Health card
@@ -1681,8 +1682,14 @@ gates damage) and **Tempo = Cadence × Finesse** (Cadence-many cards, each worth
 removed — merged 2026-06-20; defense is a Tempo spend.)* Spending moves cards to **Down**; they return
 by **Recover** (or the round refresh). A **Tempo contest** compares the **total Finesse each side
 commits** (§3); any other action just spends one card.
-- **Round refresh** *(Tempo)* — at Round end all spent Tempo flips up (re-derived each Round, §2.1) — a
-  per-Round budget, not cross-Round attrition.
+- **Round refresh** *(Tempo, at the Lull)* — the Tempo pool is **re-derived from the Form**
+  (Cadence × Finesse) each Round — a per-Round budget, not cross-Round attrition. This is a *rebuild
+  from the Form*, not a flip-back of only what was spent (§2.1).
+- **Temporary Tempo is borrowed, not Form-backed** — a grant (e.g. **Haste**, §4 Salt) adds Tempo for
+  the round as a **borrowed card** (from a shared supply), *not* one of your Form's Cadence cards. The
+  re-derive rebuilds only from the Form, so borrowed Tempo does not return — it goes back to the supply
+  at the Lull. Temporariness is therefore **emergent**: there is **no "does-not-refresh" marker**; only
+  Form-Tempo persists, so a *lasting* Tempo gain must be a **Form change** (a Cadence stat card).
 - **Heal cards** *(Health)* — Recover Health within a fight.
 - **Refresh engines** — a Lasting card that Recovers Tempo mid-Round (how a god exceeds base breadth).
 **Health is the one pool that persists within a fight** (the maintained meter, §2.1); everything
@@ -1695,6 +1702,9 @@ fully resets at the Day boundary.
 **GUARANTEES.**
 - §2.1's "one maintained meter" holds — only Health persists; Tempo/Focus re-derive each Round.
 - Pools are recomputable from cards on the table (count × value − spent).
+- **Temporary Tempo is emergent, not flagged** — the Lull re-derives Tempo from the **Form**, so
+  borrowed Tempo (e.g. Haste) vanishes with no "does-not-refresh" marker; a lasting Tempo gain requires
+  a Form (Cadence) change. *(Engine: `refresh_round` sets `tempo = eff_cadence`, discarding borrowed Tempo.)*
 
 *(SEEDED — **stats-as-deck** is now specced (§2.3 / §4.3). Until the `/spec-sync` code pass migrates
 the schema, "Form stat" still resolves via the actor-card stat in the running code. Numbers — pool
