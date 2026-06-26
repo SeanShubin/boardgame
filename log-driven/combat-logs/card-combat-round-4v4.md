@@ -9,7 +9,8 @@ where a front *does* fall and the **per-unit lock** opens the back. Its focus is
 mechanics get their own log (`card-combat-round-breach.md`). Cards only; every number is a card.
 
 Legend: `[ ]` fresh · `[X]` flipped (spent Tempo / lost Health) · `=` joined group ·
-*pile* = damage accumulating toward the Toughness bar.
+*pile* = damage accumulating toward the Toughness bar (each phase owns its pile — it wipes at
+that phase's boundary; only **Health** crosses a boundary).
 
 Rules in one breath: **Health = Vitality × Toughness** (persists all 5 rounds),
 **Tempo = Cadence × Finesse** (refills each round, **shared across the round's two
@@ -161,7 +162,7 @@ SIDE A   Bram   h[......] t[..]   Torvald h[X...] t[X.]   Garrick h[....] t[XXX]
 SIDE B   Vesper h[XX..] t[XX] (tapped)   Sable h[...] t[XXX] (tapped)   Wren h[.....] t[X.]   Robin h[...] t[X..]
 ```
 
-**No front fell → no one is freed, so the Volley and Breach are empty; nothing was deferred, so
+**No front fell → no one is freed, so the Volley and Breach are empty; nothing was held, so
 the Reckoning is empty too.** Both fronts are chipped (Vesper −2,
 Torvald −1), and that weakest-link evade gutted B's Tempo — **both** of the pair are
 tapped (Garrick too). Nobody's back opened; but the Health that's gone **doesn't
@@ -195,9 +196,9 @@ refresh between phases):
   Rearguard  Wren   Robin        ← now reachable
 
   Volley — A reaches the back; the rear would answer FIRST (pre-empt), but Robin is dry:
-  Corvin → Robin   instant fire, bid 1×F5 = 5   Robin out of Tempo → cannot pre-empt / dodge → EATS
+  Corvin → Robin   on-cast fire, bid 1×F5 = 5   Robin out of Tempo → cannot pre-empt / dodge → EATS
                                                 Might 4 ▸ Robin pile 4 ≥ T2 (twice) → FLIP ×2   Robin h[X][X][ ]
-  Corvin → Robin   instant fire, bid 1×F5 = 5   Robin h[ ] left → FLIP → ROBIN DOWN
+  Corvin → Robin   on-cast fire, bid 1×F5 = 5   Robin h[ ] left → FLIP → ROBIN DOWN
 ```
 
 The glass-cannon's gamble settles: B out-fired A's front for two rounds, but the thin shield

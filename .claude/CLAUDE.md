@@ -33,9 +33,11 @@ directory at the repo root as a staging area.
 - Give the file a descriptive, unique name (e.g. `combat-analysis.md`) so
   concurrent instances do not collide. Do not overwrite a document another
   instance may have written.
-- Do not edit the canonical docs (e.g. under `docs/`) for that analysis — a
-  separate Claude instance is responsible for merging `needs-merge/` documents
-  into the mainline.
+- **You merge what you own.** Once the document you authored under `needs-merge/`
+  is settled, **that same instance** folds it into the canonical docs (e.g. under
+  `docs/`) and removes or marks the staged document. There is no separate merge
+  instance. Only touch canonical docs to merge work **you** own — leave another
+  instance's staged analysis alone until it merges its own.
 
 ## Programming guardrail
 

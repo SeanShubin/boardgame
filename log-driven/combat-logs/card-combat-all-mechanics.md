@@ -8,27 +8,32 @@ time, and the intermediate states are where mistakes hide. **Accumulator pools a
 explicitly.**
 
 Every action here is a **form ability** — a passive enabler on a character's Form, usable
-any time for its Tempo cost (so "instant fires in any phase" just falls out — you act
-whenever you have Tempo and a legal target). The bare four below are all **instantaneous**,
-so none needs a utility / bookkeeping token; those belong to *persistent* powers (a later
-layer). **Out of scope (by design):** armor / damage-types, `persist` / `cleave`.
+any time for its Tempo cost. Timing is two fields (Spec §4.6): **`cast`** (when you may invoke
+it — `standing` = the Standoff, `strike` = the Strike window, i.e. the Fray or the Volley) and
+**`resolve`** (when the effect lands — `on-cast`, `breach`, or `reckoning`). So "a `strike` /
+`on-cast` ability fires in whichever Strike phase you use it" just falls out — you act whenever
+you have Tempo and a legal target. The bare four below resolve **`on-cast`** except Throw Bomb
+(`resolve: reckoning`) and a charge (`resolve: breach`); none needs a utility / bookkeeping token
+(those belong to *persistent* powers, a later layer). **Out of scope (by design):** armor /
+damage-types, `persist` / `cleave`.
 
 **The Form abilities used.**
 ```
-Punch        melee  · instant  · single · 1 Tempo · deals Might
-Throw Rock   ranged · instant  · single · 1 Tempo · deals Might
-Throw Bomb   ranged · DEFERRED · AREA   · 2 Tempo · deals Might to ALL in the target group;
-             a HELD wind-up — releases at the Reckoning, but DROPPED if the thrower dies first
-Rallying Cry —      · Standoff · party  · 0 Tempo, ONE-SHOT (flips face down for the whole
-             combat, never resets) · gives each ally +1 temporary Tempo this round
+Punch        reach: melee  · cast: strike   · resolve: on-cast (breach when charging) · single · 1 Tempo · Might
+Throw Rock   reach: ranged · cast: strike   · resolve: on-cast · single · 1 Tempo · Might
+Throw Bomb   reach: ranged · cast: strike   · resolve: reckoning · AREA · 2 Tempo · Might to ALL in the
+             target group — a HELD wind-up, releases at the Reckoning but DROPPED if the thrower dies first
+Rallying Cry                 cast: standing · resolve: on-cast · party · 0 Tempo, ONE-SHOT (flips face
+             down for the whole combat, never resets) · gives each ally +1 temporary Tempo this round
 ```
 
 **Legend.**
 - `h[..]` — Health pool (Vitality cards); a card flips when the pile meets Toughness.
 - **`P n/T`** — the **accumulator pile**: `n` damage banked toward Toughness `T`. A landed
   hit adds **Might** to `n`. When `n ≥ T`, **flip one Health card** and the **overflow is
-  wasted** (`P` resets to 0). The pile **carries across actions within a round** and is
-  **wiped at the Lull**.
+  wasted** (`P` resets to 0). Each **phase** owns its pile: it **carries across actions within
+  a phase** and **wipes at that phase's boundary** — sub-threshold damage never crosses into the
+  next phase; **only Health (flipped cards) persists** (§4.6 / §2.2).
 - `t[X.]` — Tempo pool (Cadence cards, each worth Finesse). A bid is `cards × Finesse`; the
   **defender must strictly beat it** — **a tie lands the hit**.
 - **`+•`** — a **temporary** Tempo card (from Rallying Cry); spent → `+×`; any unspent
@@ -132,7 +137,7 @@ B:  {Gale h[..] P0/2 t[X.] = Hob h[..] P1/2 t[XX]}    Orin h[..] P0/2 t[....]
 A:  Brand …·LOCKED   Corin …·LOCKED   Dru …·FREE   Mob⟨2⟩ (b spent) c
 B:  {Gale h[..] P0/2 t[X.] = Hob h[.] P0/2 t[XX]}    Orin h[..] P0/2 t[....]
 ```
-↳ *Two pin-pricks accumulate into one wound — the pile carrying across actions is the whole point.*
+↳ *Two pin-pricks accumulate into one wound — the pile carrying across actions **within the phase** is the whole point.*
 
 **F5c · Rat-c → Hob** (Punch, Might 1, bid 2). Hob **EATS** → `P0+1=1/2`, no flip:
 ```
@@ -145,15 +150,17 @@ B:  {Gale h[..] P0/2 t[X.] = Hob h[.] P1/2 t[XX]}    Orin h[..] P0/2 t[....]
 Corin, Mob** (all struck the still-living group). A **partial** break: one body slips free
 while the rest stay pinned.
 
+*Fray boundary — un-flipped piles wipe:* Hob's `P1/2` clears to `P0/2`; only Health crosses (§4.6).
+
 ---
 
 ## The Volley (free Vanguards charge; the rear answers first — pre-empt)
 
-**B winds up its deferred ability:** Orin uses **Throw Bomb** (2 Tempo) — a **held** area
-charge aimed at A's Vanguard line; it will release at the Reckoning *only if Orin is still
+**B winds up a `resolve: reckoning` ability:** Orin uses **Throw Bomb** (2 Tempo) — a **held**
+area attack aimed at A's Vanguard line; it will release at the Reckoning *only if Orin is still
 alive*. **A declares:** **Dru (free) charges Orin**; the locked melee can't reach the back,
-but **Brand fires Throw Rock** (multi-reach) and Corin fires again (instant, second phase) at
-the group.
+but **Brand fires Throw Rock** (multi-reach) and Corin fires again (on-cast, the second Strike
+phase) at the group.
 
 ```
 Held:  Orin's Throw Bomb → A-Vanguard (area, releases at Reckoning)        Charge:  Dru → Orin
@@ -164,27 +171,29 @@ Held:  Orin's Throw Bomb → A-Vanguard (area, releases at Reckoning)        Cha
 **FLIP** (Gale V2→1):
 ```
 A:  Brand h[....] P0/3 t[XX..]   Corin …   Dru …·FREE   Mob⟨2⟩
-B:  {Gale h[.] P0/2 t[X.] = Hob h[.] P1/2 t[XX]}    Orin h[..] P0/2 t[XX..]·(bomb held)
+B:  {Gale h[.] P0/2 t[X.] = Hob h[.] P0/2 t[XX]}    Orin h[..] P0/2 t[XX..]·(bomb held)
 ```
 ↳ ***MULTI-REACH:** one Form, **Punch** in the Fray, **Throw Rock** in the Volley.*
 
-**V2 · Corin → {Gale=Hob}** (**Throw Rock** again — **instant fires in both the Fray and the
-Volley**, bid 1×F4=4, Might 3). Group EATS → spill to Gale: `P0+3=3 ≥ T2` → **FLIP** → Gale
+**V2 · Corin → {Gale=Hob}** (**Throw Rock** again — **a `strike`/`on-cast` ability fires in both
+the Fray and the Volley**, bid 1×F4=4, Might 3). Group EATS → spill to Gale: `P0+3=3 ≥ T2` → **FLIP** → Gale
 **DOWN**:
 ```
 A:  Brand …   Corin h[...] P0/2 t[XX.]   Dru …·FREE   Mob⟨2⟩
-B:  {Gale ✗ … Hob h[.] P1/2 t[XX]}    Orin h[..] P0/2 t[XX..]·(bomb held)
+B:  {Gale ✗ … Hob h[.] P0/2 t[XX]}    Orin h[..] P0/2 t[XX..]·(bomb held)
 ```
-↳ *Instant-in-both-phases. The group is down to Hob, but Hob lives → A's locked units stay locked.*
+↳ *On-cast strike, castable in both Strike phases. The group is down to Hob, but Hob lives → A's locked units stay locked.*
 
 **V3 · Dru charges Orin — the rear answers FIRST (pre-empt).** Orin still has Tempo, so it
 fires: **Orin → Dru** (**Throw Rock**, Might 2, bid 1×F3=3). Dru **EATS** → `P0+2=2/3` (no
 flip — bloodied, not stopped):
 ```
 A:  Brand …   Corin …   Dru h[....] P2/3 t[XX.]+•·charging   Mob⟨2⟩
-B:  {Hob h[.] P1/2 t[XX]}    Orin h[..] P0/2 t[XXX.]
+B:  {Hob h[.] P0/2 t[XX]}    Orin h[..] P0/2 t[XXX.]
 ```
 ↳ ***PRE-EMPT:** the Volley resolves before the Breach, so the rear shoots first. Orin both **held the bomb and defended** — only its high Cadence allowed both.*
+
+*Volley boundary — un-flipped piles wipe:* Dru's `P2/3` clears to `P0/3` entering the Breach (§4.6).
 
 ---
 
@@ -194,22 +203,22 @@ B:  {Hob h[.] P1/2 t[XX]}    Orin h[..] P0/2 t[XXX.]
 vs `3` → **TIE → the hit lands**. `P0+2=2 ≥ T2` → **FLIP** (Orin V2→1). *Dru's base Tempo is
 now gone:*
 ```
-A:  Dru h[....] P2/3 t[XXX]+•   …
-B:  {Hob h[.] P1/2 t[XX]}    Orin h[.] P0/2 t[XXXX]
+A:  Dru h[....] P0/3 t[XXX]+•   …
+B:  {Hob h[.] P0/2 t[XX]}    Orin h[.] P0/2 t[XXXX]
 ```
 ↳ ***TIE LANDS:** the defender must *strictly* beat the bid; an exact match is not enough.*
 
 **B2 · Dru → Orin** (**Punch**, paid by the **`+•` temporary Tempo**, Might 2, bid 3). Orin is
 dry → **EATS** → `P0+2=2 ≥ T2` → **FLIP** → Orin **DOWN**:
 ```
-A:  Dru h[....] P2/3 t[XXX]+×   …
-B:  {Hob h[.] P1/2 t[XX]}    Orin ✗
+A:  Dru h[....] P0/3 t[XXX]+×   …
+B:  {Hob h[.] P0/2 t[XX]}    Orin ✗
 ```
 ↳ ***RALLYING CRY paid off, and DISRUPT lands.** The killing blow is funded by the Standoff's temporary Tempo — without it Dru is dry at B1 and Orin survives. The caster dies in the Breach, **before** the Reckoning.*
 
 ---
 
-## The Reckoning (deferred abilities resolve last)
+## The Reckoning (`resolve: reckoning` abilities resolve last)
 
 **Orin's held Throw Bomb → DROPPED.** Its thrower died in the Breach, which resolves *before*
 the Reckoning (§4.6 order), so the wind-up never releases — A's Vanguard is untouched.
@@ -221,12 +230,12 @@ lands.*
 
 ---
 
-## The Lull (refresh — Health persists, piles wipe, temp Tempo expires)
+## The Lull (refresh — Health persists, temp Tempo expires)
 
-Every spent Tempo card flips back up. **Health stays flipped.** Every **un-flipped pile is
-wiped** (Dru's `P2/3`, Hob's `P1/2`). All **temporary Tempo expires** (Dru's was spent; the
-others' vanish unused). **Rallying Cry stays face down** (used; it never resets). Round-2
-opening board:
+Every spent Tempo card flips back up. **Health stays flipped.** (The accumulator piles already
+wiped at each phase boundary, §4.6 — nothing sub-threshold survives to here.) All **temporary
+Tempo expires** (Dru's was spent; the others' vanish unused). **Rallying Cry stays face down**
+(used; it never resets). Round-2 opening board:
 
 ```
 A:  Brand h[....] P0/3 t[....]   Corin h[...] P0/2 t[...]   Dru h[....] P0/3 t[...]   Mob⟨2⟩
@@ -274,7 +283,7 @@ it **flanks Fross**:
 | Health / Tempo pools, bid = cards×Finesse                                          | throughout                 |
 | **Accumulator pile** (`P n/T`), sub-threshold banking                              | F1, F4, F5c, V3            |
 | Flip at Toughness + **wasted overflow**                                            | F2, F4, F5b                |
-| Pile **carries within a round, wipes at the Lull**                                 | F5b→Lull                   |
+| Pile **carries within a phase, wipes at each phase boundary**                      | F5b; Fray & Volley bounds  |
 | **Strictly-beat / TIE LANDS**                                                      | B1 (dodge ties → lands)    |
 | Three responses: **EAT / AVOID(block) / STRIKE-BACK**                              | F1 / F3 / F5a              |
 | Positions & reach (Vanguard/Rearguard, melee/ranged)                               | formation                  |
@@ -282,9 +291,9 @@ it **flanks Fross**:
 | **Rallying Cry** — Standoff buff, one-shot, **temp Tempo** (load-bearing at B2)    | Standoff → B2              |
 | **Per-unit lock**, partial break                                                   | F2/F5c breach list         |
 | **Pre-empt** (Volley before Breach)                                                | V3                         |
-| **Instant in both** Fray & Volley                                                  | Corin F4 + V2              |
+| **`on-cast` strike** castable in both Fray & Volley                                | Corin F4 + V2              |
 | **Multi-reach** (one Form: Punch then Throw Rock)                                  | Brand F3 + V1              |
-| **Deferred** = held wind-up (**Throw Bomb**) + **Reckoning** + **disrupt by kill** | Volley/B2/Reckoning        |
+| **`resolve: reckoning`** = held wind-up (Throw Bomb) + **Reckoning** + **disrupt by kill** | Volley/B2/Reckoning |
 | **AREA** (hits all of a rank, not spillover)                                       | Reckoning (counterfactual) |
 | **Groups**: sum-block / weakest-link evade / spillover / one-Tempo-per-member      | F3 / F4 / F4,V1 / F3       |
 | **Hoard** (n one-Health bodies, each Punch)                                        | F5a–c                      |

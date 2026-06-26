@@ -636,8 +636,8 @@ ever in flux.
 ### 2.2 The one channel — pile → bar → pool
 
 **RULE.** Every attack deals **Might** (its base magnitude — the attacker's Might plus any card power),
-resolved in one path: **accumulate the Might into the round's pile → compare the pile to the bar
-(Toughness) → each time the pile clears Toughness, flip one health card** face-down. Empty the health
+resolved in one path: **accumulate the Might into the phase's pile (per-phase, §4.6) → compare the
+pile to the bar (Toughness) → each time the pile clears Toughness, flip one health card** face-down. Empty the health
 pool and the Actor is **down**. There is **no cut** today — **Armor** and damage *types* are deferred to
 the later gear system (they will reinsert a pre-pile subtract). This is the game's **single
 kill-condition** (Charter #13): you die exactly one way — your health pool empties.
@@ -1315,14 +1315,17 @@ economy (§8) mechanically real: buying a card literally raises a stat.
 - The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
-### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Rearguard-cast 2026**; code pending)*
+### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Rearguard-cast 2026**; **abilities are tempo-gated Form cards, no card-spend 2026-06-25**; code pending)*
 
-**RULE.** Role cards are an **ability layer** over the physical battle (§4). **Casting is an action:**
-each role card spends a **Tempo card** (§3) — it competes with strikes, contests, and evades for the one
-budget — and once played the card is **Spent** (face-down, §5) until Recovered, so each distinct card
-fires **once per round**. There is **no per-suit or per-side cap**: how much magic a side throws is
-bounded only by its **Tempo** (a conserved, party-size-invariant pool), its **distinct cards**, and the
-foe's **evade**.
+**RULE.** Role cards are an **ability layer** over the physical battle (§4), and they live on the
+**Form** (§5.2) — **open, permanent enablers**, never drawn. **Casting is an action:** each use spends a
+**Tempo card** (§3) — competing with strikes, contests, and evades for the one budget. An ability is
+**repeatable**: using it does **not** Spend or exhaust it, so it may fire **as often as Tempo allows**
+(the same ability may even resolve in more than one phase — §4.6 cast/resolve). The lone exception is an
+explicit **one-shot**, which flips **face-down for the combat** (never resets — a non-recovering Spend;
+this is how a once-per-combat capstone is built, §5.6 M1). There is **no per-suit or per-side cap**: how
+much magic a side throws is bounded only by its **Tempo** (a conserved, party-size-invariant pool) and
+the foe's **evade**.
 
 **Position gates *offensive* casting.** A **Controller** debuff or an **Artillery** shot is a **ranged
 attack** (§4.2), so it is **cast from the Rearguard** and may be **evaded** (the tempo contest, §3.1).
@@ -1335,9 +1338,9 @@ buffs / braces, in the contest for ranged fire and slips.
 stat collapse makes it **redundant**: casting now spends **Tempo**, and Tempo is **already conserved**
 across party size (Cadence rides on a fixed card pool that party size only *partitions* across bodies). So
 **god ≈ party (#4) falls straight out of the tempo economy** — total casting output is party-size-invariant
-*because total Tempo is*, with no hard cap. The cap's other jobs are covered too: **zone exhaustion** (§5)
-stops same-card spam (each card once per round), and **evade** (§3.1) gives every offensive spell built-in
-counterplay. Dropping it is **force, not fiat**: a side may **concentrate** (more spells, fewer strikes)
+*because total Tempo is*, with no hard cap. The cap's other jobs are covered too: **Tempo itself**
+prices same-ability repetition (every use costs a Tempo card — no exhaust clock needed), and **evade**
+(§3.1) gives every offensive spell built-in counterplay. Dropping it is **force, not fiat**: a side may **concentrate** (more spells, fewer strikes)
 or **spread**, paying Tempo either way — opportunity cost, never prohibition (#2; emergence over fiat,
 #6 / #12).
 
@@ -1353,9 +1356,9 @@ is simultaneous**, a card is committed up front or resolves in the contest — n
 more-informed hidden moment.
 
 **GUARANTEES.**
-- **No per-suit / per-side cap.** Casting is bounded only by **Tempo** (each cast = one Tempo card),
-  **zone exhaustion** (each distinct card once per round until Recovered), and **evade** (offensive
-  spells) — all *costs*, never prohibitions.
+- **No per-suit / per-side cap, and no exhaustion.** Casting is bounded only by **Tempo** (each use =
+  one Tempo card) and **evade** (offensive spells) — both *costs*, never prohibitions. An ability is a
+  **repeatable** Form enabler; it never Spends (a **one-shot** self-limits by flipping for the combat).
 - **Conservation across party size via Tempo.** Total Tempo is party-size-invariant (fixed Cadence-card
   pool), so total casting output is too — **god ≈ party** is the N=1 partition, not an exception. No party
   size dominates role-card throughput (candidate **BI-4**, par-solver-verified).
@@ -1434,7 +1437,7 @@ The sum-vs-min asymmetry then sorts roles with **no special case** — groups **
 - **Block = summed Tempo; slip / evade = every member beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
-### 4.6 The six phases — lock, breach & the pre-empt 🟡 *(2026 — refines §4 back-access from **all-or-nothing** to **per-unit lock**, names the round's **six phases**, and orders the breach so the rear's fire **pre-empts** the charger; code pending)*
+### 4.6 The six phases — lock, breach & the pre-empt 🟡 *(2026 — refines §4 back-access from **all-or-nothing** to **per-unit lock**, names the round's **six phases**, and orders the breach so the rear's fire **pre-empts** the charger; **2026-06-25: `cast`/`resolve` supersedes instant/deferred, the accumulator is per-phase**; code pending)*
 
 > **Supersedes** the "back opens only when the whole front falls" phrasing in §4 *and* the earlier
 > Fast/Slow "windows" sketch. The *spine* holds — a front shields a back, you reach the back by **winning**,
@@ -1470,6 +1473,17 @@ per-round pool** (Tempo does **not** refresh between phases, §4):
    Breach never casts — its spell fizzles).
 6. **The Lull** — **Refresh:** Tempo resets, **Health persists**, round++.
 
+**RULE — the accumulator is per-phase.** Each phase owns a **per-target pile**; a landed hit adds
+**Might** to the pile of its **`resolve`** phase, and when the pile clears **Toughness** one Health card
+flips (overflow wasted). **Every pile wipes at its own phase boundary** — sub-threshold damage does
+**not** carry between phases (this **refines §2.2** from "the round's pile" to *the phase's pile*).
+**Health persists** (§2.1); only the sub-threshold pile is ephemeral. Effects that share a `resolve`
+phase **stack in that phase's pile** (additive, order-independent — §0.1: a combo is diverse effects in
+one pile, never a multiplying chain). *Consequence:* **Toughness is a per-phase wall**, so burst within
+one phase beats chip spread across phases — revisit Toughness values in `booklet.ron` (numbers are
+human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses a
+phase boundary, so the only number a human carries through the round is Health.)*
+
 **RULE — the breach list (who may charge).** The **Fray** fixes it. A Vanguard is **locked** for the round
 **only** while an **enemy Vanguard *it attacked* in the Fray is still alive** — *attacking* means it spent
 an action striking a body **standing in its way.** **Only attacking locks.** Being **struck**, **blocking**,
@@ -1479,13 +1493,24 @@ Fray fast shot), is **free** — and in the **Volley** may **charge** the enemy 
 surviving enemy Vanguard (legal, expected rare). A **locked** Vanguard stays pinned. *A line breaks in
 **sections**: whoever drops his own front-foe pours into the gap, even while other enemy Vanguards stand.*
 
-**RULE — instant vs deferred (the old Fast/Slow).** An attack/spell is one of:
+**RULE — `cast` & `resolve` (supersedes instant/deferred).** An ability's timing is **two fields** over
+named **cast windows** and named **resolution gates**:
 
-- **Instant** — resolves **in the phase it is used**, alongside that phase's combat. **The same instant
-  card may fire in *both* the Fray and the Volley** (Tempo permitting): an archer looses at the enemy front
-  in the Fray, then looses again at a charging breacher in the Volley. Instant is the default.
-- **Deferred ("slow")** — committed earlier (Tempo paid up front) but **resolves only in the Reckoning**,
-  after the Breach. That deferral is the **only** reason a breacher can disrupt it.
+- **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Standoff — own-side buffs /
+  braces, auto-land) or **`strike`** (the **Strike window** = the **Fray *and* the Volley**; a card
+  usable in one strike window is usable in both). Default `strike`.
+- **`resolve`** — which phase's pile the effect lands in (the per-phase accumulator above): **`on-cast`**
+  (the phase it was used — the old *instant*; an archer may loose at the enemy front in the Fray *and*
+  again at a charging breacher in the Volley), **`breach`** (the old charge — paid in the Volley, lands
+  next phase), or **`reckoning`** (the old *deferred* — paid up front, lands last; that deferral is the
+  **only** reason a breacher can disrupt it). Default `on-cast`.
+
+**Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* in a
+phase comes from **reach** (§4.2) + breach state (the front shields the rear until cracked; the rear is
+reachable only by a **freed** charger). The **disruption window is `resolve − cast`** counted in gates —
+`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); a later `resolve` ⇒ the gates in between are exactly where a
+death can silence it. **Author's dial:** choose `on-cast` for a guaranteed effect (a trade), a later gate
+to make it disruptable — the further out, the longer it is exposed.
 
 **RULE — breachers are defended normally.** A charger is **not** special: the rear spends Tempo to **dodge**
 it, **strike back** (if it carries melee), or **counter-fire** a ranged shot — any §3.4 response — all from
@@ -1540,8 +1565,9 @@ rear that dumps Tempo answering the Volley has less left for the spell, and vice
 - **"Volley" naming** — the Volley is the rear's *whole* pre-emptive answer (counter-fire **and** melee
   strike-back **and** dodge), not only arrows; **"The Answer"** is the inclusive alternative if "Volley"
   reads too ranged.
-- **When deferred spells are *committed*** — assumed paid up front (in the Fray, or at the start of the
-  Volley) so the charge can threaten them; confirm the exact commit moment.
+- ~~**When deferred spells are *committed***~~ — **resolved 2026-06-25:** dissolved into the per-card
+  **`cast`** window. A deferred ability is `cast: strike` (committable in the Fray *or* the Volley —
+  player's choice) and `resolve: reckoning`; no single global commit moment is fixed.
 
 *(Worked round exercising all six phases: `log-driven/combat-logs/card-combat-round-breach.md`.)*
 
@@ -1584,6 +1610,11 @@ fact. Three is the minimum that distinguishes *held* / *working* / *spent*.
   immune to Disrupt** — it cannot be knocked Down. Stats may be *temporarily reduced* by **Lasting
   debuffs** in Active (Slow, Sunder, Confuse), but the Form card never leaves.
 - **Action** — maneuvers, governed by the verbs (§5.3).
+- **Abilities are Form cards.** A character's powers/attacks live on the **Form** as **passive, open
+  enablers** — Active, **permanent (never Spend), immune to Disrupt**, and **never drawn** (no kit RNG,
+  §0.1). Having an ability means you *may* use it **repeatably**, gated by **Tempo alone** (§4.4) —
+  there is **no per-ability exhaustion**. The lone limiter is an explicit **one-shot**, which flips
+  **face-down for the whole combat** (never resets). *(Power/Form timing — `cast` / `resolve` — is §4.6.)*
 
 **WHY.** *Exhaustion touches what you do, never what you are* — so stats stay stable and
 recomputable (§2.1) even as the action economy churns. "Form" is a card **property**, not a fourth
@@ -1592,6 +1623,8 @@ zone (it lives in Active).
 **GUARANTEES.**
 - A stat never exhausts; only a removable Lasting debuff can modify its value, and removing it
   restores the stat exactly (no maintained meter — §2.1).
+- **Abilities are open, permanent, tempo-gated Form cards** — never drawn, never Spent/exhausted; a
+  **one-shot** self-limits by flipping face-down for the combat (§4.4).
 
 ### 5.3 The verbs — default-return + Spend · Lasting · Recover · Disrupt
 

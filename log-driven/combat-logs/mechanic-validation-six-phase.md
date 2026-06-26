@@ -9,21 +9,22 @@ a separate step. Physical-card state machine: layout → actions (with targets) 
 **Legend.** `.` fresh · `X` flipped (spent Tempo / lost Health) · `{A=B}` joined group ·
 `h[ ]` health pool (flip at Toughness) · `t[ ]` tempo pool (a card is worth Finesse). A
 **defender must strictly beat** a bid — a **tie lands the hit**. A landed hit pours **Might**
-into the pile. Phases: **Standoff · Fray · Volley · Breach · Reckoning · Lull**.
+into the pile (each phase owns its pile — it wipes at that phase's boundary; **only Health
+persists**). Phases: **Standoff · Fray · Volley · Breach · Reckoning · Lull**.
 
 ---
 
 ## Scenario 1 — The pre-empt *stops* the charge (+ the cast-vs-defend dilemma)
 
-**Validates:** the Volley resolves **before** the Breach, so the rear's instant fire can
+**Validates:** the Volley resolves **before** the Breach, so the rear's on-cast fire can
 **kill a charger before its blow lands** — the charge is stopped (the mirror of the breach
 log, where a healthier charger survived and disrupted the caster). And: a rear caster
-**cannot both cast its deferred spell and keep Tempo to defend** — one pool pays for one.
+**cannot both commit its held `resolve: reckoning` attack and keep Tempo to defend** — one pool pays for one.
 
 ```
 SIDE A   Garrick  M3 V2 T2 C3 F3  melee   (breacher)
 SIDE B   Vesper   M2 V1 T2 C2 F2  melee   (fragile front)
-         Robin    M3 V2 T2 C3 F3  ranged  (rear: instant arrows OR one deferred AoE)
+         Robin    M3 V2 T2 C3 F3  ranged  (rear: on-cast arrows OR one held AoE · resolve: reckoning)
 ```
 
 **Standoff:**
@@ -49,8 +50,8 @@ Breach list: Garrick killed Vesper → **FREE**.
 on Robin; Garrick means to push through, eating fire to keep Tempo for its Breach strikes.
 The rear answers **first**:
 ```
-  Robin → Garrick   instant arrow (Might 3)   Garrick EATS → FLIP   h[X.]
-  Robin → Garrick   instant arrow (Might 3)   Garrick EATS → FLIP   h[XX] → GARRICK DOWN (V2)
+  Robin → Garrick   on-cast arrow (Might 3)   Garrick EATS → FLIP   h[X.]
+  Robin → Garrick   on-cast arrow (Might 3)   Garrick EATS → FLIP   h[XX] → GARRICK DOWN (V2)
 ```
 ```
 [A]  Vanguard  (Garrick down)
@@ -58,11 +59,11 @@ The rear answers **first**:
 ```
 
 **Breach:** Garrick is dead at the Volley boundary → **no blow. Charge STOPPED**, Robin
-untouched. *Reckoning:* nothing deferred. *Lull:* refresh.
+untouched. *Reckoning:* nothing held. *Lull:* refresh.
 
 **The fork (same Volley start, Robin CASTS instead):**
 ```
-  Robin casts deferred AoE (2 Tempo) → 1 left
+  Robin commits a held AoE (resolve: reckoning, 2 Tempo) → 1 left
   Pre-empt: Robin → Garrick  1 arrow → 1 FLIP → Garrick h[X.] (survives)
   Breach:   Garrick → Robin  strike ×2 (2 Tempo) → FLIP ×2 → ROBIN DOWN
   Reckoning: Robin's AoE FIZZLES (caster dead)
