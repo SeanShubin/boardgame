@@ -340,22 +340,15 @@ impl Deckbound {
         }
     }
 
-    /// §4.6 breach list. A Vanguard of each side is **locked** iff there is still a living enemy
-    /// Vanguard — its committed front-foe. We approximate "the foe it attacked" as "any living enemy
-    /// Vanguard": a Vanguard that engaged the front is freed exactly when that front section is gone
-    /// (the per-unit-lock spirit — a line breaks in sections). A Vanguard with no living enemy
-    /// Vanguard to its front is free to pour through.
+    /// §4.6 **breach list / per-unit lock** — the exact primitive (replaces the old all-or-nothing
+    /// approximation). A Vanguard is locked iff **some enemy Vanguard it struck in the Fray is still
+    /// alive** (only *attacking* locks, §4.6). We feed [`combat::compute_locks`] the per-actor
+    /// attacked-map recorded as each Fray strike resolved (`fray_strike`) against the enemy pool with
+    /// its Fray deaths already finalized — so a Vanguard whose struck foe **died** is **free** even
+    /// while other enemy Vanguards stand (a line breaks per-unit, not all-or-nothing).
     fn fix_breach_list(&self, state: &mut State) {
-        let foe_van_alive = (0..state.creatures.len())
-            .any(|i| state.plan.foe_vanguard[i] && !state.creatures[i].is_down());
-        let hero_van_alive = (0..state.heroes.len())
-            .any(|i| state.plan.hero_vanguard[i] && !state.heroes[i].is_down());
-        for i in 0..state.heroes.len() {
-            state.plan.hero_locked[i] = state.plan.hero_vanguard[i] && foe_van_alive;
-        }
-        for i in 0..state.creatures.len() {
-            state.plan.foe_locked[i] = state.plan.foe_vanguard[i] && hero_van_alive;
-        }
+        state.plan.hero_locked = combat::compute_locks(&state.plan.hero_attacked, &state.creatures);
+        state.plan.foe_locked = combat::compute_locks(&state.plan.foe_attacked, &state.heroes);
     }
 
     /// End the Volley: resolve the rear's pre-emptive answers (already applied as charges were
@@ -508,8 +501,18 @@ impl Deckbound {
     }
 
     /// A **Fray melee strike** (§4.6 #2): a trade — `attacker` strikes `target`, who strikes back if
-    /// it can. Records nothing extra (the lock is recomputed from the board at the Fray boundary).
+    /// it can. **Records the struck enemy Vanguard** in the attacked-map (the input to
+    /// [`combat::compute_locks`]) so the per-unit lock is exact: a Vanguard whose struck foe dies is
+    /// freed even while other enemy Vanguards stand.
     fn fray_strike(&self, state: &mut State, hero_attacker: bool, attacker: usize, target: usize) {
+        // Only a Vanguard's front strike contributes a lock (attacking is what pins, §4.6).
+        let side: u8 = if hero_attacker { 0 } else { 1 };
+        if state.s_vanguard(side)[attacker] {
+            let map = state.s_attacked_mut(side);
+            if !map[attacker].contains(&target) {
+                map[attacker].push(target);
+            }
+        }
         if hero_attacker {
             let mut heroes = std::mem::take(&mut state.heroes);
             combat::fray_one(
@@ -652,6 +655,23 @@ impl Deckbound {
                 "{name} winds up a held effect (resolves at the Reckoning)."
             ));
             return;
+        }
+        // §10 Silence (Controller): cancel one *enemy* deferred (`resolve: Reckoning`) spell — a
+        // non-lethal disrupt (§4.6). Resolved here (the deferred list lives in the round plan); the
+        // `play_card` effect arm only narrates. The earliest wound-up enemy spell is removed.
+        if card
+            .effects
+            .iter()
+            .any(|e| matches!(e, crate::cards::Effect::Silence))
+        {
+            let enemy: u8 = 1 - side;
+            if let Some(pos) = state.plan.deferred.iter().position(|d| d.side == enemy) {
+                let d = state.plan.deferred.remove(pos);
+                state.log.push(format!(
+                    "{name} silences {}'s held {}.",
+                    d.name, d.card.name
+                ));
+            }
         }
         if side == 0 {
             let mut allies = std::mem::take(&mut state.heroes);
@@ -2134,6 +2154,75 @@ mod tests {
         assert_eq!(s.phase, Phase::Standoff);
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
+    }
+
+    /// Part 1 — the **per-unit lock** (§4.6, exact). Two heroes front two foes; hero 0 kills its
+    /// struck foe in the Fray, hero 1's struck foe survives. At the Fray boundary, `fix_breach_list`
+    /// (now fed by the recorded attacked-map through `combat::compute_locks`) must free the killer
+    /// while keeping hero 1 pinned — **even though a live enemy Vanguard still stands**. The old
+    /// all-or-nothing approximation locked *both* (any live enemy Vanguard ⇒ locked); this proves the
+    /// regression is gone.
+    #[test]
+    fn a_freed_locker_is_free_while_other_enemy_vanguards_stand() {
+        use crate::actor::Attack;
+        let game = Deckbound;
+
+        // A bare melee fighter with explicit stats and ample Tempo (the test controls who acts).
+        fn fighter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
+            let mut a = scenarios::build_character("Novice", &[]);
+            a.name = name.into();
+            a.attack = Attack::Melee;
+            a.offense.might = might;
+            a.offense.finesse = a.offense.finesse.max(1);
+            a.defense = crate::stats::Defense::new(vit, tough);
+            a.weapon = {
+                // a 0-power weapon so a blow is exactly `might`
+                let mut w = a.weapon.clone();
+                w.effects.clear();
+                w
+            };
+            a.tempo = 10;
+            a
+        }
+
+        let heroes = vec![fighter("Killer", 5, 5, 5), fighter("Pinned", 1, 5, 5)];
+        // foe 0 dies (V1/T2 ⇐ Might 5 flips its only card); foe 1 survives (V3/T5 ⇐ Might 1); foe 2 is
+        // a Rearguard. All foes Might 0 so the trade-back never kills a hero.
+        let foes = vec![
+            fighter("Doomed", 0, 1, 2),
+            fighter("Survivor", 0, 3, 5),
+            fighter("Rear", 0, 2, 2),
+        ];
+        let mut s = battle_state(heroes, foes, false, 1);
+        // Front the two foes; pull the third back to the Rearguard.
+        s.plan.foe_vanguard = vec![true, true, false];
+        s.plan.hero_vanguard = vec![true, true];
+        // Begin the Fray. (PvE: the foe side strikes first — Might 0, harmless.)
+        game.apply(&mut s, &Action::Deploy).unwrap();
+        assert_eq!(s.phase, Phase::Fray);
+
+        // Drive the hero Fray explicitly: Killer strikes foe 0, Pinned strikes foe 1.
+        game.apply(&mut s, &Action::Target(0, 0)).unwrap();
+        // After hero 0 acts, hero 1 is the pending unit; strike foe 1.
+        game.apply(&mut s, &Action::Target(1, 1)).unwrap();
+
+        // Closing the Fray fixes the breach list. (If hero 1 had nothing left, the phase auto-advanced;
+        // otherwise pass it so the Fray closes.)
+        if s.phase == Phase::Fray {
+            if let Some(&i) = game.pending(&s, 0).first() {
+                game.apply(&mut s, &Action::Pass(i)).unwrap();
+            }
+        }
+        assert!(s.creatures[0].fallen, "foe 0 died in the Fray");
+        assert!(!s.creatures[1].fallen, "foe 1 survived");
+        assert!(
+            !s.plan.hero_locked[0],
+            "the killer is FREE — its struck foe is dead (per-unit lock)"
+        );
+        assert!(
+            s.plan.hero_locked[1],
+            "hero 1 stays LOCKED — its struck foe still stands"
+        );
     }
 
     #[test]

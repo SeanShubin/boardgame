@@ -73,14 +73,22 @@ impl Defense {
     /// Apply one `raw`-magnitude (untyped Might) hit. Accumulate into the round's pile → each time the
     /// pile clears the bar (Toughness), flip one Health card. No cut, no types (Spec §2.2).
     pub fn take(&mut self, raw: u32) -> HitOutcome {
+        self.take_with_toughness(raw, self.health.toughness)
+    }
+
+    /// As [`take`](Defense::take), but the per-card **wall** is `bar` rather than the bare Toughness —
+    /// the call site folds in any **Guard** tokens (+Toughness this round, §10) so a braced wall is
+    /// harder to crack. `bar` is floored at 1 (a zero wall would flip every card at once).
+    pub fn take_with_toughness(&mut self, raw: u32, bar: u32) -> HitOutcome {
+        let bar = bar.max(1);
         let mut out = HitOutcome {
             through: raw,
             ..Default::default()
         };
         self.health_pile += raw;
-        while self.health_pile >= self.health.toughness && self.health.remaining > 0 {
+        while self.health_pile >= bar && self.health.remaining > 0 {
             self.health.remaining -= 1;
-            self.health_pile -= self.health.toughness;
+            self.health_pile -= bar;
             out.cards_flipped += 1;
         }
         if self.health.is_empty() {

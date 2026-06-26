@@ -539,6 +539,15 @@ fn effect_keyword(e: &Effect) -> String {
         Suppress { .. } => "Suppress".into(),
         Slow { .. } => "Slow".into(),
         Confuse { .. } => "Confuse".into(),
+        Mark { .. } => "Mark".into(),
+        Mire { .. } => "Mire".into(),
+        Burn { .. } => "Burn".into(),
+        Brace { .. } => "Brace (Guard token)".into(),
+        Cover => "Cover".into(),
+        Thorns { .. } => "Thorns".into(),
+        Charge { .. } => "Charge".into(),
+        Smoke => "Smoke".into(),
+        Silence => "Silence".into(),
     }
 }
 

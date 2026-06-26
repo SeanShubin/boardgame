@@ -121,6 +121,13 @@ pub struct Round {
     /// boundary. A Vanguard that is not locked is **free** and may charge/flank in the Volley.
     pub hero_locked: Vec<bool>,
     pub foe_locked: Vec<bool>,
+    /// §4.6 **attacked-map**: per actor, the **enemy-Vanguard indices it struck in the Fray** — the
+    /// exact input to [`crate::combat::compute_locks`]. Recorded as each Fray melee strike resolves
+    /// (interactive *and* foe-AI), so a Vanguard whose struck foe died is **free** even while other
+    /// enemy Vanguards stand (the per-unit lock, not an all-or-nothing approximation). Cleared each
+    /// round with the rest of the plan.
+    pub hero_attacked: Vec<Vec<usize>>,
+    pub foe_attacked: Vec<Vec<usize>>,
     /// Actors who have already acted in the current interactive phase (Standoff / Fray / Volley).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
@@ -147,6 +154,8 @@ impl Round {
             foe_vanguard: vec![true; foes],
             hero_locked: vec![false; heroes],
             foe_locked: vec![false; foes],
+            hero_attacked: vec![Vec::new(); heroes],
+            foe_attacked: vec![Vec::new(); foes],
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
             hero_roles_played: vec![Vec::new(); heroes],
@@ -233,6 +242,14 @@ impl State {
             &mut self.plan.hero_locked
         } else {
             &mut self.plan.foe_locked
+        }
+    }
+    /// Per-actor §4.6 attacked-map of `side` (the enemy-Vanguard indices each struck in the Fray).
+    pub fn s_attacked_mut(&mut self, side: u8) -> &mut Vec<Vec<usize>> {
+        if side == 0 {
+            &mut self.plan.hero_attacked
+        } else {
+            &mut self.plan.foe_attacked
         }
     }
     pub fn s_acted(&self, side: u8) -> &[bool] {

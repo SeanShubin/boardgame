@@ -24,6 +24,41 @@ pub enum Range {
     Ranged,
 }
 
+/// A **utility token** (§10 / `power-catalog-rewrite.md` §1): card-tracked state placed on an Actor.
+/// Tokens make persistent / charging / accumulating state **physical** (§5.1 cards-only — never human
+/// memory). Each token sits on its bearer; ALL tokens clear on the bearer's death and at combat end,
+/// and the per-round **Guard** token is additionally cleared at the Lull (`refresh_round`).
+///
+/// Floors (§2.2 force-not-fiat): Mark/Mire each clamp their stat at **min 1** independently, so a
+/// maximally Marked+Mired foe still has Finesse 1 **and** Cadence 1 → Tempo ≥ 1 — a debuff stack can
+/// never lock a foe (no second kill-condition).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Token {
+    /// **Guard** (Wall): +Toughness while present (raises the per-phase wall). Per-round — cleared at
+    /// the Lull (`refresh_round`).
+    Guard { toughness: u32 },
+    /// **Cover** (Wall): the bearer is a Wall covering ally index `ally` — single-target damage aimed
+    /// at that ally **redirects to this Wall** (§4.5 spillover extended to a chosen ally). AoE still
+    /// hits the ally directly.
+    Cover { ally: usize },
+    /// **Mark** (Controller): −`finesse` Finesse (floor 1) while present.
+    Mark { finesse: u32 },
+    /// **Mire** (Controller): −`cadence` Cadence (floor 1) while present (fewer Tempo cards).
+    Mire { cadence: u32 },
+    /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's Reckoning-phase
+    /// pile and remove one stack. Caster-independent once placed.
+    Burn { power: u32 },
+    /// **Thorns** (Support): when this ally is struck, the attacker takes `power` Might into the
+    /// attacker's own current-phase pile (Support's reflected "offense").
+    Thorns { power: u32 },
+    /// **Charge** (Infiltrator/Artillery): one banked step of magnitude; the unit's next damage strike
+    /// **consumes all Charge tokens for +1 Might each** (§5.4 — burst paid for by the setup round).
+    Charge,
+    /// **Smoke** (Infiltrator): the unit's next charge **ignores the rear's Volley pre-empt** (a
+    /// guaranteed breach); consumed on use.
+    Smoke,
+}
+
 /// What range(s) an Actor can attack and contest at (§4.2). A strike at a range the target
 /// cannot answer is an **auto-hit**; a same-range meeting is a trade (or a Clash).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -155,6 +190,11 @@ pub struct Actor {
     /// Range(s) this Actor can attack and contest at (§4.2).
     pub attack: Attack,
 
+    /// §10 **utility tokens** placed on this Actor — card-tracked persistent state (§5.1). Mark / Mire
+    /// / Burn / Thorns / Cover persist for the combat; **Guard** is per-round (cleared at the Lull).
+    /// ALL tokens clear on this Actor's death and at combat end. See [`Token`].
+    pub tokens: Vec<Token>,
+
     // round-scoped budgets
     /// The one breadth pool (§3): initiative spent to act *and* to defend. Sized by Cadence; refreshes
     /// each round. (Focus/Mind are merged out — defense is a Tempo spend.)
@@ -225,9 +265,102 @@ impl Actor {
         self.actions.iter().any(|c| c.name == card)
     }
 
-    /// Refresh the Tempo pool and clear round-scoped defense + status state.
+    // ---- §10 utility tokens (card-tracked state) ----
+
+    /// The **effective Finesse** read in bids/contests: base Finesse minus all **Mark** tokens, floored
+    /// at 1 (§2.2 — Marks can never lock; the stat saturates at the floor). Offense reads consult this.
+    pub fn eff_finesse(&self) -> u32 {
+        let drop: u32 = self
+            .tokens
+            .iter()
+            .map(|t| match t {
+                Token::Mark { finesse } => *finesse,
+                _ => 0,
+            })
+            .sum();
+        self.offense.finesse.saturating_sub(drop).max(1)
+    }
+
+    /// The **effective Cadence** (the Tempo-pool size at refresh): base Cadence minus all **Mire**
+    /// tokens. A Mire never floors **below 1** (§2.2 — Mire can never lock; the stat saturates at the
+    /// floor). With no Mire present the base value passes through unchanged (a genuine 0-Cadence body is
+    /// not floored up — only the *debuff* is clamped).
+    pub fn eff_cadence(&self) -> u32 {
+        let drop: u32 = self
+            .tokens
+            .iter()
+            .map(|t| match t {
+                Token::Mire { cadence } => *cadence,
+                _ => 0,
+            })
+            .sum();
+        if drop == 0 {
+            self.offense.cadence
+        } else {
+            self.offense.cadence.saturating_sub(drop).max(1)
+        }
+    }
+
+    /// The total **Guard** token Toughness on this Actor (added to the per-phase wall in the pile
+    /// pipeline; per-round, cleared at the Lull).
+    pub fn guard_toughness(&self) -> u32 {
+        self.tokens
+            .iter()
+            .map(|t| match t {
+                Token::Guard { toughness } => *toughness,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// The total banked **Charge** count on this Actor (consumed for +1 Might each by the next strike).
+    pub fn charge_count(&self) -> u32 {
+        self.tokens
+            .iter()
+            .filter(|t| matches!(t, Token::Charge))
+            .count() as u32
+    }
+
+    /// Consume **all** Charge tokens, returning the count (the next strike's +Might, §5.4).
+    pub fn drain_charges(&mut self) -> u32 {
+        let n = self.charge_count();
+        self.tokens.retain(|t| !matches!(t, Token::Charge));
+        n
+    }
+
+    /// Is a **Smoke** token present (the next charge ignores the Volley pre-empt)?
+    pub fn has_smoke(&self) -> bool {
+        self.tokens.iter().any(|t| matches!(t, Token::Smoke))
+    }
+
+    /// Consume one **Smoke** token (on a charge); returns `true` if one was present.
+    pub fn consume_smoke(&mut self) -> bool {
+        if let Some(p) = self.tokens.iter().position(|t| matches!(t, Token::Smoke)) {
+            self.tokens.remove(p);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The total **Thorns** reflect power on this Actor (Might bounced onto an attacker's own pile).
+    pub fn thorns_power(&self) -> u32 {
+        self.tokens
+            .iter()
+            .map(|t| match t {
+                Token::Thorns { power } => *power,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Refresh the Tempo pool and clear round-scoped defense + status state. The pool is sized by
+    /// **effective Cadence** (base − Mire tokens, floor 1, §2.2), so a mired foe refreshes fewer Tempo
+    /// cards. The per-round **Guard** token is cleared here (Mark/Mire/Burn/Thorns/Cover persist for the
+    /// combat — they clear only on death / combat end).
     pub fn refresh_round(&mut self) {
-        self.tempo = self.offense.cadence as i32;
+        self.tokens.retain(|t| !matches!(t, Token::Guard { .. }));
+        self.tempo = self.eff_cadence() as i32;
         self.cannot_fall = false;
         self.stunned = false;
         self.shoved = false;

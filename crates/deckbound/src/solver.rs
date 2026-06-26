@@ -117,7 +117,18 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             Haste { tempo } => 50 + *tempo as i32,
             Empower { might } => 50 + *might as i32,
             Slow { .. } | Confuse { .. } | Suppress { .. } | Stagger | Shove | Disarm | Rout => 40,
-            Guard { .. } | BankCadence { .. } | Ward | Lifeline => 20,
+            // §10 token effects. Burn (DoT damage) and Charge (a damage setup) rank near offense;
+            // proactive debuff tokens (Mark/Mire) with the other debuffs; Smoke/Silence as enablers.
+            Burn { stacks, power } => 80 + (*stacks * *power) as i32,
+            Charge { amount } => 60 + *amount as i32,
+            Mark { .. } | Mire { .. } | Silence | Smoke => 40,
+            Guard { .. }
+            | BankCadence { .. }
+            | Ward
+            | Lifeline
+            | Brace { .. }
+            | Cover
+            | Thorns { .. } => 20,
             // Reactive: only worth it once someone is hurt — at Muster (full health) it is a
             // wasted play, so the greedy ranks it below acting.
             Mend { .. } | Recover => 5,

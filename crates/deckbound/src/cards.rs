@@ -65,6 +65,37 @@ pub enum Effect {
     /// Drain `tempo` from a foe (a Confuse) — scramble it so it has less initiative to act *or*
     /// defend (the merged-pool reframing of the old "can't block").
     Confuse { tempo: u32 },
+
+    // ---- §10 / `power-catalog-rewrite.md` §1 utility-token effects (Stage D) ----
+    /// **Mark** (Controller): place a Mark token on each target — **−`finesse` Finesse (floor 1)**
+    /// while present (persistent for the combat).
+    Mark { finesse: u32 },
+    /// **Mire** (Controller): place a Mire token on each target — **−`cadence` Cadence (floor 1)**,
+    /// shrinking the foe's Tempo pool (persistent for the combat).
+    Mire { cadence: u32 },
+    /// **Burn** (Artillery DoT): place `stacks` Burn tokens (each carrying `power` Might) on each
+    /// target — at every Reckoning a token deals `power` into the bearer's Reckoning pile and is
+    /// removed (caster-independent once placed).
+    Burn { stacks: u32, power: u32 },
+    /// **Brace** (Wall): place a Guard token on self — **+`toughness` Toughness** this round (per-round;
+    /// cleared at the Lull). Distinct from the older [`Guard`](Effect::Guard) (Tempo) effect.
+    Brace { toughness: u32 },
+    /// **Cover** (Wall): self (a Wall) assigns a Cover token to one ally — **single-target** damage
+    /// aimed at that ally **redirects to the Wall** (§4.5 spillover extended to a chosen ally); AoE
+    /// still hits the ally.
+    Cover,
+    /// **Thorns** (Support): place a Thorns token (carrying `power` Might) on an ally — when that ally
+    /// is **struck**, the attacker takes `power` into the **attacker's own** pile.
+    Thorns { power: u32 },
+    /// **Charge** (Infiltrator/Artillery): bank `amount` Charge tokens on the caster — the unit's next
+    /// damage strike **consumes all Charge tokens for +1 Might each** (§5.4).
+    Charge { amount: u32 },
+    /// **Smoke** (Infiltrator): place a Smoke token on self — the unit's next charge **ignores the
+    /// rear's Volley pre-empt** (a guaranteed breach); consumed on use.
+    Smoke,
+    /// **Silence** (Controller): cancel one enemy **deferred** (`resolve: Reckoning`) spell — a
+    /// non-lethal disrupt (§4.6). Handled at [`crate::game`] (removes a `Deferred` entry).
+    Silence,
 }
 
 /// §4.6 — the **cast window**: where an ability may be used (Tempo paid & committed). Abilities are
@@ -192,6 +223,15 @@ impl Card {
                 Effect::Suppress { tempo } => format!("suppress -{tempo} tempo"),
                 Effect::Slow { cadence } => format!("slow -{cadence} cadence"),
                 Effect::Confuse { tempo } => format!("confuse -{tempo} tempo"),
+                Effect::Mark { finesse } => format!("mark -{finesse} finesse"),
+                Effect::Mire { cadence } => format!("mire -{cadence} cadence"),
+                Effect::Burn { stacks, power } => format!("burn {stacks}x{power}"),
+                Effect::Brace { toughness } => format!("brace +{toughness} tough"),
+                Effect::Cover => "cover an ally".into(),
+                Effect::Thorns { power } => format!("thorns {power}"),
+                Effect::Charge { amount } => format!("charge +{amount}"),
+                Effect::Smoke => "smoke".into(),
+                Effect::Silence => "silence".into(),
             });
         }
         if self.targets > 1 {

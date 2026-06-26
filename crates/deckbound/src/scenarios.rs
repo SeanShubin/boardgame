@@ -364,6 +364,7 @@ fn build_actor_with(
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
         attack: c.attack,
+        tokens: Vec::new(),
         tempo: 0,
         cannot_fall: false,
         stunned: false,
@@ -826,6 +827,45 @@ pub(crate) fn effect_rule(e: &Effect) -> String {
             format!(
                 "Drains {tempo} Tempo from a foe (a Confuse) — less initiative to act or defend."
             )
+        }
+        Effect::Mark { finesse } => format!(
+            "Places a Mark token on each target: \u{2212}{finesse} Finesse (floor 1, \u{00A7}2.2) while \
+             present (a Controller stat-drop, \u{00A7}10)."
+        ),
+        Effect::Mire { cadence } => format!(
+            "Places a Mire token on each target: \u{2212}{cadence} Cadence (floor 1, \u{00A7}2.2) \
+             \u{2014} a smaller Tempo pool next refresh (a Controller stat-drop, \u{00A7}10)."
+        ),
+        Effect::Burn { stacks, power } => format!(
+            "Places {stacks} Burn token(s) ({power} Might each): at each Reckoning one ticks {power} \
+             into the bearer's pile and is removed (Artillery DoT, \u{00A7}10)."
+        ),
+        Effect::Brace { toughness } => format!(
+            "Places a Guard token on self: +{toughness} Toughness this round \u{2014} a higher per-phase \
+             wall (the Wall's brace, \u{00A7}10). Cleared at the Lull."
+        ),
+        Effect::Cover => {
+            "Assigns a Cover token to an ally: single-target damage aimed at it redirects to this Wall \
+             (\u{00A7}4.5 spillover to a chosen ally); AoE still hits the ally (\u{00A7}10)."
+                .into()
+        }
+        Effect::Thorns { power } => format!(
+            "Places a Thorns token on an ally: when that ally is struck, the attacker takes {power} \
+             Might into its own pile (Support's reflected offence, \u{00A7}10)."
+        ),
+        Effect::Charge { amount } => format!(
+            "Banks {amount} Charge token(s) on the caster: the next damage strike consumes all Charge \
+             for +1 Might each (\u{00A7}5.4 \u{2014} burst paid for by the setup round)."
+        ),
+        Effect::Smoke => {
+            "Places a Smoke token on self: the next charge ignores the rear's Volley pre-empt (a \
+             guaranteed breach, \u{00A7}10); consumed on use."
+                .into()
+        }
+        Effect::Silence => {
+            "Cancels one enemy deferred (resolve: Reckoning) spell \u{2014} a non-lethal disrupt \
+             (\u{00A7}4.6)."
+                .into()
         }
     }
 }
