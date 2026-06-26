@@ -31,13 +31,17 @@ impl Health {
 }
 
 /// Everything that defends an Actor. **Toughness** (the bar) is a passive stat read off the Form; only
-/// the **health pool** is a maintained meter. `health_pile` is a round-scoped accumulator that clears at
-/// round end.
+/// the **health pool** is a maintained meter. `health_pile` is a **per-phase** accumulator (§4.6): a
+/// landed hit banks its Might here, the pile flips a Health card each time it clears Toughness, and the
+/// pile **wipes at every phase boundary** — sub-threshold damage never crosses into the next phase
+/// (only Health persists, §2.1). See [`Defense::clear_pile`].
 #[derive(Clone, Debug)]
 pub struct Defense {
     pub health: Health,
 
-    // round-scoped pile (cleared at round end)
+    /// §4.6 per-phase pile: the Might banked toward the next Health flip in the **current phase**.
+    /// Cleared at each phase boundary by [`clear_pile`](Defense::clear_pile) (was round-scoped, §2.2 →
+    /// §4.6 per-phase).
     pub health_pile: u32,
 }
 
@@ -99,9 +103,19 @@ impl Defense {
         }
     }
 
-    /// Round end: partial (sub-bar) damage clears.
-    pub fn end_round(&mut self) {
+    /// §4.6 **phase boundary**: the sub-threshold pile wipes — banked damage that did not flip a
+    /// Health card does **not** carry into the next phase (only Health persists, §2.1). This is the
+    /// single place the per-phase accumulator is reset; the round boundary (the Lull) is just the last
+    /// such wipe of the round.
+    pub fn clear_pile(&mut self) {
         self.health_pile = 0;
+    }
+
+    /// Round end (the Lull): partial (sub-bar) damage clears. Identical to [`clear_pile`](Defense::clear_pile)
+    /// — kept as a named round-boundary call site (§4.6 Lull); the pile already wiped at each in-round
+    /// phase boundary, so by the Lull there is nothing sub-threshold left to clear.
+    pub fn end_round(&mut self) {
+        self.clear_pile();
     }
 }
 

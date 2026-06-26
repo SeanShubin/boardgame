@@ -5,7 +5,7 @@
 
 use engine::{Game, Outcome, PlayerId};
 
-use crate::actor::{Actor, Range};
+use crate::actor::Actor;
 use crate::duel::Move;
 use crate::game::{Action, Deckbound, battle_state_with};
 use crate::ruleset::Ruleset;
@@ -52,48 +52,29 @@ pub fn auto_resolve_with(
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // Rank declaration (§4 static-ranks): melee **Infiltrators** flank as **Outriders** (cross to
-        // the backfield); other melee fighters hold as **Vanguards**; back-line casters / shooters
-        // (Artillery / Controller / Support) stay in the **Rearguard** to fire / cast from the rear. Then
-        // Muster standing cards and Deploy.
-        Phase::Assemble => {
-            // 1a. Melee Infiltrators flank as Outriders.
-            for a in actions {
-                if let SetOutrider(i) = a
-                    && state.heroes[*i].can_contest(Range::Melee)
-                    && wants_flank(&state.heroes[*i])
-                {
-                    return *a;
-                }
-            }
-            // 1b. Other melee front-liners hold as Vanguards (casters/shooters keep to the Rearguard).
-            for a in actions {
-                if let SetVanguard(i) = a
-                    && state.heroes[*i].can_contest(Range::Melee)
-                    && !wants_backline(&state.heroes[*i])
-                    && !wants_flank(&state.heroes[*i])
-                {
-                    return *a;
-                }
-            }
-            // 2. Muster: play standing defenses / debuffs / buffs before the Line so they bite it.
-            // 3. Then Deploy.
-            best_play(state, actions).unwrap_or(Deploy)
-        }
-        // Strike a reachable foe; else play a role card (a damaging one first); else pass.
-        Phase::Outrider => actions
+        // §4.6 #1 Standoff: positions default from the attack profile (melee fronts, ranged/support
+        // holds back), which is what the greedy wants — so it only casts any beneficial `Standing`
+        // buffs, then advances to the Fray.
+        Phase::Standoff => best_play(state, actions).unwrap_or(Deploy),
+        // §4.6 #2 Fray: strike a reachable foe (front clash / instant ranged); else cast a `Strike`
+        // ability (a damaging one first); else pass.
+        Phase::Fray => actions
             .iter()
             .copied()
             .find(|a| matches!(a, Target(..)))
             .or_else(|| best_play(state, actions))
             .unwrap_or_else(|| first_attack_or_pass(actions)),
-        // Rearguard: fire on the front, else play a power (a damaging one first), else pass.
-        Phase::Rearguard => actions
+        // §4.6 #3 Volley: a free Vanguard charges the enemy rear (or flanks); a Rearguard fires again;
+        // else cast; else pass. Prefer a charge (reach the back) over a flank.
+        Phase::Volley => actions
             .iter()
             .copied()
-            .find(|a| matches!(a, Target(..)))
+            .find(|a| matches!(a, Charge(..)))
+            .or_else(|| actions.iter().copied().find(|a| matches!(a, Target(..))))
             .or_else(|| best_play(state, actions))
             .unwrap_or_else(|| first_attack_or_pass(actions)),
+        // Breach & Reckoning resolve automatically; the greedy never has a choice there.
+        Phase::Breach | Phase::Reckoning => first_attack_or_pass(actions),
         // The Clash is off in the solver; if somehow reached, just strike.
         Phase::Clash => Play(Move::Strike),
         Phase::Menu(_) => ToMenu,
@@ -142,32 +123,6 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             Mend { .. } | Recover => 5,
         })
         .sum()
-}
-
-/// A hero whose strength is **ranged fire from the Rearguard**: it carries a non-passive Artillery /
-/// Controller card (Brass / Bone) — cards that *attack the enemy* from range, so it holds back to cast
-/// rather than trading weakly up front. **Support (Salt) does *not* want the back line**: its cards are
-/// ally **buffs** (Empower / Haste / Mend) that work from anywhere, played at Muster — so a Salt member
-/// should **charge and fight in melee** (a Rearguard full of buff-only melee actors deals no damage and
-/// is simply raided).
-fn wants_backline(a: &Actor) -> bool {
-    use crate::currency::Currency::{Bone, Brass};
-    a.actions
-        .iter()
-        .any(|c| !c.passive && matches!(c.role, Some(Brass) | Some(Bone)))
-}
-
-/// A hero whose strength is **crossing to the enemy backfield** — it carries a non-passive
-/// **Infiltrator** (Silver) card, so it declares as an **Outrider** and flanks rather than holding the
-/// line as a Vanguard.
-fn wants_flank(a: &Actor) -> bool {
-    use crate::currency::Currency::Silver;
-    // An Infiltrator kit, *or* raw Finesse high enough to cross (force, not fiat: stats alone make a
-    // flanker — this is what lets the BI-3 infinite-stat god declare as an Outrider and cross).
-    a.actions
-        .iter()
-        .any(|c| !c.passive && c.role == Some(Silver))
-        || a.offense.finesse >= 3
 }
 
 /// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
@@ -232,56 +187,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "TODO(stage-E): old charge-gauntlet model retired — crossing/`the_line` replaced by the §4.6 Volley"]
     fn higher_finesse_crosses_an_equal_one_card_tie_is_held() {
-        // §3 tripwire: a crossing contest is decided by **Finesse**, not Cadence/Power. The higher
-        // advance crosses; an equal *one-card* crossing is a tie, held by the catcher.
-        use crate::combat::the_line;
-        use crate::currency::Currency;
-        use crate::scenarios::{build_character, rewards_for};
-
-        // Silver (Infiltrator) seeds Finesse; a bare Novice floors at Finesse 1. One card clears the bare
-        // wall's hold → the Outrider crosses.
-        let runner = build_character("Novice", &rewards_for(Currency::Silver));
-        let blocker = build_character("Novice", &[]);
-        assert!(
-            runner.offense.finesse > blocker.offense.finesse.max(1),
-            "test premise: the Silver-kitted runner must out-finesse the bare blocker"
-        );
-        let mut heroes = vec![runner];
-        let mut foes = vec![blocker];
-        let mut log = Vec::new();
-        let (crossed, _) = the_line(
-            &mut heroes,
-            &[true],
-            &[true],
-            &mut foes,
-            &[true],
-            &[false],
-            &mut log,
-        );
-        assert!(
-            crossed[0],
-            "the higher-Finesse Outrider crosses on one card"
-        );
-
-        // Equal Finesse, one card → advance == hold → a tie, held by the catcher.
-        let mut a = vec![build_character("Novice", &[])];
-        a[0].tempo = 1;
-        let mut b = vec![build_character("Novice", &[])];
-        let mut log = Vec::new();
-        let (crossed, _) = the_line(
-            &mut a,
-            &[true],
-            &[true],
-            &mut b,
-            &[true],
-            &[false],
-            &mut log,
-        );
-        assert!(
-            !crossed[0],
-            "an equal one-card crossing is held (tie to the catcher)"
-        );
+        // Retired with the static-ranks crossing contest; the §4.6 Volley charge/flank replaces it.
     }
 
     // (Removed `a_holding_wall_plays_its_role_cards`: the gauntlet auto-resolves the Vanguard, so

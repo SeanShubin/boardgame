@@ -1,11 +1,22 @@
-//! Combat resolution helpers for the §4 **static-ranks** system: untyped Might strikes, the **range**
-//! rule (same-range trade, ranged evade-or-auto-hit, §4.2), **the Line** resolver ([`the_line`] —
-//! declared ranks, the card-bound crossing contest), the **evade contest** ([`try_evade`]), creature
-//! AI, and card effects. The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
+//! Combat resolution helpers for the §4.6 **six-phase** model: untyped Might strikes through the
+//! per-phase pile (§4.6 / §2.2), the **range** rule (same-range trade, ranged evade-or-auto-hit, §4.2),
+//! the **evade contest** ([`try_evade`]), and the phase resolvers — the **Fray** front clash
+//! ([`fray_clash`]), the **breach list / per-unit lock** ([`compute_locks`]), the **Volley** charge +
+//! **pre-empt** + **flank-intercept** ([`resolve_volley`]), the **Breach** blows ([`resolve_breach`]),
+//! and the **Reckoning** ([`resolve_reckoning`]). The interactive four-card Clash ([`crate::duel`]) is
+//! the optional 1v1 module.
+//!
+//! **PRINCIPLE (§4.6).** Within a phase everything is committed up front and resolves
+//! order-independently (§1.9), *including the blows of a body that dies in that same phase* (§1.3).
+//! The phases impose the only timing: a unit dead at a phase boundary takes no further action, so a
+//! death **precludes** a later phase but never reaches back into an earlier one. The pre-empt
+//! (Volley before Breach), the disrupt (a breach-kill fizzles a Reckoning spell), and the
+//! flank-intercept are all corollaries.
 
 use crate::actor::{Actor, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
+use crate::state::{Charge, Deferred};
 use crate::stats::Offense;
 
 /// The base strike raw magnitude (untyped Might, §2.2): the actor's **Might**, plus the base
@@ -87,7 +98,8 @@ pub fn living(pool: &[Actor]) -> Vec<usize> {
 /// has a Lifeline this round (M3 *Last Stand*), which leaves it standing at 1 Body instead. This is
 /// the **single** place a fall is decided and narrated (once per Actor), after the phase's
 /// order-independent damage has fully accumulated — so it reflects the net result, not a mid-stream
-/// overkill.
+/// overkill. Note this does **not** wipe the per-phase pile — that is [`clear_phase_piles`], called
+/// once both sides have tallied (the Fray and Volley boundaries, §4.6).
 pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
         if a.is_down() && !a.fallen {
@@ -104,39 +116,23 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     }
 }
 
-/// A unit's **advance** — the per-card **Finesse** it commits to *cross* the line (floor 1). An
-/// Outrider's total advance is `cards-bid × advance`.
+/// §4.6 **per-phase pile wipe**: at a phase boundary every target's sub-threshold pile clears, so
+/// banked-but-un-flipped damage does **not** carry into the next phase (only Health persists, §2.1).
+/// Call this at each phase boundary *after* [`tally`] has finalized that phase's deaths.
+pub fn clear_phase_piles(pool: &mut [Actor]) {
+    for a in pool.iter_mut() {
+        a.defense.clear_pile();
+    }
+}
+
+/// A unit's per-Tempo-card **Finesse** (floor 1) — the magnitude weighed in the evade contest.
 fn advance_finesse(a: &Actor) -> u32 {
     a.offense.finesse.max(1)
 }
 
-/// A Vanguard's **hold** for one catch — its per-card Finesse plus **Phalanx** (+2, catch strength)
-/// and **Bulwark** (+2 if any living ally carries it — the line anchors as one). A catch is a single
-/// committed card, so this is the grade an Outrider's advance must beat. Phalanx/Bulwark raise the
-/// hold only, never advance — a Wall holds; it does not slip through on a high number.
-fn hold_finesse(catcher: &Actor, allies: &[Actor]) -> u32 {
-    let bulwark = allies.iter().any(|x| !x.is_down() && x.has("Bulwark"));
-    advance_finesse(catcher)
-        + if catcher.has("Phalanx") { 2 } else { 0 }
-        + if bulwark { 2 } else { 0 }
-}
-
-/// The fewest cards an Outrider must bid for `cards × advance` to beat `hold` (strictly, or `≥` with
-/// **Shadowstep**, which wins a tie). Floors at 1.
-fn cards_to_cross(sk: &Actor, hold: u32) -> u32 {
-    let adv = advance_finesse(sk);
-    let b = if sk.has("Shadowstep") {
-        hold.div_ceil(adv) // adv·b ≥ hold
-    } else {
-        hold / adv + 1 // adv·b > hold
-    };
-    b.max(1)
-}
-
 /// The fewest Tempo cards a defender must commit for `cards × Finesse` to **strictly exceed** a ranged
-/// attacker's pressed `volley` — the evade contest (Spec §3.1 / §4.2, the same primitive as a
-/// crossing). Mirrors [`cards_to_cross`] without Shadowstep (a tie lands the strike — the avoider must
-/// strictly exceed). Floors at 1.
+/// attacker's pressed `volley` — the evade contest (Spec §3.1 / §4.2). A tie lands the strike (the
+/// avoider must strictly exceed). Floors at 1.
 fn cards_to_evade(defender: &Actor, volley: u32) -> u32 {
     let grade = advance_finesse(defender); // per-Tempo-card Finesse (floor 1)
     (volley / grade + 1).max(1) // grade·b > volley
@@ -173,144 +169,271 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
     }
 }
 
-/// Resolve **the Line** (§4 Tier 1, static-ranks). Ranks are *declared*: a charger that **flanks** is an
-/// **Outrider** attempting to cross; a charger that does not is a **Vanguard** holding; a non-charger
-/// is **Rearguard**. Nobody moves. From the start-of-tier state: **Vanguards strike** the opposing front
-/// (one card each), and each **Outrider** runs a **crossing contest** against the enemy Vanguards —
-/// **card-bound catch** (a Vanguard catches one Outrider per Tempo card, **Taunt** first; each catch's
-/// hold = [`hold_finesse`]). A caught Outrider bids the fewest cards to beat the hold
-/// ([`cards_to_cross`]); affordable (or **uncaught**) → it **slips** (the catcher lands a **parting free
-/// hit** off the same catch-card), else **held** and it trades. **Blitz** frees an Outrider's first
-/// slip. Returns `(hero_crossed, foe_crossed)`. Order-independent (offense is immutable here); deaths
-/// finalize at the boundary (`tally`).
-pub fn the_line(
-    heroes: &mut [Actor],
-    h_charging: &[bool],
-    h_flank: &[bool],
-    foes: &mut [Actor],
-    f_charging: &[bool],
-    f_flank: &[bool],
-    log: &mut Vec<String>,
-) -> (Vec<bool>, Vec<bool>) {
-    let van = |charging: &[bool], flank: &[bool], pool: &[Actor]| -> Vec<usize> {
-        (0..pool.len())
-            .filter(|&i| charging[i] && !flank[i] && !pool[i].is_down())
-            .collect()
-    };
-    let skirm = |charging: &[bool], flank: &[bool], pool: &[Actor]| -> Vec<usize> {
-        (0..pool.len())
-            .filter(|&i| charging[i] && flank[i] && !pool[i].is_down())
-            .collect()
-    };
-    let h_van = van(h_charging, h_flank, heroes);
-    let f_van = van(f_charging, f_flank, foes);
-    let h_sk = skirm(h_charging, h_flank, heroes);
-    let f_sk = skirm(f_charging, f_flank, foes);
-    let mut h_crossed = vec![false; heroes.len()];
-    let mut f_crossed = vec![false; foes.len()];
+// ===========================================================================================
+// §4.6 six-phase resolvers.
+//
+// All resolvers work from **phase-start snapshots** and apply blows order-independently: a body
+// mortally wounded mid-phase still lands the blow it committed (§1.3); deaths are finalized only at
+// the phase boundary (`tally`), and the per-phase pile is wiped there too (`clear_phase_piles`).
+// ===========================================================================================
 
-    // 1. Vanguard clash — each Vanguard strikes the first opposing Vanguard (one card).
-    clash_line(heroes, &h_van, foes, &f_van, log);
-    clash_line(foes, &f_van, heroes, &h_van, log);
-
-    // 2. Crossing contests — the defender's Vanguards catch the crossing Outriders.
-    cross_contest(heroes, &h_sk, foes, &f_van, &mut h_crossed, log);
-    cross_contest(foes, &f_sk, heroes, &h_van, &mut f_crossed, log);
-
-    (h_crossed, f_crossed)
+/// A single melee engagement (§4.2 same-range trade): `attacker` strikes `target` (paying one Tempo),
+/// and `target` **strikes back** if it carries a melee answer, can act, and has Tempo (paying one of
+/// its own). Both blows are taken from phase-start snapshots so the trade is symmetric even if one
+/// side is mortally wounded (§1.3). Used by the **Fray** front clash and a **flank** (both trades).
+fn melee_trade(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
+    if attacker.tempo <= 0 || !attacker.can_contest_now(Range::Melee) || attacker.is_down() {
+        return;
+    }
+    attacker.tempo -= 1;
+    let atk = snapshot(attacker);
+    let atk_name = attacker.name.clone();
+    // Snapshot the strike-back *before* applying the incoming blow (§1.3: the target lands its
+    // committed blow even if this hit downs it).
+    let back = (target.can_contest_now(Range::Melee) && !target.is_down() && target.tempo > 0)
+        .then(|| {
+            target.tempo -= 1;
+            (snapshot(target), target.name.clone())
+        });
+    apply_strike(target, atk, &atk_name, log);
+    if let Some((s, n)) = back {
+        apply_strike(attacker, s, &n, log);
+    }
 }
 
-/// Each Vanguard in `van` strikes the first living opposing Vanguard (one card), if it can still act.
-fn clash_line(
-    pool: &mut [Actor],
-    van: &[usize],
-    enemy: &mut [Actor],
-    enemy_van: &[usize],
+/// A one-directional **ranged shot** (§4.2): `attacker` fires at `target`, paying one Tempo; the
+/// target may **evade** by strictly exceeding the volley (cards × Finesse) with its own Tempo (a tie
+/// lands). An evaded shot does nothing; otherwise it lands (no melee strike-back — a ranged shot at
+/// range draws none here; the rear's *own* answer is sequenced by the caller in the Volley).
+fn ranged_shot(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
+    if attacker.tempo <= 0 || !attacker.can_contest_now(Range::Ranged) || attacker.is_down() {
+        return;
+    }
+    attacker.tempo -= 1;
+    let volley = advance_finesse(attacker);
+    let atk = snapshot(attacker);
+    let atk_name = attacker.name.clone();
+    if !target.is_down() && try_evade(target, volley, log) {
+        return;
+    }
+    apply_strike(target, atk, &atk_name, log);
+}
+
+/// §4.6 — a single interactive **Fray melee strike**: `attacker` strikes `target`, a trade (the
+/// target strikes back if able). The public single-pair entry the interactive game routes through.
+pub fn fray_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
+    melee_trade(attacker, target, log);
+}
+
+/// §4.6 — a single interactive **instant ranged shot** (`resolve: OnCast`): an evade contest then the
+/// shot. The public single-pair entry the interactive game routes through.
+pub fn ranged_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
+    ranged_shot(attacker, target, log);
+}
+
+/// §4.6 #2 — the **Fray** front clash. Each living Vanguard of `attackers` (in `atk_van`) strikes the
+/// first living enemy Vanguard (in `def_van`) it can reach, a melee **trade** (the target strikes
+/// back). Returns, per attacker index, the **list of enemy Vanguards it attacked** — the input to the
+/// breach list ([`compute_locks`]): *attacking* is what locks (§4.6), not being struck or blocking.
+/// Call once per side (heroes-attack-foes, then foes-attack-heroes); deaths finalize at the boundary.
+pub fn fray_clash(
+    attackers: &mut [Actor],
+    atk_van: &[bool],
+    defenders: &mut [Actor],
+    def_van: &[bool],
+    log: &mut Vec<String>,
+) -> Vec<Vec<usize>> {
+    let mut attacked = vec![Vec::new(); attackers.len()];
+    for a in 0..attackers.len() {
+        if !atk_van[a] || attackers[a].is_down() || !attackers[a].can_contest_now(Range::Melee) {
+            continue;
+        }
+        // Strike the first living enemy Vanguard standing in the way.
+        let Some(t) = (0..defenders.len()).find(|&d| def_van[d] && !defenders[d].is_down()) else {
+            continue; // no enemy front to engage — nothing to attack (and nothing to lock onto)
+        };
+        attacked[a].push(t);
+        melee_trade(&mut attackers[a], &mut defenders[t], log);
+    }
+    attacked
+}
+
+/// §4.6 **breach list / per-unit lock.** A Vanguard is **locked** for the round iff *some enemy
+/// Vanguard it attacked in the Fray is still alive* — **only attacking locks** (being struck,
+/// blocking, or evading never does). `attacked[a]` is the enemy-Vanguard indices `a` struck (from
+/// [`fray_clash`]); `enemy` is that enemy pool **after** the Fray's deaths are finalized. Returns the
+/// lock flag per attacker: `true` = locked (pinned), `false` = **free** (may charge/flank).
+pub fn compute_locks(attacked: &[Vec<usize>], enemy: &[Actor]) -> Vec<bool> {
+    attacked
+        .iter()
+        .map(|targets| {
+            targets
+                .iter()
+                .any(|&t| !enemy[t].fallen && !enemy[t].is_down())
+        })
+        .collect()
+}
+
+/// §4.6 #3 — resolve the **Volley**. `charges` were declared by free Vanguards (`flank = false` → a
+/// charge across open ground at the enemy Rearguard, landing in the Breach; `flank = true` → adjacent
+/// melee on a surviving enemy Vanguard, a trade **in the Volley**). This function resolves the
+/// Volley-phase effects only:
+///
+/// - **Flanks trade now** (same phase = both land, §4.6) — and a flank-**kill** is recorded so the
+///   caller can preclude the dead target's own charge (the **intercept**).
+/// - **Charges pre-empt:** for each charge, the rear target **answers first** — a melee target strikes
+///   back, a ranged target counter-fires, any target may have spent Tempo dodging — all resolving
+///   **before** the Breach. Here we resolve the target's strike-back / counter-fire against the
+///   *charger* (the pre-empt blow); the charger's own blow lands later, in [`resolve_breach`].
+///
+/// `heroes`/`foes` are the two pools; charges carry their own `side`. Deaths finalize at the boundary.
+pub fn resolve_volley(
+    heroes: &mut [Actor],
+    foes: &mut [Actor],
+    charges: &[Charge],
     log: &mut Vec<String>,
 ) {
-    for &v in van {
-        let Some(&t) = enemy_van.iter().find(|&&e| !enemy[e].is_down()) else {
-            continue; // no opposing front — this Vanguard pours through in the Open
+    // 1. Flanks trade in the Volley (both land). Resolve every flank first; a flank-kill silences the
+    //    target's Breach charge because the dead unit is gone by the boundary (the intercept).
+    for c in charges.iter().filter(|c| c.flank) {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
+            (heroes, foes)
+        } else {
+            (foes, heroes)
         };
-        if pool[v].tempo > 0 && pool[v].can_contest_now(Range::Melee) {
-            pool[v].tempo -= 1;
-            let snap = snapshot(&pool[v]);
-            let name = pool[v].name.clone();
-            apply_strike(&mut enemy[t], snap, &name, log);
+        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
+            continue;
+        }
+        log.push(format!(
+            "{} flanks {} (a trade, in the Volley).",
+            atk_pool[c.attacker].name, def_pool[c.target].name
+        ));
+        melee_trade(&mut atk_pool[c.attacker], &mut def_pool[c.target], log);
+    }
+
+    // 2. Charges: the rear answers FIRST (pre-empt) — its strike-back / counter-fire lands now, before
+    //    the charger's Breach blow. A ranged rear counter-fires; a melee rear strikes back; either way
+    //    it spends from the shared pool and resolves in the Volley.
+    for c in charges.iter().filter(|c| !c.flank) {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
+            (heroes, foes)
+        } else {
+            (foes, heroes)
+        };
+        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
+            continue;
+        }
+        if atk_pool[c.attacker].is_down() || def_pool[c.target].is_down() {
+            continue;
+        }
+        let charger_name = atk_pool[c.attacker].name.clone();
+        // The rear's pre-emptive answer at the charger crossing open ground.
+        if def_pool[c.target].can_contest_now(Range::Ranged) {
+            log.push(format!(
+                "{} counter-fires the charging {} (pre-empt).",
+                def_pool[c.target].name, charger_name
+            ));
+            ranged_shot(&mut def_pool[c.target], &mut atk_pool[c.attacker], log);
+        } else if def_pool[c.target].can_contest_now(Range::Melee) {
+            log.push(format!(
+                "{} strikes back at the charging {} (pre-empt).",
+                def_pool[c.target].name, charger_name
+            ));
+            if def_pool[c.target].tempo > 0 {
+                def_pool[c.target].tempo -= 1;
+                let snap = snapshot(&def_pool[c.target]);
+                let n = def_pool[c.target].name.clone();
+                apply_strike(&mut atk_pool[c.attacker], snap, &n, log);
+            }
         }
     }
 }
 
-/// Resolve the crossing contests for one side's Outriders (`sk` in `skpool`) against the enemy
-/// Vanguards (`van` in `vanpool`). Card-bound catch: a Vanguard catches one Outrider per Tempo card,
-/// **Taunt** Vanguards first; the highest-Finesse Outriders are caught first; uncaught ones slip free.
-fn cross_contest(
-    skpool: &mut [Actor],
-    sk: &[usize],
-    vanpool: &mut [Actor],
-    van: &[usize],
-    crossed: &mut [bool],
+/// §4.6 #4 — resolve the **Breach**. Each non-flank charge whose **charger survived the Volley** lands
+/// its melee blow (`resolve: Breach`) on its Rearguard target. A charger killed in the Volley
+/// pre-empt **never lands** (§4.6 pre-empt); a flank already resolved in the Volley. This is where a
+/// breacher killing a caster **disrupts** its deferred spell — the kill is finalized here, before the
+/// Reckoning (the caller drops the deferred entry for any fallen caster).
+pub fn resolve_breach(
+    heroes: &mut [Actor],
+    foes: &mut [Actor],
+    charges: &[Charge],
     log: &mut Vec<String>,
 ) {
-    // Catchers = the Vanguards alive at tier start (`van`). A Vanguard mortally wounded by the clash
-    // still catches — deaths finalize at the tier boundary (§1.3), so the Line stays order-independent.
-    let mut catchers: Vec<usize> = van.to_vec();
-    catchers.sort_by_key(|&v| !vanpool[v].has("Taunt")); // Taunt draws the first catch
-    let mut runners: Vec<usize> = sk
-        .iter()
-        .copied()
-        .filter(|&s| !skpool[s].is_down())
-        .collect();
-    runners.sort_by_key(|&s| std::cmp::Reverse(advance_finesse(&skpool[s])));
-
-    for s in runners {
-        let catcher = catchers
-            .iter()
-            .copied()
-            .find(|&v| vanpool[v].tempo > 0 && vanpool[v].can_contest_now(Range::Melee));
-        let Some(c) = catcher else {
-            crossed[s] = true; // the wall is out of catch-cards — slips free, no parting hit
-            log.push(format!("{} slips an unguarded gap.", skpool[s].name));
-            continue;
-        };
-        vanpool[c].tempo -= 1; // the catch costs the Vanguard a card
-        let hold = hold_finesse(&vanpool[c], vanpool);
-        let need = cards_to_cross(&skpool[s], hold);
-        let adv = advance_finesse(&skpool[s]);
-        let affordable = need as i32 <= skpool[s].tempo;
-        log.push(format!(
-            "crossing: {}(adv {adv}×{need}={}) vs {}(hold {hold}) → {}",
-            skpool[s].name,
-            adv * need,
-            vanpool[c].name,
-            if affordable { "slips" } else { "held" },
-        ));
-        if affordable {
-            if skpool[s].has("Blitz") && !skpool[s].free_slip_used {
-                skpool[s].free_slip_used = true;
-            } else {
-                skpool[s].tempo -= need as i32;
-            }
-            if vanpool[c].can_contest_now(Range::Melee) {
-                let snap = snapshot(&vanpool[c]);
-                let name = vanpool[c].name.clone();
-                apply_strike(&mut skpool[s], snap, &name, log);
-            }
-            if !skpool[s].is_down() {
-                crossed[s] = true;
-            }
+    for c in charges.iter().filter(|c| !c.flank) {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
+            (heroes, foes)
         } else {
-            skpool[s].tempo -= 1; // tried (one card) and trades with its catcher
-            if skpool[s].can_contest_now(Range::Melee) {
-                let snap = snapshot(&skpool[s]);
-                let name = skpool[s].name.clone();
-                apply_strike(&mut vanpool[c], snap, &name, log);
-            }
-            if vanpool[c].can_contest_now(Range::Melee) {
-                let snap = snapshot(&vanpool[c]);
-                let name = vanpool[c].name.clone();
-                apply_strike(&mut skpool[s], snap, &name, log);
-            }
+            (foes, heroes)
+        };
+        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
+            continue;
+        }
+        // Pre-empt: a charger downed in the Volley never lands its Breach blow.
+        if atk_pool[c.attacker].is_down() || atk_pool[c.attacker].fallen {
+            log.push(format!(
+                "{} fell in the Volley — its charge never lands.",
+                atk_pool[c.attacker].name
+            ));
+            continue;
+        }
+        if def_pool[c.target].is_down() {
+            continue;
+        }
+        if atk_pool[c.attacker].can_contest_now(Range::Melee) {
+            log.push(format!(
+                "{} breaches and strikes {}.",
+                atk_pool[c.attacker].name, def_pool[c.target].name
+            ));
+            let snap = snapshot(&atk_pool[c.attacker]);
+            let n = atk_pool[c.attacker].name.clone();
+            apply_strike(&mut def_pool[c.target], snap, &n, log);
+        }
+    }
+}
+
+/// §4.6 #5 — resolve the **Reckoning**: each deferred (`resolve: Reckoning`) spell lands **iff its
+/// caster is still alive** (not killed/disrupted in the Breach — disrupt, §4.6). A fizzled spell is
+/// logged. The effect is applied through the normal [`play_card`] path (AoE hits every member, §4.5).
+pub fn resolve_reckoning(
+    heroes: &mut [Actor],
+    foes: &mut [Actor],
+    deferred: &[Deferred],
+    log: &mut Vec<String>,
+) {
+    for d in deferred {
+        let caster_alive = {
+            let pool = if d.side == 0 { &*heroes } else { &*foes };
+            d.caster < pool.len() && !pool[d.caster].fallen && !pool[d.caster].is_down()
+        };
+        if !caster_alive {
+            log.push(format!(
+                "{}'s held {} is dropped — its caster fell before the Reckoning (disrupted).",
+                d.name, d.card.name
+            ));
+            continue;
+        }
+        log.push(format!("{}'s held {} releases.", d.name, d.card.name));
+        if d.side == 0 {
+            play_card(
+                &d.card,
+                &d.name,
+                d.offense,
+                foes,
+                heroes,
+                Some(d.caster),
+                log,
+            );
+        } else {
+            play_card(
+                &d.card,
+                &d.name,
+                d.offense,
+                heroes,
+                foes,
+                Some(d.caster),
+                log,
+            );
         }
     }
 }
@@ -487,13 +610,8 @@ pub fn contests(defender: &Actor, range: Range) -> bool {
 mod tests {
     use super::*;
     use crate::cards::{Card, RoleKind};
-    use crate::currency::Currency;
-    use crate::scenarios::{RewardId, build_character};
+    use crate::scenarios::build_character;
     use crate::zones::ZoneBehavior;
-
-    fn rid(track: Currency, level: u32) -> RewardId {
-        RewardId { track, level }
-    }
 
     /// A throwaway played card carrying `effects` (for testing the effect wiring directly).
     fn fx(effects: Vec<Effect>) -> Card {
@@ -517,76 +635,238 @@ mod tests {
         }
     }
 
-    /// An Outrider (charges + flanks) crossing a Vanguard (charges, holds). Returns `crossed[0]`.
-    fn cross(runner: &mut [Actor], wall: &mut [Actor]) -> bool {
+    // ---- §4.6 six-phase resolver fixtures ----
+
+    use crate::actor::Attack;
+
+    /// A bare melee combatant with explicit stats and ample Tempo (so a test controls who can act).
+    fn fighter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
+        let mut a = build_character("Novice", &[]);
+        a.name = name.into();
+        a.attack = Attack::Melee;
+        a.offense.might = might;
+        a.offense.finesse = a.offense.finesse.max(1);
+        a.defense.health = crate::stats::Health::new(vit, tough);
+        a.weapon = fx(vec![]); // a 0-power weapon so the blow is exactly `might`
+        a.tempo = 10;
+        a
+    }
+
+    /// Run one Fray exchange both ways and recompute the lock list for `heroes`, finalizing deaths and
+    /// wiping the per-phase piles at the boundary (§4.6).
+    fn fray_round(
+        heroes: &mut [Actor],
+        h_van: &[bool],
+        foes: &mut [Actor],
+        f_van: &[bool],
+    ) -> Vec<bool> {
         let mut log = Vec::new();
-        let (crossed, _) = the_line(runner, &[true], &[true], wall, &[true], &[false], &mut log);
-        crossed[0]
+        let attacked = fray_clash(heroes, h_van, foes, f_van, &mut log);
+        let _ = fray_clash(foes, f_van, heroes, h_van, &mut log);
+        tally(heroes, &mut log);
+        tally(foes, &mut log);
+        let locks = compute_locks(&attacked, foes);
+        clear_phase_piles(heroes);
+        clear_phase_piles(foes);
+        locks
     }
 
+    /// (a) A Fray **death frees a locker** who then **charges**. Two heroes front two foes; hero 0
+    /// kills its foe in the Fray (→ free), hero 1's foe survives (→ locked). The freed hero charges the
+    /// enemy Rearguard and lands in the Breach.
     #[test]
-    fn phalanx_raises_the_hold_so_a_one_card_runner_is_held() {
-        // Runner: Silver L1 → Finesse 2. One card → advance 2.
-        // A bare Wall has hold 1 → 2 > 1, the one-card runner slips.
-        let mut runner = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
-        runner[0].tempo = 1;
-        let mut bare = vec![build_character("Novice", &[])];
-        assert!(
-            cross(&mut runner, &mut bare),
-            "a bare Wall (hold 1) cannot stop advance 2"
-        );
+    fn fray_death_frees_a_locker_who_then_charges() {
+        // Hero 0 (Might 5) one-shots foe 0 (V1/T2 ⇒ 5 ≥ 2 flips its only card). Hero 1 (Might 1) cannot
+        // kill foe 1 (V3/T5). Foe Might 0 so the heroes survive the trade-back.
+        let mut heroes = vec![fighter("Killer", 5, 5, 5), fighter("Pinned", 1, 5, 5)];
+        let mut foes = vec![
+            fighter("Doomed", 0, 1, 2),
+            fighter("Survivor", 0, 3, 5),
+            fighter("Rear", 0, 2, 2), // a Rearguard target
+        ];
+        let f_van = [true, true, false];
+        let locks = fray_round(&mut heroes, &[true, true, false], &mut foes, &f_van);
+        assert!(foes[0].fallen, "foe 0 dies in the Fray");
+        assert!(!locks[0], "the killer is FREE — its struck foe is dead");
+        assert!(locks[1], "hero 1 stays LOCKED — its struck foe lives");
 
-        // A Phalanx Wall (Iron L2) raises the hold to 1+2 = 3 — the *one-card* runner (advance 2) is
-        // held. (Force, not fiat: a runner with the Tempo to bid 2 cards — advance 4 — still crosses;
-        // Phalanx makes it *cost more*, never impossible.)
-        let mut runner = vec![build_character("Novice", &[rid(Currency::Silver, 1)])];
-        runner[0].tempo = 1;
-        let mut phalanx = vec![build_character("Novice", &[rid(Currency::Iron, 2)])];
+        // The freed hero 0 charges the enemy Rearguard (foe 2); it lands in the Breach.
+        let charges = [Charge {
+            side: 0,
+            attacker: 0,
+            target: 2,
+            flank: false,
+        }];
+        let rear0 = foes[2].defense.health.remaining;
+        let mut log = Vec::new();
+        resolve_volley(&mut heroes, &mut foes, &charges, &mut log); // rear has no answer (Might 0, but it does strike back)
+        resolve_breach(&mut heroes, &mut foes, &charges, &mut log);
         assert!(
-            !cross(&mut runner, &mut phalanx),
-            "Phalanx (hold 3) holds a one-card advance-2 runner"
-        );
-        assert!(
-            phalanx[0].has("Phalanx") && hold_finesse(&phalanx[0], &phalanx) == 3,
-            "Phalanx raises the hold to 3"
-        );
-    }
-
-    #[test]
-    fn shadowstep_wins_a_tie() {
-        // One card each, equal Finesse → advance 2 vs hold 2, a tie. Without Shadowstep, a tie needs a
-        // second card (advance 4) to win — with only one card the runner is held.
-        let mut a = vec![build_character("Novice", &[])];
-        a[0].offense.finesse = 2;
-        a[0].tempo = 1;
-        let mut b = vec![build_character("Novice", &[])];
-        b[0].offense.finesse = 2;
-        assert!(!cross(&mut a, &mut b), "an even one-card tie is held");
-
-        // Shadowstep (Silver L3) wins the tie: one card (advance 2 ≥ hold 2) slips.
-        let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 3)])];
-        a[0].offense.finesse = 2;
-        a[0].tempo = 1;
-        let mut b = vec![build_character("Novice", &[])];
-        b[0].offense.finesse = 2;
-        assert!(
-            cross(&mut a, &mut b),
-            "Shadowstep wins the tie and slips through on one card"
+            foes[2].defense.health.remaining < rear0,
+            "the freed charger breaches the Rearguard"
         );
     }
 
+    /// (b) The Volley **pre-empt** kills a charger before its Breach blow. A free hero charges a ranged
+    /// rear that counter-fires hard enough to drop the charger in the Volley — so its Breach blow never
+    /// lands.
     #[test]
-    fn blitz_makes_the_first_slip_cost_no_tempo() {
-        let mut a = vec![build_character("Novice", &[rid(Currency::Silver, 2)])]; // owns Blitz
-        a[0].offense.finesse = 5; // clearly out-advances the bare wall (hold 1) on one card
-        let mut b = vec![build_character("Novice", &[])];
-        let tempo_before = a[0].tempo;
-        assert!(cross(&mut a, &mut b), "the high-Finesse runner slips");
+    fn volley_pre_empt_kills_the_charger_before_the_breach() {
+        let mut heroes = vec![{
+            let mut c = fighter("Charger", 4, 1, 2); // fragile: V1/T2
+            c.tempo = 0; // spent everything reaching the rear — no Tempo left to dodge the counter-fire
+            c
+        }];
+        let mut foes = vec![{
+            let mut r = fighter("Gunner", 9, 3, 2);
+            r.attack = Attack::Ranged; // counter-fires the charge
+            r.offense.finesse = 1;
+            r
+        }];
+        let charges = [Charge {
+            side: 0,
+            attacker: 0,
+            target: 0,
+            flank: false,
+        }];
+        let mut log = Vec::new();
+        // The charger declares no melee target in the Fray; we drive only the Volley + Breach.
+        resolve_volley(&mut heroes, &mut foes, &charges, &mut log);
+        tally(&mut heroes, &mut log);
+        let rear0 = foes[0].defense.health.remaining;
+        resolve_breach(&mut heroes, &mut foes, &charges, &mut log);
+        assert!(
+            heroes[0].is_down(),
+            "the pre-empting counter-fire downs the charger"
+        );
         assert_eq!(
-            a[0].tempo, tempo_before,
-            "Blitz: the first slip each round costs no Tempo"
+            foes[0].defense.health.remaining, rear0,
+            "a charger killed in the Volley never lands its Breach blow (pre-empt)"
         );
-        assert!(a[0].free_slip_used, "the free slip is now spent");
+    }
+
+    /// (c) A **flank-kill intercepts** an enemy charge. Foe is charging the hero rear; a freed hero
+    /// flanks and kills it in the Volley, so its Breach charge is precluded.
+    #[test]
+    fn flank_kill_intercepts_a_charge() {
+        let mut heroes = vec![
+            fighter("Flanker", 5, 3, 2), // kills the enemy Vanguard it flanks
+            fighter("Bryn", 0, 3, 2),    // the rear the foe was charging
+        ];
+        let mut foes = vec![fighter("Breaker", 5, 1, 2)]; // V1/T2 ⇒ dies to the flank
+        let charges = [
+            Charge {
+                side: 1,
+                attacker: 0,
+                target: 1,
+                flank: false,
+            }, // foe charges hero rear (Bryn)
+            Charge {
+                side: 0,
+                attacker: 0,
+                target: 0,
+                flank: true,
+            }, // hero flanks the foe Vanguard
+        ];
+        let bryn0 = heroes[1].defense.health.remaining;
+        let mut log = Vec::new();
+        resolve_volley(&mut heroes, &mut foes, &charges, &mut log);
+        tally(&mut foes, &mut log);
+        resolve_breach(&mut heroes, &mut foes, &charges, &mut log);
+        assert!(
+            foes[0].is_down(),
+            "the flank kills the breaker in the Volley"
+        );
+        assert_eq!(
+            heroes[1].defense.health.remaining, bryn0,
+            "the dead breaker's charge is intercepted — Bryn is untouched"
+        );
+    }
+
+    /// (d) A **Breach-kill disrupts** a deferred (`resolve: Reckoning`) effect. A foe winds up a
+    /// Reckoning bomb; a hero breaches and kills the caster in the Breach; at the Reckoning the spell
+    /// fizzles (no damage to the heroes).
+    #[test]
+    fn breach_kill_disrupts_a_deferred_spell() {
+        let mut heroes = vec![fighter("Breacher", 9, 3, 2)];
+        let mut foes = vec![{
+            let mut c = fighter("Caster", 0, 1, 2); // V1/T2 — dies to the breach
+            c.attack = Attack::Neither; // no pre-empt answer
+            c
+        }];
+        // The caster's held Reckoning bomb: AoE Might 5 to all heroes.
+        let bomb = {
+            let mut b = fx(vec![Effect::Damage { power: 5 }]);
+            b.targets = 5;
+            b.resolve = crate::cards::Resolve::Reckoning;
+            b
+        };
+        let deferred = vec![Deferred {
+            side: 1,
+            caster: 0,
+            card: bomb,
+            offense: foes[0].offense,
+            name: "Caster".into(),
+        }];
+        let charges = [Charge {
+            side: 0,
+            attacker: 0,
+            target: 0,
+            flank: false,
+        }];
+        let hero0 = heroes[0].defense.health.remaining;
+        let mut log = Vec::new();
+        resolve_volley(&mut heroes, &mut foes, &charges, &mut log);
+        resolve_breach(&mut heroes, &mut foes, &charges, &mut log);
+        tally(&mut foes, &mut log); // finalize the caster's death BEFORE the Reckoning
+        assert!(foes[0].fallen, "the breacher kills the caster");
+        resolve_reckoning(&mut heroes, &mut foes, &deferred, &mut log);
+        assert_eq!(
+            heroes[0].defense.health.remaining, hero0,
+            "the deferred bomb fizzles — its caster died in the Breach (disrupt)"
+        );
+    }
+
+    /// (e) The per-phase **pile wipes between phases**: sub-threshold Fray damage does NOT carry into
+    /// the Volley. A foe takes a sub-Toughness hit in the Fray; after the boundary wipe its pile is 0,
+    /// so an identical Volley-phase hit (still sub-Toughness) does not flip a card.
+    #[test]
+    fn the_pile_wipes_between_phases() {
+        // Foe T5: a Might-3 hit banks 3 (no flip). After the Fray boundary the pile must wipe to 0.
+        // (Run a one-directional clash so the foe is struck exactly once — a two-way fray would have
+        // the hero strike again as strike-back, which is not what this test isolates.)
+        let mut heroes = vec![fighter("Chipper", 3, 5, 5)];
+        let mut foes = vec![fighter("Wall", 0, 3, 5)];
+        {
+            let mut log = Vec::new();
+            let _ = fray_clash(&mut heroes, &[true], &mut foes, &[true], &mut log);
+            tally(&mut foes, &mut log);
+            clear_phase_piles(&mut foes);
+        }
+        assert_eq!(
+            foes[0].defense.health_pile, 0,
+            "the Fray boundary wiped the sub-threshold pile"
+        );
+        assert_eq!(
+            foes[0].defense.health.remaining, foes[0].defense.health.max,
+            "no Health flipped from a single sub-Toughness hit"
+        );
+        // A second, identical sub-Toughness hit in the Volley still does not flip (3 < 5) — proof the
+        // earlier 3 did not carry (3 + 3 = 6 ≥ 5 would have flipped if it had).
+        let mut log = Vec::new();
+        heroes[0].tempo = 10;
+        let charges = [Charge {
+            side: 0,
+            attacker: 0,
+            target: 0,
+            flank: true,
+        }]; // a flank = a Volley trade
+        // Re-front the foe so the flank is legal melee; foe Might 0 so the trade-back is harmless.
+        resolve_volley(&mut heroes, &mut foes, &charges, &mut log);
+        assert_eq!(
+            foes[0].defense.health.remaining, foes[0].defense.health.max,
+            "the carried-over pile was wiped — a second sub-Toughness hit still does not flip"
+        );
     }
 
     #[test]

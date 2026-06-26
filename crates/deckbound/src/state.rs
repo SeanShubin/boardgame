@@ -1,11 +1,14 @@
-//! The state of a combat in progress (§4 charge-and-gauntlet system).
+//! The state of a combat in progress (§4.6 **six-phase** model).
 //!
-//! A round is a phase machine: **Assemble** (declare who charges, and **Muster** standing/persistent
-//! cards before the gauntlet) → on Deploy the **gauntlet** resolves (the two charge-columns thread
-//! through each other, producing Outriders who broke through and Vanguard who stopped) → **Outrider**
-//! (outriders strike the enemy Rearguard) → **Rearguard** (rearguards fire ranged) → refresh. A same-range
-//! engagement is a **trade** unless the optional **Clash** module is on (then the four-card mix-up
-//! runs, [`Phase::Clash`]). Resolution is order-independent within each phase.
+//! A round is a fixed six-phase machine ([`Phase`], §4.6): **Standoff** (reveal; positions lock;
+//! `cast: Standing` buffs/braces auto-land) → **Fray** (the fronts engage — melee and instant ranged
+//! resolve simultaneously; deaths here **fix the breach list**) → **Volley** (free Vanguards charge the
+//! enemy Rearguard, or flank a survivor; the rear answers **first** — pre-empt) → **Breach** (chargers
+//! who survived the Volley land their `resolve: Breach` blows; a kill here **disrupts** a deferred
+//! spell) → **Reckoning** (`resolve: Reckoning` effects land last) → **Lull** (refresh: Tempo resets,
+//! Health persists, round++). All Tempo across all phases is paid from **one shared per-round pool**.
+//! The optional four-card **Clash** module ([`Phase::Clash`]) replaces a same-range trade when on.
+//! Resolution is order-independent **within** a phase (§1.9); the phase order is the only timing.
 
 use engine::{Outcome, Rng};
 
@@ -32,20 +35,30 @@ pub enum Menu {
     CardDetail(usize),
 }
 
-/// Where the round is (§4 charge-and-gauntlet). `Assemble` selects who charges **and** is the
-/// **Muster** window (play standing/persistent cards before the gauntlet); on Deploy the **gauntlet**
-/// resolves automatically (the two charge-columns thread through each other), producing Outriders
-/// (broke through) and Vanguard (stopped); then the Outrider and Rearguard phases.
+/// Where the round is — the §4.6 **six phases**, in fixed order. The Lull (refresh) is not an
+/// interactive phase: it is the transition `Breach`/`Reckoning` → next round's `Standoff`. The
+/// interactive phases are **Standoff** (declare positions, cast `Standing` buffs), **Fray** (the
+/// front clash: pick targets / cast `Strike` abilities), and **Volley** (free Vanguards charge or
+/// flank; the rear answers first); **Breach** and **Reckoning** resolve automatically (a charger's
+/// blow and a deferred spell, both committed earlier). [`Phase::Clash`] is the optional 1v1 module.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Menu(Menu),
-    /// Select which heroes charge (vs. hold back as Rearguard) and **Muster** standing cards, then
-    /// Deploy to run the gauntlet.
-    Assemble,
-    /// Outriders (broke through the gauntlet) strike the enemy Rearguard, then Vanguard.
-    Outrider,
-    /// Rearguards fire ranged at the enemy front.
-    Rearguard,
+    /// §4.6 #1 — reveal commitments; pick each unit's **position** (Vanguard / Rearguard) and cast
+    /// `Standing` buffs/braces (auto-land). Advancing begins the Fray.
+    Standoff,
+    /// §4.6 #2 — the fronts engage: Vanguards strike, instant (`cast: Strike, resolve: OnCast`)
+    /// ranged fire and its defenses resolve simultaneously. Deaths here **fix the breach list**.
+    Fray,
+    /// §4.6 #3 — free Vanguards charge the enemy Rearguard (or flank a survivor); the rear answers
+    /// **first** (pre-empt). Instant abilities may fire again here.
+    Volley,
+    /// §4.6 #4 — chargers who survived the Volley land their `resolve: Breach` blows; a breach-kill
+    /// **disrupts** the victim's deferred spell. Resolved automatically from the Volley's charges.
+    Breach,
+    /// §4.6 #5 — deferred (`resolve: Reckoning`) effects from surviving casters resolve last.
+    /// Resolved automatically.
+    Reckoning,
     /// An interactive four-card Clash (the optional module) for a 1v1 same-range duel.
     Clash,
 }
@@ -61,32 +74,65 @@ pub struct Clash {
     pub stall: u32,
 }
 
-/// The per-round working plan for the §4 charge-and-gauntlet system.
+/// A held (`resolve: Reckoning`) spell wound up in the Fray or the Volley, resolving last (§4.6 #5).
+/// It **fizzles** if its caster is killed before the Reckoning (disrupt, §4.6).
+#[derive(Clone, Debug)]
+pub struct Deferred {
+    /// Which side cast it (0 = heroes, 1 = creatures).
+    pub side: u8,
+    /// The caster's index in its pool.
+    pub caster: usize,
+    /// The wound-up card (its effects land in the Reckoning).
+    pub card: crate::cards::Card,
+    /// The caster's Offense snapshot at cast time (Might for the effect).
+    pub offense: crate::stats::Offense,
+    /// The caster's name (for the log, in case the index shifts).
+    pub name: String,
+}
+
+/// A charge (or flank) declared in the Volley (§4.6 #3). A **charge** crosses open ground at the enemy
+/// Rearguard and lands in the **Breach** (the rear pre-empts it); a **flank** is adjacent melee on a
+/// surviving enemy Vanguard and **trades** in the Volley itself (a flank-kill intercepts the target's
+/// own charge).
+#[derive(Clone, Copy, Debug)]
+pub struct Charge {
+    /// The charger's side (0 = heroes, 1 = creatures).
+    pub side: u8,
+    /// The charger's index in its pool.
+    pub attacker: usize,
+    /// The target's index in the **enemy** pool.
+    pub target: usize,
+    /// `true` = a **flank** (trades in the Volley); `false` = a **charge** (lands in the Breach).
+    pub flank: bool,
+}
+
+/// The per-round working plan for the §4.6 six-phase model. Positions are declared at the **Standoff**;
+/// the **breach list** (`locked`) is fixed by the **Fray**; charges/flanks are declared in the
+/// **Volley**; deferred spells resolve in the **Reckoning**.
 #[derive(Clone, Debug, Default)]
 pub struct Round {
-    /// Per hero: did it **charge** (commit to the front)? `false` = held back (Rearguard). A charger is a
-    /// Vanguard unless it also **flanks** (then an Outrider). Sized to heroes.
-    pub hero_charging: Vec<bool>,
+    /// Per hero: is it a **Vanguard** (`true`, the front) or **Rearguard** (`false`, the back)? A group
+    /// shares one position. Declared at the Standoff. Sized to heroes.
+    pub hero_vanguard: Vec<bool>,
     /// Per creature: same.
-    pub foe_charging: Vec<bool>,
-    /// Per hero: does this charger **flank** — declare itself an **Outrider** (attempt to cross) rather
-    /// than hold as a Vanguard? Only meaningful when charging. Sized to heroes.
-    pub hero_flank: Vec<bool>,
-    /// Per creature: same.
-    pub foe_flank: Vec<bool>,
-    /// Heroes / creatures who **broke through** the gauntlet and became Outriders. A charger that
-    /// did *not* break through is a Vanguard (stopped at the front); a non-charger is a Rearguard.
-    pub hero_skirmisher: Vec<bool>,
-    pub foe_skirmisher: Vec<bool>,
-    /// Actors who have already acted in the current target phase (Outrider / Rearguard).
+    pub foe_vanguard: Vec<bool>,
+    /// §4.6 **breach list / per-unit lock**: per Vanguard, is it **locked** — did it attack an enemy
+    /// Vanguard in the Fray that is **still alive**? Only attacking locks; recomputed at the Fray
+    /// boundary. A Vanguard that is not locked is **free** and may charge/flank in the Volley.
+    pub hero_locked: Vec<bool>,
+    pub foe_locked: Vec<bool>,
+    /// Actors who have already acted in the current interactive phase (Standoff / Fray / Volley).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
     /// §4.4 per-role-per-round cap: the role tracks each actor has already played a card of this
-    /// round (reset each round). A role card is playable only if its track is not yet present here.
+    /// round. (Retained from the old model; tempo-gating is the §4.6 limiter, but the cap stays.)
     pub hero_roles_played: Vec<Vec<crate::currency::Currency>>,
     pub foe_roles_played: Vec<Vec<crate::currency::Currency>>,
-    /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always
-    /// 0 in PvE.
+    /// §4.6 #3 — charges/flanks declared in the Volley, resolved at the Volley/Breach boundary.
+    pub charges: Vec<Charge>,
+    /// §4.6 #5 — deferred (`resolve: Reckoning`) spells wound up this round.
+    pub deferred: Vec<Deferred>,
+    /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always 0 in PvE.
     pub committing: u8,
     /// True once the deterministic-base trade is replaced by the interactive Clash module.
     pub clash_mode: bool,
@@ -95,16 +141,18 @@ pub struct Round {
 impl Round {
     pub fn sized(heroes: usize, foes: usize) -> Self {
         Round {
-            hero_charging: vec![false; heroes],
-            foe_charging: vec![false; foes],
-            hero_flank: vec![false; heroes],
-            foe_flank: vec![false; foes],
-            hero_skirmisher: vec![false; heroes],
-            foe_skirmisher: vec![false; foes],
+            // Default position: a melee unit fronts, a ranged/support unit holds back. `game` overrides
+            // this per-actor from the attack profile when a round opens.
+            hero_vanguard: vec![true; heroes],
+            foe_vanguard: vec![true; foes],
+            hero_locked: vec![false; heroes],
+            foe_locked: vec![false; foes],
             hero_acted: vec![false; heroes],
             foe_acted: vec![false; foes],
             hero_roles_played: vec![Vec::new(); heroes],
             foe_roles_played: vec![Vec::new(); foes],
+            charges: Vec::new(),
+            deferred: Vec::new(),
             committing: 0,
             clash_mode: false,
         }
@@ -157,39 +205,34 @@ impl State {
     pub fn s_len(&self, side: u8) -> usize {
         self.s_pool(side).len()
     }
-    pub fn s_charging(&self, side: u8) -> &[bool] {
+    /// Per-unit Vanguard flag of `side` (§4.6 position; `true` = front).
+    pub fn s_vanguard(&self, side: u8) -> &[bool] {
         if side == 0 {
-            &self.plan.hero_charging
+            &self.plan.hero_vanguard
         } else {
-            &self.plan.foe_charging
+            &self.plan.foe_vanguard
         }
     }
-    pub fn s_charging_mut(&mut self, side: u8) -> &mut Vec<bool> {
+    pub fn s_vanguard_mut(&mut self, side: u8) -> &mut Vec<bool> {
         if side == 0 {
-            &mut self.plan.hero_charging
+            &mut self.plan.hero_vanguard
         } else {
-            &mut self.plan.foe_charging
+            &mut self.plan.foe_vanguard
         }
     }
-    pub fn s_flank(&self, side: u8) -> &[bool] {
+    /// Per-unit lock flag of `side` (§4.6 breach list; `true` = locked, may not charge).
+    pub fn s_locked(&self, side: u8) -> &[bool] {
         if side == 0 {
-            &self.plan.hero_flank
+            &self.plan.hero_locked
         } else {
-            &self.plan.foe_flank
+            &self.plan.foe_locked
         }
     }
-    pub fn s_flank_mut(&mut self, side: u8) -> &mut Vec<bool> {
+    pub fn s_locked_mut(&mut self, side: u8) -> &mut Vec<bool> {
         if side == 0 {
-            &mut self.plan.hero_flank
+            &mut self.plan.hero_locked
         } else {
-            &mut self.plan.foe_flank
-        }
-    }
-    pub fn s_skirm(&self, side: u8) -> &[bool] {
-        if side == 0 {
-            &self.plan.hero_skirmisher
-        } else {
-            &self.plan.foe_skirmisher
+            &mut self.plan.foe_locked
         }
     }
     pub fn s_acted(&self, side: u8) -> &[bool] {
