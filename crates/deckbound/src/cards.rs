@@ -67,6 +67,30 @@ pub enum Effect {
     Confuse { tempo: u32 },
 }
 
+/// §4.6 — the **cast window**: where an ability may be used (Tempo paid & committed). Abilities are
+/// open, repeatable, tempo-gated ("Form open, bid hidden").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum Cast {
+    /// The Standoff — own-side buffs / braces, auto-land before the Fray.
+    Standing,
+    /// The **Strike window** = the Fray *and* the Volley; a card usable in one is usable in both.
+    #[default]
+    Strike,
+}
+
+/// §4.6 — the **resolution gate**: which phase's pile an ability's effect lands in. The disruption
+/// window is `resolve − cast` measured in gates (`OnCast` ⇒ zero ⇒ undisruptable, §1.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum Resolve {
+    /// Resolves in the phase it was used (the old *instant*).
+    #[default]
+    OnCast,
+    /// Lands in the Breach (a charge).
+    Breach,
+    /// Lands in the Reckoning (a deferred spell / a DoT tick).
+    Reckoning,
+}
+
 /// An Action card: its effect(s), how many foes it hits, its §5 zone behavior, and tags.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Card {
@@ -97,6 +121,17 @@ pub struct Card {
     pub passive: bool,
     #[serde(default)]
     pub effects: Vec<Effect>,
+    // ---- §4.6 timing (cast / resolve); defaults = the old "instant", usable in the Strike window ----
+    /// §4.6 — the window this ability may be used in (default `Strike` = the Fray *and* Volley).
+    #[serde(default)]
+    pub cast: Cast,
+    /// §4.6 — which phase's pile the effect resolves into (default `OnCast`).
+    #[serde(default)]
+    pub resolve: Resolve,
+    /// §4.6 — a one-shot: flips face-down for the whole combat when used (never resets). The
+    /// tempo-gated replacement for `zone: Spend` on abilities.
+    #[serde(default)]
+    pub one_shot: bool,
     // ---- role-card metadata (§5.6 / §4.4); defaults keep plain cards role-free ----
     /// The role track this card belongs to (§8.3) — `None` for non-role cards (weapons, the
     /// pre-built scenario kits).
@@ -181,6 +216,9 @@ mod tests {
             tags: vec![],
             passive: false,
             effects: vec![Effect::Damage { power: 5 }],
+            cast: Cast::Strike,
+            resolve: Resolve::OnCast,
+            one_shot: false,
             role: None,
             kind: RoleKind::Base,
             positional: false,
