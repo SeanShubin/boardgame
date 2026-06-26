@@ -55,6 +55,11 @@ Catalog(
     // Infiltrator / Artillery) means the card is playable only from its §4 position. Damage is untyped
     // Might (§2.2); Controller cards deal NO damage (debuff/status only) and Support NO damage
     // (buff/heal only) — §8.6 / Charter #13.
+    // ⚠ PRE-REWRITE SCHEMA (2026-06-25). The cast/resolve + utility-card rewrite
+    // (role-card-redesign.md §10 / needs-merge/power-catalog-rewrite.md) supersedes the catalog below.
+    // This data stays until the schema migration adds Card.cast/resolve, the token effect-kinds
+    // (Guard/Cover/Charge/Mark/Mire/Burn/Thorns/Smoke), and a one-shot flag (replacing zone: Spend) —
+    // see role-card-redesign.md §8 "Migration status" item (5).
     rewards: [
         // ---- Wall (Iron) — the immovable line: hold the front, protect the backline ----
         Reward( track: Iron, level: 1, stat: (vitality: 2, toughness: 1),

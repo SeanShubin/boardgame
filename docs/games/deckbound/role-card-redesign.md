@@ -417,8 +417,11 @@ dominates on raw card throughput (the budget #4 / candidate **BI-3** the solver 
 On graduation, §8.3 / §8.5 / §5 / §4 are `🟡 seeded · migration pending`. The code is then a defect to
 fix in: **(1)** drop the currency economy + add the role-card data model & permanent atomic assignment;
 **(2)** the per-role-per-round cap + positional metadata in combat; **(3)** author the 25 sets;
-**(4)** rebuild `reference.rs`. (Per the [§10 runbook](computability-and-balance.md) discipline, code
-follows Spec, not the reverse.)
+**(4)** rebuild `reference.rs`; **(5)** *(2026-06-25 power rewrite)* add `Card.cast`/`resolve`,
+per-phase piles, the utility-token effect-kinds (Guard/Cover/Charge/Mark/Mire/Burn/Thorns/Smoke), a
+one-shot flag (replacing `zone: Spend`), melee-AoE, and non-lethal disrupt/Rout — **`booklet.ron` is
+rewritten to the §10 catalog only once these land.** (Per the [§10 runbook](computability-and-balance.md)
+discipline, code follows Spec, not the reverse.)
 
 ---
 
@@ -543,13 +546,19 @@ is unchanged — clearing still unlocks; it just yields role cards, not currency
 
 ## 10. The 25 sets — first-draft content (AI-seeded, human to tune)
 
-> **Superseded wording (combat migration, 2026-06-20).** This table is the *original* design record;
-> the **live content is `booklet.ron`** and the **rules are Spec §3/§4**. The combat rewrite (lanes →
-> **charge-and-gauntlet**; Focus/Mind merged into **Tempo = Speed × Drive**) re-themed several effects
-> below: **Brace** "Guard +block vs slips" → **+Tempo** (defend the gauntlet); **Confuse** "strip Focus"
-> → **drain Tempo**; the **+Mind** Stat grants were reallocated to Resolve/Spirit/Speed; the
-> Phalanx/Bodyguard/Taunt/Shadowstep text now reads in gauntlet terms. Read the effect names below as
-> *identities*; for the current mechanics see `booklet.ron`.
+> **REWRITTEN 2026-06-25 — cast/resolve + per-phase + utility cards.** The 25 below are rebuilt for the
+> current rules: abilities are **tempo-gated Form cards** (no Spend), timing is **`cast`/`resolve`**
+> (Spec §4.6), the accumulator is **per-phase**, powers scale on **typed axes**
+> (Magnitude/Breadth/Duration/Cost), and **utility tokens** (Guard/Cover/Charge/Mark/Mire/Burn/Thorns/
+> Smoke) make persistent state **card-tracked** (§5.1). Full rationale + the §6.1 necessity audit:
+> `needs-merge/power-catalog-rewrite.md`. Numbers remain **seeds** (human-tuned). Effects in *italics*
+> are new builds (§10.6). *(Supersedes the 2026-06-20 charge-and-gauntlet re-theme and the original
+> stance/Fear wording entirely.)*
+>
+> **⚠ `booklet.ron` is NOT yet updated** — it still holds the pre-rewrite schema. Receiving this catalog
+> is a **code/schema migration** (new `Card.cast`/`resolve`; token effect-kinds; a one-shot flag
+> replacing `zone: Spend`; per-phase piles; melee-AoE; non-lethal disrupt) — see the expanded Migration
+> status (§8).
 
 > **Design intent.** Each role reads as a **distinct identity**; each level is *more powerful* than
 > the last (a level-1→5 investor is a **god at that role**); a **Stat card** is bundled into every
@@ -561,54 +570,57 @@ is unchanged — clearing still unlocks; it just yields role cards, not currency
 > Notation: `L# — <Kind> Name : effect | Stat(+…)`. Most rewards are **2 cards** (the role card + its
 > Stat card); capstones may be more.
 
-### Wall — *the immovable line* (Vanguard · holds lanes, protects the backline)
-- **L1** — Base **Brace** : *Guard — hold harder this round (+block vs slips)* | Stat(+2 body, +1 tough)
-- **L2** — Passive **Phalanx** : holders' Focus combines (existing) | Stat(+2 body, +1 tough)
-- **L3** — Passive **Bodyguard** : lend Focus to other lanes (existing) | Stat(+3 body)
-- **L4** — Base·Lasting **Rally** : +Resolve to all allies (existing) | Stat(+2 body, +1 tough)
-- **L5** — Mode **Last Stand** (capstone, 2 cards) : *this round you cannot fall* + Taunt all + Steel the party | Stat(+4 body, +2 tough)
+### Wall — *the immovable line* (Vanguard · hold the front, shield the back · axes: **Cost + Breadth**)
+- **L1** — Base **Brace** : `standing·on-cast` — place a **Guard token** = +Toughness this round (raises the per-phase wall) | Stat(+2 vit, +1 tough)
+- **L2** — Modifier **Phalanx** : the group's Guard tokens **pool** — the line shares one summed wall (§4.5) | Stat(+2 vit, +1 tough)
+- **L3** — Base **Aegis** : `standing·on-cast` — assign a **Cover token** to an ally; single-target damage on it **spills to the Wall first** | Stat(+3 vit)
+- **L4** — Base **Shield Sweep** : `melee·strike·on-cast·area` — *melee AoE*: Might to every enemy front body (§4.5) | Stat(+2 vit, +2 tough)
+- **L5** — *one-shot* **Last Stand** + Modifier **Taunt** (capstone) : Last Stand — **1-Health floor** this round (a number, not immunity); Taunt — chargers pulled to this Wall first | Stat(+4 vit, +2 tough)
 
-### Infiltrator — *the unseen blade* (Outrider · slips walls, deletes the backline)
-- **L1** — Base **Slip Strike** : a mobile melee Damage | Stat(+2 speed)
-- **L2** — Passive **Blitz** : first slip each round is free (existing) | Stat(+1 speed, +1 power)
-- **L3** — Passive **Shadowstep** : ignore one blocker when slipping (existing) | Stat(+2 speed)
-- **L4** — Passive **Backstab** : bonus damage vs enemy Rearguard (existing) | Stat(+2 power)
-- **L5** — Base **Assassinate** (capstone) : heavy Damage, *lethal to a Rearguard target* | Stat(+2 power, +1 speed)
+### Infiltrator — *the unseen blade* (Outrider · slip the wall, gut the back · axes: **Magnitude + Breadth**)
+- **L1** — Base **Slip Strike** : `melee·strike·resolve:breach` — Might + **shove** (the charge blow) | Stat(+2 cad, +2 fin)
+- **L2** — Base **Smoke** : `strike·on-cast` — place a **Smoke token**; spend it for one *uncontested* slip (interceptor can't bid; does **not** stop the rear's Volley pre-empt) | Stat(+1 cad, +1 might)
+- **L3** — Modifier **Shadowstep** : **win ties** when slipping past an interceptor | Stat(+2 cad, +2 fin)
+- **L4** — Base **Coiled Strike** : *charge-up* — bank **Charge tokens** one round; a later strike consumes them for **+Might each** (§5.4) | Stat(+2 might)
+- **L5** — *one-shot* **Assassinate** (capstone) : `melee·strike·resolve:breach` — **overwhelming Might** vs an enemy Rearguard (kills by burst, **not** execute — single kill-condition, §2.2) | Stat(+2 might, +1 cad)
 
-### Artillery — *the long reach* (Rearguard · ranged burst & AoE)
-- **L1** — Base **Bolt** : ranged single-target Damage | Stat(+2 power)
-- **L2** — Base **Volley** : ranged AoE — Damage `targets:3` (existing) | Stat(+1 power, +1 precision)
-- **L3** — Base **Suppress** : strip enemy Tempo (existing) | Stat(+2 power)
-- **L4** — Passive **Longshot** : reach the enemy Rearguard (existing) | Stat(+1 power, +1 precision)
-- **L5** — Mode **Bombardment** (capstone) : heavy AoE — Damage `targets:5`, high power | Stat(+2 power)
+### Artillery — *the long reach* (Rearguard · ranged burst, AoE, the slow shell · axes: **Magnitude + Breadth**)
+- **L1** — Base **Bolt** : `ranged·strike·on-cast` — single-target Might | Stat(+2 might)
+- **L2** — Base **Volley** : `ranged·strike·on-cast·area` — Might to a rank/group (anti-group, §4.5) | Stat(+2 might)
+- **L3** — Base **Incendiary** : *DoT* — place **Burn tokens**; each **Reckoning** deal Might into the target's Reckoning pile, −1 token | Stat(+3 might)
+- **L4** — Modifier **Longshot** : this Rearguard's fire may target the **enemy Rearguard** directly | Stat(+2 might)
+- **L5** — Base **Bombardment** (capstone) : *charge-up × deferred* — bank Charge tokens, then a `resolve:reckoning` AoE scaled by charges (**disruptable**; charge-gated, not one-shot) | Stat(+2 might)
 
-### Controller — *the unmaker* (effect `−` · strips, slows, fears)
-- **L1** — Base **Slow** : cut a foe's Speed (existing) | Stat(+2 spirit)
-- **L2** — Base **Dread** : Fear damage (existing) | Stat(+1 spirit, +1 mind)
-- **L3** — Base **Confuse** : strip a foe's Focus, can't block (existing) | Stat(+2 mind)
-- **L4** — Modifier **Curse** : *your debuffs hit +1 extra foe (and bite deeper)* | Stat(+1 spirit, +1 mind)
-- **L5** — Mode **Unmake** (capstone) : the enemy front loses its action + takes Fear — Stagger + Dread `targets:3` | Stat(+2 spirit)
+### Controller — *the unmaker* (effect `−` · ranged **stat-drops**, no damage · axes: **Breadth + Duration**)
+- **L1** — Base **Mark** : `ranged·strike·on-cast` — *Mark token* = **−Finesse** (min 1) while marked | Stat(+1 might)
+- **L2** — Base **Mire** : `ranged·strike·on-cast` — *Mire token* = **−Cadence** (min 1), shrinking the foe's Tempo pool | Stat(+1 might)
+- **L3** — Base **Hex** : `ranged·strike·on-cast·area` — marks every body in a rank (§4.5) | Stat(+1 might)
+- **L4** — Modifier **Curse** : each Controller card you play hits **+1 additional foe** (the Breadth axis as a passive) | Stat(+1 might)
+- **L5** — *one-shot* **Silence** (capstone) : **non-lethal disrupt** — cancel/delay a foe's *deferred* spell (§4.6) + **Rout** several foes off the line | Stat(+1 might)
 
-### Support — *the hand that holds the line* (effect `+` · heals, wards, hastes)
-- **L1** — Base **Mend** : heal the most-wounded ally (existing) | Stat(+2 resolve, +1 body)
-- **L2** — Base·Lasting **Ward** : grant a melee guard to a defenceless ally (existing) | Stat(+2 resolve)
-- **L3** — Base **Haste** : +Tempo to an ally (existing) | Stat(+1 mind, +1 body)
-- **L4** — Base **Steel** : clear Fear / steady the party (existing) | Stat(+2 resolve)
-- **L5** — Mode **Sanctuary** (capstone) : heal + ward + haste **all** allies — Mend + Ward + Haste `targets:all` | Stat(+2 body, +1 resolve)
+### Support — *the hand that holds the line* (effect `+` · buffs/heal, **no direct damage** · axes: **Magnitude + Breadth**)
+- **L1** — Base **Haste** : `standing·on-cast` — +Tempo to an ally this round | Stat(+1 vit)
+- **L2** — Base·Lasting **Empower** : `standing` — +Might to the party this round | Stat(+1 vit)
+- **L3** — Base **Thorns** : *reflect* — **Thorns token** on an ally; an attacker takes **reflected Might** into its own pile (the attacker's own doing — not Support dealing damage) | Stat(+1 cad, +1 vit)
+- **L4** — Base **Mend** : `standing·on-cast` — restore Health cards to the most-wounded ally (burst rescue) | Stat(+2 vit)
+- **L5** — *one-shot* **Sanctuary** (capstone) : Empower + Haste + Mend the **whole party** (`targets:all`) | Stat(+2 vit)
 
-### 10.6 New engine work this content implies (for Phase 2)
+### 10.6 New engine work this content implies (Phase 2 — expanded by the 2026-06-25 rewrite)
 
-Most levels reuse **existing effects** (Damage / Suppress / Slow / Confuse / Dread / Mend / Ward /
-Haste / Steel / Rally) and **existing passives** (Phalanx / Bodyguard / Taunt / Blitz / Shadowstep /
-Backstab / Longshot) — just redistributed and re-statted. Genuinely **new** pieces to build:
-- **`Guard`** — a defensive "hold harder" effect (Wall L1).
-- **"cannot fall" this round** + the **Mode** mechanic generally (Wall L5 / Artillery L5 / Support L5 /
-  Controller L5) — a played, mutually-exclusive-with-Base "charged" card.
-- **`lethal-to-Rearguard`** on a Damage card (Infiltrator L5).
-- **Modifier** application — a passive that upgrades a named Base (Controller's **Curse**; the §3.4
-  scaling option). *(This draft uses Modifiers sparingly — only Curse — per the "lean new-effect"
-  dial stance, §9.1.)*
-- **`targets:all` / party-wide** targeting for buffs (Support L5).
+The cast/resolve rewrite needs:
+- **`cast` / `resolve` fields** on `Card` (`standing|strike` × `on-cast|breach|reckoning`), replacing
+  implicit timing **and** `zone: Spend`; **one-shot** = flip-face-down-for-combat (a flag, not a zone).
+- **Per-phase accumulator piles** (replace the per-round pile); a hit's Might lands in its **resolve**
+  phase's pile.
+- **Utility-token effects** — each a card-tracked state: **Guard** (+Toughness), **Cover** (redirect
+  spillover to the holder), **Charge** (bank → consume for ×magnitude, §5.4), **Mark** (−Finesse),
+  **Mire** (−Cadence), **Burn** (DoT ticking at the Reckoning), **Thorns** (reflect Might to attackers),
+  **Smoke** (one uncontested slip).
+- **Melee AoE** (`reach: melee, target: area`) — Wall's Shield Sweep.
+- **Non-lethal disrupt** (Silence cancels/delays a deferred spell) and **Rout** (reposition).
+- **`Assassinate` = overwhelming Might**, *not* a lethal-to-Rearguard bypass (single kill-condition, §2.2).
+- **Modifier** application (Phalanx / Curse / Taunt / Shadowstep / Longshot) and **`targets:all`**
+  (Sanctuary) — as before.
 
 ### 10.7 Sanity check against the brief
 - **Roles unique?** Wall = protect/hold; Infiltrator = mobile assassination; Artillery = ranged
