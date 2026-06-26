@@ -1205,11 +1205,13 @@ mod tests {
         }
 
         let has = |term: &str| g.iter().any(|e| e.term == term);
-        // Rule terms parsed from the Spec, across several sections.
+        // Rule terms parsed from the Spec, across several sections. (Updated for the §4.6 six-phase
+        // model: the old "the line" / "Assemble" / "Phases" TERMs were retired with the static-ranks
+        // crossing contest; the live Spec defines the Blind-bid / Phase-1/Phase-2 / Tempo-contest terms.)
         for term in [
             "Vanguard",
-            "The Line",
-            "Assemble",
+            "Rearguard",
+            "Blind bid",
             "Cadence",
             "Finesse",
             "Tempo",
@@ -1223,8 +1225,8 @@ mod tests {
             );
         }
         assert!(
-            has("Phases"),
-            "Spec TERM `Phases` was not parsed into the glossary"
+            has("Phase 1 / Phase 2"),
+            "Spec TERM `Phase 1 / Phase 2` was not parsed into the glossary"
         );
         // Powers generated from card data (passive power cards' `text`).
         for power in ["Phalanx", "Blitz", "Longshot"] {
@@ -1240,8 +1242,8 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            23,
-            "expected 23 Spec TERM entries — a marker may have failed to parse"
+            20,
+            "expected 20 Spec TERM entries — a marker may have failed to parse"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).

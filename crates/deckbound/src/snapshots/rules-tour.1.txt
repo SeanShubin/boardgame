@@ -8,40 +8,40 @@ HEROES
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Iron L1     Brace                   vitality 2, toughness 1
       Iron L2     Phalanx                 vitality 2, toughness 1
-      Iron L3     Bulwark                 vitality 3
-      Iron L4     Hold Fast               vitality 2, toughness 2
+      Iron L3     Aegis                   vitality 3
+      Iron L4     Shield Sweep            vitality 2, toughness 2
       Iron L5     Last Stand · Taunt      vitality 4, toughness 2
       Totals                              might 1, vitality 18, toughness 7, cadence 3
   Wisp — Human · Fist [melee]  (12 cards)   cardsets: Silver
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Silver L1   Slip Strike             cadence 2, finesse 2
-      Silver L2   Blitz                   might 1, cadence 1
+      Silver L2   Smoke                   might 1, cadence 1
       Silver L3   Shadowstep              cadence 2, finesse 2
-      Silver L4   Backstab                might 2
+      Silver L4   Coiled Strike           might 2
       Silver L5   Assassinate             might 2, cadence 1
       Totals                              might 6, vitality 5, toughness 1, cadence 9, finesse 4
   Sear — Human · Fist [melee]  (12 cards)   cardsets: Brass
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Brass L1    Bolt                    might 2
       Brass L2    Volley                  might 2
-      Brass L3    Piercing Shot           might 3
+      Brass L3    Incendiary              might 3
       Brass L4    Longshot                might 2
       Brass L5    Bombardment             might 2
       Totals                              might 12, vitality 5, toughness 1, cadence 3
   Hex — Human · Fist [melee]  (12 cards)   cardsets: Bone
       Human                               might 1, vitality 5, toughness 1, cadence 3
-      Bone L1     Menace                  might 1
-      Bone L2     Shackle                 might 1
-      Bone L3     Terror                  might 1
+      Bone L1     Mark                    might 1
+      Bone L2     Mire                    might 1
+      Bone L3     Hex                     might 1
       Bone L4     Curse                   might 1
-      Bone L5     Unmake                  might 1
+      Bone L5     Silence                 might 1
       Totals                              might 6, vitality 5, toughness 1, cadence 3
   Vow — Human · Fist [melee]  (12 cards)   cardsets: Salt
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Salt L1     Haste                   vitality 1
       Salt L2     Empower                 vitality 1
-      Salt L3     Mend                    vitality 1, cadence 1
-      Salt L4     Bolster                 vitality 2
+      Salt L3     Thorns                  vitality 1, cadence 1
+      Salt L4     Mend                    vitality 2
       Salt L5     Sanctuary               vitality 2
       Totals                              might 1, vitality 12, toughness 1, cadence 4
 FOES
@@ -63,7 +63,7 @@ FOES
 
 ── round 1 ──────────────────────────────────────
   Vow plays Sanctuary.
-    empowers the line (+2 Might).
+    empowers the line (+3 Might).
     +3 Tempo to Anvil.
     +3 Tempo to Wisp.
     +3 Tempo to Sear.
@@ -74,110 +74,177 @@ FOES
     mends Hex (+4 health).
     mends Vow (+4 health).
     mends Anvil (+4 health).
-  Hex plays Unmake.
-    routs Brute — driven from the line.
-    routs Raider — driven from the line.
-    routs Slinger — driven from the line.
-    routs Seer — driven from the line.
-    staggers Brute (loses its action).
-    staggers Raider (loses its action).
-    staggers Slinger (loses its action).
-    staggers Seer (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-RANKS    heroes — vanguard: Anvil, Vow   outrider: Wisp   rearguard: Sear, Hex
-         foes   — vanguard: Husk   outrider: —   rearguard: Brute, Raider, Slinger, Seer
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 119/122]
-    Vow hits Husk: 3 might — turns 3 health cards face down. [health 116/122]
-    Husk hits Anvil: 2 might — damage accumulates. [health 18/18]
-  crossing: Wisp(adv 4×1=4) vs Husk(hold 1) → slips
-    Husk hits Wisp: 2 might — turns 2 health cards face down. [health 3/5]
-    Wisp hits Brute: 11 might — turns a health card face down. [health 127/128]
-  Brute is marked and executed!
-  Brute — all its health cards are face down; defeated.
-    Wisp hits Raider: 11 might — turns 5 health cards face down. [health 119/124]
-  Raider is marked and executed!
-  Raider — all its health cards are face down; defeated.
-    Wisp hits Slinger: 11 might — turns 3 health cards face down. [health 120/123]
-  Slinger is marked and executed!
-  Slinger — all its health cards are face down; defeated.
-    Wisp hits Seer: 11 might — turns 2 health cards face down. [health 122/124]
-  Seer is marked and executed!
-  Seer — all its health cards are face down; defeated.
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 108/122]
-    Husk hits Wisp: 2 might — turns 2 health cards face down. [health 1/5]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 100/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 92/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 84/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 76/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 68/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 60/122]
-    Wisp hits Husk: 8 might — turns 8 health cards face down. [health 52/122]
-  Sear plays Piercing Shot.
-    Sear hits Husk: 18 might — turns 18 health cards face down. [health 34/122]
-ENDROUND heroes: Anvil 18/18  Wisp 1/5  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: Brute 0/128 down  Raider 0/124 down  Slinger 0/123 down  Seer 0/124 down  Husk 34/122
+RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
+         foes   — vanguard: Brute, Raider, Husk   rearguard: Slinger, Seer
+    Brute hits Anvil: 6 might — damage accumulates. [health 18/18]
+    Anvil hits Brute: 4 might — damage accumulates. [health 128/128]
+    Raider hits Anvil: 3 might — turns a health card face down. [health 17/18]
+    Anvil hits Raider: 4 might — turns 2 health cards face down. [health 122/124]
+    Anvil evades (evade 2×1=2 > volley 1).
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 16/18]
+    Husk hits Anvil: 2 might — damage accumulates. [health 16/18]
+    Anvil hits Husk: 4 might — turns 4 health cards face down. [health 118/122]
+    Wisp hits Brute: 9 might — turns 2 health cards face down. [health 126/128]
+    Brute hits Wisp: 6 might — turns 5 health cards face down. [health 0/5]
+    Sear hits Brute: 15 might — turns 2 health cards face down. [health 124/128]
+    Hex hits Brute: 9 might — turns 2 health cards face down. [health 122/128]
+    Vow hits Brute: 4 might — damage accumulates. [health 122/128]
+  Wisp — all its health cards are face down; defeated.
+    Anvil cannot evade the volley (1) — the shot lands.
+    Slinger hits Anvil: 5 might — damage accumulates. [health 16/18]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
+ENDROUND heroes: Anvil 15/18  Wisp 0/5 down  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: Brute 122/128  Raider 122/124  Slinger 123/123  Seer 124/124  Husk 118/122
 
 ── round 2 ──────────────────────────────────────
   Vow plays Sanctuary.
-    empowers the line (+2 Might).
+    empowers the line (+3 Might).
     +3 Tempo to Anvil.
-    +3 Tempo to Wisp.
     +3 Tempo to Sear.
     +3 Tempo to Hex.
     +3 Tempo to Vow.
-    mends Wisp (+4 health).
     mends Sear (+4 health).
     mends Hex (+4 health).
     mends Vow (+4 health).
     mends Anvil (+4 health).
-  Hex plays Unmake.
-    routs Husk — driven from the line.
-    staggers Husk (loses its action).
   Anvil plays Last Stand.
     steels for a last stand — it cannot fall this round.
-RANKS    heroes — vanguard: Anvil, Vow   outrider: Wisp   rearguard: Sear, Hex
-         foes   — vanguard: —   outrider: —   rearguard: Husk
-  Wisp slips an unguarded gap.
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 31/122]
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 28/122]
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 25/122]
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 22/122]
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 19/122]
-    Anvil hits Husk: 3 might — turns 3 health cards face down. [health 16/122]
-    Wisp hits Husk: 11 might — turns 11 health cards face down. [health 5/122]
-  Husk is marked and executed!
-  Husk — all its health cards are face down; defeated.
-  Every foe is down — victory!
-FINAL    heroes: Anvil 18/18  Wisp 5/5  Sear 5/5  Hex 5/5  Vow 12/12  |  foes: Brute 0/128 down  Raider 0/124 down  Slinger 0/123 down  Seer 0/124 down  Husk 0/122 down
+RANKS    heroes — vanguard: Anvil, Sear, Hex, Vow   rearguard: —
+         foes   — vanguard: Brute, Raider, Husk   rearguard: Slinger, Seer
+    Brute hits Anvil: 6 might — damage accumulates. [health 18/18]
+    Anvil hits Brute: 4 might — damage accumulates. [health 122/128]
+    Raider hits Anvil: 3 might — turns a health card face down. [health 17/18]
+    Anvil hits Raider: 4 might — turns 2 health cards face down. [health 120/124]
+    Anvil evades (evade 2×1=2 > volley 1).
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 16/18]
+    Husk hits Anvil: 2 might — damage accumulates. [health 16/18]
+    Anvil hits Husk: 4 might — turns 4 health cards face down. [health 114/122]
+    Sear hits Brute: 15 might — turns 3 health cards face down. [health 119/128]
+    Brute hits Sear: 6 might — turns 5 health cards face down. [health 0/5]
+    Hex hits Brute: 9 might — turns a health card face down. [health 118/128]
+    Vow hits Brute: 4 might — turns a health card face down. [health 117/128]
+  Sear — all its health cards are face down; defeated.
+    Anvil cannot evade the volley (1) — the shot lands.
+    Slinger hits Anvil: 5 might — damage accumulates. [health 16/18]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
+ENDROUND heroes: Anvil 15/18  Wisp 0/5 down  Sear 0/5 down  Hex 5/5  Vow 12/12  |  foes: Brute 117/128  Raider 120/124  Slinger 123/123  Seer 124/124  Husk 114/122
 
-OUTCOME  WIN (heroes) — round 2
+── round 3 ──────────────────────────────────────
+  Vow plays Sanctuary.
+    empowers the line (+3 Might).
+    +3 Tempo to Anvil.
+    +3 Tempo to Hex.
+    +3 Tempo to Vow.
+    mends Hex (+4 health).
+    mends Vow (+4 health).
+    mends Anvil (+4 health).
+  Anvil plays Last Stand.
+    steels for a last stand — it cannot fall this round.
+RANKS    heroes — vanguard: Anvil, Hex, Vow   rearguard: —
+         foes   — vanguard: Brute, Raider, Husk   rearguard: Slinger, Seer
+    Brute hits Anvil: 6 might — damage accumulates. [health 18/18]
+    Anvil hits Brute: 4 might — damage accumulates. [health 117/128]
+    Raider hits Anvil: 3 might — turns a health card face down. [health 17/18]
+    Anvil hits Raider: 4 might — turns 2 health cards face down. [health 118/124]
+    Anvil evades (evade 2×1=2 > volley 1).
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 16/18]
+    Husk hits Anvil: 2 might — damage accumulates. [health 16/18]
+    Anvil hits Husk: 4 might — turns 4 health cards face down. [health 110/122]
+    Hex hits Brute: 9 might — turns 2 health cards face down. [health 115/128]
+    Brute hits Hex: 6 might — turns 5 health cards face down. [health 0/5]
+    Vow hits Brute: 4 might — damage accumulates. [health 115/128]
+  Hex — all its health cards are face down; defeated.
+    Anvil cannot evade the volley (1) — the shot lands.
+    Slinger hits Anvil: 5 might — damage accumulates. [health 16/18]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
+ENDROUND heroes: Anvil 15/18  Wisp 0/5 down  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 115/128  Raider 118/124  Slinger 123/123  Seer 124/124  Husk 110/122
+
+── round 4 ──────────────────────────────────────
+  Vow plays Sanctuary.
+    empowers the line (+3 Might).
+    +3 Tempo to Anvil.
+    +3 Tempo to Vow.
+    mends Vow (+4 health).
+    mends Anvil (+4 health).
+  Anvil plays Last Stand.
+    steels for a last stand — it cannot fall this round.
+RANKS    heroes — vanguard: Anvil, Vow   rearguard: —
+         foes   — vanguard: Brute, Raider, Husk   rearguard: Slinger, Seer
+    Brute hits Anvil: 6 might — damage accumulates. [health 18/18]
+    Anvil hits Brute: 4 might — damage accumulates. [health 115/128]
+    Raider hits Anvil: 3 might — turns a health card face down. [health 17/18]
+    Anvil hits Raider: 4 might — turns 2 health cards face down. [health 116/124]
+    Anvil evades (evade 2×1=2 > volley 1).
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 16/18]
+    Husk hits Anvil: 2 might — damage accumulates. [health 16/18]
+    Anvil hits Husk: 4 might — turns 4 health cards face down. [health 106/122]
+    Vow hits Brute: 4 might — turns a health card face down. [health 114/128]
+    Brute hits Vow: 6 might — turns 6 health cards face down. [health 6/12]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Slinger hits Anvil: 5 might — damage accumulates. [health 16/18]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
+ENDROUND heroes: Anvil 15/18  Wisp 0/5 down  Sear 0/5 down  Hex 0/5 down  Vow 6/12  |  foes: Brute 114/128  Raider 116/124  Slinger 123/123  Seer 124/124  Husk 106/122
+
+── round 5 ──────────────────────────────────────
+  Vow plays Sanctuary.
+    empowers the line (+3 Might).
+    +3 Tempo to Anvil.
+    +3 Tempo to Vow.
+    mends Vow (+4 health).
+    mends Anvil (+4 health).
+  Anvil plays Last Stand.
+    steels for a last stand — it cannot fall this round.
+RANKS    heroes — vanguard: Anvil, Vow   rearguard: —
+         foes   — vanguard: Brute, Raider, Husk   rearguard: Slinger, Seer
+    Brute hits Anvil: 6 might — damage accumulates. [health 18/18]
+    Anvil hits Brute: 4 might — damage accumulates. [health 114/128]
+    Raider hits Anvil: 3 might — turns a health card face down. [health 17/18]
+    Anvil hits Raider: 4 might — turns 2 health cards face down. [health 114/124]
+    Anvil evades (evade 2×1=2 > volley 1).
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 16/18]
+    Husk hits Anvil: 2 might — damage accumulates. [health 16/18]
+    Anvil hits Husk: 4 might — turns 4 health cards face down. [health 102/122]
+    Vow hits Brute: 4 might — turns a health card face down. [health 113/128]
+    Brute hits Vow: 6 might — turns 6 health cards face down. [health 4/12]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Slinger hits Anvil: 5 might — damage accumulates. [health 16/18]
+    Anvil cannot evade the volley (1) — the shot lands.
+    Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
+  The battle reaches the round cap — a draw.
+FINAL    heroes: Anvil 15/18  Wisp 0/5 down  Sear 0/5 down  Hex 0/5 down  Vow 4/12  |  foes: Brute 113/128  Raider 114/124  Slinger 123/123  Seer 124/124  Husk 102/122
+
+OUTCOME  DRAW (round cap reached) — round 5
 
 CARDS USED   (every card played, plus the chargers' weapons and powers)
   Action  Last Stand     [Iron L5]   cannot fall                     (played by Anvil)
-  Action  Piercing Shot  [Brass L3]  might 6                         (played by Sear)
-  Action  Sanctuary      [Salt L5]   empower +2 might, haste +3, mend +4, x99 targets  (played by Vow)
-  Action  Unmake         [Bone L5]   rout, stagger, x4 targets       (played by Hex)
-  Weapon  Claw                       might weapon (+0)               (wielded by Husk)
-  Weapon  Fist                       might weapon (+0)               (wielded by Anvil, Wisp, Vow)
-  Power   Backstab       [Silver L4] passive power                   (carried by Wisp)
-  Power   Blitz          [Silver L2] passive power                   (carried by Wisp)
-  Power   Bulwark        [Iron L3]   passive power                   (carried by Anvil)
+  Action  Sanctuary      [Salt L5]   empower +3 might, haste +3, mend +4, x99 targets  (played by Vow)
+  Weapon  Claw                       might weapon (+0)               (wielded by Raider, Husk)
+  Weapon  Fist                       might weapon (+0)               (wielded by Anvil, Wisp, Sear, Hex, Vow)
+  Weapon  Maul                       might weapon (+1)               (wielded by Brute)
+  Power   Curse          [Bone L4]   passive power                   (carried by Hex)
+  Power   Longshot       [Brass L4]  passive power                   (carried by Sear)
   Power   Phalanx        [Iron L2]   passive power                   (carried by Anvil)
   Power   Shadowstep     [Silver L3] passive power                   (carried by Wisp)
   Power   Taunt          [Iron L5]   passive power                   (carried by Anvil)
 
 GLOSSARY   (what the rulebook says about each keyword above)
-  Backstab               Bonus damage when this Outrider strikes an enemy Rearguard.
-  Blitz                  The first slip each round is free — it costs no Tempo.
-  Bulwark                Holds the line for the whole front — every allied Vanguard's hold rises, not only this Wall's.
+  Curse                  Your debuffs bite wider: each Controller card you play strikes one extra foe (the Breadth axis as a passive, M5).
   Damage (Might)         Deals 0 untyped Might. It accumulates into the round's pile; each time the pile clears the target's Toughness bar, one Health card turns face down (pile → bar → pool, §2.2); Force scales this.
-  Empower                Raises allies' Might by 2 this round (an Empower) — the Support buff's indirect offense.
+  Empower                Raises allies' Might by 3 this round (an Empower) — the Support buff's indirect offense.
   Haste                  Grants +3 Tempo to an ally (a Haste).
   Lifeline (Last Stand)  Last Stand: this round the holder cannot be downed — damage that would fell it leaves it at 1 health (M3).
+  Longshot               Lets this Rearguard's ranged fire reach the enemy Rearguard — the sanctioned sniper exception.
   Mend                   Restores 4 Health cards to the most-wounded ally (a Mend).
   Phalanx                Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.
-  Rout                   Drives the target from the line to the Rearguard this round (a Rout) — a Controller status (§4).
   Shadowstep             Win a tie when slipping past an interceptor — your equal Tempo gets you through anyway.
-  Stagger                On a landed hit, the target loses its action this round.
   Taunt                  Draws fire: chargers are pulled to intercept this Wall first, sparing the rest of the line.
-  Zone: Spend            Zone — Spend: the card goes face-down (Down) after use; only a Recover stands it back up. That gap is its cooldown (§5.3).

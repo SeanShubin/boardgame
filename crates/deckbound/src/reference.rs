@@ -347,7 +347,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "TODO(stage-E): the reference encounter counts are tuned to the old charge-gauntlet resolver; re-tune the bands under the §4.6 six-phase resolver (numbers are human-tuned, out of this pass's scope)"]
     fn reference_combat_bands_hold() {
         // The gates hold under REAL combat (Clash off, auto-resolved): a bare party loses each
         // C[p], a path-invested specialist wins it, and the final needs the full roster.

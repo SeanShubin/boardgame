@@ -1886,7 +1886,6 @@ mod tests {
     /// through `Deckbound`'s wrapped actions (`OpenCampaign` → `CampaignMove`s) — i.e. the merge
     /// preserves the standalone campaign's win.
     #[test]
-    #[ignore = "TODO(stage-E): asserts the guided run *wins*; the win-band shifted with the §4.6 combat re-tune (the campaign still plays and terminates)"]
     fn campaign_is_playable_from_the_menu() {
         let game = Deckbound;
         let mut s = game.new_game(1, 1);
@@ -1927,7 +1926,6 @@ mod tests {
     /// Event-sourcing invariant (the basis of the renderer's save/load + undo): an action log,
     /// serialized through RON and back, replays from a fresh game to the *identical* result.
     #[test]
-    #[ignore = "TODO(stage-E): replays the guided run and asserts the same win; the win-band shifted with the §4.6 combat re-tune (the RON round-trip itself is unaffected)"]
     fn action_log_round_trips_through_ron() {
         let game = Deckbound;
         // Record the guided campaign run as a flat action log (what the UI persists).
@@ -2026,19 +2024,68 @@ mod tests {
         assert!(matches!(s.phase, Phase::Fray | Phase::Standoff) || s.outcome.is_some());
     }
 
-    /// §4.6 Standoff: a `cast: Standing` one-shot (Rallying Cry) auto-lands and spends a Tempo; a
-    /// `cast: Strike` ability is **not** castable in the Standoff (wrong window).
+    /// §4.6 cast window: a `cast: Standing` card (Wall's Brace) **is** offered in the Standoff, while a
+    /// `cast: Strike` card (Artillery's Bolt) is **not** (wrong window) — and the Strike card flips to
+    /// legal once the Fray opens. (Rewritten for §4.6, replacing the retired Muster/positional test.)
     #[test]
-    #[ignore = "TODO(stage-E): old Muster/Wall-positional model retired; §4.6 Standing-cast wiring covered by the resolver"]
-    fn muster_window_offers_a_charging_walls_standing_card() {
-        // Retired: the Muster window and Wall-positional gating are gone; §4.6 casts by window
-        // (`Standing` in the Standoff, `Strike` in the Fray/Volley). Covered by combat.rs resolver tests.
-    }
+    fn standoff_offers_standing_casts_but_not_strike_casts() {
+        use crate::currency::Currency;
+        let game = Deckbound;
+        // A hero holding both a Standing card (Iron L1 Brace) and a Strike card (Brass L1 Bolt).
+        let hero = scenarios::build_character(
+            "Novice",
+            &[
+                scenarios::RewardId {
+                    track: Currency::Iron,
+                    level: 1,
+                },
+                scenarios::RewardId {
+                    track: Currency::Brass,
+                    level: 1,
+                },
+            ],
+        );
+        let foe = scenarios::build_creature("Husk");
+        let mut s = battle_state(vec![hero], vec![foe], false, 1);
+        assert_eq!(s.phase, Phase::Standoff);
 
-    /// §4.6 Rout retired with the old deploy/line model.
-    #[test]
-    #[ignore = "TODO(stage-E): old charge-gauntlet deploy/Rout-relocation retired"]
-    fn a_routed_vanguard_is_driven_to_the_reserve() {}
+        // Index the hero's two role cards.
+        let brace = s.heroes[0]
+            .actions
+            .iter()
+            .position(|c| c.name == "Brace")
+            .expect("Iron L1 grants Brace");
+        let bolt = s.heroes[0]
+            .actions
+            .iter()
+            .position(|c| c.name == "Bolt")
+            .expect("Brass L1 grants Bolt");
+
+        // In the Standoff: the Standing Brace is playable, the Strike Bolt is not (wrong window).
+        let brace_card = s.heroes[0].actions[brace].clone();
+        let bolt_card = s.heroes[0].actions[bolt].clone();
+        assert!(
+            game.card_playable_now(&s, 0, 0, &brace_card),
+            "a cast:Standing card is offered in the Standoff"
+        );
+        assert!(
+            !game.card_playable_now(&s, 0, 0, &bolt_card),
+            "a cast:Strike card is NOT offered in the Standoff (wrong window)"
+        );
+
+        // Advance to the Fray; now the Strike card is castable (and the Standing one is not).
+        game.apply(&mut s, &Action::Deploy).unwrap();
+        if s.phase == Phase::Fray {
+            assert!(
+                game.card_playable_now(&s, 0, 0, &bolt_card),
+                "a cast:Strike card is offered once the Fray opens"
+            );
+            assert!(
+                !game.card_playable_now(&s, 0, 0, &brace_card),
+                "a cast:Standing card is not castable in the Fray (wrong window)"
+            );
+        }
+    }
 
     /// §0 Ruleset: reaching the round cap ends an unfinished fight as a **draw** (which, in PvE, is no
     /// different from a loss). The cap is a pre-game parameter, not a fixed law.

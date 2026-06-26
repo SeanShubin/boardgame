@@ -197,11 +197,9 @@ mod tests {
         );
     }
 
-    #[test]
-    #[ignore = "TODO(stage-E): old charge-gauntlet model retired — crossing/`the_line` replaced by the §4.6 Volley"]
-    fn higher_finesse_crosses_an_equal_one_card_tie_is_held() {
-        // Retired with the static-ranks crossing contest; the §4.6 Volley charge/flank replaces it.
-    }
+    // (Removed `higher_finesse_crosses_an_equal_one_card_tie_is_held`: the static-ranks **crossing
+    // contest** it tested was retired with the old charge-gauntlet model; the §4.6 Volley charge / flank
+    // replaces it, and the evade contest is covered by `combat::evade_contest_strictly_exceeds_the_volley`.)
 
     // (Removed `a_holding_wall_plays_its_role_cards`: the gauntlet auto-resolves the Vanguard, so
     // there is no interactive Wall play window in v1 — a known limitation, see role-card-redesign.)

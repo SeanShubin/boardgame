@@ -7,35 +7,29 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 
 ## Roles
 
-- **Assemble** — The one hidden, simultaneous commit: each side assigns every Actor a rank (Vanguard / Outrider / Rearguard), commits its crossing / catch bids and which Vanguard catches which Outrider, and plays its standing cards. Revealed together; everything after resolves in the open, and nobody moves.
-- **Vanguard** — The declared melee front line. Holds, and may spend Tempo to catch crossing Outriders — as many as it can pay catch-bids for (Cadence = breadth, Finesse = strength); once the enemy Vanguard it faces is dead it pours through. Shields the Rearguard.
-- **Outrider** — A declared flanker that attempts to cross the enemy line. Held → it trades with its catcher; crossed → it reaches the backfield, where any enemy rank is fair game. The route (besides a broken front) to the enemy Rearguard.
-- **Rearguard** — The declared ranged / support line behind the front. Fires over it and aids allies, can never target the enemy Rearguard, and is reached only by an Outrider who crossed or a Vanguard pouring through a broken front.
-- **The triangle** — Vanguard beats Outrider (catches it at the line); Outrider beats Rearguard (crosses to assassinate); Rearguard beats Vanguard (fires from safety, untouchable in melee).
+- **Blind bid** — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group to the Vanguard (front) or Rearguard (back), and plays its standing buffs / braces. Positions are re-bid every round. Revealed together; everything after resolves in the open, nobody moves.
+- **Vanguard** — The declared front. The position that can be hit and the shield: while a side's Vanguard lives, its Rearguard cannot be targeted. Melee Actors fight from here.
+- **Rearguard** — The declared back. Untargetable while its own Vanguard lives; from safety it fires on the enemy front (ranged), buffs allies, and degrades foes. Reached only once its own front falls.
 - **Suit** — A role track's **identity** (a substance): Iron · Silver · Brass · Bone · Salt, bound 1:1 to a **Role** (Wall · Infiltrator · Artillery · Controller · Support). The Suit is what a reward *is*; the Role is what it *does*. Name treasure by its Suit — "an Iron reward," never "a Wall reward."
 
 ## Combat
 
-- **The Line** — Tier 1: Vanguards strike across, and each crossing Outrider's advance Finesse is weighed against its catcher's hold. Resolved from a start-of-round snapshot; deaths tally at the boundary.
-- **Crossing** — An Outrider's attempt to pass the wall: a single simultaneous Finesse bid (committed cards × Finesse). Strictly more than the catcher's hold slips (and the bypassed wall may convert any remaining Tempo into one free hit per card, no cap — slipping wins right of way, not immunity); equal-or-less is held and trades; an uncaught Outrider slips free. Wall powers raise the hold only.
-- **The Open** — Tier 2: crossed Outriders strike anything behind the line (the Rearguard is the prize), a Vanguard whose foe is dead pours through, Rearguards fire on the front and pick off exposed Outriders, and the struck strike back if they can answer the range.
-- **Open brawl** — If neither side fields a front, no line forms and the Rearguard's safety lifts: everyone may target anyone with whatever range they carry.
-- **Group** — Several same-side Actors bound at Assemble into one unit: one shared intention and one shared target, but distinct Health pools (members die individually). Single-target blows land whole on a defender-chosen member; area effects hit every member at full value; a grouped Vanguard catches with combined Tempo, a grouped Outrider crosses on its weakest member's Tempo. No size cap, no mixed intentions.
-- **Window tag** — A spell's or ranged shot's printed timing: Line (resolves with the Line), Fast (the Open, before the Outrider melee), or Slow (the Open, after it). Casting spends a Tempo card. Persistent **buffs** (Support, ally-targeted) are *not* windowed — they are Assemble standing cards (§4.4), so attacks-before-buffs (§1.9) is never violated; **debuffs** (Controller) are evadable ranged attacks and *are* windowed (§4.2).
+- **Phase 1 / Phase 2** — The two phases of a round. Phase 1: both backs protected — strike the enemy front only. Phase 2 (per side): a side's back is fair game the instant its Vanguard falls. Both phases share one Tempo pool (no refresh between them); Tempo refills at round end. Effects accumulate and lock at the boundary.
+- **Tempo contest** — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
+- **Reach** — Where you can attack from: melee strikes only from the Vanguard, ranged only from the Rearguard. Positions self-sort by attack type; a melee unit in the back is idle until the front breaks.
+- **Group** — Same-side Actors bound at form-up into one unit: one position, one shared target, distinct Health. Single-target damage spills in declared order; AoE hits every member; acting costs one Tempo per member; blocking sums member Tempo, slipping needs every member to beat the attacker. No size cap, no mixed positions.
+- **Hoard X** — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
+- **Spillover** — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member when the current can no longer absorb it.
 - **Trade** — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **Evade** — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **Auto-hit** — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
-- **Attack type** — Each Actor is Melee, Ranged, Both, or Neither. Crossing contests & Outrider strikes are melee; Rearguard fire is ranged. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
+- **Attack type** — Each Actor is Melee, Ranged, Both, or Neither. Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ## Resources
 
 - **Cadence** — A permanent Form stat: how many **Tempo** cards you start each combat round with (the *count*). It is not a magnitude of movement and never sets turn order.
-- **Finesse** — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **tempo contest** — a crossing or an evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
-- **Tempo** — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, contest a crossing, evade a ranged attack, strike back) — standing and soaking are free; spent cards stay spent until the round refreshes.
-
-## Round
-
-- **Phases** — Assemble (hidden: ranks + groups + bids + standing cards) → the Line (Vanguards trade, Outriders contest the crossing) → the Open, in three ordered sub-windows (Fast ▸ Outrider melee ▸ Slow) → Refresh. Order-independent within each window, strictly sequenced between.
+- **Finesse** — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **Tempo contest** — block / slip / evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
+- **Tempo** — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, block / slip / evade, strike back) — standing and soaking are free; spent cards stay spent until the round refresh (shared across the round's two phases; a **Recover** verb can return one mid-round, §5).
 
 ## Clash module
 

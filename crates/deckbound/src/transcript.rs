@@ -598,7 +598,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "TODO(stage-E): transcript markers (crossing:/outrider:) are old-model; re-author for the §4.6 six phases"]
     fn rules_tour_transcript_is_deterministic_and_has_all_three_sections() {
         let scn = rules_tour();
         let a = transcribe(&scn, 1);
@@ -606,12 +605,15 @@ mod tests {
         assert_eq!(a, b, "a transcript must be a pure function of the seed");
 
         // The rules tour must exercise the machinery it claims to, and carry its reference sections.
+        // Markers re-authored for the §4.6 six-phase model (2026-06-26): the old `outrider:` / `crossing:`
+        // gauntlet markers are gone; the rank line now names the §4.6 positions (`vanguard:` /
+        // `rearguard:`).
         for marker in [
             "SCENARIO",
-            "RANKS",     // the §4 Assemble rank allocation (Vanguard / Outrider / Rearguard)
-            "outrider:", // the rank line names all three ranks, not a charged/held binary
-            "crossing:", // an Outrider's card-bound crossing contest (§4 the Line)
-            "ENDROUND",  // at least two rounds — refresh happened
+            "RANKS",      // the §4.6 position allocation (Vanguard / Rearguard)
+            "vanguard:",  // the rank line names the §4.6 front
+            "rearguard:", // …and the §4.6 back
+            "ENDROUND",   // at least two rounds — refresh happened
             "OUTCOME",
             "CARDS USED",
             "GLOSSARY",
@@ -629,7 +631,6 @@ mod tests {
     /// regenerate (`cargo run -p deckbound --example transcript`) and copy `transcripts/rules-tour.1.txt`
     /// over `crates/deckbound/src/snapshots/rules-tour.1.txt`.
     #[test]
-    #[ignore = "TODO(stage-E): golden snapshot is the old charge-gauntlet transcript; regenerate after the §4.6 transcript is re-authored"]
     fn rules_tour_transcript_matches_golden() {
         let got = transcribe(&rules_tour(), 1);
         let want = include_str!("snapshots/rules-tour.1.txt");
