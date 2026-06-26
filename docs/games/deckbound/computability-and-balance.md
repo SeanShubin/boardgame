@@ -414,6 +414,30 @@ Build the instrument before its consumers.
 
 ### 10.7 The exact battle solver — perfect PvE combat play (the §10.1-step-2 oracle, detailed)
 
+> **STATUS — built 2026-06-26 (Phases A–C + E luck-off; D deferred).** Implemented in
+> [`crate::solver`](../../../crates/deckbound/src/solver.rs) (`solve`, `winnable`, `Solution`), alongside
+> the greedy `auto_resolve`/`greedy` it augments. It is a **memoized backward-induction search over the
+> existing `Game` loop**: the foe AI runs *inside* `apply` (`foe_fray`/`foe_volley`) and `legal_actions`
+> only ever offers the committing side — **always the heroes in PvE** — so every hero action has a single
+> successor and the search is single-agent (no minimax). The engine sequences a phase's commitments as
+> single-action steps, so order-independence (§1.9) is collapsed by the **transposition table** keyed on a
+> canonical `state_key`, not a separate set-enumerator. **Verified:** toy known-answers (winnable /
+> not-winnable-without-damage) and the **optimal ≥ greedy** invariant on every small campaign scenario
+> (`solver::tests`); `cargo test probe_solver -- --ignored --nocapture` prints per-scenario verdict / par /
+> node counts.
+>
+> **Empirical width (the §10.7 "validate the branching factor" step):** 2v2 encounters are tiny (Ward 84
+> nodes / par 1; Hold & Rain 5 342 / par 2). **Reachability (`winnable`) scales to the full roster** — the
+> 11-unit "The Five" resolves quickly — because of the **early-cutoff + symmetry pruning + greedy
+> move-ordering** in `Reach`. The **graded `solve`** (battle-par) is exact and cheap on small/medium
+> rosters but expensive on the largest *distinct*-hero scenarios (5 unique heroes ⇒ a 2⁵ position space ×
+> per-phase plays with **no symmetry to collapse**); a node budget (`MAX_NODES`) makes it return
+> `overflowed` rather than hang. **Remaining levers (future perf, exactness-preserving):** **dominance
+> pruning** (the real fix for the distinct-hero graded case) and **full swarm canonicalization** of the
+> `state_key` (merge permutations of identical units — helps graded par on swarms like the six-Husk
+> Swarm). The load-bearing instrument the consumers need — boolean reachability / the difficulty frontier —
+> already scales; graded par is the refinement.
+
 **Ratified 2026-06-26.** The detailed runbook for **step 2** above: replace the greedy combat oracle
 (`solver::auto_resolve`) with one that computes **exact optimal battle play** (no heuristic). It *is* the
 "slow but exact per-battle search" §5 calls for as ground truth — and because the **analysis envelope**
@@ -491,16 +515,22 @@ rounds under greedy (Spec §0.4 note), so depth is small in practice; confirm wi
 
 **Build phases (incremental, each verifiable).**
 
-- **A — legal-action enumerator + canonical state hash.** Reuse `game.rs` action routing for legality;
-  add a per-phase commitment-set generator and a hashable state key. (No search yet.)
-- **B — reachability search, luck-off, boolean objective** + transposition table. Validate on **toy
-  known-answer scenarios** (hand-computed winnable/unwinnable battles). Invariant: **optimal ≥ greedy**
-  always.
-- **C — graded objectives** (rounds-to-clear / frontier) via backward induction with the lexicographic value.
-- **D — luck-on expectimax** — chance nodes over creature fixed distributions + RNG; exact value iteration
-  over the finite horizon.
-- **E — perf + wiring** — dominance/symmetry pruning if B/C show width pressure; expose the API to the
-  par-tooling and the role-weight measurement (this *is* their strong policy).
+- **A — ✅ legal-action enumerator + canonical state hash.** `combat_actions` (legal moves minus the
+  `ToMenu` escape) + `state_key` (round/phase + per-actor mutable state + the round plan; tokens and the
+  attacked-map are sorted so orderings canonicalize). The engine *is* the per-phase set-sequencer.
+- **B — ✅ reachability search, luck-off, boolean objective** + transposition table. `winnable` / `Reach`,
+  with early cutoff + greedy move-ordering. Validated on toy known-answers and the **optimal ≥ greedy**
+  invariant.
+- **C — ✅ graded objectives** via backward induction with the lexicographic value (`solve` → `Solution`
+  `{ win, rounds, downed, health, line }`). Swap the leaf value for rounds-to-clear / the difficulty
+  frontier the role-weight measurement needs.
+- **D — ⬜ luck-on expectimax** (deferred per the ratified first cut) — chance nodes over creature fixed
+  distributions + RNG; exact value iteration over the finite horizon.
+- **E — ◐ perf + wiring.** Done: **symmetry pruning** (collapse interchangeable identical-foe targets) +
+  the boolean early-cutoff, which make reachability scale to the full roster; API exposed
+  (`deckbound::{solve, winnable, Solution}`) as the strong policy for the par-tooling / role-weight /
+  encounter-suite consumers. **Remaining:** **dominance pruning** and **full swarm canonicalization** of
+  the state key, for graded par on the largest (distinct-hero / deep-swarm) encounters.
 
 **API (sketch).** `solve(party, encounter, ruleset, objective) -> { value, optimal_line }` in
 `deckbound::solver` (replaces/augments `greedy`). `optimal_line` = the perfect-play trace (the battle-par
