@@ -103,9 +103,15 @@ An ability has two timing fields:
 
 - **`cast`** — *when you may invoke it:* `standing` (the Standoff) or `strike` (the **Strike
   window = the Fray or the Volley**).
-- **`resolve`** — *when its effect lands:* `on-cast` (immediately, in the phase cast) ·
-  `breach` (a **charge** — cast in the Volley, lands in the Breach) · `reckoning` (**held** to
-  resolve last).
+- **`resolve`** — *when its effect lands.* A card carries one **intrinsic** value: `on-cast`
+  (immediately, in the phase cast) or `reckoning` (**held** to resolve last). The third value,
+  **`breach`, is *derived*, not authored on the card.** It is the timing a **melee** attack takes
+  when used as a **charge** — a *free* Vanguard, targeting the enemy **rear**, in the Volley; the
+  gap-crossing defers the blow to the Breach so the rear can **pre-empt** the crosser. So
+  `resolve: breach` is a property of **melee charging the rear** (reach + breach-state — *targeting
+  is derived, not enumerated*), shared by **every** melee ability, never specific to one card. The
+  same melee attack used as a **flank** (a surviving enemy *front*, no gap) stays `on-cast` — a
+  trade that lands in the Volley.
 
 Old terms → new: **instant** = `resolve: on-cast`; **slow / deferred** = `resolve: reckoning`;
 **a charge** = `resolve: breach`. Because a `strike`/`on-cast` ability isn't phase-locked, the
@@ -132,13 +138,17 @@ deferred resolve, a buff or lingering effect instead of plain Might).
 **The four bare abilities used in the logs:**
 
 ```
-Punch        reach: melee  · cast: strike   · resolve: on-cast (breach when charging) · single · 1 Tempo · Might
+Punch        reach: melee  · cast: strike   · resolve: on-cast · single · 1 Tempo · Might
 Throw Rock   reach: ranged · cast: strike   · resolve: on-cast · single · 1 Tempo · Might
 Throw Bomb   reach: ranged · cast: strike   · resolve: reckoning · AREA · 2 Tempo · Might to ALL in the
              target group — a HELD wind-up; releases at the Reckoning but DROPPED if the thrower dies first
 Rallying Cry                 cast: standing · resolve: on-cast · party · 0 Tempo, ONE-SHOT (flips face
              down for the whole combat) · gives each ally +1 temporary Tempo this round
 ```
+
+*`breach` is not a card field: **any** melee attack — Punch included — resolves at the **Breach**
+instead of on-cast when used as a **charge** on the enemy rear (§6). That's a function of
+melee + targeting the rear, not of the card.*
 
 ---
 

@@ -19,7 +19,7 @@ damage-types, `persist` / `cleave`.
 
 **The Form abilities used.**
 ```
-Punch        reach: melee  · cast: strike   · resolve: on-cast (breach when charging) · single · 1 Tempo · Might
+Punch        reach: melee  · cast: strike   · resolve: on-cast · single · 1 Tempo · Might   (→ breach when charging the rear — a melee/charge function, not Punch's)
 Throw Rock   reach: ranged · cast: strike   · resolve: on-cast · single · 1 Tempo · Might
 Throw Bomb   reach: ranged · cast: strike   · resolve: reckoning · AREA · 2 Tempo · Might to ALL in the
              target group — a HELD wind-up, releases at the Reckoning but DROPPED if the thrower dies first
