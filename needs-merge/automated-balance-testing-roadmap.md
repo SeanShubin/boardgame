@@ -28,6 +28,10 @@
   necessity**). Search the build × play space for a line that beats par or makes the interesting set
   redundant. **Unplanned, and a first-class gate** (the half that catches degenerate *strategies*, where
   necessity catches dead *mechanics*).
+- ⬜ **Variety (reward combining, punish repetition)** — `variety-as-a-balance-objective.md`. A *balancer*
+  objective (not the player's): **combo premium > 0** (combining beats spamming; epic wins require it),
+  **monotone-spam is sub-par**, and combos stay **situational** (closure still holds). Measured via
+  party-restriction + optimal-line diversity. The variety-oriented half of the closure family.
 - ◐ **Necessity (§6.1) at the MECHANIC level** — roles are partially covered (the suite niches).
   **Remains:** a required-to-win scenario for **every** ability / keyword / phase-rule, the **dependency
   graph** (each scenario forces exactly one new mechanic → topological sort = test order = tutorial
@@ -45,6 +49,14 @@
   retune that lets a naive line win **breaks the build**) vs on-demand **sweeps** (today's `balance.rs`
   `probe_*` `#[ignore]` reports). **Remains:** decide which checks are gates, plus the **solver's
   performance budget** (the par-tooling must be fast enough to run).
+- ◐ **Searchability bound — a design signal, not a silent cutoff** *(2026-06-26)*. The solver runs under a
+  **path budget** (`MAX_NODES` / the new `winnable_within(max_nodes)` returning `overflowed`). §0.4's
+  analysis envelope makes the state space **finite**, but ability designs (unbounded Charge/token stacking)
+  can **inflate** it — so "searchable within the budget" is a **design constraint on abilities**, the
+  sibling of §0.4's "winnable within the horizon": *an encounter whose optimal-play search **overflows** the
+  budget is a design smell to **decide** on* (raise the bound, simplify the ability/encounter, or accept it
+  knowingly), surfaced as a **needs-decision flag**, never silently cranked. **Remains:** the harness must
+  treat `overflowed` as this signal + report it; promote to §0.4 as a stated assertion.
 - ⬜ **Tuning loop** — seed numbers → tune against the suite/solver → human gate (we deferred numbers:
   "propose seeds, tune via balance tests"). The workflow itself is unplanned.
 

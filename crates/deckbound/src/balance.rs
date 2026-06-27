@@ -22,8 +22,9 @@ use crate::actor::Actor;
 use crate::campaign::grind_encounter;
 use crate::currency::Currency;
 use crate::encounter::EncounterCard;
+use crate::ruleset::Ruleset;
 use crate::scenarios::{RewardId, build_character, build_encounter_foes, rewards_for};
-use crate::solver::auto_resolve;
+use crate::solver::{Solution, auto_resolve, solve_within, winnable_within};
 use crate::world::REWARD_SUITS;
 
 /// A balance property the current content fails to satisfy against the resolver-of-record.
@@ -122,11 +123,12 @@ fn lock_entry(creature: &str, count: u32) -> crate::encounter::RosterEntry {
 fn lock_encounter(role: Currency) -> EncounterCard {
     use crate::form::StatCard;
     let foes = match role {
-        // Infiltrator — a lethal ranged **backline** (Slingers) screened by a Husk front: melee Wall
-        // killers bog on the screen while the Slingers plink them down; only a **slip** (the §4.6 Volley
-        // charge) reaches the back. Seed re-tuned for the §4.6 resolver (2026-06-26): Husk 2 / Slinger 3
-        // is the band where the Wall baseline loses and the slip tips it.
-        Currency::Silver => vec![lock_entry("Husk", 2), lock_entry("Slinger", 3)],
+        // Infiltrator — lever-gated + DECISIVE (2026-06-26): a light **Husk** screen + a **lethal Slinger
+        // backline**. The trade-back-only Wall bogs on the screen while the Slingers shred the party in
+        // ~2 rounds — a FAST loss (small search, not a grindy Golem stalemate). The Infiltrator **slips**
+        // past the screen (the §4.6 Volley charge) and kills the Slingers before they kill the party — so
+        // the slip is the key, not a harder fight. Tuned to the band where the Wall loses and the slip tips it.
+        Currency::Silver => vec![lock_entry("Husk", 2), lock_entry("Slinger", 4)],
         // Artillery — a **high-toughness** front (Brutes): low-Might Wall fists barely flip a card; only
         // Artillery's heavy Might bursts through the bar (§2.2).
         Currency::Brass => vec![lock_entry("Brute", 1)],
@@ -273,6 +275,279 @@ pub fn report(violations: &[Violation]) -> String {
     s
 }
 
+// ====================================================================================================
+// Role-weight — marginal contribution across an encounter suite (the robust necessity instrument).
+// ====================================================================================================
+//
+// The §8.6 *single exclusive lock* per role is structurally fragile (see
+// `needs-merge/lock-exclusivity-finding.md`): two levers are "universal solvents" (Support's sustain
+// wins any grind; the Infiltrator's burst kills any exposed source), so locks overlap and only the
+// *screened* slip lock is cleanly exclusive. The robust instrument measures, instead, each role's
+// **marginal contribution** in the context of a *full* party across a *suite* — where overlap is
+// expected and fine. We do **leave-one-out by SWAP** (replace the role's specialist with a vanilla
+// Novice, holding body count at the party size) so we isolate the role's *kit* from raw headcount, and
+// grade the delta on the solver's lexicographic value (win → fewer rounds → fewer downed → more Health).
+// A role that flips or improves outcomes *somewhere* in the suite pulls its weight; one that is
+// redundant everywhere is a dead-mechanic candidate; one that makes the party *worse* (Hurts) is an
+// anti-synergy / over-cost signal.
+
+// **Why winnability, not graded par, for the per-role pass.** Graded `solve` cannot short-circuit —
+// to prove a value *optimal* it must explore the whole tree — so a 5-hero full-kit graded solve
+// overflows even a 300K-node budget (≈15 min, every verdict `budget-limited`), and a budget-limited
+// graded value is a *lower bound at the cut*, not the optimum: its rounds/downed/health are an artifact
+// of where the search stopped and are **not comparable across parties** (a probe run showed the Wall
+// reading "HURTS everywhere" purely because each truncated search hit its first win at a different
+// depth). So marginal *necessity* rides [`winnable_within`] — which **short-circuits on the first win**
+// (cheap regardless of budget) and gives a reliable boolean flip. The graded *weight* (does a role
+// improve par/downed/Health beyond bare winnability — the Anchor's real axis) needs the full optimum,
+// so it is measured separately on **tractable small scenarios** ([`battle_par_report`]), never on the
+// 5-hero party. The searchability-bound finding itself: full-kit graded par is out of practical reach.
+
+/// One role's marginal **necessity** in a full-party context (winnability flip on a single encounter).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Necessity {
+    /// Full party wins; removing the role's kit makes it unwinnable — load-bearing here (a FLIP).
+    Necessary,
+    /// Both winnable — the role's kit is not *required* for the win here (its value, if any, is graded:
+    /// fewer downed / more Health — invisible to a win/loss boolean; see [`battle_par_report`]).
+    Redundant,
+    /// The full party cannot win this encounter at all — too hard to attribute a role to (re-tune it).
+    Insufficient,
+}
+
+impl Necessity {
+    fn classify(full_win: bool, without_win: bool) -> Self {
+        match (full_win, without_win) {
+            (true, false) => Necessity::Necessary,
+            (true, true) => Necessity::Redundant,
+            (false, _) => Necessity::Insufficient,
+        }
+    }
+
+    fn tag(self) -> &'static str {
+        match self {
+            Necessity::Necessary => "NECESSARY",
+            Necessity::Redundant => "redundant",
+            Necessity::Insufficient => "(full party loses)",
+        }
+    }
+}
+
+/// A small **encounter suite** spanning the design's levers: an armored front, a screened lethal
+/// backline, a swarm, a Toughness wall, a mixed multi-rank threat, and a **lethal volley** (high
+/// incoming ranged damage) — the last sized so an *unprotected* party is overwhelmed, the one axis on
+/// which the **Anchor's** protection flips winnability (every other lever is offense, where the Wall
+/// reads redundant). Foe bands reuse the §8.6 lock vocabulary. Seeds — tune against the report.
+fn balance_suite() -> Vec<(&'static str, EncounterCard)> {
+    use crate::form::StatCard;
+    let enc = |name: &'static str, foes: Vec<crate::encounter::RosterEntry>| {
+        (
+            name,
+            EncounterCard {
+                name: name.into(),
+                currency: Currency::Gold,
+                strategy: "aggressor".into(),
+                foes,
+                scaling: StatCard::default(),
+            },
+        )
+    };
+    // Scaled to challenge a FIVE-body full-kit party (the §8.6 bands were sized for 3 heroes and a
+    // 5-body party trivially won them → no flip). Sized toward the party's *edge*, where winnability is
+    // sensitive to removing a single kit; tune against the report.
+    vec![
+        enc("armored front", vec![lock_entry("Brute", 6)]),
+        enc(
+            "screened backline",
+            vec![lock_entry("Husk", 4), lock_entry("Slinger", 8)],
+        ),
+        enc("swarm", vec![lock_entry("Husk", 24)]),
+        enc("toughness wall", vec![lock_entry("Golem", 3)]),
+        enc(
+            "mixed threat",
+            vec![
+                lock_entry("Brute", 3),
+                lock_entry("Slinger", 8),
+                lock_entry("Husk", 8),
+            ],
+        ),
+        enc("lethal volley", vec![lock_entry("Slinger", 14)]),
+    ]
+}
+
+/// The **full-kit party**: one specialist per reward suit (the realistic context a role's marginal
+/// value is measured in). Body count = number of reward suits.
+fn full_party() -> Vec<Actor> {
+    REWARD_SUITS
+        .iter()
+        .map(|&s| build_character("Novice", &rewards_up_to(s, 5)))
+        .collect()
+}
+
+/// The full party with `role`'s **kit removed but its body kept** (a vanilla Novice in its slot), so
+/// the delta isolates the role's mechanics from raw headcount.
+fn party_minus(role: Currency) -> Vec<Actor> {
+    REWARD_SUITS
+        .iter()
+        .map(|&s| {
+            if s == role {
+                build_character("Novice", &[])
+            } else {
+                build_character("Novice", &rewards_up_to(s, 5))
+            }
+        })
+        .collect()
+}
+
+/// **Role-weight report (marginal necessity)** — for each suite encounter, is the full-kit party
+/// winnable, and does removing each role's kit (body kept) make it unwinnable (a FLIP = NECESSARY)?
+/// Rides [`winnable_within`], which short-circuits wins, so the whole sweep is fast and the verdicts
+/// reliable. `budget` bounds loss-confirmation; a budget-limited verdict is flagged `?` (a budget-
+/// limited "unwinnable" is not a *proven* loss — raise the budget or shrink the encounter). The Anchor
+/// reads redundant on offense encounters by design — its weight is graded; see [`battle_par_report`].
+pub fn role_weight_report(seed: u64, budget: u64) -> String {
+    let suite = balance_suite();
+    let roles: Vec<Currency> = REWARD_SUITS.to_vec();
+    // tally[role] = (necessary, redundant, insufficient)
+    let mut tally: Vec<[u32; 3]> = vec![[0; 3]; roles.len()];
+    let mut out = String::from(
+        "role-weight — marginal NECESSITY per role across the suite (LOO-swap, winnability):\n",
+    );
+    for (name, enc) in &suite {
+        let foes = || build_encounter_foes(enc, 5);
+        let (full_win, full_of) = winnable_within(full_party(), foes(), seed, budget);
+        out.push_str(&format!(
+            "\n  {name}: full {}{}\n",
+            if full_win { "winnable" } else { "UNWINNABLE" },
+            if full_of { " [budget-limited]" } else { "" }
+        ));
+        for (i, &r) in roles.iter().enumerate() {
+            let (w, of) = winnable_within(party_minus(r), foes(), seed, budget);
+            let c = Necessity::classify(full_win, w);
+            tally[i][c as usize] += 1;
+            out.push_str(&format!(
+                "      {:<12} {:<18} (without: {}{})\n",
+                r.label(),
+                c.tag(),
+                if w { "winnable" } else { "unwinnable" },
+                if of { "?" } else { "" },
+            ));
+        }
+    }
+    out.push_str("\n  per-role over the suite (necessary / redundant / insufficient):\n");
+    for (i, &r) in roles.iter().enumerate() {
+        let [nec, rd, ins] = tally[i];
+        let verdict = if nec > 0 {
+            "load-bearing (flips at least one encounter)"
+        } else if rd > 0 {
+            "no winnability flip — weight is graded (downed/Health); check battle par"
+        } else {
+            "INERT in this suite (full party never wins where it's swapped) — re-tune the suite"
+        };
+        out.push_str(&format!(
+            "      {:<12} {nec}/{rd}/{ins}  — {verdict}\n",
+            r.label()
+        ));
+    }
+    out
+}
+
+/// **Battle-par report (graded weight, tractable scenarios only)** — the graded refinement winnability
+/// can't give: on the small §8.6 **lock parties** (3 heroes — within the graded solver's practical
+/// reach), solve for the optimal value and show how adding the lock's role changes **par / downed /
+/// Health**. This is where an Anchor's contribution (fewer downed, more Health) becomes legible, and
+/// where battle-par regressions would be asserted. A `[budget-limited]` line means even the small solve
+/// overflowed `budget` — the searchability-bound signal; trust only un-flagged values.
+pub fn battle_par_report(seed: u64, budget: u64) -> String {
+    let mut out = String::from(
+        "battle par — graded value on the 3-hero lock parties (baseline vs +role; optimal play):\n",
+    );
+    for &lock in &PAIRED_ROLES {
+        let enc = lock_encounter(lock);
+        let foes = || build_encounter_foes(&enc, 5);
+        let base = solve_within(
+            lock_party(lock, LOCK_PARTY, false),
+            foes(),
+            seed,
+            Ruleset::analysis(),
+            budget,
+        );
+        let keyed = solve_within(
+            lock_party(lock, LOCK_PARTY, true),
+            foes(),
+            seed,
+            Ruleset::analysis(),
+            budget,
+        );
+        out.push_str(&format!(
+            "  {:<10} baseline {}{}  →  +{} {}{}\n",
+            lock.label(),
+            outcome_str(&base),
+            if base.overflowed {
+                " [budget-limited]"
+            } else {
+                ""
+            },
+            lock.label(),
+            outcome_str(&keyed),
+            if keyed.overflowed {
+                " [budget-limited]"
+            } else {
+                ""
+            },
+        ));
+    }
+    out
+}
+
+/// A compact `win (rN dD hH)` / `loss` string for a solved battle (graded; meaningful when not
+/// budget-limited).
+fn outcome_str(s: &Solution) -> String {
+    if s.win {
+        format!("win (r{} d{} h{})", s.rounds, s.downed, s.health)
+    } else {
+        "loss".to_string()
+    }
+}
+
+/// Build an ad-hoc fixed-band encounter from `(creature, count)` pairs (unscaled, like the suite) — the
+/// raw material for the ramp / niche experiments.
+#[cfg(test)]
+fn custom_encounter(name: &'static str, bands: &[(&str, u32)]) -> EncounterCard {
+    use crate::form::StatCard;
+    EncounterCard {
+        name: name.into(),
+        currency: Currency::Gold,
+        strategy: "aggressor".into(),
+        foes: bands.iter().map(|&(c, n)| lock_entry(c, n)).collect(),
+        scaling: StatCard::default(),
+    }
+}
+
+/// One-line marginal-necessity summary for a single encounter vs the full party: is it winnable, and
+/// which roles' kits are NECESSARY (remove the kit, keep the body → the fight is lost)? A `?` marks a
+/// budget-limited (unproven) verdict. The shared core of [`role_weight_report`]'s experiments.
+#[cfg(test)]
+fn flip_summary(enc: &EncounterCard, seed: u64, budget: u64) -> String {
+    let foes = || build_encounter_foes(enc, 5);
+    let (full_win, full_of) = winnable_within(full_party(), foes(), seed, budget);
+    if !full_win {
+        return format!("full UNWINNABLE{}", if full_of { "?" } else { "" });
+    }
+    let keys: Vec<String> = REWARD_SUITS
+        .iter()
+        .filter_map(|&r| {
+            let (w, of) = winnable_within(party_minus(r), foes(), seed, budget);
+            (!w).then(|| format!("{}{}", r.label(), if of { "?" } else { "" }))
+        })
+        .collect();
+    if keys.is_empty() {
+        "winnable; no role necessary".into()
+    } else {
+        format!("winnable; NECESSARY: {}", keys.join(", "))
+    }
+}
+
 /// T3 — **stat decisiveness** (§8.6 no-redundant-stat, coarse view): zero each offensive magnitude
 /// stat across the grind-ladder parties and report whether it **flips** any L5 win/loss. This is a
 /// *decisiveness* probe, not a consumption proof: a stat that is consumed but never tips an outcome
@@ -326,7 +601,7 @@ mod tests {
     use super::*;
     use crate::ruleset::Ruleset;
     use crate::scenarios::build_creature;
-    use crate::solver::auto_resolve_with;
+    use crate::solver::{auto_resolve_with, winnable_within};
 
     /// Diagnostic (run on demand): print the current balance violations.
     /// `cargo test -p deckbound probe_grind_balance -- --ignored --nocapture`.
@@ -373,6 +648,201 @@ mod tests {
                 }
             }
             println!();
+        }
+    }
+
+    /// **Solver** necessity/exclusivity diagnostic — the §8.6 picture under OPTIMAL play (`winnable`,
+    /// the strong policy), not greedy `auto_resolve`. For each lock: is the baseline (no key role)
+    /// winnable, and which roles swapped into slot 0 flip a losing baseline to a win (KEY = the lock's
+    /// own role)? A healthy lock: baseline = loss, and **only** its KEY flips it. Anything else flipping
+    /// it — especially the Wall baseline winning outright — is the dominance/role-substitution signal.
+    /// `cargo test -p deckbound probe_solver_locks -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_solver_locks() {
+        const BUDGET: u64 = 50_000; // bound loss-confirmation; wins short-circuit well under this
+        for &lock in &PAIRED_ROLES {
+            let enc = lock_encounter(lock);
+            let foes = || build_encounter_foes(&enc, 5);
+            let (base, base_of) =
+                winnable_within(lock_party(lock, LOCK_PARTY, false), foes(), 1, BUDGET);
+            print!(
+                "{} lock {:?}: base_win={base}{}  flips:",
+                lock.label(),
+                enc.roster(5),
+                if base_of { " [budget-limited]" } else { "" }
+            );
+            for &r in &PAIRED_ROLES {
+                let mut p = lock_party(lock, LOCK_PARTY, false);
+                p[0] = build_character("Novice", &rewards_up_to(r, 5));
+                let (w, _of) = winnable_within(p, foes(), 1, BUDGET);
+                if w && !base {
+                    print!(" +{}{}", r.label(), if r == lock { "(KEY)" } else { "" });
+                }
+            }
+            println!();
+        }
+    }
+
+    /// **Role-weight** marginal-necessity report (the robust, overlap-tolerant necessity instrument):
+    /// for each suite encounter, is the full-kit party winnable, and does removing each role's kit make
+    /// it unwinnable (a FLIP = NECESSARY)? Rides winnability (short-circuits wins → fast + reliable),
+    /// unlike graded par at full-party scale (intractable — see the module note). `budget` bounds
+    /// loss-confirmation; a `?` marks a budget-limited verdict.
+    /// `cargo test -p deckbound probe_role_weight -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_role_weight() {
+        const BUDGET: u64 = 400_000;
+        println!("{}", role_weight_report(1, BUDGET));
+    }
+
+    /// **Battle-par** graded report on the tractable 3-hero lock parties — the par/downed/Health weight
+    /// winnability can't show (where an Anchor's contribution is legible). `[budget-limited]` flags a
+    /// solve that overflowed (the searchability signal). `cargo test -p deckbound probe_battle_par -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_battle_par() {
+        const BUDGET: u64 = 1_000_000;
+        println!("{}", battle_par_report(1, BUDGET));
+    }
+
+    /// EXPERIMENT 1 — **size ramp**: grow ONE encounter and watch the *order* roles flip. Hypothesis:
+    /// raw size makes *survival* binding first (Wall/Support flip early); offense roles flip late or
+    /// never from count alone (their constraint is shape, not size).
+    /// `cargo test -p deckbound probe_flip_ramp -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_flip_ramp() {
+        const BUDGET: u64 = 200_000;
+        println!("size ramp — flip set as one encounter grows (seed 1):");
+        println!("  swarm (Husk, melee chip):");
+        for n in [8u32, 16, 24, 32, 40] {
+            let enc = custom_encounter("swarm", &[("Husk", n)]);
+            println!("    Husk x{n:<3} {}", flip_summary(&enc, 1, BUDGET));
+        }
+        println!("  volley (Slinger, ranged burst):");
+        for n in [6u32, 10, 14, 18, 22] {
+            let enc = custom_encounter("volley", &[("Slinger", n)]);
+            println!("    Slinger x{n:<3} {}", flip_summary(&enc, 1, BUDGET));
+        }
+    }
+
+    /// EXPERIMENT 2 — **per-role niche scenarios**: one encounter *shaped* to bind each role's specific
+    /// capability. Ideal: each is NECESSARY for (only) its keyed role. A niche that flips its key + others
+    /// = overlap; one that flips *nobody* (while still hard) = that capability is fungible — the role has
+    /// no distinct *responsibility* here, a design signal, not a tuning miss.
+    /// `cargo test -p deckbound probe_niche_scenarios -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_niche_scenarios() {
+        const BUDGET: u64 = 200_000;
+        // (intended key role, shape name, foe bands) — best-effort shapes per the responsibilities table.
+        let niches: &[(&str, &str, &[(&str, u32)])] = &[
+            ("Iron", "burst spike (heavy ranged)", &[("Slinger", 18)]),
+            ("Salt", "attrition (sustained swarm)", &[("Husk", 30)]),
+            ("Brass", "armored line (Toughness front)", &[("Brute", 9)]),
+            (
+                "Silver",
+                "Golem-screened backline",
+                &[("Golem", 2), ("Slinger", 10)],
+            ),
+            ("Bone", "toughness wall (Golems)", &[("Golem", 4)]),
+        ];
+        println!(
+            "per-role niche scenarios — does each shaped fight flip (only) its key? (seed 1):"
+        );
+        for &(key, name, bands) in niches {
+            let enc = custom_encounter("niche", bands);
+            println!("  [{key:<6}] {name:<32} {}", flip_summary(&enc, 1, BUDGET));
+        }
+    }
+
+    /// STEP 1 — **does the solver actually play the slip?** Solve a small scenario where slipping is the
+    /// natural line — an Infiltrator + a Wall vs a tanky front (Golem) screening a lethal ranged back
+    /// (Slingers). Print the optimal line; if it contains `Charge` (a freed Vanguard charging the enemy
+    /// Rearguard) and/or `Pass`/`Smoke`, the slip is exercised by optimal play (not just legal).
+    /// `cargo test -p deckbound probe_slip_is_played -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_slip_is_played() {
+        let inf = build_character("Novice", &rewards_up_to(Currency::Silver, 5));
+        let wall = build_character("Novice", &rewards_up_to(Currency::Iron, 5));
+        // The hero card names, so PlayCard(i, idx) is legible (e.g. "Slip Strike").
+        let names: Vec<Vec<String>> = [&inf, &wall]
+            .iter()
+            .map(|a| a.actions.iter().map(|c| c.name.clone()).collect())
+            .collect();
+        // Winnable, and the lone backline Slinger survives to be reached — so a win must route to the back.
+        let enc = custom_encounter("slip-test", &[("Husk", 1), ("Slinger", 1)]);
+        let sol = solve_within(
+            vec![inf, wall],
+            build_encounter_foes(&enc, 5),
+            1,
+            Ruleset::analysis(),
+            3_000_000,
+        );
+        println!(
+            "slip scenario (Infiltrator+Wall vs Husk front / Slinger back): {}{}",
+            outcome_str(&sol),
+            if sol.overflowed {
+                " [budget-limited]"
+            } else {
+                ""
+            },
+        );
+        for act in &sol.line {
+            let s = format!("{act:?}");
+            if s.contains("SetVanguard") || s.contains("SetRearguard") || s.contains("Deploy") {
+                continue; // skip Standoff position noise
+            }
+            // Annotate PlayCard with the card name.
+            let label = match act {
+                crate::game::Action::PlayCard(i, idx) => names
+                    .get(*i)
+                    .and_then(|c| c.get(*idx))
+                    .map(|n| format!("{s}  = \"{n}\""))
+                    .unwrap_or(s),
+                _ => s,
+            };
+            println!("    {label}");
+        }
+    }
+
+    /// **Can we build an encounter that *requires* the Infiltrator?** Combined-arms: a lethal melee
+    /// **front** (Brutes) that pins the Wall/Support holding the line, plus a ranged **back** (Slingers)
+    /// that must be killed and whose counter-fire punishes a glass charger — so the squishies can't safely
+    /// cross and the tanks can't leave the front. The slip should be the only safe back-killer → removing
+    /// Silver should flip the fight. Ramp to find the band. `cargo test -p deckbound probe_infiltrator_required -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_infiltrator_required() {
+        const BUDGET: u64 = 300_000;
+        println!("combined-arms (front pins tanks; back must be slip-killed) — flips? (seed 1):");
+        for (b, s) in [(4u32, 8u32), (6, 8), (4, 12), (6, 12), (8, 12), (6, 16)] {
+            let enc = custom_encounter("combined", &[("Brute", b), ("Slinger", s)]);
+            println!(
+                "  Brute {b} + Slinger {s}: {}",
+                flip_summary(&enc, 1, BUDGET)
+            );
+        }
+    }
+
+    /// EXPERIMENT 3 — **the Toughness extreme** (does *Strip* have an isolating extreme, or is focus-fire
+    /// a universal substitute?). Ramp the breadth of **Monolith** (Toughness 10, above any single hit).
+    /// Hypothesis: a single Monolith is focus-fired down (the party stacks one per-phase pile over the
+    /// wall → Sunder not needed); a *rank* of them forces the party to SPREAD, each pile drops below the
+    /// wall → nothing flips → only **Bone's Sunder/Hex** opens them. If Bone flips at breadth, Strip is a
+    /// real non-fungible responsibility; if nobody flips (or survival flips), Strip is fungible like
+    /// Vitality. `cargo test -p deckbound probe_toughness_extreme -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_toughness_extreme() {
+        const BUDGET: u64 = 200_000;
+        println!("Toughness extreme — Monolith (T10) breadth ramp (seed 1):");
+        for n in [1u32, 2, 3, 4, 5] {
+            let enc = custom_encounter("monoliths", &[("Monolith", n)]);
+            println!("  Monolith x{n}  {}", flip_summary(&enc, 1, BUDGET));
         }
     }
 

@@ -238,6 +238,25 @@ pub(crate) fn check_outcome(state: &mut State) {
     }
 }
 
+/// A single-purpose round-resolution step (§4 exploded-phase model): it does exactly one thing to the
+/// state — resolve a strike-set, finalize deaths, or wipe an accumulator.
+type ResolutionStep = fn(&Deckbound, &mut State);
+
+/// The **§4 post-Volley resolution as one editable list** (the exploded-phase model): pre-empt → wipe,
+/// then Breach → wipe, then Reckoning → wipe. Each resolve step finalizes its own deaths (tally); every
+/// `clear_piles` is an **isolated accumulator-wipe that does *only* that**, so reordering/removing one
+/// directly tunes how much focus-fire accumulates across a phase boundary (the Toughness-as-wall dial).
+/// The runner ([`Deckbound::end_volley`]) checks the outcome after every step and stops the instant the
+/// battle ends. To change the model, edit this list.
+const POST_VOLLEY_SCHEDULE: &[(&str, ResolutionStep)] = &[
+    ("preempt", Deckbound::step_preempt),
+    ("clear_piles", Deckbound::step_clear_piles),
+    ("breach", Deckbound::step_breach),
+    ("clear_piles", Deckbound::step_clear_piles),
+    ("reckoning", Deckbound::step_reckoning),
+    ("clear_piles", Deckbound::step_clear_piles),
+];
+
 impl Deckbound {
     // ---- §4.6 six-phase round -------------------------------------------------
 
@@ -372,40 +391,49 @@ impl Deckbound {
         }
     }
 
-    /// End the Volley: resolve the rear's pre-emptive answers (already applied as charges were
-    /// declared via [`combat::resolve_volley`] at phase close), finalize deaths, wipe piles, then the
-    /// Breach and the Reckoning.
+    /// End the Volley → Breach → Reckoning, then the Lull (next round). Runs [`POST_VOLLEY_SCHEDULE`] —
+    /// the §4 resolution as an ordered list of single-purpose steps — checking the outcome after each and
+    /// stopping the instant the battle ends. The behavior is identical to the old hardcoded flow; the
+    /// difference is that the sequence (and the accumulator-wipes) is now **data we can edit**.
     fn end_volley(&self, state: &mut State) {
+        for (_name, step) in POST_VOLLEY_SCHEDULE {
+            step(self, state);
+            check_outcome(state);
+            if state.outcome.is_some() {
+                return;
+            }
+        }
+        self.next_round(state);
+    }
+
+    // ---- §4 round-resolution steps (single-purpose; sequenced by POST_VOLLEY_SCHEDULE) ----
+
+    /// **Pre-empt:** the rear answers the declared charges first (counter-fire / strike-back / dodge),
+    /// then finalize deaths.
+    fn step_preempt(&self, state: &mut State) {
         let charges = state.plan.charges.clone();
         let mut log = std::mem::take(&mut state.log);
-        // Pre-empt: the rear answers first (counter-fire / strike-back / dodge) before the Breach.
         combat::resolve_volley(&mut state.heroes, &mut state.creatures, &charges, &mut log);
         combat::tally(&mut state.heroes, &mut log);
         combat::tally(&mut state.creatures, &mut log);
         state.log = log;
-        check_outcome(state);
-        if state.outcome.is_some() {
-            return;
-        }
-        combat::clear_phase_piles(&mut state.heroes);
-        combat::clear_phase_piles(&mut state.creatures);
+    }
 
-        // Breach: surviving chargers land their blows (§4.6 #4).
+    /// **Breach:** surviving chargers land their blows on the exposed Rearguard (§4.6 #4), then tally.
+    fn step_breach(&self, state: &mut State) {
         state.phase = Phase::Breach;
         state.log.push("-- the Breach --".into());
+        let charges = state.plan.charges.clone();
         let mut log = std::mem::take(&mut state.log);
         combat::resolve_breach(&mut state.heroes, &mut state.creatures, &charges, &mut log);
         combat::tally(&mut state.heroes, &mut log);
         combat::tally(&mut state.creatures, &mut log);
         state.log = log;
-        check_outcome(state);
-        if state.outcome.is_some() {
-            return;
-        }
-        combat::clear_phase_piles(&mut state.heroes);
-        combat::clear_phase_piles(&mut state.creatures);
+    }
 
-        // Reckoning: deferred spells resolve, fizzling if their caster died in the Breach (§4.6 #5).
+    /// **Reckoning:** deferred spells resolve, fizzling if their caster died in the Breach (§4.6 #5),
+    /// then tally.
+    fn step_reckoning(&self, state: &mut State) {
         state.phase = Phase::Reckoning;
         state.log.push("-- the Reckoning --".into());
         let deferred = state.plan.deferred.clone();
@@ -414,13 +442,14 @@ impl Deckbound {
         combat::tally(&mut state.heroes, &mut log);
         combat::tally(&mut state.creatures, &mut log);
         state.log = log;
-        check_outcome(state);
-        if state.outcome.is_some() {
-            return;
-        }
+    }
+
+    /// **Accumulator-wipe** (does ONLY this, §4): clear the per-phase pile on both sides so
+    /// sub-threshold damage never crosses a phase boundary. Its placement is the focus-fire /
+    /// Toughness-as-wall dial — moving or removing it changes how much damage accumulates before a wall.
+    fn step_clear_piles(&self, state: &mut State) {
         combat::clear_phase_piles(&mut state.heroes);
         combat::clear_phase_piles(&mut state.creatures);
-        self.next_round(state);
     }
 
     /// PvE creature **Fray**: each living foe Vanguard strikes the first living hero Vanguard (a melee

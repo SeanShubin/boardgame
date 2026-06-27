@@ -9,7 +9,7 @@ HEROES
       Iron L1     Brace                   vitality 2, toughness 1
       Iron L2     Phalanx                 vitality 2, toughness 1
       Iron L3     Aegis                   vitality 3
-      Iron L4     Shield Sweep            vitality 2, toughness 2
+      Iron L4     Bastion                 vitality 2, toughness 2
       Iron L5     Last Stand · Taunt      vitality 4, toughness 2
       Totals                              might 1, vitality 18, toughness 7, cadence 3
   Wisp — Human · Fist [melee]  (12 cards)   cardsets: Silver

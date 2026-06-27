@@ -15,8 +15,8 @@
 | Salt — Support | 10 |
 | Weapons | 7 |
 | Pool | 21 |
-| Cast | 22 |
-| **Total** | **102** |
+| Cast | 23 |
+| **Total** | **103** |
 
 ## Baseline (1 cards)
 
@@ -34,7 +34,7 @@
 | 2 | Iron L2 | stat | vitality 2, toughness 1 |
 | 3 | Aegis | action | cover an ally |
 | 3 | Iron L3 | stat | vitality 3 |
-| 4 | Shield Sweep | action | might 2, x3 targets |
+| 4 | Bastion | action | cover an ally, x2 targets |
 | 4 | Iron L4 | stat | vitality 2, toughness 2 |
 | 5 | Last Stand | action | cannot fall |
 | 5 | Taunt | passive | — |
@@ -138,7 +138,7 @@
 | — | Backstab | passive | — |
 | 4 | Longshot | passive | — |
 
-## Cast (22 cards)
+## Cast (23 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -157,6 +157,7 @@
 | — | Seer | character | Hexer · Wand |
 | — | Ogre | character | Boss · Maul |
 | — | Golem | character | Bulwark · Maul |
+| — | Monolith | character | Bulwark · Maul |
 | — | Vael | character | Duelist · Blade |
 | — | Pell | character | Charger · Claw |
 | — | Bron | character | Leader · Claw |

@@ -518,6 +518,7 @@ struct Solver<'a> {
     stack: HashSet<StateKey>,
     nodes: u64,
     overflow: bool,
+    max_nodes: u64,
 }
 
 impl Solver<'_> {
@@ -531,15 +532,19 @@ impl Solver<'_> {
         if let Some(v) = self.memo.get(&key) {
             return *v;
         }
-        if self.nodes >= MAX_NODES {
+        if self.nodes >= self.max_nodes {
             self.overflow = true;
             return Value::LOSS;
         }
         self.nodes += 1;
-        // A state revisited while still on the stack is a no-progress cycle (the free
-        // Standoff position toggles): it can never improve a single-agent maximum, so
-        // the cycle edge is worth nothing.
-        if !self.stack.insert(key.clone()) {
+        // A state revisited while still on the stack is a no-progress cycle. Key the path-stack on the
+        // MATERIAL state (round excluded): a round transition with **no state change** re-enters the
+        // same material state with fewer rounds — a dominated loop that can never improve a single-agent
+        // maximum — so prune it. This collapses non-terminating stalemates that would otherwise explore
+        // all five rounds × the per-round branching (§0.4).
+        let mut mkey = key.clone();
+        mkey.round = 0;
+        if !self.stack.insert(mkey.clone()) {
             return Value::LOSS;
         }
         let mut best = Value::LOSS;
@@ -553,39 +558,52 @@ impl Solver<'_> {
                 }
             }
         }
-        self.stack.remove(&key);
+        self.stack.remove(&mkey);
         self.memo.insert(key, best);
         best
     }
 
-    /// Reconstruct the optimal line by walking from the root, taking the action whose
-    /// successor carries the (memoized) best value at each step.
+    /// Reconstruct the optimal line by walking from the root, at each step taking the **highest-value
+    /// action that leads to an as-yet-unvisited material state**. The unseen guard is essential: many
+    /// actions are value-neutral (e.g. Standoff position toggles `SetVanguard(0)`↔`SetRearguard(0)`), and
+    /// a plain greedy walk oscillates between them forever. Skipping revisited material states forces
+    /// progress; an optimal **win** line never needs to revisit one (a revisit only wastes rounds), so
+    /// this still extracts an optimal-value line.
     fn witness(&mut self, root: &State) -> Vec<Action> {
+        let mat = |s: &State| {
+            let mut k = state_key(s);
+            k.round = 0; // material key: collapse the round so a no-progress revisit is caught
+            k
+        };
         let mut line = Vec::new();
         let mut cur = root.clone();
+        let mut seen: HashSet<StateKey> = HashSet::new();
+        seen.insert(mat(&cur));
         let mut guard = 0u32;
         while cur.outcome.is_none() && guard < 100_000 {
             guard += 1;
-            let mut best: Option<(Action, Value)> = None;
+            // All applicable actions with their optimal-play value and resulting state.
+            let mut cands: Vec<(Action, Value, State)> = Vec::new();
             for action in combat_actions_dedup(self.game, &cur) {
                 let mut child = cur.clone();
                 child.log.clear();
                 if self.game.apply(&mut child, &action).is_ok() {
                     let v = self.run(&child);
-                    if best.is_none_or(|(_, bv)| v > bv) {
-                        best = Some((action, v));
-                    }
+                    cands.push((action, v, child));
                 }
             }
-            match best {
-                Some((action, _)) => {
-                    cur.log.clear();
-                    if self.game.apply(&mut cur, &action).is_err() {
-                        break;
-                    }
+            // Highest value first; among those, the first that reaches an unvisited material state.
+            cands.sort_by(|a, b| b.1.cmp(&a.1));
+            match cands
+                .into_iter()
+                .find(|(_, _, child)| !seen.contains(&mat(child)))
+            {
+                Some((action, _, child)) => {
+                    seen.insert(mat(&child));
                     line.push(action);
+                    cur = child;
                 }
-                None => break,
+                None => break, // every move revisits a seen state — stop rather than loop
             }
         }
         line
@@ -598,6 +616,23 @@ impl Solver<'_> {
 /// witness line, and perf telemetry. Luck-off / deterministic; the foe side is the
 /// game's own fixed creature AI.
 pub fn solve(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64, ruleset: Ruleset) -> Solution {
+    solve_within(heroes, foes, seed, ruleset, MAX_NODES)
+}
+
+/// Budgeted graded solve — like [`solve`] but caps the search at `max_nodes`. Unlike
+/// [`winnable_within`] (which short-circuits on the first win), the graded objective must explore
+/// every line to prove a value is *optimal*, so even a winnable battle can exhaust a small budget;
+/// when it does, `overflowed = true` flags the verdict as **budget-limited** (the returned value is a
+/// lower bound on the true optimum — a deeper/better line may have been cut). The balance harness uses
+/// a modest budget so a 5-hero graded solve never hangs, and reads `overflowed` as the §0.4
+/// searchability-bound **needs-decision signal** (raise the budget, shrink the encounter, or accept it).
+pub fn solve_within(
+    heroes: Vec<Actor>,
+    foes: Vec<Actor>,
+    seed: u64,
+    ruleset: Ruleset,
+    max_nodes: u64,
+) -> Solution {
     let game = Deckbound;
     let root = battle_state_with(heroes, foes, false, seed, ruleset);
     let mut solver = Solver {
@@ -606,6 +641,7 @@ pub fn solve(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64, ruleset: Ruleset) 
         stack: HashSet::new(),
         nodes: 0,
         overflow: false,
+        max_nodes,
     };
     let value = solver.run(&root);
     let line = solver.witness(&root);
@@ -638,6 +674,7 @@ struct Reach<'a> {
     stack: HashSet<StateKey>,
     nodes: u64,
     overflow: bool,
+    max_nodes: u64,
 }
 
 impl Reach<'_> {
@@ -651,13 +688,18 @@ impl Reach<'_> {
         if let Some(v) = self.seen.get(&key) {
             return *v;
         }
-        if self.nodes >= MAX_NODES {
+        if self.nodes >= self.max_nodes {
             self.overflow = true;
             return false;
         }
         self.nodes += 1;
-        if !self.stack.insert(key.clone()) {
-            return false; // no-progress cycle (the free Standoff toggles)
+        // Material key (round excluded): a round transition with no state change re-enters the same
+        // material state with fewer rounds — a dominated no-progress loop, not a new position. Keying
+        // the path-stack on it prunes stalemates in ~1 round instead of exploring all five (§0.4).
+        let mut mkey = key.clone();
+        mkey.round = 0;
+        if !self.stack.insert(mkey.clone()) {
+            return false; // no-progress loop (same material state, round advanced)
         }
         let mut actions = combat_actions_dedup(self.game, state);
         order_greedy_first(self.game, state, &mut actions);
@@ -670,7 +712,7 @@ impl Reach<'_> {
                 break; // existential: one winning line suffices
             }
         }
-        self.stack.remove(&key);
+        self.stack.remove(&mkey);
         self.seen.insert(key, result);
         result
     }
@@ -681,6 +723,22 @@ impl Reach<'_> {
 /// analysis envelope — the strong-policy answer the role-weight / encounter-suite
 /// measurements key on. (Cheaper than [`solve`]: it stops at the first win.)
 pub fn winnable(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64) -> bool {
+    winnable_within(heroes, foes, seed, MAX_NODES).0
+}
+
+/// Budgeted reachability — like [`winnable`] but caps the search at `max_nodes`. Returns
+/// `(winnable, overflowed)`. A **win short-circuits** (cheap regardless of budget — greedy
+/// move-ordering finds a real win early), while **confirming a loss is exhaustive**, so a losing
+/// battle that explores a large tree (e.g. a stalemate dragging to the round cap) hits the budget and
+/// returns `(false, true)` — a §0.4 "not winnable within the bounded search" verdict. The balance
+/// harness uses a modest budget so loss-confirmation never hangs; `overflowed = true` flags a
+/// budget-limited verdict (don't read a budget-limited `false` as a *proven* loss).
+pub fn winnable_within(
+    heroes: Vec<Actor>,
+    foes: Vec<Actor>,
+    seed: u64,
+    max_nodes: u64,
+) -> (bool, bool) {
     let game = Deckbound;
     let root = battle_state_with(heroes, foes, false, seed, Ruleset::analysis());
     let mut reach = Reach {
@@ -689,8 +747,10 @@ pub fn winnable(heroes: Vec<Actor>, foes: Vec<Actor>, seed: u64) -> bool {
         stack: HashSet::new(),
         nodes: 0,
         overflow: false,
+        max_nodes,
     };
-    reach.win(&root)
+    let win = reach.win(&root);
+    (win, reach.overflow)
 }
 
 #[cfg(test)]

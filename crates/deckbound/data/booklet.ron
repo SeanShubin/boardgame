@@ -75,8 +75,8 @@ Catalog(
                 flavor: "One shield is a man; a line of them is a wall.",
                 cards: [ Card( name: "Aegis", role: Some(Iron), kind: Base, cast: Standing, resolve: OnCast, effects: [Cover], text: "Assigns a Cover token to an ally — single-target damage aimed at it spills to this Wall first (§4.5)." ) ] ),
         Reward( track: Iron, level: 4, stat: (vitality: 2, toughness: 2),
-                flavor: "One sweep of the shield-line, and the whole front rank reels.",
-                cards: [ Card( name: "Shield Sweep", role: Some(Iron), kind: Base, cast: Strike, resolve: OnCast, targets: 3, reach: (1, 1), effects: [Damage(power: 2)], text: "Melee AoE: Might to every enemy front body (§4.5) — the Wall's answer to a pressing rank." ) ] ),
+                flavor: "Two more shields slide into the gaps. Nothing gets through the line now.",
+                cards: [ Card( name: "Bastion", role: Some(Iron), kind: Base, cast: Standing, resolve: OnCast, targets: 2, effects: [Cover], text: "Covers the two most-wounded allies — single-target damage aimed at them spills to this Wall (§4.5). The Wall has no proactive attack: its only damage is the §4.2 trade-back, punishing whoever crashes the line." ) ] ),
         Reward( track: Iron, level: 5, stat: (vitality: 4, toughness: 2),
                 flavor: "Here, and no further. Not while I am standing — and I am not going down.",
                 cards: [
@@ -211,6 +211,15 @@ Catalog(
         // won by cracking the wall, not by out-lasting damage.
         ActorCard( name: "Golem", role: "Bulwark", flavor: "Old siege-stone given legs and a grudge. You do not wound it; you take it apart.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 5,
                    base: (might: 3, vitality: 12, toughness: 5, cadence: 2) ),
+        // A **Toughness-extreme** test foe (strategy-primitive suite, 2026-06-26): Toughness 10 — above
+        // any single hero hit's raw Might (so no lone strike flips a card), and high enough that only a
+        // *focused* per-phase pile crosses it. Low Vitality (a focused party fells one fast). The point:
+        // a SINGLE Monolith is focus-fired down (Strip not needed), but a RANK of them forces the party to
+        // SPREAD — each pile then falls below Toughness 10 → nothing flips → only a **Sunder/Hex**
+        // (−Toughness) opens them. The experiment that asks whether "Strip" (the Controller's Breaker
+        // half) has an isolating extreme, or whether focus-fire is a universal substitute.
+        ActorCard( name: "Monolith", role: "Bulwark", flavor: "A standing stone that learned to resent you. One blow does nothing; you must wear the face off it.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 4,
+                   base: (might: 3, vitality: 5, toughness: 10, cadence: 2) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),
