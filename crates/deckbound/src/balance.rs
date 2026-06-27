@@ -693,7 +693,9 @@ mod tests {
     #[test]
     #[ignore]
     fn probe_role_weight() {
-        const BUDGET: u64 = 400_000;
+        // High budget: confirm flips rather than trust budget-limited verdicts (a 300K run produced a
+        // false Silver flip that a 12M run retracted). Slower, but trustworthy.
+        const BUDGET: u64 = 12_000_000;
         println!("{}", role_weight_report(1, BUDGET));
     }
 
@@ -814,6 +816,38 @@ mod tests {
     /// that must be killed and whose counter-fire punishes a glass charger — so the squishies can't safely
     /// cross and the tanks can't leave the front. The slip should be the only safe back-killer → removing
     /// Silver should flip the fight. Ramp to find the band. `cargo test -p deckbound probe_infiltrator_required -- --ignored --nocapture`.
+    /// PROVE the Silver flip: run the exact flip case at a high budget. If the full party is winnable and
+    /// the Infiltrator-less party is unwinnable WITHOUT the budget-limited flag, the Infiltrator is
+    /// genuinely necessary here (not a search artifact). `cargo test -p deckbound probe_confirm_silver_flip -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_confirm_silver_flip() {
+        const BUDGET: u64 = 12_000_000;
+        let enc = custom_encounter("combined", &[("Brute", 6), ("Slinger", 8)]);
+        let foes = || build_encounter_foes(&enc, 5);
+        let (full, full_of) = winnable_within(full_party(), foes(), 1, BUDGET);
+        let (wo, wo_of) = winnable_within(party_minus(Currency::Silver), foes(), 1, BUDGET);
+        println!("Silver-flip confirmation — Brute 6 + Slinger 8, budget {BUDGET} (seed 1):");
+        println!(
+            "  full party:          winnable={full}{}",
+            if full_of { " [budget-limited]" } else { "" }
+        );
+        println!(
+            "  without Infiltrator: winnable={wo}{}",
+            if wo_of { " [budget-limited]" } else { "" }
+        );
+        let verdict = if full && !wo && !wo_of {
+            "PROVEN: the Infiltrator is necessary here (clean, not budget-limited)"
+        } else if full && !wo && wo_of {
+            "still budget-limited — raise the budget further"
+        } else if full && wo {
+            "NOT a flip — the party wins without the Infiltrator after all"
+        } else {
+            "full party not winnable within budget — inconclusive"
+        };
+        println!("  => {verdict}");
+    }
+
     #[test]
     #[ignore]
     fn probe_infiltrator_required() {
