@@ -1027,6 +1027,14 @@ impl Game for Deckbound {
             Phase::Standoff => {
                 let side = state.plan.committing;
                 let mut a = Vec::new();
+                // §4 Block is only worth a decision branch when a live enemy melee Vanguard can actually
+                // strike a hero this round — otherwise slipping nothing is a wasted toggle (perf prune).
+                let melee_threat = side == 0
+                    && (0..state.s_len(1)).any(|f| {
+                        state.s_vanguard(1)[f]
+                            && !state.s_pool(1)[f].is_down()
+                            && state.s_pool(1)[f].can_contest(Range::Melee)
+                    });
                 for i in 0..state.s_len(side) {
                     if state.s_pool(side)[i].fallen {
                         continue;
@@ -1037,7 +1045,7 @@ impl Game for Deckbound {
                         // **Block** (out-bid to slip the blow) instead of the default Trade. One-way
                         // (offered only while still Trade) so the solver explores the *set* of blockers
                         // without value-neutral on/off toggling. Heroes only — creatures use instinct.
-                        if side == 0 && state.plan.hero_guard[i] == combat::Guard::Trade {
+                        if melee_threat && state.plan.hero_guard[i] == combat::Guard::Trade {
                             a.push(Action::Guard(i));
                         }
                     } else {
