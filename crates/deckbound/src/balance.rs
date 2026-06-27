@@ -842,11 +842,62 @@ mod tests {
     /// PROVE the Silver flip: run the exact flip case at a high budget. If the full party is winnable and
     /// the Infiltrator-less party is unwinnable WITHOUT the budget-limited flag, the Infiltrator is
     /// genuinely necessary here (not a search artifact). `cargo test -p deckbound probe_confirm_silver_flip -- --ignored --nocapture`.
+    /// PROVE the Infiltrator can be made necessary — in a **small, fully-solvable** case (the 5-hero
+    /// version is too large to confirm at 12M). A 3-hero party (Wall to survive, Support to sustain,
+    /// Infiltrator to cross) vs a small healed Sentry screen + Mender. If the Infiltrator-less party is
+    /// genuinely unwinnable (NOT budget-limited), the role is proven necessary.
+    /// `cargo test -p deckbound probe_confirm_infiltrator_small -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_confirm_infiltrator_small() {
+        const BUDGET: u64 = 12_000_000;
+        // Decisive (so it resolves fast → searchable): a Sentry screen + a LETHAL Slinger backline that
+        // kills the party in ~2 rounds. The party must cross the screen *fast* to kill the Slingers — only
+        // the slip does. Without it the party dies before it can break through. Both sides resolve quickly.
+        let enc = custom_encounter("sentry-small", &[("Sentry", 4), ("Slinger", 4)]);
+        let foes = || build_encounter_foes(&enc, 5);
+        let with = || {
+            vec![
+                build_character("Novice", &rewards_up_to(Currency::Iron, 5)), // Wall — survive
+                build_character("Novice", &rewards_up_to(Currency::Salt, 5)), // Support — sustain
+                build_character("Novice", &rewards_up_to(Currency::Silver, 5)), // Infiltrator — cross
+            ]
+        };
+        let without = || {
+            vec![
+                build_character("Novice", &rewards_up_to(Currency::Iron, 5)),
+                build_character("Novice", &rewards_up_to(Currency::Salt, 5)),
+                build_character("Novice", &[]), // Infiltrator's kit removed, body kept
+            ]
+        };
+        let (w, w_of) = winnable_within(with(), foes(), 1, BUDGET);
+        let (wo, wo_of) = winnable_within(without(), foes(), 1, BUDGET);
+        println!("small Infiltrator-necessity test — Sentry 2 + Mender, 3-hero party (seed 1):");
+        println!(
+            "  with Infiltrator:    winnable={w}{}",
+            if w_of { " [budget-limited]" } else { "" }
+        );
+        println!(
+            "  without Infiltrator: winnable={wo}{}",
+            if wo_of { " [budget-limited]" } else { "" }
+        );
+        let verdict = if w && !wo && !wo_of {
+            "PROVEN: the Infiltrator is necessary (clean, not budget-limited)"
+        } else if w && !wo && wo_of {
+            "still budget-limited — shrink the case further"
+        } else if w && wo {
+            "NOT necessary — the party wins without the Infiltrator"
+        } else {
+            "with-Infiltrator party can't win within budget — re-tune"
+        };
+        println!("  => {verdict}");
+    }
+
     #[test]
     #[ignore]
     fn probe_confirm_silver_flip() {
         const BUDGET: u64 = 12_000_000;
-        let enc = custom_encounter("combined", &[("Brute", 6), ("Slinger", 8)]);
+        let enc = custom_encounter("sentry", &[("Sentry", 4), ("Mender", 1)]);
         let foes = || build_encounter_foes(&enc, 5);
         let (full, full_of) = winnable_within(full_party(), foes(), 1, BUDGET);
         let (wo, wo_of) = winnable_within(party_minus(Currency::Silver), foes(), 1, BUDGET);
