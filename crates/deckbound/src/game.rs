@@ -252,6 +252,7 @@ type ResolutionStep = fn(&Deckbound, &mut State);
 /// The runner ([`Deckbound::end_volley`]) checks the outcome after every step and stops the instant the
 /// battle ends. To change the model, edit this list.
 const POST_VOLLEY_SCHEDULE: &[(&str, ResolutionStep)] = &[
+    ("intercept", Deckbound::step_intercept),
     ("preempt", Deckbound::step_preempt),
     ("clear_piles", Deckbound::step_clear_piles),
     ("breach", Deckbound::step_breach),
@@ -421,6 +422,45 @@ impl Deckbound {
     }
 
     // ---- §4 round-resolution steps (single-purpose; sequenced by POST_VOLLEY_SCHEDULE) ----
+
+    /// **Interception** (§4): each declared charge is struck by the *enemy front* Vanguards as it crosses
+    /// — the front strikes the runner. The charger slips each via the Finesse contest (spending Tempo) or
+    /// is cut down at the line; a charger downed here never reaches the back (its Breach blow fizzles). So
+    /// crossing a guarded front is a specialist play — only a lone high-Finesse/high-Tempo body survives.
+    fn step_intercept(&self, state: &mut State) {
+        let charges = state.plan.charges.clone();
+        for c in charges.iter().filter(|c| !c.flank) {
+            if c.side == 0 {
+                // A hero charges the enemy Rearguard — the creature front intercepts.
+                if c.attacker >= state.heroes.len() {
+                    continue;
+                }
+                let mut creatures = std::mem::take(&mut state.creatures);
+                combat::intercept(
+                    &mut state.heroes[c.attacker],
+                    &mut creatures,
+                    &state.plan.foe_vanguard,
+                    &mut state.log,
+                );
+                state.creatures = creatures;
+            } else {
+                // A foe charges the hero Rearguard — the hero front intercepts.
+                if c.attacker >= state.creatures.len() {
+                    continue;
+                }
+                let mut heroes = std::mem::take(&mut state.heroes);
+                combat::intercept(
+                    &mut state.creatures[c.attacker],
+                    &mut heroes,
+                    &state.plan.hero_vanguard,
+                    &mut state.log,
+                );
+                state.heroes = heroes;
+            }
+        }
+        combat::tally(&mut state.heroes, &mut state.log);
+        combat::tally(&mut state.creatures, &mut state.log);
+    }
 
     /// **Pre-empt:** the rear answers the declared charges first (counter-fire / strike-back / dodge),
     /// then finalize deaths.

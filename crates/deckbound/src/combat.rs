@@ -365,6 +365,36 @@ pub fn fray_one(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mu
     melee_trade(attacker, target, guard, log);
 }
 
+/// §4 **interception** (the front strikes the runner): a `charger` crossing toward the enemy Rearguard
+/// is struck by each living enemy front Vanguard (`front`, `van` marks who is a Vanguard). The charger
+/// **slips** each via the Finesse contest ([`try_evade`]) — spending its own Tempo — or takes the blow.
+/// A *wide* front drains a crosser slip-by-slip (the weakest-link race), so only a lone **high-Finesse,
+/// high-Tempo** body crosses a guarded line; the rest are cut down at it. No new mechanic — the existing
+/// melee strike + Tempo contest, applied to the cross. Each interceptor spends one Tempo.
+pub fn intercept(charger: &mut Actor, front: &mut [Actor], van: &[bool], log: &mut Vec<String>) {
+    for (v, interceptor) in front.iter_mut().enumerate() {
+        if charger.is_down() {
+            return; // cut down crossing — it never reaches the back
+        }
+        if !van.get(v).copied().unwrap_or(false)
+            || interceptor.is_down()
+            || interceptor.stunned
+            || interceptor.tempo <= 0
+            || !interceptor.can_contest_now(Range::Melee)
+        {
+            continue;
+        }
+        interceptor.tempo -= 1;
+        let bid = advance_finesse(interceptor); // the interceptor's one-card bid (cards × Finesse)
+        if try_evade(charger, bid, log) {
+            continue; // slipped this interceptor (Tempo spent on both sides — the attrition)
+        }
+        let snap = snapshot(interceptor);
+        let n = interceptor.name.clone();
+        apply_strike(charger, snap, &n, log);
+    }
+}
+
 /// §4.6 — a single interactive **instant ranged shot** (`resolve: OnCast`): an evade contest then the
 /// shot. The public single-pair entry the interactive game routes through.
 pub fn ranged_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {

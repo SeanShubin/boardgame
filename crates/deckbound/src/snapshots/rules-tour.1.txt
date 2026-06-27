@@ -98,6 +98,8 @@ RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
     Anvil cannot evade the volley (1) — the shot lands.
     Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
   Wisp charges the Slinger.
+    Wisp evades (evade 2×4=8 > volley 5).
+    Wisp evades (evade 1×4=4 > volley 1).
   Slinger counter-fires the charging Wisp (pre-empt).
     Wisp evades (evade 1×4=4 > volley 1).
   Wisp breaches and strikes Slinger.
@@ -141,6 +143,8 @@ RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
     Anvil cannot evade the volley (1) — the shot lands.
     Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
   Wisp charges the Slinger.
+    Wisp evades (evade 2×4=8 > volley 5).
+    Wisp evades (evade 1×4=4 > volley 1).
   Slinger counter-fires the charging Wisp (pre-empt).
     Wisp evades (evade 1×4=4 > volley 1).
   Wisp breaches and strikes Slinger.
@@ -184,6 +188,8 @@ RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
     Anvil cannot evade the volley (1) — the shot lands.
     Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
   Wisp charges the Slinger.
+    Wisp evades (evade 2×4=8 > volley 5).
+    Wisp evades (evade 1×4=4 > volley 1).
   Slinger counter-fires the charging Wisp (pre-empt).
     Wisp evades (evade 1×4=4 > volley 1).
   Wisp breaches and strikes Slinger.
@@ -227,6 +233,8 @@ RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
     Anvil cannot evade the volley (1) — the shot lands.
     Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
   Wisp charges the Slinger.
+    Wisp evades (evade 2×4=8 > volley 5).
+    Wisp evades (evade 1×4=4 > volley 1).
   Slinger counter-fires the charging Wisp (pre-empt).
     Wisp evades (evade 1×4=4 > volley 1).
   Wisp breaches and strikes Slinger.
@@ -270,6 +278,8 @@ RANKS    heroes — vanguard: Anvil, Wisp, Sear, Hex, Vow   rearguard: —
     Anvil cannot evade the volley (1) — the shot lands.
     Seer hits Anvil: 5 might — turns a health card face down. [health 15/18]
   Wisp charges the Slinger.
+    Wisp evades (evade 2×4=8 > volley 5).
+    Wisp evades (evade 1×4=4 > volley 1).
   Slinger counter-fires the charging Wisp (pre-empt).
     Wisp evades (evade 1×4=4 > volley 1).
   Wisp breaches and strikes Slinger.
