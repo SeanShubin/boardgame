@@ -268,7 +268,19 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 /// and `target` **strikes back** if it carries a melee answer, can act, and has Tempo (paying one of
 /// its own). Both blows are taken from phase-start snapshots so the trade is symmetric even if one
 /// side is mortally wounded (§1.3). Used by the **Fray** front clash and a **flank** (both trades).
-fn melee_trade(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
+/// How a melee defender answers a strike (§4 the one contest):
+/// - **Trade** — the reflexive strike-back of the front clash (both blows land, §1.3): the legacy
+///   behavior, and what a holding Vanguard does.
+/// - **Block** — spend Tempo to **out-bid** the attacker (`cards × Finesse`, strictly exceed) and take
+///   **no blow** — the melee twin of the ranged evade ([`try_evade`]). No strike-back: the Tempo went to
+///   *defending / slipping*, not trading. This is also a slipper's defense as it pushes the front.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Guard {
+    Trade,
+    Block,
+}
+
+fn melee_trade(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mut Vec<String>) {
     if attacker.tempo <= 0 || !attacker.can_contest_now(Range::Melee) || attacker.is_down() {
         return;
     }
@@ -276,8 +288,20 @@ fn melee_trade(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) 
     // §10: a damage strike consumes the attacker's banked Charge tokens (+1 Might each, §5.4).
     let atk = charged_snapshot(attacker, log);
     let atk_name = attacker.name.clone();
-    // Snapshot the strike-back *before* applying the incoming blow (§1.3: the target lands its
-    // committed blow even if this hit downs it).
+    // §4 **Block**: the target out-bids the attacker's one-card bid (`cards × Finesse`, strictly exceed,
+    // §3.1) and takes no blow — no strike-back; defending is Tempo-negative (it spent more than the
+    // attacker to avoid the hit). If it cannot out-bid, the blow lands.
+    if guard == Guard::Block {
+        let bid = advance_finesse(attacker); // the attacker's one-card bid (cards × Finesse)
+        if !target.is_down() && try_evade(target, bid, log) {
+            return;
+        }
+        apply_strike(target, atk, &atk_name, log);
+        reflect_thorns(attacker, target, log);
+        return;
+    }
+    // **Trade** (default): snapshot the strike-back *before* applying the incoming blow (§1.3: the target
+    // lands its committed blow even if this hit downs it).
     let back = (target.can_contest_now(Range::Melee) && !target.is_down() && target.tempo > 0)
         .then(|| {
             target.tempo -= 1;
@@ -316,7 +340,7 @@ fn ranged_shot(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) 
 /// §4.6 — a single interactive **Fray melee strike**: `attacker` strikes `target`, a trade (the
 /// target strikes back if able). The public single-pair entry the interactive game routes through.
 pub fn fray_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
-    melee_trade(attacker, target, log);
+    melee_trade(attacker, target, Guard::Trade, log);
 }
 
 /// §4.6 — a single interactive **instant ranged shot** (`resolve: OnCast`): an evade contest then the
@@ -347,7 +371,7 @@ pub fn fray_clash(
             continue; // no enemy front to engage — nothing to attack (and nothing to lock onto)
         };
         attacked[a].push(t);
-        melee_trade(&mut attackers[a], &mut defenders[t], log);
+        melee_trade(&mut attackers[a], &mut defenders[t], Guard::Trade, log);
     }
     attacked
 }
@@ -408,7 +432,12 @@ pub fn resolve_volley(
             "{} flanks {} (a trade, in the Volley).",
             atk_pool[c.attacker].name, def_pool[c.target].name
         ));
-        melee_trade(&mut atk_pool[c.attacker], &mut def_pool[c.target], log);
+        melee_trade(
+            &mut atk_pool[c.attacker],
+            &mut def_pool[c.target],
+            Guard::Trade,
+            log,
+        );
     }
 
     // 2. Charges: the rear answers FIRST (pre-empt) — its strike-back / counter-fire lands now, before
@@ -885,6 +914,46 @@ mod tests {
         a.weapon = fx(vec![]); // a 0-power weapon so the blow is exactly `might`
         a.tempo = 10;
         a
+    }
+
+    /// §4 one-contest (melee **Block**): a defender that can out-bid the attacker's `cards × Finesse`
+    /// (strictly exceed) takes **no blow** — the melee twin of the ranged evade — and spends Tempo doing
+    /// it (defending is Tempo-negative).
+    #[test]
+    fn melee_block_slips_a_strike_when_out_bidding() {
+        let mut atk = fighter("Striker", 3, 6, 2);
+        atk.offense.finesse = 1; // bid = 1 card × Finesse 1 = 1
+        let mut def = fighter("Slipper", 1, 6, 2);
+        def.offense.finesse = 2; // 1 card × 2 = 2 > 1 → out-bids with a single card
+        let before = def.defense.health.remaining;
+        let tempo_before = def.tempo;
+        let mut log = Vec::new();
+        melee_trade(&mut atk, &mut def, Guard::Block, &mut log);
+        assert_eq!(
+            def.defense.health.remaining, before,
+            "the slipper out-bid the attacker and took no blow"
+        );
+        assert!(
+            def.tempo < tempo_before,
+            "blocking spends Tempo (defending is Tempo-negative)"
+        );
+    }
+
+    /// Force-not-fiat: a defender with **no Tempo** to out-bid eats the blow — Block is never free immunity.
+    #[test]
+    fn melee_block_eats_the_hit_when_out_of_tempo() {
+        let mut atk = fighter("Striker", 3, 6, 1);
+        atk.offense.finesse = 1;
+        let mut def = fighter("Slipper", 1, 6, 1);
+        def.offense.finesse = 2;
+        def.tempo = 0; // cannot afford to bid
+        let before = def.defense.health.remaining;
+        let mut log = Vec::new();
+        melee_trade(&mut atk, &mut def, Guard::Block, &mut log);
+        assert!(
+            def.defense.health.remaining < before,
+            "no Tempo to out-bid → the blow lands"
+        );
     }
 
     /// Run one Fray exchange both ways and recompute the lock list for `heroes`, finalizing deaths and
@@ -1460,7 +1529,7 @@ mod tests {
         warded[0].tokens.push(Token::Thorns { power: 4 });
         let mut log = Vec::new();
         // Brute strikes the warded ally (a melee trade); thorns bite the Brute.
-        melee_trade(&mut attacker[0], &mut warded[0], &mut log);
+        melee_trade(&mut attacker[0], &mut warded[0], Guard::Trade, &mut log);
         assert_eq!(
             attacker[0].defense.health_pile, 4,
             "the warded ally's thorns reflected 4 onto the attacker's own pile"
@@ -1512,7 +1581,7 @@ mod tests {
         let mut target = vec![fighter("Mark", 0, 3, 5)];
         let before = target[0].defense.health.remaining;
         let mut log = Vec::new();
-        melee_trade(&mut attacker[0], &mut target[0], &mut log);
+        melee_trade(&mut attacker[0], &mut target[0], Guard::Trade, &mut log);
         assert_eq!(
             target[0].defense.health.remaining,
             before - 1,
