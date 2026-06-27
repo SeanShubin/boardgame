@@ -220,6 +220,13 @@ Catalog(
         // half) has an isolating extreme, or whether focus-fire is a universal substitute.
         ActorCard( name: "Monolith", role: "Bulwark", flavor: "A standing stone that learned to resent you. One blow does nothing; you must wear the face off it.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 4,
                    base: (might: 3, vitality: 5, toughness: 10, cadence: 2) ),
+        // An **enemy healer** (§13 enemy-roles test foe, 2026-06-27): mends 2 Health on its most-wounded
+        // ally each Fray instead of attacking, so the front never falls to attrition — the party **must
+        // reach and kill the Mender**. Holds the Rearguard (ranged profile → seeds back), screened by a
+        // front it keeps standing. The necessity test for **reach / priority-elimination** (Infiltrator):
+        // ranged fire only hits the front, so only a unit that crosses to the back removes it.
+        ActorCard( name: "Mender", role: "Healer", flavor: "It carries no blade — only the patience to undo everything you just did.", driver: "post", attack: Ranged, weapon: "Wand", aggression: 1, heal: 2,
+                   base: (might: 1, vitality: 6, toughness: 1, cadence: 3, finesse: 2) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),

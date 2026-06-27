@@ -101,6 +101,11 @@ struct ActorCard {
     aggression: u32,
     #[serde(default)]
     target_rule: Option<TargetRule>,
+    /// §13 enemy roles — a **healer** creature mends (recovers Health cards on) its most-wounded ally
+    /// each Fray instead of attacking. `0` = not a healer. A protected healer makes a fight un-out-
+    /// attrition-able: you must *reach and kill it*, so it tests reach/priority-elimination roles.
+    #[serde(default)]
+    heal: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -351,6 +356,7 @@ fn build_actor_with(
             aggression: c.aggression,
             target_rule: c.target_rule.unwrap_or(TargetRule::Front),
             instinct: instinct_for(driver_kw),
+            heal: c.heal,
         })
     };
 

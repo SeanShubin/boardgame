@@ -111,6 +111,9 @@ pub struct Behavior {
     pub target_rule: TargetRule,
     /// Clash instinct — used only when the optional Clash module is enabled.
     pub instinct: Instinct,
+    /// §13 enemy roles — Health cards this creature **mends** on its most-wounded ally each Fray instead
+    /// of attacking (`0` = not a healer).
+    pub heal: u32,
 }
 
 impl Behavior {

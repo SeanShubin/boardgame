@@ -469,6 +469,18 @@ impl Deckbound {
     /// PvE creature **Fray**: each living foe Vanguard strikes the first living hero Vanguard (a melee
     /// trade), and each ranged foe Rearguard fires at the hero front. Deterministic (§0.1 fixed
     /// instinct): a foe acts while it has Tempo and a legal target.
+    /// The living creature with the most missing Health (a healer's mend target); `None` if all are full.
+    fn most_wounded_creature(&self, state: &State) -> Option<usize> {
+        (0..state.creatures.len())
+            .filter(|&i| !state.creatures[i].fallen && !state.creatures[i].is_down())
+            .filter(|&i| {
+                state.creatures[i].defense.health.remaining < state.creatures[i].defense.health.max
+            })
+            .max_by_key(|&i| {
+                state.creatures[i].defense.health.max - state.creatures[i].defense.health.remaining
+            })
+    }
+
     fn foe_fray(&self, state: &mut State) {
         for f in 0..state.creatures.len() {
             if state.creatures[f].fallen
@@ -476,6 +488,26 @@ impl Deckbound {
                 || state.creatures[f].stunned
             {
                 continue;
+            }
+            // §13 healer: a support creature mends its most-wounded ally instead of attacking — undoing
+            // the party's attrition, so the front never falls to damage alone and the healer must be
+            // *reached and killed*.
+            let heal = state.creatures[f].behavior().map_or(0, |b| b.heal);
+            if heal > 0 && state.creatures[f].tempo > 0 {
+                if let Some(t) = self.most_wounded_creature(state) {
+                    state.creatures[f].tempo -= 1;
+                    let restored: u32 = (0..heal)
+                        .map(|_| state.creatures[t].defense.recover_card())
+                        .sum();
+                    if restored > 0 {
+                        let hn = state.creatures[f].name.clone();
+                        let tn = state.creatures[t].name.clone();
+                        state
+                            .log
+                            .push(format!("  {hn} mends {tn} (+{restored} Health)."));
+                    }
+                }
+                continue; // a healer does not attack
             }
             if state.plan.foe_vanguard[f] {
                 // Front clash: strike the first living hero Vanguard. One committed strike per foe

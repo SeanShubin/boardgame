@@ -816,6 +816,26 @@ mod tests {
     /// that must be killed and whose counter-fire punishes a glass charger — so the squishies can't safely
     /// cross and the tanks can't leave the front. The slip should be the only safe back-killer → removing
     /// Silver should flip the fight. Ramp to find the band. `cargo test -p deckbound probe_infiltrator_required -- --ignored --nocapture`.
+    /// §13 ENEMY HEALER: a tanky screen the **Mender** keeps healing (so it never falls to attrition) +
+    /// the Mender in the Rearguard behind it. The party can't out-damage the heal — it must *reach and
+    /// kill the Mender*. Tests whether that forces a role (reach / priority-elimination). Moderate budget
+    /// for a first look; confirm any flip at high budget. `cargo test -p deckbound probe_enemy_healer -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_enemy_healer() {
+        const BUDGET: u64 = 2_000_000;
+        println!("enemy healer (screen kept alive by a back-line Mender) — flips? (seed 1):");
+        let scenarios: &[(&str, &[(&str, u32)])] = &[
+            ("Golem + Mender", &[("Golem", 1), ("Mender", 1)]),
+            ("Golem x2 + Mender", &[("Golem", 2), ("Mender", 1)]),
+            ("Golem + Mender x2", &[("Golem", 1), ("Mender", 2)]),
+        ];
+        for &(name, bands) in scenarios {
+            let enc = custom_encounter("healer", bands);
+            println!("  {name:<20} {}", flip_summary(&enc, 1, BUDGET));
+        }
+    }
+
     /// PROVE the Silver flip: run the exact flip case at a high budget. If the full party is winnable and
     /// the Infiltrator-less party is unwinnable WITHOUT the budget-limited flag, the Infiltrator is
     /// genuinely necessary here (not a search artifact). `cargo test -p deckbound probe_confirm_silver_flip -- --ignored --nocapture`.
