@@ -347,7 +347,7 @@ impl Deckbound {
     /// End the Fray: finalize deaths, **fix the breach list** (§4.6: only attacking an enemy Vanguard
     /// that is still alive locks you), wipe the per-phase piles, then open the Volley.
     fn end_fray(&self, state: &mut State) {
-        combat::tally(&mut state.heroes, &mut state.log);
+        combat::tally(&mut state.heroes, &mut state.log); // finalize Fray deaths
         combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
         if state.outcome.is_some() {
@@ -357,8 +357,10 @@ impl Deckbound {
         // still alive. We recompute it from the current board — a Vanguard that struck no living enemy
         // Vanguard (its target dead, or it never engaged) is free.
         self.fix_breach_list(state);
-        combat::clear_phase_piles(&mut state.heroes);
-        combat::clear_phase_piles(&mut state.creatures);
+        // The **Fray** accumulator-wipe (§4): the per-phase pile clears at the Fray boundary. This is the
+        // single point that bounds **focus-fire accumulation** within the front clash — the Toughness-as-
+        // wall / Sunder-necessity dial. Same named step as the post-Volley wipes (toggle/move to tune).
+        self.step_clear_piles(state);
         state.plan.committing = 0;
         state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
         state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
