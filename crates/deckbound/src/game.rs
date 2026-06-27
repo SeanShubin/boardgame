@@ -329,6 +329,15 @@ impl Deckbound {
         // Run the creature side's Fray first (PvE), so the human front sees the incoming blows.
         if !state.pvp {
             self.foe_fray(state);
+            // §4 / solver dedup: the hero **guard** is spent the instant the foe's Fray melee has
+            // resolved against it (nothing downstream reads it this round). Reset it to the default so a
+            // now-irrelevant stance no longer distinguishes states in the transposition table — two
+            // Standoff guard-choices with the same Fray outcome converge, collapsing the Block branching.
+            state
+                .plan
+                .hero_guard
+                .iter_mut()
+                .for_each(|g| *g = combat::Guard::Trade);
         }
         if self.pending(state, 0).is_empty() {
             self.advance_phase(state);
