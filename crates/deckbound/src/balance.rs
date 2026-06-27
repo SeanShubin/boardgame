@@ -825,10 +825,13 @@ mod tests {
     fn probe_enemy_healer() {
         const BUDGET: u64 = 2_000_000;
         println!("enemy healer (screen kept alive by a back-line Mender) — flips? (seed 1):");
+        // The front width is the interception lever: a wider standing front (kept alive by the Mender)
+        // drains a crosser slip-by-slip, so only a lone high-Finesse/high-Tempo body reaches the Mender.
         let scenarios: &[(&str, &[(&str, u32)])] = &[
-            ("Golem + Mender", &[("Golem", 1), ("Mender", 1)]),
-            ("Golem x2 + Mender", &[("Golem", 2), ("Mender", 1)]),
-            ("Golem + Mender x2", &[("Golem", 1), ("Mender", 2)]),
+            ("Sentry x3 + Mender", &[("Sentry", 3), ("Mender", 1)]),
+            ("Sentry x4 + Mender", &[("Sentry", 4), ("Mender", 1)]),
+            ("Sentry x5 + Mender", &[("Sentry", 5), ("Mender", 1)]),
+            ("Sentry x4 + Mender x2", &[("Sentry", 4), ("Mender", 2)]),
         ];
         for &(name, bands) in scenarios {
             let enc = custom_encounter("healer", bands);

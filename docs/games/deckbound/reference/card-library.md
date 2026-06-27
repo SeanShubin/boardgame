@@ -15,8 +15,8 @@
 | Salt — Support | 10 |
 | Weapons | 7 |
 | Pool | 21 |
-| Cast | 24 |
-| **Total** | **104** |
+| Cast | 25 |
+| **Total** | **105** |
 
 ## Baseline (1 cards)
 
@@ -138,7 +138,7 @@
 | — | Backstab | passive | — |
 | 4 | Longshot | passive | — |
 
-## Cast (24 cards)
+## Cast (25 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -159,6 +159,7 @@
 | — | Golem | character | Bulwark · Maul |
 | — | Monolith | character | Bulwark · Maul |
 | — | Mender | character | Healer · Wand |
+| — | Sentry | character | Warden · Spear |
 | — | Vael | character | Duelist · Blade |
 | — | Pell | character | Charger · Claw |
 | — | Bron | character | Leader · Claw |

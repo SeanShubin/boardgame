@@ -225,8 +225,14 @@ Catalog(
         // reach and kill the Mender**. Holds the Rearguard (ranged profile → seeds back), screened by a
         // front it keeps standing. The necessity test for **reach / priority-elimination** (Infiltrator):
         // ranged fire only hits the front, so only a unit that crosses to the back removes it.
-        ActorCard( name: "Mender", role: "Healer", flavor: "It carries no blade — only the patience to undo everything you just did.", driver: "post", attack: Ranged, weapon: "Wand", aggression: 1, heal: 2,
+        ActorCard( name: "Mender", role: "Healer", flavor: "It carries no blade — only the patience to undo everything you just did.", driver: "post", attack: Ranged, weapon: "Wand", aggression: 1, heal: 5,
                    base: (might: 1, vitality: 6, toughness: 1, cadence: 3, finesse: 2) ),
+        // A **high-Finesse interceptor screen** (§13, 2026-06-27): a defensive front that holds the line
+        // and **cuts down runners** — its Finesse 4 makes the §4 interception costly to slip, so only a
+        // higher-Finesse, high-Tempo body (the Infiltrator) crosses it. Kept standing by a Mender behind
+        // it, it forces the party to *cross* rather than break through — the necessity test for **reach**.
+        ActorCard( name: "Sentry", role: "Warden", flavor: "It does not chase. It simply makes sure that what runs past it does not arrive whole.", driver: "turtle", attack: Melee, weapon: "Spear", aggression: 2,
+                   base: (might: 3, vitality: 10, toughness: 4, cadence: 4, finesse: 4) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),
