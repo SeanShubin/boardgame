@@ -1033,10 +1033,11 @@ impl Game for Deckbound {
                     }
                     if state.s_vanguard(side)[i] {
                         a.push(Action::SetRearguard(i));
-                        // §4: a hero Vanguard (the position that eats melee) may toggle its answer to
-                        // **Block** (out-bid to slip the blow) instead of Trade. Heroes only — creatures
-                        // use fixed instinct.
-                        if side == 0 {
+                        // §4: a hero Vanguard (the position that eats melee) may set its answer to
+                        // **Block** (out-bid to slip the blow) instead of the default Trade. One-way
+                        // (offered only while still Trade) so the solver explores the *set* of blockers
+                        // without value-neutral on/off toggling. Heroes only — creatures use instinct.
+                        if side == 0 && state.plan.hero_guard[i] == combat::Guard::Trade {
                             a.push(Action::Guard(i));
                         }
                     } else {
@@ -1331,12 +1332,10 @@ impl Game for Deckbound {
                 let side = state.plan.committing;
                 state.s_vanguard_mut(side)[*i] = false;
             }
-            // §4: toggle a hero unit's melee answer for the round (Trade <-> Block).
+            // §4: set a hero unit's melee answer to Block for the round (one-way; resets to Trade at the
+            // next Standoff). The solver explores the set of blockers without on/off toggle noise.
             (Phase::Standoff, Action::Guard(i)) => {
-                state.plan.hero_guard[*i] = match state.plan.hero_guard[*i] {
-                    combat::Guard::Trade => combat::Guard::Block,
-                    combat::Guard::Block => combat::Guard::Trade,
-                };
+                state.plan.hero_guard[*i] = combat::Guard::Block;
             }
             (Phase::Standoff, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;
