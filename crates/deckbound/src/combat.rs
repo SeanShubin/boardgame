@@ -220,9 +220,15 @@ fn advance_finesse(a: &Actor) -> u32 {
 /// The fewest Tempo cards a defender must commit for `cards × Finesse` to **strictly exceed** a ranged
 /// attacker's pressed `volley` — the evade contest (Spec §3.1 / §4.2). A tie lands the strike (the
 /// avoider must strictly exceed). Floors at 1.
-fn cards_to_evade(defender: &Actor, volley: u32) -> u32 {
+fn cards_to_evade(defender: &Actor, volley: u32, wins_ties: bool) -> u32 {
     let grade = advance_finesse(defender); // per-Tempo-card Finesse (floor 1)
-    (volley / grade + 1).max(1) // grade·b > volley
+    if wins_ties {
+        // §4 **Shadowstep** (Infiltrator): a tie *slips* — the avoider needs only `cards × grade ≥
+        // volley` (ceil division), one card cheaper on an exact tie.
+        volley.div_ceil(grade).max(1)
+    } else {
+        (volley / grade + 1).max(1) // grade·b > volley (strict; a tie lands the hit)
+    }
 }
 
 /// Resolve a ranged attack against `defender` (Spec §4.2): the defender may **evade** by committing the
@@ -237,7 +243,9 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
     if defender.stunned {
         return false; // no action to spend — takes the free hit
     }
-    let need = cards_to_evade(defender, volley) as i32;
+    // §4 Shadowstep (Infiltrator): win ties in the contest — a tie slips instead of landing.
+    let wins_ties = defender.has("Shadowstep");
+    let need = cards_to_evade(defender, volley, wins_ties) as i32;
     let grade = advance_finesse(defender);
     if need <= defender.tempo {
         defender.tempo -= need;
@@ -295,6 +303,16 @@ fn melee_trade(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mut
     // §3.1) and takes no blow — no strike-back; defending is Tempo-negative (it spent more than the
     // attacker to avoid the hit). If it cannot out-bid, the blow lands.
     if guard == Guard::Block {
+        // §4 **Blitz** (Infiltrator): the first slip each round is free — an uncontested escape that costs
+        // no Tempo (the role-conditional tempo-discount). Cleared at Refresh.
+        if !target.is_down() && target.has("Blitz") && !target.free_slip_used {
+            target.free_slip_used = true;
+            log.push(format!(
+                "  {} slips free (Blitz — first slip is free).",
+                target.name
+            ));
+            return;
+        }
         let bid = advance_finesse(attacker); // the attacker's one-card bid (cards × Finesse)
         if !target.is_down() && try_evade(target, bid, log) {
             return;
@@ -957,6 +975,25 @@ mod tests {
         assert!(
             def.defense.health.remaining < before,
             "no Tempo to out-bid → the blow lands"
+        );
+    }
+
+    /// §4 **Shadowstep**: winning ties makes the contest `≥` instead of `>`, so an exact tie slips and
+    /// costs one card fewer.
+    #[test]
+    fn shadowstep_wins_ties_in_the_contest() {
+        let mut d = fighter("Slipper", 1, 6, 2);
+        d.offense.finesse = 2; // grade 2
+        // volley 4: strict-exceed needs 3 cards (3×2=6>4); a tie-winner needs only 2 (2×2=4 ≥ 4).
+        assert_eq!(
+            cards_to_evade(&d, 4, false),
+            3,
+            "strict: a tie does not slip"
+        );
+        assert_eq!(
+            cards_to_evade(&d, 4, true),
+            2,
+            "Shadowstep: a tie slips, one card cheaper"
         );
     }
 
