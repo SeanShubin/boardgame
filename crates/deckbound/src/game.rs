@@ -48,6 +48,9 @@ pub enum Action {
     /// Standoff (§4.6 #1): set this unit's **position** — front (Vanguard) or back (Rearguard).
     SetVanguard(usize),
     SetRearguard(usize),
+    /// Standoff (§4): toggle this hero unit's melee answer for the round — **Block** (out-bid to slip the
+    /// blow) vs the default **Trade** (strike back). The slipper sets Block to survive the front untouched.
+    Guard(usize),
     /// Volley (§4.6 #3): declare a **flank** — this freed Vanguard attacks a surviving enemy
     /// Vanguard (a trade in the Volley). `Flank(actor)` flanks the first enemy Vanguard.
     Flank(usize),
@@ -557,18 +560,23 @@ impl Deckbound {
             }
         }
         if hero_attacker {
+            // The defender is a creature — it answers with its fixed instinct (Trade, §0.1).
             let mut heroes = std::mem::take(&mut state.heroes);
             combat::fray_one(
                 &mut heroes[attacker],
                 &mut state.creatures[target],
+                combat::Guard::Trade,
                 &mut state.log,
             );
             state.heroes = heroes;
         } else {
+            // The defender is a hero — it answers per its declared §4 stance (Trade / Block).
+            let guard = state.plan.hero_guard[target];
             let mut creatures = std::mem::take(&mut state.creatures);
             combat::fray_one(
                 &mut creatures[attacker],
                 &mut state.heroes[target],
+                guard,
                 &mut state.log,
             );
             state.creatures = creatures;
@@ -1025,6 +1033,12 @@ impl Game for Deckbound {
                     }
                     if state.s_vanguard(side)[i] {
                         a.push(Action::SetRearguard(i));
+                        // §4: a hero Vanguard (the position that eats melee) may toggle its answer to
+                        // **Block** (out-bid to slip the blow) instead of Trade. Heroes only — creatures
+                        // use fixed instinct.
+                        if side == 0 {
+                            a.push(Action::Guard(i));
+                        }
                     } else {
                         a.push(Action::SetVanguard(i));
                     }
@@ -1199,6 +1213,7 @@ impl Game for Deckbound {
             Action::SetVanguard(h) => format!("Send {} to the Vanguard (front)", hname(*h)),
             Action::Flank(h) => format!("{} flanks the enemy front", hname(*h)),
             Action::SetRearguard(h) => format!("Pull {} back to the Rearguard", hname(*h)),
+            Action::Guard(h) => format!("{}: block/slip incoming melee (vs trade)", hname(*h)),
             Action::Deploy => "Advance the phase".into(),
             Action::Charge(a, f) => format!("{} → charge the {}", hname(*a), fname(*f)),
             Action::Target(a, f) => format!("{} → strike the {}", hname(*a), fname(*f)),
@@ -1315,6 +1330,13 @@ impl Game for Deckbound {
             (Phase::Standoff, Action::SetRearguard(i)) => {
                 let side = state.plan.committing;
                 state.s_vanguard_mut(side)[*i] = false;
+            }
+            // §4: toggle a hero unit's melee answer for the round (Trade <-> Block).
+            (Phase::Standoff, Action::Guard(i)) => {
+                state.plan.hero_guard[*i] = match state.plan.hero_guard[*i] {
+                    combat::Guard::Trade => combat::Guard::Block,
+                    combat::Guard::Block => combat::Guard::Trade,
+                };
             }
             (Phase::Standoff, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;

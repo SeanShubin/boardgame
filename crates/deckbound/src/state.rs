@@ -14,6 +14,7 @@ use engine::{Outcome, Rng};
 
 use crate::actor::Actor;
 use crate::campaign::CampaignState;
+use crate::combat::Guard;
 use crate::ruleset::Ruleset;
 use crate::scenarios::Scenario;
 
@@ -116,6 +117,11 @@ pub struct Round {
     pub hero_vanguard: Vec<bool>,
     /// Per creature: same.
     pub foe_vanguard: Vec<bool>,
+    /// §4 one-contest — per hero, how it **answers an incoming melee strike** this round: **Trade**
+    /// (strike back, the front clash) or **Block** (spend Tempo to out-bid and slip the blow). Declared
+    /// at the Standoff (default Trade); the slipper's tool for surviving the front untouched. Creatures
+    /// answer with their fixed instinct (Trade), so only the hero stance is tracked. Sized to heroes.
+    pub hero_guard: Vec<Guard>,
     /// §4.6 **breach list / per-unit lock**: per Vanguard, is it **locked** — did it attack an enemy
     /// Vanguard in the Fray that is **still alive**? Only attacking locks; recomputed at the Fray
     /// boundary. A Vanguard that is not locked is **free** and may charge/flank in the Volley.
@@ -154,6 +160,7 @@ impl Round {
             // this per-actor from the attack profile when a round opens.
             hero_vanguard: vec![true; heroes],
             foe_vanguard: vec![true; foes],
+            hero_guard: vec![Guard::Trade; heroes],
             hero_locked: vec![false; heroes],
             foe_locked: vec![false; foes],
             hero_pinned: vec![false; heroes],

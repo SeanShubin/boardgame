@@ -274,9 +274,12 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 /// - **Block** — spend Tempo to **out-bid** the attacker (`cards × Finesse`, strictly exceed) and take
 ///   **no blow** — the melee twin of the ranged evade ([`try_evade`]). No strike-back: the Tempo went to
 ///   *defending / slipping*, not trading. This is also a slipper's defense as it pushes the front.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Guard {
+    /// Reflexive strike-back (the holding Vanguard's front clash) — the default.
+    #[default]
     Trade,
+    /// Spend Tempo to out-bid and avoid the blow (the slipper's defense).
     Block,
 }
 
@@ -337,10 +340,11 @@ fn ranged_shot(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) 
     reflect_thorns(attacker, target, log);
 }
 
-/// §4.6 — a single interactive **Fray melee strike**: `attacker` strikes `target`, a trade (the
-/// target strikes back if able). The public single-pair entry the interactive game routes through.
-pub fn fray_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
-    melee_trade(attacker, target, Guard::Trade, log);
+/// §4.6 — a single interactive **Fray melee strike**: `attacker` strikes `target`, who answers per its
+/// `guard` (§4 one-contest): **Trade** strikes back (the front clash) / **Block** out-bids to slip the
+/// blow. The public single-pair entry the interactive game routes through.
+pub fn fray_one(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mut Vec<String>) {
+    melee_trade(attacker, target, guard, log);
 }
 
 /// §4.6 — a single interactive **instant ranged shot** (`resolve: OnCast`): an evade contest then the
