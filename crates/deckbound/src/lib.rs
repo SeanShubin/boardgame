@@ -19,6 +19,7 @@ pub mod currency;
 pub mod decktree;
 pub mod duel;
 pub mod encounter;
+pub mod engagement;
 pub mod form;
 pub mod game;
 pub mod groups;
