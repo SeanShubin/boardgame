@@ -63,15 +63,15 @@ do (or vice versa).
 
 ## Where common games sit
 
-| Game                        | Players | Others adaptive? | Information     | Timing             | Sum         | "Optimal play" is…           |
-| --------------------------- | ------- | ---------------- | --------------- | ------------------ | ----------- | ---------------------------- |
-| Solitaire / a puzzle        | 1       | — (none)         | perfect         | sequential         | —           | a winning plan (search)      |
-| A PvE level vs scripted AI  | 1\*     | no (fixed)       | perfect if open | sequential         | —           | a winning plan (search)      |
-| Chess / Go                  | 2       | yes              | perfect         | sequential         | zero-sum    | a minimax strategy           |
-| Rock-Paper-Scissors         | 2       | yes              | imperfect       | simultaneous       | zero-sum    | a mixed equilibrium          |
-| Poker                       | 2+      | yes              | imperfect       | sequential         | ~zero-sum   | a mixed equilibrium          |
-| Backgammon                  | 2       | yes              | perfect         | sequential + chance| zero-sum    | an expectiminimax strategy   |
-| A co-op team's worth        | n       | —                | —               | —                  | cooperative | each member's Shapley value  |
+| Game                       | Players | Others adaptive? | Information     | Timing              | Sum         | "Optimal play" is…          |
+| -------------------------- | ------- | ---------------- | --------------- | ------------------- | ----------- | --------------------------- |
+| Solitaire / a puzzle       | 1       | — (none)         | perfect         | sequential          | —           | a winning plan (search)     |
+| A PvE level vs scripted AI | 1\*     | no (fixed)       | perfect if open | sequential          | —           | a winning plan (search)     |
+| Chess / Go                 | 2       | yes              | perfect         | sequential          | zero-sum    | a minimax strategy          |
+| Rock-Paper-Scissors        | 2       | yes              | imperfect       | simultaneous        | zero-sum    | a mixed equilibrium         |
+| Poker                      | 2+      | yes              | imperfect       | sequential          | ~zero-sum   | a mixed equilibrium         |
+| Backgammon                 | 2       | yes              | perfect         | sequential + chance | zero-sum    | an expectiminimax strategy  |
+| A co-op team's worth       | n       | —                | —               | —                   | cooperative | each member's Shapley value |
 
 \* single-agent **precisely because** the AI is fixed; make the AI adapt to the player's plan and the
 same level becomes a two-player game with all the attendant hardness.

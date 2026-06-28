@@ -11,12 +11,12 @@ For each lever, a baseline party that should *lose* the lock, then add exactly o
 whether it now *wins* (`winnable_within(50K)`; a win short-circuits, a loss is bounded + flagged
 `budget-limited`). Exclusive = **only** the keyed role flips the lock.
 
-| Lock (foes) | Lever under test | Flips it | Exclusive? |
-|---|---|---|---|
-| Silver — `Husk 2 + Slinger 4` (lethal backline behind a screen) | Infiltrator **slip** | `+Silver` only | **✅ yes** |
-| Brass — `Brute 1` (high-Toughness front) | Artillery **burst** | `+Brass`, `+Salt` | ✗ Support also |
-| Salt — `Slinger 4` (glass cannons) | Support **sustain** | `+Salt`, `+Silver` | ✗ Infiltrator also |
-| Bone — `Golem 1` (Sunder-gated wall) | Controller **Sunder** | none surfaced @50K | ✗ + deep-win problem |
+| Lock (foes)                                                     | Lever under test      | Flips it           | Exclusive?           |
+| --------------------------------------------------------------- | --------------------- | ------------------ | -------------------- |
+| Silver — `Husk 2 + Slinger 4` (lethal backline behind a screen) | Infiltrator **slip**  | `+Silver` only     | **✅ yes**            |
+| Brass — `Brute 1` (high-Toughness front)                        | Artillery **burst**   | `+Brass`, `+Salt`  | ✗ Support also       |
+| Salt — `Slinger 4` (glass cannons)                              | Support **sustain**   | `+Salt`, `+Silver` | ✗ Infiltrator also   |
+| Bone — `Golem 1` (Sunder-gated wall)                            | Controller **Sunder** | none surfaced @50K | ✗ + deep-win problem |
 
 ## Why — two "universal solvents"
 The damage model is per-phase (overflow wasted; `raw = eff_might + card_power`, Toughness is the gate). Under it:

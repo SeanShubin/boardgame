@@ -34,11 +34,11 @@
   "difficulty-scaling axis," now confirmed as **necessary**, not optional.
 
 ## First real signal (scaled suite, seed 1, 400K budget, ~76 s)
-| Role | necessary / redundant | reading |
-|---|---|---|
-| **Iron (Wall)** | 2 / 4 | **load-bearing** — NECESSARY in *mixed threat* + *lethal volley* |
-| **Salt (Support)** | 2 / 4 | **load-bearing** — NECESSARY in the same two (budget-limited `?`) |
-| Silver / Brass / Bone | 0 / 6 | **no winnability flip** — value is graded/niche, not winnability |
+| Role                  | necessary / redundant | reading                                                           |
+| --------------------- | --------------------- | ----------------------------------------------------------------- |
+| **Iron (Wall)**       | 2 / 4                 | **load-bearing** — NECESSARY in *mixed threat* + *lethal volley*  |
+| **Salt (Support)**    | 2 / 4                 | **load-bearing** — NECESSARY in the same two (budget-limited `?`) |
+| Silver / Brass / Bone | 0 / 6                 | **no winnability flip** — value is graded/niche, not winnability  |
 
 - **The Anchor's necessity surfaces on the *survival* axis** (lethal encounters) — the one axis a win/loss
   boolean can see. This directly answers the founding worry ("don't mis-measure the Wall as

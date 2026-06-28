@@ -27,10 +27,10 @@ tough to burst forces *strip*; a blitz too fast to out-heal forces *suppress*. T
 — it's "kills every substitute but one."
 
 ## The candidate roster the rules imply: a symmetric 3 + 3
-| Survival race (don't die) | Damage race (kill them) |
-|---|---|
-| **Prevent** — absorb the spike → **Wall** | **Reach** — get to the protected target → **Infiltrator** |
-| **Heal** — out-sustain the grind → **Support** | **Range/breadth** — hit the distant/many → **Artillery** |
+| Survival race (don't die)                                       | Damage race (kill them)                                           |
+| --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Prevent** — absorb the spike → **Wall**                       | **Reach** — get to the protected target → **Infiltrator**         |
+| **Heal** — out-sustain the grind → **Support**                  | **Range/breadth** — hit the distant/many → **Artillery**          |
 | **Suppress** — blunt enemy offense (−Cadence/−Might) → *Warden* | **Strip** — crack enemy defense (−Toughness/−Finesse) → *Breaker* |
 
 The current **five** = this six with the **Controller** bundling *Warden* + *Breaker* (its −stat kit spans

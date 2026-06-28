@@ -111,16 +111,16 @@ tools above don't apply. Use marginal contribution and the Shapley value — see
 
 ## Picking the method (summary)
 
-| The situation                                            | Method                                                       | Exact?                  |
-| -------------------------------------------------------- | ----------------------------------------------------------- | ----------------------- |
-| No adaptive opponent · win/lose                          | reachability search (BFS/DFS/IDA\*)                          | yes (if finite)         |
-| No adaptive opponent · minimize a cost                   | Dijkstra / A\*                                               | yes (if finite)         |
-| No adaptive opponent · bounded sequential                | backward induction + memoization + dominance pruning        | yes (if finite)         |
-| + environment randomness                                 | expectimax / MDP value iteration                            | yes (if distrib. finite)|
-| Adaptive opponent · perfect info · sequential            | minimax / alpha-beta                                         | only to search depth    |
-| Adaptive opponent · simultaneous / hidden · zero-sum     | mixed-strategy Nash via linear programming                  | yes (matrix game)       |
-| Adaptive opponent · sequential **with** chance           | expectiminimax                                              | yes (if finite)         |
-| A member's value within a team                           | Shapley value                                               | yes (if `v` computable) |
+| The situation                                        | Method                                               | Exact?                   |
+| ---------------------------------------------------- | ---------------------------------------------------- | ------------------------ |
+| No adaptive opponent · win/lose                      | reachability search (BFS/DFS/IDA\*)                  | yes (if finite)          |
+| No adaptive opponent · minimize a cost               | Dijkstra / A\*                                       | yes (if finite)          |
+| No adaptive opponent · bounded sequential            | backward induction + memoization + dominance pruning | yes (if finite)          |
+| + environment randomness                             | expectimax / MDP value iteration                     | yes (if distrib. finite) |
+| Adaptive opponent · perfect info · sequential        | minimax / alpha-beta                                 | only to search depth     |
+| Adaptive opponent · simultaneous / hidden · zero-sum | mixed-strategy Nash via linear programming           | yes (matrix game)        |
+| Adaptive opponent · sequential **with** chance       | expectiminimax                                       | yes (if finite)          |
+| A member's value within a team                       | Shapley value                                        | yes (if `v` computable)  |
 
 **See also:** `game-classification.md` (classify before solving) · `measurement-mechanics.md` (the
 counter-system LP and the balance measures) · `cooperative-and-marginal-value.md` (teams).

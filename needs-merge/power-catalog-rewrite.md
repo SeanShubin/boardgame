@@ -56,16 +56,16 @@ cover/redirect, regen, zones, deferred wind-ups — all in §1.
 
 Each is a **physical token / card** on the table — the state is *seen*, never remembered.
 
-| Token | Carries | Sits on | Resolves / ticks | Used by |
-|-------|---------|---------|------------------|---------|
-| **Guard** | +Toughness while present | the holder | passive (raises the per-phase wall) | Wall |
-| **Cover** | redirect: single-target damage on the covered ally spills to the holder first | the covered ally | at damage resolution (§4.5) | Wall |
-| **Charge** | +1 step of magnitude when consumed | the **ability card** (Active) | placed one round, consumed a later round (§5.4) | Infiltrator, Artillery |
-| **Mark** | −Finesse (min 1) while present | the marked foe | passive stat-drop | Controller |
-| **Mire** | −Cadence (min 1) while present | the mired foe | passive stat-drop | Controller |
-| **Burn** (DoT) | deal Might, −1 token/round | the burning foe | **Reckoning** pile, each round | Artillery |
-| **Thorns** | reflect Might to any attacker | the warded ally | when the ally is attacked (attacker's pile) | Support |
-| **Smoke** | one **uncontested** slip (interceptor can't bid) | the Infiltrator (consumed on use) | when slipping / charging | Infiltrator |
+| Token          | Carries                                                                       | Sits on                           | Resolves / ticks                                | Used by                |
+| -------------- | ----------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------- | ---------------------- |
+| **Guard**      | +Toughness while present                                                      | the holder                        | passive (raises the per-phase wall)             | Wall                   |
+| **Cover**      | redirect: single-target damage on the covered ally spills to the holder first | the covered ally                  | at damage resolution (§4.5)                     | Wall                   |
+| **Charge**     | +1 step of magnitude when consumed                                            | the **ability card** (Active)     | placed one round, consumed a later round (§5.4) | Infiltrator, Artillery |
+| **Mark**       | −Finesse (min 1) while present                                                | the marked foe                    | passive stat-drop                               | Controller             |
+| **Mire**       | −Cadence (min 1) while present                                                | the mired foe                     | passive stat-drop                               | Controller             |
+| **Burn** (DoT) | deal Might, −1 token/round                                                    | the burning foe                   | **Reckoning** pile, each round                  | Artillery              |
+| **Thorns**     | reflect Might to any attacker                                                 | the warded ally                   | when the ally is attacked (attacker's pile)     | Support                |
+| **Smoke**      | one **uncontested** slip (interceptor can't bid)                              | the Infiltrator (consumed on use) | when slipping / charging                        | Infiltrator            |
 
 *(One-shot use is tracked by the **ability card flipped face-down**; the per-phase pile is tracked by
 **cards in the pile zone**. So nothing — charges, debuffs, DoT clocks, reflects, regen — lives in a
