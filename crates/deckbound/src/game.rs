@@ -525,6 +525,39 @@ impl Deckbound {
             })
     }
 
+    /// Choose foe `f`'s melee target among `candidates` (hero indices). An **Assassin** targets by class
+    /// priority — Mage > Assassin > Fighter — preferring a target it can actually damage (raw >=
+    /// Toughness), and otherwise falling to the lowest-priority reachable body (chip the tank). Any other
+    /// foe takes the first candidate (the front-most target). §13 deterministic enemy AI.
+    fn foe_pick_target(&self, f: usize, candidates: &[usize], state: &State) -> Option<usize> {
+        fn class_priority(name: &str) -> u8 {
+            match name {
+                "Mage" => 0,
+                "Assassin" => 1,
+                "Fighter" => 2,
+                _ => 3,
+            }
+        }
+        if candidates.is_empty() {
+            return None;
+        }
+        if state.creatures[f].name != "Assassin" {
+            return candidates.first().copied();
+        }
+        let raw = state.creatures[f].eff_might();
+        candidates
+            .iter()
+            .copied()
+            .filter(|&t| raw >= state.heroes[t].eff_toughness())
+            .min_by_key(|&t| class_priority(&state.heroes[t].name))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .copied()
+                    .max_by_key(|&t| class_priority(&state.heroes[t].name))
+            })
+    }
+
     fn foe_fray(&self, state: &mut State) {
         for f in 0..state.creatures.len() {
             if state.creatures[f].fallen
@@ -554,14 +587,16 @@ impl Deckbound {
                 continue; // a healer does not attack
             }
             if state.plan.foe_vanguard[f] {
-                // Front clash: strike the first living hero Vanguard. One committed strike per foe
-                // Vanguard in the Fray (keeps the trade clean).
-                if state.creatures[f].tempo > 0
-                    && state.creatures[f].can_contest_now(Range::Melee)
-                    && let Some(t) = (0..state.heroes.len())
-                        .find(|&h| state.plan.hero_vanguard[h] && !state.heroes[h].is_down())
+                // Front clash: an Assassin targets by class priority (Mage>Assassin>Fighter, preferring a
+                // target it can damage); any other foe strikes the front-most living hero Vanguard.
+                if state.creatures[f].tempo > 0 && state.creatures[f].can_contest_now(Range::Melee)
                 {
-                    self.fray_strike(state, false, f, t);
+                    let fronts: Vec<usize> = (0..state.heroes.len())
+                        .filter(|&h| state.plan.hero_vanguard[h] && !state.heroes[h].is_down())
+                        .collect();
+                    if let Some(t) = self.foe_pick_target(f, &fronts, state) {
+                        self.fray_strike(state, false, f, t);
+                    }
                 }
             } else if state.creatures[f].can_contest(Range::Ranged) && state.creatures[f].tempo > 0
             {
