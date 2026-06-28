@@ -21,6 +21,7 @@ fn main() {
     let docs = [
         ("card-library.md", card_library_md()),
         ("rules-reference.md", rules_reference_md()),
+        ("combat-phases.md", deckbound::rules::appendix()),
     ];
     for (name, body) in docs {
         let path = dir.join(name);

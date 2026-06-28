@@ -124,6 +124,18 @@ mod tests {
         );
     }
 
+    /// Golden: the committed phase-by-phase appendix matches the `rules.rs` registry.
+    #[test]
+    fn combat_phases_doc_is_current() {
+        let got = crate::rules::appendix();
+        let want = include_str!("../../../docs/games/deckbound/reference/combat-phases.md");
+        assert_eq!(
+            norm(&got),
+            norm(want),
+            "combat-phases.md drifted — regenerate with `cargo run -p deckbound --example handbook`"
+        );
+    }
+
     /// Each suit track covers all five levels (a level may bundle >1 card), and every role card in it
     /// carries its `(suit, level)`. Filtered by the track's set name so pool cards that share a name
     /// with a reward (e.g. Sunder) don't leak in.

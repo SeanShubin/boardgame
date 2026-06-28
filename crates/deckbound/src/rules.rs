@@ -202,6 +202,40 @@ pub const ALL_RULES: &[Rule] = &[
     Rule::Grouping,
 ];
 
+/// Render the **phase-by-phase combat appendix** (the mechanical reference) from the registry. This is
+/// the canonical mechanical text — generated, never hand-edited — and is distinct from the thematic
+/// rulebook overview. Phases are listed in round order, then the cross-cutting behaviors.
+pub fn appendix() -> String {
+    let mut s = String::new();
+    s.push_str("# Combat — phase-by-phase appendix\n\n");
+    s.push_str(
+        "> **Auto-generated from `crates/deckbound/src/rules.rs`** (the canonical mechanical text) — do \
+         not edit by hand; regenerate with `cargo run -p deckbound --example handbook`. This is the \
+         *mechanical* reference: each phase does exactly one thing, over two accumulators (the per-phase \
+         damage **pile** and **Tempo**). The thematic overview lives in the rulebook.\n\n",
+    );
+    s.push_str("## Phases (in round order)\n\n");
+    let mut n = 1;
+    for &r in ALL_RULES {
+        let info = r.info();
+        if info.kind == RuleKind::Phase {
+            s.push_str(&format!(
+                "{n}. **{}** — {}\n\n",
+                info.name, info.description
+            ));
+            n += 1;
+        }
+    }
+    s.push_str("## Cross-cutting behaviors\n\n");
+    for &r in ALL_RULES {
+        let info = r.info();
+        if info.kind == RuleKind::Behavior {
+            s.push_str(&format!("- **{}** — {}\n\n", info.name, info.description));
+        }
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
