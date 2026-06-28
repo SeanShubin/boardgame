@@ -15,10 +15,17 @@
 //! them — encounters are *designed* to resolve within the envelope, and the solver is the oracle that
 //! checks it.
 
+use crate::rules::{ALL_RULES, Rule};
+
 /// Tunable, pre-game combat parameters. Set once before a battle (see [`crate::game::battle_state_with`]
 /// and [`crate::state::State::ruleset`]); never mutated mid-combat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ruleset {
+    /// Which combat [`Rule`]s are **enabled** this game (a bitset, so the struct stays `Copy`). A
+    /// disabled phase is skipped and a disabled behavior is not consulted, so a simulation can run
+    /// against a chosen subset; default is **all on** (current behavior). The enabled set is also the
+    /// **provenance** recorded with a simulation result.
+    pub rules: u16,
     /// Hard cap on combat **rounds**. Reaching it ends the fight as a **draw** (PvE: a draw is, given
     /// current mechanics, no different from a loss). Live default is the historical backstop; analysis
     /// bounds it (e.g. 5) to make the game tree shallow and the win/lose question a finite,
@@ -37,6 +44,7 @@ impl Default for Ruleset {
         Self {
             max_rounds: 100,
             max_unique_per_side: u32::MAX,
+            rules: u16::MAX, // all rules on
         }
     }
 }
@@ -48,7 +56,31 @@ impl Ruleset {
         Self {
             max_rounds: 5,
             max_unique_per_side: 5,
+            rules: u16::MAX, // all rules on
         }
+    }
+
+    /// Is [`Rule`] `r` enabled this game? A disabled phase is skipped; a disabled behavior is not
+    /// consulted. (All rules are on by default; `bit()`s outside [`ALL_RULES`] are unused.)
+    pub fn allows(&self, r: Rule) -> bool {
+        self.rules & r.bit() != 0
+    }
+
+    /// This ruleset with `off` rules **disabled** (builder; for running a simulation against a subset).
+    pub fn without(mut self, off: &[Rule]) -> Self {
+        for &r in off {
+            self.rules &= !r.bit();
+        }
+        self
+    }
+
+    /// The enabled rules, in registry order — the **provenance** to record with a result.
+    pub fn enabled_rules(&self) -> Vec<Rule> {
+        ALL_RULES
+            .iter()
+            .copied()
+            .filter(|&r| self.allows(r))
+            .collect()
     }
 
     /// Is a side's distinct-type count within the roster envelope? Advisory — for analysis setup to
@@ -72,5 +104,19 @@ mod tests {
         assert_eq!(Ruleset::analysis().max_unique_per_side, 5);
         assert!(Ruleset::analysis().roster_within(5));
         assert!(!Ruleset::analysis().roster_within(6));
+    }
+
+    #[test]
+    fn rules_default_on_and_without_disables() {
+        // All rules on by default / under the analysis envelope.
+        assert!(Ruleset::default().allows(Rule::Interception));
+        assert!(Ruleset::analysis().allows(Rule::Grouping));
+        assert_eq!(Ruleset::analysis().enabled_rules().len(), ALL_RULES.len());
+        // `without` disables exactly the named rules; the rest stay on.
+        let subset = Ruleset::analysis().without(&[Rule::Grouping, Rule::AreaOfEffect]);
+        assert!(!subset.allows(Rule::Grouping));
+        assert!(!subset.allows(Rule::AreaOfEffect));
+        assert!(subset.allows(Rule::MeleeContest));
+        assert_eq!(subset.enabled_rules().len(), ALL_RULES.len() - 2);
     }
 }

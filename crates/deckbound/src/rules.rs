@@ -181,6 +181,12 @@ impl Rule {
     pub fn is_phase(self) -> bool {
         self.info().kind == RuleKind::Phase
     }
+
+    /// This rule's bit in a [`Ruleset`](crate::ruleset::Ruleset) enabled-mask (a fieldless enum, so the
+    /// discriminant is a stable small index). There are well under 16 rules, so the mask fits a `u16`.
+    pub fn bit(self) -> u16 {
+        1u16 << (self as u16)
+    }
 }
 
 /// Every combat rule, in **round order** for the phases (the appendix and the engine read it in

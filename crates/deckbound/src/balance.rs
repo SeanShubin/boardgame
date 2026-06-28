@@ -1102,6 +1102,7 @@ mod tests {
         let bounded = Ruleset {
             max_rounds: 50,
             max_unique_per_side: u32::MAX,
+            ..Ruleset::default()
         };
         let parties: [(&str, Vec<Actor>); 3] = [
             ("a deep wall", vec![build_creature("Brute"); 5]),

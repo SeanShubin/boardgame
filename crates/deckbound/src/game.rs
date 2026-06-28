@@ -13,6 +13,7 @@ use crate::actor::{Actor, Range};
 use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
+use crate::rules::Rule;
 use crate::ruleset::Ruleset;
 use crate::scenarios::{self, Scenario};
 use crate::state::{Clash, Menu, Phase, Round, State};
@@ -251,14 +252,14 @@ type ResolutionStep = fn(&Deckbound, &mut State);
 /// directly tunes how much focus-fire accumulates across a phase boundary (the Toughness-as-wall dial).
 /// The runner ([`Deckbound::end_volley`]) checks the outcome after every step and stops the instant the
 /// battle ends. To change the model, edit this list.
-const POST_VOLLEY_SCHEDULE: &[(&str, ResolutionStep)] = &[
-    ("intercept", Deckbound::step_intercept),
-    ("preempt", Deckbound::step_preempt),
-    ("clear_piles", Deckbound::step_clear_piles),
-    ("breach", Deckbound::step_breach),
-    ("clear_piles", Deckbound::step_clear_piles),
-    ("reckoning", Deckbound::step_reckoning),
-    ("clear_piles", Deckbound::step_clear_piles),
+const POST_VOLLEY_SCHEDULE: &[(Rule, ResolutionStep)] = &[
+    (Rule::Interception, Deckbound::step_intercept),
+    (Rule::Preempt, Deckbound::step_preempt),
+    (Rule::WipePile, Deckbound::step_clear_piles),
+    (Rule::Breach, Deckbound::step_breach),
+    (Rule::WipePile, Deckbound::step_clear_piles),
+    (Rule::Reckoning, Deckbound::step_reckoning),
+    (Rule::WipePile, Deckbound::step_clear_piles),
 ];
 
 impl Deckbound {
@@ -411,7 +412,10 @@ impl Deckbound {
     /// stopping the instant the battle ends. The behavior is identical to the old hardcoded flow; the
     /// difference is that the sequence (and the accumulator-wipes) is now **data we can edit**.
     fn end_volley(&self, state: &mut State) {
-        for (_name, step) in POST_VOLLEY_SCHEDULE {
+        for (rule, step) in POST_VOLLEY_SCHEDULE {
+            if !state.ruleset.allows(*rule) {
+                continue; // this phase is toggled off for this game
+            }
             step(self, state);
             check_outcome(state);
             if state.outcome.is_some() {
@@ -1128,7 +1132,10 @@ impl Game for Deckbound {
                         // **Block** (out-bid to slip the blow) instead of the default Trade. One-way
                         // (offered only while still Trade) so the solver explores the *set* of blockers
                         // without value-neutral on/off toggling. Heroes only — creatures use instinct.
-                        if melee_threat && state.plan.hero_guard[i] == combat::Guard::Trade {
+                        if melee_threat
+                            && state.ruleset.allows(Rule::DeclareGuard)
+                            && state.plan.hero_guard[i] == combat::Guard::Trade
+                        {
                             a.push(Action::Guard(i));
                         }
                     } else {
@@ -2309,6 +2316,7 @@ mod tests {
             Ruleset {
                 max_rounds: 3,
                 max_unique_per_side: 5,
+                ..Ruleset::default()
             },
         );
         assert!(s.outcome.is_none());
