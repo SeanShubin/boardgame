@@ -1,7 +1,8 @@
 # Combat reference — how to read the card-combat logs
 
-The legend and rules digest for every log in this directory (`card-combat-all-mechanics.md`,
-`card-combat-round-4v4.md`, `card-combat-round-breach.md`, `mechanic-validation-six-phase.md`).
+The legend and rules digest for every log here (`designer/card-combat-all-mechanics.md`,
+`designer/card-combat-round-4v4.md`, `designer/card-combat-round-breach.md`,
+`designer/mechanic-validation-six-phase.md`, and the `tutorials/` series).
 Canon source: Spec §4.6 (the six phases, cast/resolve, the per-phase accumulator), §2.1–§2.2
 (stats, Health), §3.4 (defender responses), §1.3/§1.9 (death-timing, order-independence).
 

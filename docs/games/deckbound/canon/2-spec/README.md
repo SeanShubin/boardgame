@@ -1634,7 +1634,7 @@ rear that dumps Tempo answering the Volley has less left for the spell, and vice
   **`cast`** window. A deferred ability is `cast: strike` (committable in the Fray *or* the Volley —
   player's choice) and `resolve: reckoning`; no single global commit moment is fixed.
 
-*(Worked round exercising all six phases: `log-driven/combat-logs/card-combat-round-breach.md`.)*
+*(Worked round exercising all six phases: `log-driven/combat-logs/designer/card-combat-round-breach.md`.)*
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
