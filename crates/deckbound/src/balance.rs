@@ -867,9 +867,11 @@ mod tests {
         // breaker's M1, even doubled by the melee trade-back, is 2 < 3), so Deal is necessary. The
         // balanced 1F1A1M team is the strongest composition; mono-role comps are the weakest.
         // (Might, Vitality, Toughness, Cadence, Finesse).
+        // Finesse 2 and 3 give an identical matrix vs these F1 defenders (the evade contest is a
+        // threshold, not a gradient); F1 collapses the breaker. So F2 is the minimum.
         const TRIAD: [(&str, Stat5); 3] = [
             ("Fighter", (1, 2, 3, 1, 1)),  // hold the line
-            ("Assassin", (1, 1, 1, 2, 3)), // break the line
+            ("Assassin", (1, 1, 1, 2, 2)), // break the line
             ("Mage", (3, 1, 1, 1, 1)),     // deal the damage (ranged)
         ];
         println!("{}", tuned_matrix_report(&TRIAD, 3, BUDGET));
