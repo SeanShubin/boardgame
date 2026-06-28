@@ -597,6 +597,75 @@ pub fn sim_subset() -> Ruleset {
     Ruleset::analysis().without(&[Rule::Grouping, Rule::AreaOfEffect])
 }
 
+/// A five-stat tuning tuple: `(Might, Vitality, Toughness, Cadence, Finesse)`.
+pub type Stat5 = (u32, u32, u32, u32, u32);
+
+/// Build a canonical class actor (`Fighter`/`Assassin`/`Mage` — preserving its name→AI binding, driver,
+/// and melee/ranged profile) with its five stats **overridden** to `s`. The weapon stays power-0 so a
+/// strike's raw force equals Might. Lets a tuning sweep try stat triads with no booklet round-trip.
+pub fn build_tuned(name: &str, s: Stat5) -> Actor {
+    let (m, v, t, c, f) = s;
+    let mut a = build_creature(name);
+    a.offense.might = m;
+    a.offense.cadence = c;
+    a.offense.finesse = f;
+    a.defense = crate::stats::Defense::new(v, t);
+    a.tempo = c as i32;
+    a
+}
+
+/// Build a party from a composition under a tuning `triad` (`[(name, stats); 3]`, in F/A/M order).
+fn tuned_party(c: &[u32; 3], triad: &[(&str, Stat5); 3]) -> Vec<Actor> {
+    let mut p = Vec::new();
+    for (i, &(name, s)) in triad.iter().enumerate() {
+        for _ in 0..c[i] {
+            p.push(build_tuned(name, s));
+        }
+    }
+    p
+}
+
+/// **Tuning matrix.** As [`nvn_matrix_report`], but over a programmatic stat `triad` (hold/break/deal)
+/// rather than the booklet stats — so a balance sweep can try candidate numbers without editing data.
+/// Prints each player composition's W/L/? record across all enemy compositions of the same size.
+pub fn tuned_matrix_report(triad: &[(&str, Stat5); 3], max_n: u32, budget: u64) -> String {
+    let subset = sim_subset();
+    let mut out = String::from("Tuning matrix — solver-optimized player vs deterministic AI\n");
+    for &(name, (m, v, t, c, f)) in triad {
+        out.push_str(&format!("  {name:<9} M{m} V{v} T{t} C{c} F{f}\n"));
+    }
+    out.push('\n');
+    for n in 1..=max_n {
+        let comps = compositions(n);
+        out.push_str(&format!("== size {n} ==\n"));
+        for pc in &comps {
+            let (mut w, mut l, mut u) = (0, 0, 0);
+            for ec in &comps {
+                let (win, of) = winnable_within_rules(
+                    tuned_party(pc, triad),
+                    tuned_party(ec, triad),
+                    1,
+                    budget,
+                    subset,
+                );
+                if win {
+                    w += 1;
+                } else if of {
+                    u += 1;
+                } else {
+                    l += 1;
+                }
+            }
+            out.push_str(&format!(
+                "  {:<8} {w:>2}W {l:>2}L {u:>2}?\n",
+                comp_label(pc)
+            ));
+        }
+        out.push('\n');
+    }
+    out
+}
+
 /// **NvN balance matrix.** For each party size `1..=max_n`, run every player composition vs every enemy
 /// composition (the full matrix) — solver-optimized player (side 0) vs deterministic AI (side 1), under
 /// the subset ruleset. Reports each player composition's win/loss/unknown record across all enemy
@@ -786,6 +855,26 @@ mod tests {
     /// it unwinnable (a FLIP = NECESSARY)? Rides winnability (short-circuits wins → fast + reliable),
     /// unlike graded par at full-party scale (intractable — see the module note). `budget` bounds
     /// loss-confirmation; a `?` marks a budget-limited verdict.
+    /// Stat-tuning sweep: find the smallest numbers that balance hold/break/deal. Edit `TRIAD` and re-run.
+    /// `cargo test -p deckbound probe_tune_triad -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_tune_triad() {
+        const BUDGET: u64 = 2_000_000;
+        // The smallest numbers that balance hold/break/deal: each role maxes one signature stat at 3,
+        // the rest at floor 1 (the tank pays V2 for durability, the breaker C2 for mobility). The
+        // load-bearing lock is T3 ↔ M3 — only a Mage's Might 3 cracks a Fighter's Toughness 3 (a
+        // breaker's M1, even doubled by the melee trade-back, is 2 < 3), so Deal is necessary. The
+        // balanced 1F1A1M team is the strongest composition; mono-role comps are the weakest.
+        // (Might, Vitality, Toughness, Cadence, Finesse).
+        const TRIAD: [(&str, Stat5); 3] = [
+            ("Fighter", (1, 2, 3, 1, 1)),  // hold the line
+            ("Assassin", (1, 1, 1, 2, 3)), // break the line
+            ("Mage", (3, 1, 1, 1, 1)),     // deal the damage (ranged)
+        ];
+        println!("{}", tuned_matrix_report(&TRIAD, 3, BUDGET));
+    }
+
     /// Trace one matchup: print both fighters' stats, the optimal outcome, and the winning line — to
     /// sanity-check a surprising matrix cell. `cargo test -p deckbound probe_trace_1a1f -- --ignored --nocapture`.
     #[test]
