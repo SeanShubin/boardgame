@@ -187,6 +187,13 @@ impl Rule {
     pub fn bit(self) -> u16 {
         1u16 << (self as u16)
     }
+
+    /// Parse a [`Rule`] from its **variant identifier** (the `Debug` name, e.g. `"Grouping"`,
+    /// `"AreaOfEffect"`) — the stable, code-facing key a data file (a balance level's `rules_off`) names
+    /// it by. `None` if no variant matches. (Distinct from [`name`](Rule::name), the prose appendix title.)
+    pub fn from_ident(s: &str) -> Option<Rule> {
+        ALL_RULES.iter().copied().find(|r| format!("{r:?}") == s)
+    }
 }
 
 /// Every combat rule, in **round order** for the phases (the appendix and the engine read it in

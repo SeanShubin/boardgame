@@ -18,6 +18,8 @@
 //! The comparative-par properties (even-advancement ≤ god; 2–3 teams ≤ blob/solos) are run-level, not
 //! encounter-level, and are the next layer (they need par over the world, not a single fight).
 
+use serde::Deserialize;
+
 use crate::actor::Actor;
 use crate::campaign::grind_encounter;
 use crate::currency::Currency;
@@ -666,6 +668,159 @@ pub fn tuned_matrix_report(triad: &[(&str, Stat5); 3], max_n: u32, budget: u64) 
     out
 }
 
+// ----------------------------------------------------------------------------------------------------
+// Data-driven balance **levels** — a level (roster stats + which rules are on + sizes) lives in a RON
+// file read at runtime, so iterating on numbers needs no rebuild. The complexity ladder is "rules
+// first": each level disables fewer registry rules, re-balancing the same chassis under more mechanics.
+// ----------------------------------------------------------------------------------------------------
+
+/// One role in a [`Level`]: a canonical class name (`Fighter`/`Assassin`/`Mage` — preserving its
+/// name→AI binding and melee/ranged profile) with its five stats overridden.
+#[derive(Clone, Debug, Deserialize)]
+pub struct RoleSpec {
+    /// Canonical class (the AI + attack-profile key); its booklet stats are overridden by `stats`.
+    pub class: String,
+    /// `(Might, Vitality, Toughness, Cadence, Finesse)`.
+    pub stats: Stat5,
+}
+
+/// A balance **level**: the roster, the rules left on, the party sizes to sweep, and the solver budget.
+/// Deserialized from a RON file (`data/balance/level-N.ron`) at runtime so edits skip the rebuild.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Level {
+    /// A label for the report header.
+    pub name: String,
+    /// Registry rules to **disable** for this level, by variant identifier (e.g. `"Grouping"`). All
+    /// other rules stay on. Climbing the ladder shortens this list.
+    #[serde(default)]
+    pub rules_off: Vec<String>,
+    /// The roster (hold / break / deal, in any order — labels come from the class initials).
+    pub roles: Vec<RoleSpec>,
+    /// Party sizes to sweep (equal player vs enemy count).
+    pub sizes: Vec<u32>,
+    /// Per-matchup solver node budget (a `?` in the report marks a budget-limited verdict).
+    pub budget: u64,
+}
+
+impl Level {
+    /// The [`Ruleset`] this level runs under: the analysis envelope with `rules_off` disabled. Panics if
+    /// a name in `rules_off` matches no [`Rule`] variant (a typo in the data file should fail loud).
+    pub fn ruleset(&self) -> Ruleset {
+        let off: Vec<Rule> = self
+            .rules_off
+            .iter()
+            .map(|s| {
+                Rule::from_ident(s).unwrap_or_else(|| {
+                    panic!("level {:?}: unknown rule in rules_off: {s:?}", self.name)
+                })
+            })
+            .collect();
+        Ruleset::analysis().without(&off)
+    }
+}
+
+/// Every composition of `n` units over `k` role bins (counts summing to `n`) — the general multiset
+/// enumerator behind [`compositions`] (which is the `k = 3` case).
+pub fn compositions_k(n: u32, k: usize) -> Vec<Vec<u32>> {
+    if k == 0 {
+        return if n == 0 { vec![vec![]] } else { vec![] };
+    }
+    if k == 1 {
+        return vec![vec![n]];
+    }
+    let mut out = Vec::new();
+    for first in 0..=n {
+        for mut rest in compositions_k(n - first, k - 1) {
+            let mut v = Vec::with_capacity(k);
+            v.push(first);
+            v.append(&mut rest);
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// Label a `k`-role composition from per-role counts and a tag per role (e.g. `2F1A`; zeros omitted).
+fn comp_label_k(counts: &[u32], tags: &[String]) -> String {
+    let s: String = counts
+        .iter()
+        .zip(tags)
+        .filter(|(c, _)| **c > 0)
+        .map(|(c, t)| format!("{c}{t}"))
+        .collect();
+    if s.is_empty() { "-".into() } else { s }
+}
+
+/// Build a party from a `k`-role composition under the level's roster.
+fn level_party(counts: &[u32], roles: &[RoleSpec]) -> Vec<Actor> {
+    let mut p = Vec::new();
+    for (c, r) in counts.iter().zip(roles) {
+        for _ in 0..*c {
+            p.push(build_tuned(&r.class, r.stats));
+        }
+    }
+    p
+}
+
+/// **Run a data-driven balance level**: the full composition matrix per size, solver-optimized player
+/// vs deterministic AI, under the level's ruleset. Returns the report (with the enabled-rule provenance
+/// in the header). This is the runtime entry the `balance` example calls.
+pub fn run_level(level: &Level) -> String {
+    let ruleset = level.ruleset();
+    let k = level.roles.len();
+    let tags: Vec<String> = level
+        .roles
+        .iter()
+        .map(|r| r.class.chars().next().unwrap_or('?').to_string())
+        .collect();
+    let mut out = format!(
+        "Balance level {:?} — solver-optimized player vs deterministic AI\n",
+        level.name
+    );
+    for r in &level.roles {
+        let (m, v, t, c, f) = r.stats;
+        out.push_str(&format!("  {:<9} M{m} V{v} T{t} C{c} F{f}\n", r.class));
+    }
+    out.push_str(&format!(
+        "rules on (provenance): {}\n\n",
+        ruleset
+            .enabled_rules()
+            .iter()
+            .map(|r| r.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    for &n in &level.sizes {
+        let comps = compositions_k(n, k);
+        out.push_str(&format!("== size {n}  ({} compositions) ==\n", comps.len()));
+        for pc in &comps {
+            let (mut w, mut l, mut u) = (0, 0, 0);
+            for ec in &comps {
+                let (win, of) = winnable_within_rules(
+                    level_party(pc, &level.roles),
+                    level_party(ec, &level.roles),
+                    1,
+                    level.budget,
+                    ruleset,
+                );
+                if win {
+                    w += 1;
+                } else if of {
+                    u += 1;
+                } else {
+                    l += 1;
+                }
+            }
+            out.push_str(&format!(
+                "  {:<10} {w:>2}W {l:>2}L {u:>2}?\n",
+                comp_label_k(pc, &tags)
+            ));
+        }
+        out.push('\n');
+    }
+    out
+}
+
 /// **NvN balance matrix.** For each party size `1..=max_n`, run every player composition vs every enemy
 /// composition (the full matrix) — solver-optimized player (side 0) vs deterministic AI (side 1), under
 /// the subset ruleset. Reports each player composition's win/loss/unknown record across all enemy
@@ -768,6 +923,18 @@ mod tests {
     use crate::ruleset::Ruleset;
     use crate::scenarios::build_creature;
     use crate::solver::{auto_resolve_with, winnable_within};
+
+    /// The canonical level-1 balance file parses and resolves to a sane ruleset — so the data-driven
+    /// runner can't silently rot (a typo'd rule name or malformed stats fails here, not at runtime).
+    #[test]
+    fn level_1_file_parses() {
+        let level: Level = ron::from_str(include_str!("../data/balance/level-1.ron"))
+            .expect("data/balance/level-1.ron should parse");
+        assert_eq!(level.roles.len(), 3);
+        let rs = level.ruleset();
+        assert!(!rs.allows(Rule::Grouping) && !rs.allows(Rule::AreaOfEffect));
+        assert!(rs.allows(Rule::MeleeContest)); // a core phase stays on
+    }
 
     /// Diagnostic (run on demand): print the current balance violations.
     /// `cargo test -p deckbound probe_grind_balance -- --ignored --nocapture`.

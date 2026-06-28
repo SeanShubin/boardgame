@@ -1,0 +1,20 @@
+// Balance level 1 — the simplest possible roster: three stat-only roles (no abilities), on the core
+// six-phase combat with grouping and area-of-effect switched off. This is the engine-soundness floor:
+// if hold/break/deal can't be balanced with nothing but five small integers here, the engine is wrong.
+//
+// Edit the numbers and re-run `cargo run -p deckbound --example balance` — no rebuild (the binary reads
+// this file at runtime). Climb the ladder by shortening `rules_off` (rules first), then re-balancing.
+//
+// stats: (Might, Vitality, Toughness, Cadence, Finesse). Weapons are power-0, so raw strike = Might.
+Level(
+    name: "level-1",
+    rules_off: ["Grouping", "AreaOfEffect"],
+    roles: [
+        (class: "Fighter",  stats: (1, 2, 3, 1, 1)),  // hold the line: only Might 3 cracks Toughness 3
+        (class: "Assassin", stats: (1, 1, 1, 2, 2)),  // break the line: Cadence 2 to move, Finesse 2 to slip
+        (class: "Mage",     stats: (3, 1, 1, 1, 1)),  // deal the damage (ranged): the only stat that hits 3
+    ],
+    sizes: [1, 2, 3],
+    budget: 2000000,
+)
+
