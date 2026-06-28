@@ -24,6 +24,7 @@ pub mod game;
 pub mod groups;
 pub mod handbook;
 pub mod reference;
+pub mod rules;
 pub mod ruleset;
 pub mod scenarios;
 pub mod solver;
