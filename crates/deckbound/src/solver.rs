@@ -741,8 +741,20 @@ pub fn winnable_within(
     seed: u64,
     max_nodes: u64,
 ) -> (bool, bool) {
+    winnable_within_rules(heroes, foes, seed, max_nodes, Ruleset::analysis())
+}
+
+/// As [`winnable_within`], but under an explicit [`Ruleset`] — so a simulation can run against a chosen
+/// rule **subset** (disabled phases skipped, disabled behaviors not consulted) and key its result to it.
+pub fn winnable_within_rules(
+    heroes: Vec<Actor>,
+    foes: Vec<Actor>,
+    seed: u64,
+    max_nodes: u64,
+    ruleset: Ruleset,
+) -> (bool, bool) {
     let game = Deckbound;
-    let root = battle_state_with(heroes, foes, false, seed, Ruleset::analysis());
+    let root = battle_state_with(heroes, foes, false, seed, ruleset);
     let mut reach = Reach {
         game: &game,
         seen: HashMap::new(),

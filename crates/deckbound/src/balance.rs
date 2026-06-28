@@ -22,9 +22,11 @@ use crate::actor::Actor;
 use crate::campaign::grind_encounter;
 use crate::currency::Currency;
 use crate::encounter::EncounterCard;
+use crate::rules::Rule;
 use crate::ruleset::Ruleset;
+use crate::scenarios::build_creature;
 use crate::scenarios::{RewardId, build_character, build_encounter_foes, rewards_for};
-use crate::solver::{Solution, auto_resolve, solve_within, winnable_within};
+use crate::solver::{Solution, auto_resolve, solve_within, winnable_within, winnable_within_rules};
 use crate::world::REWARD_SUITS;
 
 /// A balance property the current content fails to satisfy against the resolver-of-record.
@@ -548,6 +550,101 @@ fn flip_summary(enc: &EncounterCard, seed: u64, budget: u64) -> String {
     }
 }
 
+// ====================================================================================================
+// §13 NvN balance simulation — equal-count parties (solver-optimized player vs deterministic AI) over
+// the Fighter/Assassin/Mage classes, on the minimal subset ruleset (no grouping, no area-of-effect).
+// ====================================================================================================
+
+/// The §13 simulation classes (label/priority order).
+const SIM_CLASSES: [&str; 3] = ["Fighter", "Assassin", "Mage"];
+
+/// Every party composition of `n` units over the 3 classes — counts `[fighters, assassins, mages]`
+/// summing to `n` (multisets; identical units are interchangeable).
+pub fn compositions(n: u32) -> Vec<[u32; 3]> {
+    let mut v = Vec::new();
+    for f in 0..=n {
+        for a in 0..=(n - f) {
+            v.push([f, a, n - f - a]);
+        }
+    }
+    v
+}
+
+/// A short composition label, e.g. `2F1A` (zero counts omitted).
+pub fn comp_label(c: &[u32; 3]) -> String {
+    let tags = ["F", "A", "M"];
+    let s: String = (0..3)
+        .filter(|&i| c[i] > 0)
+        .map(|i| format!("{}{}", c[i], tags[i]))
+        .collect();
+    if s.is_empty() { "-".into() } else { s }
+}
+
+/// Build a party from a composition: `count` of each class via `build_creature`.
+fn build_party(c: &[u32; 3]) -> Vec<Actor> {
+    let mut p = Vec::new();
+    for (i, &class) in SIM_CLASSES.iter().enumerate() {
+        for _ in 0..c[i] {
+            p.push(build_creature(class));
+        }
+    }
+    p
+}
+
+/// The §13 subset ruleset (the recorded provenance): the analysis envelope with grouping and
+/// area-of-effect disabled.
+pub fn sim_subset() -> Ruleset {
+    Ruleset::analysis().without(&[Rule::Grouping, Rule::AreaOfEffect])
+}
+
+/// **NvN balance matrix.** For each party size `1..=max_n`, run every player composition vs every enemy
+/// composition (the full matrix) — solver-optimized player (side 0) vs deterministic AI (side 1), under
+/// the subset ruleset. Reports each player composition's win/loss/unknown record across all enemy
+/// compositions of that size (`?` = budget-limited, not a proven loss). The enabled ruleset is recorded
+/// as provenance at the top.
+pub fn nvn_matrix_report(max_n: u32, budget: u64) -> String {
+    let subset = sim_subset();
+    let mut out =
+        String::from("NvN balance matrix — solver-optimized player vs deterministic AI\n");
+    out.push_str(&format!(
+        "ruleset (provenance): {}\n\n",
+        subset
+            .enabled_rules()
+            .iter()
+            .map(|r| r.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    for n in 1..=max_n {
+        let comps = compositions(n);
+        out.push_str(&format!(
+            "== size {n}  ({} compositions, {} matchups) ==\n",
+            comps.len(),
+            comps.len() * comps.len()
+        ));
+        for pc in &comps {
+            let (mut w, mut l, mut u) = (0, 0, 0);
+            for ec in &comps {
+                let (win, of) =
+                    winnable_within_rules(build_party(pc), build_party(ec), 1, budget, subset);
+                if win {
+                    w += 1;
+                } else if of {
+                    u += 1;
+                } else {
+                    l += 1;
+                }
+            }
+            out.push_str(&format!(
+                "  {:<8} {w:>2}W {l:>2}L {u:>2}?\n",
+                comp_label(pc)
+            ));
+        }
+        out.push('\n');
+    }
+    out
+}
+
 /// T3 — **stat decisiveness** (§8.6 no-redundant-stat, coarse view): zero each offensive magnitude
 /// stat across the grind-ladder parties and report whether it **flips** any L5 win/loss. This is a
 /// *decisiveness* probe, not a consumption proof: a stat that is consumed but never tips an outcome
@@ -689,6 +786,60 @@ mod tests {
     /// it unwinnable (a FLIP = NECESSARY)? Rides winnability (short-circuits wins → fast + reliable),
     /// unlike graded par at full-party scale (intractable — see the module note). `budget` bounds
     /// loss-confirmation; a `?` marks a budget-limited verdict.
+    /// Trace one matchup: print both fighters' stats, the optimal outcome, and the winning line — to
+    /// sanity-check a surprising matrix cell. `cargo test -p deckbound probe_trace_1a1f -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_trace_1a1f() {
+        let dump = |label: &str, name: &str| {
+            let a = build_creature(name);
+            println!(
+                "  {label} {name}: Might {} Vit {} Tough {} Cadence {} Finesse {} | tempo {}",
+                a.offense.might,
+                a.defense.health.max,
+                a.defense.health.toughness,
+                a.offense.cadence,
+                a.offense.finesse,
+                a.tempo,
+            );
+        };
+        dump("player", "Assassin");
+        dump("enemy ", "Fighter");
+        let sol = solve_within(
+            vec![build_creature("Assassin")],
+            vec![build_creature("Fighter")],
+            1,
+            crate::ruleset::Ruleset::analysis(),
+            3_000_000,
+        );
+        println!(
+            "1A vs 1F: {}{}",
+            outcome_str(&sol),
+            if sol.overflowed {
+                " [budget-limited]"
+            } else {
+                ""
+            }
+        );
+        for act in &sol.line {
+            let s = format!("{act:?}");
+            if !s.contains("SetVanguard") && !s.contains("SetRearguard") && !s.contains("Deploy") {
+                println!("    {s}");
+            }
+        }
+    }
+
+    /// §13 NvN balance matrix — full composition matrix per party size, solver-optimized player vs the
+    /// deterministic AI, under the subset ruleset. Small max_n first to gauge solver speed; scale up
+    /// after. `cargo test -p deckbound probe_nvn_matrix -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_nvn_matrix() {
+        const BUDGET: u64 = 2_000_000;
+        const MAX_N: u32 = 3; // gauge speed at small sizes first
+        println!("{}", nvn_matrix_report(MAX_N, BUDGET));
+    }
+
     /// `cargo test -p deckbound probe_role_weight -- --ignored --nocapture`.
     #[test]
     #[ignore]
