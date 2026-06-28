@@ -233,6 +233,15 @@ Catalog(
         // it, it forces the party to *cross* rather than break through — the necessity test for **reach**.
         ActorCard( name: "Sentry", role: "Warden", flavor: "It does not chase. It simply makes sure that what runs past it does not arrive whole.", driver: "turtle", attack: Melee, weapon: "Spear", aggression: 2,
                    base: (might: 3, vitality: 10, toughness: 4, cadence: 4, finesse: 4) ),
+        // ---- §13 simulation classes (2026-06-27): three ability-less stat blocks for the minimal-subset
+        //      NvN balance study (no grouping, no AoE). Power-0 weapons, so a strike = the class's Might.
+        //      Used on both sides — solver-optimized as heroes (side 0), deterministic AI as foes (side 1). ----
+        ActorCard( name: "Fighter",  role: "Fighter",  flavor: "Holds the line and trades. Tough, plain, immovable.", driver: "brute",      attack: Melee,  weapon: "Blade", aggression: 6,
+                   base: (might: 1, vitality: 2, toughness: 3, cadence: 1, finesse: 2) ),
+        ActorCard( name: "Assassin", role: "Assassin", flavor: "Fast and pointed — goes for the soft target behind the line.", driver: "skirmisher", attack: Melee,  weapon: "Claw",  aggression: 8,
+                   base: (might: 2, vitality: 2, toughness: 2, cadence: 2, finesse: 3) ),
+        ActorCard( name: "Mage",     role: "Mage",     flavor: "Frail, deadly, and only safe while the front holds.", driver: "aggressor",  attack: Ranged, weapon: "Staff", aggression: 1,
+                   base: (might: 3, vitality: 1, toughness: 1, cadence: 1, finesse: 1) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
         ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),

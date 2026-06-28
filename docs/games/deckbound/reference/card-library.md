@@ -13,10 +13,10 @@
 | Brass — Artillery | 10 |
 | Bone — Controller | 10 |
 | Salt — Support | 10 |
-| Weapons | 7 |
-| Pool | 21 |
-| Cast | 25 |
-| **Total** | **105** |
+| Weapons | 8 |
+| Pool | 20 |
+| Cast | 28 |
+| **Total** | **108** |
 
 ## Baseline (1 cards)
 
@@ -100,7 +100,7 @@
 | 5 | Sanctuary | action | empower +3 might, haste +3, mend +4, x99 targets |
 | 5 | Salt L5 | stat | vitality 2 |
 
-## Weapons (7 cards)
+## Weapons (8 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -109,14 +109,14 @@
 | — | Maul | weapon | might weapon (+1) |
 | — | Claw | weapon | might weapon (+0) |
 | — | Spear | weapon | might weapon (+0) |
+| — | Staff | weapon | might weapon (+0) |
 | — | Bow | weapon | might weapon (+1) |
 | — | Wand | weapon | might weapon (+2) |
 
-## Pool (21 cards)
+## Pool (20 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
-| — | Staff | action | might 0 |
 | — | Bash | action | might 0 |
 | — | Flame | action | might 3 |
 | — | Barrage | action | might 3, x3 targets |
@@ -138,7 +138,7 @@
 | — | Backstab | passive | — |
 | 4 | Longshot | passive | — |
 
-## Cast (25 cards)
+## Cast (28 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -160,6 +160,9 @@
 | — | Monolith | character | Bulwark · Maul |
 | — | Mender | character | Healer · Wand |
 | — | Sentry | character | Warden · Spear |
+| — | Fighter | character | Fighter · Blade |
+| — | Assassin | character | Assassin · Claw |
+| — | Mage | character | Mage · Staff |
 | — | Vael | character | Duelist · Blade |
 | — | Pell | character | Charger · Claw |
 | — | Bron | character | Leader · Claw |
