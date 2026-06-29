@@ -1077,18 +1077,19 @@ side is dead.** Each round:
    battle is a draw, §0.4).
 
 **The engagement schedule — the one ordering system.** Every attacker→target role-pair is resolved in a
-fixed order; *every legal pair appears exactly once* (Rearguard→Rearguard is the lone illegal pair — a
-back-line trading shots with a back-line it cannot reach, §4.6). The **order is the whole interception /
+fixed order; *every legal pair appears exactly once* (Rearguard→Rearguard is legal **only in the Breach,
+and only once the enemy Vanguard has fallen** — until then a back-line cannot reach a screened back-line,
+§4.6). The **order is the whole interception /
 pre-empt / Reckoning machinery** — there are no other timing rules; a unit struck in an earlier engagement
 takes no action in a later one (§4.6 PRINCIPLE):
 
-| Step | Name (diegetic) | Engagements | What the fiction is |
-|------|-----------------|-------------|---------------------|
-| a | **Intercept** | Vanguard → Outrider | the front screens the crossing flankers |
-| b | **Volley** | Rearguard → Outrider | the back fires on the crossers (it shoots *before* they arrive — the pre-empt) |
-| c | **Raid** | Outrider → Rearguard | flankers that survived strike the exposed back |
-| d | **Clash** | Rearguard → Vanguard, Vanguard → Vanguard | the back snipes the enemy front; the fronts meet |
-| e | **Breach** | Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider | the deep / trailing blows land last |
+| Step (in order) | Engagements | What the fiction is |
+|-----------------|-------------|---------------------|
+| **Intercept** | Vanguard → Outrider | the front screens the crossing flankers |
+| **Volley** | Rearguard → Outrider | the back fires on the crossers (it shoots *before* they arrive — the pre-empt) |
+| **Raid** | Outrider → Rearguard | flankers that survived strike the exposed back |
+| **Clash** | Rearguard → Vanguard, Vanguard → Vanguard | the back snipes the enemy front; the fronts meet |
+| **Breach** | Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard *(only once the enemy Vanguard has fallen)* | the deep / trailing blows land last; a dropped front opens the enemy back-line to fire |
 
 This is **consult-on-ambiguity precedence, not a five-step procedure** — a table collapses "everyone attacks
 their target" into "obviously," and a player reaches for the order only when two events would resolve in a
@@ -1170,9 +1171,11 @@ reached it — the back is shielded until cracked. Friendly fire does not exist 
 **buffs only**, and they auto-land.
 
 **Edge cases.** *No Vanguard (all-Rearguard):* with no front to shield it, **your Rearguard is exposed
-from the start** (the "while its front lives" clause never holds), and the enemy front closes untouched —
-holding everyone back only exposes you. *No Rearguard (all-Vanguard):* a pure front — durable, with
-nothing to expose, but short on the safe damage cannons give; it wins by out-lasting, not out-gunning.
+from the start** (the "while its front lives" clause never holds) — the enemy front closes untouched, and
+an enemy Rearguard may fire on yours (`R→R`, the front-less back is open). Two all-Rearguard sides
+therefore **trade fire and resolve** rather than stalemate out of range; holding everyone back only exposes
+you. *No Rearguard (all-Vanguard):* a pure front — durable, with nothing to expose, but short on the safe
+damage cannons give; it wins by out-lasting, not out-gunning.
 
 **Protection is the front's, and momentary.** Only a **living Vanguard** shields the back; the instant it
 falls — killed or Routed — the back is reachable. **No position is ever permanently safe** — every unit
@@ -1227,7 +1230,7 @@ guarantees blows eventually land, so Health and Might never become decorative.
   The Outrider is the *efficient* path, never the only one; a back's safety is always *paid for*, never
   decreed.
 - **One fixed engagement schedule** is the sole timing system: every legal attacker→target role-pair
-  resolves once, in order (a–e), and a unit struck in an earlier engagement takes no action in a later one
+  resolves once, in the fixed order (Intercept → Volley → Raid → Clash → Breach), and a unit struck in an earlier engagement takes no action in a later one
   (§4.6 PRINCIPLE). The order is **consulted at ambiguity**, not performed each round.
 - **One unified Tempo contest:** a single simultaneous bid; the defender must **beat, not match** (ties
   land); **no iterated auction**, so combat stays a maximizer (§0.4). Defending is Tempo-negative → blows
@@ -1235,9 +1238,10 @@ guarantees blows eventually land, so Health and Might never become decorative.
 - **One per-round Tempo pool, shared across the whole schedule:** it refills each round but does **not**
   refresh between engagements — the opportunity cost across the order is the balance engine. **Health
   persists**; the battle is capped at **five rounds**.
-- **Groups:** sum-to-block, weakest-link-to-slip; single-target damage **spills** in declared order
-  (bodyguarding), **AoE hits all** (bypasses spillover), acting costs **one Tempo per member**; **Hoard X**
-  is a one-card group of X bodies (§4.5).
+- **Groups:** pool-to-block / catch, weakest-link-to-slip; **individual targeting, collective reposition**;
+  single-target damage **spills** in declared order (bodyguarding, overflow on death), **AoE hits all** at
+  full value (bypasses spillover); a **melee** attack spends one Tempo per member, a **ranged** attack only
+  the shooters'; **Hoard X** is a one-card group of X bodies (§4.5).
 - **Force, not fiat:** every position is killable by enough Tempo — no immunity, no hard cap. A no-skills,
   infinite-Tempo character wipes any finite party (BI-3).
 
@@ -1257,12 +1261,12 @@ At round end Tempo refreshes, Health carries over; the battle runs **five rounds
 - **TERM.** `Vanguard` (Roles) — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
 - **TERM.** `Outrider` (Roles) — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
 - **TERM.** `Rearguard` (Roles) — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.
-- **TERM.** `Engagement schedule` (Combat) — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider). The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
+- **TERM.** `Engagement schedule` (Combat) — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider, and Rearguard→Rearguard once the enemy Vanguard has fallen). Each engagement cycles until no one will spend Tempo, then resolves. The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
 - **TERM.** `Tempo contest` (Combat) — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
 - **TERM.** `Reach` (Combat) — Where you can attack from: melee strikes from the Vanguard or raids as an Outrider, ranged deals from the Rearguard. Positions self-sort by attack type; a misplaced unit is idle, not barred.
-- **TERM.** `Group` (Combat) — Same-side Actors bound at form-up into one unit: one position, one shared target, distinct Health. Single-target damage spills in declared order; AoE hits every member; acting costs one Tempo per member; blocking sums member Tempo, slipping needs every member to beat the attacker. No size cap, no mixed positions.
+- **TERM.** `Group` (Combat) — Same-side Actors bound at form-up into one unit: one position, distinct Health; members target individually but reposition collectively. Single-target damage spills in declared order (overflowing on a death); AoE hits every member. A melee attack spends one Tempo per member (the whole group crosses); a ranged attack spends only the shooters'. Blocking/catching pools member Tempo; slipping needs every member to beat the attacker. No size cap, no mixed positions.
 - **TERM.** `Hoard X` (Combat) — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
-- **TERM.** `Spillover` (Combat) — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member when the current can no longer absorb it.
+- **TERM.** `Spillover` (Combat) — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member only when the current **dies**. AoE instead hits every member at full value; the two-pool resolution (AoE counted in-pile while spillover cascades, flip at the boundary) is §4.6.
 
 **Open dials (pin with implementation).** The structure (the per-round declared intentions, the engagement
 schedule, the one Tempo contest, the three declared intentions, reach, targeting, the five-round cap) is
@@ -1325,8 +1329,11 @@ current head-count.
 over its own line. A strike lands at its range;
 how the target may answer depends on the range:
 
-- **Melee, same range (target can strike back)** → a **simultaneous trade** (both deal their base through
-  toughness, §2). With the **optional Clash module** (§1.0) on, the trade becomes the four-card Clash + Force.
+- **Melee, same range (target can strike back)** → a **simultaneous trade**: the attacker pays to strike,
+  and the defender may **strike back reflexively** — no crossing cost (the attacker came to it), but **one
+  Tempo** for the swing, and only if it **carries a melee attack** (§4.6). A defender that cannot or will
+  not pay simply **eats the hit**. With the **optional Clash module** (§1.0) on, the trade becomes the
+  four-card Clash + Force.
 - **Ranged** → the target may **evade** (the Tempo contest, §3.1 — spend Tempo, strictly beat the
   attacker's pressed volley; a tie lands the hit) **whatever its own range**, and may additionally
   **strike back** if it carries the range. A blow neither evaded nor answered is an **auto-hit** (through
@@ -1356,9 +1363,10 @@ reached. It also opens clean power-design space: keep-at-range tricks, strong-at
 hybrids, and pure-support "neither" kits — each re-derivable from "do you have the attack for this range?".
 
 **GUARANTEES.**
-- A **melee** strike at the same range is a trade / Clash; a **ranged** strike may be **evaded** with Tempo
-  (§3.1) by any target and **struck back** only by a same-range answerer; a blow neither evaded nor
-  answered **auto-hits** (through toughness).
+- A **melee** strike at the same range is a trade / Clash — the defender strikes back **reflexively** (no
+  crossing cost) for **one Tempo**, and only if melee-capable (§4.6); a **ranged** strike may be **evaded**
+  with Tempo (§3.1) by any target and **struck back** only by a same-range answerer; a blow neither evaded
+  nor answered **auto-hits** (through toughness).
 - Range is **position-determined** (Vanguard = melee, Rearguard = ranged) — never the attacker's free pick.
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
@@ -1479,26 +1487,33 @@ was already code-pending — `role-card-redesign.md` §8.)*
 ### 4.5 Groups — bind same-side Actors into one unit 🟡 *(engagement-schedule model, 2026)*
 
 **RULE.** At **form-up** (§4), a side may bind several Actors into a **group**. A group shares **one
-position** (all Vanguard or all Rearguard — never mixed) and **one target** at a time, with **no size
-cap**. Within a group:
+position** (all Vanguard or all Rearguard — never mixed), with **no size cap**. The binding is for
+**defense and position, not offense**: members **target individually** (each picks its own victim and
+spends its own Tempo) but **reposition collectively** (they move, block, and slip as one body). Within a
+group:
 
 - **Distinct pools, spillover damage.** Each member keeps its own Health and **dies individually**.
-  Accumulated **single-target** damage is applied **point-by-point in declared order**, **spilling over**
-  to the next member once the current can no longer absorb it (a tank in front soaks for the squishies
-  behind).
+  Accumulated **single-target** damage is applied **point-by-point in declared order**, overflowing to the
+  next member **only once the current dies** — the front body soaks in full before any spills (a tank in
+  front shields the squishies behind).
 - **AoE hits every member at full value** — the standing risk of clustering; it bypasses the spillover
-  queue and strikes each body.
-- **Acting costs one Tempo per member.** A group attacks, or makes a contested defense, only when **every**
-  member spends a Tempo card — so a big group is durable but **tempo-hungry**, and bleeds its own budget
-  fast.
+  queue and strikes each body. *(The two-pool accumulator that makes AoE + spillover order-independent —
+  AoE counted in each pile while spillover cascades, overflow on death, flip at the boundary — is §4.6.)*
+- **Offense is individual; the reposition is collective.** A **melee** attack moves the group as one, so
+  **every member spends one Tempo for the crossing — even a member with no attack** (it relocated with the
+  group); the melee-capable members land the strikes. A **ranged** attack needs no crossing, so **only the
+  shooters spend** — the group's melee members **bank their Tempo to bodyguard**. So a group that presses
+  in melee commits its whole budget and has nothing left to defend that engagement; a group that fires
+  keeps its front free to soak.
 
-**Groups in the Tempo contest (§4) — sum to block, weakest-link to slip.**
+**Groups in the Tempo contest (§4) — pool to block / catch, weakest-link to slip.**
 
-- **Blocking pools Tempo:** members combine their bids into one **summed hold** — a group is a superb
-  **wall**.
-- **Slipping / evading takes the minimum:** **every member must individually beat** the attacker
-  (weakest-link), so a group is a **hopeless slipper**. The unit that reaches an exposed back is a **lone,
-  high-Tempo** body, not a blob.
+- **Blocking or catching pools Tempo:** every member who spends adds its bid to one **summed hold** —
+  `Σ (cards × Finesse)` over the contributors. A group is a superb **wall**, and **spreading more bodies
+  onto the catch raises the bid**, so a diver must out-bid the whole pool to slip past.
+- **Slipping / evading takes the minimum:** the group avoids a blow only if **every** member individually
+  beats the attacker (weakest-link) — a target-rich cluster is a **hopeless slipper**. The unit that
+  reaches an exposed back is a **lone, high-Tempo** body, not a blob.
 
 **Hoard X.** A creature whose **X Health cards each act as a separate entity** is mechanically a **built-in
 group of X one-Health bodies** — a swarm. It sums those X to block, can essentially never slip (each tiny
@@ -1506,10 +1521,12 @@ body must win its own race), **melts to AoE** (X× hits), and **loses one attack
 swarm archetype falls straight out of the group rules, and a swarm can be authored as **one card** rather
 than X.
 
-**WHY.** A group buys **durability** (shared spillover Health behind a front member) and **focus-fire**
-(its members' attacks concentrate on one target). It pays threefold: **AoE-fragility** (every member hit),
-**target-lock** (one target at a time), and **per-member Tempo** (it bleeds the attrition budget faster).
-The sum-vs-min asymmetry then sorts groups with **no special case** — a group **walls**, a lone fast unit
+**WHY.** A group buys **durability** (shared spillover Health behind a front member) and **focus-fire** —
+members may aim their individual strikes at one victim so their **Might combines in that target's pile**,
+cracking a Toughness no single member could (the emergent reason to gang up; what counts is the *combined*
+hit, not each strike alone — §4.6). It pays for this: **AoE-fragility** (every member hit at once) and a
+**tempo-hungry melee press** (a melee move spends the whole group's Tempo, even non-attackers). The
+sum-vs-min asymmetry then sorts groups with **no special case** — a group **walls**, a lone fast unit
 **slips** — so a **grouped Outrider cannot raid** (only a lone, high-Tempo one can): the price of grouping
 for the breaker. *(The Outrider is now a **declared** intention, §4; sum-vs-min no longer has to conjure it,
 only to price the choice to group.)*
@@ -1535,10 +1552,14 @@ only to price the choice to group.)*
   at their maximum, which is exactly why a swarm is authored as **one card**, not X.
 
 **GUARANTEES.**
-- One position, distinct pools, one shared target; no merged stat-block, no size cap, no mixed positions.
-- Single-target damage **spills** in declared order; **AoE hits every member**; **acting costs one Tempo
-  per member**.
-- **Block = summed Tempo; slip / evade = every member beats the attacker** (weakest-link).
+- One position, distinct pools; **individual targeting, collective reposition**; no merged stat-block, no
+  size cap, no mixed positions.
+- Single-target damage **spills** in declared order (overflowing only when a member **dies**); **AoE hits
+  every member** at full value (two-pool accumulator, §4.6).
+- **Melee attack = every member spends one Tempo** (the collective crossing, even non-attackers); **ranged
+  attack = only the shooters spend** (melee members bank to bodyguard).
+- **Block / catch = pooled Tempo** (`Σ cards × Finesse` over contributors); **slip / evade = every member
+  beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
 ### 4.6 The engagement schedule — resolution order, the pile, the pre-empt & disrupt 🟡 *(2026 — supersedes the six-phase / per-unit-lock model; the round resolves over the declared-intention schedule of §4; the per-engagement pile, `cast`/`resolve`, pre-empt, and disrupt carry forward; code pending)*
@@ -1567,7 +1588,7 @@ ambiguous — §4.)*
 
 **RULE — the round resolves over the schedule; each engagement is a boundary.** A round runs: **Declare
 Intentions** (hidden) → **Reveal** → **Pre-Battle** (Standing effects auto-land) → the **engagement
-schedule** a–e (§4) → **Reset** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
+schedule** (Intercept → Volley → Raid → Clash → Breach, §4) → **Reset** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
 §5.5 — Health persists, round++). Each engagement is a §1.9 boundary (declare → resolve → apply; accumulate,
 then lock; deaths finalize, §1.3). All Tempo across the whole round is paid from **one shared per-round
 pool** (no refresh between engagements, §4).
@@ -1583,13 +1604,59 @@ within one engagement beats chip spread across them — revisit Toughness values
 are human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses an
 engagement boundary, so the only number a human carries through the round is Health.)*
 
+**RULE — the group accumulator: AoE pool + spillover pool (order-independent).** When an engagement's
+targets are a **group**, its per-engagement pile splits into two group-level pools so the result never
+depends on the order strikes were declared (§1.9):
+- **AoE pool** — each AoE strike adds its **full Might to every member's pile**.
+- **Spillover pool** — each single-target strike adds its Might here; it **cascades front-to-back in
+  declared order**, every member absorbing into its pile until it **dies** (its pile reaches `remaining
+  cards × Toughness`), then the remainder overflows to the next.
+The AoE is **counted in each member's pile while the spillover cascades** (so spillover only needs to
+*finish* a body the AoE already softened), and **all cards flip at the engagement boundary** (`flips =
+⌊pile ÷ Toughness⌋`, capped at the member's cards; overflow wasted). *Worked example — AoE 3, spillover 2
+over four 2-Health / 2-Toughness bodies a–d: **a** takes 3 + 1 = 4 (both cards flip → dies; 1 spillover
+overflows), **b** takes 3 + 1 = 4 (dies; spillover spent), **c** and **d** take 3 each (one card apiece,
+1 wasted each) — **2 damage wasted.*** AoE thus reaches a shielded back member regardless of order (it
+bypasses the bodyguard) — the **anti-cluster counter**: a bodyguard soaks aimed fire but cannot cover the
+area.
+
+**RULE — engagements cycle to exhaustion (force-not-fiat).** An engagement is not a single exchange but a
+**loop**: units keep committing strikes and defenses — accumulating in the per-engagement pile — **until no
+one wants to spend Tempo** (no positive-effect action remains, or the pools run dry), and only then does the
+boundary fire (flip, finalize deaths, wipe the pile). **Tempo is therefore the true resource:** a unit with
+more Tempo strikes more times in the same engagement, and enough Tempo overwhelms **any** Toughness. *(Test:
+imagine an infinite-Tempo unit — if it could not turn that into unlimited strikes, Toughness would be a hard
+wall and force-not-fiat would break. A Rearguard that still cannot reach the enemy back is **not** a
+violation — staying back was its choice; to wipe everyone it declares Outrider or Vanguard.)*
+
+**RULE — the positive-effect rule (no futile spend), judged at the target.** A unit commits a Tempo action
+only when it **changes the outcome** — and that is judged at the **target's pile, not the lone strike**: a
+strike that cannot flip a card **by itself** is still worth committing if the **combined** committed Might
+on that target this engagement crosses a Toughness it would not without it (focus-fire — weak chip ganging
+up to crack a wall). Likewise a defense is committed only at the **full** cost that actually beats the bid
+(never a partial spend that still eats the hit), and a strike-back only when it can crack the attacker. A
+**dead unit takes no action.** *(This is the rule the scripted PvE policy and the solver both follow; it is
+what lets a group's chip combine instead of each weak member idling — and it is the converse of cycling:
+the loop keeps going precisely until no *positive-effect* spend is left.)*
+
+**RULE — strike-back is melee-only and reflexive.** A struck unit may **strike back** only against a
+**melee** attacker (it *came to you* — the position half of an attack is waived, there being no ground to
+cross), and only if the defender itself **wields a melee attack**; a ranged attacker firing from across the
+field is **not** struck back (nothing closed to hit). Striking back is still an **action**, so it costs
+**one Tempo**. The only answer to a blow you cannot strike back at is to **evade** it (the Tempo contest,
+open to anyone) or to **counter-fire** with your own ranged attack (a separate strike, not a reflex). A
+pure caster caught in melee therefore cannot strike back — it can only evade or be hit.
+
 **RULE — back-access (who may strike the Rearguard).** Two earned routes, both gated by the schedule order:
-- **The Outrider's raid** — a declared Outrider strikes the enemy Rearguard in the **Raid** (c), **if it
-  survived** the enemy front's **Intercept** (a) and the enemy back's **Volley** (b). The breaker *declares*
+- **The Outrider's raid** — a declared Outrider strikes the enemy Rearguard in the **Raid**, **if it
+  survived** the enemy front's **Intercept** and the enemy back's **Volley**. The breaker *declares*
   the raid (no per-unit lock); its cost is total exposure *before* it lands.
-- **The front falling** — once a side's Vanguard is gone, its Rearguard is open to the **Breach**'s `V→R`
-  (a Vanguard crossing the now-open ground) and to ranged fire. This is *late* (the last engagement) but
-  needs no Outrider.
+- **The front falling** — once a side's Vanguard is gone, its Rearguard is **exposed to every attack that
+  can reach it** in the **Breach**: a Vanguard crossing the now-open ground (`V→R`) **and the enemy
+  Rearguard's fire (`R→R`)** — the dropped screen opens a clear line, so a back-line may now shoot the
+  enemy back-line. This is *late* (the last engagement) but needs no Outrider. *(The front falling exposes
+  the back to **all** reachable fire, not selectively to the breach alone — and it is what lets two
+  front-less all-Rearguard sides resolve instead of standing forever out of range.)*
 
 A Rearguard is shielded until one of these cracks it; neither is by decree (force-not-fiat — you reach the
 back by **winning** the Intercept/Volley as an Outrider, or by **killing** the front).
@@ -1616,7 +1683,7 @@ Outrider's Raid blow lands (the schedule order). Any §3.4 response (dodge, stri
 the shared pool applies. So the rear can drop or drain the breaker before it arrives — *and a Rearguard that
 spends its shot doing so has none left for the enemy Vanguard in the Clash* (the opportunity cost, §4).
 
-**RULE — interception & flanking.** The **Intercept** (a, `V→O`) is the front's screen on crossing
+**RULE — interception & flanking.** The **Intercept** (`V→O`) is the front's screen on crossing
 Outriders — a Vanguard that kills a raider there **precludes** its Raid (dead at the boundary). A Vanguard
 with no Outrider to screen falls back to the **Clash** (`V→V`) and then the **Breach** (`V→R`) — screener →
 primary force → cleanup (§4). An Outrider with no reachable Rearguard falls back to the **Breach**
@@ -1639,9 +1706,21 @@ the balance engine (§4).
 **GUARANTEES.**
 
 - **The schedule is the sole timing system:** every legal attacker→target role-pair resolves once, in the
-  fixed order (a–e); a unit dead at an engagement boundary takes no later action. No other timing rule.
-- **Back-access is earned two ways:** the Outrider's declared Raid (survived Intercept + Volley) or the
-  front falling (Breach `V→R`) — never by decree (force-not-fiat).
+  fixed order (Intercept → Volley → Raid → Clash → Breach); a unit dead at an engagement boundary takes no later action. No other timing rule.
+- **Engagements cycle to exhaustion:** within an engagement, strikes and defenses repeat until no one has a
+  positive-effect Tempo spend left; only then does the boundary flip / finalize. Tempo is the true
+  resource — enough of it overwhelms any Toughness (force-not-fiat).
+- **The positive-effect rule is judged at the target:** a strike counts if the *combined* committed Might
+  flips a card (focus-fire), not only if it flips alone; a defense is paid only at the full beating cost; a
+  dead unit acts not.
+- **Group accumulator:** AoE pool (full Might to every member) + spillover pool (cascades front-to-back,
+  overflowing on a death), AoE counted in-pile while spillover cascades, all flips at the boundary — AoE
+  reaches a shielded back member (anti-cluster), order-independent.
+- **Strike-back is melee-only + reflexive:** only a melee attacker is struck back, only by a melee-capable
+  defender, for one Tempo; a ranged blow is answered only by evasion or counter-fire.
+- **Back-access is earned ways:** the Outrider's declared Raid (survived Intercept + Volley); or the front
+  falling, which exposes the back to the Breach's `V→R` **and** `R→R` (enemy Rearguard fire) — never by
+  decree (force-not-fiat).
 - **Pre-empt:** the Intercept and Volley resolve **before** the Raid, so the front's screen and the rear's
   fire can stop a breaker before it strikes.
 - **Per-engagement pile:** Might accumulates within an engagement and **wipes at its boundary**; Toughness

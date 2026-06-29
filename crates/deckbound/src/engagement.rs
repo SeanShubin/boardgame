@@ -2,7 +2,8 @@
 //! `log-driven/brainstorming/phases.md`), built **isolated** from the live 12-phase engine so we can
 //! test whether the hold/break/deal triangle survives it before adopting it as the official spec.
 //!
-//! A round: declare intentions (V/O/R) → resolve a fixed engagement **schedule** a–e over one shared
+//! A round: declare intentions (V/O/R) → resolve a fixed engagement **schedule** (Intercept → Volley →
+//! Raid → Clash → Breach) over one shared
 //! per-round **Tempo** pool → reset. The damage core is unchanged (Might into a per-phase pile, Toughness
 //! gates the flip — reused from [`crate::stats`]). The schedule is **permissive on purpose** (every
 //! attacker→target role-pair except Rearguard→Rearguard is legal): balance must emerge from the
