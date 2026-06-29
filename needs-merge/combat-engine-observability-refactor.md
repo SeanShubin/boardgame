@@ -80,4 +80,8 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
 `apply`/`run` with `--state`/`--out` file-or-stdio. Suite 87/9 (the 9 are the known migration follow-ups).
-**P2 (physical decks) next.** (Owner: this instance — merge into `docs/` / mainline when settled.)
+**P2 DONE** (commit `37493d7`): `Health` is a `Vec<HealthCard{toughness, down}>` deck with facing; accessors preserve every read; `take_with_toughness` bit-identical for a uniform deck. Tempo left as a fungible count-deck. Suite 88/9.
+
+**P4 is a BEHAVIOR CHANGE, not behavior-preserving** — porting the sim's cycling / two-pool / R→R / strike-back / priorities into the live resolver makes live combat resolve *differently*, so it will move the behavioral goldens (reference_combat_bands, campaign wins, solver_wins) and needs deliberate re-tuning/regeneration, not a "no-new-failures" guard. P3 (2D layout) is behavior-neutral groundwork and **not a prerequisite for P4's mechanics** (vec-order + the existing `Round.*_group` ids suffice for spillover, as the sim does) — it's an observability/UI view that can land before or after P4.
+
+(Owner: this instance — merge into `docs/` / mainline when settled.)
