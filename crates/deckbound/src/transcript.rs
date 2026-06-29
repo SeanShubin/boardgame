@@ -145,7 +145,7 @@ pub fn transcribe(scn: &TranscriptScenario, seed: u64) -> String {
             push_line(&mut out, &round_banner(cur_round));
         }
 
-        let was_standoff = state.phase == Phase::Standoff;
+        let declaring = state.phase == Phase::DeclareIntentions;
         let actions = game.legal_actions(&state);
         let action = greedy(&state, &actions);
         if game.apply(&mut state, &action).is_err() {
@@ -156,8 +156,8 @@ pub fn transcribe(scn: &TranscriptScenario, seed: u64) -> String {
             break;
         }
 
-        // The Standoff has just closed (we entered the Fray): record positions / fronts.
-        if was_standoff && state.phase != Phase::Standoff {
+        // The declaration has just closed (Deploy resolves the engagement): record the intentions.
+        if declaring && matches!(action, crate::game::Action::Deploy) {
             collect_chargers(&mut chargers, &state);
             push_line(&mut out, &ranks_summary(&state));
         }
@@ -318,23 +318,27 @@ fn form_block(a: &Actor) -> String {
 /// The §4.6 positions, per side (read after the Standoff closes): which units front (Vanguard) and
 /// which hold back (Rearguard).
 fn ranks_summary(state: &State) -> String {
-    let split = |pool: &[Actor], vanguard: &[bool]| {
-        let pick = |f: &dyn Fn(usize) -> bool| {
+    use crate::actor::Intention;
+    let split = |pool: &[Actor], intent: &[Intention]| {
+        let pick = |role: Intention| {
             (0..pool.len())
-                .filter(|&i| f(i))
+                .filter(|&i| intent[i] == role && !pool[i].fallen)
                 .map(|i| pool[i].name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let front = pick(&|i| vanguard[i] && !pool[i].fallen);
-        let rear = pick(&|i| !vanguard[i] && !pool[i].fallen);
         let cell = |s: String| if s.is_empty() { "—".to_string() } else { s };
-        format!("vanguard: {}   rearguard: {}", cell(front), cell(rear))
+        format!(
+            "vanguard: {}   outrider: {}   rearguard: {}",
+            cell(pick(Intention::Vanguard)),
+            cell(pick(Intention::Outrider)),
+            cell(pick(Intention::Rearguard)),
+        )
     };
     format!(
         "RANKS    heroes — {}\n         foes   — {}",
-        split(&state.heroes, &state.plan.hero_vanguard),
-        split(&state.creatures, &state.plan.foe_vanguard),
+        split(&state.heroes, &state.plan.hero_intent),
+        split(&state.creatures, &state.plan.foe_intent),
     )
 }
 
@@ -395,13 +399,14 @@ fn parse_play(line: &str) -> Option<(String, String)> {
 /// Record the names of every actor in the **Vanguard** this round (their weapon and passive powers
 /// drive the front clash, so those count as "used").
 fn collect_chargers(chargers: &mut BTreeSet<String>, state: &State) {
-    for (a, v) in state.heroes.iter().zip(&state.plan.hero_vanguard) {
-        if *v && !a.fallen {
+    use crate::actor::Intention;
+    for (a, v) in state.heroes.iter().zip(&state.plan.hero_intent) {
+        if *v == Intention::Vanguard && !a.fallen {
             chargers.insert(a.name.clone());
         }
     }
-    for (a, v) in state.creatures.iter().zip(&state.plan.foe_vanguard) {
-        if *v && !a.fallen {
+    for (a, v) in state.creatures.iter().zip(&state.plan.foe_intent) {
+        if *v == Intention::Vanguard && !a.fallen {
             chargers.insert(a.name.clone());
         }
     }

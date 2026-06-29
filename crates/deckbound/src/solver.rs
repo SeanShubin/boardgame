@@ -54,31 +54,13 @@ pub fn auto_resolve_with(
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // §4.6 #1 Standoff: positions default from the attack profile (melee fronts, ranged/support
-        // holds back), which is what the greedy wants — so it only casts any beneficial `Standing`
-        // buffs, then advances to the Fray.
-        Phase::Standoff => best_play(state, actions).unwrap_or(Deploy),
-        // §4.6 #2 Fray: cast a **setup** ability first (a foe stat-drop / amp — e.g. the Controller's
-        // Sunder lowers the wall *before* allies strike this phase, the whole point of the role); else
-        // play the **best `Strike` card** (a damage AoE / DoT — a unit's once-per-round role card is its
-        // strongest blow, well above a plain weapon poke); else strike a reachable foe with the weapon;
-        // else pass. A debuff is read at strike time, so the setup leads (resolution is order-independent
-        // within the phase, but the token must be on the target before the blow snapshots it).
-        Phase::Fray => setup_play(state, actions)
-            .or_else(|| best_play(state, actions))
-            .or_else(|| actions.iter().copied().find(|a| matches!(a, Target(..))))
-            .unwrap_or_else(|| first_attack_or_pass(actions)),
-        // §4.6 #3 Volley: a free Vanguard charges the enemy rear (or flanks); a Rearguard fires again;
-        // else cast; else pass. Prefer a charge (reach the back) over a flank.
-        Phase::Volley => actions
-            .iter()
-            .copied()
-            .find(|a| matches!(a, Charge(..)))
-            .or_else(|| actions.iter().copied().find(|a| matches!(a, Target(..))))
-            .or_else(|| best_play(state, actions))
-            .unwrap_or_else(|| first_attack_or_pass(actions)),
-        // Breach & Reckoning resolve automatically; the greedy never has a choice there.
-        Phase::Breach | Phase::Reckoning => first_attack_or_pass(actions),
+        // §4 DeclareIntentions: each unit defaults to its stat-based intention (which is what the greedy
+        // wants — melee fronts/flanks, ranged deals), so the greedy casts any beneficial `Standing` buff,
+        // then advances. **Deploy resolves the whole engagement schedule** (targeting is the resolver's
+        // job now, not an interactive choice).
+        Phase::DeclareIntentions => best_play(state, actions).unwrap_or(Deploy),
+        // Engage is transient — the round resolves inside Deploy, so this is never a resting choice.
+        Phase::Engage => Deploy,
         // The Clash is off in the solver; if somehow reached, just strike.
         Phase::Clash => Play(Move::Strike),
         Phase::Menu(_) => ToMenu,
@@ -180,18 +162,6 @@ fn play_score(card: &crate::cards::Card) -> i32 {
             Mend { .. } | Recover => 5,
         })
         .sum()
-}
-
-/// First `Target` (attack), else `Pass`, else the first non-`ToMenu` action.
-fn first_attack_or_pass(actions: &[Action]) -> Action {
-    use Action::*;
-    actions
-        .iter()
-        .copied()
-        .find(|a| matches!(a, Target(..)))
-        .or_else(|| actions.iter().copied().find(|a| matches!(a, Pass(..))))
-        .or_else(|| actions.iter().copied().find(|a| !matches!(a, ToMenu)))
-        .unwrap_or(ToMenu)
 }
 
 // ===========================================================================
@@ -340,41 +310,22 @@ struct StateKey {
     committing: u8,
     heroes: Vec<ActorKey>,
     creatures: Vec<ActorKey>,
-    hero_vanguard: Vec<bool>,
-    foe_vanguard: Vec<bool>,
-    hero_guard: Vec<crate::combat::Guard>,
-    hero_locked: Vec<bool>,
-    foe_locked: Vec<bool>,
-    hero_pinned: Vec<bool>,
-    foe_pinned: Vec<bool>,
+    hero_intent: Vec<crate::actor::Intention>,
+    foe_intent: Vec<crate::actor::Intention>,
+    hero_group: Vec<usize>,
+    foe_group: Vec<usize>,
     hero_acted: Vec<bool>,
     foe_acted: Vec<bool>,
-    hero_attacked: Vec<Vec<usize>>,
-    foe_attacked: Vec<Vec<usize>>,
-    charges: Vec<(u8, usize, usize, bool)>,
     deferred: Vec<(u8, usize, String)>,
 }
 
 fn phase_tag(p: &Phase) -> u8 {
     match p {
         Phase::Menu(_) => 0,
-        Phase::Standoff => 1,
-        Phase::Fray => 2,
-        Phase::Volley => 3,
-        Phase::Breach => 4,
-        Phase::Reckoning => 5,
-        Phase::Clash => 6,
+        Phase::DeclareIntentions => 1,
+        Phase::Engage => 2,
+        Phase::Clash => 3,
     }
-}
-
-fn sorted_inner(v: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    v.iter()
-        .map(|inner| {
-            let mut c = inner.clone();
-            c.sort_unstable();
-            c
-        })
-        .collect()
 }
 
 fn state_key(s: &State) -> StateKey {
@@ -384,23 +335,12 @@ fn state_key(s: &State) -> StateKey {
         committing: s.plan.committing,
         heroes: s.heroes.iter().map(actor_key).collect(),
         creatures: s.creatures.iter().map(actor_key).collect(),
-        hero_vanguard: s.plan.hero_vanguard.clone(),
-        foe_vanguard: s.plan.foe_vanguard.clone(),
-        hero_guard: s.plan.hero_guard.clone(),
-        hero_locked: s.plan.hero_locked.clone(),
-        foe_locked: s.plan.foe_locked.clone(),
-        hero_pinned: s.plan.hero_pinned.clone(),
-        foe_pinned: s.plan.foe_pinned.clone(),
+        hero_intent: s.plan.hero_intent.clone(),
+        foe_intent: s.plan.foe_intent.clone(),
+        hero_group: s.plan.hero_group.clone(),
+        foe_group: s.plan.foe_group.clone(),
         hero_acted: s.plan.hero_acted.clone(),
         foe_acted: s.plan.foe_acted.clone(),
-        hero_attacked: sorted_inner(&s.plan.hero_attacked),
-        foe_attacked: sorted_inner(&s.plan.foe_attacked),
-        charges: s
-            .plan
-            .charges
-            .iter()
-            .map(|c| (c.side, c.attacker, c.target, c.flank))
-            .collect(),
         deferred: s
             .plan
             .deferred
@@ -422,51 +362,12 @@ fn combat_actions(game: &Deckbound, state: &State) -> Vec<Action> {
 
 /// An enemy unit's interchangeability signature: type (name), full mutable state,
 /// and position/lock/pin/acted flags. (See [`target_class`].)
-type TargetClass = (String, ActorKey, bool, bool, bool, bool);
-
-/// The interchangeability signature of an enemy unit `t` (the side *not* committing):
-/// its type (name), full mutable state, and position/lock/pin/acted flags. Two
-/// targets with the same signature are symmetric — striking either yields isomorphic
-/// successors (§10.7 swarm-as-one) — so the search need branch on only one.
-fn target_class(state: &State, t: usize) -> TargetClass {
-    let enemy = 1 - state.plan.committing;
-    let a = &state.s_pool(enemy)[t];
-    (
-        a.name.clone(),
-        actor_key(a),
-        state.s_vanguard(enemy)[t],
-        state.s_locked(enemy)[t],
-        state.s_pinned(enemy)[t],
-        state.s_acted(enemy)[t],
-    )
-}
-
-/// Phase E **symmetry pruning** (exactness-preserving): [`combat_actions`] with
-/// symmetric target choices collapsed — among identical enemy units in identical
-/// state, `Target`/`Charge`/flank against each produce isomorphic subtrees, so keep
-/// one representative. This is the swarm-as-one lever (§10.7 / Spec §0.4); it is what
-/// keeps full rosters (the two Raiders / Husks of "The Five", the six-Husk Swarm)
-/// from exploding. Non-targeting actions (positions, casts, passes, deploy) pass
-/// through untouched.
+/// Phase E symmetry pruning. In the engagement-schedule model targeting is **not** an interactive choice
+/// (the resolver picks targets, §4.6), so the only branching actions are intention declarations, Standing
+/// casts, Pass, and Deploy — there is no `Target`/`Charge` fan-out to collapse. Pass through unchanged.
+/// *(Follow-on: dedup symmetric units' identical intention sets to prune full-roster branching.)*
 fn combat_actions_dedup(game: &Deckbound, state: &State) -> Vec<Action> {
-    let mut seen: HashSet<(u8, usize, TargetClass)> = HashSet::new();
-    let mut out = Vec::new();
-    for a in combat_actions(game, state) {
-        let class = match a {
-            Action::Target(i, t) => Some((0u8, i, target_class(state, t))),
-            Action::Charge(i, t) => Some((1u8, i, target_class(state, t))),
-            _ => None,
-        };
-        match class {
-            Some(c) => {
-                if seen.insert(c) {
-                    out.push(a);
-                }
-            }
-            None => out.push(a),
-        }
-    }
-    out
+    combat_actions(game, state)
 }
 
 /// Move-ordering: put the greedy policy's pick first, so a reachability search tends

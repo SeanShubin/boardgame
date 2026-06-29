@@ -528,6 +528,7 @@ impl Deckbound {
                 "Round {} — declare intentions (Vanguard / Outrider / Rearguard), then advance. (Esc: menu)",
                 state.round
             ),
+            (None, Phase::Engage) => "Resolving the engagement…".to_string(),
             (None, Phase::Clash) => match state.clash {
                 Some(c) => format!(
                     "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
