@@ -1,15 +1,14 @@
-//! The **engagement-schedule** combat model (the brainstormed redesign in
-//! `log-driven/brainstorming/phases.md`), built **isolated** from the live 12-phase engine so we can
-//! test whether the hold/break/deal triangle survives it before adopting it as the official spec.
+//! The **engagement-schedule** combat model (canon — Spec §4 / §4.5 / §4.6), kept here as an **isolated
+//! balance sim** (separate from the live engine) so the hold/break/deal triangle and the counterability of
+//! extreme formations can be probed quickly without the full game loop.
 //!
 //! A round: declare intentions (V/O/R) → resolve a fixed engagement **schedule** (Intercept → Volley →
-//! Raid → Clash → Breach) over one shared
-//! per-round **Tempo** pool → reset. The damage core is unchanged (Might into a per-phase pile, Toughness
-//! gates the flip — reused from [`crate::stats`]). The schedule is **permissive on purpose** (every
-//! attacker→target role-pair except Rearguard→Rearguard is legal): balance must emerge from the
-//! **efficiency gradient** in the *order* (an Outrider raids the back in `Raid` before the back fires in
-//! `Clash`; a Vanguard only reaches it in `Breach`, too late), never from banning a pair — **force, not
-//! fiat**.
+//! Raid → Clash → Breach), each step **cycling to exhaustion**, over one shared per-round **Tempo** pool →
+//! reset. The damage core is unchanged (Might into a per-engagement pile, Toughness gates the flip — reused
+//! from [`crate::stats`]). The schedule is **permissive on purpose**: balance emerges from the **efficiency
+//! gradient** in the *order* (an Outrider raids in `Raid` before the back fires in `Clash`; a Vanguard only
+//! reaches the back in `Breach`, too late), never from banning a pair — **force, not fiat**. The lone
+//! conditional pair is `Rearguard → Rearguard`, legal only in the Breach once the enemy Vanguard has fallen.
 //!
 //! Because true PvP is simultaneous + hidden (not computable), balance is approximated by a **default
 //! policy** (a reasonable, predictable human stand-in) playing both sides; we then check the roster is
