@@ -13,11 +13,15 @@
 //! ```text
 //! sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->
 //! sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->
+//! sim step  --state <PATH|-> --out <PATH|->
 //! ```
 //!
 //! - `--state` / `--out` / `--actions` accept a filesystem path, or `-` for stdin/stdout.
 //! - `apply` applies exactly one `Action` parsed from the `--action` RON string.
 //! - `run` applies a `Vec<Action>` (RON, read from `--actions`) in order.
+//! - `step` advances the in-flight §4.6 resolution machine **one atomic step** (`combat::step`): it
+//!   resolves the next engagement pair / crosses the next engagement boundary. If the loaded state is
+//!   not mid-resolution (e.g. at DeclareIntentions), it is a no-op that reports so on stderr.
 //!
 //! An illegal action prints the error to stderr and exits non-zero (the `State` is left unmodified by
 //! the engine's `apply`, so nothing is written on failure).
@@ -32,7 +36,7 @@
 use std::io::{Read, Write};
 use std::process::exit;
 
-use deckbound::{Action, Deckbound, State};
+use deckbound::{Action, Deckbound, State, combat};
 use engine::Game;
 
 fn main() {
@@ -48,6 +52,7 @@ fn run(args: &[String]) -> Result<(), String> {
     match cmd {
         Some("apply") => cmd_apply(&args[1..]),
         Some("run") => cmd_run(&args[1..]),
+        Some("step") => cmd_step(&args[1..]),
         _ => Err(usage()),
     }
 }
@@ -55,7 +60,8 @@ fn run(args: &[String]) -> Result<(), String> {
 fn usage() -> String {
     "usage:\n  \
      sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->\n  \
-     sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->"
+     sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->\n  \
+     sim step  --state <PATH|-> --out <PATH|->"
         .to_string()
 }
 
@@ -91,6 +97,29 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     for (i, action) in actions.iter().enumerate() {
         game.apply(&mut state, action)
             .map_err(|e| format!("illegal action #{i} {action:?}: {e}"))?;
+    }
+
+    write_state(&out_arg, &state)
+}
+
+/// `step`: load a State, advance the in-flight §4.6 resolution machine ONE atomic step
+/// ([`combat::step`]), write the result. If the state is not mid-resolution (`resolution` is `None`,
+/// e.g. at DeclareIntentions), it is a no-op — the state is written back unchanged and a note goes to
+/// stderr.
+fn cmd_step(args: &[String]) -> Result<(), String> {
+    let state_arg = flag(args, "--state")?;
+    let out_arg = flag(args, "--out")?;
+
+    let mut state = load_state(&state_arg)?;
+    if state.resolution.is_none() {
+        eprintln!(
+            "sim: state is not mid-resolution (resolution: None) — nothing to step; writing it back unchanged"
+        );
+    } else {
+        let more = combat::step(&mut state);
+        if !more {
+            eprintln!("sim: resolution complete (last step) — the round should now advance");
+        }
     }
 
     write_state(&out_arg, &state)

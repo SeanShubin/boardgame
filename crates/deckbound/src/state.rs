@@ -125,6 +125,13 @@ pub struct State {
     pub heroes: Vec<Actor>,
     pub creatures: Vec<Actor>,
     pub phase: Phase,
+    /// §4.6 — the in-flight engagement-schedule resolution cursor. `Some` while a round is resolving
+    /// (between [`combat::step`](crate::combat::step) calls); `None` at rest (DeclareIntentions, Lull).
+    /// Today resolution runs to completion synchronously inside `apply(Deploy)`, so live play never
+    /// rests with this set — it exists so the resolution is observable one atomic step at a time and so
+    /// the whole machine round-trips through RON.
+    #[serde(default)]
+    pub resolution: Option<crate::combat::Resolution>,
     pub plan: Round,
     pub clash: Option<Clash>,
     #[serde(skip)]

@@ -68,6 +68,7 @@ fn menu_state(seed: u64) -> State {
         heroes: Vec::new(),
         creatures: Vec::new(),
         phase: Phase::Menu(Menu::Top),
+        resolution: None,
         plan: Round::default(),
         clash: None,
         scenario: None,

@@ -135,8 +135,22 @@ impl Health {
     }
 }
 
+/// The per-phase **pending damage** accumulator, split into two observable pools (§4.6). A landed hit
+/// banks its Might here; the pile flips a Health card each time it clears Toughness; the whole thing
+/// **wipes at every phase boundary**. `targeted` is the classic single-target pile (the old
+/// `health_pile`, same semantics — it drives the flips). `aoe` is a separate pool reserved for an
+/// area-of-effect mechanic; the **live resolver has no AoE source**, so it stays `0` (nothing populates
+/// it). Both are observable structure for the steppable resolution machine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PendingDamage {
+    /// Area-of-effect pending Might. Unused by the live resolver (stays 0).
+    pub aoe: u32,
+    /// Single-target pending Might — the old `health_pile`. Drives the per-card flips.
+    pub targeted: u32,
+}
+
 /// Everything that defends an Actor. **Toughness** (the bar) is a passive stat read off the Form; only
-/// the **health pool** is a maintained meter. `health_pile` is a **per-phase** accumulator (§4.6): a
+/// the **health pool** is a maintained meter. `pending` is a **per-phase** accumulator (§4.6): a
 /// landed hit banks its Might here, the pile flips a Health card each time it clears Toughness, and the
 /// pile **wipes at every phase boundary** — sub-threshold damage never crosses into the next phase
 /// (only Health persists, §2.1). See [`Defense::clear_pile`].
@@ -144,10 +158,11 @@ impl Health {
 pub struct Defense {
     pub health: Health,
 
-    /// §4.6 per-phase pile: the Might banked toward the next Health flip in the **current phase**.
-    /// Cleared at each phase boundary by [`clear_pile`](Defense::clear_pile) (was round-scoped, §2.2 →
-    /// §4.6 per-phase).
-    pub health_pile: u32,
+    /// §4.6 per-phase pending damage: the Might banked toward the next Health flip in the **current
+    /// phase**, split into [`PendingDamage::targeted`] (drives flips, the old `health_pile`) and
+    /// [`PendingDamage::aoe`] (reserved, stays 0). Cleared at each phase boundary by
+    /// [`clear_pile`](Defense::clear_pile).
+    pub pending: PendingDamage,
 }
 
 /// What a single hit did.
@@ -166,8 +181,14 @@ impl Defense {
     pub fn new(vitality: u32, toughness: u32) -> Self {
         Self {
             health: Health::new(vitality, toughness),
-            health_pile: 0,
+            pending: PendingDamage::default(),
         }
+    }
+
+    /// The single-target pending pile (the old `health_pile`). Read-only accessor kept for call sites
+    /// that only need the targeted accumulator (the one that drives flips).
+    pub fn health_pile(&self) -> u32 {
+        self.pending.targeted
     }
 
     /// Health gone → out of the fight.
@@ -190,9 +211,9 @@ impl Defense {
             through: raw,
             ..Default::default()
         };
-        self.health_pile += raw;
-        while self.health_pile >= bar && self.health.flip_down() {
-            self.health_pile -= bar;
+        self.pending.targeted += raw;
+        while self.pending.targeted >= bar && self.health.flip_down() {
+            self.pending.targeted -= bar;
             out.cards_flipped += 1;
         }
         if self.health.is_empty() {
@@ -206,7 +227,7 @@ impl Defense {
     /// down. Returns the number of cards turned back up (0 if already at full health). A down Actor with
     /// a card restored is no longer down.
     pub fn recover_card(&mut self) -> u32 {
-        self.health_pile = 0;
+        self.pending = PendingDamage::default();
         if self.health.turn_up() { 1 } else { 0 }
     }
 
@@ -215,7 +236,7 @@ impl Defense {
     /// single place the per-phase accumulator is reset; the round boundary (the Lull) is just the last
     /// such wipe of the round.
     pub fn clear_pile(&mut self) {
-        self.health_pile = 0;
+        self.pending = PendingDamage::default();
     }
 
     /// Round end (the Lull): partial (sub-bar) damage clears. Identical to [`clear_pile`](Defense::clear_pile)
@@ -270,9 +291,9 @@ mod tests {
     fn partial_damage_clears_at_round_end() {
         let mut d = knight();
         d.take(1); // pile 1, no flip
-        assert_eq!(d.health_pile, 1);
+        assert_eq!(d.health_pile(), 1);
         d.end_round();
-        assert_eq!(d.health_pile, 0);
+        assert_eq!(d.health_pile(), 0);
     }
 
     #[test]
@@ -314,11 +335,11 @@ mod tests {
         let o = d.take(5); // pile 5 / bar 2 = 2 flips, 1 left in pile
         assert_eq!(o.cards_flipped, 2);
         assert_eq!(d.health.remaining(), 2);
-        assert_eq!(d.health_pile, 1);
+        assert_eq!(d.health_pile(), 1);
         // Recover clears the pile and turns one card up.
         assert_eq!(d.recover_card(), 1);
         assert_eq!(d.health.remaining(), 3);
-        assert_eq!(d.health_pile, 0);
+        assert_eq!(d.health_pile(), 0);
     }
 
     #[test]

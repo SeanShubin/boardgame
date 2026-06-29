@@ -72,10 +72,20 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   Behavior-preserving (a deck of N face-up cards == the old count). Touches `stats.rs`, `actor.rs`, every
   read site.
 - **P3 — 2D layout.** `Layout { side × rank × slot }` + group adjacency; derive/replace the Intention tag.
-- **P4 — Resolution Step machine.** `Phase::Resolve(Resolution)` + per-actor `PendingDamage{aoe,targeted}`
-  + `Step` action. Rewrite `resolve_round` as the steppable machine, porting the sim's amended rules (#14).
-  This is the heart and the riskiest phase.
+- **P4 — Resolution Step machine (BEHAVIOR-PRESERVING).** Two-layer API (user direction 2026-06-29): the
+  **high-level** `apply(Deploy)` stays identical (same phase-boundary State); it *delegates* to a
+  **low-level** `combat::step(state)` that advances ONE atomic transition for debug/per-strike
+  observability. `resolve_round` becomes `while step(state) {}`. Add `Phase::Resolve(Resolution)` (cursor +
+  pending strikes) and per-actor `PendingDamage{aoe, targeted}` (targeted = the old `health_pile`; **aoe
+  stays 0** — observable structure only). `sim step` subcommand. **Guard: suite stays exactly 88/9 — the
+  decomposition must not move any goldens.** The rule-port is explicitly NOT here.
 - **P5 — Cleanup.** Wire groups (#11) / deferred (#12); delete dead six-phase code (#13).
+- **P6 — Port canon rules into the live engine (DELIBERATE behavior change, separate).** Cycling /
+  two-pool AoE+spillover (populates the `aoe` pool) / conditional R→R / melee-reflexive strike-back / role
+  priorities, from the validated `engagement.rs` sim (#14). This MOVES the behavioral goldens
+  (reference_combat_bands, campaign wins, solver_wins) — re-tune/regenerate as part of it. Was conflated
+  into P4; split out per user direction (the Step decomposition is behavior-preserving; aligning live
+  combat with canon is a distinct, opt-in change).
 
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives

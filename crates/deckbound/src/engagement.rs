@@ -216,7 +216,7 @@ fn team_can_crack(units: &[Unit], attacker: usize, target: usize) -> bool {
     let side = units[attacker].side;
     let role = units[target].intent;
     let tough = units[target].defense.health.toughness();
-    let pile = units[target].defense.health_pile;
+    let pile = units[target].defense.health_pile();
     let sum: u32 = units
         .iter()
         .filter(|u| u.alive() && u.side == side && role_can_attack(u.intent, role))
@@ -248,7 +248,7 @@ fn choose_target(units: &[Unit], attacker: usize, tgt_role: Intention) -> Option
         })
         // crackable now (pile + this strike), or by the team's combined Might (focus-fire).
         .filter(|(i, u)| {
-            might + u.defense.health_pile >= u.defense.health.toughness()
+            might + u.defense.health_pile() >= u.defense.health.toughness()
                 || team_can_crack(units, attacker, *i)
         })
         .min_by_key(|(i, u)| (u.defense.health.remaining(), *i))
@@ -441,7 +441,7 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
                 if units[soaker].is_melee()
                     && units[soaker].tempo >= 1
                     && units[atk].alive()
-                    && units[soaker].offense.might + units[atk].defense.health_pile
+                    && units[soaker].offense.might + units[atk].defense.health_pile()
                         >= units[atk].defense.health.toughness()
                 {
                     units[soaker].tempo -= 1;
@@ -479,7 +479,7 @@ fn cascade(units: &mut [Unit], members: &[usize], mut amount: u32) {
         let bar = units[m].defense.health.toughness();
         let out = units[m].defense.take_with_toughness(amount, bar);
         if out.down {
-            amount = units[m].defense.health_pile; // unflipped remainder overflows
+            amount = units[m].defense.health_pile(); // unflipped remainder overflows
             units[m].defense.clear_pile();
         } else {
             amount = 0; // fully absorbed by the surviving front

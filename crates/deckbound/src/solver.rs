@@ -251,7 +251,7 @@ fn actor_key(a: &Actor) -> ActorKey {
     tokens.sort_unstable();
     ActorKey {
         remaining: a.defense.health.remaining(),
-        pile: a.defense.health_pile,
+        pile: a.defense.health_pile(),
         tempo: a.tempo,
         might_bonus: a.might_bonus,
         flags,

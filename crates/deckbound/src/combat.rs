@@ -596,13 +596,12 @@ fn resolve_pair(state: &mut State, atk_side: u8, atk_role: Intention, tgt_role: 
     state.log = log;
 }
 
-/// §4.6 — resolve one round over the **engagement schedule**, in place on `state`. Tempo is assumed
-/// refreshed for the round. Each unit acts by its declared intention (`state.s_intent`); the resolution
-/// policy (prey-with-fallback, every-Tempo-spend-must-matter) is ported from `engagement.rs`. Each
-/// engagement is a §1.9 boundary: after it, deaths finalize and the per-engagement pile wipes.
-pub fn resolve_round(state: &mut State) {
+/// §4.6 — the fixed **engagement schedule**: five engagements, each a list of `(attacker, target)` role
+/// pairs resolved in order. This is the single source of truth shared by [`resolve_round`] and the
+/// steppable [`step`] machine — they must walk it identically.
+pub const SCHEDULE: &[&[(Intention, Intention)]] = {
     use Intention::{Outrider, Rearguard, Vanguard};
-    const SCHEDULE: &[&[(Intention, Intention)]] = &[
+    &[
         &[(Vanguard, Outrider)],                        // Intercept
         &[(Rearguard, Outrider)],                       // Volley
         &[(Outrider, Rearguard)],                       // Raid
@@ -612,20 +611,118 @@ pub fn resolve_round(state: &mut State) {
             (Outrider, Vanguard),
             (Outrider, Outrider),
         ], // Breach
-    ];
-    for step in SCHEDULE {
-        for &(atk_role, tgt_role) in *step {
-            resolve_pair(state, 0, atk_role, tgt_role);
-            resolve_pair(state, 1, atk_role, tgt_role);
+    ]
+};
+
+/// Where the steppable resolver's cursor sits *within* the current schedule pair. One [`step`] performs
+/// exactly one of these transitions, leaving `State` in a serializable resting micro-state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Stage {
+    /// Resolve the next `(atk_role, tgt_role)` pair for `side` (0 = heroes, 1 = creatures). The walk is
+    /// side 0 then side 1, matching `resolve_round`'s `resolve_pair(0); resolve_pair(1);`.
+    Pair { side: u8 },
+    /// All pairs of the current engagement are resolved — finalize deaths and wipe the per-engagement
+    /// pile (the §4.6 boundary), then advance to the next engagement.
+    Boundary,
+}
+
+/// The in-flight resolution cursor for the §4.6 engagement schedule, held in [`State::resolution`] while
+/// a round resolves. It indexes into [`SCHEDULE`] (`step` = engagement, `pair` = pair within it) and
+/// tracks the sub-pair [`Stage`]. Each [`step`] advances it one atomic transition; when it runs off the
+/// end of the schedule the resolution is complete and `step` returns `false`.
+///
+/// (Today every micro-step still happens synchronously inside `apply(Deploy)` — see [`resolve_round`] —
+/// so the live engine never *rests* mid-resolution; the cursor exists so a caller *can* observe the
+/// in-between states, and so the whole resolution serializes through RON.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Resolution {
+    /// Index into [`SCHEDULE`] — which engagement (Intercept … Breach) is current.
+    pub step: usize,
+    /// Index of the current `(atk, tgt)` pair within `SCHEDULE[step]`.
+    pub pair: usize,
+    /// The sub-pair cursor (which side to resolve next, or the engagement boundary).
+    pub stage: Stage,
+}
+
+impl Resolution {
+    /// A fresh cursor at the very start of the schedule (Intercept, side 0).
+    pub fn start() -> Self {
+        Resolution {
+            step: 0,
+            pair: 0,
+            stage: Stage::Pair { side: 0 },
         }
-        // Engagement boundary: finalize deaths, then wipe the per-engagement pile (§4.6).
-        let mut log = std::mem::take(&mut state.log);
-        tally(&mut state.heroes, &mut log);
-        tally(&mut state.creatures, &mut log);
-        state.log = log;
-        clear_phase_piles(&mut state.heroes);
-        clear_phase_piles(&mut state.creatures);
     }
+}
+
+/// Perform **one atomic transition** of the §4.6 engagement-schedule resolution on `state`, advancing
+/// (and, when needed, initializing) [`State::resolution`]. Returns `true` if more steps remain and
+/// `false` when the resolution is complete (the cursor is then cleared and the round should advance).
+///
+/// One step does exactly one of:
+/// - resolve the next `(atk_role, tgt_role)` pair for one side (a [`resolve_pair`] call), or
+/// - cross an engagement boundary: finalize deaths ([`tally`]) on both pools and wipe the per-engagement
+///   pile ([`clear_phase_piles`]) on both.
+///
+/// The sequence of steps reproduces [`resolve_round`]'s exact end state — `resolve_round` is just
+/// `while step(state) {}`.
+pub fn step(state: &mut State) -> bool {
+    let mut cur = state.resolution.unwrap_or_else(Resolution::start);
+    if cur.step >= SCHEDULE.len() {
+        // Already complete (defensive): clear and report done.
+        state.resolution = None;
+        return false;
+    }
+    let pairs = SCHEDULE[cur.step];
+    match cur.stage {
+        Stage::Pair { side } => {
+            let (atk_role, tgt_role) = pairs[cur.pair];
+            resolve_pair(state, side, atk_role, tgt_role);
+            if side == 0 {
+                cur.stage = Stage::Pair { side: 1 };
+            } else {
+                // Both sides of this pair are done; move to the next pair, or the boundary.
+                cur.pair += 1;
+                cur.stage = if cur.pair < pairs.len() {
+                    Stage::Pair { side: 0 }
+                } else {
+                    Stage::Boundary
+                };
+            }
+        }
+        Stage::Boundary => {
+            // Engagement boundary: finalize deaths, then wipe the per-engagement pile (§4.6).
+            let mut log = std::mem::take(&mut state.log);
+            tally(&mut state.heroes, &mut log);
+            tally(&mut state.creatures, &mut log);
+            state.log = log;
+            clear_phase_piles(&mut state.heroes);
+            clear_phase_piles(&mut state.creatures);
+            cur.step += 1;
+            cur.pair = 0;
+            cur.stage = Stage::Pair { side: 0 };
+        }
+    }
+    if cur.step >= SCHEDULE.len() {
+        // Walked off the end — resolution complete.
+        state.resolution = None;
+        false
+    } else {
+        state.resolution = Some(cur);
+        true
+    }
+}
+
+/// §4.6 — resolve one round over the **engagement schedule**, in place on `state`. Tempo is assumed
+/// refreshed for the round. Each unit acts by its declared intention (`state.s_intent`); the resolution
+/// policy (prey-with-fallback, every-Tempo-spend-must-matter) is ported from `engagement.rs`. Each
+/// engagement is a §1.9 boundary: after it, deaths finalize and the per-engagement pile wipes.
+///
+/// Drives the steppable [`step`] machine to completion — the phase-boundary end state is identical to
+/// resolving the schedule in one synchronous pass.
+pub fn resolve_round(state: &mut State) {
+    state.resolution = Some(Resolution::start());
+    while step(state) {}
 }
 
 /// §4.6 #5 — resolve the **Reckoning**: each deferred (`resolve: Reckoning`) spell lands **iff its
@@ -1014,5 +1111,64 @@ mod tests {
         assert_eq!(a.defense.health.remaining(), 2);
         a.defense.recover_card();
         assert_eq!(a.defense.health.remaining(), 3);
+    }
+
+    /// Behavior preservation: driving the round one [`step`] at a time reproduces the **exact** end
+    /// state of the batched [`resolve_round`] — same Health, same Tempo, same fallen flags, same log.
+    #[test]
+    fn stepping_reproduces_resolve_round_exactly() {
+        let heroes = vec![fighter("Hero", 3, 4, 1), fighter("Squire", 2, 3, 1)];
+        let foes = vec![fighter("Brute", 3, 4, 1), fighter("Imp", 2, 3, 1)];
+        let mut batched = crate::game::battle_state(heroes.clone(), foes.clone(), false, 11);
+        let mut stepped = crate::game::battle_state(heroes, foes, false, 11);
+
+        // Batched: one synchronous pass.
+        resolve_round(&mut batched);
+        assert!(
+            batched.resolution.is_none(),
+            "resolve_round clears the cursor"
+        );
+
+        // Stepped: explicit micro-steps, each leaving a serializable resting micro-state.
+        stepped.resolution = Some(Resolution::start());
+        let mut guard = 0;
+        while step(&mut stepped) {
+            // Every resting micro-state must round-trip through RON.
+            let text = ron::ser::to_string(&stepped).expect("mid-resolution state serializes");
+            let _back: State = ron::from_str(&text).expect("and deserializes");
+            guard += 1;
+            assert!(guard < 1000, "step machine failed to terminate");
+        }
+        assert!(
+            stepped.resolution.is_none(),
+            "step clears the cursor when done"
+        );
+
+        // The two end states match field-for-field where it matters.
+        assert_eq!(stepped.log, batched.log, "logs identical");
+        for (a, b) in stepped.heroes.iter().zip(batched.heroes.iter()) {
+            assert_eq!(a.defense.health.remaining(), b.defense.health.remaining());
+            assert_eq!(a.defense.health_pile(), b.defense.health_pile());
+            assert_eq!(a.tempo, b.tempo);
+            assert_eq!(a.fallen, b.fallen);
+        }
+        for (a, b) in stepped.creatures.iter().zip(batched.creatures.iter()) {
+            assert_eq!(a.defense.health.remaining(), b.defense.health.remaining());
+            assert_eq!(a.defense.health_pile(), b.defense.health_pile());
+            assert_eq!(a.tempo, b.tempo);
+            assert_eq!(a.fallen, b.fallen);
+        }
+    }
+
+    /// `aoe` is reserved and untouched by the live resolver — it stays 0 across a whole round.
+    #[test]
+    fn aoe_pending_pool_stays_zero() {
+        let heroes = vec![fighter("Hero", 3, 4, 1)];
+        let foes = vec![fighter("Brute", 2, 3, 1)];
+        let mut state = crate::game::battle_state(heroes, foes, false, 5);
+        resolve_round(&mut state);
+        for a in state.heroes.iter().chain(state.creatures.iter()) {
+            assert_eq!(a.defense.pending.aoe, 0, "no AoE source this phase");
+        }
     }
 }
