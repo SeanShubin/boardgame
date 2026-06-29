@@ -105,9 +105,9 @@ pub enum Effect {
     /// non-lethal disrupt (§4.6). Handled at [`crate::game`] (removes a `Deferred` entry).
     Silence,
     /// **Pin** (Artillery): suppressive fire that **denies a free enemy Vanguard its charge** this round
-    /// — sets the target's lock so [`crate::combat::resolve_volley`] / charge declaration skips it (the
-    /// space-control rider on the area cards, §10). Handled at [`crate::game`] (touches the round plan's
-    /// lock list, not [`play_card`]) — like [`Silence`](Effect::Silence).
+    /// — sets the target's lock so the charge declaration skips it (the space-control rider on the area
+    /// cards, §10). Handled at [`crate::game`] (touches the round plan's lock list, not [`play_card`]) —
+    /// like [`Silence`](Effect::Silence).
     Pin,
 }
 

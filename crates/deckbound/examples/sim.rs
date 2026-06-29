@@ -11,9 +11,10 @@
 //! ## Usage
 //!
 //! ```text
-//! sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->
-//! sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->
-//! sim step  --state <PATH|-> --out <PATH|->
+//! sim apply  --state <PATH|-> --action <RON-STRING> --out <PATH|->
+//! sim run    --state <PATH|-> --actions <PATH|-> --out <PATH|->
+//! sim step   --state <PATH|-> --out <PATH|->
+//! sim layout --state <PATH|-> --out <PATH|->
 //! ```
 //!
 //! - `--state` / `--out` / `--actions` accept a filesystem path, or `-` for stdin/stdout.
@@ -22,6 +23,8 @@
 //! - `step` advances the in-flight §4.6 resolution machine **one atomic step** (`combat::step`): it
 //!   resolves the next engagement pair / crosses the next engagement boundary. If the loaded state is
 //!   not mid-resolution (e.g. at DeclareIntentions), it is a no-op that reports so on stderr.
+//! - `layout` prints the **derived 2D combat layout** (`State::layout` → `CombatLayout`, side × rank ×
+//!   slot) as RON — a read-only view; the state itself is not modified.
 //!
 //! An illegal action prints the error to stderr and exits non-zero (the `State` is left unmodified by
 //! the engine's `apply`, so nothing is written on failure).
@@ -53,6 +56,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("apply") => cmd_apply(&args[1..]),
         Some("run") => cmd_run(&args[1..]),
         Some("step") => cmd_step(&args[1..]),
+        Some("layout") => cmd_layout(&args[1..]),
         _ => Err(usage()),
     }
 }
@@ -61,7 +65,8 @@ fn usage() -> String {
     "usage:\n  \
      sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->\n  \
      sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->\n  \
-     sim step  --state <PATH|-> --out <PATH|->"
+     sim step   --state <PATH|-> --out <PATH|->\n  \
+     sim layout --state <PATH|-> --out <PATH|->"
         .to_string()
 }
 
@@ -125,6 +130,18 @@ fn cmd_step(args: &[String]) -> Result<(), String> {
     write_state(&out_arg, &state)
 }
 
+/// `layout`: load a State and print its **derived 2D combat layout** (`State::layout` → `CombatLayout`,
+/// side × rank × slot with group adjacency) as RON. Read-only: the state is not modified; only the
+/// derived view is written.
+fn cmd_layout(args: &[String]) -> Result<(), String> {
+    let state_arg = flag(args, "--state")?;
+    let out_arg = flag(args, "--out")?;
+
+    let state = load_state(&state_arg)?;
+    let layout = state.layout();
+    write_ron(&out_arg, &layout, "layout")
+}
+
 // ---- tiny dependency-free arg parsing & I/O (RON throughout, matching the codebase) ----
 
 /// The value following `name` in `args` (e.g. `--state <value>`). Errors if absent.
@@ -158,7 +175,13 @@ fn load_state(arg: &str) -> Result<State, String> {
 
 /// Write the State (RON) to a path, or to stdout when `arg` is `-`.
 fn write_state(arg: &str, state: &State) -> Result<(), String> {
-    let text = ron::ser::to_string(state).map_err(|e| format!("serializing state: {e}"))?;
+    write_ron(arg, state, "state")
+}
+
+/// Serialize any value to RON and write it to a path, or to stdout (with a trailing newline) when
+/// `arg` is `-`. `what` names the value for error messages.
+fn write_ron<T: serde::Serialize>(arg: &str, value: &T, what: &str) -> Result<(), String> {
+    let text = ron::ser::to_string(value).map_err(|e| format!("serializing {what}: {e}"))?;
     if arg == "-" {
         let mut out = std::io::stdout();
         out.write_all(text.as_bytes())

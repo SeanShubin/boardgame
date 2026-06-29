@@ -1,17 +1,27 @@
-//! Combat resolution helpers for the §4.6 **six-phase** model: untyped Might strikes through the
-//! per-phase pile (§4.6 / §2.2), the **range** rule (same-range trade, ranged evade-or-auto-hit, §4.2),
-//! the **evade contest** ([`try_evade`]), and the phase resolvers — the **Fray** front clash
-//! ([`fray_clash`]), the **breach list / per-unit lock** ([`compute_locks`]), the **Volley** charge +
-//! **pre-empt** + **flank-intercept** ([`resolve_volley`]), the **Breach** blows ([`resolve_breach`]),
-//! and the **Reckoning** ([`resolve_reckoning`]). The interactive four-card Clash ([`crate::duel`]) is
-//! the optional 1v1 module.
+//! Combat resolution for the §4.6 **engagement-schedule** model. Damage is untyped Might into the
+//! per-engagement pile (pile→bar→pool, §2.2), gated by the target's effective Toughness ([`apply_strike`]),
+//! with the one **Tempo contest** ([`try_evade`] / [`avoid_cost`]): a defender strictly out-bids the
+//! attacker (`cards × Finesse`) to avoid a blow that would flip a card.
 //!
-//! **PRINCIPLE (§4.6).** Within a phase everything is committed up front and resolves
-//! order-independently (§1.9), *including the blows of a body that dies in that same phase* (§1.3).
-//! The phases impose the only timing: a unit dead at a phase boundary takes no further action, so a
-//! death **precludes** a later phase but never reaches back into an earlier one. The pre-empt
-//! (Volley before Breach), the disrupt (a breach-kill fizzles a Reckoning spell), and the
-//! flank-intercept are all corollaries.
+//! The round resolves the fixed [`SCHEDULE`] of engagements — Intercept (`V→O`), Volley (`R→O`),
+//! Raid (`O→R`), Clash (`R→V`, `V→V`), Breach (`V→R`, `O→V`, `O→O`) — each a list of
+//! `(attacker-role, target-role)` pairs. [`resolve_pair`] resolves one pair in place: each eligible
+//! attacker declares a target (prey-with-fallback, shield/reachability rules), spends Tempo, the
+//! defender contests, then eats the blow and a melee defender strikes back. [`step`] performs one
+//! atomic transition of this walk (one pair for one side, or an engagement [`Stage::Boundary`] that
+//! finalizes deaths via [`tally`] and wipes the per-engagement pile via [`clear_phase_piles`]), holding
+//! its cursor in [`State::resolution`] so the resolution serializes through RON and can be observed one
+//! step at a time. [`resolve_round`] just drives `step` to completion.
+//!
+//! [`resolve_reckoning`], [`tick_burn`], and the token applications in [`play_card`] (Burn / Charge /
+//! Guard / Cover / Thorns / the Controller debuffs, §10) are wired here for the cast/resolve and
+//! status layers. The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
+//!
+//! **PRINCIPLE (§1.9 / §1.3).** Within one engagement everything resolves order-independently,
+//! *including the blow of a body that dies in that same engagement*. The schedule order is the only
+//! timing: a unit dead at an engagement boundary takes no further action, so a death **precludes** a
+//! later engagement but never reaches back into an earlier one (the disrupt — a kill before the last
+//! engagement fizzles a deferred Reckoning spell — is a corollary).
 
 use crate::actor::{Actor, Intention, Range, TargetRule};
 use crate::cards::Effect;
@@ -269,204 +279,13 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 }
 
 // ===========================================================================================
-// §4.6 six-phase resolvers.
-//
-// All resolvers work from **phase-start snapshots** and apply blows order-independently: a body
-// mortally wounded mid-phase still lands the blow it committed (§1.3); deaths are finalized only at
-// the phase boundary (`tally`), and the per-phase pile is wiped there too (`clear_phase_piles`).
+// The §4.6 engagement-schedule resolver lives below (`resolve_pair` / `step` / `resolve_round`),
+// alongside the shared strike helpers above (`base_strike`, `snapshot`, `charged_snapshot`,
+// `apply_strike`, `reflect_thorns`, `cover_redirect`, `try_evade`, `tick_burn`, `play_card`,
+// `resolve_reckoning`). The superseded six-phase resolvers (the Fray clash, the breach-list lock,
+// the Volley/Breach blows) have been removed; their behavior is subsumed by `resolve_pair`.
 // ===========================================================================================
 
-/// A single melee engagement (§4.2 same-range trade): `attacker` strikes `target` (paying one Tempo),
-/// and `target` **strikes back** if it carries a melee answer, can act, and has Tempo (paying one of
-/// its own). Both blows are taken from phase-start snapshots so the trade is symmetric even if one
-/// side is mortally wounded (§1.3). Used by the **Fray** front clash and a **flank** (both trades).
-/// How a melee defender answers a strike (§4 the one contest):
-/// - **Trade** — the reflexive strike-back of the front clash (both blows land, §1.3): the legacy
-///   behavior, and what a holding Vanguard does.
-/// - **Block** — spend Tempo to **out-bid** the attacker (`cards × Finesse`, strictly exceed) and take
-///   **no blow** — the melee twin of the ranged evade ([`try_evade`]). No strike-back: the Tempo went to
-///   *defending / slipping*, not trading. This is also a slipper's defense as it pushes the front.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-pub enum Guard {
-    /// Reflexive strike-back (the holding Vanguard's front clash) — the default.
-    #[default]
-    Trade,
-    /// Spend Tempo to out-bid and avoid the blow (the slipper's defense).
-    Block,
-}
-
-fn melee_trade(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mut Vec<String>) {
-    if attacker.tempo <= 0 || !attacker.can_contest_now(Range::Melee) || attacker.is_down() {
-        return;
-    }
-    attacker.tempo -= 1;
-    // §10: a damage strike consumes the attacker's banked Charge tokens (+1 Might each, §5.4).
-    let atk = charged_snapshot(attacker, log);
-    let atk_name = attacker.name.clone();
-    // §4 **Block**: the target out-bids the attacker's one-card bid (`cards × Finesse`, strictly exceed,
-    // §3.1) and takes no blow — no strike-back; defending is Tempo-negative (it spent more than the
-    // attacker to avoid the hit). If it cannot out-bid, the blow lands.
-    if guard == Guard::Block {
-        // §4 **Blitz** (Infiltrator): the first slip each round is free — an uncontested escape that costs
-        // no Tempo (the role-conditional tempo-discount). Cleared at Refresh.
-        if !target.is_down() && target.has("Blitz") && !target.free_slip_used {
-            target.free_slip_used = true;
-            log.push(format!(
-                "  {} slips free (Blitz — first slip is free).",
-                target.name
-            ));
-            return;
-        }
-        let bid = advance_finesse(attacker); // the attacker's one-card bid (cards × Finesse)
-        if !target.is_down() && try_evade(target, bid, log) {
-            return;
-        }
-        apply_strike(target, atk, &atk_name, log);
-        reflect_thorns(attacker, target, log);
-        return;
-    }
-    // **Trade** (default): snapshot the strike-back *before* applying the incoming blow (§1.3: the target
-    // lands its committed blow even if this hit downs it).
-    let back = (target.can_contest_now(Range::Melee) && !target.is_down() && target.tempo > 0)
-        .then(|| {
-            target.tempo -= 1;
-            (charged_snapshot(target, log), target.name.clone())
-        });
-    apply_strike(target, atk, &atk_name, log);
-    // §10 Thorns: the struck target reflects Might onto the attacker's own pile.
-    reflect_thorns(attacker, target, log);
-    if let Some((s, n)) = back {
-        apply_strike(attacker, s, &n, log);
-        reflect_thorns(target, attacker, log);
-    }
-}
-
-/// A one-directional **ranged shot** (§4.2): `attacker` fires at `target`, paying one Tempo; the
-/// target may **evade** by strictly exceeding the volley (cards × Finesse) with its own Tempo (a tie
-/// lands). An evaded shot does nothing; otherwise it lands (no melee strike-back — a ranged shot at
-/// range draws none here; the rear's *own* answer is sequenced by the caller in the Volley).
-fn ranged_shot(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
-    if attacker.tempo <= 0 || !attacker.can_contest_now(Range::Ranged) || attacker.is_down() {
-        return;
-    }
-    attacker.tempo -= 1;
-    let volley = advance_finesse(attacker);
-    // §10: a damage strike consumes the attacker's banked Charge tokens (+1 Might each, §5.4).
-    let atk = charged_snapshot(attacker, log);
-    let atk_name = attacker.name.clone();
-    if !target.is_down() && try_evade(target, volley, log) {
-        return;
-    }
-    apply_strike(target, atk, &atk_name, log);
-    // §10 Thorns: the struck target reflects Might onto the (ranged) attacker's own pile.
-    reflect_thorns(attacker, target, log);
-}
-
-/// §4.6 — a single interactive **Fray melee strike**: `attacker` strikes `target`, who answers per its
-/// `guard` (§4 one-contest): **Trade** strikes back (the front clash) / **Block** out-bids to slip the
-/// blow. The public single-pair entry the interactive game routes through.
-pub fn fray_one(attacker: &mut Actor, target: &mut Actor, guard: Guard, log: &mut Vec<String>) {
-    melee_trade(attacker, target, guard, log);
-}
-
-/// §4 **interception** (the front strikes the runner): a `charger` crossing toward the enemy Rearguard
-/// is struck by each living enemy front Vanguard (`front`, `van` marks who is a Vanguard). The charger
-/// **slips** each via the Finesse contest ([`try_evade`]) — spending its own Tempo — or takes the blow.
-/// A *wide* front drains a crosser slip-by-slip (the weakest-link race), so only a lone **high-Finesse,
-/// high-Tempo** body crosses a guarded line; the rest are cut down at it. No new mechanic — the existing
-/// melee strike + Tempo contest, applied to the cross. Each interceptor spends one Tempo.
-pub fn intercept(charger: &mut Actor, front: &mut [Actor], van: &[bool], log: &mut Vec<String>) {
-    for (v, interceptor) in front.iter_mut().enumerate() {
-        if charger.is_down() {
-            return; // cut down crossing — it never reaches the back
-        }
-        if !van.get(v).copied().unwrap_or(false)
-            || interceptor.is_down()
-            || interceptor.stunned
-            || interceptor.tempo <= 0
-            || !interceptor.can_contest_now(Range::Melee)
-        {
-            continue;
-        }
-        interceptor.tempo -= 1;
-        let bid = advance_finesse(interceptor); // the interceptor's one-card bid (cards × Finesse)
-        if try_evade(charger, bid, log) {
-            continue; // slipped this interceptor (Tempo spent on both sides — the attrition)
-        }
-        let snap = snapshot(interceptor);
-        let n = interceptor.name.clone();
-        apply_strike(charger, snap, &n, log);
-    }
-}
-
-/// §4.6 — a single interactive **instant ranged shot** (`resolve: OnCast`): an evade contest then the
-/// shot. The public single-pair entry the interactive game routes through.
-pub fn ranged_one(attacker: &mut Actor, target: &mut Actor, log: &mut Vec<String>) {
-    ranged_shot(attacker, target, log);
-}
-
-/// §4.6 #2 — the **Fray** front clash. Each living Vanguard of `attackers` (in `atk_van`) strikes the
-/// first living enemy Vanguard (in `def_van`) it can reach, a melee **trade** (the target strikes
-/// back). Returns, per attacker index, the **list of enemy Vanguards it attacked** — the input to the
-/// breach list ([`compute_locks`]): *attacking* is what locks (§4.6), not being struck or blocking.
-/// Call once per side (heroes-attack-foes, then foes-attack-heroes); deaths finalize at the boundary.
-pub fn fray_clash(
-    attackers: &mut [Actor],
-    atk_van: &[bool],
-    defenders: &mut [Actor],
-    def_van: &[bool],
-    log: &mut Vec<String>,
-) -> Vec<Vec<usize>> {
-    let mut attacked = vec![Vec::new(); attackers.len()];
-    for a in 0..attackers.len() {
-        if !atk_van[a] || attackers[a].is_down() || !attackers[a].can_contest_now(Range::Melee) {
-            continue;
-        }
-        // Strike the first living enemy Vanguard standing in the way.
-        let Some(t) = (0..defenders.len()).find(|&d| def_van[d] && !defenders[d].is_down()) else {
-            continue; // no enemy front to engage — nothing to attack (and nothing to lock onto)
-        };
-        attacked[a].push(t);
-        melee_trade(&mut attackers[a], &mut defenders[t], Guard::Trade, log);
-    }
-    attacked
-}
-
-/// §4.6 **breach list / per-unit lock.** A Vanguard is **locked** for the round iff *some enemy
-/// Vanguard it attacked in the Fray is still **standing in the front*** — **only attacking locks**
-/// (being struck, blocking, or evading never does). `attacked[a]` is the enemy-Vanguard indices `a`
-/// struck (from [`fray_clash`]); `enemy` is that enemy pool **after** the Fray's deaths are finalized.
-/// Returns the lock flag per attacker: `true` = locked (pinned), `false` = **free** (may charge/flank).
-///
-/// §4.6 **Rout/position refinement (2026-06-26).** You reach the back by clearing the front — by death
-/// **or displacement**. A struck enemy Vanguard that is **routed** (driven off the line to the
-/// Rearguard) no longer holds the front, so it **does not lock** its attacker: a hero whose front-foe is
-/// routed is **freed to charge**, even though that foe is still alive. (A `routed` foe is also barred
-/// from charging itself — enforced at the charge-declaration site in [`crate::game`].)
-pub fn compute_locks(attacked: &[Vec<usize>], enemy: &[Actor]) -> Vec<bool> {
-    attacked
-        .iter()
-        .map(|targets| {
-            targets
-                .iter()
-                .any(|&t| !enemy[t].fallen && !enemy[t].is_down() && !enemy[t].routed)
-        })
-        .collect()
-}
-
-/// §4.6 #3 — resolve the **Volley**. `charges` were declared by free Vanguards (`flank = false` → a
-/// charge across open ground at the enemy Rearguard, landing in the Breach; `flank = true` → adjacent
-/// melee on a surviving enemy Vanguard, a trade **in the Volley**). This function resolves the
-/// Volley-phase effects only:
-///
-/// - **Flanks trade now** (same phase = both land, §4.6) — and a flank-**kill** is recorded so the
-///   caller can preclude the dead target's own charge (the **intercept**).
-/// - **Charges pre-empt:** for each charge, the rear target **answers first** — a melee target strikes
-///   back, a ranged target counter-fires, any target may have spent Tempo dodging — all resolving
-///   **before** the Breach. Here we resolve the target's strike-back / counter-fire against the
-///   *charger* (the pre-empt blow); the charger's own blow lands later, in [`resolve_breach`].
-///
-/// `heroes`/`foes` are the two pools; charges carry their own `side`. Deaths finalize at the boundary.
 // ====================================================================================================
 // §4.6 The engagement-schedule resolver — ports the validated `engagement.rs` algorithm onto `Actor`s.
 // (Single-target core: schedule order, the one Tempo contest, prey-with-fallback targeting, strike-back.
@@ -1021,7 +840,7 @@ pub fn play_card(
             }
             Effect::Smoke => {
                 // §10 Infiltrator — place a Smoke token on self; the next charge ignores the Volley
-                // pre-empt (consumed on use in `resolve_volley`).
+                // pre-empt (consumed on use when the charge is resolved).
                 if let Some(i) = self_idx {
                     allies[i].tokens.push(crate::actor::Token::Smoke);
                     log.push("  veils in smoke (next charge ignores the pre-empt).".into());

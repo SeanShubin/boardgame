@@ -24,6 +24,7 @@ pub mod form;
 pub mod game;
 pub mod groups;
 pub mod handbook;
+pub mod layout;
 pub mod reference;
 pub mod rules;
 pub mod ruleset;
@@ -46,6 +47,9 @@ pub use form::{Form, StatCard};
 pub use reference::{ReferenceScenario, check_combat_bands, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
 pub use game::{Action, Deckbound};
+// `CombatLayout` (the derived 2D combat board) is named to avoid colliding with `world::Layout`
+// (the world-map grid/hex layout), which is already re-exported as `Layout` below.
+pub use layout::{CombatLayout, Rank, SideLayout, Slot};
 pub use scenarios::{
     CatalogEntry, RewardId, Scenario, build_character, build_encounter_foes, campaign,
     card_catalog, god, rewards_for, tutorials, versus,
