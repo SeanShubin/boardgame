@@ -91,43 +91,6 @@ fn best_play(state: &State, actions: &[Action]) -> Option<Action> {
         .map(|(a, _)| a)
 }
 
-/// A **setup** play to fire before striking this phase: the highest-scoring playable card that is a
-/// foe **stat-drop** (Sunder / Mark / Mire / Defang — the Controller's amp/soften) or an own-side
-/// **amp** (Empower / Haste). These shape the phase's strikes (a Sunder lowers the wall the allies are
-/// about to hit), so the greedy casts one *before* it attacks. Returns `None` if the best play is not a
-/// setup effect (then the greedy attacks, then falls back to any other play).
-fn setup_play(state: &State, actions: &[Action]) -> Option<Action> {
-    use crate::cards::Effect::*;
-    let side = state.plan.committing;
-    let is_setup = |c: &crate::cards::Card| {
-        c.effects.iter().any(|e| {
-            matches!(
-                e,
-                Sunder { .. }
-                    | Mark { .. }
-                    | Mire { .. }
-                    | Defang { .. }
-                    | Empower { .. }
-                    | Haste { .. }
-            )
-        })
-    };
-    actions
-        .iter()
-        .copied()
-        .filter_map(|a| match a {
-            Action::PlayCard(i, idx) => state
-                .s_pool(side)
-                .get(i)
-                .and_then(|act| act.actions.get(idx))
-                .filter(|c| is_setup(c))
-                .map(|c| (a, play_score(c))),
-            _ => None,
-        })
-        .max_by_key(|&(_, score)| score)
-        .map(|(a, _)| a)
-}
-
 /// A heuristic value for playing `card` now (greedy policy). Damage ≫ amplification ≫ proactive debuff
 /// ≫ minor buff ≫ reactive heal. The magnitude terms give a mild preference for the deeper (stronger)
 /// card of a track. Used only by the greedy resolver — not a rule.

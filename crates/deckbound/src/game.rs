@@ -1314,11 +1314,10 @@ mod tests {
         game.apply(s, &Action::PickScenario(index)).unwrap();
     }
 
-    /// Drive a scenario to an outcome with a rough auto-strategy.
+    /// Drive a scenario to an outcome: accept the stat-defaulted intentions and resolve each round.
     fn autoplay(game: &Deckbound, s: &mut State) -> Outcome {
         let mut guard = 0;
         while game.current_player(s).is_some() {
-            let acts = game.legal_actions(s);
             let action = match s.phase {
                 Phase::Clash => {
                     let beat = s.clash.map(|c| c.beat).unwrap_or(0);
@@ -1328,14 +1327,8 @@ mod tests {
                         Action::Play(Move::Anticipate)
                     }
                 }
-                Phase::Standoff => Action::Deploy,
-                Phase::Fray | Phase::Volley => acts
-                    .iter()
-                    .find(|a| matches!(a, Action::Charge(..)))
-                    .or_else(|| acts.iter().find(|a| matches!(a, Action::Target(..))))
-                    .or_else(|| acts.iter().find(|a| matches!(a, Action::Pass(_))))
-                    .copied()
-                    .unwrap_or(Action::ToMenu),
+                // Declare intentions are stat-defaulted; Deploy resolves the engagement schedule.
+                Phase::DeclareIntentions | Phase::Engage => Action::Deploy,
                 _ => break,
             };
             game.apply(s, &action).unwrap();
@@ -1498,40 +1491,36 @@ mod tests {
         assert_eq!(s.phase, Phase::Menu(Menu::Top));
     }
 
-    /// §4.6 Standoff: a melee unit defaults to the Vanguard (front), a ranged unit to the Rearguard
-    /// (back); the human may toggle a unit's position and advance to begin the Fray.
+    /// §4 DeclareIntentions: a unit defaults to a stat-based intention; the human may re-declare it and
+    /// advance, which resolves the round's engagement schedule.
     #[test]
-    fn standoff_sets_positions_then_advances_to_the_fray() {
+    fn declare_intentions_then_resolve() {
         let game = Deckbound;
         let mut hero = scenarios::build_character("Novice", &[]);
         hero.attack = crate::actor::Attack::Melee;
         let foe = scenarios::build_creature("Husk");
         let mut s = battle_state(vec![hero], vec![foe], false, 1);
-        assert_eq!(s.phase, Phase::Standoff);
-        assert!(
-            s.plan.hero_vanguard[0],
-            "a melee unit defaults to the front"
-        );
-        // Toggle to the Rearguard and back.
-        game.apply(&mut s, &Action::SetRearguard(0)).unwrap();
-        assert!(!s.plan.hero_vanguard[0]);
+        assert_eq!(s.phase, Phase::DeclareIntentions);
+        // A melee unit defaults to a front intention (Vanguard or Outrider, by Finesse).
+        assert!(matches!(
+            s.plan.hero_intent[0],
+            Intention::Vanguard | Intention::Outrider
+        ));
+        // Re-declare explicitly, then advance — the round resolves.
         game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
-        assert!(s.plan.hero_vanguard[0]);
-        // Advance — the Fray begins (or the fight resolves if a side is wiped).
+        assert_eq!(s.plan.hero_intent[0], Intention::Vanguard);
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert!(matches!(s.phase, Phase::Fray | Phase::Standoff) || s.outcome.is_some());
+        // After Deploy the round resolved → a fresh DeclareIntentions, or an outcome.
+        assert!(matches!(s.phase, Phase::DeclareIntentions) || s.outcome.is_some());
     }
 
-    /// §4.6 cast window **and** §4.4 target-classification position gate. A `cast: Standing` support card
-    /// (Wall's Brace) is offered in the Standoff (rank-free); a `cast: Strike` offensive card (Artillery's
-    /// Bolt) is not (wrong window) — and once the Fray opens, the ranged offensive Bolt is castable **only
-    /// from the Rearguard** (a Vanguard cannot rain ranged spells, §4.2), never the front.
+    /// §4 cast window: a `cast: Standing` support card (Wall's Brace) is offered at DeclareIntentions
+    /// (rank-free); an **offensive** ability (Artillery's Bolt) is not — offensive casting is resolved by
+    /// the engagement schedule, not cast interactively (a deferred follow-on, §4.6).
     #[test]
-    fn cast_window_and_position_gate_role_cards() {
+    fn standing_support_casts_at_declare_offensive_deferred() {
         use crate::currency::Currency;
         let game = Deckbound;
-        // A hero holding both a Standing support card (Iron L1 Brace) and a Strike ranged-offensive card
-        // (Brass L1 Bolt).
         let hero = scenarios::build_character(
             "Novice",
             &[
@@ -1546,10 +1535,9 @@ mod tests {
             ],
         );
         let foe = scenarios::build_creature("Husk");
-        let mut s = battle_state(vec![hero], vec![foe], false, 1);
-        assert_eq!(s.phase, Phase::Standoff);
+        let s = battle_state(vec![hero], vec![foe], false, 1);
+        assert_eq!(s.phase, Phase::DeclareIntentions);
 
-        // Index the hero's two role cards.
         let brace = s.heroes[0]
             .actions
             .iter()
@@ -1560,40 +1548,18 @@ mod tests {
             .iter()
             .position(|c| c.name == "Bolt")
             .expect("Brass L1 grants Bolt");
-
-        // In the Standoff: the Standing (support) Brace is playable, the Strike Bolt is not (wrong window).
         let brace_card = s.heroes[0].actions[brace].clone();
         let bolt_card = s.heroes[0].actions[bolt].clone();
         assert!(!brace_card.is_offensive());
-        assert!(bolt_card.is_offensive() && bolt_card.is_ranged());
+        assert!(bolt_card.is_offensive());
         assert!(
             game.card_playable_now(&s, 0, 0, &brace_card),
-            "a cast:Standing support card is offered in the Standoff (rank-free)"
+            "a cast:Standing support card is offered at DeclareIntentions"
         );
         assert!(
             !game.card_playable_now(&s, 0, 0, &bolt_card),
-            "a cast:Strike card is NOT offered in the Standoff (wrong window)"
+            "offensive abilities are not interactively cast (resolved by the schedule)"
         );
-
-        // Advance to the Fray; the Standing card is now out of window.
-        game.apply(&mut s, &Action::Deploy).unwrap();
-        if s.phase == Phase::Fray {
-            assert!(
-                !game.card_playable_now(&s, 0, 0, &brace_card),
-                "a cast:Standing card is not castable in the Fray (wrong window)"
-            );
-            // §4.4 position gate: the ranged offensive Bolt fires only from the Rearguard.
-            s.plan.hero_vanguard[0] = true; // at the front
-            assert!(
-                !game.card_playable_now(&s, 0, 0, &bolt_card),
-                "an offensive ranged spell cannot be cast from the Vanguard (§4.2)"
-            );
-            s.plan.hero_vanguard[0] = false; // holding the back
-            assert!(
-                game.card_playable_now(&s, 0, 0, &bolt_card),
-                "an offensive ranged spell fires from the Rearguard"
-            );
-        }
     }
 
     /// §0 Ruleset: reaching the round cap ends an unfinished fight as a **draw** (which, in PvE, is no
@@ -1682,211 +1648,39 @@ mod tests {
         game.apply(&mut s, &Action::OpenVersus).unwrap();
         let idx = scenarios::versus().iter().position(|v| v.pvp).unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
-        assert_eq!(s.phase, Phase::Standoff);
+        assert_eq!(s.phase, Phase::DeclareIntentions);
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(0)),
-            "side A takes the Standoff first"
+            "side A declares first"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(s.phase, Phase::Standoff, "still in the Standoff");
+        assert_eq!(
+            s.phase,
+            Phase::DeclareIntentions,
+            "still declaring (side B now)"
+        );
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(1)),
-            "now side B takes the Standoff"
+            "now side B declares"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        // Both committed the Standoff → the Fray begins; play it out to an outcome.
+        // Both sides declared → the engagement resolves; play it out to an outcome.
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
     }
 
-    /// A base-mode cooperation scenario runs the six-phase round to an outcome.
+    /// A base-mode cooperation scenario runs the engagement-schedule round to an outcome.
     #[test]
-    fn base_scenario_runs_lanes() {
+    fn base_scenario_runs_to_outcome() {
         let game = Deckbound;
         let mut s = game.new_game(2, 1);
         game.apply(&mut s, &Action::OpenCooperation).unwrap();
         game.apply(&mut s, &Action::PickScenario(0)).unwrap();
-        assert_eq!(s.phase, Phase::Standoff);
+        assert_eq!(s.phase, Phase::DeclareIntentions);
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
-    }
-
-    /// Part 1 — the **per-unit lock** (§4.6, exact). Two heroes front two foes; hero 0 kills its
-    /// struck foe in the Fray, hero 1's struck foe survives. At the Fray boundary, `fix_breach_list`
-    /// (now fed by the recorded attacked-map through `combat::compute_locks`) must free the killer
-    /// while keeping hero 1 pinned — **even though a live enemy Vanguard still stands**. The old
-    /// all-or-nothing approximation locked *both* (any live enemy Vanguard ⇒ locked); this proves the
-    /// regression is gone.
-    #[test]
-    fn a_freed_locker_is_free_while_other_enemy_vanguards_stand() {
-        use crate::actor::Attack;
-        let game = Deckbound;
-
-        // A bare melee fighter with explicit stats and ample Tempo (the test controls who acts).
-        fn fighter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
-            let mut a = scenarios::build_character("Novice", &[]);
-            a.name = name.into();
-            a.attack = Attack::Melee;
-            a.offense.might = might;
-            a.offense.finesse = a.offense.finesse.max(1);
-            a.defense = crate::stats::Defense::new(vit, tough);
-            a.weapon = {
-                // a 0-power weapon so a blow is exactly `might`
-                let mut w = a.weapon.clone();
-                w.effects.clear();
-                w
-            };
-            a.tempo = 10;
-            a
-        }
-
-        let heroes = vec![fighter("Killer", 5, 5, 5), fighter("Pinned", 1, 5, 5)];
-        // foe 0 dies (V1/T2 ⇐ Might 5 flips its only card); foe 1 survives (V3/T5 ⇐ Might 1); foe 2 is
-        // a Rearguard. All foes Might 0 so the trade-back never kills a hero.
-        let foes = vec![
-            fighter("Doomed", 0, 1, 2),
-            fighter("Survivor", 0, 3, 5),
-            fighter("Rear", 0, 2, 2),
-        ];
-        let mut s = battle_state(heroes, foes, false, 1);
-        // Front the two foes; pull the third back to the Rearguard.
-        s.plan.foe_vanguard = vec![true, true, false];
-        s.plan.hero_vanguard = vec![true, true];
-        // Begin the Fray. (PvE: the foe side strikes first — Might 0, harmless.)
-        game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(s.phase, Phase::Fray);
-
-        // Drive the hero Fray explicitly: Killer strikes foe 0, Pinned strikes foe 1.
-        game.apply(&mut s, &Action::Target(0, 0)).unwrap();
-        // After hero 0 acts, hero 1 is the pending unit; strike foe 1.
-        game.apply(&mut s, &Action::Target(1, 1)).unwrap();
-
-        // Closing the Fray fixes the breach list. (If hero 1 had nothing left, the phase auto-advanced;
-        // otherwise pass it so the Fray closes.)
-        if s.phase == Phase::Fray {
-            if let Some(&i) = game.pending(&s, 0).first() {
-                game.apply(&mut s, &Action::Pass(i)).unwrap();
-            }
-        }
-        assert!(s.creatures[0].fallen, "foe 0 died in the Fray");
-        assert!(!s.creatures[1].fallen, "foe 1 survived");
-        assert!(
-            !s.plan.hero_locked[0],
-            "the killer is FREE — its struck foe is dead (per-unit lock)"
-        );
-        assert!(
-            s.plan.hero_locked[1],
-            "hero 1 stays LOCKED — its struck foe still stands"
-        );
-    }
-
-    /// A bare melee fighter with explicit stats and ample Tempo (shared by the Pin/Rout game tests).
-    fn fighter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
-        use crate::actor::Attack;
-        let mut a = scenarios::build_character("Novice", &[]);
-        a.name = name.into();
-        a.attack = Attack::Melee;
-        a.offense.might = might;
-        a.offense.finesse = a.offense.finesse.max(1);
-        a.defense = crate::stats::Defense::new(vit, tough);
-        a.weapon = {
-            let mut w = a.weapon.clone();
-            w.effects.clear();
-            w
-        };
-        a.tempo = 10;
-        a
-    }
-
-    /// §10 **Pin** (Artillery space-control): a free enemy Vanguard pinned by suppressive fire is
-    /// **denied its charge** this round. We pin a foe that *would* have charged the hero Rearguard and
-    /// confirm the rear is untouched (the pinned foe declares no charge in the foe Volley).
-    #[test]
-    fn pin_denies_a_charge() {
-        let game = Deckbound;
-        // A foe Vanguard (would charge) + a hero front-holder so the foe is free, and a hero rear it
-        // would gut. Foe Might 5; hero rear V1/T1 so an un-pinned charge would clearly hurt it.
-        let heroes = vec![fighter("Front", 0, 8, 5), fighter("Caster", 0, 1, 1)];
-        let foes = vec![fighter("Breaker", 5, 8, 5)];
-        let mut s = battle_state(heroes, foes, false, 1);
-        s.plan.hero_vanguard = vec![true, false]; // Front holds; Caster is the rear
-        s.plan.foe_vanguard = vec![true];
-
-        // Pin the foe Vanguard (the round-plan surgery Effect::Pin performs at `do_play_card`).
-        s.plan.foe_pinned[0] = true;
-
-        let rear0 = s.heroes[1].defense.health.remaining;
-        // Run the round: Standoff → Fray (foe strikes the front, harmless to the rear) → Volley. The
-        // foe Volley must skip the pinned Breaker (no charge declared), so the Breach touches no one.
-        game.apply(&mut s, &Action::Deploy).unwrap(); // → Fray (foe_fray runs)
-        // Close the Fray (front trades; pin survives `fix_breach_list` via the pinned OR).
-        while s.phase == Phase::Fray {
-            if let Some(&i) = game.pending(&s, 0).first() {
-                game.apply(&mut s, &Action::Pass(i)).unwrap();
-            } else {
-                break;
-            }
-        }
-        assert!(
-            s.plan.foe_locked[0],
-            "the pinned foe is locked across the Fray boundary (Pin's lock survives fix_breach_list)"
-        );
-        assert!(
-            !s.plan.charges.iter().any(|c| c.side == 1),
-            "the pinned foe declared no charge"
-        );
-        // Carry the Volley through to the Breach.
-        while matches!(s.phase, Phase::Volley) {
-            if let Some(&i) = game.pending(&s, 0).first() {
-                game.apply(&mut s, &Action::Pass(i)).unwrap();
-            } else {
-                game.apply(&mut s, &Action::Deploy).unwrap();
-            }
-        }
-        assert_eq!(
-            s.heroes[1].defense.health.remaining, rear0,
-            "the rear is untouched — the pinned charge never crossed (Pin denied it)"
-        );
-    }
-
-    /// §10 **Rout** (the area-CC rider): a **routed** foe Vanguard is driven off the line and **cannot
-    /// charge** — the foe Volley skips it, so the hero rear is spared.
-    #[test]
-    fn a_routed_foe_cannot_charge() {
-        let game = Deckbound;
-        let heroes = vec![fighter("Front", 0, 8, 5), fighter("Caster", 0, 1, 1)];
-        let foes = vec![fighter("Breaker", 5, 8, 5)];
-        let mut s = battle_state(heroes, foes, false, 1);
-        s.plan.hero_vanguard = vec![true, false];
-        s.plan.foe_vanguard = vec![true];
-        s.creatures[0].routed = true; // displaced off the line (a Rout)
-
-        let rear0 = s.heroes[1].defense.health.remaining;
-        game.apply(&mut s, &Action::Deploy).unwrap(); // → Fray
-        while s.phase == Phase::Fray {
-            if let Some(&i) = game.pending(&s, 0).first() {
-                game.apply(&mut s, &Action::Pass(i)).unwrap();
-            } else {
-                break;
-            }
-        }
-        assert!(
-            !s.plan.charges.iter().any(|c| c.side == 1),
-            "a routed foe declares no charge (it neither holds the front nor crosses)"
-        );
-        while matches!(s.phase, Phase::Volley) {
-            if let Some(&i) = game.pending(&s, 0).first() {
-                game.apply(&mut s, &Action::Pass(i)).unwrap();
-            } else {
-                game.apply(&mut s, &Action::Deploy).unwrap();
-            }
-        }
-        assert_eq!(
-            s.heroes[1].defense.health.remaining, rear0,
-            "the routed foe could not charge — the hero rear is spared"
-        );
     }
 
     #[test]

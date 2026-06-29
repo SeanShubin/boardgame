@@ -7,16 +7,17 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 
 ## Roles
 
-- **Blind bid** — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group to the Vanguard (front) or Rearguard (back), and plays its standing buffs / braces. Positions are re-bid every round. Revealed together; everything after resolves in the open, nobody moves.
-- **Vanguard** — The declared front. The position that can be hit and the shield: while a side's Vanguard lives, its Rearguard cannot be targeted. Melee Actors fight from here.
-- **Rearguard** — The declared back. Untargetable while its own Vanguard lives; from safety it fires on the enemy front (ranged), buffs allies, and degrades foes. Reached only once its own front falls.
+- **Declare intentions** — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together; everything after resolves in the open, nobody moves.
+- **Vanguard** — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
+- **Outrider** — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
+- **Rearguard** — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.
 - **Suit** — A role track's **identity** (a substance): Iron · Silver · Brass · Bone · Salt, bound 1:1 to a **Role** (Wall · Infiltrator · Artillery · Controller · Support). The Suit is what a reward *is*; the Role is what it *does*. Name treasure by its Suit — "an Iron reward," never "a Wall reward."
 
 ## Combat
 
-- **Phase 1 / Phase 2** — The two phases of a round. Phase 1: both backs protected — strike the enemy front only. Phase 2 (per side): a side's back is fair game the instant its Vanguard falls. Both phases share one Tempo pool (no refresh between them); Tempo refills at round end. Effects accumulate and lock at the boundary.
+- **Engagement schedule** — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider). The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
 - **Tempo contest** — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
-- **Reach** — Where you can attack from: melee strikes only from the Vanguard, ranged only from the Rearguard. Positions self-sort by attack type; a melee unit in the back is idle until the front breaks.
+- **Reach** — Where you can attack from: melee strikes from the Vanguard or raids as an Outrider, ranged deals from the Rearguard. Positions self-sort by attack type; a misplaced unit is idle, not barred.
 - **Group** — Same-side Actors bound at form-up into one unit: one position, one shared target, distinct Health. Single-target damage spills in declared order; AoE hits every member; acting costs one Tempo per member; blocking sums member Tempo, slipping needs every member to beat the attacker. No size cap, no mixed positions.
 - **Hoard X** — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
 - **Spillover** — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member when the current can no longer absorb it.
