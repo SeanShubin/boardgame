@@ -97,10 +97,17 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   cleaved into `policy.rs`; mechanics ported from the sim; cycling is per-engagement (§4.6 order-independent).
   `solver_wins` flipped GREEN; no passing test regressed. **Deferred (separate later work):** Reckoning
   firing (`resolve_reckoning` still uncalled) + offensive-ability casting (`card_playable_now` Standing-only).
-  **Golden review in progress** (post-P6): regenerate the 2 pure-doc goldens (rules-reference, glossary);
-  the 6 combat-dependent (rules-tour transcript, reference_combat_bands, 3× campaign, action_log) need a
-  correct-canon-vs-regression judgment before re-baselining — several may be *fixed* by P6, the campaign
-  wins may need re-tuning if the party's scripted run now resolves differently. Original split below:
+  **Golden review DONE** (commit `2389c44`): the 2 pure-doc goldens (rules-reference, glossary) regenerated
+  + passing → suite **96/6**. The 6 remaining (rules-tour transcript, reference_combat_bands, 3× campaign,
+  action_log) are **NOT a P6 regression** — they were all in the original 9 and stay red for a *pre-existing*
+  reason: every reference hero is a melee **Fist** with its real damage in **offensive ability cards**
+  (Sear's Bolt/Volley, etc.), and **offensive abilities are still unwired in combat** (`card_playable_now`
+  Standing-only) — so casters fight with Might-1 Fists and never deal their ranged damage; and
+  `default_intentions` (game.rs:178, `ranged = Ranged && !Melee`) never fires for a Fist-wielder, so no hero
+  is ever placed in the Rearguard. P6 net-FIXED 3 of the 9 (solver_wins + the 2 docs); no test regressed.
+  **P7 (the unblock): wire the offensive-ability layer** (cast offensive cards in combat → casters fire
+  Bolt/Volley as ranged attacks → get placed Rearguard → the party can win) — closes the remaining 6.
+  Pairs with Reckoning firing (both are the deferred ability layer). Original split below:
 - **P6 (orig) — Align the live engine with canon (DELIBERATE behavior change).** Split along the mechanics /
   interaction seam (user direction 2026-06-29): *mechanics are the game (a rulebook statement); the policy
   is how our code chooses among legal moves (swap human / scripted AI / solver and the mechanics don't
