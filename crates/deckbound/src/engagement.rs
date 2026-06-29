@@ -242,30 +242,26 @@ fn choose_target(units: &[Unit], attacker: usize, tgt_role: Intention) -> Option
         .map(|(i, _)| i)
 }
 
-/// The role each intention is **designed to beat** — its cycle prey (Hold→Break→Deal→Hold). The efficient
-/// default spends a unit's scarce Tempo only on its prey (where its attack has unique value: only the
-/// Rearguard can kill a Vanguard, etc.). The other schedule pairs stay legal — they are the "go around
-/// the design" deviations, available but costed — but the default does not take them.
-fn prey(i: Intention) -> Intention {
+/// The **role priority list** (§4.6): each role's ordered target preference. The Outrider alone puts the
+/// back first (its raid); every other role puts it last (a mop-up through a broken line). The default
+/// follows this order, holding Tempo for a higher priority still to come rather than spending it on a lower
+/// one now; going around the order stays legal, just unspent-on by the default.
+fn priorities(i: Intention) -> [Intention; 3] {
+    use Intention::{Outrider as O, Rearguard as R, Vanguard as V};
     match i {
-        Intention::Vanguard => Intention::Outrider,
-        Intention::Outrider => Intention::Rearguard,
-        Intention::Rearguard => Intention::Vanguard,
+        V => [O, V, R], // screen the flankers → clash the front → breach the back
+        O => [R, V, O], // raid the back → flank the front → hunt stragglers
+        R => [V, O, R], // destroy the front → hunt flankers → finish the back
     }
 }
 
-/// Is there a living enemy of `i`'s **prey** role that `i` can actually crack? If so, the efficient
-/// default holds its scarce Tempo for that prey (where its strike has unique value — only the Rearguard
-/// can kill a Vanguard, etc.) rather than spending it on a lower-value fallback rank now. Only when no
-/// crackable prey remains does a unit fall back to whatever rank the schedule lets it reach — so it is
-/// never useless, but "going around" is always second choice.
-fn flippable_prey_alive(units: &[Unit], i: usize) -> bool {
-    let side = units[i].side;
-    let might = units[i].offense.might;
-    let pr = prey(units[i].intent);
-    units.iter().any(|u| {
-        u.alive() && u.side != side && u.intent == pr && might >= u.defense.health.toughness
-    })
+/// The schedule step (index) in which the pair `(atk, tgt)` resolves, or `None` if it is never a legal
+/// pair. Used to time the priority list against the schedule: a unit strikes a priority when *its* step is
+/// now, holds for it when its step is still to come, and skips it once its step has passed.
+fn step_of(atk: Intention, tgt: Intention) -> Option<usize> {
+    SCHEDULE
+        .iter()
+        .position(|(_, pairs)| pairs.iter().any(|&(a, t)| a == atk && t == tgt))
 }
 
 /// Should `defender` spend Tempo to avoid this incoming attack? Avoid only blows that would actually flip
@@ -293,7 +289,7 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
         u.tempo = u.offense.cadence as i32;
     }
 
-    for (sname, pairs) in SCHEDULE.iter() {
+    for (step_idx, (sname, _pairs)) in SCHEDULE.iter().enumerate() {
         note!("-- {sname} --");
         // Each step CYCLES to exhaustion (§4.6): keep committing positive-effect strikes until no one
         // will spend Tempo. The per-phase pile persists across cycles (chip combines) and wipes only at
@@ -307,62 +303,75 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
             let mut crossed = vec![false; n]; // by group_rep — the collective melee move, paid once
             let mut struck = vec![false; n]; // each unit strikes at most once per cycle
             let mut committed = false;
-            for &(atk_role, tgt_role) in *pairs {
-                for i in 0..n {
-                    if !units[i].alive() || units[i].intent != atk_role || struck[i] {
-                        continue;
-                    }
-                    // Efficient default: hold for your prey when one is crackable; else fall back.
-                    if tgt_role != prey(units[i].intent) && flippable_prey_alive(units, i) {
-                        continue;
-                    }
-                    let melee = units[i].is_melee();
-                    let rep = group_rep(units, i);
-                    // Tempo eligibility: ranged pays its own card; a melee unit pays the crossing unless
-                    // its group already crossed this cycle (then its strike rides the same move, free).
-                    let affordable = if melee {
-                        crossed[rep] || units[i].tempo >= 1
-                    } else {
-                        units[i].tempo >= 1
-                    };
-                    if !affordable {
-                        continue;
-                    }
-                    let Some(t) = choose_target(units, i, tgt_role) else {
-                        continue;
-                    };
-                    if melee {
-                        if !crossed[rep] {
-                            // The whole group crosses as one — every living member spends one Tempo, even
-                            // those with no attack (§4.5 collective reposition). Tempo-hungry by design.
-                            for m in group_of(units, i) {
-                                if units[m].alive() {
-                                    units[m].tempo = (units[m].tempo - 1).max(0);
-                                }
-                            }
-                            crossed[rep] = true;
-                        }
-                    } else {
-                        units[i].tempo -= 1;
-                    }
-                    struck[i] = true;
-                    committed = true;
-                    note!(
-                        "  {} -> {} (M{}{})",
-                        uid(units, i),
-                        uid(units, t),
-                        units[i].offense.might,
-                        if units[i].aoe { " AoE" } else { "" }
-                    );
-                    decls.push(Decl {
-                        atk: i,
-                        def: t,
-                        might: units[i].offense.might,
-                        finesse: units[i].offense.finesse,
-                        melee,
-                        aoe: units[i].aoe,
-                    });
+            for i in 0..n {
+                if !units[i].alive() || struck[i] {
+                    continue;
                 }
+                // Target by the role priority list (§4.6): walk the priorities in order; the first one with
+                // a crackable target sets the goal. Strike it if its engagement is *this* step; **hold** (do
+                // nothing) if its step is still to come; **skip** to the next priority if its step has passed.
+                let mut target = None;
+                for &role in &priorities(units[i].intent) {
+                    let Some(st) = step_of(units[i].intent, role) else {
+                        continue;
+                    };
+                    if choose_target(units, i, role).is_none() {
+                        continue; // no crackable target of this role — try the next priority
+                    }
+                    if st == step_idx {
+                        target = choose_target(units, i, role); // its window is now — strike
+                    }
+                    if st >= step_idx {
+                        break; // now (struck) or later (hold) — either way this is the governing priority
+                    }
+                    // st < step_idx: this priority's window has passed — fall through to the next
+                }
+                let Some(t) = target else {
+                    continue;
+                };
+                let melee = units[i].is_melee();
+                let rep = group_rep(units, i);
+                // Tempo eligibility: ranged pays its own card; a melee unit pays the crossing unless its
+                // group already crossed this cycle (then its strike rides the same move, free).
+                let affordable = if melee {
+                    crossed[rep] || units[i].tempo >= 1
+                } else {
+                    units[i].tempo >= 1
+                };
+                if !affordable {
+                    continue;
+                }
+                if melee {
+                    if !crossed[rep] {
+                        // The whole group crosses as one — every living member spends one Tempo, even those
+                        // with no attack (§4.5 collective reposition). Tempo-hungry by design.
+                        for m in group_of(units, i) {
+                            if units[m].alive() {
+                                units[m].tempo = (units[m].tempo - 1).max(0);
+                            }
+                        }
+                        crossed[rep] = true;
+                    }
+                } else {
+                    units[i].tempo -= 1;
+                }
+                struck[i] = true;
+                committed = true;
+                note!(
+                    "  {} -> {} (M{}{})",
+                    uid(units, i),
+                    uid(units, t),
+                    units[i].offense.might,
+                    if units[i].aoe { " AoE" } else { "" }
+                );
+                decls.push(Decl {
+                    atk: i,
+                    def: t,
+                    might: units[i].offense.might,
+                    finesse: units[i].offense.finesse,
+                    melee,
+                    aoe: units[i].aoe,
+                });
             }
             if !committed {
                 break;

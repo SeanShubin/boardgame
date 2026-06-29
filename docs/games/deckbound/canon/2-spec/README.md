@@ -1647,19 +1647,42 @@ field is **not** struck back (nothing closed to hit). Striking back is still an 
 open to anyone) or to **counter-fire** with your own ranged attack (a separate strike, not a reflex). A
 pure caster caught in melee therefore cannot strike back — it can only evade or be hit.
 
-**RULE — back-access (who may strike the Rearguard).** Two earned routes, both gated by the schedule order:
-- **The Outrider's raid** — a declared Outrider strikes the enemy Rearguard in the **Raid**, **if it
-  survived** the enemy front's **Intercept** and the enemy back's **Volley**. The breaker *declares*
-  the raid (no per-unit lock); its cost is total exposure *before* it lands.
-- **The front falling** — once a side's Vanguard is gone, its Rearguard is **exposed to every attack that
-  can reach it** in the **Breach**: a Vanguard crossing the now-open ground (`V→R`) **and the enemy
-  Rearguard's fire (`R→R`)** — the dropped screen opens a clear line, so a back-line may now shoot the
-  enemy back-line. This is *late* (the last engagement) but needs no Outrider. *(The front falling exposes
-  the back to **all** reachable fire, not selectively to the breach alone — and it is what lets two
-  front-less all-Rearguard sides resolve instead of standing forever out of range.)*
+**RULE — role priorities (the default targeting order).** Each role engages in a fixed order of preference
+— a card-writable priority list a reasonable player (and the PvE stand-in) follows. It is **policy, not a
+hard rule:** you may always go around it, at its Tempo cost.
 
-A Rearguard is shielded until one of these cracks it; neither is by decree (force-not-fiat — you reach the
-back by **winning** the Intercept/Volley as an Outrider, or by **killing** the front).
+- **Vanguard:** screen the enemy **Outrider** → clash the enemy **Vanguard** → breach the enemy **Rearguard**.
+- **Outrider:** raid the enemy **Rearguard** → flank the enemy **Vanguard** → hunt straggling **Outriders**.
+- **Rearguard:** destroy the enemy **Vanguard** → hunt straggling **Outriders** → finish the enemy **Rearguard**.
+
+Read against the schedule, these *are* the model's signature behaviours, with no extra rules. The **Outrider
+alone** puts the back **first** (its raid); every other role puts it **last**. And the **Rearguard's** top
+priority — the enemy Vanguard, struck in the Clash — falls *after* its second — a raider, met in the Volley —
+which is the **opportunity cost that defines the glass cannon:** hold the shot for the wall (and eat the
+raid), or spend it screening the raider (and have none for the wall). A unit **holds** Tempo for a
+higher-priority target still to come rather than spend it on a lower one now.
+
+**RULE — back-access (who may strike the Rearguard): flank the intact line, or pour through a broken one.**
+The back's shield is **emergent, not decreed** — it falls straight out of the priorities above. A Rearguard
+is reached two ways:
+
+- **Flank the intact line — the Outrider's raid.** A declared Outrider strikes the enemy Rearguard in the
+  **Raid**, going *around* a still-living front — **if it survived** the front's **Intercept** and the
+  back's **Volley** (the pre-empt). It is the **only** role that may reach a *guarded* back, and it pays for
+  that with total exposure before it lands (its whole purpose — the one role whose first priority is the back).
+- **Pour through a broken line — the Breach.** `V→R` (a Vanguard crossing the open ground) and `R→R` (a
+  back-line firing on the now-exposed enemy back) resolve in the **Breach**, but **only once that side's
+  Vanguard has fallen** — the literal sense of *breach*: you pour through a line that has **broken**, never
+  an intact one. *How* and *by whom* the line breaks is fully emergent (your Vanguard kills it in the Clash,
+  your Rearguard shoots it down — any force; force-not-fiat); the gate is only *"is the line broken."*
+
+So a living front shields the back **through the role order** — every role but the Outrider targets the enemy
+Rearguard last and only through a broken line — not by any immunity. **This is why the gate is a floor, not
+fiat:** were the Breach *ungated*, a Vanguard that merely **cannot crack** the enemy front would peel around
+it to the back — so a **tougher** front would **expose** its own Rearguard (attackers route around it),
+backwards. Requiring the line to **fall** keeps a tough front genuinely protective, and leaves flanking an
+intact line to the Outrider who pays for it. *(This also lets two front-less all-Rearguard sides resolve via
+`R→R` instead of standing forever out of range.)*
 
 **RULE — `cast` & `resolve` (carried forward).** An ability's timing is **two fields**:
 
@@ -1718,9 +1741,13 @@ the balance engine (§4).
   reaches a shielded back member (anti-cluster), order-independent.
 - **Strike-back is melee-only + reflexive:** only a melee attacker is struck back, only by a melee-capable
   defender, for one Tempo; a ranged blow is answered only by evasion or counter-fire.
-- **Back-access is earned ways:** the Outrider's declared Raid (survived Intercept + Volley); or the front
-  falling, which exposes the back to the Breach's `V→R` **and** `R→R` (enemy Rearguard fire) — never by
-  decree (force-not-fiat).
+- **Back-access — flank or breach:** the Outrider flanks the *intact* line (the Raid, paying Intercept +
+  Volley); everyone else pours through a *broken* line (the Breach's `V→R` and `R→R`, only once that
+  Vanguard has fallen). The shield is **emergent from the role priorities**, never a decreed immunity —
+  and gating the breach on the line falling (not on "I can't crack it") keeps a tough front protective.
+- **Role priorities are policy, not law:** each role's target order (Vanguard O→V→R, Outrider R→V→O,
+  Rearguard V→O→R) is the predictable default; a unit holds Tempo for a higher priority still to come.
+  Going around the order is always legal, at its Tempo cost.
 - **Pre-empt:** the Intercept and Volley resolve **before** the Raid, so the front's screen and the rear's
   fire can stop a breaker before it strikes.
 - **Per-engagement pile:** Might accumulates within an engagement and **wipes at its boundary**; Toughness
