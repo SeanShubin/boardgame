@@ -28,8 +28,19 @@ pub enum Intention {
     Rearguard,
 }
 
+/// How a unit answers incoming blows (the **hit policy**, part of a [`Strategy`]) — the one card-writable
+/// reaction knob. `Evade`: spend Tempo to dodge a blow that would flip a card, when affordable (and so
+/// arrive at later engagements poorer). `Endure`: never spend Tempo on defense — eat every blow and keep
+/// the whole pool for offense (the reckless "ignore hits to reach the back" line).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HitMode {
+    Evade,
+    Endure,
+}
+
 /// A lean combatant for the sim: the stat block (reusing the real [`Offense`]/[`Defense`] so the damage
-/// math is identical to the live game), an attack range, a side, an intention, and the round Tempo pool.
+/// math is identical to the live game), an attack range, a side, an intention, the hit policy, and the
+/// round Tempo pool.
 #[derive(Clone, Debug)]
 pub struct Unit {
     pub name: String,
@@ -38,6 +49,8 @@ pub struct Unit {
     pub offense: Offense,
     pub defense: Defense,
     pub attack: Attack,
+    /// How this unit reacts to incoming blows (Evade vs Endure) — set by its [`Strategy`].
+    pub hits: HitMode,
     /// Round-scoped Tempo pool (= Cadence), shared across the whole schedule.
     pub tempo: i32,
 }
@@ -89,6 +102,7 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
         },
         defense: Defense::new(v, t),
         attack,
+        hits: HitMode::Evade,
         tempo: c as i32,
     }
 }
@@ -263,7 +277,7 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
                 if !units[def].alive() {
                     // already down this step — committed blows still landed via the pile; skip extras
                 }
-                if should_avoid(&units[def], might, finesse) {
+                if units[def].hits == HitMode::Evade && should_avoid(&units[def], might, finesse) {
                     let cost = avoid_cost(finesse, units[def].offense.finesse);
                     units[def].tempo -= cost;
                     note!("  {} avoids (-{}t)", uid(units, def), cost);
@@ -467,6 +481,143 @@ pub fn matrix_report(triad: &Triad, max_n: u32) -> String {
     out
 }
 
+// ====================================================================================================
+// Strategies & counterability — extreme, card-writable scripts and the check that a balanced party
+// counters each. A Strategy is a deterministic, public-information decision tree simple enough to print
+// on a card: where each unit stands (the intention plan) + how it answers a blow (the hit policy).
+// Targeting is not a free choice — it follows the schedule + the **positive-effect rule** (take the
+// highest-priority action that actually flips a card / lands; never a futile or self-destructive one),
+// which is the engine invariant baked into `choose_target` / `should_avoid` / the strike-back gate.
+// ====================================================================================================
+
+/// How a strategy assigns each unit's **intention** (the position half of the script).
+#[derive(Clone, Copy, Debug)]
+pub enum IntentPlan {
+    AllVanguard,
+    AllOutrider,
+    AllRearguard,
+    /// The balanced default: by stats — ranged → Rearguard, high-Finesse melee → Outrider, else Vanguard.
+    ByStats,
+}
+
+/// A **strategy**: a deterministic, public-information script — where every unit stands (`plan`) and how
+/// it answers a blow (`hits`). Card-writable; the targeting/positive-effect rule is the engine invariant.
+#[derive(Clone, Copy, Debug)]
+pub struct Strategy {
+    pub name: &'static str,
+    pub plan: IntentPlan,
+    pub hits: HitMode,
+}
+
+impl Strategy {
+    fn intent_for(&self, class: &str, s: Stat5) -> Intention {
+        match self.plan {
+            IntentPlan::AllVanguard => Intention::Vanguard,
+            IntentPlan::AllOutrider => Intention::Outrider,
+            IntentPlan::AllRearguard => Intention::Rearguard,
+            IntentPlan::ByStats => default_intention(class, s),
+        }
+    }
+}
+
+/// A roster entry: a class name + its stat tuple `(M, V, T, C, F)`.
+pub type Recruit = (&'static str, Stat5);
+
+/// Build one side from a roster under a strategy (assign each unit its intention + hit policy).
+pub fn build_side(roster: &[Recruit], strat: &Strategy, side: u8) -> Vec<Unit> {
+    roster
+        .iter()
+        .map(|&(class, s)| {
+            let mut u = make_unit(class, s, side);
+            u.intent = strat.intent_for(class, s);
+            u.hits = strat.hits;
+            u
+        })
+        .collect()
+}
+
+/// `n` copies of one recruit (an extreme mono-roster).
+pub fn n_of(class: &'static str, s: Stat5, n: usize) -> Vec<Recruit> {
+    vec![(class, s); n]
+}
+
+// The validated triad stats (see `deckbound-level-1-balance` / Spec §4): hold / break / deal.
+const HOLD: Stat5 = (1, 2, 3, 1, 1); // Fighter — Vanguard
+const BREAK: Stat5 = (2, 1, 1, 2, 2); // Assassin — Outrider
+const DEAL: Stat5 = (3, 1, 2, 1, 1); // Mage — Rearguard
+
+/// The **balanced party** (one of each role, played by stats with the Evade hit policy) — the reference a
+/// counter must hold against.
+pub fn balanced_party() -> (Vec<Recruit>, Strategy) {
+    let roster = vec![("Fighter", HOLD), ("Assassin", BREAK), ("Mage", DEAL)];
+    let strat = Strategy {
+        name: "balanced",
+        plan: IntentPlan::ByStats,
+        hits: HitMode::Evade,
+    };
+    (roster, strat)
+}
+
+/// The **extreme** enemy scenarios, each pushing one mechanic to a limit a balanced party should counter.
+/// Returns `(label, roster, strategy)` triples (size matches the balanced party).
+pub fn extremes() -> Vec<(&'static str, Vec<Recruit>, Strategy)> {
+    let s = |name, plan, hits| Strategy { name, plan, hits };
+    vec![
+        (
+            "all-Vanguard wall",
+            n_of("Fighter", HOLD, 3),
+            s("all-V", IntentPlan::AllVanguard, HitMode::Evade),
+        ),
+        (
+            "all-Outrider (evasive)",
+            n_of("Assassin", BREAK, 3),
+            s("all-O evade", IntentPlan::AllOutrider, HitMode::Evade),
+        ),
+        (
+            "all-Outrider (reckless — ignore hits)",
+            n_of("Assassin", BREAK, 3),
+            s("all-O endure", IntentPlan::AllOutrider, HitMode::Endure),
+        ),
+        (
+            "all-Rearguard battery",
+            n_of("Mage", DEAL, 3),
+            s("all-R", IntentPlan::AllRearguard, HitMode::Evade),
+        ),
+        (
+            "glass cannons (extreme Might, no defense)",
+            n_of("Mage", (5, 1, 1, 1, 1), 3),
+            s("all-R glass", IntentPlan::AllRearguard, HitMode::Evade),
+        ),
+        (
+            "fortress (extreme Toughness, no offense)",
+            n_of("Fighter", (1, 3, 5, 1, 1), 3),
+            s("all-V fortress", IntentPlan::AllVanguard, HitMode::Evade),
+        ),
+    ]
+}
+
+/// **Counterability report.** Run the balanced party against each extreme and report the result. A
+/// balanced party *counters* an extreme when the extreme does **not** beat it (the balanced party WINs or
+/// the engagement is a draw). A LOSS row is an uncountered extreme — a balance gap to fix.
+pub fn counter_report() -> String {
+    let (party, pstrat) = balanced_party();
+    let mut out = String::from("Counterability — balanced party vs extreme scenarios:\n");
+    for (label, roster, estrat) in extremes() {
+        let o = battle(
+            build_side(&party, &pstrat, 0),
+            build_side(&roster, &estrat, 1),
+            8,
+        );
+        let verdict = match o {
+            Outcome::Win => "COUNTERED (party wins)",
+            Outcome::Draw => "held (draw)",
+            Outcome::Loss => "!! UNCOUNTERED (party loses)",
+        };
+        out.push_str(&format!("  {label:<42} {verdict}\n"));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,6 +645,29 @@ mod tests {
             default_intention("Mage", (3, 1, 1, 1, 1)),
             Intention::Rearguard
         );
+    }
+
+    /// Counterability: the balanced party vs each extreme scenario.
+    /// `cargo test -p deckbound probe_counters -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_counters() {
+        println!("{}", counter_report());
+    }
+
+    /// The guarded property: the balanced party is **not beaten** by any extreme scenario — each is
+    /// countered (a win) or held (a draw). A Loss row is an uncountered extreme (a balance gap to fix).
+    #[test]
+    fn balanced_party_counters_every_extreme() {
+        let (party, pstrat) = balanced_party();
+        for (label, roster, estrat) in extremes() {
+            let o = battle(
+                build_side(&party, &pstrat, 0),
+                build_side(&roster, &estrat, 1),
+                8,
+            );
+            assert_ne!(o, Outcome::Loss, "uncountered extreme: {label}");
+        }
     }
 
     /// Trace specific matchups to calibrate understanding of the resolver.

@@ -13,7 +13,6 @@ use crate::actor::{Actor, Intention, Range};
 use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
-use crate::rules::Rule;
 use crate::ruleset::Ruleset;
 use crate::scenarios::{self, Scenario};
 use crate::state::{Clash, Menu, Phase, Round, State};
@@ -687,13 +686,6 @@ impl Game for Deckbound {
             state
                 .s_pool(side)
                 .get(h)
-                .map(|x| x.name.clone())
-                .unwrap_or_else(|| "?".into())
-        };
-        let fname = |f: usize| {
-            state
-                .s_pool(1 - side)
-                .get(f)
                 .map(|x| x.name.clone())
                 .unwrap_or_else(|| "?".into())
         };
