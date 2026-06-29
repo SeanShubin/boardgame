@@ -8,7 +8,8 @@
 //! `(attacker-role, target-role)` pairs. [`resolve_pair`] resolves one pair in place: each eligible
 //! attacker declares a target (prey-with-fallback, shield/reachability rules), spends Tempo, the
 //! defender contests, then eats the blow and a melee defender strikes back. [`step`] performs one
-//! atomic transition of this walk (one pair for one side, or an engagement [`Stage::Boundary`] that
+//! atomic transition of this walk (one engagement-cycle [`Stage::Cycle`] — all pairs both sides resolved
+//! together, §1.9 — or an engagement [`Stage::Boundary`] that
 //! finalizes deaths via [`tally`] and wipes the per-engagement pile via [`clear_phase_piles`]), holding
 //! its cursor in [`State::resolution`] so the resolution serializes through RON and can be observed one
 //! step at a time. [`resolve_round`] just drives `step` to completion.
@@ -357,225 +358,235 @@ struct Decl {
     aoe: bool,
 }
 
-/// Resolve one engagement pair (attacker role → target role) for `atk_side`, in place on `state`, at
-/// schedule engagement `step_idx`. **Cycles to exhaustion** (§4.6): declare → apply repeats until no
-/// attacker commits a positive-effect strike. The per-engagement pile persists across these cycles
-/// (it wipes only at the engagement boundary). **Decision-agnostic**: the governing-target / focus-fire
-/// / evade / strike-back / stop-cycling choices are delegated to [`crate::policy`]; this function
-/// applies the §4.5/§4.6 mechanics (groups, two-pool AoE, spillover, the melee crossing).
-fn resolve_pair(
-    state: &mut State,
-    atk_side: u8,
-    atk_role: Intention,
-    tgt_role: Intention,
-    step_idx: usize,
-) {
+/// **Declare** one cycle's strikes for `atk_side` at schedule engagement `step_idx` — a single pass over
+/// every living attacker of `atk_side`, collecting each unit's governing strike for **this engagement
+/// across all its pairs** (the priority list, timed against the engagement index by
+/// [`policy::governing_target`], picks the target — so a unit that should hold for a later engagement, or
+/// strike a different pair of *this* engagement, is captured correctly). A melee group pays the collective
+/// crossing (every living member −1 Tempo) once per cycle; a working Tempo view prevents a unit/group
+/// over-committing within the pass. Spends the Tempo (the actual crossing/strike payment) on `atk_side`
+/// and returns the committed [`Decl`]s. Read-only on the defender side.
+fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
     let def_side = 1 - atk_side;
-    let mut log = std::mem::take(&mut state.log);
-    let mut guard = 0;
-    loop {
-        // Guard against a non-terminating loop (deaths + Tempo spend strictly shrink the committing set
-        // each committing pass, so this is purely defensive).
-        guard += 1;
-        if guard > 256 {
-            break;
-        }
-
-        // --- Declare one pass (read-only): the policy's governing target, restricted to this pair. A
-        // melee group pays the crossing (every living member −1 Tempo) once per cycle; a working Tempo
-        // view prevents a unit/group over-committing within the pass. ---
-        let decls: Vec<Decl> = {
-            let atk = state.s_pool(atk_side);
-            let atk_int = state.s_intent(atk_side);
-            let atk_grp = state.s_group(atk_side);
-            let def = state.s_pool(def_side);
-            let def_int = state.s_intent(def_side);
-            let n = atk.len();
-            let mut crossed = vec![false; n];
-            let mut tempo: Vec<i32> = atk.iter().map(|a| a.tempo).collect();
-            let mut out: Vec<Decl> = Vec::new();
-            for ai in 0..n {
-                if atk[ai].is_down() || atk_int.get(ai) != Some(&atk_role) {
-                    continue;
-                }
-                let Some((role, ti)) = policy::governing_target(
-                    step_idx, &atk[ai], atk_role, atk, atk_int, def, def_int,
-                ) else {
-                    continue;
-                };
-                if role != tgt_role {
-                    continue; // its governing window is a different pair this engagement
-                }
-                let melee = atk[ai].attack.has(Range::Melee);
-                let rep = group_rep(atk_grp, ai);
-                let affordable = if melee {
-                    crossed[rep] || tempo[ai] >= 1
-                } else {
-                    tempo[ai] >= 1
-                };
-                if !affordable {
-                    continue;
-                }
-                if melee {
-                    if !crossed[rep] {
-                        for m in group_of(atk_grp, ai) {
-                            if !atk[m].is_down() {
-                                tempo[m] = (tempo[m] - 1).max(0);
-                            }
-                        }
-                        crossed[rep] = true;
-                    }
-                } else {
-                    tempo[ai] -= 1;
-                }
-                out.push(Decl {
-                    ai,
-                    ti,
-                    might: base_strike(&atk[ai]),
-                    fa: atk[ai].eff_finesse(),
-                    melee,
-                    aoe: atk[ai].aoe,
-                });
+    // Which attacker roles even act this engagement (so we skip a unit whose role has no pair here).
+    let atk_roles: Vec<Intention> = SCHEDULE[step_idx].iter().map(|&(a, _)| a).collect();
+    // --- Read-only declare: collect decls + the Tempo each crossing/strike will spend. ---
+    let decls: Vec<Decl> = {
+        let atk = state.s_pool(atk_side);
+        let atk_int = state.s_intent(atk_side);
+        let atk_grp = state.s_group(atk_side);
+        let def = state.s_pool(def_side);
+        let def_int = state.s_intent(def_side);
+        let n = atk.len();
+        let mut crossed = vec![false; n];
+        let mut tempo: Vec<i32> = atk.iter().map(|a| a.tempo).collect();
+        let mut out: Vec<Decl> = Vec::new();
+        for ai in 0..n {
+            let Some(&atk_role) = atk_int.get(ai) else {
+                continue;
+            };
+            if atk[ai].is_down() || !atk_roles.contains(&atk_role) {
+                continue;
             }
-            out
+            let Some((_role, ti)) =
+                policy::governing_target(step_idx, &atk[ai], atk_role, atk, atk_int, def, def_int)
+            else {
+                continue; // holds for a later engagement, or no crackable target this engagement
+            };
+            let melee = atk[ai].attack.has(Range::Melee);
+            let rep = group_rep(atk_grp, ai);
+            let affordable = if melee {
+                crossed[rep] || tempo[ai] >= 1
+            } else {
+                tempo[ai] >= 1
+            };
+            if !affordable {
+                continue;
+            }
+            if melee {
+                if !crossed[rep] {
+                    for m in group_of(atk_grp, ai) {
+                        if !atk[m].is_down() {
+                            tempo[m] = (tempo[m] - 1).max(0);
+                        }
+                    }
+                    crossed[rep] = true;
+                }
+            } else {
+                tempo[ai] -= 1;
+            }
+            out.push(Decl {
+                ai,
+                ti,
+                might: base_strike(&atk[ai]),
+                fa: atk[ai].eff_finesse(),
+                melee,
+                aoe: atk[ai].aoe,
+            });
+        }
+        out
+    };
+    // --- Commit the Tempo spend (mirrors the declare working view). ---
+    {
+        let (atk_grp, atk_pool): (Vec<usize>, &mut [Actor]) = if atk_side == 0 {
+            (state.plan.hero_group.clone(), &mut state.heroes)
+        } else {
+            (state.plan.foe_group.clone(), &mut state.creatures)
         };
-        if decls.is_empty() {
-            break; // exhausted — no positive-effect strike left for this pair
-        }
-
-        // --- Commit Tempo on the attacker side (the actual spend; mirrors the declare working view). ---
-        {
-            let (atk_grp, atk_pool): (Vec<usize>, &mut [Actor]) = if atk_side == 0 {
-                (state.plan.hero_group.clone(), &mut state.heroes)
-            } else {
-                (state.plan.foe_group.clone(), &mut state.creatures)
-            };
-            let mut crossed = vec![false; atk_pool.len()];
-            for d in &decls {
-                if d.melee {
-                    let rep = group_rep(&atk_grp, d.ai);
-                    if !crossed[rep] {
-                        for m in group_of(&atk_grp, d.ai) {
-                            if !atk_pool[m].is_down() {
-                                atk_pool[m].tempo = (atk_pool[m].tempo - 1).max(0);
-                            }
+        let mut crossed = vec![false; atk_pool.len()];
+        for d in &decls {
+            if d.melee {
+                let rep = group_rep(&atk_grp, d.ai);
+                if !crossed[rep] {
+                    for m in group_of(&atk_grp, d.ai) {
+                        if !atk_pool[m].is_down() {
+                            atk_pool[m].tempo = (atk_pool[m].tempo - 1).max(0);
                         }
-                        crossed[rep] = true;
                     }
-                } else {
-                    atk_pool[d.ai].tempo -= 1;
+                    crossed[rep] = true;
                 }
-            }
-        }
-
-        // --- Route each strike (read-only) into the two pools: AoE → every target-group member;
-        // aimed → the group's living front, unless a *lone* Evade soaker dodges (groups never slip). ---
-        let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
-        let dn = state.s_len(def_side);
-        let mut aoe_add: Vec<u32> = vec![0; dn];
-        let mut spill_add: Vec<u32> = vec![0; dn];
-        let mut sbacks: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx)
-        let mut evades: Vec<(usize, usize, i32)> = Vec::new(); // (soaker, attacker idx, cost)
-        let mut hits: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx) — landed aimed blows
-        {
-            let def = state.s_pool(def_side);
-            for d in &decls {
-                let members = group_of(&def_grp, d.ti);
-                if d.aoe {
-                    for m in members {
-                        aoe_add[m] += d.might; // unevadable, full value to each (§4.5)
-                    }
-                    continue;
-                }
-                let soaker = front_living(def, &members).unwrap_or(d.ti);
-                if members.len() == 1 && policy::should_avoid(&def[soaker], d.might, d.fa) {
-                    let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
-                    evades.push((soaker, d.ai, cost));
-                    continue;
-                }
-                spill_add[soaker] += d.might;
-                hits.push((soaker, d.ai));
-                if d.melee {
-                    sbacks.push((soaker, d.ai));
-                }
-            }
-        }
-
-        // --- Apply (mutable). Evades pay their bid; AoE banks into every member FIRST (counted in-pile
-        // before spillover); then aimed spillover cascades front-to-back per group. ---
-        {
-            let atk_names: Vec<String> = state
-                .s_pool(atk_side)
-                .iter()
-                .map(|a| a.name.clone())
-                .collect();
-            let def_pool: &mut [Actor] = if def_side == 0 {
-                &mut state.heroes
             } else {
-                &mut state.creatures
-            };
-            for (soaker, ai, cost) in &evades {
-                def_pool[*soaker].tempo -= *cost;
-                log.push(format!(
-                    "{} avoids {}'s strike (-{cost}t).",
-                    def_pool[*soaker].name, atk_names[*ai]
-                ));
-            }
-            for m in 0..def_pool.len() {
-                if aoe_add[m] > 0 && !def_pool[m].is_down() {
-                    def_pool[m].defense.pending.aoe += aoe_add[m];
-                    apply_strike(
-                        &mut def_pool[m],
-                        Strike { raw: aoe_add[m] },
-                        "area fire",
-                        &mut log,
-                    );
-                }
-            }
-            for s in 0..def_pool.len() {
-                if spill_add[s] > 0 {
-                    // Cascade head: the soaker first, then the rest of its group behind it.
-                    let head: Vec<usize> = group_of(&def_grp, s)
-                        .into_iter()
-                        .skip_while(|&m| m != s)
-                        .collect();
-                    let head = if head.is_empty() { vec![s] } else { head };
-                    cascade(def_pool, &head, spill_add[s], "strike", &mut log);
-                }
-            }
-        }
-
-        // --- §10 Thorns: a soaker carrying a Thorns token reflects its power onto each attacker that
-        // landed an aimed blow on it this cycle (onto the attacker's *own* pile — Support's reflected
-        // "offense"). Unevadable AoE does not draw Thorns (no aimed soaker). Preserves the old
-        // per-strike `reflect_thorns` behavior under the two-pool model. ---
-        for (soaker, atk_i) in &hits {
-            let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
-                (&mut state.heroes, &mut state.creatures)
-            } else {
-                (&mut state.creatures, &mut state.heroes)
-            };
-            reflect_thorns(&mut atk_pool[*atk_i], &def_pool[*soaker], &mut log);
-        }
-
-        // --- Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for
-        // one Tempo, when it can crack the attacker (focus-fire on the attacker, §4.6). A soaker that
-        // committed before dying still answers (§1.3) — gated on Tempo, not on surviving. ---
-        for (soaker, atk_i) in sbacks {
-            let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
-                (&mut state.heroes, &mut state.creatures)
-            } else {
-                (&mut state.creatures, &mut state.heroes)
-            };
-            if policy::should_strike_back(&def_pool[soaker], &atk_pool[atk_i]) {
-                def_pool[soaker].tempo -= 1;
-                let snap = snapshot(&def_pool[soaker]);
-                let sn = def_pool[soaker].name.clone();
-                apply_strike(&mut atk_pool[atk_i], snap, &sn, &mut log);
+                atk_pool[d.ai].tempo -= 1;
             }
         }
     }
+    decls
+}
+
+/// **Apply** `atk_side`'s committed `decls` onto the defender side (the two-pool accumulator, §4.6):
+/// evades pay their bid; AoE banks full Might into **every** target-group member FIRST (counted in-pile,
+/// unevadable, no spillover); then aimed spillover cascades front-to-back per group (a lone Evade soaker
+/// may dodge; a group walls). Thorns reflect onto each attacker that landed an aimed blow; melee soakers
+/// strike back. Mirrors `engagement.rs`'s per-cycle apply. The `might` in each [`Decl`] was captured at
+/// declare, so a unit killed earlier this cycle still lands its committed blow (§1.3).
+fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<String>) {
+    let def_side = 1 - atk_side;
+    let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
+    let dn = state.s_len(def_side);
+    let mut aoe_add: Vec<u32> = vec![0; dn];
+    let mut spill_add: Vec<u32> = vec![0; dn];
+    let mut sbacks: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx)
+    let mut evades: Vec<(usize, usize, i32)> = Vec::new(); // (soaker, attacker idx, cost)
+    let mut hits: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx) — landed aimed blows
+    {
+        let def = state.s_pool(def_side);
+        for d in decls {
+            let members = group_of(&def_grp, d.ti);
+            if d.aoe {
+                for m in members {
+                    aoe_add[m] += d.might; // unevadable, full value to each (§4.5)
+                }
+                continue;
+            }
+            let soaker = front_living(def, &members).unwrap_or(d.ti);
+            if members.len() == 1 && policy::should_avoid(&def[soaker], d.might, d.fa) {
+                let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
+                evades.push((soaker, d.ai, cost));
+                continue;
+            }
+            spill_add[soaker] += d.might;
+            hits.push((soaker, d.ai));
+            if d.melee {
+                sbacks.push((soaker, d.ai));
+            }
+        }
+    }
+
+    {
+        let atk_names: Vec<String> = state
+            .s_pool(atk_side)
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
+        let def_pool: &mut [Actor] = if def_side == 0 {
+            &mut state.heroes
+        } else {
+            &mut state.creatures
+        };
+        for (soaker, ai, cost) in &evades {
+            def_pool[*soaker].tempo -= *cost;
+            log.push(format!(
+                "{} avoids {}'s strike (-{cost}t).",
+                def_pool[*soaker].name, atk_names[*ai]
+            ));
+        }
+        for m in 0..def_pool.len() {
+            if aoe_add[m] > 0 && !def_pool[m].is_down() {
+                def_pool[m].defense.pending.aoe += aoe_add[m];
+                apply_strike(
+                    &mut def_pool[m],
+                    Strike { raw: aoe_add[m] },
+                    "area fire",
+                    log,
+                );
+            }
+        }
+        for s in 0..def_pool.len() {
+            if spill_add[s] > 0 {
+                // Cascade head: the soaker first, then the rest of its group behind it.
+                let head: Vec<usize> = group_of(&def_grp, s)
+                    .into_iter()
+                    .skip_while(|&m| m != s)
+                    .collect();
+                let head = if head.is_empty() { vec![s] } else { head };
+                cascade(def_pool, &head, spill_add[s], "strike", log);
+            }
+        }
+    }
+
+    // §10 Thorns: a soaker reflects its power onto each attacker that landed an aimed blow this cycle
+    // (onto the attacker's own pile). Unevadable AoE draws no Thorns (no aimed soaker).
+    for (soaker, atk_i) in &hits {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+            (&mut state.heroes, &mut state.creatures)
+        } else {
+            (&mut state.creatures, &mut state.heroes)
+        };
+        reflect_thorns(&mut atk_pool[*atk_i], &def_pool[*soaker], log);
+    }
+
+    // Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for one
+    // Tempo, when it can crack the attacker (focus-fire on the attacker, §4.6). A soaker that committed
+    // before dying still answers (§1.3) — gated on Tempo, not on surviving.
+    for (soaker, atk_i) in sbacks {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+            (&mut state.heroes, &mut state.creatures)
+        } else {
+            (&mut state.creatures, &mut state.heroes)
+        };
+        if policy::should_strike_back(&def_pool[soaker], &atk_pool[atk_i]) {
+            def_pool[soaker].tempo -= 1;
+            let snap = snapshot(&def_pool[soaker]);
+            let sn = def_pool[soaker].name.clone();
+            apply_strike(&mut atk_pool[atk_i], snap, &sn, log);
+        }
+    }
+}
+
+/// Resolve **one engagement-cycle** at schedule engagement `step_idx` (§4.6 / §1.9): a single declare
+/// pass collects **every** unit's strike for this engagement across **all its pairs and both sides**
+/// (order-independent — both sides declare against the same pre-apply board), then both sides' strikes
+/// apply together (AoE-first → spillover cascade → Thorns → strike-backs). Returns `true` if any side
+/// committed a strike (the engagement should cycle again — the per-engagement pile persists), `false`
+/// when the engagement is exhausted (the caller then crosses the boundary). **Decision-agnostic**: all
+/// target / focus-fire / evade / strike-back choices come from [`crate::policy`].
+fn resolve_engagement_cycle(state: &mut State, step_idx: usize) -> bool {
+    // Both sides declare against the **same** pre-apply state (declaring spends only the declaring
+    // side's own Tempo and reads board health, which no declare mutates — so the order of the two
+    // declares does not matter, §1.9).
+    let decls_0 = declare_side(state, 0, step_idx);
+    let decls_1 = declare_side(state, 1, step_idx);
+    if decls_0.is_empty() && decls_1.is_empty() {
+        return false; // exhausted — no positive-effect strike left this engagement
+    }
+    let mut log = std::mem::take(&mut state.log);
+    // Apply both sides. Each side's strikes mutate only the *other* pool's Health (strike-backs reach
+    // back across, but `apply_strike` is `is_down`-safe and `might` was captured at declare), so the
+    // two applies are independent and order-independent.
+    apply_side(state, 0, &decls_0, &mut log);
+    apply_side(state, 1, &decls_1, &mut log);
     state.log = log;
+    true
 }
 
 /// §4.6 — the fixed **engagement schedule**: five engagements, each a list of `(attacker, target)` role
@@ -600,22 +611,23 @@ pub const SCHEDULE: &[&[(Intention, Intention)]] = {
     ]
 };
 
-/// Where the steppable resolver's cursor sits *within* the current schedule pair. One [`step`] performs
+/// Where the steppable resolver's cursor sits within the current engagement. One [`step`] performs
 /// exactly one of these transitions, leaving `State` in a serializable resting micro-state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Stage {
-    /// Resolve the next `(atk_role, tgt_role)` pair for `side` (0 = heroes, 1 = creatures). The walk is
-    /// side 0 then side 1, matching `resolve_round`'s `resolve_pair(0); resolve_pair(1);`.
-    Pair { side: u8 },
-    /// All pairs of the current engagement are resolved — finalize deaths and wipe the per-engagement
-    /// pile (the §4.6 boundary), then advance to the next engagement.
+    /// Run **one engagement-cycle** of the current engagement (§4.6): a single declare pass across all
+    /// its pairs and both sides, applied together (see [`resolve_engagement_cycle`]). If anything
+    /// committed, the engagement cycles again (stays in `Cycle`); otherwise it advances to [`Boundary`].
+    Cycle,
+    /// The engagement is exhausted — finalize deaths ([`tally`]) and wipe the per-engagement pile
+    /// ([`clear_phase_piles`]) on both pools (the §4.6 boundary), then advance to the next engagement.
     Boundary,
 }
 
 /// The in-flight resolution cursor for the §4.6 engagement schedule, held in [`State::resolution`] while
-/// a round resolves. It indexes into [`SCHEDULE`] (`step` = engagement, `pair` = pair within it) and
-/// tracks the sub-pair [`Stage`]. Each [`step`] advances it one atomic transition; when it runs off the
-/// end of the schedule the resolution is complete and `step` returns `false`.
+/// a round resolves. It indexes into [`SCHEDULE`] (`step` = engagement) and tracks the [`Stage`]
+/// (cycling vs the boundary). Each [`step`] advances it one atomic transition; when it runs off the end
+/// of the schedule the resolution is complete and [`step`] returns `false`.
 ///
 /// (Today every micro-step still happens synchronously inside `apply(Deploy)` — see [`resolve_round`] —
 /// so the live engine never *rests* mid-resolution; the cursor exists so a caller *can* observe the
@@ -624,19 +636,16 @@ pub enum Stage {
 pub struct Resolution {
     /// Index into [`SCHEDULE`] — which engagement (Intercept … Breach) is current.
     pub step: usize,
-    /// Index of the current `(atk, tgt)` pair within `SCHEDULE[step]`.
-    pub pair: usize,
-    /// The sub-pair cursor (which side to resolve next, or the engagement boundary).
+    /// The cursor within the engagement: cycling, or its boundary.
     pub stage: Stage,
 }
 
 impl Resolution {
-    /// A fresh cursor at the very start of the schedule (Intercept, side 0).
+    /// A fresh cursor at the very start of the schedule (Intercept, first cycle).
     pub fn start() -> Self {
         Resolution {
             step: 0,
-            pair: 0,
-            stage: Stage::Pair { side: 0 },
+            stage: Stage::Cycle,
         }
     }
 }
@@ -646,9 +655,11 @@ impl Resolution {
 /// `false` when the resolution is complete (the cursor is then cleared and the round should advance).
 ///
 /// One step does exactly one of:
-/// - resolve the next `(atk_role, tgt_role)` pair for one side (a [`resolve_pair`] call), or
-/// - cross an engagement boundary: finalize deaths ([`tally`]) on both pools and wipe the per-engagement
-///   pile ([`clear_phase_piles`]) on both.
+/// - run **one engagement-cycle** ([`resolve_engagement_cycle`]) — a declare-all-pairs-both-sides pass
+///   plus its joint apply; if it committed, the engagement cycles again, else it advances to the
+///   boundary, or
+/// - cross the engagement **boundary**: finalize deaths ([`tally`]) on both pools and wipe the
+///   per-engagement pile ([`clear_phase_piles`]) on both, then move to the next engagement.
 ///
 /// The sequence of steps reproduces [`resolve_round`]'s exact end state — `resolve_round` is just
 /// `while step(state) {}`.
@@ -659,21 +670,12 @@ pub fn step(state: &mut State) -> bool {
         state.resolution = None;
         return false;
     }
-    let pairs = SCHEDULE[cur.step];
     match cur.stage {
-        Stage::Pair { side } => {
-            let (atk_role, tgt_role) = pairs[cur.pair];
-            resolve_pair(state, side, atk_role, tgt_role, cur.step);
-            if side == 0 {
-                cur.stage = Stage::Pair { side: 1 };
-            } else {
-                // Both sides of this pair are done; move to the next pair, or the boundary.
-                cur.pair += 1;
-                cur.stage = if cur.pair < pairs.len() {
-                    Stage::Pair { side: 0 }
-                } else {
-                    Stage::Boundary
-                };
+        Stage::Cycle => {
+            // One engagement-cycle. While it makes progress, stay in `Cycle` (the pile persists across
+            // cycles); when a cycle commits nothing, the engagement is exhausted → its boundary.
+            if !resolve_engagement_cycle(state, cur.step) {
+                cur.stage = Stage::Boundary;
             }
         }
         Stage::Boundary => {
@@ -685,8 +687,7 @@ pub fn step(state: &mut State) -> bool {
             clear_phase_piles(&mut state.heroes);
             clear_phase_piles(&mut state.creatures);
             cur.step += 1;
-            cur.pair = 0;
-            cur.stage = Stage::Pair { side: 0 };
+            cur.stage = Stage::Cycle;
         }
     }
     if cur.step >= SCHEDULE.len() {
