@@ -71,7 +71,9 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
 - **P2 — Physical decks.** Health & Tempo → 1D card decks with facing; weapon/action cards → `Zone`.
   Behavior-preserving (a deck of N face-up cards == the old count). Touches `stats.rs`, `actor.rs`, every
   read site.
-- **P3 — 2D layout.** `Layout { side × rank × slot }` + group adjacency; derive/replace the Intention tag.
+- **P3 — DONE** (commit `3803901`): `layout.rs` exposes a derived `CombatLayout` (side × rank × slot +
+  `Rank::group_runs` adjacency), `State::layout()`, serde, `sim layout`. Behavior-neutral (derived view, not
+  authoritative); downed actors kept with a `down` flag. (Named `CombatLayout` — `world::Layout` owns `Layout`.)
 - **P4 — DONE** (commit `8269f11`): `resolve_round = { resolution = Some(start()); while step(state) {} }`.
   `State.resolution: Option<Resolution{step,pair,stage}>` (serde default); `PendingDamage{aoe(0),targeted}`
   replaces `health_pile`; `combat::step` advances one (pair,side) or a boundary; `sim step` added. Guard
@@ -86,7 +88,11 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   pending strikes) and per-actor `PendingDamage{aoe, targeted}` (targeted = the old `health_pile`; **aoe
   stays 0** — observable structure only). `sim step` subcommand. **Guard: suite stays exactly 88/9 — the
   decomposition must not move any goldens.** The rule-port is explicitly NOT here.
-- **P5 — Cleanup.** Wire groups (#11) / deferred (#12); delete dead six-phase code (#13).
+- **P5 — DONE** (commit `3803901`): deleted the dead six-phase cluster (`fray_clash`, `intercept`,
+  `compute_locks`, `fray_one`, `ranged_one`, `melee_trade`, `ranged_shot`, `combat::Guard`) + stale doc
+  links; rewrote the `combat.rs` module header for the current model. Kept Reckoning/Burn/token machinery
+  (P6 wires it) and all live helpers. **Wiring groups (#11) / deferred (#12) is a behavior change → moved
+  to P6a**, not done here. Behavior-neutral; suite 92/9.
 - **P6 — Align the live engine with canon (DELIBERATE behavior change).** Split along the mechanics /
   interaction seam (user direction 2026-06-29): *mechanics are the game (a rulebook statement); the policy
   is how our code chooses among legal moves (swap human / scripted AI / solver and the mechanics don't
