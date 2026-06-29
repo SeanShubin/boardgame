@@ -370,6 +370,7 @@ fn build_actor_with(
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
         attack: c.attack,
+        aoe: false,
         tokens: Vec::new(),
         tempo: 0,
         cannot_fall: false,

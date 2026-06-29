@@ -26,6 +26,7 @@
 use crate::actor::{Actor, Intention, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
+use crate::policy;
 use crate::state::{Deferred, State};
 use crate::stats::Offense;
 
@@ -288,128 +289,290 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 
 // ====================================================================================================
 // §4.6 The engagement-schedule resolver — ports the validated `engagement.rs` algorithm onto `Actor`s.
-// (Single-target core: schedule order, the one Tempo contest, prey-with-fallback targeting, strike-back.
-// Group spillover / AoE integration is a follow-on — see needs-merge/engine-migration-to-engagement-model.md.)
+// Mechanics: schedule order, cycling-to-exhaustion, the two-pool AoE/spillover accumulator, group
+// spillover / melee-crossing payment / weakest-link slip, conditional R→R, back-access gate, and
+// melee-reflexive strike-back. The *decisions* (target priority, focus-fire, evade, when to stop) come
+// from `crate::policy`; this resolver only applies the rules they imply.
 // ====================================================================================================
 
-/// Tempo a defender spends to avoid one attack (§4.6 contest): cards × Fd must strictly exceed Fa, so the
-/// minimum cards is `floor(Fa / Fd) + 1`.
-fn avoid_cost(attacker_finesse: u32, defender_finesse: u32) -> i32 {
-    (attacker_finesse / defender_finesse.max(1)) as i32 + 1
+/// The members of unit `i`'s group within `pool`, in pool (front-to-back) order. `group[j]` is `j`'s
+/// group id; a unit shares a group only with same-side units carrying the same id. Mirrors the sim's
+/// `group_of`. (Today live groups default to each unit's own index, so every unit is its own singleton
+/// — group mechanics are behavior-neutral until grouping is declared.)
+fn group_of(group: &[usize], i: usize) -> Vec<usize> {
+    let gid = group.get(i).copied().unwrap_or(i);
+    (0..group.len())
+        .filter(|&j| group.get(j).copied().unwrap_or(j) == gid)
+        .collect()
 }
 
-/// Is a Rearguard target reachable by this attacker? The shield holds: a Rearguard may be struck only by
-/// an **Outrider** (the raid bypasses the shield) or once the defending side has **no living Vanguard**
-/// (the front fell — the Breach's `V→R`).
-fn rearguard_reachable(attacker_is_outrider: bool, def: &[Actor], def_int: &[Intention]) -> bool {
-    if attacker_is_outrider {
-        return true;
-    }
-    !def.iter()
-        .enumerate()
-        .any(|(j, u)| !u.is_down() && def_int[j] == Intention::Vanguard)
+/// A stable per-group key (its lowest member index) — used to pay the **collective melee crossing**
+/// once per cycle rather than once per striking member. Mirrors the sim's `group_rep`.
+fn group_rep(group: &[usize], i: usize) -> usize {
+    group_of(group, i).into_iter().min().unwrap_or(i)
 }
 
-/// Does `me` have a **crackable prey** alive on the enemy side? (Prey = `me`'s cycle target.) If so the
-/// efficient default holds Tempo for it rather than spending on a fallback rank now.
-fn prey_alive(me: &Actor, prey: Intention, def: &[Actor], def_int: &[Intention]) -> bool {
-    def.iter()
-        .enumerate()
-        .any(|(j, u)| !u.is_down() && def_int[j] == prey && me.eff_might() >= u.eff_toughness())
+/// The front-most **living** member of a group — the bodyguard that soaks aimed (single-target) blows.
+/// Mirrors the sim's `front_living`.
+fn front_living(pool: &[Actor], members: &[usize]) -> Option<usize> {
+    members.iter().copied().find(|&j| !pool[j].is_down())
 }
 
-/// Pick the best target for `me` among enemies of `tgt_role` it can **crack** (Might ≥ effective
-/// Toughness — never swing at what you can't crack), reachable (shield rule for a Rearguard), lowest
-/// remaining Health first (finish kills).
-fn choose(
-    me: &Actor,
-    me_is_outrider: bool,
-    tgt_role: Intention,
-    def: &[Actor],
-    def_int: &[Intention],
-) -> Option<usize> {
-    let reach_back =
-        tgt_role != Intention::Rearguard || rearguard_reachable(me_is_outrider, def, def_int);
-    if !reach_back {
-        return None;
-    }
-    def.iter()
-        .enumerate()
-        .filter(|(j, u)| {
-            !u.is_down() && def_int[*j] == tgt_role && me.eff_might() >= u.eff_toughness()
-        })
-        .min_by_key(|(j, u)| (u.defense.health.remaining(), *j))
-        .map(|(j, _)| j)
-}
-
-/// Resolve one engagement pair (attacker role → target role) for `atk_side`, in place on `state`.
-fn resolve_pair(state: &mut State, atk_side: u8, atk_role: Intention, tgt_role: Intention) {
-    let def_side = 1 - atk_side;
-    // --- Declare (read-only): each eligible attacker picks its target, focusing prey first. ---
-    let decls: Vec<(usize, usize)> = {
-        let atk = state.s_pool(atk_side);
-        let atk_int = state.s_intent(atk_side);
-        let def = state.s_pool(def_side);
-        let def_int = state.s_intent(def_side);
-        let mut out = Vec::new();
-        for ai in 0..atk.len() {
-            if atk[ai].is_down() || atk_int[ai] != atk_role || atk[ai].tempo < 1 {
-                continue;
-            }
-            // Prey-with-fallback: on a non-prey pair, hold Tempo if a crackable prey is still alive.
-            if tgt_role != atk_role.prey() && prey_alive(&atk[ai], atk_role.prey(), def, def_int) {
-                continue;
-            }
-            let outrider = atk_role == Intention::Outrider;
-            if let Some(ti) = choose(&atk[ai], outrider, tgt_role, def, def_int) {
-                out.push((ai, ti));
-            }
+/// §4.6 spillover cascade: bank `amount` of aimed Might into a group's living front, overflowing only
+/// on a **death** (the unflipped remainder spills to the next living member). A surviving front soaks
+/// the rest (the bodyguard). `members` is the cascade head (the front living soaker first), front to
+/// back. Each absorbing blow is narrated via [`apply_strike`] so the transcript verifies it. Mirrors
+/// the sim's `cascade`.
+fn cascade(
+    pool: &mut [Actor],
+    members: &[usize],
+    mut amount: u32,
+    attacker: &str,
+    log: &mut Vec<String>,
+) {
+    for &m in members {
+        if amount == 0 {
+            break;
         }
-        out
-    };
-    // --- Resolve (mutable): spend Tempo, contest, eat + strike-back. ---
-    let mut log = std::mem::take(&mut state.log);
-    for (ai, ti) in decls {
-        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
-            (&mut state.heroes, &mut state.creatures)
+        if pool[m].is_down() {
+            continue;
+        }
+        apply_strike(&mut pool[m], Strike { raw: amount }, attacker, log);
+        if pool[m].is_down() {
+            amount = pool[m].defense.health_pile(); // unflipped remainder overflows
+            pool[m].defense.clear_pile();
         } else {
-            (&mut state.creatures, &mut state.heroes)
+            amount = 0; // fully absorbed by the surviving front
+        }
+    }
+}
+
+/// One declared, committed strike awaiting apply (the read of the attacker captured at declare).
+struct Decl {
+    ai: usize,
+    ti: usize,
+    might: u32,
+    fa: u32,
+    melee: bool,
+    aoe: bool,
+}
+
+/// Resolve one engagement pair (attacker role → target role) for `atk_side`, in place on `state`, at
+/// schedule engagement `step_idx`. **Cycles to exhaustion** (§4.6): declare → apply repeats until no
+/// attacker commits a positive-effect strike. The per-engagement pile persists across these cycles
+/// (it wipes only at the engagement boundary). **Decision-agnostic**: the governing-target / focus-fire
+/// / evade / strike-back / stop-cycling choices are delegated to [`crate::policy`]; this function
+/// applies the §4.5/§4.6 mechanics (groups, two-pool AoE, spillover, the melee crossing).
+fn resolve_pair(
+    state: &mut State,
+    atk_side: u8,
+    atk_role: Intention,
+    tgt_role: Intention,
+    step_idx: usize,
+) {
+    let def_side = 1 - atk_side;
+    let mut log = std::mem::take(&mut state.log);
+    let mut guard = 0;
+    loop {
+        // Guard against a non-terminating loop (deaths + Tempo spend strictly shrink the committing set
+        // each committing pass, so this is purely defensive).
+        guard += 1;
+        if guard > 256 {
+            break;
+        }
+
+        // --- Declare one pass (read-only): the policy's governing target, restricted to this pair. A
+        // melee group pays the crossing (every living member −1 Tempo) once per cycle; a working Tempo
+        // view prevents a unit/group over-committing within the pass. ---
+        let decls: Vec<Decl> = {
+            let atk = state.s_pool(atk_side);
+            let atk_int = state.s_intent(atk_side);
+            let atk_grp = state.s_group(atk_side);
+            let def = state.s_pool(def_side);
+            let def_int = state.s_intent(def_side);
+            let n = atk.len();
+            let mut crossed = vec![false; n];
+            let mut tempo: Vec<i32> = atk.iter().map(|a| a.tempo).collect();
+            let mut out: Vec<Decl> = Vec::new();
+            for ai in 0..n {
+                if atk[ai].is_down() || atk_int.get(ai) != Some(&atk_role) {
+                    continue;
+                }
+                let Some((role, ti)) = policy::governing_target(
+                    step_idx, &atk[ai], atk_role, atk, atk_int, def, def_int,
+                ) else {
+                    continue;
+                };
+                if role != tgt_role {
+                    continue; // its governing window is a different pair this engagement
+                }
+                let melee = atk[ai].attack.has(Range::Melee);
+                let rep = group_rep(atk_grp, ai);
+                let affordable = if melee {
+                    crossed[rep] || tempo[ai] >= 1
+                } else {
+                    tempo[ai] >= 1
+                };
+                if !affordable {
+                    continue;
+                }
+                if melee {
+                    if !crossed[rep] {
+                        for m in group_of(atk_grp, ai) {
+                            if !atk[m].is_down() {
+                                tempo[m] = (tempo[m] - 1).max(0);
+                            }
+                        }
+                        crossed[rep] = true;
+                    }
+                } else {
+                    tempo[ai] -= 1;
+                }
+                out.push(Decl {
+                    ai,
+                    ti,
+                    might: base_strike(&atk[ai]),
+                    fa: atk[ai].eff_finesse(),
+                    melee,
+                    aoe: atk[ai].aoe,
+                });
+            }
+            out
         };
-        if atk_pool[ai].is_down() || def_pool[ti].is_down() || atk_pool[ai].tempo < 1 {
-            continue;
+        if decls.is_empty() {
+            break; // exhausted — no positive-effect strike left for this pair
         }
-        atk_pool[ai].tempo -= 1; // spend to attack (drained whether or not it is dodged)
-        let melee = atk_pool[ai].attack.has(Range::Melee);
-        let fa = atk_pool[ai].eff_finesse();
-        let might = base_strike(&atk_pool[ai]);
-        let bar = def_pool[ti].eff_toughness();
-        let cost = avoid_cost(fa, def_pool[ti].eff_finesse());
-        // The defender avoids only a blow that would flip a card, and only if it can afford the bid.
-        if might >= bar && def_pool[ti].tempo >= cost {
-            def_pool[ti].tempo -= cost;
-            log.push(format!(
-                "{} avoids {}'s strike (-{cost}t).",
-                def_pool[ti].name, atk_pool[ai].name
-            ));
-            continue;
-        }
-        // Eat it.
-        let snap = snapshot(&atk_pool[ai]);
-        let an = atk_pool[ai].name.clone();
-        apply_strike(&mut def_pool[ti], snap, &an, &mut log);
-        reflect_thorns(&mut atk_pool[ai], &def_pool[ti], &mut log);
-        // Strike back at a melee attacker if a card is free and it can crack the attacker (a corpse
-        // cannot react; never burn Tempo on a strike that bounces off Toughness).
-        if melee
-            && !def_pool[ti].is_down()
-            && !atk_pool[ai].is_down()
-            && def_pool[ti].tempo >= 1
-            && base_strike(&def_pool[ti]) >= atk_pool[ai].eff_toughness()
+
+        // --- Commit Tempo on the attacker side (the actual spend; mirrors the declare working view). ---
         {
-            def_pool[ti].tempo -= 1;
-            let snap2 = snapshot(&def_pool[ti]);
-            let dn = def_pool[ti].name.clone();
-            apply_strike(&mut atk_pool[ai], snap2, &dn, &mut log);
+            let (atk_grp, atk_pool): (Vec<usize>, &mut [Actor]) = if atk_side == 0 {
+                (state.plan.hero_group.clone(), &mut state.heroes)
+            } else {
+                (state.plan.foe_group.clone(), &mut state.creatures)
+            };
+            let mut crossed = vec![false; atk_pool.len()];
+            for d in &decls {
+                if d.melee {
+                    let rep = group_rep(&atk_grp, d.ai);
+                    if !crossed[rep] {
+                        for m in group_of(&atk_grp, d.ai) {
+                            if !atk_pool[m].is_down() {
+                                atk_pool[m].tempo = (atk_pool[m].tempo - 1).max(0);
+                            }
+                        }
+                        crossed[rep] = true;
+                    }
+                } else {
+                    atk_pool[d.ai].tempo -= 1;
+                }
+            }
+        }
+
+        // --- Route each strike (read-only) into the two pools: AoE → every target-group member;
+        // aimed → the group's living front, unless a *lone* Evade soaker dodges (groups never slip). ---
+        let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
+        let dn = state.s_len(def_side);
+        let mut aoe_add: Vec<u32> = vec![0; dn];
+        let mut spill_add: Vec<u32> = vec![0; dn];
+        let mut sbacks: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx)
+        let mut evades: Vec<(usize, usize, i32)> = Vec::new(); // (soaker, attacker idx, cost)
+        let mut hits: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker idx) — landed aimed blows
+        {
+            let def = state.s_pool(def_side);
+            for d in &decls {
+                let members = group_of(&def_grp, d.ti);
+                if d.aoe {
+                    for m in members {
+                        aoe_add[m] += d.might; // unevadable, full value to each (§4.5)
+                    }
+                    continue;
+                }
+                let soaker = front_living(def, &members).unwrap_or(d.ti);
+                if members.len() == 1 && policy::should_avoid(&def[soaker], d.might, d.fa) {
+                    let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
+                    evades.push((soaker, d.ai, cost));
+                    continue;
+                }
+                spill_add[soaker] += d.might;
+                hits.push((soaker, d.ai));
+                if d.melee {
+                    sbacks.push((soaker, d.ai));
+                }
+            }
+        }
+
+        // --- Apply (mutable). Evades pay their bid; AoE banks into every member FIRST (counted in-pile
+        // before spillover); then aimed spillover cascades front-to-back per group. ---
+        {
+            let atk_names: Vec<String> = state
+                .s_pool(atk_side)
+                .iter()
+                .map(|a| a.name.clone())
+                .collect();
+            let def_pool: &mut [Actor] = if def_side == 0 {
+                &mut state.heroes
+            } else {
+                &mut state.creatures
+            };
+            for (soaker, ai, cost) in &evades {
+                def_pool[*soaker].tempo -= *cost;
+                log.push(format!(
+                    "{} avoids {}'s strike (-{cost}t).",
+                    def_pool[*soaker].name, atk_names[*ai]
+                ));
+            }
+            for m in 0..def_pool.len() {
+                if aoe_add[m] > 0 && !def_pool[m].is_down() {
+                    def_pool[m].defense.pending.aoe += aoe_add[m];
+                    apply_strike(
+                        &mut def_pool[m],
+                        Strike { raw: aoe_add[m] },
+                        "area fire",
+                        &mut log,
+                    );
+                }
+            }
+            for s in 0..def_pool.len() {
+                if spill_add[s] > 0 {
+                    // Cascade head: the soaker first, then the rest of its group behind it.
+                    let head: Vec<usize> = group_of(&def_grp, s)
+                        .into_iter()
+                        .skip_while(|&m| m != s)
+                        .collect();
+                    let head = if head.is_empty() { vec![s] } else { head };
+                    cascade(def_pool, &head, spill_add[s], "strike", &mut log);
+                }
+            }
+        }
+
+        // --- §10 Thorns: a soaker carrying a Thorns token reflects its power onto each attacker that
+        // landed an aimed blow on it this cycle (onto the attacker's *own* pile — Support's reflected
+        // "offense"). Unevadable AoE does not draw Thorns (no aimed soaker). Preserves the old
+        // per-strike `reflect_thorns` behavior under the two-pool model. ---
+        for (soaker, atk_i) in &hits {
+            let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+                (&mut state.heroes, &mut state.creatures)
+            } else {
+                (&mut state.creatures, &mut state.heroes)
+            };
+            reflect_thorns(&mut atk_pool[*atk_i], &def_pool[*soaker], &mut log);
+        }
+
+        // --- Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for
+        // one Tempo, when it can crack the attacker (focus-fire on the attacker, §4.6). A soaker that
+        // committed before dying still answers (§1.3) — gated on Tempo, not on surviving. ---
+        for (soaker, atk_i) in sbacks {
+            let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+                (&mut state.heroes, &mut state.creatures)
+            } else {
+                (&mut state.creatures, &mut state.heroes)
+            };
+            if policy::should_strike_back(&def_pool[soaker], &atk_pool[atk_i]) {
+                def_pool[soaker].tempo -= 1;
+                let snap = snapshot(&def_pool[soaker]);
+                let sn = def_pool[soaker].name.clone();
+                apply_strike(&mut atk_pool[atk_i], snap, &sn, &mut log);
+            }
         }
     }
     state.log = log;
@@ -429,6 +592,10 @@ pub const SCHEDULE: &[&[(Intention, Intention)]] = {
             (Vanguard, Rearguard),
             (Outrider, Vanguard),
             (Outrider, Outrider),
+            // §4.6 conditional pair: a Rearguard fires on the enemy back-line, but **only once the
+            // enemy Vanguard has fallen** (the dropped screen opens the back). Gated by the back-access
+            // rule in `policy::can_reach`, so it is a no-op while the enemy front lives.
+            (Rearguard, Rearguard),
         ], // Breach
     ]
 };
@@ -496,7 +663,7 @@ pub fn step(state: &mut State) -> bool {
     match cur.stage {
         Stage::Pair { side } => {
             let (atk_role, tgt_role) = pairs[cur.pair];
-            resolve_pair(state, side, atk_role, tgt_role);
+            resolve_pair(state, side, atk_role, tgt_role, cur.step);
             if side == 0 {
                 cur.stage = Stage::Pair { side: 1 };
             } else {
@@ -901,9 +1068,11 @@ mod tests {
         a
     }
 
-    /// The §4.6 evade/contest cost: cards × Fd must strictly exceed Fa → floor(Fa/Fd)+1.
+    /// The §4.6 evade/contest cost: cards × Fd must strictly exceed Fa → floor(Fa/Fd)+1. (Now lives in
+    /// the policy module — the contest *cost* is a decision input, not a mechanic.)
     #[test]
     fn avoid_cost_is_a_threshold() {
+        use crate::policy::avoid_cost;
         assert_eq!(avoid_cost(2, 2), 2);
         assert_eq!(avoid_cost(2, 1), 3);
         assert_eq!(avoid_cost(1, 2), 1);
@@ -979,7 +1148,10 @@ mod tests {
         }
     }
 
-    /// `aoe` is reserved and untouched by the live resolver — it stays 0 across a whole round.
+    /// With **no AoE source** in a scenario (no Actor sets `aoe`), the AoE pool stays 0 across a whole
+    /// round — every existing scenario is in this regime, so the two-pool model is observable structure
+    /// that does not change their resolution. (P6a makes a populated AoE pool *possible*; see
+    /// `aoe_attacker_shreds_a_group_through_the_bodyguard` for the populated path.)
     #[test]
     fn aoe_pending_pool_stays_zero() {
         let heroes = vec![fighter("Hero", 3, 4, 1)];
@@ -989,5 +1161,72 @@ mod tests {
         for a in state.heroes.iter().chain(state.creatures.iter()) {
             assert_eq!(a.defense.pending.aoe, 0, "no AoE source this phase");
         }
+    }
+
+    /// A bare **ranged** combatant (so it deals from the Rearguard) with a 0-power weapon.
+    fn shooter(name: &str, might: u32, vit: u32, tough: u32) -> Actor {
+        let mut a = fighter(name, might, vit, tough);
+        a.attack = Attack::Ranged;
+        a
+    }
+
+    /// §4.5/§4.6 — **AoE bypasses the bodyguard.** A tough front (T4 Vanguard) groups with and shields
+    /// two squishy Mages behind it (same group id). A lone aimed attacker (M3, one strike per cycle)
+    /// cannot crack the front, so aimed fire never reaches the back — the Mages live. An **AoE** attacker
+    /// of the same Might lands on *every* group member at once (unevadable, no spillover), killing the
+    /// shielded back through the shield. Mirrors the sim's `probe_aoe_vs_group`.
+    #[test]
+    fn aoe_attacker_shreds_a_group_through_the_bodyguard() {
+        use crate::actor::Intention;
+        let make_group = || {
+            vec![
+                fighter("Front", 1, 2, 4), // tough front bodyguard (T4)
+                shooter("BackA", 3, 1, 2), // shielded back (squishy)
+                shooter("BackB", 3, 1, 2),
+            ]
+        };
+        let backs_alive = |aoe: bool| -> usize {
+            let attacker = {
+                let mut a = shooter("Sniper", 3, 4, 1);
+                a.aoe = aoe;
+                // One Tempo per round (like the sim's M3/C1 Mage): a single aimed strike cannot
+                // accumulate a flip on the T4 front before the engagement boundary wipes the pile.
+                a.offense.cadence = 1;
+                a.tempo = 1;
+                a
+            };
+            let mut state = crate::game::battle_state(vec![attacker], make_group(), false, 7);
+            // Force the foe formation into one group (front-to-back) all declared Vanguard so the front
+            // is the cascade soaker; the hero is a lone Rearguard shooter.
+            state.plan.hero_intent = vec![Intention::Rearguard];
+            state.plan.foe_intent = vec![Intention::Vanguard; 3];
+            state.plan.foe_group = vec![0, 0, 0]; // one shared group
+            for _ in 0..4 {
+                resolve_round(&mut state);
+                state.round += 1;
+                for a in state.heroes.iter_mut().chain(state.creatures.iter_mut()) {
+                    if !a.is_down() {
+                        a.refresh_round();
+                    }
+                }
+            }
+            crate::combat::tally(&mut state.creatures, &mut state.log);
+            state
+                .creatures
+                .iter()
+                .skip(1)
+                .filter(|a| !a.is_down())
+                .count()
+        };
+        assert_eq!(
+            backs_alive(false),
+            2,
+            "aimed fire cannot reach the shielded back"
+        );
+        assert_eq!(
+            backs_alive(true),
+            0,
+            "AoE lands on every member — the back dies through the shield"
+        );
     }
 }

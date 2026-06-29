@@ -229,6 +229,13 @@ pub struct Actor {
     /// Range(s) this Actor can attack and contest at (§4.2).
     pub attack: Attack,
 
+    /// §4.5 **area** strike: when `true`, this Actor's strike hits **every** member of the target's
+    /// group at full Might, is **unevadable**, and bypasses the spillover bodyguard (it banks into the
+    /// [`crate::stats::PendingDamage::aoe`] pool). `false` = a single aimed blow. No live creature sets
+    /// this yet, so the AoE pool stays 0 in existing scenarios. Mirrors the sim's `Unit.aoe`.
+    #[serde(default)]
+    pub aoe: bool,
+
     /// §10 **utility tokens** placed on this Actor — card-tracked persistent state (§5.1). Mark / Mire
     /// / Burn / Thorns / Cover persist for the combat; **Guard** is per-round (cleared at the Lull).
     /// ALL tokens clear on this Actor's death and at combat end. See [`Token`].

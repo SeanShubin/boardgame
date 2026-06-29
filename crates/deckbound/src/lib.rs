@@ -25,6 +25,7 @@ pub mod game;
 pub mod groups;
 pub mod handbook;
 pub mod layout;
+pub mod policy;
 pub mod reference;
 pub mod rules;
 pub mod ruleset;
