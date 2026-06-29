@@ -92,7 +92,8 @@ pub fn apply_strike(target: &mut Actor, strike: Strike, attacker: &str, log: &mu
     // the resulting health meter (no cut today, §2.2).
     let math = format!(
         " [health {}/{}]",
-        target.defense.health.remaining, target.defense.health.max
+        target.defense.health.remaining(),
+        target.defense.health.max()
     );
     let what = if out.cards_flipped == 1 {
         " — turns a health card face down.".to_string()
@@ -164,7 +165,7 @@ pub fn pick_target(pool: &[Actor], candidates: &[usize], rule: TargetRule) -> Op
         TargetRule::LowestBody => candidates
             .iter()
             .copied()
-            .min_by_key(|&i| pool[i].defense.health.remaining),
+            .min_by_key(|&i| pool[i].defense.health.remaining()),
     }
 }
 
@@ -187,7 +188,10 @@ pub fn tally(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
         if a.is_down() && !a.fallen {
             if a.cannot_fall {
-                a.defense.health.remaining = a.defense.health.remaining.max(1);
+                // Keep at least one card face-up (turn one up if the pool just emptied).
+                if a.defense.health.is_empty() {
+                    a.defense.health.turn_up();
+                }
             } else {
                 a.fallen = true;
                 // §10: ALL tokens on a bearer clear on its death (they return to supply). A
@@ -515,7 +519,7 @@ fn choose(
         .filter(|(j, u)| {
             !u.is_down() && def_int[*j] == tgt_role && me.eff_might() >= u.eff_toughness()
         })
-        .min_by_key(|(j, u)| (u.defense.health.remaining, *j))
+        .min_by_key(|(j, u)| (u.defense.health.remaining(), *j))
         .map(|(j, _)| j)
 }
 
@@ -726,12 +730,10 @@ pub fn play_card(
             Effect::Mend { vitality } => {
                 // Heal the `n` most-wounded allies (M6 Sanctuary heals all).
                 let mut order: Vec<usize> = living(allies);
-                order.sort_by_key(|&i| allies[i].defense.health.remaining);
+                order.sort_by_key(|&i| allies[i].defense.health.remaining());
                 let amt = vitality;
                 for ai in order.into_iter().take(n) {
-                    let max = allies[ai].defense.health.max;
-                    let r = &mut allies[ai].defense.health.remaining;
-                    *r = (*r + amt).min(max);
+                    allies[ai].defense.health.heal(amt);
                     log.push(format!("  mends {} (+{amt} health).", allies[ai].name));
                 }
             }
@@ -882,7 +884,7 @@ pub fn play_card(
                 if let Some(i) = self_idx {
                     let mut order: Vec<usize> =
                         living(allies).into_iter().filter(|&a| a != i).collect();
-                    order.sort_by_key(|&a| allies[a].defense.health.remaining);
+                    order.sort_by_key(|&a| allies[a].defense.health.remaining());
                     for ai in order.into_iter().take(n) {
                         allies[i]
                             .tokens
@@ -899,7 +901,7 @@ pub fn play_card(
                 // §10 Support — place a Thorns token (reflect `power` Might) on the `n` most-wounded
                 // living allies; reflects onto an attacker's own pile when the ally is struck.
                 let mut order: Vec<usize> = living(allies);
-                order.sort_by_key(|&a| allies[a].defense.health.remaining);
+                order.sort_by_key(|&a| allies[a].defense.health.remaining());
                 for ai in order.into_iter().take(n) {
                     allies[ai]
                         .tokens
@@ -945,7 +947,7 @@ pub fn play_card(
             Effect::Recover => {
                 // Turn a face-down Health card back up on the most-wounded ally/allies (§5).
                 let mut order: Vec<usize> = living(allies);
-                order.sort_by_key(|&i| allies[i].defense.health.remaining);
+                order.sort_by_key(|&i| allies[i].defense.health.remaining());
                 for ai in order.into_iter().take(n) {
                     if allies[ai].defense.recover_card() > 0 {
                         log.push(format!(
@@ -998,10 +1000,10 @@ mod tests {
         let mut def = fighter("D", 1, 2, 3); // Vitality 2, Toughness 3
         let mut log = Vec::new();
         apply_strike(&mut def, Strike { raw: 1 }, "A", &mut log); // 1 < 3 → no flip
-        assert_eq!(def.defense.health.remaining, 2);
+        assert_eq!(def.defense.health.remaining(), 2);
         def.defense.clear_pile();
         apply_strike(&mut def, Strike { raw: 3 }, "A", &mut log); // 3 ≥ 3 → one card down
-        assert_eq!(def.defense.health.remaining, 1);
+        assert_eq!(def.defense.health.remaining(), 1);
     }
 
     /// Recover turns one face-down Health card back up (§5 card-state).
@@ -1009,8 +1011,8 @@ mod tests {
     fn recover_turns_a_health_card_back_up() {
         let mut a = fighter("R", 1, 3, 1);
         a.defense.take(1); // one card flips (Toughness 1)
-        assert_eq!(a.defense.health.remaining, 2);
+        assert_eq!(a.defense.health.remaining(), 2);
         a.defense.recover_card();
-        assert_eq!(a.defense.health.remaining, 3);
+        assert_eq!(a.defense.health.remaining(), 3);
     }
 }

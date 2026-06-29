@@ -215,7 +215,7 @@ fn role_can_attack(atk: Intention, tgt: Intention) -> bool {
 fn team_can_crack(units: &[Unit], attacker: usize, target: usize) -> bool {
     let side = units[attacker].side;
     let role = units[target].intent;
-    let tough = units[target].defense.health.toughness;
+    let tough = units[target].defense.health.toughness();
     let pile = units[target].defense.health_pile;
     let sum: u32 = units
         .iter()
@@ -248,10 +248,10 @@ fn choose_target(units: &[Unit], attacker: usize, tgt_role: Intention) -> Option
         })
         // crackable now (pile + this strike), or by the team's combined Might (focus-fire).
         .filter(|(i, u)| {
-            might + u.defense.health_pile >= u.defense.health.toughness
+            might + u.defense.health_pile >= u.defense.health.toughness()
                 || team_can_crack(units, attacker, *i)
         })
-        .min_by_key(|(i, u)| (u.defense.health.remaining, *i))
+        .min_by_key(|(i, u)| (u.defense.health.remaining(), *i))
         .map(|(i, _)| i)
 }
 
@@ -282,7 +282,7 @@ fn step_of(atk: Intention, tgt: Intention) -> Option<usize> {
 /// and only if it can afford the bid. Keep the cheapest, most-dangerous dodges.
 fn should_avoid(d: &Unit, might: u32, finesse: u32) -> bool {
     let cost = avoid_cost(finesse, d.offense.finesse);
-    might >= d.defense.health.toughness && d.tempo >= cost
+    might >= d.defense.health.toughness() && d.tempo >= cost
 }
 
 /// Resolve one round in place: refresh Tempo, walk the schedule, declare→resolve→apply each step.
@@ -423,7 +423,7 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
             // AoE first — counted in each member's pile before spillover cascades (§4.6 worked example).
             for m in 0..n {
                 if aoe_add[m] > 0 && units[m].alive() {
-                    let bar = units[m].defense.health.toughness;
+                    let bar = units[m].defense.health.toughness();
                     units[m].defense.take_with_toughness(aoe_add[m], bar);
                 }
             }
@@ -442,10 +442,10 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
                     && units[soaker].tempo >= 1
                     && units[atk].alive()
                     && units[soaker].offense.might + units[atk].defense.health_pile
-                        >= units[atk].defense.health.toughness
+                        >= units[atk].defense.health.toughness()
                 {
                     units[soaker].tempo -= 1;
-                    let bar = units[atk].defense.health.toughness;
+                    let bar = units[atk].defense.health.toughness();
                     let mb = units[soaker].offense.might;
                     units[atk].defense.take_with_toughness(mb, bar);
                     note!(
@@ -476,7 +476,7 @@ fn cascade(units: &mut [Unit], members: &[usize], mut amount: u32) {
         if !units[m].alive() {
             continue;
         }
-        let bar = units[m].defense.health.toughness;
+        let bar = units[m].defense.health.toughness();
         let out = units[m].defense.take_with_toughness(amount, bar);
         if out.down {
             amount = units[m].defense.health_pile; // unflipped remainder overflows

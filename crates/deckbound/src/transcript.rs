@@ -90,9 +90,8 @@ fn rules_tour() -> TranscriptScenario {
     // Seeds; tune to taste.
     let threat = |name: &str, tough: u32| {
         let mut a = build_creature(name);
-        a.defense.health.max += 120;
-        a.defense.health.remaining += 120;
-        a.defense.health.toughness += tough;
+        a.defense.health.add_cards(120);
+        a.defense.health.add_toughness(tough);
         a
     };
     let foes = vec![
@@ -308,8 +307,8 @@ fn form_block(a: &Actor) -> String {
         might: a.offense.might,
         cadence: a.offense.cadence,
         finesse: a.offense.finesse,
-        vitality: a.defense.health.max,
-        toughness: a.defense.health.toughness,
+        vitality: a.defense.health.max(),
+        toughness: a.defense.health.toughness(),
     };
     out.push_str(&format!("      {:<36}{}\n", "Totals", stat_grant(&totals)));
     out
@@ -350,7 +349,9 @@ fn hp_table(state: &State, label: &str) -> String {
                 let mark = if a.fallen || a.is_down() { " down" } else { "" };
                 format!(
                     "{} {}/{}{mark}",
-                    a.name, a.defense.health.remaining, a.defense.health.max
+                    a.name,
+                    a.defense.health.remaining(),
+                    a.defense.health.max()
                 )
             })
             .collect::<Vec<_>>()

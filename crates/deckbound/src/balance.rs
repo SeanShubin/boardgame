@@ -882,10 +882,9 @@ pub fn stat_necessity_report(seed: u64) -> String {
     let zeroers: [Zeroer; 5] = [
         ("might", |a| a.offense.might = 0),
         ("vitality", |a| {
-            a.defense.health.max = 1;
-            a.defense.health.remaining = 1;
+            a.defense.health.set_count(1);
         }),
-        ("toughness", |a| a.defense.health.toughness = 1),
+        ("toughness", |a| a.defense.health.set_toughness(1)),
         ("cadence", |a| a.offense.cadence = 0),
         ("finesse", |a| a.offense.finesse = 0),
     ];
@@ -1054,8 +1053,8 @@ mod tests {
             println!(
                 "  {label} {name}: Might {} Vit {} Tough {} Cadence {} Finesse {} | tempo {}",
                 a.offense.might,
-                a.defense.health.max,
-                a.defense.health.toughness,
+                a.defense.health.max(),
+                a.defense.health.toughness(),
                 a.offense.cadence,
                 a.offense.finesse,
                 a.tempo,
@@ -1487,9 +1486,8 @@ mod tests {
         g.offense.finesse = big; // crosses any finite hold
         g.offense.cadence = big; // unlimited actions
         g.tempo = big as i32;
-        g.defense.health.max = big; // survives anything finite
-        g.defense.health.remaining = big;
-        g.defense.health.toughness = 1;
+        g.defense.health.set_count(big); // survives anything finite
+        g.defense.health.set_toughness(1);
         g
     }
 

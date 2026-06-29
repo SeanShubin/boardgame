@@ -77,4 +77,7 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   This is the heart and the riskiest phase.
 - **P5 — Cleanup.** Wire groups (#11) / deferred (#12); delete dead six-phase code (#13).
 
-**Status:** P1 in progress. (Owner: this instance — merge into `docs/` / mainline when settled.)
+**Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
+tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
+`apply`/`run` with `--state`/`--out` file-or-stdio. Suite 87/9 (the 9 are the known migration follow-ups).
+**P2 (physical decks) next.** (Owner: this instance — merge into `docs/` / mainline when settled.)

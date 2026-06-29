@@ -355,9 +355,9 @@ impl Actor {
             })
             .sum();
         if drop == 0 {
-            self.defense.health.toughness
+            self.defense.health.toughness()
         } else {
-            self.defense.health.toughness.saturating_sub(drop).max(1)
+            self.defense.health.toughness().saturating_sub(drop).max(1)
         }
     }
 

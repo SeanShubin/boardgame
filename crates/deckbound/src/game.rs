@@ -1080,7 +1080,7 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
     let d = &a.defense;
     CardView::up(format!("{} — {}", a.name, a.role))
         .body(vec![
-            format!("HP [{}]", pips(d.health.remaining, d.health.max)),
+            format!("HP [{}]", pips(d.health.remaining(), d.health.max())),
             format!(
                 "Cad {} Fin {} Mgt {} {}",
                 a.offense.cadence,
@@ -1480,12 +1480,12 @@ mod tests {
         for (a, b) in restored.heroes.iter().zip(s.heroes.iter()) {
             assert_eq!(a.name, b.name);
             assert_eq!(a.tempo, b.tempo);
-            assert_eq!(a.defense.health.remaining, b.defense.health.remaining);
-            assert_eq!(a.defense.health.toughness, b.defense.health.toughness);
+            assert_eq!(a.defense.health.remaining(), b.defense.health.remaining());
+            assert_eq!(a.defense.health.toughness(), b.defense.health.toughness());
         }
         for (a, b) in restored.creatures.iter().zip(s.creatures.iter()) {
             assert_eq!(a.name, b.name);
-            assert_eq!(a.defense.health.remaining, b.defense.health.remaining);
+            assert_eq!(a.defense.health.remaining(), b.defense.health.remaining());
         }
         // The skipped presentation/campaign context comes back empty (by design).
         assert!(restored.scenario.is_none());

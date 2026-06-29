@@ -1096,10 +1096,11 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
     let def = &actor.defense;
     let body = vec![
         format!("Cad {} \u{00B7} Fin {}", off.cadence, off.finesse.max(1)),
-        format!("Mgt {} \u{00B7} Vit {}", off.might, def.health.max),
+        format!("Mgt {} \u{00B7} Vit {}", off.might, def.health.max()),
         format!(
             "Tgh {} \u{00B7} Tempo {}",
-            def.health.toughness, off.cadence
+            def.health.toughness(),
+            off.cadence
         ),
     ];
     let view = CardView::up(a.name.clone())
@@ -1109,7 +1110,7 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
             a.role
         ))
         .body(body)
-        .corner(def.health.max.to_string())
+        .corner(def.health.max().to_string())
         .accent(if is_hero { Accent::Ally } else { Accent::Foe });
 
     let mut detail = vec![
@@ -1131,8 +1132,8 @@ fn actor_entry(a: &ActorCard) -> CatalogEntry {
             off.cadence,
             off.finesse.max(1),
             off.might,
-            def.health.max,
-            def.health.toughness,
+            def.health.max(),
+            def.health.toughness(),
         )),
     ];
     if !a.actions.is_empty() {
@@ -1318,12 +1319,12 @@ mod tests {
         let l1 = build_encounter_foes(&enc, 1);
         assert_eq!(l1.len(), 1);
         assert_eq!(l1[0].name, "Husk");
-        assert_eq!(l1[0].defense.health.max, 5);
+        assert_eq!(l1[0].defense.health.max(), 5);
         // L2: Husk + Brute; Husk vitality = 2 + 3×2 = 8.
         let l2 = build_encounter_foes(&enc, 2);
         assert_eq!(l2.len(), 2);
         let husk = l2.iter().find(|a| a.name == "Husk").unwrap();
-        assert_eq!(husk.defense.health.max, 8);
+        assert_eq!(husk.defense.health.max(), 8);
         // The encounter's strategy overrode the instinct: foes are creatures, not humans.
         assert!(l2.iter().all(|a| !a.is_human()));
     }
@@ -1333,7 +1334,7 @@ mod tests {
         let bare = build_character("Novice", &[]);
         let wall = build_character("Novice", &rewards_for(Currency::Iron));
         // The Wall track's bundled Stat cards make the character tougher; its role cards join the kit.
-        assert!(wall.defense.health.max > bare.defense.health.max);
+        assert!(wall.defense.health.max() > bare.defense.health.max());
         assert!(wall.actions.len() > bare.actions.len());
         // Five levels per track (§8.3).
         assert_eq!(rewards_for(Currency::Iron).len(), 5);
@@ -1352,8 +1353,8 @@ mod tests {
         // The baseline is preserved by the separate clean-slate card: a bare-built Novice still
         // fields the old numbers (vitality 5 / toughness 1 / cadence 3 / might 1).
         let bare = build_character("Novice", &[]);
-        assert_eq!(bare.defense.health.max, 5);
-        assert_eq!(bare.defense.health.toughness, 1);
+        assert_eq!(bare.defense.health.max(), 5);
+        assert_eq!(bare.defense.health.toughness(), 1);
         assert_eq!(bare.offense.cadence, 3);
         assert_eq!(bare.offense.might, 1);
         // A creature, by contrast, still prints its base on the identity card.

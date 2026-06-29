@@ -100,12 +100,12 @@ mod tests {
         let o = form.offense();
         assert_eq!((o.might, o.cadence, o.finesse), (4, 3, 1));
         let d = form.defense();
-        assert_eq!(d.health.max, 10);
-        assert_eq!(d.health.toughness, 3); // 2 + 1 from the reward
+        assert_eq!(d.health.max(), 10);
+        assert_eq!(d.health.toughness(), 3); // 2 + 1 from the reward
 
         // Commutative: reordering the attachments yields the same block.
         let reordered = Form::new(vec![reward_b, reward_a, fundamental]);
-        assert_eq!(reordered.defense().health.toughness, d.health.toughness);
+        assert_eq!(reordered.defense().health.toughness(), d.health.toughness());
         assert_eq!(reordered.offense().cadence, o.cadence);
     }
 }

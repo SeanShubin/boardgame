@@ -250,7 +250,7 @@ fn actor_key(a: &Actor) -> ActorKey {
     let mut tokens: Vec<(u8, u32)> = a.tokens.iter().map(token_key).collect();
     tokens.sort_unstable();
     ActorKey {
-        remaining: a.defense.health.remaining,
+        remaining: a.defense.health.remaining(),
         pile: a.defense.health_pile,
         tempo: a.tempo,
         might_bonus: a.might_bonus,
@@ -352,7 +352,7 @@ fn leaf_value(state: &State) -> Value {
     let health: i64 = state
         .heroes
         .iter()
-        .map(|h| h.defense.health.remaining as i64)
+        .map(|h| h.defense.health.remaining() as i64)
         .sum();
     if matches!(state.outcome, Some(Outcome::Win(PlayerId(0)))) {
         let downed = state

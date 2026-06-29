@@ -7,26 +7,131 @@
 //! (`future-possibilities.md` §7). The old inner **Fear/Spirit** channel was collapsed out (2026).
 //! See `docs/games/deckbound/notes/form-and-defeat.md`.
 
-/// The **health pool**: a stack of generic Health cards, each absorbing `toughness` damage. The only
-/// maintained meter. `max`/`remaining` are the **Vitality** count; `toughness` the per-card magnitude.
+/// A single **Health card** in the pool (§2.4 Power). A card is **face-up** while it is still absorbing
+/// blows and **face-down** (`down`) once a pile clears its bar and flips it. `toughness` is this card's
+/// per-card bar — the magnitude the pile must clear to flip *it*. Today every card in a pool shares one
+/// toughness (a uniform deck), but the field is per-card so a future mixed wall can vary it.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HealthCard {
+    /// §2.4 Power: this card's per-card bar (the damage the pile must clear to flip it).
+    pub toughness: u32,
+    /// Facing: `false` = face-up (intact), `true` = face-down (flipped/spent).
+    pub down: bool,
+}
+
+/// The **health pool**: a 1D deck of [`HealthCard`]s, front-to-back. Flips happen **front-first** (the
+/// front-most face-up card flips down); Recover turns the front-most face-down card back up. The only
+/// maintained defensive meter — Vitality is the card *count*, Toughness the per-card *bar*.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Health {
-    pub max: u32,
-    pub remaining: u32,
-    pub toughness: u32,
+    /// The deck, front (index 0) to back. Damage flips face-up cards front-first.
+    pub cards: Vec<HealthCard>,
 }
 
 impl Health {
+    /// `count` face-up cards, each with `toughness` (floored at 1) — matches the old constructor.
     pub fn new(count: u32, toughness: u32) -> Self {
+        let toughness = toughness.max(1);
         Self {
-            max: count,
-            remaining: count,
-            toughness: toughness.max(1),
+            cards: (0..count)
+                .map(|_| HealthCard {
+                    toughness,
+                    down: false,
+                })
+                .collect(),
         }
     }
 
+    /// **Vitality** count still standing — the number of face-up cards (the old `remaining`).
+    pub fn remaining(&self) -> u32 {
+        self.cards.iter().filter(|c| !c.down).count() as u32
+    }
+
+    /// Total deck size — the old `max`.
+    pub fn max(&self) -> u32 {
+        self.cards.len() as u32
+    }
+
+    /// The current **bar** (Toughness): the toughness of the front-most **face-up** card. The deck is
+    /// uniform today, so the choice of card is behavior-identical to the old single `toughness`; we pick
+    /// the front-most face-up card (the one a hit would flip next) so `take_with_toughness` reads the bar
+    /// of the card it is about to flip. If no card is face-up (the Actor is down), fall back to the front
+    /// card's toughness — still floored at 1, and never used to flip since the loop stops at empty.
+    pub fn toughness(&self) -> u32 {
+        self.cards
+            .iter()
+            .find(|c| !c.down)
+            .or_else(|| self.cards.first())
+            .map(|c| c.toughness)
+            .unwrap_or(1)
+            .max(1)
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.remaining == 0
+        self.remaining() == 0
+    }
+
+    /// Turn the front-most **face-up** card **face-down** (a flip). Returns whether one was flipped.
+    pub fn flip_down(&mut self) -> bool {
+        if let Some(c) = self.cards.iter_mut().find(|c| !c.down) {
+            c.down = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Turn the front-most **face-down** card **face-up** (Recover). Returns whether one was turned up.
+    pub fn turn_up(&mut self) -> bool {
+        if let Some(c) = self.cards.iter_mut().find(|c| c.down) {
+            c.down = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Turn up to `amt` face-down cards back up (front-first); returns how many were turned. A heal that
+    /// exceeds the down cards simply stops (clamped to `max`, like the old `(remaining + amt).min(max)`).
+    pub fn heal(&mut self, amt: u32) -> u32 {
+        let mut turned = 0;
+        while turned < amt && self.turn_up() {
+            turned += 1;
+        }
+        turned
+    }
+
+    /// Replace the deck with `count` face-up cards, each at this pool's current toughness (the front
+    /// card's, or 1 if empty) — a wholesale Vitality reset for balance probes.
+    pub fn set_count(&mut self, count: u32) {
+        let toughness = self.cards.first().map(|c| c.toughness).unwrap_or(1).max(1);
+        *self = Health::new(count, toughness);
+    }
+
+    /// Set **every** card's per-card bar to `toughness` (floored at 1).
+    pub fn set_toughness(&mut self, toughness: u32) {
+        let toughness = toughness.max(1);
+        for c in &mut self.cards {
+            c.toughness = toughness;
+        }
+    }
+
+    /// Append `n` face-up cards at the current toughness (the front card's, or 1 if empty).
+    pub fn add_cards(&mut self, n: u32) {
+        let toughness = self.cards.first().map(|c| c.toughness).unwrap_or(1).max(1);
+        for _ in 0..n {
+            self.cards.push(HealthCard {
+                toughness,
+                down: false,
+            });
+        }
+    }
+
+    /// Add `extra` to **every** card's per-card bar.
+    pub fn add_toughness(&mut self, extra: u32) {
+        for c in &mut self.cards {
+            c.toughness += extra;
+        }
     }
 }
 
@@ -73,7 +178,7 @@ impl Defense {
     /// Apply one `raw`-magnitude (untyped Might) hit. Accumulate into the round's pile → each time the
     /// pile clears the bar (Toughness), flip one Health card. No cut, no types (Spec §2.2).
     pub fn take(&mut self, raw: u32) -> HitOutcome {
-        self.take_with_toughness(raw, self.health.toughness)
+        self.take_with_toughness(raw, self.health.toughness())
     }
 
     /// As [`take`](Defense::take), but the per-card **wall** is `bar` rather than the bare Toughness —
@@ -86,8 +191,7 @@ impl Defense {
             ..Default::default()
         };
         self.health_pile += raw;
-        while self.health_pile >= bar && self.health.remaining > 0 {
-            self.health.remaining -= 1;
+        while self.health_pile >= bar && self.health.flip_down() {
             self.health_pile -= bar;
             out.cards_flipped += 1;
         }
@@ -103,12 +207,7 @@ impl Defense {
     /// a card restored is no longer down.
     pub fn recover_card(&mut self) -> u32 {
         self.health_pile = 0;
-        if self.health.remaining < self.health.max {
-            self.health.remaining += 1;
-            1
-        } else {
-            0
-        }
+        if self.health.turn_up() { 1 } else { 0 }
     }
 
     /// §4.6 **phase boundary**: the sub-threshold pile wipes — banked damage that did not flip a
@@ -173,6 +272,52 @@ mod tests {
         d.take(1); // pile 1, no flip
         assert_eq!(d.health_pile, 1);
         d.end_round();
+        assert_eq!(d.health_pile, 0);
+    }
+
+    #[test]
+    fn health_deck_flips_front_first_and_recovers_like_the_old_counts() {
+        // A uniform deck of 3 cards, bar 2 — must behave exactly like the old {max:3, remaining:3}.
+        let mut h = Health::new(3, 2);
+        assert_eq!(h.max(), 3);
+        assert_eq!(h.remaining(), 3);
+        assert_eq!(h.toughness(), 2);
+        assert!(!h.is_empty());
+
+        // Flip the front-most face-up card.
+        assert!(h.flip_down());
+        assert!(h.cards[0].down, "front card flips first");
+        assert!(!h.cards[1].down);
+        assert_eq!(h.remaining(), 2);
+        assert_eq!(h.max(), 3, "max is the deck size, unchanged by flips");
+        assert_eq!(
+            h.toughness(),
+            2,
+            "bar still reads from the next face-up card"
+        );
+
+        // Flip the rest; once none are up the pool is empty and flip_down reports failure.
+        assert!(h.flip_down());
+        assert!(h.flip_down());
+        assert_eq!(h.remaining(), 0);
+        assert!(h.is_empty());
+        assert!(!h.flip_down(), "no face-up card left to flip");
+
+        // turn_up recovers front-first (the card at index 0 comes back up first).
+        assert!(h.turn_up());
+        assert!(!h.cards[0].down, "front card recovers first");
+        assert_eq!(h.remaining(), 1);
+        assert!(!h.is_empty());
+
+        // Driving the deck through Defense::take_with_toughness matches the old remaining-- loop.
+        let mut d = Defense::new(4, 2); // 4 cards, bar 2
+        let o = d.take(5); // pile 5 / bar 2 = 2 flips, 1 left in pile
+        assert_eq!(o.cards_flipped, 2);
+        assert_eq!(d.health.remaining(), 2);
+        assert_eq!(d.health_pile, 1);
+        // Recover clears the pile and turns one card up.
+        assert_eq!(d.recover_card(), 1);
+        assert_eq!(d.health.remaining(), 3);
         assert_eq!(d.health_pile, 0);
     }
 

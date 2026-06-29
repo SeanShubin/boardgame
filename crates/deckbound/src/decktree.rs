@@ -142,8 +142,8 @@ impl FormTree {
                 StatDeck {
                     deck: Deck::Health,
                     suits: vec![
-                        SuitDeck::new(Suit::Quantity, Stat::Vitality, d.health.max),
-                        SuitDeck::new(Suit::Power, Stat::Toughness, d.health.toughness),
+                        SuitDeck::new(Suit::Quantity, Stat::Vitality, d.health.max()),
+                        SuitDeck::new(Suit::Power, Stat::Toughness, d.health.toughness()),
                     ],
                 },
                 StatDeck {
