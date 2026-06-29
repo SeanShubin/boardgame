@@ -87,12 +87,29 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   stays 0** — observable structure only). `sim step` subcommand. **Guard: suite stays exactly 88/9 — the
   decomposition must not move any goldens.** The rule-port is explicitly NOT here.
 - **P5 — Cleanup.** Wire groups (#11) / deferred (#12); delete dead six-phase code (#13).
-- **P6 — Port canon rules into the live engine (DELIBERATE behavior change, separate).** Cycling /
-  two-pool AoE+spillover (populates the `aoe` pool) / conditional R→R / melee-reflexive strike-back / role
-  priorities, from the validated `engagement.rs` sim (#14). This MOVES the behavioral goldens
-  (reference_combat_bands, campaign wins, solver_wins) — re-tune/regenerate as part of it. Was conflated
-  into P4; split out per user direction (the Step decomposition is behavior-preserving; aligning live
-  combat with canon is a distinct, opt-in change).
+- **P6 — Align the live engine with canon (DELIBERATE behavior change).** Split along the mechanics /
+  interaction seam (user direction 2026-06-29): *mechanics are the game (a rulebook statement); the policy
+  is how our code chooses among legal moves (swap human / scripted AI / solver and the mechanics don't
+  change).* **Anchor examples: grouping = mechanic; target priority = interaction.** Build it by **cleaving
+  the resolver from the policy** — today `resolve_pair` bakes prey-with-fallback targeting *into*
+  resolution; separate them.
+  - **P6a — mechanics → the resolver (canon, decision-agnostic).** Groups (spillover / melee-all-spend
+    crossing / pooled-block / weakest-link-slip), AoE + the two-pool accumulator (populates the `aoe`
+    pool), conditional R→R, back-access "broken line" gate, melee-reflexive strike-back (defender must be
+    melee-capable), the *capability* to act repeatedly while Tempo allows (cycling-as-rule), Reckoning
+    firing, offensive-ability *effects*. Already canon in Spec §4.5/§4.6; port from the validated
+    `engagement.rs` sim. The resolver takes *committed decisions* and applies these rules — same whether
+    the decider is human, AI, or solver.
+  - **P6b — policy → a separate decision module (the swappable balance proxy).** The role priority lists
+    (V: O→V→R, etc.), the positive-effect rule (commit a strike only when the *combined* committed Might
+    flips — skip futile spends), *when* to stop cycling, *when* to cast an offensive ability. Canon calls
+    this "policy, not a hard rule." It *produces* the decisions the resolver consumes; PvE uses the
+    predictable stand-in, the solver searches, a human plays.
+  - This MOVES the behavioral goldens (reference_combat_bands, campaign wins, solver_wins) — re-tune /
+    regenerate as part of it; several are failing *because* the live engine is behind canon, so P6 likely
+    turns some green. The P4 Step machine is the scaffold: a step is either a **mechanics transition**
+    (deterministic) or a **decision point** (the policy/human chooses) — human/solver/AI all plug into one
+    mechanics core.
 
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
