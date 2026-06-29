@@ -109,14 +109,14 @@ mod tests {
     #[test]
     fn rules_default_on_and_without_disables() {
         // All rules on by default / under the analysis envelope.
-        assert!(Ruleset::default().allows(Rule::Interception));
+        assert!(Ruleset::default().allows(Rule::Intercept));
         assert!(Ruleset::analysis().allows(Rule::Grouping));
         assert_eq!(Ruleset::analysis().enabled_rules().len(), ALL_RULES.len());
         // `without` disables exactly the named rules; the rest stay on.
         let subset = Ruleset::analysis().without(&[Rule::Grouping, Rule::AreaOfEffect]);
         assert!(!subset.allows(Rule::Grouping));
         assert!(!subset.allows(Rule::AreaOfEffect));
-        assert!(subset.allows(Rule::MeleeContest));
+        assert!(subset.allows(Rule::Clash));
         assert_eq!(subset.enabled_rules().len(), ALL_RULES.len() - 2);
     }
 }
