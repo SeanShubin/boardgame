@@ -162,6 +162,20 @@ fn prey(i: Intention) -> Intention {
     }
 }
 
+/// Is there a living enemy of `i`'s **prey** role that `i` can actually crack? If so, the efficient
+/// default holds its scarce Tempo for that prey (where its strike has unique value — only the Rearguard
+/// can kill a Vanguard, etc.) rather than spending it on a lower-value fallback rank now. Only when no
+/// crackable prey remains does a unit fall back to whatever rank the schedule lets it reach — so it is
+/// never useless, but "going around" is always second choice.
+fn flippable_prey_alive(units: &[Unit], i: usize) -> bool {
+    let side = units[i].side;
+    let might = units[i].offense.might;
+    let pr = prey(units[i].intent);
+    units.iter().any(|u| {
+        u.alive() && u.side != side && u.intent == pr && might >= u.defense.health.toughness
+    })
+}
+
 /// Should `defender` spend Tempo to avoid this incoming attack? Avoid only blows that would actually flip
 /// a Health card (Might ≥ effective Toughness — sub-threshold hits wipe harmlessly at the step boundary),
 /// and only if it can afford the bid. Keep the cheapest, most-dangerous dodges.
@@ -198,8 +212,15 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
                 if !units[i].alive() || units[i].intent != atk_role {
                     continue;
                 }
-                if tgt_role != prey(units[i].intent) || units[i].tempo < 1 {
-                    continue; // only strike your designed prey, and only with Tempo in hand
+                if units[i].tempo < 1 {
+                    continue;
+                }
+                // Screener → primary force → cleanup: focus your prey when one is crackable (its strike
+                // has unique value there), and only fall back to another rank the schedule reaches when no
+                // crackable prey remains. So a Vanguard screens Outriders, then fights Vanguards, then
+                // cleans up Rearguards — never useless, but "going around" is always the second choice.
+                if tgt_role != prey(units[i].intent) && flippable_prey_alive(units, i) {
+                    continue;
                 }
                 if let Some(t) = choose_target(units, i, tgt_role) {
                     units[i].tempo -= 1;
@@ -483,7 +504,7 @@ mod tests {
         const TRIAD: Triad = [
             ("Fighter", (1, 2, 3, 1, 1)), // hold: only M3 cracks T3; its M1 can't crack the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid
-            ("Mage", (3, 1, 1, 1, 1)),    // deal: M3 cracks the tank; the sole anti-tank
+            ("Mage", (3, 1, 2, 1, 1)), // deal: M3 cracks the tank; T2 bounces the tank's fallback M1
         ];
         for &(i, j, label) in &[(0usize, 1usize, "Hold vs Break"), (2, 0, "Deal vs Hold")] {
             let (o, log) = battle_traced(
@@ -507,7 +528,7 @@ mod tests {
         const TRIAD: Triad = [
             ("Fighter", (1, 2, 3, 1, 1)), // hold: only M3 cracks T3; its M1 can't crack the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid
-            ("Mage", (3, 1, 1, 1, 1)),    // deal: M3 cracks the tank; the sole anti-tank
+            ("Mage", (3, 1, 2, 1, 1)), // deal: M3 cracks the tank; T2 bounces the tank's fallback M1
         ];
         println!("{}", rps_report(&TRIAD));
         println!("{}", matrix_report(&TRIAD, 3));
