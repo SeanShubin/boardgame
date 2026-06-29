@@ -9,7 +9,7 @@
 
 /// The **health pool**: a stack of generic Health cards, each absorbing `toughness` damage. The only
 /// maintained meter. `max`/`remaining` are the **Vitality** count; `toughness` the per-card magnitude.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Health {
     pub max: u32,
     pub remaining: u32,
@@ -35,7 +35,7 @@ impl Health {
 /// landed hit banks its Might here, the pile flips a Health card each time it clears Toughness, and the
 /// pile **wipes at every phase boundary** — sub-threshold damage never crosses into the next phase
 /// (only Health persists, §2.1). See [`Defense::clear_pile`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Defense {
     pub health: Health,
 
@@ -46,7 +46,7 @@ pub struct Defense {
 }
 
 /// What a single hit did.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct HitOutcome {
     /// Damage that accumulated into the round's pile — what "accumulates" before any health card
     /// turns. (No cut today, so this equals the raw blow.)
@@ -129,7 +129,7 @@ impl Defense {
 
 /// The offensive stats (Spec §2.4): the flat strike force **Might**, the Tempo **count** (Cadence), and
 /// the per-Tempo-card **grade** (Finesse — the magnitude weighed in a crossing or evade contest).
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Offense {
     /// Flat strike force (Power-only magnitude, §2.4). Formerly `power`.
     pub might: u32,

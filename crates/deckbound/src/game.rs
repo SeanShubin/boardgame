@@ -1449,6 +1449,49 @@ mod tests {
         ));
     }
 
+    /// Phase 1 of the combat-engine observability refactor: the live combat [`State`] serializes to
+    /// RON and back, preserving the combat fields (round, heroes' Health/Tempo, phase, plan
+    /// intentions). `scenario` / `campaign` are `#[serde(skip)]` (presentation/campaign context) and
+    /// come back `None` — fine for the combat-state use case the `sim` CLI loads.
+    #[test]
+    fn state_round_trips_through_ron() {
+        let game = Deckbound;
+        let mut hero = scenarios::build_character("Novice", &[]);
+        hero.attack = crate::actor::Attack::Melee;
+        let foe = scenarios::build_creature("Husk");
+        let mut s = battle_state(vec![hero], vec![foe], false, 7);
+        assert_eq!(s.phase, Phase::DeclareIntentions);
+
+        // Declare an intention or two before serializing.
+        game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
+        assert_eq!(s.plan.hero_intent[0], Intention::Vanguard);
+
+        // Serialize → deserialize through RON.
+        let text = ron::ser::to_string(&s).expect("the combat state serializes");
+        let restored: State = ron::from_str(&text).expect("and deserializes");
+
+        // Key combat fields survive the round-trip.
+        assert_eq!(restored.round, s.round);
+        assert_eq!(restored.phase, s.phase);
+        assert_eq!(restored.seed, s.seed);
+        assert_eq!(restored.plan.hero_intent, s.plan.hero_intent);
+        assert_eq!(restored.plan.foe_intent, s.plan.foe_intent);
+        assert_eq!(restored.heroes.len(), s.heroes.len());
+        for (a, b) in restored.heroes.iter().zip(s.heroes.iter()) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.tempo, b.tempo);
+            assert_eq!(a.defense.health.remaining, b.defense.health.remaining);
+            assert_eq!(a.defense.health.toughness, b.defense.health.toughness);
+        }
+        for (a, b) in restored.creatures.iter().zip(s.creatures.iter()) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.defense.health.remaining, b.defense.health.remaining);
+        }
+        // The skipped presentation/campaign context comes back empty (by design).
+        assert!(restored.scenario.is_none());
+        assert!(restored.campaign.is_none());
+    }
+
     /// The card catalog is reachable from the menu, cards open to a detail page showing both the
     /// card and its rules, and Back climbs detail → catalog → top.
     #[test]

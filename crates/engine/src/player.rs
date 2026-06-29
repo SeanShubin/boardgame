@@ -1,7 +1,9 @@
 use std::fmt;
 
 /// Identifies a player by seat index, counting from zero.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct PlayerId(pub usize);
 
 impl PlayerId {

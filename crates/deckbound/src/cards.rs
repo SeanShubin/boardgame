@@ -6,7 +6,7 @@
 //! `data/booklet.ron`, so numbers retune without recompiling; a card's magnitude flows through the
 //! [`crate::stats`] pile→bar→pool pipeline (untyped Might, §2.2).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::currency::Currency;
 use crate::zones::ZoneBehavior;
@@ -14,7 +14,7 @@ use crate::zones::ZoneBehavior;
 /// The §5.6 role-card taxonomy kind. `Stat` cards are [`crate::form::StatCard`]s (Form
 /// attachments), not `Card`s, so they are not in this enum. `Mode` is defined-but-deferred
 /// (M1, 2026-06-19): the first content builds capstones as `Spend`-zone `Base` cards instead.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoleKind {
     /// Played from Hand — the track's core effect.
     #[default]
@@ -27,7 +27,7 @@ pub enum RoleKind {
 
 /// A single effect a card can carry. Magnitudes are the card's own printed values (§2.4) — there is
 /// no signature force-multiplier stat.
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Effect {
     /// Deal `power` untyped **Might** damage (§2.2 — no type, no cut), per target.
     Damage { power: u32 },
@@ -113,7 +113,7 @@ pub enum Effect {
 
 /// §4.6 — the **cast window**: where an ability may be used (Tempo paid & committed). Abilities are
 /// open, repeatable, tempo-gated ("Form open, bid hidden").
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cast {
     /// The Standoff — own-side buffs / braces, auto-land before the Fray.
     Standing,
@@ -124,7 +124,7 @@ pub enum Cast {
 
 /// §4.6 — the **resolution gate**: which phase's pile an ability's effect lands in. The disruption
 /// window is `resolve − cast` measured in gates (`OnCast` ⇒ zero ⇒ undisruptable, §1.3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Resolve {
     /// Resolves in the phase it was used (the old *instant*).
     #[default]
@@ -136,7 +136,7 @@ pub enum Resolve {
 }
 
 /// An Action card: its effect(s), how many foes it hits, its §5 zone behavior, and tags.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Card {
     pub name: String,
     /// A human rules description, used to generate the encyclopedia's **Powers** entries from

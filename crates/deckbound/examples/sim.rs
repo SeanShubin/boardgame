@@ -1,0 +1,141 @@
+//! `sim` — a headless combat-state simulator (Phase 1 of the combat-engine observability refactor).
+//!
+//! Loads a serialized combat [`State`] (RON), applies one or more [`Action`]s through the live
+//! [`Deckbound`] `engine::Game` impl, and writes the resulting `State` (RON) back out. This is the
+//! load → apply → write loop the refactor plan calls for: state in, action(s) in, state out, all over
+//! the filesystem or stdin/stdout so the engine is observable from a shell.
+//!
+//! State is `#[serde(skip)]`-ped on its `scenario`/`campaign` fields (presentation/campaign context),
+//! so a round-tripped state is a pure combat state — exactly what this tool drives.
+//!
+//! ## Usage
+//!
+//! ```text
+//! sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->
+//! sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->
+//! ```
+//!
+//! - `--state` / `--out` / `--actions` accept a filesystem path, or `-` for stdin/stdout.
+//! - `apply` applies exactly one `Action` parsed from the `--action` RON string.
+//! - `run` applies a `Vec<Action>` (RON, read from `--actions`) in order.
+//!
+//! An illegal action prints the error to stderr and exits non-zero (the `State` is left unmodified by
+//! the engine's `apply`, so nothing is written on failure).
+//!
+//! ### Example
+//!
+//! ```text
+//! # Serialize a state elsewhere (e.g. a test), then advance one declaration:
+//! sim apply --state battle.ron --action 'SetVanguard(0)' --out -
+//! ```
+
+use std::io::{Read, Write};
+use std::process::exit;
+
+use deckbound::{Action, Deckbound, State};
+use engine::Game;
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(e) = run(&args) {
+        eprintln!("sim: {e}");
+        exit(1);
+    }
+}
+
+fn run(args: &[String]) -> Result<(), String> {
+    let cmd = args.first().map(String::as_str);
+    match cmd {
+        Some("apply") => cmd_apply(&args[1..]),
+        Some("run") => cmd_run(&args[1..]),
+        _ => Err(usage()),
+    }
+}
+
+fn usage() -> String {
+    "usage:\n  \
+     sim apply --state <PATH|-> --action <RON-STRING> --out <PATH|->\n  \
+     sim run   --state <PATH|-> --actions <PATH|-> --out <PATH|->"
+        .to_string()
+}
+
+/// `apply`: load a State, apply ONE Action (from the `--action` RON string), write the result.
+fn cmd_apply(args: &[String]) -> Result<(), String> {
+    let state_arg = flag(args, "--state")?;
+    let action_str = flag(args, "--action")?;
+    let out_arg = flag(args, "--out")?;
+
+    let mut state = load_state(&state_arg)?;
+    let action: Action =
+        ron::from_str(&action_str).map_err(|e| format!("parsing --action: {e}"))?;
+
+    let game = Deckbound::default();
+    game.apply(&mut state, &action)
+        .map_err(|e| format!("illegal action {action:?}: {e}"))?;
+
+    write_state(&out_arg, &state)
+}
+
+/// `run`: load a State, apply a Vec<Action> (RON) in order, write the final State.
+fn cmd_run(args: &[String]) -> Result<(), String> {
+    let state_arg = flag(args, "--state")?;
+    let actions_arg = flag(args, "--actions")?;
+    let out_arg = flag(args, "--out")?;
+
+    let mut state = load_state(&state_arg)?;
+    let actions_text = read_source(&actions_arg)?;
+    let actions: Vec<Action> =
+        ron::from_str(&actions_text).map_err(|e| format!("parsing --actions: {e}"))?;
+
+    let game = Deckbound::default();
+    for (i, action) in actions.iter().enumerate() {
+        game.apply(&mut state, action)
+            .map_err(|e| format!("illegal action #{i} {action:?}: {e}"))?;
+    }
+
+    write_state(&out_arg, &state)
+}
+
+// ---- tiny dependency-free arg parsing & I/O (RON throughout, matching the codebase) ----
+
+/// The value following `name` in `args` (e.g. `--state <value>`). Errors if absent.
+fn flag(args: &[String], name: &str) -> Result<String, String> {
+    let pos = args
+        .iter()
+        .position(|a| a == name)
+        .ok_or_else(|| format!("missing {name}\n{}", usage()))?;
+    args.get(pos + 1)
+        .cloned()
+        .ok_or_else(|| format!("{name} needs a value\n{}", usage()))
+}
+
+/// Read from a path, or from stdin when `arg` is `-`.
+fn read_source(arg: &str) -> Result<String, String> {
+    if arg == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("reading stdin: {e}"))?;
+        Ok(buf)
+    } else {
+        std::fs::read_to_string(arg).map_err(|e| format!("reading {arg}: {e}"))
+    }
+}
+
+fn load_state(arg: &str) -> Result<State, String> {
+    let text = read_source(arg)?;
+    ron::from_str(&text).map_err(|e| format!("parsing state from {arg}: {e}"))
+}
+
+/// Write the State (RON) to a path, or to stdout when `arg` is `-`.
+fn write_state(arg: &str, state: &State) -> Result<(), String> {
+    let text = ron::ser::to_string(state).map_err(|e| format!("serializing state: {e}"))?;
+    if arg == "-" {
+        let mut out = std::io::stdout();
+        out.write_all(text.as_bytes())
+            .and_then(|_| out.write_all(b"\n"))
+            .map_err(|e| format!("writing stdout: {e}"))
+    } else {
+        std::fs::write(arg, text).map_err(|e| format!("writing {arg}: {e}"))
+    }
+}

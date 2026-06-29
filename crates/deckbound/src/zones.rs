@@ -7,10 +7,10 @@
 //! (§2.3/§4.3): a character's Form (fundamental + attachments) lives in Active and derives its
 //! stat block; Action cards move through these zones. See `canon/2-spec/README.md` §5.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The three zones a card can occupy (§5.1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Zone {
     /// *In your grip* — held, ready to play.
     Hand,
@@ -31,7 +31,7 @@ impl Zone {
 /// the card goes back to Hand, reusable next turn (the Clash kit is all-Return). Keywords modify
 /// it. (`Recover` and `Disrupt` are not self-behaviors — they are *effects* that move **other**
 /// cards' zones; see [`Move`].)
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ZoneBehavior {
     /// Default: a jab you keep throwing — play → Hand.
     #[default]

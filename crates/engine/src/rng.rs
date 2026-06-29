@@ -5,7 +5,7 @@
 //! has no external dependencies, and is more than adequate for shuffling.
 
 /// A seeded SplitMix64 generator.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Rng {
     state: u64,
 }

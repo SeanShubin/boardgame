@@ -6,7 +6,7 @@ use crate::player::PlayerId;
 use crate::view::TableView;
 
 /// How a finished game turned out.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Outcome {
     /// A single player won outright.
     Win(PlayerId),

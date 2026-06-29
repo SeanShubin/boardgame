@@ -6,14 +6,14 @@
 
 use crate::stats::{Defense, Offense};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// One card's contribution to the Form stat block over the **five** stats (Spec §2.4): `might`,
 /// `vitality` (Health-card count), `toughness` (per-card bar), `cadence` (Tempo count), `finesse`
 /// (per-Tempo-card grade). The **fundamental** (`base`) card sets the base; each **attachment** (a
 /// reward, or a bought Upgrade, §8.3) adds on top. Health pool = `vitality` (count) × `toughness`
 /// (value). No channel / armor / damage-type fields — those are deferred with gear (§2.2).
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct StatCard {
     #[serde(default)]
     pub name: String,
@@ -38,7 +38,7 @@ pub struct StatCard {
 /// A character's **Form**: the fundamental (`base`) card + attachments. Sums to the Offense/Defense the
 /// engine reads (stats-as-deck, §2.3/§4.3). Form cards are permanent (§5.2) — this is *what you
 /// are*, derived from the table, never a maintained meter (§2.1).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Form {
     pub cards: Vec<StatCard>,
 }

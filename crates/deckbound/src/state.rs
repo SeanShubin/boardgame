@@ -9,6 +9,7 @@
 //! schedule order is the only timing.
 
 use engine::{Outcome, Rng};
+use serde::{Deserialize, Serialize};
 
 use crate::actor::{Actor, Intention};
 use crate::campaign::CampaignState;
@@ -16,7 +17,7 @@ use crate::ruleset::Ruleset;
 use crate::scenarios::Scenario;
 
 /// Which menu page is showing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Menu {
     Top,
     Cooperation,
@@ -37,7 +38,7 @@ pub enum Menu {
 /// grouping, cast `Standing` buffs); **Engage** resolves the fixed engagement schedule (§4.6) and the
 /// **Lull** (refresh) is the transition to the next round's DeclareIntentions. [`Phase::Clash`] is the
 /// optional 1v1 module.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
     Menu(Menu),
     /// §4 — reveal commitments; pick each unit's **intention** (Vanguard / Outrider / Rearguard) and
@@ -51,7 +52,7 @@ pub enum Phase {
 }
 
 /// The active interactive Clash (module): the two duelists and their per-duel Force.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Clash {
     pub hero: usize,
     pub foe: usize,
@@ -63,7 +64,7 @@ pub struct Clash {
 
 /// A held (`resolve: Reckoning`) spell wound up earlier in the round, resolving in the **last** engagement
 /// (§4.6). It **fizzles** if its caster is killed before then (disrupt, §4.6).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Deferred {
     /// Which side cast it (0 = heroes, 1 = creatures).
     pub side: u8,
@@ -79,7 +80,7 @@ pub struct Deferred {
 
 /// The per-round working plan for the §4 engagement-schedule model. Intentions and grouping are declared
 /// at **DeclareIntentions**; the schedule then resolves over them (§4.6).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Round {
     /// Per hero: its declared **intention** this round (§4). A group shares one intention. Sized to heroes.
     pub hero_intent: Vec<Intention>,
@@ -118,7 +119,7 @@ impl Round {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
     pub round: u32,
     pub heroes: Vec<Actor>,
@@ -126,6 +127,7 @@ pub struct State {
     pub phase: Phase,
     pub plan: Round,
     pub clash: Option<Clash>,
+    #[serde(skip)]
     pub scenario: Option<Scenario>,
     pub exiting: bool,
     pub log: Vec<String>,
@@ -144,6 +146,7 @@ pub struct State {
     /// delegates to it. Boxed because the campaign embeds combat `State`s (its battles).
     ///
     /// [`Deckbound`]: crate::game::Deckbound
+    #[serde(skip)]
     pub campaign: Option<Box<CampaignState>>,
 }
 

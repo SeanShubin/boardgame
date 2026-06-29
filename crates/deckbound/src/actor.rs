@@ -9,7 +9,7 @@
 //! cards and cleared at Refresh.
 
 use engine::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cards::Card;
 use crate::duel::Move;
@@ -18,7 +18,7 @@ use crate::stats::{Defense, Offense};
 
 /// The range of an engagement (§4.2). Position-determined: Vanguard and Outrider strikes are
 /// melee; Rearguard fire is ranged.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Range {
     Melee,
     Ranged,
@@ -26,7 +26,7 @@ pub enum Range {
 
 /// A unit's declared **intention** for the round (§4) — the position it takes, and the role it plays in
 /// the engagement schedule (§4.6). Re-declared each round; declaring is free and may *fail* (force-not-fiat).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Intention {
     /// Hold the line (front): the shield; screens enemy Outriders, fights the front, cleans up last.
     Vanguard,
@@ -63,7 +63,7 @@ impl Intention {
 /// Floors (§2.2 force-not-fiat): Mark/Mire each clamp their stat at **min 1** independently, so a
 /// maximally Marked+Mired foe still has Finesse 1 **and** Cadence 1 → Tempo ≥ 1 — a debuff stack can
 /// never lock a foe (no second kill-condition).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Token {
     /// **Guard** (Wall): +Toughness while present (raises the per-phase wall). Per-round — cleared at
     /// the Lull (`refresh_round`).
@@ -97,7 +97,7 @@ pub enum Token {
 
 /// What range(s) an Actor can attack and contest at (§4.2). A strike at a range the target
 /// cannot answer is an **auto-hit**; a same-range meeting is a trade (or a Clash).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Attack {
     Melee,
     Ranged,
@@ -125,7 +125,7 @@ impl Attack {
 }
 
 /// Who drives an Actor's choices.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Driver {
     /// A Character: the human (or a stand-in) improvises.
     Human,
@@ -135,7 +135,7 @@ pub enum Driver {
 
 /// A creature's policy: how eagerly it commits to the Vanguard, whom it targets, and (only
 /// when the Clash module is on) how it plays the four-card mix-up.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Behavior {
     /// 0..=10 — higher commits more Actors to the Vanguard / slips more readily.
     pub aggression: u32,
@@ -165,14 +165,14 @@ impl Behavior {
 
 /// How a creature chooses each Clash beat: a random **deck** or a deterministic **script**
 /// (tutorial dummies). Used only when the Clash module is enabled.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Instinct {
     Deck(Vec<Move>),
     Script(Script),
 }
 
 /// A deterministic Clash algorithm (tutorial dummies).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Script {
     Always(Move),
     ChargeThenStrike { until: u32 },
@@ -202,7 +202,7 @@ impl Script {
 }
 
 /// Whom a creature goes for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TargetRule {
     /// The first reachable enemy.
     Front,
@@ -211,7 +211,7 @@ pub enum TargetRule {
 }
 
 /// A combatant.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Actor {
     pub name: String,
     pub role: String,

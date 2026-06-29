@@ -19,7 +19,7 @@ use crate::rules::{ALL_RULES, Rule};
 
 /// Tunable, pre-game combat parameters. Set once before a battle (see [`crate::game::battle_state_with`]
 /// and [`crate::state::State::ruleset`]); never mutated mid-combat.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Ruleset {
     /// Which combat [`Rule`]s are **enabled** this game (a bitset, so the struct stays `Copy`). A
     /// disabled phase is skipped and a disabled behavior is not consulted, so a simulation can run
