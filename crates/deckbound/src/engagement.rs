@@ -75,22 +75,34 @@ impl Unit {
 pub type Stat5 = (u32, u32, u32, u32, u32);
 
 /// The default **intention assignment** (part of the policy): ranged bodies deal from the Rearguard;
-/// high-Finesse melee bodies break the line as Outriders; everyone else holds as a Vanguard. Predictable
-/// from the stat line, so a player knows what their stand-in will pick.
+/// **aggressive** melee (Might ≥ Toughness — a glassy striker) breaks the line as an Outrider; **durable**
+/// melee (Toughness > Might — a wall) holds as a Vanguard. Predictable from the stat line, so a player
+/// knows what their stand-in will pick. (Might-vs-Toughness, not Finesse — the re-tuned tank carries F2 to
+/// run down the Outrider, so Finesse no longer separates the wall from the skirmisher.)
 pub fn default_intention(class: &str, s: Stat5) -> Intention {
-    let ranged = class == "Mage";
-    let (_, _, _, _, finesse) = s;
-    if ranged {
+    let (might, _, toughness, _, _) = s;
+    if class == "Mage" {
         Intention::Rearguard
-    } else if finesse >= 2 {
+    } else if might >= toughness {
         Intention::Outrider
     } else {
         Intention::Vanguard
     }
 }
 
-/// Build a sim unit from a class name + stat tuple, assigning its default intention. `Mage` is ranged;
-/// the others melee. The weapon is implicit power-0, so a strike's raw force is Might.
+/// The thematic **default hit policy** by role: a **Vanguard endures** — it holds the line and *takes*
+/// the blows (and so keeps all its Tempo for offense); the fragile **Outrider** and **Rearguard evade**.
+/// This is load-bearing under cycling: an *evading* tank would dodge the Rearguard's fire and break
+/// Deal>Hold, so "the wall stands and takes it" is what keeps the glass cannon's counter to the turtle.
+pub fn default_hits(intent: Intention) -> HitMode {
+    match intent {
+        Intention::Vanguard => HitMode::Endure,
+        Intention::Outrider | Intention::Rearguard => HitMode::Evade,
+    }
+}
+
+/// Build a sim unit from a class name + stat tuple, assigning its default intention and hit policy. `Mage`
+/// is ranged; the others melee. The weapon is implicit power-0, so a strike's raw force is Might.
 pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
     let (m, v, t, c, f) = s;
     let attack = if class == "Mage" {
@@ -98,10 +110,11 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
     } else {
         Attack::Melee
     };
+    let intent = default_intention(class, s);
     Unit {
         name: class.to_string(),
         side,
-        intent: default_intention(class, s),
+        intent,
         offense: Offense {
             might: m,
             cadence: c,
@@ -109,7 +122,7 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
         },
         defense: Defense::new(v, t),
         attack,
-        hits: HitMode::Evade,
+        hits: default_hits(intent),
         aoe: false,
         group: None,
         tempo: c as i32,
@@ -643,13 +656,13 @@ pub enum IntentPlan {
     ByStats,
 }
 
-/// A **strategy**: a deterministic, public-information script — where every unit stands (`plan`) and how
-/// it answers a blow (`hits`). Card-writable; the targeting/positive-effect rule is the engine invariant.
+/// A **strategy**: a deterministic, public-information script — where every unit stands (`plan`). The hit
+/// policy follows each unit's role default ([`default_hits`]); the targeting/positive-effect rule is the
+/// engine invariant. Card-writable.
 #[derive(Clone, Copy, Debug)]
 pub struct Strategy {
     pub name: &'static str,
     pub plan: IntentPlan,
-    pub hits: HitMode,
 }
 
 impl Strategy {
@@ -666,14 +679,15 @@ impl Strategy {
 /// A roster entry: a class name + its stat tuple `(M, V, T, C, F)`.
 pub type Recruit = (&'static str, Stat5);
 
-/// Build one side from a roster under a strategy (assign each unit its intention + hit policy).
+/// Build one side from a roster under a strategy (assign each unit its intention; the hit policy follows
+/// the role default, [`default_hits`]).
 pub fn build_side(roster: &[Recruit], strat: &Strategy, side: u8) -> Vec<Unit> {
     roster
         .iter()
         .map(|&(class, s)| {
             let mut u = make_unit(class, s, side);
             u.intent = strat.intent_for(class, s);
-            u.hits = strat.hits;
+            u.hits = default_hits(u.intent);
             u
         })
         .collect()
@@ -684,8 +698,10 @@ pub fn n_of(class: &'static str, s: Stat5, n: usize) -> Vec<Recruit> {
     vec![(class, s); n]
 }
 
-// The validated triad stats (see `deckbound-level-1-balance` / Spec §4): hold / break / deal.
-const HOLD: Stat5 = (1, 2, 3, 1, 1); // Fighter — Vanguard
+// The triad stats, re-tuned for the cycling model (probe_retune): hold / break / deal. The Fighter grew
+// C1F1→C2F2 (and *endures* by role default) so the wall can run down the slippery Outrider under cycling
+// — evasion is stronger now that Tempo refreshes each round.
+const HOLD: Stat5 = (1, 2, 3, 2, 2); // Fighter — Vanguard (endures)
 const BREAK: Stat5 = (2, 1, 1, 2, 2); // Assassin — Outrider
 const DEAL: Stat5 = (3, 1, 2, 1, 1); // Mage — Rearguard
 
@@ -696,7 +712,6 @@ pub fn balanced_party() -> (Vec<Recruit>, Strategy) {
     let strat = Strategy {
         name: "balanced",
         plan: IntentPlan::ByStats,
-        hits: HitMode::Evade,
     };
     (roster, strat)
 }
@@ -704,10 +719,11 @@ pub fn balanced_party() -> (Vec<Recruit>, Strategy) {
 // ---- builders for the extreme scenarios (all stat lines are the triad's 8-point budget, so an extreme
 // wins by *formation*, never by being bigger) ----
 
-/// One unit with an explicit intention.
+/// One unit with an explicit intention (and the hit policy that role defaults to).
 fn lone(class: &str, s: Stat5, intent: Intention, side: u8) -> Unit {
     let mut u = make_unit(class, s, side);
     u.intent = intent;
+    u.hits = default_hits(intent);
     u
 }
 
@@ -747,7 +763,12 @@ pub fn extreme_sides() -> Vec<(&'static str, Vec<Unit>)> {
         v
     };
     vec![
-        ("all-Vanguard wall", mono("Fighter", HOLD, Vanguard, 3, 1)),
+        // A wall of *generic* budget-8 tanks (not the party's beefier tuned HOLD Fighter) — the extreme
+        // tests formation, so it must not out-budget the party.
+        (
+            "all-Vanguard wall",
+            mono("Fighter", (1, 2, 3, 1, 1), Vanguard, 3, 1),
+        ),
         (
             "all-Outrider (evasive)",
             mono("Assassin", BREAK, Outrider, 3, 1),
@@ -885,13 +906,95 @@ mod tests {
         }
     }
 
+    /// Sweep Fighter stat lines to find a triad where the RPS triangle is **decisive** under cycling
+    /// (Hold>Break, Break>Deal, Deal>Hold all WIN; the anti-legs not WIN). Assassin/Mage held fixed.
+    /// `cargo test -p deckbound probe_retune -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_retune() {
+        use Intention::{Outrider, Rearguard, Vanguard};
+        let assassin = (2u32, 1, 1, 2, 2);
+        let mage = (3u32, 1, 2, 1, 1);
+        let mk = |s: Stat5, intent: Intention, side: u8, h: HitMode| {
+            let class = match intent {
+                Vanguard => "Fighter",
+                Outrider => "Assassin",
+                Rearguard => "Mage",
+            };
+            let mut u = lone(class, s, intent, side);
+            u.hits = h;
+            u
+        };
+        let bd = battle(
+            vec![mk(assassin, Outrider, 0, HitMode::Evade)],
+            vec![mk(mage, Rearguard, 1, HitMode::Evade)],
+            8,
+        );
+        let db = battle(
+            vec![mk(mage, Rearguard, 0, HitMode::Evade)],
+            vec![mk(assassin, Outrider, 1, HitMode::Evade)],
+            8,
+        );
+        println!("fixed: Break>Deal {bd:?}  (anti Deal>Break {db:?})");
+        let mut found: Vec<(Stat5, HitMode, u32)> = Vec::new();
+        for v in 1..=3u32 {
+            for t in 3..=4u32 {
+                for c in 1..=3u32 {
+                    for f in 1..=2u32 {
+                        for &hit in &[HitMode::Evade, HitMode::Endure] {
+                            let fs = (1u32, v, t, c, f);
+                            let hb = battle(
+                                vec![mk(fs, Vanguard, 0, hit)],
+                                vec![mk(assassin, Outrider, 1, HitMode::Evade)],
+                                8,
+                            );
+                            let bh = battle(
+                                vec![mk(assassin, Outrider, 0, HitMode::Evade)],
+                                vec![mk(fs, Vanguard, 1, hit)],
+                                8,
+                            );
+                            let dh = battle(
+                                vec![mk(mage, Rearguard, 0, HitMode::Evade)],
+                                vec![mk(fs, Vanguard, 1, hit)],
+                                8,
+                            );
+                            let hd = battle(
+                                vec![mk(fs, Vanguard, 0, hit)],
+                                vec![mk(mage, Rearguard, 1, HitMode::Evade)],
+                                8,
+                            );
+                            if hb == Outcome::Win
+                                && dh == Outcome::Win
+                                && bd == Outcome::Win
+                                && bh != Outcome::Win
+                                && hd != Outcome::Win
+                                && db != Outcome::Win
+                            {
+                                found.push((fs, hit, 1 + v + t + c + f));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        found.sort_by_key(|x| x.2);
+        for (fs, hit, budget) in found.iter().take(10) {
+            println!("clean triangle: Fighter {fs:?} {hit:?} (budget {budget})");
+        }
+        if found.is_empty() {
+            println!(
+                "no clean triangle in the swept range — widen the sweep or re-tune Assassin/Mage"
+            );
+        }
+    }
+
     /// Trace specific matchups to calibrate understanding of the resolver.
     /// `cargo test -p deckbound probe_trace_engagement -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn probe_trace_engagement() {
         const TRIAD: Triad = [
-            ("Fighter", (1, 2, 3, 1, 1)), // hold: only M3 cracks T3; its M1 can't crack the dealer
+            ("Fighter", (1, 2, 3, 2, 2)), // hold: T3 bounces the breaker; C2F2 runs it down; endures the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid
             ("Mage", (3, 1, 2, 1, 1)), // deal: M3 cracks the tank; T2 bounces the tank's fallback M1
         ];
@@ -915,7 +1018,7 @@ mod tests {
     #[ignore]
     fn probe_engagement() {
         const TRIAD: Triad = [
-            ("Fighter", (1, 2, 3, 1, 1)), // hold: only M3 cracks T3; its M1 can't crack the dealer
+            ("Fighter", (1, 2, 3, 2, 2)), // hold: T3 bounces the breaker; C2F2 runs it down; endures the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid
             ("Mage", (3, 1, 2, 1, 1)), // deal: M3 cracks the tank; T2 bounces the tank's fallback M1
         ];
