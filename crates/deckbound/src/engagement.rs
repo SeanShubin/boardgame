@@ -52,6 +52,13 @@ pub struct Unit {
     pub attack: Attack,
     /// How this unit reacts to incoming blows (Evade vs Endure) — set by its [`Strategy`].
     pub hits: HitMode,
+    /// Whether this unit's strike is **area** (§4.5): it hits **every** member of the target's group at
+    /// full Might, is **unevadable**, and bypasses the spillover bodyguard. `false` = a single aimed blow.
+    pub aoe: bool,
+    /// Group binding (§4.5). `None` = a lone unit (its own singleton group). `Some(g)` binds it to the
+    /// same-side units sharing `g`: they **reposition collectively** (block / spill / a melee crossing pays
+    /// every member) but **target individually**. Vector order within a group is front-to-back.
+    pub group: Option<u32>,
     /// Round-scoped Tempo pool (= Cadence), shared across the whole schedule.
     pub tempo: i32,
 }
@@ -104,6 +111,8 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
         defense: Defense::new(v, t),
         attack,
         hits: HitMode::Evade,
+        aoe: false,
+        group: None,
         tempo: c as i32,
     }
 }
@@ -112,8 +121,10 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
 type Pair = (Intention, Intention);
 
 /// The fixed schedule, in resolution order — the *ordering* is the whole interception/Reckoning system.
-/// Each step may hold several role-pairs; all of a step's attacks declare before any resolve, and the
-/// per-phase pile wipes at the step boundary. (`Rearguard → Rearguard` is the one illegal pair.)
+/// Each step may hold several role-pairs; each step **cycles to exhaustion** (units keep committing
+/// positive-effect strikes until no one will spend Tempo), and the per-phase pile wipes at the step
+/// boundary. `Rearguard → Rearguard` is legal **only in the Breach, and only once the enemy Vanguard has
+/// fallen** (the dropped screen opens the back-line to fire — gated in [`choose_target`]).
 const SCHEDULE: &[(&str, &[Pair])] = {
     use Intention::{Outrider as O, Rearguard as R, Vanguard as V};
     &[
@@ -121,7 +132,7 @@ const SCHEDULE: &[(&str, &[Pair])] = {
         ("Volley", &[(R, O)]),
         ("Raid", &[(O, R)]),
         ("Clash", &[(R, V), (V, V)]),
-        ("Breach", &[(V, R), (O, V), (O, O)]),
+        ("Breach", &[(V, R), (O, V), (O, O), (R, R)]),
     ]
 };
 
@@ -141,25 +152,92 @@ struct Decl {
     might: u32,
     finesse: u32,
     melee: bool,
+    aoe: bool,
+}
+
+// ---- groups (§4.5): bind for defense + position, target individually ----
+
+/// The members of `i`'s group, in declared (vector / front-to-back) order. A lone unit (`group: None`)
+/// is its own singleton.
+fn group_of(units: &[Unit], i: usize) -> Vec<usize> {
+    match units[i].group {
+        None => vec![i],
+        Some(g) => (0..units.len())
+            .filter(|&j| units[j].side == units[i].side && units[j].group == Some(g))
+            .collect(),
+    }
+}
+
+/// A stable per-group key (its lowest member index) — used to pay the **collective melee crossing** once
+/// per cycle rather than once per striking member.
+fn group_rep(units: &[Unit], i: usize) -> usize {
+    group_of(units, i).into_iter().min().unwrap_or(i)
+}
+
+/// The front-most **living** member of a group — the bodyguard that soaks aimed (single-target) blows.
+fn front_living(units: &[Unit], members: &[usize]) -> Option<usize> {
+    members.iter().copied().find(|&j| units[j].alive())
+}
+
+/// Does `side`'s **enemy** still field a living Vanguard? The back-access gate: a Rearguard is shielded
+/// while its own side's Vanguard lives (§4.6) — checked against the *target's* side.
+fn vanguard_alive(units: &[Unit], side: u8) -> bool {
+    units
+        .iter()
+        .any(|u| u.alive() && u.side == side && u.intent == Intention::Vanguard)
+}
+
+/// Is `(atk, tgt)` a legal pair anywhere in the schedule? (Reach upper-bound for the focus-fire estimate;
+/// the actual strike is still gated by [`choose_target`]'s back-access and the schedule order.)
+fn role_can_attack(atk: Intention, tgt: Intention) -> bool {
+    SCHEDULE
+        .iter()
+        .any(|(_, pairs)| pairs.iter().any(|&(a, t)| a == atk && t == tgt))
+}
+
+/// **Focus-fire test (the positive-effect rule judged at the target, §4.6).** A weak strike that cannot
+/// flip a card *alone* is still worth committing if the **combined** Might the team can pile onto this
+/// target — plus what is already banked in its pile — crosses its Toughness. Sums the Might of living
+/// allies that can reach this target's role; the per-engagement pile persists across cycles, so chip
+/// ganging up on a wall converges.
+fn team_can_crack(units: &[Unit], attacker: usize, target: usize) -> bool {
+    let side = units[attacker].side;
+    let role = units[target].intent;
+    let tough = units[target].defense.health.toughness;
+    let pile = units[target].defense.health_pile;
+    let sum: u32 = units
+        .iter()
+        .filter(|u| u.alive() && u.side == side && role_can_attack(u.intent, role))
+        .map(|u| u.offense.might)
+        .sum();
+    sum + pile >= tough
 }
 
 // ---- the default policy (the reasonable, predictable human stand-in) ----
 
-/// Pick the best target for `attacker` among living enemies of `tgt_role`: only ones it can actually
-/// **flip a card on** (Might ≥ their effective Toughness — never swing at what you can't crack and eat a
-/// pointless strike-back), focusing the highest-threat role (dealer first), and within a role the
-/// **lowest remaining health** (finish kills). Returns an index, or `None` if nothing is crackable.
+/// Pick the best target for `attacker` among living enemies of `tgt_role`. Three gates: **back-access**
+/// (a Rearguard is reachable only by an Outrider's raid, or once its side's Vanguard has fallen, §4.6);
+/// **crackability** judged at the target (it flips to this strike given its banked pile, *or* the team's
+/// combined Might can crack it — focus-fire); then pick the **lowest remaining health** to finish kills.
+/// Returns the chosen enemy (single-target damage routes to that enemy's group **front** at apply).
 fn choose_target(units: &[Unit], attacker: usize, tgt_role: Intention) -> Option<usize> {
     let side = units[attacker].side;
     let might = units[attacker].offense.might;
+    let atk_intent = units[attacker].intent;
     units
         .iter()
         .enumerate()
+        .filter(|(_, u)| u.alive() && u.side != side && u.intent == tgt_role)
+        // back-access: the back is shielded while its own Vanguard lives, unless this is an Outrider's raid.
         .filter(|(_, u)| {
-            u.alive()
-                && u.side != side
-                && u.intent == tgt_role
-                && might >= u.defense.health.toughness
+            tgt_role != Intention::Rearguard
+                || atk_intent == Intention::Outrider
+                || !vanguard_alive(units, u.side)
+        })
+        // crackable now (pile + this strike), or by the team's combined Might (focus-fire).
+        .filter(|(i, u)| {
+            might + u.defense.health_pile >= u.defense.health.toughness
+                || team_can_crack(units, attacker, *i)
         })
         .min_by_key(|(i, u)| (u.defense.health.remaining, *i))
         .map(|(i, _)| i)
@@ -218,109 +296,143 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
 
     for (sname, pairs) in SCHEDULE.iter() {
         note!("-- {sname} --");
-        // --- Declare: each unit (both sides) commits one attack on its **prey** (the efficient default:
-        // it spends its scarce Tempo only where its strike has unique value, not on go-around pairs). ---
-        let mut decls: Vec<Decl> = Vec::new();
-        let order: Vec<usize> = (0..units.len()).collect();
-        for &(atk_role, tgt_role) in *pairs {
-            for &i in &order {
-                if !units[i].alive() || units[i].intent != atk_role {
-                    continue;
-                }
-                if units[i].tempo < 1 {
-                    continue;
-                }
-                // Screener → primary force → cleanup: focus your prey when one is crackable (its strike
-                // has unique value there), and only fall back to another rank the schedule reaches when no
-                // crackable prey remains. So a Vanguard screens Outriders, then fights Vanguards, then
-                // cleans up Rearguards — never useless, but "going around" is always the second choice.
-                if tgt_role != prey(units[i].intent) && flippable_prey_alive(units, i) {
-                    continue;
-                }
-                if let Some(t) = choose_target(units, i, tgt_role) {
-                    units[i].tempo -= 1;
+        // Each step CYCLES to exhaustion (§4.6): keep committing positive-effect strikes until no one
+        // will spend Tempo. The per-phase pile persists across cycles (chip combines) and wipes only at
+        // the step boundary. Deaths finalize at each cycle's apply, so a unit's committed blows land but
+        // a corpse cannot open a new cycle.
+        loop {
+            let n = units.len();
+            // --- DECLARE one pass: units target individually; a melee group pays the crossing (every
+            // member −1 Tempo) once per cycle, then each member with a target strikes. ---
+            let mut decls: Vec<Decl> = Vec::new();
+            let mut crossed = vec![false; n]; // by group_rep — the collective melee move, paid once
+            let mut struck = vec![false; n]; // each unit strikes at most once per cycle
+            let mut committed = false;
+            for &(atk_role, tgt_role) in *pairs {
+                for i in 0..n {
+                    if !units[i].alive() || units[i].intent != atk_role || struck[i] {
+                        continue;
+                    }
+                    // Efficient default: hold for your prey when one is crackable; else fall back.
+                    if tgt_role != prey(units[i].intent) && flippable_prey_alive(units, i) {
+                        continue;
+                    }
+                    let melee = units[i].is_melee();
+                    let rep = group_rep(units, i);
+                    // Tempo eligibility: ranged pays its own card; a melee unit pays the crossing unless
+                    // its group already crossed this cycle (then its strike rides the same move, free).
+                    let affordable = if melee {
+                        crossed[rep] || units[i].tempo >= 1
+                    } else {
+                        units[i].tempo >= 1
+                    };
+                    if !affordable {
+                        continue;
+                    }
+                    let Some(t) = choose_target(units, i, tgt_role) else {
+                        continue;
+                    };
+                    if melee {
+                        if !crossed[rep] {
+                            // The whole group crosses as one — every living member spends one Tempo, even
+                            // those with no attack (§4.5 collective reposition). Tempo-hungry by design.
+                            for m in group_of(units, i) {
+                                if units[m].alive() {
+                                    units[m].tempo = (units[m].tempo - 1).max(0);
+                                }
+                            }
+                            crossed[rep] = true;
+                        }
+                    } else {
+                        units[i].tempo -= 1;
+                    }
+                    struck[i] = true;
+                    committed = true;
                     note!(
-                        "  {} -> {} (M{})",
+                        "  {} -> {} (M{}{})",
                         uid(units, i),
                         uid(units, t),
-                        units[i].offense.might
+                        units[i].offense.might,
+                        if units[i].aoe { " AoE" } else { "" }
                     );
                     decls.push(Decl {
                         atk: i,
                         def: t,
                         might: units[i].offense.might,
                         finesse: units[i].offense.finesse,
-                        melee: units[i].is_melee(),
+                        melee,
+                        aoe: units[i].aoe,
                     });
                 }
             }
-        }
-
-        // --- Resolve + Apply: each defender handles its incoming, most-dangerous first; avoid if worth
-        // it and affordable, else eat (Might into the pile) and strike back if a melee attacker. ---
-        let mut by_def: Vec<Vec<usize>> = vec![Vec::new(); units.len()];
-        for (di, d) in decls.iter().enumerate() {
-            by_def[d.def].push(di);
-        }
-        for def in 0..units.len() {
-            if by_def[def].is_empty() {
-                continue;
+            if !committed {
+                break;
             }
-            let mut incoming = by_def[def].clone();
-            incoming.sort_by_key(|&di| std::cmp::Reverse(decls[di].might));
-            for di in incoming {
-                let (might, finesse, melee, atk) = (
-                    decls[di].might,
-                    decls[di].finesse,
-                    decls[di].melee,
-                    decls[di].atk,
-                );
-                if !units[def].alive() {
-                    // already down this step — committed blows still landed via the pile; skip extras
-                }
-                if units[def].hits == HitMode::Evade && should_avoid(&units[def], might, finesse) {
-                    let cost = avoid_cost(finesse, units[def].offense.finesse);
-                    units[def].tempo -= cost;
-                    note!("  {} avoids (-{}t)", uid(units, def), cost);
+
+            // --- APPLY this cycle (the two-pool accumulator, §4.6). AoE banks full Might into every
+            // target-group member's pile; aimed fire banks into the group's spillover, routed to the
+            // living front. A lone Evade unit may dodge an aimed blow; a group walls (weakest-link slip,
+            // so it eats) and AoE is unevadable. ---
+            let mut aoe_add = vec![0u32; n]; // per-member area damage
+            let mut spill_add = vec![0u32; n]; // aimed damage, keyed by the front soaker it routes to
+            let mut sbacks: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker) reflexive melee answers
+            for d in &decls {
+                if d.aoe {
+                    for m in group_of(units, d.def) {
+                        aoe_add[m] += d.might; // unevadable, full value to each (§4.5)
+                    }
                     continue;
                 }
-                // Eat it.
-                let bar = units[def].defense.health.toughness;
-                let out = units[def].defense.take_with_toughness(might, bar);
-                if out.cards_flipped > 0 {
-                    note!(
-                        "  {} eats M{} -> -{} card{} ({} left){}",
-                        uid(units, def),
-                        might,
-                        out.cards_flipped,
-                        if out.cards_flipped == 1 { "" } else { "s" },
-                        units[def].defense.health.remaining,
-                        if out.down { " DOWN" } else { "" }
-                    );
-                }
-                // Strike back at a melee attacker if a card is free — but only when it can actually flip
-                // a card (never burn Tempo on a strike that bounces off the attacker's Toughness), and a
-                // corpse can't react (only pre-declared blows land when mortally wounded).
-                if melee
-                    && units[def].alive()
-                    && units[def].tempo >= 1
-                    && units[atk].alive()
-                    && units[def].offense.might >= units[atk].defense.health.toughness
+                let members = group_of(units, d.def);
+                let soaker = front_living(units, &members).unwrap_or(d.def);
+                if members.len() == 1
+                    && units[soaker].hits == HitMode::Evade
+                    && should_avoid(&units[soaker], d.might, d.finesse)
                 {
-                    units[def].tempo -= 1;
+                    let cost = avoid_cost(d.finesse, units[soaker].offense.finesse);
+                    units[soaker].tempo -= cost;
+                    note!("  {} avoids (-{}t)", uid(units, soaker), cost);
+                    continue;
+                }
+                spill_add[soaker] += d.might;
+                if d.melee {
+                    sbacks.push((soaker, d.atk));
+                }
+            }
+            // AoE first — counted in each member's pile before spillover cascades (§4.6 worked example).
+            for m in 0..n {
+                if aoe_add[m] > 0 && units[m].alive() {
+                    let bar = units[m].defense.health.toughness;
+                    units[m].defense.take_with_toughness(aoe_add[m], bar);
+                }
+            }
+            // Spillover cascades front-to-back through each targeted group, overflowing only on a death.
+            for s in 0..n {
+                if spill_add[s] > 0 {
+                    let members = group_of(units, s);
+                    cascade(units, &members, spill_add[s]);
+                }
+            }
+            // Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for
+            // one Tempo, and only when it can crack the attacker (positive-effect). A soaker that committed
+            // before dying still answers (§1.3), so this is not gated on it surviving the blow.
+            for (soaker, atk) in sbacks {
+                if units[soaker].is_melee()
+                    && units[soaker].tempo >= 1
+                    && units[atk].alive()
+                    && units[soaker].offense.might + units[atk].defense.health_pile
+                        >= units[atk].defense.health.toughness
+                {
+                    units[soaker].tempo -= 1;
                     let bar = units[atk].defense.health.toughness;
-                    let mb = units[def].offense.might;
-                    let so = units[atk].defense.take_with_toughness(mb, bar);
-                    if so.cards_flipped > 0 {
-                        note!(
-                            "  {} strikes back M{} -> -{} ({} left){}",
-                            uid(units, def),
-                            mb,
-                            so.cards_flipped,
-                            units[atk].defense.health.remaining,
-                            if so.down { " DOWN" } else { "" }
-                        );
-                    }
+                    let mb = units[soaker].offense.might;
+                    units[atk].defense.take_with_toughness(mb, bar);
+                    note!(
+                        "  {} strikes back M{} on {}",
+                        uid(units, soaker),
+                        mb,
+                        uid(units, atk)
+                    );
                 }
             }
         }
@@ -328,6 +440,28 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
         // --- Step boundary: wipe every per-phase pile (sub-threshold damage does not carry). ---
         for u in units.iter_mut() {
             u.defense.clear_pile();
+        }
+    }
+}
+
+/// Spillover cascade (§4.6): apply `amount` of aimed Might to a group front-to-back. The front living
+/// member absorbs into its pile (which already holds any AoE) until it **dies**; only then does the
+/// unflipped leftover overflow to the next. A surviving front soaks the rest (the bodyguard).
+fn cascade(units: &mut [Unit], members: &[usize], mut amount: u32) {
+    for &m in members {
+        if amount == 0 {
+            break;
+        }
+        if !units[m].alive() {
+            continue;
+        }
+        let bar = units[m].defense.health.toughness;
+        let out = units[m].defense.take_with_toughness(amount, bar);
+        if out.down {
+            amount = units[m].defense.health_pile; // unflipped remainder overflows
+            units[m].defense.clear_pile();
+        } else {
+            amount = 0; // fully absorbed by the surviving front
         }
     }
 }
@@ -559,41 +693,80 @@ pub fn balanced_party() -> (Vec<Recruit>, Strategy) {
     (roster, strat)
 }
 
-/// The **extreme** enemy scenarios, each pushing one mechanic to a limit a balanced party should counter.
-/// Returns `(label, roster, strategy)` triples (size matches the balanced party).
-pub fn extremes() -> Vec<(&'static str, Vec<Recruit>, Strategy)> {
-    let s = |name, plan, hits| Strategy { name, plan, hits };
+// ---- builders for the extreme scenarios (all stat lines are the triad's 8-point budget, so an extreme
+// wins by *formation*, never by being bigger) ----
+
+/// One unit with an explicit intention.
+fn lone(class: &str, s: Stat5, intent: Intention, side: u8) -> Unit {
+    let mut u = make_unit(class, s, side);
+    u.intent = intent;
+    u
+}
+
+/// `n` copies of one class at one intention (a mono-formation).
+fn mono(class: &'static str, s: Stat5, intent: Intention, n: usize, side: u8) -> Vec<Unit> {
+    (0..n).map(|_| lone(class, s, intent, side)).collect()
+}
+
+/// A single **group** (one shared `gid`) from `(class, stats, intention)` members in front-to-back order.
+fn grouped(members: &[(&'static str, Stat5, Intention)], gid: u32, side: u8) -> Vec<Unit> {
+    members
+        .iter()
+        .map(|&(c, s, i)| {
+            let mut u = lone(c, s, i, side);
+            u.group = Some(gid);
+            u
+        })
+        .collect()
+}
+
+/// The **extreme** enemy forces (side 1), each pushing one mechanic to a limit a balanced party should
+/// counter. All stat lines are 8-point (triad-budget), so the test is of formation, not raw numbers.
+pub fn extreme_sides() -> Vec<(&'static str, Vec<Unit>)> {
+    use Intention::{Outrider, Rearguard, Vanguard};
+    let reckless = {
+        let mut v = mono("Assassin", BREAK, Outrider, 3, 1);
+        for u in &mut v {
+            u.hits = HitMode::Endure; // ignore hits to reach the back
+        }
+        v
+    };
+    let aoe_battery = {
+        let mut v = mono("Mage", DEAL, Rearguard, 3, 1);
+        for u in &mut v {
+            u.aoe = true; // area fire — hits a whole rank/group, unevadable, bypasses bodyguards
+        }
+        v
+    };
     vec![
-        (
-            "all-Vanguard wall",
-            n_of("Fighter", HOLD, 3),
-            s("all-V", IntentPlan::AllVanguard, HitMode::Evade),
-        ),
+        ("all-Vanguard wall", mono("Fighter", HOLD, Vanguard, 3, 1)),
         (
             "all-Outrider (evasive)",
-            n_of("Assassin", BREAK, 3),
-            s("all-O evade", IntentPlan::AllOutrider, HitMode::Evade),
+            mono("Assassin", BREAK, Outrider, 3, 1),
+        ),
+        ("all-Outrider (reckless/Endure)", reckless),
+        ("all-Rearguard battery", mono("Mage", DEAL, Rearguard, 3, 1)),
+        (
+            "glass cannons (max Might 4, 8pt)",
+            mono("Mage", (4, 1, 1, 1, 1), Rearguard, 3, 1),
         ),
         (
-            "all-Outrider (reckless — ignore hits)",
-            n_of("Assassin", BREAK, 3),
-            s("all-O endure", IntentPlan::AllOutrider, HitMode::Endure),
+            "fortress (max Toughness 4, 8pt)",
+            mono("Fighter", (1, 1, 4, 1, 1), Vanguard, 3, 1),
         ),
         (
-            "all-Rearguard battery",
-            n_of("Mage", DEAL, 3),
-            s("all-R", IntentPlan::AllRearguard, HitMode::Evade),
+            "bodyguard group (Fighter front shields 2 Mages)",
+            grouped(
+                &[
+                    ("Fighter", HOLD, Vanguard),
+                    ("Mage", DEAL, Vanguard),
+                    ("Mage", DEAL, Vanguard),
+                ],
+                0,
+                1,
+            ),
         ),
-        (
-            "glass cannons (extreme Might, no defense)",
-            n_of("Mage", (5, 1, 1, 1, 1), 3),
-            s("all-R glass", IntentPlan::AllRearguard, HitMode::Evade),
-        ),
-        (
-            "fortress (extreme Toughness, no offense)",
-            n_of("Fighter", (1, 3, 5, 1, 1), 3),
-            s("all-V fortress", IntentPlan::AllVanguard, HitMode::Evade),
-        ),
+        ("AoE battery (3 area Mages)", aoe_battery),
     ]
 }
 
@@ -603,18 +776,14 @@ pub fn extremes() -> Vec<(&'static str, Vec<Recruit>, Strategy)> {
 pub fn counter_report() -> String {
     let (party, pstrat) = balanced_party();
     let mut out = String::from("Counterability — balanced party vs extreme scenarios:\n");
-    for (label, roster, estrat) in extremes() {
-        let o = battle(
-            build_side(&party, &pstrat, 0),
-            build_side(&roster, &estrat, 1),
-            8,
-        );
+    for (label, force) in extreme_sides() {
+        let o = battle(build_side(&party, &pstrat, 0), force, 8);
         let verdict = match o {
             Outcome::Win => "COUNTERED (party wins)",
             Outcome::Draw => "held (draw)",
             Outcome::Loss => "!! UNCOUNTERED (party loses)",
         };
-        out.push_str(&format!("  {label:<42} {verdict}\n"));
+        out.push_str(&format!("  {label:<48} {verdict}\n"));
     }
     out
 }
@@ -661,13 +830,50 @@ mod tests {
     #[test]
     fn balanced_party_counters_every_extreme() {
         let (party, pstrat) = balanced_party();
-        for (label, roster, estrat) in extremes() {
-            let o = battle(
-                build_side(&party, &pstrat, 0),
-                build_side(&roster, &estrat, 1),
-                8,
-            );
+        for (label, force) in extreme_sides() {
+            let o = battle(build_side(&party, &pstrat, 0), force, 8);
             assert_ne!(o, Outcome::Loss, "uncountered extreme: {label}");
+        }
+    }
+
+    /// AoE bypasses the bodyguard. A **tough front** (T4) shields two squishy Mages; a lone attacker (one
+    /// Tempo/round, M3) cannot crack the front with **aimed** fire (per-engagement pile wipes before it
+    /// accumulates a flip), so the back Mages live — but **AoE** lands on every member at once and kills
+    /// them through the shield. `cargo test -p deckbound probe_aoe_vs_group -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_aoe_vs_group() {
+        use Intention::{Rearguard, Vanguard};
+        let group = || {
+            grouped(
+                &[
+                    ("Fighter", (1, 2, 4, 1, 1), Vanguard), // tough front bodyguard (T4)
+                    ("Mage", (3, 1, 2, 1, 1), Vanguard),    // shielded back
+                    ("Mage", (3, 1, 2, 1, 1), Vanguard),    // shielded back
+                ],
+                0,
+                1,
+            )
+        };
+        for aoe in [false, true] {
+            let mut atk = vec![lone("Mage", (3, 1, 2, 1, 1), Rearguard, 0)];
+            atk[0].aoe = aoe;
+            let mut all: Vec<Unit> = Vec::new();
+            all.append(&mut atk);
+            let mut g = group();
+            all.append(&mut g);
+            for _ in 0..4 {
+                run_round(&mut all);
+            }
+            let backs = all
+                .iter()
+                .filter(|u| u.side == 1 && u.name == "Mage" && u.alive())
+                .count();
+            println!(
+                "{} attacker → shielded back Mages alive after 4 rounds: {}/2",
+                if aoe { "AoE  " } else { "aimed" },
+                backs
+            );
         }
     }
 
