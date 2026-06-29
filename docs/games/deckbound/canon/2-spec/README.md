@@ -60,7 +60,7 @@ front-liner). A card never *silently* contradicts the core; an unstated conflict
 | **Defense model** (pile → bar → pool, one channel)       | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                                                                                                                                                 |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                                                                                                                                        |
 | **Cadence/Tempo** (one breadth pool)                     | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                    |
-| **The battle — hold the front, expose the back**         | 🟡 seeded    | §4 **respecced to the attrition model 2026** — two positions, one Tempo contest, a five-round battle on a per-round Tempo budget (supersedes the static-ranks model); **code pending**. §4.5 groups (spillover · sum-vs-min · Hoard) and §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current (bare ActorCard + Form-derived stats) |
+| **The battle — hold / break / deal**                     | 🟡 seeded    | §4 **respecced to the engagement-schedule model 2026** — three declared intentions (Vanguard / Outrider / Rearguard), one Tempo contest, a five-round battle resolved over a fixed engagement schedule (supersedes the attrition model); **code pending**. §4.6 the engagement schedule, §4.5 groups (spillover · sum-vs-min · Hoard), §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                                                                                                                                            |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                                                                                                                                               |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                                                                                                                                         |
@@ -953,9 +953,10 @@ Finesse to the **contest** keeps a strike's force on Might (not on how hard you 
 
 ### 3.4 The round — orchestration (PvE & PvP)
 
-> **SUPERSEDED by §4 (attrition model).** The round is no longer a player-phase/foe-phase loop over
-> formation; it is the **blind bid → Phase 1 → Phase 2 → refresh** round-loop model in §4. **Tempo is now the single
-> currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved *per phase*. The
+> **SUPERSEDED by §4 (engagement-schedule model).** The round is no longer a player-phase/foe-phase loop
+> over formation; it is the **declare intentions → engagement schedule → reset** round-loop model in §4.
+> **Tempo is now the single currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved
+> *per engagement*. The
 > PvE/PvP text below (and its Focus-defend modes) is kept for design history; where it conflicts with
 > §4, §4 wins.
 
@@ -1006,69 +1007,98 @@ phase.
 
 ---
 
-## 4. The battle — hold the front, expose the back 🟡 *(**attrition model**, 2026 — supersedes the static-ranks model; **code pending**. Two positions, one Tempo contest, a five-round battle on a per-round Tempo budget.)*
+## 4. The battle — hold the front, break the line, deal from the back 🟡 *(**engagement-schedule model**, 2026 — supersedes the attrition model; **code pending**. Three declared intentions, one Tempo contest, a five-round battle on a per-round Tempo budget, resolved over a fixed engagement schedule.)*
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
-> **charge-and-gauntlet** → the **static-ranks** model (three ranks — Vanguard / Outrider / Rearguard —
-> two ordered tiers, a Finesse **crossing contest**, catch / slip / parting hits, Fast / Slow
-> sub-windows). All replaced by the **attrition** model below. The *spine survives* — a front that
-> shields a back, "the front protects the back," **declared** positions, force-not-fiat — but a
-> **simplification pass** collapses the rest: **three ranks → two** (the Outrider is gone), the **two
-> tiers and the crossing contest → one universal Tempo contest**, and **reaching the protected back
-> becomes a matter of *time* (the front falling)** rather than a flanker winning a crossing. Motivation:
-> the Outrider rank, the catch / slip machinery, and the Fast / Slow windows were the costly constructs,
-> and the two-position / one-contest model reproduces the same consequences — the playstyle triangle, the
-> glass-cannon back, force-not-fiat (the WHY, below) — with far less to track.
+> **charge-and-gauntlet** → the **static-ranks** model (three ranks, two tiers, a Finesse crossing contest,
+> catch / slip / parting hits, Fast / Slow windows) → the **attrition** model (two positions, the Outrider
+> *emergent* from grouping's sum-vs-min, the back opened only when the whole front fell). The *spine
+> survives across all of them* — a front that shields a back, **declared** positions, force-not-fiat, the
+> playstyle triangle, the glass-cannon back. The current **engagement-schedule** model below makes one
+> deliberate reversal and one simplification: it **re-introduces the Outrider as a declared third
+> intention** (validated 2026 — see `log-driven/brainstorming/phases.md` and the `engagement.rs` sim), and
+> it replaces the attrition model's *emergent* breaker — a freed Vanguard charging through a per-unit lock,
+> plus the sum-vs-min slip machinery built to make the Outrider *pop out* — with a breaker you simply
+> **declare**. **Motivation (force vs fiat, the designer's call):** naming the Outrider is **honest fiat** —
+> it declares a *plan* the player chooses, which can *fail* (a misplaced Outrider is screened, runs dry, or
+> bounces off Toughness) and which nothing is immune to (the back is reachable by *anyone*, §4.6; the
+> Outrider is only *more efficient*). The emergent construction was a *page of machinery* to avoid a
+> *one-word label*; the consequences (the RPS triangle, each role necessary, force-not-fiat) stay emergent
+> from the schedule + Tempo economy, proven on numbers ≤ 3. The crossing contest, catch/slip, and Fast/Slow
+> windows stay retired; the **per-phase pile, the pre-empt, cast/resolve, and disrupt** (§4.6) carry forward
+> unchanged — the engagement schedule *is* their named ordering.
 
-**The budget (one per-round pool, shared by the round's two phases).** **Tempo** is the action economy
+**The budget (one per-round pool, shared across the whole schedule).** **Tempo** is the action economy
 (§3): a `count × value` pool of **Cadence**-many cards, each worth **Finesse**, that **refills at the end
-of every round.** **Acting on the enemy spends Tempo** — *every* attack, and *every* defense (block or
-slip), is a Tempo bid; **standing in a position and *absorbing* a blow are free.** A round's **two phases
-share the one budget — it does *not* refresh between them**, so Phase 1's contests can leave you **spent
-for Phase 2** (the front's whole job: make you burn the round's Tempo before the back opens). **Health does
-*not* reset** — it is the **cross-round** meter that decides the **five-round** battle. **Finesse is read
-only in a Tempo contest** (a bid); a strike's *damage* is set by **Might**.
+of every round.** **Acting on the enemy spends Tempo** — *every* attack, and *every* defense (block, slip,
+or evade), is a Tempo bid; **standing in a position and *absorbing* a blow are free.** The **whole round's
+engagement schedule shares the one budget — it does *not* refresh mid-round**, so Tempo spent early (a
+dodge in the Intercept, a raid in the Raid) is gone by the late engagements — the **opportunity cost is the
+balance engine** (a Rearguard that spends its shot on a raider has none left for the enemy front, and dies
+to it later). **Health does *not* reset** — it is the **cross-round** meter that decides the **five-round**
+battle. **Finesse is read only in a Tempo contest** (a bid); a strike's *damage* is set by **Might**.
 
-**RULE — two declared positions.** Each side secretly **groups** its Actors (§4.5) and places each group,
-then both reveal:
+**RULE — three declared intentions.** Each side secretly **groups** its Actors (§4.5) and declares each
+group's **intention** for the round, then both reveal. An intention is a *plan* — declaring it is free; it
+pays off only if the stats and the schedule bear it out (force-not-fiat: a misplaced intention simply
+fails):
 
-- **Vanguard** — the **front**. The position that **can be hit**, and the **shield**: *while a side's
-  Vanguard lives, its Rearguard cannot be targeted.*
-- **Rearguard** — the **back**. **Untargetable while its own front lives;** from safety it fires on the
-  enemy front (ranged), buffs allies, and degrades foes.
+- **Vanguard** — **hold the line** (front). The position that **can be hit**, and the **shield**: *while a
+  side's Vanguard lives, its Rearguard cannot be targeted.* It screens the enemy Outriders, fights the enemy
+  front, and cleans up last (§4.6).
+- **Outrider** — **break the line** (flank). It forgoes the Vanguard's shielding and the Rearguard's safety
+  to **raid the enemy Rearguard directly** — but it is **exposed both ways**: the enemy front screens it and
+  the enemy back fires on it *before* it strikes (the schedule, below). A fragile, high-Tempo body that gets
+  *through* and back out; a blob cannot (groups slip weakest-link, §4.5).
+- **Rearguard** — **deal from the back**. **Untargetable while its own Vanguard lives;** from safety it
+  fires on the enemy front (ranged), buffs allies, and degrades foes — and it is the side's **only
+  answer to an enemy Vanguard's Toughness** (the glass cannon).
 
-**Reach = where you can attack from.** Range is **position-determined** (§4.2): a **melee** Actor can only
-strike from the **Vanguard** (it must be at the front); a **ranged** Actor strikes from the **Rearguard**,
-reaching over its own line. So melee belongs up front (it is also your shield) and ranged belongs in back
-(safe damage) — positions **self-sort by attack type**, no rule needed; a melee unit parked in the
-Rearguard is dead weight until the front breaks and the distance closes.
+**Reach = where you can attack from.** Range is **position-determined** (§4.2): a **melee** Actor strikes
+from the **Vanguard** (the front) or as an **Outrider** (raiding across the gap); a **ranged** Actor deals
+from the **Rearguard**, reaching over its own line. Positions **self-sort by attack type** — a ranged body
+declared Outrider, or a melee body parked in the Rearguard, is dead weight (no rule bans it; it is just
+ineffective).
 
-**The structure — a round is two phases; the battle is up to five rounds.** The battle runs **five rounds,
-or until a side is dead.** Each round:
+**The structure — declare, then walk the engagement schedule.** The battle runs **five rounds, or until a
+side is dead.** Each round:
 
-1. **Blind bid** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors (§4.5)
-   and assigns each group **Vanguard** or **Rearguard** (re-bid each round), and plays **standing buffs /
-   braces** (Support mends, Wall braces — ally-targeted, last the round). Reveal together; nobody moves.
-2. **Phase 1 — the front holds.** A free-for-all: anyone may strike the **enemy Vanguard**; **no one may
-   target an enemy Rearguard.** Friendly **buffs auto-land** (no friendly harm). Every attack is contested
-   (the one Tempo contest, below); effects **accumulate** and **lock at the boundary** (§1.9; deaths tally,
-   §1.3).
-3. **Phase 2 — the front falls (per side).** The instant a side's **Vanguard is gone, its Rearguard is
-   fair game** — to ranged fire and to any melee that crossed. Each side flips **independently**. **No
-   Tempo refresh between the phases:** the round's budget carries over, so a side that spent Phase 1
-   breaking the line may reach the open back **empty-handed**.
-4. **Refresh.** All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved battle
-   is a draw, §0.4).
+1. **Declare Intentions** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors
+   (§4.5) and assigns each group an intention — **Vanguard / Outrider / Rearguard** (re-declared each round).
+   *(The hidden commit matters only under the Versus / Clash layers; in PvE the foe's intentions are
+   scripted and open — §0.1.)*
+2. **Reveal Intentions.** Reveal together; nobody moves. Positions are now open.
+3. **Pre-Battle (Standing).** Standing effects — buffs / braces (Support mends, Wall braces) — are cast now:
+   ally-targeted, auto-land, last the round (the §4.6 Standoff / §4.4 `cast: standing`).
+4. **The engagement schedule.** The round's strikes resolve over a **fixed sequence of role-vs-role
+   engagements** (below). Each engagement is a §1.9 boundary: declare → resolve → apply (the per-phase pile,
+   §4.6; deaths finalize, §1.3).
+5. **Reset (the Lull).** All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved
+   battle is a draw, §0.4).
 
-> **REFINED (2026) — see §4.6.** Two parts of the picture below are sharpened by **§4.6**: (a) back-access
-> is **per-unit lock**, not all-or-nothing — a **free** Vanguard (the enemy Vanguard it attacked is dead, or
-> it attacked none) breaches the enemy Rearguard in Phase 2 **even while other enemy Vanguards still
-> stand**; a **locked** one cannot. (b) Ranged/spell attacks resolve in **windows** — Standing (blind bid) /
-> Fast (end of Phase 1) / Slow (last) — on the one shared Tempo pool, in a fixed **resolution order**. Read
-> the all-or-nothing phrasing below as the base intuition; **§4.6 is the operative rule.**
+**The engagement schedule — the one ordering system.** Every attacker→target role-pair is resolved in a
+fixed order; *every legal pair appears exactly once* (Rearguard→Rearguard is the lone illegal pair — a
+back-line trading shots with a back-line it cannot reach, §4.6). The **order is the whole interception /
+pre-empt / Reckoning machinery** — there are no other timing rules; a unit struck in an earlier engagement
+takes no action in a later one (§4.6 PRINCIPLE):
 
-The front's whole job is **within-round attrition**: make the enemy *spend the round's Tempo* to break
-through, so whoever reaches the exposed back this round arrives with an empty tank — or not at all.
+| Step | Name (diegetic) | Engagements | What the fiction is |
+|------|-----------------|-------------|---------------------|
+| a | **Intercept** | Vanguard → Outrider | the front screens the crossing flankers |
+| b | **Volley** | Rearguard → Outrider | the back fires on the crossers (it shoots *before* they arrive — the pre-empt) |
+| c | **Raid** | Outrider → Rearguard | flankers that survived strike the exposed back |
+| d | **Clash** | Rearguard → Vanguard, Vanguard → Vanguard | the back snipes the enemy front; the fronts meet |
+| e | **Breach** | Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider | the deep / trailing blows land last |
+
+This is **consult-on-ambiguity precedence, not a five-step procedure** — a table collapses "everyone attacks
+their target" into "obviously," and a player reaches for the order only when two events would resolve in a
+sequence that changes the outcome and isn't obvious (does my Outrider kill the Mage before it fires? — Raid
+is before Clash, so yes). The names are **diegetic** so the order is *reconstructable* from the picture, not
+memorized (the back fires at a crosser before it arrives; you cannot hit what is behind a living wall; your
+committed blow lands after they answer it). The opportunity cost falls straight out of the order on a shared
+budget: an Outrider must pay to dodge the Intercept **and** still afford the Raid (its extra Tempo card); a
+Rearguard that spends its shot screening a raider in the Volley has none left to crack the enemy Vanguard in
+the Clash — *going around the design costs you the action you needed for it.*
 
 **The one contest — attack vs. block / slip.** Every attack is a **single simultaneous Tempo bid**; the
 defender answers by spending Tempo to **beat it — strictly (a tie lands the hit).** *One* mechanic covers
@@ -1082,21 +1112,23 @@ hit lands; spend past what your foe can answer and nothing is immune — opposit
 
 **Groups — sum to block, weakest-link to slip.** A group that **blocks** pools its members' Tempo into one
 summed bid (a strong hold); a group that **slips or evades** needs **every member to individually beat the
-attacker** (weakest-link). So a group is a superb **wall** and a hopeless **slipper** — the unit that
-reaches an exposed back is a **lone, high-Tempo** body, not a blob (§4.5). *This is the old
-Vanguard-vs-Outrider distinction, now emergent from sum-vs-min.*
+attacker** (weakest-link). So a group is a superb **wall** and a hopeless **slipper** — the body that
+gets through the line as a raider is a **lone, high-Tempo Outrider**, not a blob (§4.5). *(The Outrider is
+now a **declared** intention; sum-vs-min no longer has to **conjure** the breaker, only to price grouping —
+a grouped Outrider trades its raid for a wall.)*
 
 **Demise — protection is the front's, and only while it stands.**
 
 | Position                          | Dies to                                                                                              | Safe from                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| **Vanguard** (the front / shield) | the enemy front it fights — and anything else once engaged; it is the **exposed** position by design | nothing — being the shield *is* its job |
-| **Rearguard** (the back)          | once **its own Vanguard falls** — enemy ranged fire, and any melee that crosses the open distance    | **everything, while its front holds**   |
+| **Vanguard** (front / shield)     | the enemy Rearguard's fire (Clash) and enemy Vanguards (Clash) / Outriders (Breach); the **exposed** front by design | nothing — being the shield *is* its job |
+| **Outrider** (flank / breaker)    | the enemy front that screens it (Intercept) **and** the enemy back that fires on it (Volley) — exposed both ways, *before* it strikes | nothing — it forgoes both the shield and the safe back |
+| **Rearguard** (back / cannon)     | the enemy **Outrider's raid** (Raid), and — once its own front falls — enemy fire and any melee that crosses | the raid aside, **everything while its own front holds** |
 
-So the **front is spent to keep the back alive**: a glass-cannon Rearguard is safe *and* deadly while
-shielded, and dies the moment the shield drops. The core decision is the **allocation** — load the
-**front** (outlast the enemy to *their* Phase 2) or the **back** (burn from safety, but lose it when
-*your* front breaks).
+So each intention buys one thing at the price of another: the **Vanguard** trades exposure for the shield it
+projects; the **Outrider** trades *all* protection for direct back-access; the **Rearguard** trades reach
+for safe, decisive damage — safe from everything *except* the breaker built to reach it. The core decision
+is the **allocation** of bodies and Tempo across the three.
 
 **Role powers (re-homed to the one contest).** With no crossing or catch, powers now bite the **Tempo
 bid** or the **exposed-back strike** instead: e.g. **Bulwark** (+block bid for every allied Vanguard — the
@@ -1118,20 +1150,24 @@ round-scoped status or drops a stat:
 immune. *(The old fear/Dread channel is **gone**; the Controller applies these directly as evadable ranged
 attacks. Each debuff's strength, and whether Rout can fire before contact, are seeded — tune to taste.)*
 
-**The back opens by attrition, not by slipping.** There is no flanker that *slips* to the back; a
-Rearguard becomes reachable only when **its own front is gone** — killed outright, or **Routed off the
-line.** Until then the line protects everything behind it; once it falls, the backfield is open to fire
-and to any melee that crosses.
+**Two ways the back opens — the raid, and the fall.** A Rearguard is reached **two** ways, both *earned*
+(force-not-fiat): by the **Outrider's raid** (the declared breaker crosses and strikes it directly in the
+Raid — *if* it survives the enemy Intercept and Volley), or by **the front falling** (once a side's
+Vanguard is gone, its back is open to fire and to any melee that crosses — the Breach's `V→R`). The
+Outrider buys *early, direct* access at the price of total exposure; waiting for the front to fall is *late*
+but free. Until one of those happens, the living front shields everything behind it.
 
-**Targeting matrix.**
+**Targeting matrix** *(who may strike whom — the engagement schedule fixes the order; here is the reach).*
 
-| Chooser                | May target                                                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Vanguard** (melee)   | the **enemy Vanguard**; once the enemy front is gone, the **enemy Rearguard** (crossing the open distance)                                                       |
-| **Rearguard** (ranged) | the **enemy Vanguard** (firing over its own line); once the enemy front is gone, the **enemy Rearguard**; and it may **aid its own allies** (auto-success buffs) |
+| Chooser                | May strike                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Vanguard** (melee)   | enemy **Outrider** (Intercept) → enemy **Vanguard** (Clash) → enemy **Rearguard** once its front is down (Breach) — screener, then primary force, then cleanup |
+| **Outrider** (melee)   | enemy **Rearguard** (Raid — its purpose) → enemy **Vanguard** / **Outrider** (Breach) if no back is reachable                        |
+| **Rearguard** (ranged) | enemy **Outrider** (Volley) and enemy **Vanguard** (Clash); the enemy **Rearguard** once *its* front is down; and **aids its own allies** (auto-land buffs) |
 
-No one may target an enemy **Rearguard** while that side's **Vanguard** lives. Friendly fire does not
-exist — ally-targeted effects are **buffs only**, and they auto-land.
+No one may strike an enemy **Rearguard** while that side's **Vanguard** lives **and** no Outrider has
+reached it — the back is shielded until cracked. Friendly fire does not exist — ally-targeted effects are
+**buffs only**, and they auto-land.
 
 **Edge cases.** *No Vanguard (all-Rearguard):* with no front to shield it, **your Rearguard is exposed
 from the start** (the "while its front lives" clause never holds), and the enemy front closes untouched —
@@ -1154,22 +1190,24 @@ well-defined (§0.4). The only hidden, simultaneous mind-game is the optional **
 until the simultaneous reveal. Everything after is open; Tempo is flipped face-up to spend. Always public:
 stats (Cadence / Vitality) and the spent / unspent pool.
 
-**WHY.** One physical picture — a front that shields a back — collapsed to **two knobs:** *where each unit
-stands* (front = exposed shield, back = safe cannon) and *how a finite Tempo budget is spent* (attack vs.
-block / slip). The old three-rank triangle survives as a **playstyle** rock-paper-scissors, mediated by
-that economy:
+**WHY.** One physical picture — a **front**, a **flank**, and a **back** — and a finite Tempo budget spent
+across a **fixed order**. The three declared intentions **are** the playstyle triangle, mediated by the
+schedule + economy (validated on numbers ≤ 3 — `engagement.rs`):
 
-- **Aggressor** (spend Tempo breaking the front to expose the back) **beats Glass-Cannon** — cracks the
-  thin shield before the cannons win.
-- **Glass-Cannon** (all Rearguard, fire from safety) **beats Turtle** — out-guns a passive defender it
-  never has to reach.
-- **Turtle / Guard** (spend Tempo on block / slip) **beats Aggressor** — drains the pusher dry, so it
-  reaches the back with nothing left.
+- **Outrider = Aggressor** — break the line to reach the cannons. **Beats the Rearguard** (the Raid kills
+  the glass cannon before it can win); **loses to the Vanguard** (the Intercept screens and drains it, so it
+  reaches the back empty — or dead).
+- **Rearguard = Glass-Cannon** — deal from safety. **Beats the Vanguard** (only its Might cracks the front's
+  Toughness, and it never has to reach it); **loses to the Outrider**.
+- **Vanguard = Turtle** — hold the line. **Beats the Outrider** (screen-and-drain in the Intercept); **loses
+  to the Rearguard** (a tank it cannot reach is out-gunned).
 
-`Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor`. The Vanguard is recast from "catch flankers" to **tempo
-sponge** — make the enemy too poor to cash in Phase 2. **Force, not fiat:** out-bid any defender, over-power
-any wall — opposition is always *cost*; and "beat, not match" guarantees blows eventually land, so Health
-and Might never become decorative.
+`Outrider ▸ Rearguard ▸ Vanguard ▸ Outrider` (= `Aggressor ▸ Glass-Cannon ▸ Turtle`). Each leg is the
+*efficiency* of doing your job versus going around it: the breaker that the front drains, the cannon the
+breaker reaches early, the wall only the cannon's Might can crack. **Force, not fiat:** out-bid any
+defender, over-power any wall, declare any intention — opposition and back-access are always *cost*, never
+decree (the Outrider is only the *efficient* path to the back, never the *only* one); and "beat, not match"
+guarantees blows eventually land, so Health and Might never become decorative.
 
 > This three-cycle is a **counter system** — a clean 3-element RPS, so the counter-system hierarchy
 > applies directly (no Condorcet winner, regular, uniform Nash):
@@ -1181,47 +1219,54 @@ and Might never become decorative.
 
 **GUARANTEES.**
 
-- **Two declared positions:** Vanguard (front, exposed shield) and Rearguard (back, safe cannon);
-  positions **self-sort by reach** (melee front, ranged back).
-- **The back is reachable by any *free* (unlocked) enemy Vanguard** — the enemy Vanguard it attacked is
-  dead, or it attacked none — **even while *other* enemy Vanguards still stand** (per-unit lock, **§4.6**);
-  a **locked** Vanguard cannot reach it. A back's safety is *paid for* (you breach by winning your front),
-  never decreed (force-not-fiat).
+- **Three declared intentions:** Vanguard (front / shield), Outrider (flank / breaker), Rearguard (back /
+  cannon); reach **self-sorts** them (melee fights from the Vanguard or raids as an Outrider, ranged deals
+  from the Rearguard). Declaring an intention is free and may *fail*; nothing is decreed by the label.
+- **The back is reachable two earned ways** (force-not-fiat): an enemy **Outrider's raid** (it survived the
+  Intercept and Volley), or **the front falling** (the Breach's `V→R`, once that side's Vanguard is gone).
+  The Outrider is the *efficient* path, never the only one; a back's safety is always *paid for*, never
+  decreed.
+- **One fixed engagement schedule** is the sole timing system: every legal attacker→target role-pair
+  resolves once, in order (a–e), and a unit struck in an earlier engagement takes no action in a later one
+  (§4.6 PRINCIPLE). The order is **consulted at ambiguity**, not performed each round.
 - **One unified Tempo contest:** a single simultaneous bid; the defender must **beat, not match** (ties
   land); **no iterated auction**, so combat stays a maximizer (§0.4). Defending is Tempo-negative → blows
   always connect in the end → Health / Might stay load-bearing.
-- **Per-round Tempo, shared by the round's two phases:** it refills each round but does **not** refresh
-  between Phase 1 and Phase 2 — within-round attrition is the front's job. **Health persists**; the battle
-  is capped at **five rounds**.
-- **Groups:** sum-to-block, weakest-link-to-slip; single-target damage **spills** in declared order, **AoE
-  hits all**, acting costs **one Tempo per member**; **Hoard X** is a one-card group of X bodies (§4.5).
+- **One per-round Tempo pool, shared across the whole schedule:** it refills each round but does **not**
+  refresh between engagements — the opportunity cost across the order is the balance engine. **Health
+  persists**; the battle is capped at **five rounds**.
+- **Groups:** sum-to-block, weakest-link-to-slip; single-target damage **spills** in declared order
+  (bodyguarding), **AoE hits all** (bypasses spillover), acting costs **one Tempo per member**; **Hoard X**
+  is a one-card group of X bodies (§4.5).
 - **Force, not fiat:** every position is killable by enough Tempo — no immunity, no hard cap. A no-skills,
   infinite-Tempo character wipes any finite party (BI-3).
 
-**MANUAL.** *Group your Actors and place each group in the **Vanguard** (front) or **Rearguard** (back);
-play standing buffs / braces in the same hidden commit. Reveal; no one moves. **Phase 1 — the front
-holds:** everyone may strike the enemy front; nobody may touch an enemy back; friendly buffs auto-land.
-Every attack is one Tempo bid the defender must **strictly beat** to block or slip (a tie lands; a group
-**pools** Tempo to block, but must have **every** member beat it to slip). Both sides spend what they bid;
-**the round's two phases share one Tempo pool** (no refresh between them). **Phase 2 — a front falls:** that
-side's back is now fair game to fire and to melee that crosses; grind on the round's remaining Tempo.
-Standing and soaking are free — only acting spends Tempo. At round end Tempo refreshes; the battle runs
-**five rounds** or until a side is dead.*
+**MANUAL.** *Group your Actors and declare each group's intention — **Vanguard** (hold the front),
+**Outrider** (break the line, raid the back), or **Rearguard** (deal from the back) — and play standing
+buffs / braces, all in one hidden commit. Reveal; no one moves. Strikes then resolve over the fixed
+**engagement schedule**: the front screens crossing Outriders, the back fires on them, surviving Outriders
+raid the back, the lines clash, and the deep blows land last. Every attack is one Tempo bid the defender
+must **strictly beat** to block, slip, or evade (a tie lands; a group **pools** Tempo to block but needs
+**every** member to beat it to slip). All of it is paid from **one Tempo pool that does not refresh
+mid-round** — spend it early and you reach the late engagements empty. Standing and soaking are free.
+At round end Tempo refreshes, Health carries over; the battle runs **five rounds** or until a side is dead.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Blind bid` (Roles) — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group to the Vanguard (front) or Rearguard (back), and plays its standing buffs / braces. Positions are re-bid every round. Revealed together; everything after resolves in the open, nobody moves.
-- **TERM.** `Vanguard` (Roles) — The declared front. The position that can be hit and the shield: while a side's Vanguard lives, its Rearguard cannot be targeted. Melee Actors fight from here.
-- **TERM.** `Rearguard` (Roles) — The declared back. Untargetable while its own Vanguard lives; from safety it fires on the enemy front (ranged), buffs allies, and degrades foes. Reached only once its own front falls.
-- **TERM.** `Phase 1 / Phase 2` (Combat) — The two phases of a round. Phase 1: both backs protected — strike the enemy front only. Phase 2 (per side): a side's back is fair game the instant its Vanguard falls. Both phases share one Tempo pool (no refresh between them); Tempo refills at round end. Effects accumulate and lock at the boundary.
+- **TERM.** `Declare intentions` (Roles) — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together; everything after resolves in the open, nobody moves.
+- **TERM.** `Vanguard` (Roles) — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
+- **TERM.** `Outrider` (Roles) — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
+- **TERM.** `Rearguard` (Roles) — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.
+- **TERM.** `Engagement schedule` (Combat) — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider). The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
 - **TERM.** `Tempo contest` (Combat) — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
-- **TERM.** `Reach` (Combat) — Where you can attack from: melee strikes only from the Vanguard, ranged only from the Rearguard. Positions self-sort by attack type; a melee unit in the back is idle until the front breaks.
+- **TERM.** `Reach` (Combat) — Where you can attack from: melee strikes from the Vanguard or raids as an Outrider, ranged deals from the Rearguard. Positions self-sort by attack type; a misplaced unit is idle, not barred.
 - **TERM.** `Group` (Combat) — Same-side Actors bound at form-up into one unit: one position, one shared target, distinct Health. Single-target damage spills in declared order; AoE hits every member; acting costs one Tempo per member; blocking sums member Tempo, slipping needs every member to beat the attacker. No size cap, no mixed positions.
 - **TERM.** `Hoard X` (Combat) — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
 - **TERM.** `Spillover` (Combat) — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member when the current can no longer absorb it.
 
-**Open dials (pin with implementation).** The structure (the per-round blind bid, the two phases, the one
-Tempo contest, the two declared positions, reach, targeting, the five-round cap) is settled; these are not:
+**Open dials (pin with implementation).** The structure (the per-round declared intentions, the engagement
+schedule, the one Tempo contest, the three declared intentions, reach, targeting, the five-round cap) is
+settled; these are not:
 
 > **SUPERSESSION (2026).** The static-ranks ratification (2026-06-21) — three ranks, two tiers, the
 > crossing contest, card-bound catch, Shadowstep / Phalanx / Bulwark / Blitz riders — is **retired** by
@@ -1275,8 +1320,9 @@ current head-count.
 ### 4.2 Range & attack type — melee, ranged, both, or neither
 
 **RULE.** Every Actor's offense is **melee**, **ranged**, **both**, or **neither**. Range is
-**position-determined** (§4): a **melee** Actor strikes only from the **Vanguard** (it must be at the
-front); a **ranged** Actor strikes from the **Rearguard**, over its own line. A strike lands at its range;
+**position-determined** (§4): a **melee** Actor strikes from the **Vanguard** (the front) or as an
+**Outrider** (raiding the enemy back across the gap); a **ranged** Actor strikes from the **Rearguard**,
+over its own line. A strike lands at its range;
 how the target may answer depends on the range:
 
 - **Melee, same range (target can strike back)** → a **simultaneous trade** (both deal their base through
@@ -1430,7 +1476,7 @@ foe-targeting; support = ally/self), and only an offensive *ranged* one is posit
 attacks fire from the Rearguard (§4.2). Code/data + `TERM` lines land with the role-card migration; §4.4
 was already code-pending — `role-card-redesign.md` §8.)*
 
-### 4.5 Groups — bind same-side Actors into one unit 🟡 *(attrition model, 2026)*
+### 4.5 Groups — bind same-side Actors into one unit 🟡 *(engagement-schedule model, 2026)*
 
 **RULE.** At **form-up** (§4), a side may bind several Actors into a **group**. A group shares **one
 position** (all Vanguard or all Rearguard — never mixed) and **one target** at a time, with **no size
@@ -1463,8 +1509,10 @@ than X.
 **WHY.** A group buys **durability** (shared spillover Health behind a front member) and **focus-fire**
 (its members' attacks concentrate on one target). It pays threefold: **AoE-fragility** (every member hit),
 **target-lock** (one target at a time), and **per-member Tempo** (it bleeds the attrition budget faster).
-The sum-vs-min asymmetry then sorts roles with **no special case** — groups **wall**, lone fast units
-**slip** — reproducing the old Vanguard-vs-Outrider distinction emergently.
+The sum-vs-min asymmetry then sorts groups with **no special case** — a group **walls**, a lone fast unit
+**slips** — so a **grouped Outrider cannot raid** (only a lone, high-Tempo one can): the price of grouping
+for the breaker. *(The Outrider is now a **declared** intention, §4; sum-vs-min no longer has to conjure it,
+only to price the choice to group.)*
 
 **Why the fiction forces these asymmetries** *(documented so interpretation can't drift):*
 
@@ -1493,148 +1541,119 @@ The sum-vs-min asymmetry then sorts roles with **no special case** — groups **
 - **Block = summed Tempo; slip / evade = every member beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
-### 4.6 The six phases — lock, breach & the pre-empt 🟡 *(2026 — refines §4 back-access from **all-or-nothing** to **per-unit lock**, names the round's **six phases**, and orders the breach so the rear's fire **pre-empts** the charger; **2026-06-25: `cast`/`resolve` supersedes instant/deferred, the accumulator is per-phase**; code pending)*
+### 4.6 The engagement schedule — resolution order, the pile, the pre-empt & disrupt 🟡 *(2026 — supersedes the six-phase / per-unit-lock model; the round resolves over the declared-intention schedule of §4; the per-engagement pile, `cast`/`resolve`, pre-empt, and disrupt carry forward; code pending)*
 
-> **Supersedes** the "back opens only when the whole front falls" phrasing in §4 *and* the earlier
-> Fast/Slow "windows" sketch. The *spine* holds — a front shields a back, you reach the back by **winning**,
-> force-not-fiat — but the shield is now **per engagement**, not per-front, and the round resolves in **six
-> named phases**.
+> **Supersedes** the six named phases (Standoff / Fray / Volley / Breach / Reckoning / Lull) and the
+> **per-unit lock / freed-Vanguard charge.** The *spine* holds — a front shields a back, you reach the back
+> by **winning**, force-not-fiat — and the per-engagement pile, the pre-empt, `cast`/`resolve`, and disrupt
+> all carry over unchanged. What changes: the round resolves over the **declared-intention engagement
+> schedule** of §4 (Intercept / Volley / Raid / Clash / Breach), and the breaker is a **declared Outrider**
+> with its own engagement (the Raid), not a Vanguard that freed itself through a per-unit lock.
 
-**PRINCIPLE — why there are phases at all (re-derive timing questions from this).** *Within* a single phase,
-damage is applied **order-independently** (§1.9): every strike and defense is **committed up front** and the
-whole phase resolves together — *including the blows of a body that dies in that same phase* (§1.3: a
-mortally-wounded unit still lands every blow it committed). The **only** reason to split combat into
-separate phases is to impose a **timing order between them:** a unit **dead at a phase boundary takes no
-further action**, so a death can **preclude** what happens in a *later* phase but can never reach back into
-an *earlier* one. Every phase rule below is a corollary — the **Volley pre-empts the Breach** (a charger
-killed in the Volley never strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the
-Reckoning), and a **committed defense is spent whether or not it succeeds** (it was locked before
-resolution). When a new timing question arises, decide it from this one rule: **put two effects in the same
-phase if they should *trade* (both land); in ordered phases if one death should *silence* the other.**
+**PRINCIPLE — why there are engagements at all (re-derive timing questions from this).** *Within* a single
+engagement, damage is applied **order-independently** (§1.9): every strike and defense is **committed up
+front** and the whole engagement resolves together — *including the blows of a body that dies in that same
+engagement* (§1.3: a mortally-wounded unit still lands every blow it committed). The **only** reason to
+split the round into separate engagements is to impose a **timing order between them:** a unit **dead at an
+engagement boundary takes no further action**, so a death can **preclude** what happens in a *later*
+engagement but can never reach back into an *earlier* one. Every schedule rule is a corollary — the
+**Intercept and Volley pre-empt the Raid** (an Outrider screened or shot down before the Raid never
+strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the last engagement), and a
+**committed defense is spent whether or not it succeeds** (it was locked before resolution). When a new
+timing question arises, decide it from this one rule: **put two effects in the same engagement if they
+should *trade* (both land); in ordered engagements if one death should *silence* the other.** *(This is why
+humans can collapse the schedule in their heads and consult the order only when an outcome is genuinely
+ambiguous — §4.)*
 
-**RULE — the six phases.** A combat round runs this fixed sequence; each phase is a §1.9 boundary
-(accumulate, then lock; deaths finalize, §1.3). All Tempo across all phases is paid from **one shared
-per-round pool** (Tempo does **not** refresh between phases, §4):
+**RULE — the round resolves over the schedule; each engagement is a boundary.** A round runs: **Declare
+Intentions** (hidden) → **Reveal** → **Pre-Battle** (Standing effects auto-land) → the **engagement
+schedule** a–e (§4) → **Reset** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
+§5.5 — Health persists, round++). Each engagement is a §1.9 boundary (declare → resolve → apply; accumulate,
+then lock; deaths finalize, §1.3). All Tempo across the whole round is paid from **one shared per-round
+pool** (no refresh between engagements, §4).
 
-1. **The Standoff** — the blind bid is revealed; positions lock; **Standing** effects (buffs / braces, bid
-   face-down) auto-land. *Setup, no clash.*
-2. **The Fray** — the fronts engage: **melee and instant ("fast") ranged and their defenses resolve
-   simultaneously.** Deaths here — by melee *or* by fast ranged — **fix the breach list** (below).
-3. **The Volley** — free Vanguards **charge** declared enemy Rearguard targets across the open ground, and
-   **the rear answers *first*:** counter-fire, melee strike-back, or dodge — all resolving **before** the
-   charger's blow, so a defender can **drop or turn back the charger before it lands.** *(Pre-empt.)*
-4. **The Breach** — chargers who **survived the Volley** land their blows on the rear. This is where a
-   breacher **kills a slow caster and disrupts its spell.**
-5. **The Reckoning** — **deferred ("slow") spells** from survivors resolve **last** (a caster killed in the
-   Breach never casts — its spell fizzles).
-6. **The Lull** — **Refresh:** Tempo is **re-derived from the Form** (borrowed/temporary Tempo does not
-   return — §5.5), **Health persists**, round++.
+**RULE — the accumulator is per-engagement.** Each engagement owns a **per-target pile**; a landed hit adds
+**Might** to the pile of its **`resolve`** engagement, and when the pile clears **Toughness** one Health
+card flips (overflow wasted). **Every pile wipes at its own engagement boundary** — sub-threshold damage
+does **not** carry between engagements (this **refines §2.2** from "the round's pile" to *the engagement's
+pile*). **Health persists** (§2.1); only the sub-threshold pile is ephemeral. Effects that share a
+`resolve` engagement **stack in that pile** (additive, order-independent — §0.1: a combo is diverse effects
+in one pile, never a multiplying chain). *Consequence:* **Toughness is a per-engagement wall**, so burst
+within one engagement beats chip spread across them — revisit Toughness values in `booklet.ron` (numbers
+are human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses an
+engagement boundary, so the only number a human carries through the round is Health.)*
 
-**RULE — the accumulator is per-phase.** Each phase owns a **per-target pile**; a landed hit adds
-**Might** to the pile of its **`resolve`** phase, and when the pile clears **Toughness** one Health card
-flips (overflow wasted). **Every pile wipes at its own phase boundary** — sub-threshold damage does
-**not** carry between phases (this **refines §2.2** from "the round's pile" to *the phase's pile*).
-**Health persists** (§2.1); only the sub-threshold pile is ephemeral. Effects that share a `resolve`
-phase **stack in that phase's pile** (additive, order-independent — §0.1: a combo is diverse effects in
-one pile, never a multiplying chain). *Consequence:* **Toughness is a per-phase wall**, so burst within
-one phase beats chip spread across phases — revisit Toughness values in `booklet.ron` (numbers are
-human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses a
-phase boundary, so the only number a human carries through the round is Health.)*
+**RULE — back-access (who may strike the Rearguard).** Two earned routes, both gated by the schedule order:
+- **The Outrider's raid** — a declared Outrider strikes the enemy Rearguard in the **Raid** (c), **if it
+  survived** the enemy front's **Intercept** (a) and the enemy back's **Volley** (b). The breaker *declares*
+  the raid (no per-unit lock); its cost is total exposure *before* it lands.
+- **The front falling** — once a side's Vanguard is gone, its Rearguard is open to the **Breach**'s `V→R`
+  (a Vanguard crossing the now-open ground) and to ranged fire. This is *late* (the last engagement) but
+  needs no Outrider.
 
-**RULE — the breach list (who may charge).** The **Fray** fixes it. A Vanguard is **locked** for the round
-**only** while an **enemy Vanguard *it attacked* in the Fray is still alive** — *attacking* means it spent
-an action striking a body **standing in its way.** **Only attacking locks.** Being **struck**, **blocking**,
-or **evading a ranged shot** never locks you (you answered the *shot*, not a blocker). A Vanguard that
-**attacked no enemy Vanguard**, or for whom **every** Vanguard it struck is now **dead** (by melee *or* by a
-Fray fast shot), is **free** — and in the **Volley** may **charge** the enemy Rearguard, or **flank** a
-surviving enemy Vanguard (legal, expected rare). A **locked** Vanguard stays pinned. *A line breaks in
-**sections**: whoever drops his own front-foe pours into the gap, even while other enemy Vanguards stand.*
+A Rearguard is shielded until one of these cracks it; neither is by decree (force-not-fiat — you reach the
+back by **winning** the Intercept/Volley as an Outrider, or by **killing** the front).
 
-**RULE — `cast` & `resolve` (supersedes instant/deferred).** An ability's timing is **two fields** over
-named **cast windows** and named **resolution gates**:
+**RULE — `cast` & `resolve` (carried forward).** An ability's timing is **two fields**:
 
-- **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Standoff — own-side buffs /
-  braces, auto-land) or **`strike`** (the **Strike window** = the **Fray *and* the Volley**; a card
-  usable in one strike window is usable in both). Default `strike`.
-- **`resolve`** — which phase's pile the effect lands in (the per-phase accumulator above). A card
-  **authors one of two** values: **`on-cast`** (the phase it was used — the old *instant*; an archer may
-  loose at the enemy front in the Fray *and* again at a charging breacher in the Volley; the default) or
-  **`reckoning`** (the old *deferred* — paid up front, lands last; that deferral is the **only** reason a
-  breacher can disrupt it).
-  - **`breach` is *derived-only* — never authored on a card.** It is the resolve a **melee** attack takes
-    when used as a **charge**: a *freed* Vanguard targeting the enemy **rear**, paid in the Volley and
-    landing in the **Breach** (so the rear can pre-empt the crosser). It follows from **reach + breach
-    state** (below), belongs to the **charge action** rather than the card, and is shared by **every**
-    melee ability. *(The same melee used as a **flank** — a surviving enemy front, no gap — stays
-    `on-cast`, a trade.)*
+- **`cast`** — where you may pay Tempo and commit it: **`standing`** (Pre-Battle — own-side buffs / braces,
+  auto-land) or **`strike`** (any engagement in which the unit may act per reach + back-access; default).
+- **`resolve`** — which engagement's pile the effect lands in. A card **authors one of two**: **`on-cast`**
+  (the engagement it was used — the old *instant*; a Rearguard may fire on a raider in the Volley *and* on
+  the enemy front in the Clash; the default) or **`reckoning`** (the old *deferred* — paid up front, lands
+  in the **last** engagement of the round; that deferral is the **only** reason a breacher can disrupt it).
+  The Outrider's **raid** and the Vanguard's **breach** are not authored resolves — they are the timing of
+  their **scheduled engagement** (Raid / Breach), exposed to the earlier pre-empt by construction.
 
-**Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* in a
-phase comes from **reach** (§4.2) + breach state (the front shields the rear until cracked; the rear is
-reachable only by a **freed** charger). The **disruption window is `resolve − cast`** counted in gates —
-`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); a later `resolve` ⇒ the gates in between are exactly where a
-death can silence it. **Author's dial (the two authorable values):** choose `on-cast` for a guaranteed
-effect (a trade) or `reckoning` to make it disruptable and land last. `breach` is **not** an authoring
-choice — it is the charge action's derived timing (a melee charging the rear), exposed to the Volley
-pre-empt by construction.
+**Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* comes from
+**reach** (§4.2) + back-access (above). The **disruption window** is the gates between `cast` and `resolve`:
+`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); `reckoning` ⇒ the engagements in between are exactly where a
+death can silence it.
 
-**RULE — breachers are defended normally.** A charger is **not** special: the rear spends Tempo to **dodge**
-it, **strike back** (if it carries melee), or **counter-fire** a ranged shot — any §3.4 response — all from
-the shared pool, all in the **Volley**, so all **pre-empt** the charger's Breach blow.
+**RULE — the rear pre-empts the raider.** A raiding Outrider is **not** special: in the **Intercept** the
+enemy front may strike it, and in the **Volley** the enemy back may fire on it — both **before** the
+Outrider's Raid blow lands (the schedule order). Any §3.4 response (dodge, strike-back, counter-fire) from
+the shared pool applies. So the rear can drop or drain the breaker before it arrives — *and a Rearguard that
+spends its shot doing so has none left for the enemy Vanguard in the Clash* (the opportunity cost, §4).
 
-**RULE — flanking intercepts.** A **free** Vanguard may, in the **Volley**, **flank** a surviving enemy
-Vanguard instead of charging a rear (legal, expected rare). A flank is **adjacent melee, not a charge across
-a gap**, so flanker and target **trade** — both land, no pre-empt between them (the PRINCIPLE: same phase =
-trade). But because the flank sits in the **Volley — before the Breach —** a flank that **kills** its target
-**intercepts:** if that target was itself **charging**, it is dead at the Volley boundary, so its Breach
-charge is **precluded**. So a freed Vanguard can **gang a survivor** *or* **cut down an enemy breakthrough
-before it lands**. (Supersedes "resolves like any charge.")
+**RULE — interception & flanking.** The **Intercept** (a, `V→O`) is the front's screen on crossing
+Outriders — a Vanguard that kills a raider there **precludes** its Raid (dead at the boundary). A Vanguard
+with no Outrider to screen falls back to the **Clash** (`V→V`) and then the **Breach** (`V→R`) — screener →
+primary force → cleanup (§4). An Outrider with no reachable Rearguard falls back to the **Breach**
+(`O→V`, `O→O`).
 
-**RULE — disrupt.** Default disrupt = **kill the caster in the Breach before the Reckoning** (no caster, no
-spell). Beyond that, dedicated **non-lethal disruption** effects (stagger / silence / unseat) may **cancel
-or delay** a deferred spell **without** a kill. Both routes cash out in the same place: a deferred spell
-resolves only if its caster reaches the Reckoning able to cast.
+**RULE — disrupt.** Default disrupt = **kill the caster before its `reckoning` resolves** (no caster, no
+spell). Dedicated **non-lethal disruption** (stagger / silence / unseat) may **cancel or delay** a deferred
+spell without a kill. Both cash out the same way: a deferred spell resolves only if its caster reaches the
+last engagement able to cast.
 
-**WHY.** The front's real job is the **lock**, and it is **personal**: you are pinned by the foe you
-committed to, and only **dropping him** (or never committing) frees you to pour through the gap behind.
-All-or-nothing erased that texture; the per-unit lock restores it while keeping **force-not-fiat** (you
-reach the back by **winning**, never by rule). The **Volley-before-Breach** order is the theme made
-mechanical: the front is an engaged melee with no gap, so its blows trade **simultaneously** (the Fray);
-the breach is a **charge across open ground**, so the defender **shoots first** (the Volley pre-empts) — you
-suffer their quick fire to reach them, and it is worth it only if you survive to **disrupt** the slow doom
-they were winding up. Deferring slow spells to the **Reckoning** is the caster's own bet — *dear and late*:
-a big effect that lands **only if it survives the charge** it provoked. And **one shared pool** keeps every
-strike, defense, charge, counter-shot, and spell a single **allocation** — never a free extra action: the
-rear that dumps Tempo answering the Volley has less left for the spell, and vice-versa.
+**WHY.** The schedule *is* the timing system — one fixed order replaces a pile of per-effect timing rules,
+and every consequence (interception, pre-empt, Reckoning) is just a position in it. The **Intercept/Volley
+before the Raid** is the theme made mechanical: a flanker crossing open ground is screened by the front and
+shot at by the back *before* it arrives, so breaking the line is push-your-luck — you suffer their answer to
+reach them. Deferring a slow spell to the last engagement is the caster's own bet — *dear and late*: a big
+effect that lands **only if it survives** the round it provoked. And **one shared pool** makes every strike,
+defense, raid, counter-shot, and spell a single **allocation** — the opportunity cost across the schedule is
+the balance engine (§4).
 
 **GUARANTEES.**
 
-- **Per-unit lock, not all-or-nothing:** the back is reachable by any **free** enemy Vanguard — its struck
-  front-foe dead, or it struck none — *even while other enemy Vanguards live*; a **locked** Vanguard cannot
-  charge. (Supersedes "untargetable while any Vanguard lives.")
-- **The Fray fixes the list:** deaths in the Fray — melee **or** fast ranged — both count toward freeing a
-  locker; nothing after the Fray changes who may charge.
-- **Pre-empt:** in the Volley the rear's answer (counter-fire / strike-back / dodge) resolves **before** the
-  charger's Breach blow — it can stop the charge cold.
-- **Flank intercepts:** a flank *trades* (both land), but resolving in the Volley means a flank-**kill**
-  silences the target's own Breach charge — a freed Vanguard can intercept a breakthrough, not just gang a
-  survivor.
-- **Instant in both engagements:** a card usable in the Fray is usable again in the Volley (shared Tempo).
-- **Disrupt window:** a breacher's Breach damage resolves **before** the Reckoning, so killing (or
-  non-lethally disrupting) a caster fizzles its deferred spell.
-- **One pool:** every action across all six phases is paid from the single per-round Tempo budget.
-- **Force-not-fiat preserved:** you breach by winning your front (or never engaging), never by decree; every
-  position still dies to enough Tempo.
+- **The schedule is the sole timing system:** every legal attacker→target role-pair resolves once, in the
+  fixed order (a–e); a unit dead at an engagement boundary takes no later action. No other timing rule.
+- **Back-access is earned two ways:** the Outrider's declared Raid (survived Intercept + Volley) or the
+  front falling (Breach `V→R`) — never by decree (force-not-fiat).
+- **Pre-empt:** the Intercept and Volley resolve **before** the Raid, so the front's screen and the rear's
+  fire can stop a breaker before it strikes.
+- **Per-engagement pile:** Might accumulates within an engagement and **wipes at its boundary**; Toughness
+  is a per-engagement wall; only Health crosses boundaries.
+- **`cast`/`resolve`:** `on-cast` is undisruptable; `reckoning` lands last and is disruptable by killing or
+  unseating the caster first; the raid/breach take their scheduled engagement's timing.
+- **One pool:** every action across the whole schedule is paid from the single per-round Tempo budget.
+- **Force-not-fiat preserved:** you reach the back by winning (the raid) or killing the front (the breach),
+  never by decree; every position still dies to enough Tempo.
 
-**Open dials (human-ratify).**
-
-- **"Volley" naming** — the Volley is the rear's *whole* pre-emptive answer (counter-fire **and** melee
-  strike-back **and** dodge), not only arrows; **"The Answer"** is the inclusive alternative if "Volley"
-  reads too ranged.
-- ~~**When deferred spells are *committed***~~ — **resolved 2026-06-25:** dissolved into the per-card
-  **`cast`** window. A deferred ability is `cast: strike` (committable in the Fray *or* the Volley —
-  player's choice) and `resolve: reckoning`; no single global commit moment is fixed.
-
-*(Worked round exercising all six phases: `log-driven/combat-logs/designer/card-combat-round-breach.md`.)*
+*(Worked round to be regenerated for the engagement schedule:
+`log-driven/combat-logs/designer/card-combat-round-breach.md`.)*
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
@@ -1975,11 +1994,12 @@ register (#10 conceptual integrity — each concept named once, for one job).
 
 **Why exactly five — `3 + 2`.** The role set is the *smallest complete* one on both of combat's axes,
 so the count is re-derivable, not arbitrary (#10):
-- **Three damage roles = the §4 *playstyle* triangle's vertices:** **Wall = Turtle** (hold / block the
-  front), **Infiltrator = Aggressor** (a **Vanguard sub-type** that pushes through to the exposed back),
-  **Artillery = Glass-Cannon = Rearguard** (fire from safety). Three is the *minimal* counter-cycle — the
-  `Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor` RPS needs exactly three. (Two *positions*, three
-  *styles*: Wall and Infiltrator both stand in the Vanguard.)
+- **Three damage roles = the §4 *playstyle* triangle's vertices, one per declared intention:** **Wall =
+  Turtle = Vanguard** (hold / block the front), **Infiltrator = Aggressor = Outrider** (the declared flank
+  that raids the exposed back), **Artillery = Glass-Cannon = Rearguard** (fire from safety). Three is the
+  *minimal* counter-cycle — the `Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor` RPS needs exactly three.
+  (One role per **declared intention** now — the Outrider is its own position, §4, not a Vanguard
+  sub-type.)
 - **Two effect roles = the complete duality of state-bending:** **Support** *augments* your side (`+`:
   heal / brace / haste), **Controller** *degrades* theirs (`−`: slow / confuse / weaken). Two is the
   whole of that duality.
@@ -1992,9 +2012,9 @@ against #6 / the small core).
 
 **GUARANTEES.**
 - The five roles are **`3 + 2`**: the §4 playstyle triangle's three vertices (Turtle / Aggressor /
-  Glass-Cannon = Wall / Infiltrator / Artillery — across two positions, Wall & Infiltrator in the Vanguard)
-  plus the two effect directions (augment = Support, degrade = Controller) — *minimal-complete on both
-  axes*, not an arbitrary list.
+  Glass-Cannon = Wall / Infiltrator / Artillery — one per declared intention: Vanguard / Outrider /
+  Rearguard) plus the two effect directions (augment = Support, degrade = Controller) — *minimal-complete on
+  both axes*, not an arbitrary list.
 - A character's roles = its assigned role-card tracks; they **accrete** (monotone, §0.1).
 - **Stats are bundled with role rewards** — the survivability to *use* a role grows *with* the role;
   there is no free-floating generic stat pool (no "stat-mule").
