@@ -9,7 +9,7 @@ use engine::{
     Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
 };
 
-use crate::actor::{Actor, Range};
+use crate::actor::{Actor, Intention, Range};
 use crate::campaign::{Campaign, reference_campaign};
 use crate::combat;
 use crate::duel::{self, Move, Side};
@@ -46,21 +46,13 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// Standoff (§4.6 #1): set this unit's **position** — front (Vanguard) or back (Rearguard).
+    /// DeclareIntentions (§4): set this unit's **intention** for the round — Vanguard (hold the front),
+    /// Outrider (break the line), or Rearguard (deal from the back).
     SetVanguard(usize),
+    SetOutrider(usize),
     SetRearguard(usize),
-    /// Standoff (§4): toggle this hero unit's melee answer for the round — **Block** (out-bid to slip the
-    /// blow) vs the default **Trade** (strike back). The slipper sets Block to survive the front untouched.
-    Guard(usize),
-    /// Volley (§4.6 #3): declare a **flank** — this freed Vanguard attacks a surviving enemy
-    /// Vanguard (a trade in the Volley). `Flank(actor)` flanks the first enemy Vanguard.
-    Flank(usize),
-    /// Advance the current phase (Standoff → Fray → Volley → Breach → Reckoning → next round).
+    /// Advance: finish declaring → resolve the round's engagement schedule (§4.6).
     Deploy,
-    /// Fray (§4.6 #2) strike / Volley (§4.6 #3) **flank**: this actor attacks that enemy.
-    Target(usize, usize),
-    /// Volley (§4.6 #3): this freed Vanguard **charges** that enemy Rearguard (lands in the Breach).
-    Charge(usize, usize),
     PlayCard(usize, usize),
     Pass(usize),
     /// Clash module (1v1): play one move.
@@ -330,30 +322,18 @@ impl Deckbound {
         if state.s_pool(side)[i].tempo <= 0 {
             return false;
         }
-        // §4.6 cast window.
-        let window_ok = matches!(
+        // §4 cast window: in the engagement-schedule engine the interactive phase is DeclareIntentions,
+        // where **Standing** (ally/self) casts go up. Offensive abilities are resolved by the engagement
+        // schedule, not cast interactively — wiring ability-strikes into `resolve_round` is a follow-on
+        // (see needs-merge/engine-migration-to-engagement-model.md), so only Standing casts are playable.
+        if !matches!(
             (state.phase, card.cast),
-            (Phase::Standoff, Cast::Standing)
-                | (Phase::Fray, Cast::Strike)
-                | (Phase::Volley, Cast::Strike)
-        );
-        if !window_ok {
+            (Phase::DeclareIntentions, Cast::Standing)
+        ) {
             return false;
         }
-        // §4.4 — offensive casting is positioned by reach (§4.2). A foe-targeting card has its casting
-        // position fixed by whether it is ranged: an offensive *ranged* spell fires only from the
-        // Rearguard (so a Vanguard cannot rain ranged spells); an offensive *melee* ability is cast from
-        // the front. Support (ally/self) is rank-free (the "a Vanguard can't rain spells" gate falls out
-        // of §4.2 — it is not a separate mechanism).
         if card.is_offensive() {
-            let in_vanguard = state.s_vanguard(side)[i];
-            let ranged = card.is_ranged();
-            if ranged && in_vanguard {
-                return false; // an offensive ranged spell needs the Rearguard
-            }
-            if !ranged && !in_vanguard {
-                return false; // an offensive melee ability needs the Vanguard
-            }
+            return false;
         }
         true
     }
@@ -399,39 +379,6 @@ impl Deckbound {
                 ));
             }
         }
-        // §10 Pin (Artillery): suppressive fire denies a free enemy Vanguard its charge. Resolved here
-        // (the lock/charge lists live in the round plan); the `play_card` effect arm only narrates. We
-        // pin up to `targets` free enemy Vanguards — set the pinned flag (so `fix_breach_list` keeps the
-        // lock across the Fray boundary), lock it now, and drop any charge it has already declared.
-        if card
-            .effects
-            .iter()
-            .any(|e| matches!(e, crate::cards::Effect::Pin))
-        {
-            let enemy: u8 = 1 - side;
-            let want = (card.targets as usize).max(1);
-            let victims: Vec<usize> = (0..state.s_len(enemy))
-                .filter(|&t| {
-                    state.s_vanguard(enemy)[t]
-                        && !state.s_pool(enemy)[t].is_down()
-                        && !state.s_pinned(enemy)[t]
-                })
-                .take(want)
-                .collect();
-            for t in victims {
-                state.s_pinned_mut(enemy)[t] = true;
-                state.s_locked_mut(enemy)[t] = true;
-                let vname = state.s_pool(enemy)[t].name.clone();
-                // Drop a charge/flank this pinned unit may have already declared (e.g. a Volley cast).
-                state
-                    .plan
-                    .charges
-                    .retain(|c| !(c.side == enemy && c.attacker == t));
-                state
-                    .log
-                    .push(format!("{name} pins {vname} — its charge is denied."));
-            }
-        }
         if side == 0 {
             let mut allies = std::mem::take(&mut state.heroes);
             combat::play_card(
@@ -460,24 +407,6 @@ impl Deckbound {
         combat::tally(&mut state.heroes, &mut state.log);
         combat::tally(&mut state.creatures, &mut state.log);
         check_outcome(state);
-    }
-
-    /// After an interactive Fray/Volley action: if the fight ended, stop; else if the committing side
-    /// has nothing left to do, advance — in PvP hand the phase to side B first, otherwise close the
-    /// phase (which resolves the rest and steps to the next phase).
-    fn after_combat_action(&self, state: &mut State) {
-        if state.outcome.is_some() {
-            return;
-        }
-        if !self.pending(state, state.plan.committing).is_empty() {
-            return;
-        }
-        if state.pvp && state.plan.committing == 0 {
-            state.plan.committing = 1;
-            return;
-        }
-        state.plan.committing = 0;
-        self.advance_phase(state);
     }
 
     // ---- Clash module (1v1) -------------------------------------------------
@@ -595,17 +524,10 @@ impl Deckbound {
                     .unwrap_or_else(|| "Card".into())
             ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
-            (None, Phase::Standoff) => format!(
-                "Round {} — the Standoff: set positions & cast standing buffs, then advance. (Esc: menu)",
+            (None, Phase::DeclareIntentions) => format!(
+                "Round {} — declare intentions (Vanguard / Outrider / Rearguard), then advance. (Esc: menu)",
                 state.round
             ),
-            (None, Phase::Fray) => "The Fray — the fronts clash. (Esc: menu)".to_string(),
-            (None, Phase::Volley) => {
-                "The Volley — free Vanguards charge or flank; the rear answers first. (Esc: menu)"
-                    .to_string()
-            }
-            (None, Phase::Breach) => "The Breach.".to_string(),
-            (None, Phase::Reckoning) => "The Reckoning.".to_string(),
             (None, Phase::Clash) => match state.clash {
                 Some(c) => format!(
                     "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
@@ -617,10 +539,7 @@ impl Deckbound {
         // Hotseat: announce whose turn it is (pass-and-play); never reveal the other side's
         // committed choices — they aren't rendered until resolution. The play-by-play now lives in
         // the event feed (`TableView::log`), so the caption is just this one-line prompt.
-        if state.pvp
-            && state.outcome.is_none()
-            && matches!(state.phase, Phase::Standoff | Phase::Fray | Phase::Volley)
-        {
+        if state.pvp && state.outcome.is_none() && matches!(state.phase, Phase::DeclareIntentions) {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
         } else {
             prompt
@@ -698,42 +617,26 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
-            // §4.6 #1 Standoff: set each unit's position (front/back) and cast `Standing` buffs;
-            // advance to start the Fray.
-            Phase::Standoff => {
+            // §4 DeclareIntentions: the next pending unit picks its **intention** (Vanguard / Outrider /
+            // Rearguard) and may cast a `Standing` buff; advancing resolves the round's engagement
+            // schedule (§4.6). Declaration is sequential (one unit at a time) so the solver branches on
+            // intention; Pass accepts the unit's current (defaulted) intention.
+            Phase::DeclareIntentions => {
+                use crate::actor::Intention;
                 let side = state.plan.committing;
                 let mut a = Vec::new();
-                // §4 Block is only worth a decision branch when a live enemy melee Vanguard can actually
-                // strike a hero this round — otherwise slipping nothing is a wasted toggle (perf prune).
-                let melee_threat = side == 0
-                    && (0..state.s_len(1)).any(|f| {
-                        state.s_vanguard(1)[f]
-                            && !state.s_pool(1)[f].is_down()
-                            && state.s_pool(1)[f].can_contest(Range::Melee)
-                    });
-                for i in 0..state.s_len(side) {
-                    if state.s_pool(side)[i].fallen {
-                        continue;
-                    }
-                    if state.s_vanguard(side)[i] {
-                        a.push(Action::SetRearguard(i));
-                        // §4: a hero Vanguard (the position that eats melee) may set its answer to
-                        // **Block** (out-bid to slip the blow) instead of the default Trade. One-way
-                        // (offered only while still Trade) so the solver explores the *set* of blockers
-                        // without value-neutral on/off toggling. Heroes only — creatures use instinct.
-                        if melee_threat
-                            && state.ruleset.allows(Rule::DeclareGuard)
-                            && state.plan.hero_guard[i] == combat::Guard::Trade
-                        {
-                            a.push(Action::Guard(i));
-                        }
-                    } else {
+                if let Some(&i) = self.pending(state, side).first() {
+                    let cur = state.s_intent(side)[i];
+                    if cur != Intention::Vanguard {
                         a.push(Action::SetVanguard(i));
                     }
-                    // One Standing cast per unit per Standoff: skip a unit that has already cast.
-                    if state.s_acted(side)[i] {
-                        continue;
+                    if cur != Intention::Outrider {
+                        a.push(Action::SetOutrider(i));
                     }
+                    if cur != Intention::Rearguard {
+                        a.push(Action::SetRearguard(i));
+                    }
+                    // Standing casts (buffs/braces) for this unit before it locks its intention.
                     for idx in 0..state.s_pool(side)[i].actions.len() {
                         if self.card_playable_now(
                             state,
@@ -744,95 +647,12 @@ impl Game for Deckbound {
                             a.push(Action::PlayCard(i, idx));
                         }
                     }
+                    a.push(Action::Pass(i)); // accept the current intention, no change
                 }
                 a.push(Action::Deploy);
                 a.push(Action::ToMenu);
                 a
             }
-            // §4.6 #2 Fray: the next pending unit strikes the enemy front (melee Vanguards) or fires
-            // instant ranged (ranged Rearguards), casts a `Strike` ability, or passes.
-            Phase::Fray => {
-                let side = state.plan.committing;
-                let other = 1 - side;
-                let mut a = Vec::new();
-                if let Some(&i) = self.pending(state, side).first() {
-                    let targets: Vec<usize> = if state.s_vanguard(side)[i] {
-                        // Vanguards strike the enemy front.
-                        (0..state.s_len(other))
-                            .filter(|&t| {
-                                state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down()
-                            })
-                            .collect()
-                    } else {
-                        // Ranged Rearguards fire at the enemy front.
-                        (0..state.s_len(other))
-                            .filter(|&t| {
-                                state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down()
-                            })
-                            .collect()
-                    };
-                    for t in targets {
-                        a.push(Action::Target(i, t));
-                    }
-                    for idx in 0..state.s_pool(side)[i].actions.len() {
-                        if self.card_playable_now(
-                            state,
-                            side,
-                            i,
-                            &state.s_pool(side)[i].actions[idx],
-                        ) {
-                            a.push(Action::PlayCard(i, idx));
-                        }
-                    }
-                    a.push(Action::Pass(i));
-                }
-                a.push(Action::ToMenu);
-                a
-            }
-            // §4.6 #3 Volley: a **free** Vanguard charges an enemy Rearguard (`Charge`) or flanks a
-            // surviving enemy Vanguard (`Target`); a ranged Rearguard fires again (`Target`).
-            Phase::Volley => {
-                let side = state.plan.committing;
-                let other = 1 - side;
-                let mut a = Vec::new();
-                if let Some(&i) = self.pending(state, side).first() {
-                    if state.s_vanguard(side)[i] {
-                        // Free Vanguard: charge the rear, or flank a surviving enemy Vanguard.
-                        for t in (0..state.s_len(other)).filter(|&t| {
-                            !state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down()
-                        }) {
-                            a.push(Action::Charge(i, t));
-                        }
-                        for t in (0..state.s_len(other)).filter(|&t| {
-                            state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down()
-                        }) {
-                            a.push(Action::Target(i, t)); // a flank (a trade)
-                        }
-                    } else {
-                        // Ranged Rearguard fires again at the enemy front.
-                        for t in (0..state.s_len(other)).filter(|&t| {
-                            state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down()
-                        }) {
-                            a.push(Action::Target(i, t));
-                        }
-                    }
-                    for idx in 0..state.s_pool(side)[i].actions.len() {
-                        if self.card_playable_now(
-                            state,
-                            side,
-                            i,
-                            &state.s_pool(side)[i].actions[idx],
-                        ) {
-                            a.push(Action::PlayCard(i, idx));
-                        }
-                    }
-                    a.push(Action::Pass(i));
-                }
-                a.push(Action::ToMenu);
-                a
-            }
-            // Breach & Reckoning resolve automatically; surface only an escape.
-            Phase::Breach | Phase::Reckoning => vec![Action::ToMenu],
             Phase::Clash => vec![
                 Action::Play(Move::Strike),
                 Action::Play(Move::Anticipate),
@@ -840,6 +660,9 @@ impl Game for Deckbound {
                 Action::Play(Move::Evade),
                 Action::ToMenu,
             ],
+            // Engage is transient — the round resolves synchronously inside Deploy, so it is never a
+            // resting state; surface only an escape if ever reached.
+            Phase::Engage => vec![Action::ToMenu],
         }
     }
 
@@ -898,13 +721,10 @@ impl Game for Deckbound {
                     .unwrap_or_else(|| "?".into()),
                 _ => "?".into(),
             },
-            Action::SetVanguard(h) => format!("Send {} to the Vanguard (front)", hname(*h)),
-            Action::Flank(h) => format!("{} flanks the enemy front", hname(*h)),
-            Action::SetRearguard(h) => format!("Pull {} back to the Rearguard", hname(*h)),
-            Action::Guard(h) => format!("{}: block/slip incoming melee (vs trade)", hname(*h)),
-            Action::Deploy => "Advance the phase".into(),
-            Action::Charge(a, f) => format!("{} → charge the {}", hname(*a), fname(*f)),
-            Action::Target(a, f) => format!("{} → strike the {}", hname(*a), fname(*f)),
+            Action::SetVanguard(h) => format!("{} holds the front (Vanguard)", hname(*h)),
+            Action::SetOutrider(h) => format!("{} breaks the line (Outrider)", hname(*h)),
+            Action::SetRearguard(h) => format!("{} deals from the back (Rearguard)", hname(*h)),
+            Action::Deploy => "Advance — resolve the engagement".into(),
             Action::PlayCard(h, idx) => {
                 let c = state.s_pool(side).get(*h).and_then(|x| x.actions.get(*idx));
                 match c {
@@ -1010,21 +830,23 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
-            // ---- §4.6 #1 Standoff: positions + Standing buffs ----
-            (Phase::Standoff, Action::SetVanguard(i)) => {
+            // ---- §4 DeclareIntentions: set intentions + Standing buffs ----
+            (Phase::DeclareIntentions, Action::SetVanguard(i)) => {
                 let side = state.plan.committing;
-                state.s_vanguard_mut(side)[*i] = true;
+                state.s_intent_mut(side)[*i] = Intention::Vanguard;
+                state.s_acted_mut(side)[*i] = true;
             }
-            (Phase::Standoff, Action::SetRearguard(i)) => {
+            (Phase::DeclareIntentions, Action::SetOutrider(i)) => {
                 let side = state.plan.committing;
-                state.s_vanguard_mut(side)[*i] = false;
+                state.s_intent_mut(side)[*i] = Intention::Outrider;
+                state.s_acted_mut(side)[*i] = true;
             }
-            // §4: set a hero unit's melee answer to Block for the round (one-way; resets to Trade at the
-            // next Standoff). The solver explores the set of blockers without on/off toggle noise.
-            (Phase::Standoff, Action::Guard(i)) => {
-                state.plan.hero_guard[*i] = combat::Guard::Block;
+            (Phase::DeclareIntentions, Action::SetRearguard(i)) => {
+                let side = state.plan.committing;
+                state.s_intent_mut(side)[*i] = Intention::Rearguard;
+                state.s_acted_mut(side)[*i] = true;
             }
-            (Phase::Standoff, Action::PlayCard(i, idx)) => {
+            (Phase::DeclareIntentions, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;
                 let card = state.s_pool(side)[*i]
                     .actions
@@ -1032,129 +854,23 @@ impl Game for Deckbound {
                     .cloned()
                     .ok_or_else(|| GameError::new("no such card"))?;
                 if !self.card_playable_now(state, side, *i, &card) {
-                    return Err(GameError::new("that card can't be cast in the Standoff"));
+                    return Err(GameError::new("that card can't be cast now"));
                 }
                 self.do_play_card(state, side, *i, card);
-                // One Standing cast per unit per Standoff (the same one-action-per-phase discipline the
-                // Fray/Volley use via `pending`); the unit may still act again in later phases. Without
-                // this the greedy would replay a returning buff until its Tempo drained (§4.4).
-                state.s_acted_mut(side)[*i] = true;
+                // A Standing cast does not lock the intention; the unit still declares it.
             }
-            (Phase::Standoff, Action::Deploy) => {
+            (Phase::DeclareIntentions, Action::Pass(i)) => {
+                let side = state.plan.committing;
+                state.s_acted_mut(side)[*i] = true; // accept the current (defaulted) intention
+            }
+            (Phase::DeclareIntentions, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
                     state.plan.committing = 1;
-                    state.log.push("-- side B: the Standoff --".into());
+                    state.log.push("-- side B: declare intentions --".into());
                 } else {
                     state.plan.committing = 0;
-                    self.advance_phase(state);
+                    self.resolve_and_advance(state);
                 }
-            }
-
-            // ---- §4.6 #2 Fray ----
-            (Phase::Fray, Action::Target(i, t)) => {
-                let side = state.plan.committing;
-                if state.s_vanguard(side)[*i] {
-                    self.fray_strike(state, side == 0, *i, *t);
-                } else {
-                    self.fray_shot(state, side == 0, *i, *t);
-                }
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Fray, Action::PlayCard(i, idx)) => {
-                let side = state.plan.committing;
-                let card = state.s_pool(side)[*i]
-                    .actions
-                    .get(*idx)
-                    .cloned()
-                    .ok_or_else(|| GameError::new("no such card"))?;
-                if !self.card_playable_now(state, side, *i, &card) {
-                    return Err(GameError::new("that card can't be cast in the Fray"));
-                }
-                self.do_play_card(state, side, *i, card);
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Fray, Action::Pass(i)) => {
-                let side = state.plan.committing;
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-
-            // ---- §4.6 #3 Volley: charge / flank / fire ----
-            (Phase::Volley, Action::Charge(i, t)) => {
-                let side = state.plan.committing;
-                state.plan.charges.push(crate::state::Charge {
-                    side,
-                    attacker: *i,
-                    target: *t,
-                    flank: false,
-                });
-                state.log.push(format!(
-                    "{} charges the {}.",
-                    state.s_pool(side)[*i].name,
-                    state.s_pool(1 - side)[*t].name
-                ));
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Volley, Action::Target(i, t)) => {
-                let side = state.plan.committing;
-                if state.s_vanguard(side)[*i] {
-                    // A flank (a Volley trade) — recorded, resolved at the Volley boundary.
-                    state.plan.charges.push(crate::state::Charge {
-                        side,
-                        attacker: *i,
-                        target: *t,
-                        flank: true,
-                    });
-                    state.log.push(format!(
-                        "{} moves to flank the {}.",
-                        state.s_pool(side)[*i].name,
-                        state.s_pool(1 - side)[*t].name
-                    ));
-                } else {
-                    // A Rearguard fires again (instant ranged).
-                    self.fray_shot(state, side == 0, *i, *t);
-                }
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Volley, Action::Flank(i)) => {
-                // Convenience: flank the first surviving enemy Vanguard.
-                let side = state.plan.committing;
-                let other = 1 - side;
-                if let Some(t) = (0..state.s_len(other))
-                    .find(|&t| state.s_vanguard(other)[t] && !state.s_pool(other)[t].is_down())
-                {
-                    state.plan.charges.push(crate::state::Charge {
-                        side,
-                        attacker: *i,
-                        target: t,
-                        flank: true,
-                    });
-                }
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Volley, Action::PlayCard(i, idx)) => {
-                let side = state.plan.committing;
-                let card = state.s_pool(side)[*i]
-                    .actions
-                    .get(*idx)
-                    .cloned()
-                    .ok_or_else(|| GameError::new("no such card"))?;
-                if !self.card_playable_now(state, side, *i, &card) {
-                    return Err(GameError::new("that card can't be cast in the Volley"));
-                }
-                self.do_play_card(state, side, *i, card);
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
-            }
-            (Phase::Volley, Action::Pass(i)) => {
-                let side = state.plan.committing;
-                state.s_acted_mut(side)[*i] = true;
-                self.after_combat_action(state);
             }
 
             (Phase::Clash, Action::Play(m)) => {
@@ -1308,9 +1024,9 @@ impl Game for Deckbound {
                     zones.push(hero_zone(state, Some(c.hero)));
                 }
             }
-            // §4.6 #1 Standoff reads as **card placement**: the enemy on top, then your Vanguard
-            // (front) and Rearguard (back) zones, each character card clickable to toggle its position.
-            Phase::Standoff => {
+            // §4 DeclareIntentions reads as **card placement**: the enemy on top, then your party, each
+            // character card clickable to **cycle** its intention (Vanguard → Outrider → Rearguard).
+            Phase::DeclareIntentions => {
                 let side = state.plan.committing;
                 zones.push(if side == 0 {
                     creature_zone(state, None)
@@ -1319,41 +1035,30 @@ impl Game for Deckbound {
                 });
                 let acts = self.legal_actions(state);
                 let idx_of = |want: &Action| acts.iter().position(|a| a == want);
-                let mut front = Vec::new();
-                let mut back = Vec::new();
+                let mut cards = Vec::new();
                 for i in 0..state.s_len(side) {
                     let actor = &state.s_pool(side)[i];
                     if actor.fallen {
                         continue;
                     }
-                    let is_front = state.s_vanguard(side)[i];
-                    // Clicking a card sends it to the *other* position.
-                    let toggle = if is_front {
-                        Action::SetRearguard(i)
-                    } else {
-                        Action::SetVanguard(i)
+                    // Clicking a card cycles it to the next intention.
+                    let next = match state.s_intent(side)[i] {
+                        Intention::Vanguard => Action::SetOutrider(i),
+                        Intention::Outrider => Action::SetRearguard(i),
+                        Intention::Rearguard => Action::SetVanguard(i),
                     };
                     let mut card = actor_card(actor, Accent::Ally);
-                    if let Some(idx) = idx_of(&toggle) {
+                    if let Some(idx) = idx_of(&next) {
                         card = card.action(idx);
                     }
-                    if is_front {
-                        front.push(card);
-                    } else {
-                        back.push(card);
-                    }
+                    cards.push(card);
                 }
                 zones.push(ZoneView {
-                    label: "Vanguard — hold the front".into(),
+                    label: "Declare intentions (click to cycle: Vanguard / Outrider / Rearguard)"
+                        .into(),
                     layout: Layout::Row,
                     owner: None,
-                    cards: front,
-                });
-                zones.push(ZoneView {
-                    label: "Rearguard — hold back, fire from the rear".into(),
-                    layout: Layout::Row,
-                    owner: None,
-                    cards: back,
+                    cards,
                 });
             }
             _ => {
