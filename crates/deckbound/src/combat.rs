@@ -13,10 +13,10 @@
 //! (Volley before Breach), the disrupt (a breach-kill fizzles a Reckoning spell), and the
 //! flank-intercept are all corollaries.
 
-use crate::actor::{Actor, Range, TargetRule};
+use crate::actor::{Actor, Intention, Range, TargetRule};
 use crate::cards::Effect;
 use crate::duel::Strike;
-use crate::state::{Charge, Deferred};
+use crate::state::{Deferred, State};
 use crate::stats::Offense;
 
 /// The base strike raw magnitude (untyped Might, §2.2): the actor's **Might**, plus the base
@@ -463,123 +463,164 @@ pub fn compute_locks(attacked: &[Vec<usize>], enemy: &[Actor]) -> Vec<bool> {
 ///   *charger* (the pre-empt blow); the charger's own blow lands later, in [`resolve_breach`].
 ///
 /// `heroes`/`foes` are the two pools; charges carry their own `side`. Deaths finalize at the boundary.
-pub fn resolve_volley(
-    heroes: &mut [Actor],
-    foes: &mut [Actor],
-    charges: &[Charge],
-    log: &mut Vec<String>,
-) {
-    // 1. Flanks trade in the Volley (both land). Resolve every flank first; a flank-kill silences the
-    //    target's Breach charge because the dead unit is gone by the boundary (the intercept).
-    for c in charges.iter().filter(|c| c.flank) {
-        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
-            (heroes, foes)
-        } else {
-            (foes, heroes)
-        };
-        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
-            continue;
-        }
-        log.push(format!(
-            "{} flanks {} (a trade, in the Volley).",
-            atk_pool[c.attacker].name, def_pool[c.target].name
-        ));
-        melee_trade(
-            &mut atk_pool[c.attacker],
-            &mut def_pool[c.target],
-            Guard::Trade,
-            log,
-        );
-    }
+// ====================================================================================================
+// §4.6 The engagement-schedule resolver — ports the validated `engagement.rs` algorithm onto `Actor`s.
+// (Single-target core: schedule order, the one Tempo contest, prey-with-fallback targeting, strike-back.
+// Group spillover / AoE integration is a follow-on — see needs-merge/engine-migration-to-engagement-model.md.)
+// ====================================================================================================
 
-    // 2. Charges: the rear answers FIRST (pre-empt) — its strike-back / counter-fire lands now, before
-    //    the charger's Breach blow. A ranged rear counter-fires; a melee rear strikes back; either way
-    //    it spends from the shared pool and resolves in the Volley.
-    for c in charges.iter().filter(|c| !c.flank) {
-        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
-            (heroes, foes)
-        } else {
-            (foes, heroes)
-        };
-        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
-            continue;
-        }
-        if atk_pool[c.attacker].is_down() || def_pool[c.target].is_down() {
-            continue;
-        }
-        let charger_name = atk_pool[c.attacker].name.clone();
-        // §10 Smoke: a charger carrying a Smoke token slips uncontested — the rear's Volley pre-empt is
-        // skipped for this charge (the token is consumed). It still has to survive the Breach normally.
-        if atk_pool[c.attacker].consume_smoke() {
-            log.push(format!(
-                "{charger_name} charges through smoke — the rear cannot pre-empt it."
-            ));
-            continue;
-        }
-        // The rear's pre-emptive answer at the charger crossing open ground.
-        if def_pool[c.target].can_contest_now(Range::Ranged) {
-            log.push(format!(
-                "{} counter-fires the charging {} (pre-empt).",
-                def_pool[c.target].name, charger_name
-            ));
-            ranged_shot(&mut def_pool[c.target], &mut atk_pool[c.attacker], log);
-        } else if def_pool[c.target].can_contest_now(Range::Melee) {
-            log.push(format!(
-                "{} strikes back at the charging {} (pre-empt).",
-                def_pool[c.target].name, charger_name
-            ));
-            if def_pool[c.target].tempo > 0 {
-                def_pool[c.target].tempo -= 1;
-                let snap = snapshot(&def_pool[c.target]);
-                let n = def_pool[c.target].name.clone();
-                apply_strike(&mut atk_pool[c.attacker], snap, &n, log);
-            }
-        }
-    }
+/// Tempo a defender spends to avoid one attack (§4.6 contest): cards × Fd must strictly exceed Fa, so the
+/// minimum cards is `floor(Fa / Fd) + 1`.
+fn avoid_cost(attacker_finesse: u32, defender_finesse: u32) -> i32 {
+    (attacker_finesse / defender_finesse.max(1)) as i32 + 1
 }
 
-/// §4.6 #4 — resolve the **Breach**. Each non-flank charge whose **charger survived the Volley** lands
-/// its melee blow (`resolve: Breach`) on its Rearguard target. A charger killed in the Volley
-/// pre-empt **never lands** (§4.6 pre-empt); a flank already resolved in the Volley. This is where a
-/// breacher killing a caster **disrupts** its deferred spell — the kill is finalized here, before the
-/// Reckoning (the caller drops the deferred entry for any fallen caster).
-pub fn resolve_breach(
-    heroes: &mut [Actor],
-    foes: &mut [Actor],
-    charges: &[Charge],
-    log: &mut Vec<String>,
-) {
-    for c in charges.iter().filter(|c| !c.flank) {
-        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if c.side == 0 {
-            (heroes, foes)
+/// Is a Rearguard target reachable by this attacker? The shield holds: a Rearguard may be struck only by
+/// an **Outrider** (the raid bypasses the shield) or once the defending side has **no living Vanguard**
+/// (the front fell — the Breach's `V→R`).
+fn rearguard_reachable(attacker_is_outrider: bool, def: &[Actor], def_int: &[Intention]) -> bool {
+    if attacker_is_outrider {
+        return true;
+    }
+    !def.iter()
+        .enumerate()
+        .any(|(j, u)| !u.is_down() && def_int[j] == Intention::Vanguard)
+}
+
+/// Does `me` have a **crackable prey** alive on the enemy side? (Prey = `me`'s cycle target.) If so the
+/// efficient default holds Tempo for it rather than spending on a fallback rank now.
+fn prey_alive(me: &Actor, prey: Intention, def: &[Actor], def_int: &[Intention]) -> bool {
+    def.iter()
+        .enumerate()
+        .any(|(j, u)| !u.is_down() && def_int[j] == prey && me.eff_might() >= u.eff_toughness())
+}
+
+/// Pick the best target for `me` among enemies of `tgt_role` it can **crack** (Might ≥ effective
+/// Toughness — never swing at what you can't crack), reachable (shield rule for a Rearguard), lowest
+/// remaining Health first (finish kills).
+fn choose(
+    me: &Actor,
+    me_is_outrider: bool,
+    tgt_role: Intention,
+    def: &[Actor],
+    def_int: &[Intention],
+) -> Option<usize> {
+    let reach_back =
+        tgt_role != Intention::Rearguard || rearguard_reachable(me_is_outrider, def, def_int);
+    if !reach_back {
+        return None;
+    }
+    def.iter()
+        .enumerate()
+        .filter(|(j, u)| {
+            !u.is_down() && def_int[*j] == tgt_role && me.eff_might() >= u.eff_toughness()
+        })
+        .min_by_key(|(j, u)| (u.defense.health.remaining, *j))
+        .map(|(j, _)| j)
+}
+
+/// Resolve one engagement pair (attacker role → target role) for `atk_side`, in place on `state`.
+fn resolve_pair(state: &mut State, atk_side: u8, atk_role: Intention, tgt_role: Intention) {
+    let def_side = 1 - atk_side;
+    // --- Declare (read-only): each eligible attacker picks its target, focusing prey first. ---
+    let decls: Vec<(usize, usize)> = {
+        let atk = state.s_pool(atk_side);
+        let atk_int = state.s_intent(atk_side);
+        let def = state.s_pool(def_side);
+        let def_int = state.s_intent(def_side);
+        let mut out = Vec::new();
+        for ai in 0..atk.len() {
+            if atk[ai].is_down() || atk_int[ai] != atk_role || atk[ai].tempo < 1 {
+                continue;
+            }
+            // Prey-with-fallback: on a non-prey pair, hold Tempo if a crackable prey is still alive.
+            if tgt_role != atk_role.prey() && prey_alive(&atk[ai], atk_role.prey(), def, def_int) {
+                continue;
+            }
+            let outrider = atk_role == Intention::Outrider;
+            if let Some(ti) = choose(&atk[ai], outrider, tgt_role, def, def_int) {
+                out.push((ai, ti));
+            }
+        }
+        out
+    };
+    // --- Resolve (mutable): spend Tempo, contest, eat + strike-back. ---
+    let mut log = std::mem::take(&mut state.log);
+    for (ai, ti) in decls {
+        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+            (&mut state.heroes, &mut state.creatures)
         } else {
-            (foes, heroes)
+            (&mut state.creatures, &mut state.heroes)
         };
-        if c.attacker >= atk_pool.len() || c.target >= def_pool.len() {
+        if atk_pool[ai].is_down() || def_pool[ti].is_down() || atk_pool[ai].tempo < 1 {
             continue;
         }
-        // Pre-empt: a charger downed in the Volley never lands its Breach blow.
-        if atk_pool[c.attacker].is_down() || atk_pool[c.attacker].fallen {
+        atk_pool[ai].tempo -= 1; // spend to attack (drained whether or not it is dodged)
+        let melee = atk_pool[ai].attack.has(Range::Melee);
+        let fa = atk_pool[ai].eff_finesse();
+        let might = base_strike(&atk_pool[ai]);
+        let bar = def_pool[ti].eff_toughness();
+        let cost = avoid_cost(fa, def_pool[ti].eff_finesse());
+        // The defender avoids only a blow that would flip a card, and only if it can afford the bid.
+        if might >= bar && def_pool[ti].tempo >= cost {
+            def_pool[ti].tempo -= cost;
             log.push(format!(
-                "{} fell in the Volley — its charge never lands.",
-                atk_pool[c.attacker].name
+                "{} avoids {}'s strike (-{cost}t).",
+                def_pool[ti].name, atk_pool[ai].name
             ));
             continue;
         }
-        if def_pool[c.target].is_down() {
-            continue;
+        // Eat it.
+        let snap = snapshot(&atk_pool[ai]);
+        let an = atk_pool[ai].name.clone();
+        apply_strike(&mut def_pool[ti], snap, &an, &mut log);
+        reflect_thorns(&mut atk_pool[ai], &def_pool[ti], &mut log);
+        // Strike back at a melee attacker if a card is free and it can crack the attacker (a corpse
+        // cannot react; never burn Tempo on a strike that bounces off Toughness).
+        if melee
+            && !def_pool[ti].is_down()
+            && !atk_pool[ai].is_down()
+            && def_pool[ti].tempo >= 1
+            && base_strike(&def_pool[ti]) >= atk_pool[ai].eff_toughness()
+        {
+            def_pool[ti].tempo -= 1;
+            let snap2 = snapshot(&def_pool[ti]);
+            let dn = def_pool[ti].name.clone();
+            apply_strike(&mut atk_pool[ai], snap2, &dn, &mut log);
         }
-        if atk_pool[c.attacker].can_contest_now(Range::Melee) {
-            log.push(format!(
-                "{} breaches and strikes {}.",
-                atk_pool[c.attacker].name, def_pool[c.target].name
-            ));
-            // §10: the breach blow consumes banked Charge (+1 Might each, §5.4 — e.g. Coiled Strike).
-            let snap = charged_snapshot(&mut atk_pool[c.attacker], log);
-            let n = atk_pool[c.attacker].name.clone();
-            apply_strike(&mut def_pool[c.target], snap, &n, log);
-            reflect_thorns(&mut atk_pool[c.attacker], &def_pool[c.target], log);
+    }
+    state.log = log;
+}
+
+/// §4.6 — resolve one round over the **engagement schedule**, in place on `state`. Tempo is assumed
+/// refreshed for the round. Each unit acts by its declared intention (`state.s_intent`); the resolution
+/// policy (prey-with-fallback, every-Tempo-spend-must-matter) is ported from `engagement.rs`. Each
+/// engagement is a §1.9 boundary: after it, deaths finalize and the per-engagement pile wipes.
+pub fn resolve_round(state: &mut State) {
+    use Intention::{Outrider, Rearguard, Vanguard};
+    const SCHEDULE: &[&[(Intention, Intention)]] = &[
+        &[(Vanguard, Outrider)],                        // Intercept
+        &[(Rearguard, Outrider)],                       // Volley
+        &[(Outrider, Rearguard)],                       // Raid
+        &[(Rearguard, Vanguard), (Vanguard, Vanguard)], // Clash
+        &[
+            (Vanguard, Rearguard),
+            (Outrider, Vanguard),
+            (Outrider, Outrider),
+        ], // Breach
+    ];
+    for step in SCHEDULE {
+        for &(atk_role, tgt_role) in *step {
+            resolve_pair(state, 0, atk_role, tgt_role);
+            resolve_pair(state, 1, atk_role, tgt_role);
         }
+        // Engagement boundary: finalize deaths, then wipe the per-engagement pile (§4.6).
+        let mut log = std::mem::take(&mut state.log);
+        tally(&mut state.heroes, &mut log);
+        tally(&mut state.creatures, &mut log);
+        state.log = log;
+        clear_phase_piles(&mut state.heroes);
+        clear_phase_piles(&mut state.creatures);
     }
 }
 
