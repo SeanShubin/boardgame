@@ -72,7 +72,14 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   Behavior-preserving (a deck of N face-up cards == the old count). Touches `stats.rs`, `actor.rs`, every
   read site.
 - **P3 — 2D layout.** `Layout { side × rank × slot }` + group adjacency; derive/replace the Intention tag.
-- **P4 — Resolution Step machine (BEHAVIOR-PRESERVING).** Two-layer API (user direction 2026-06-29): the
+- **P4 — DONE** (commit `8269f11`): `resolve_round = { resolution = Some(start()); while step(state) {} }`.
+  `State.resolution: Option<Resolution{step,pair,stage}>` (serde default); `PendingDamage{aoe(0),targeted}`
+  replaces `health_pile`; `combat::step` advances one (pair,side) or a boundary; `sim step` added. Guard
+  `stepping_reproduces_resolve_round_exactly` (stepped == batched, field-for-field + identical log + RON
+  round-trip of micro-states). Suite 90/9 (88 + 2 new, same 9). **Step granularity = per (pair, side) +
+  engagement boundary** — the finest *meaningful* unit given §1.9 order-independence within a pair (finer
+  than a pair has no defined intermediate state). Original (now-superseded) P4 description:
+- **P4 (orig) — Resolution Step machine (BEHAVIOR-PRESERVING).** Two-layer API (user direction 2026-06-29): the
   **high-level** `apply(Deploy)` stays identical (same phase-boundary State); it *delegates* to a
   **low-level** `combat::step(state)` that advances ONE atomic transition for debug/per-strike
   observability. `resolve_round` becomes `while step(state) {}`. Add `Phase::Resolve(Resolution)` (cursor +
