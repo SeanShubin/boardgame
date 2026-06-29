@@ -93,7 +93,15 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
   links; rewrote the `combat.rs` module header for the current model. Kept Reckoning/Burn/token machinery
   (P6 wires it) and all live helpers. **Wiring groups (#11) / deferred (#12) is a behavior change → moved
   to P6a**, not done here. Behavior-neutral; suite 92/9.
-- **P6 — Align the live engine with canon (DELIBERATE behavior change).** Split along the mechanics /
+- **P6 — DONE** (commits `76eab6b` port + `69bcede` per-engagement cycling fix + `40a5a82` doc). Policy
+  cleaved into `policy.rs`; mechanics ported from the sim; cycling is per-engagement (§4.6 order-independent).
+  `solver_wins` flipped GREEN; no passing test regressed. **Deferred (separate later work):** Reckoning
+  firing (`resolve_reckoning` still uncalled) + offensive-ability casting (`card_playable_now` Standing-only).
+  **Golden review in progress** (post-P6): regenerate the 2 pure-doc goldens (rules-reference, glossary);
+  the 6 combat-dependent (rules-tour transcript, reference_combat_bands, 3× campaign, action_log) need a
+  correct-canon-vs-regression judgment before re-baselining — several may be *fixed* by P6, the campaign
+  wins may need re-tuning if the party's scripted run now resolves differently. Original split below:
+- **P6 (orig) — Align the live engine with canon (DELIBERATE behavior change).** Split along the mechanics /
   interaction seam (user direction 2026-06-29): *mechanics are the game (a rulebook statement); the policy
   is how our code chooses among legal moves (swap human / scripted AI / solver and the mechanics don't
   change).* **Anchor examples: grouping = mechanic; target priority = interaction.** Build it by **cleaving
