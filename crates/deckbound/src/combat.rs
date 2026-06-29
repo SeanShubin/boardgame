@@ -5,9 +5,11 @@
 //!
 //! The round resolves the fixed [`SCHEDULE`] of engagements — Intercept (`V→O`), Volley (`R→O`),
 //! Raid (`O→R`), Clash (`R→V`, `V→V`), Breach (`V→R`, `O→V`, `O→O`) — each a list of
-//! `(attacker-role, target-role)` pairs. [`resolve_pair`] resolves one pair in place: each eligible
-//! attacker declares a target (prey-with-fallback, shield/reachability rules), spends Tempo, the
-//! defender contests, then eats the blow and a melee defender strikes back. [`step`] performs one
+//! `(attacker-role, target-role)` pairs. Each engagement **cycles to exhaustion**:
+//! [`resolve_engagement_cycle`] declares every eligible attacker on **both sides** against the same
+//! pre-apply board (targets chosen by [`crate::policy`] — role priorities, the back-access / shield gate,
+//! focus-fire), spends Tempo, then applies the two pools together (AoE to all members, aimed spillover
+//! front-to-back) plus Thorns and melee strike-backs. [`step`] performs one
 //! atomic transition of this walk (one engagement-cycle [`Stage::Cycle`] — all pairs both sides resolved
 //! together, §1.9 — or an engagement [`Stage::Boundary`] that
 //! finalizes deaths via [`tally`] and wipes the per-engagement pile via [`clear_phase_piles`]), holding
