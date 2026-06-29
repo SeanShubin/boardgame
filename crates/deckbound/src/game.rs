@@ -164,22 +164,34 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
         state.phase = Phase::Clash;
         state.log = vec![scenario.blurb.clone(), "-- the duel begins --".into()];
     } else {
-        state.phase = Phase::Standoff;
-        default_positions(state);
-        state.log = vec![scenario.blurb.clone(), "-- Round 1: the Standoff --".into()];
+        state.phase = Phase::DeclareIntentions;
+        default_intentions(state);
+        state.log = vec![
+            scenario.blurb.clone(),
+            "-- Round 1: declare intentions --".into(),
+        ];
     }
     state.scenario = Some(scenario);
 }
 
-/// §4.6 #1 — seed each unit's default **position** from its attack profile: a melee unit fronts
-/// (Vanguard), a ranged / support unit holds back (Rearguard). The Standoff lets the human (or the AI)
-/// override this per unit before the Fray.
-fn default_positions(state: &mut State) {
+/// §4 — seed each unit's default **intention** from its stats (the policy of
+/// `engagement::default_intention`): a ranged unit deals from the Rearguard, a high-Finesse melee unit
+/// breaks the line as an Outrider, everyone else holds as a Vanguard. DeclareIntentions lets the human
+/// (or the AI) override this per unit each round.
+fn default_intentions(state: &mut State) {
     for side in 0u8..2 {
         let n = state.s_len(side);
         for i in 0..n {
-            let melee = state.s_pool(side)[i].can_contest(Range::Melee);
-            state.s_vanguard_mut(side)[i] = melee;
+            let a = &state.s_pool(side)[i];
+            let ranged = a.can_contest(Range::Ranged) && !a.can_contest(Range::Melee);
+            let intent = if ranged {
+                Intention::Rearguard
+            } else if a.offense.finesse >= 2 {
+                Intention::Outrider
+            } else {
+                Intention::Vanguard
+            };
+            state.s_intent_mut(side)[i] = intent;
         }
     }
 }
@@ -225,9 +237,9 @@ pub fn battle_state_with(
         // "choose a scenario set" line until combat events push it off.
         state.log = vec!["-- the duel begins --".into()];
     } else {
-        state.phase = Phase::Standoff;
-        default_positions(&mut state);
-        state.log = vec!["-- Round 1: the Standoff --".into()];
+        state.phase = Phase::DeclareIntentions;
+        default_intentions(&mut state);
+        state.log = vec!["-- Round 1: declare intentions --".into()];
     }
     state
 }
@@ -242,494 +254,36 @@ pub(crate) fn check_outcome(state: &mut State) {
     }
 }
 
-/// A single-purpose round-resolution step (§4 exploded-phase model): it does exactly one thing to the
-/// state — resolve a strike-set, finalize deaths, or wipe an accumulator.
-type ResolutionStep = fn(&Deckbound, &mut State);
-
-/// The **§4 post-Volley resolution as one editable list** (the exploded-phase model): pre-empt → wipe,
-/// then Breach → wipe, then Reckoning → wipe. Each resolve step finalizes its own deaths (tally); every
-/// `clear_piles` is an **isolated accumulator-wipe that does *only* that**, so reordering/removing one
-/// directly tunes how much focus-fire accumulates across a phase boundary (the Toughness-as-wall dial).
-/// The runner ([`Deckbound::end_volley`]) checks the outcome after every step and stops the instant the
-/// battle ends. To change the model, edit this list.
-const POST_VOLLEY_SCHEDULE: &[(Rule, ResolutionStep)] = &[
-    (Rule::Interception, Deckbound::step_intercept),
-    (Rule::Preempt, Deckbound::step_preempt),
-    (Rule::WipePile, Deckbound::step_clear_piles),
-    (Rule::Breach, Deckbound::step_breach),
-    (Rule::WipePile, Deckbound::step_clear_piles),
-    (Rule::Reckoning, Deckbound::step_reckoning),
-    (Rule::WipePile, Deckbound::step_clear_piles),
-];
-
 impl Deckbound {
     // ---- §4.6 six-phase round -------------------------------------------------
 
-    /// A unit of `side` that may still act in the current interactive phase: living, not staggered,
-    /// and not yet flagged `acted`. In the **Fray** only Vanguards (front) and ranged Rearguards act;
-    /// in the **Volley** only **free** (un-locked) Vanguards may charge/flank and ranged Rearguards
-    /// may fire again.
+    /// Units of `side` that may still **declare an intention** this round (alive, not staggered, not yet
+    /// acted). The only interactive combat choice is the declaration; the schedule then resolves (§4.6).
     fn pending(&self, state: &State, side: u8) -> Vec<usize> {
         (0..state.s_len(side))
             .filter(|&i| {
                 let a = &state.s_pool(side)[i];
-                if a.fallen || a.is_down() || a.stunned || state.s_acted(side)[i] {
-                    return false;
-                }
-                match state.phase {
-                    Phase::Fray => self.can_act_in_fray(state, side, i),
-                    Phase::Volley => self.can_act_in_volley(state, side, i),
-                    _ => false,
-                }
+                !a.fallen && !a.is_down() && !a.stunned && !state.s_acted(side)[i]
             })
             .collect()
     }
 
-    /// In the Fray a unit acts if it is a Vanguard with a melee answer (it strikes the front) or a
-    /// Rearguard that can fire instant ranged at the front.
-    fn can_act_in_fray(&self, state: &State, side: u8, i: usize) -> bool {
-        let a = &state.s_pool(side)[i];
-        if state.s_vanguard(side)[i] {
-            a.can_contest_now(Range::Melee) && a.tempo > 0
-        } else {
-            a.can_contest(Range::Ranged) && a.tempo > 0
-        }
-    }
-
-    /// In the Volley a **free** Vanguard may charge/flank, and a Rearguard with ranged fire may shoot
-    /// again (instant). A locked Vanguard stays pinned (no action).
-    fn can_act_in_volley(&self, state: &State, side: u8, i: usize) -> bool {
-        let a = &state.s_pool(side)[i];
-        if state.s_vanguard(side)[i] {
-            // §10 Rout: a routed Vanguard is driven off the line — it cannot charge/flank (neither holds
-            // the front nor crosses). A pinned/locked Vanguard likewise stays put.
-            !state.s_locked(side)[i] && !a.routed && a.can_contest_now(Range::Melee) && a.tempo > 0
-        } else {
-            a.can_contest(Range::Ranged) && a.tempo > 0
-        }
-    }
-
-    /// Advance the round one phase (§4.6 fixed order). Called by `Deploy`, or automatically when a
-    /// phase has no remaining interactive choices.
-    fn advance_phase(&self, state: &mut State) {
-        match state.phase {
-            Phase::Standoff => self.begin_fray(state),
-            Phase::Fray => self.end_fray(state),
-            Phase::Volley => self.end_volley(state),
-            _ => {}
-        }
-    }
-
-    /// Standoff → Fray. (Positions are already declared; in PvE the creature AI keeps its profile
-    /// defaults. Nothing else to set up — the Fray is interactive.)
-    fn begin_fray(&self, state: &mut State) {
-        state.plan.committing = 0;
-        state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
-        state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
-        state.phase = Phase::Fray;
-        state.log.push("-- the Fray --".into());
-        // Run the creature side's Fray first (PvE), so the human front sees the incoming blows.
-        if !state.pvp {
-            self.foe_fray(state);
-            // §4 / solver dedup: the hero **guard** is spent the instant the foe's Fray melee has
-            // resolved against it (nothing downstream reads it this round). Reset it to the default so a
-            // now-irrelevant stance no longer distinguishes states in the transposition table — two
-            // Standoff guard-choices with the same Fray outcome converge, collapsing the Block branching.
-            state
-                .plan
-                .hero_guard
-                .iter_mut()
-                .for_each(|g| *g = combat::Guard::Trade);
-        }
-        if self.pending(state, 0).is_empty() {
-            self.advance_phase(state);
-        }
-    }
-
-    /// End the Fray: finalize deaths, **fix the breach list** (§4.6: only attacking an enemy Vanguard
-    /// that is still alive locks you), wipe the per-phase piles, then open the Volley.
-    fn end_fray(&self, state: &mut State) {
-        combat::tally(&mut state.heroes, &mut state.log); // finalize Fray deaths
-        combat::tally(&mut state.creatures, &mut state.log);
+    /// All declarations are in → resolve the round over the **engagement schedule** (§4.6), finalize the
+    /// outcome, then advance to the next round's DeclareIntentions (the Lull). The foe keeps its
+    /// stat-defaulted intentions in PvE.
+    fn resolve_and_advance(&self, state: &mut State) {
+        state.log.push("-- the engagement --".into());
+        combat::resolve_round(state);
         check_outcome(state);
         if state.outcome.is_some() {
             return;
         }
-        // The breach list: a Vanguard is locked iff some enemy Vanguard it *attacked* in the Fray is
-        // still alive. We recompute it from the current board — a Vanguard that struck no living enemy
-        // Vanguard (its target dead, or it never engaged) is free.
-        self.fix_breach_list(state);
-        // The **Fray** accumulator-wipe (§4): the per-phase pile clears at the Fray boundary. This is the
-        // single point that bounds **focus-fire accumulation** within the front clash — the Toughness-as-
-        // wall / Sunder-necessity dial. Same named step as the post-Volley wipes (toggle/move to tune).
-        self.step_clear_piles(state);
-        state.plan.committing = 0;
-        state.plan.hero_acted.iter_mut().for_each(|v| *v = false);
-        state.plan.foe_acted.iter_mut().for_each(|v| *v = false);
-        state.plan.charges.clear();
-        state.phase = Phase::Volley;
-        state.log.push("-- the Volley --".into());
-        if !state.pvp {
-            self.foe_volley(state);
-        }
-        if self.pending(state, 0).is_empty() {
-            self.advance_phase(state);
-        }
-    }
-
-    /// §4.6 **breach list / per-unit lock** — the exact primitive (replaces the old all-or-nothing
-    /// approximation). A Vanguard is locked iff **some enemy Vanguard it struck in the Fray is still
-    /// alive** (only *attacking* locks, §4.6). We feed [`combat::compute_locks`] the per-actor
-    /// attacked-map recorded as each Fray strike resolved (`fray_strike`) against the enemy pool with
-    /// its Fray deaths already finalized — so a Vanguard whose struck foe **died** is **free** even
-    /// while other enemy Vanguards stand (a line breaks per-unit, not all-or-nothing).
-    fn fix_breach_list(&self, state: &mut State) {
-        state.plan.hero_locked = combat::compute_locks(&state.plan.hero_attacked, &state.creatures);
-        state.plan.foe_locked = combat::compute_locks(&state.plan.foe_attacked, &state.heroes);
-        // §10 **Pin** (Artillery): a Vanguard pinned by suppressive fire is locked regardless of the Fray
-        // breach list — OR it in here so a Fray-cast Pin survives this boundary recompute (it denies the
-        // pinned unit its Volley charge).
-        for (l, &p) in state
-            .plan
-            .hero_locked
-            .iter_mut()
-            .zip(state.plan.hero_pinned.iter())
-        {
-            *l |= p;
-        }
-        for (l, &p) in state
-            .plan
-            .foe_locked
-            .iter_mut()
-            .zip(state.plan.foe_pinned.iter())
-        {
-            *l |= p;
-        }
-    }
-
-    /// End the Volley → Breach → Reckoning, then the Lull (next round). Runs [`POST_VOLLEY_SCHEDULE`] —
-    /// the §4 resolution as an ordered list of single-purpose steps — checking the outcome after each and
-    /// stopping the instant the battle ends. The behavior is identical to the old hardcoded flow; the
-    /// difference is that the sequence (and the accumulator-wipes) is now **data we can edit**.
-    fn end_volley(&self, state: &mut State) {
-        for (rule, step) in POST_VOLLEY_SCHEDULE {
-            if !state.ruleset.allows(*rule) {
-                continue; // this phase is toggled off for this game
-            }
-            step(self, state);
-            check_outcome(state);
-            if state.outcome.is_some() {
-                return;
-            }
-        }
         self.next_round(state);
-    }
-
-    // ---- §4 round-resolution steps (single-purpose; sequenced by POST_VOLLEY_SCHEDULE) ----
-
-    /// **Interception** (§4): each declared charge is struck by the *enemy front* Vanguards as it crosses
-    /// — the front strikes the runner. The charger slips each via the Finesse contest (spending Tempo) or
-    /// is cut down at the line; a charger downed here never reaches the back (its Breach blow fizzles). So
-    /// crossing a guarded front is a specialist play — only a lone high-Finesse/high-Tempo body survives.
-    fn step_intercept(&self, state: &mut State) {
-        let charges = state.plan.charges.clone();
-        for c in charges.iter().filter(|c| !c.flank) {
-            if c.side == 0 {
-                // A hero charges the enemy Rearguard — the creature front intercepts.
-                if c.attacker >= state.heroes.len() {
-                    continue;
-                }
-                let mut creatures = std::mem::take(&mut state.creatures);
-                combat::intercept(
-                    &mut state.heroes[c.attacker],
-                    &mut creatures,
-                    &state.plan.foe_vanguard,
-                    &mut state.log,
-                );
-                state.creatures = creatures;
-            } else {
-                // A foe charges the hero Rearguard — the hero front intercepts.
-                if c.attacker >= state.creatures.len() {
-                    continue;
-                }
-                let mut heroes = std::mem::take(&mut state.heroes);
-                combat::intercept(
-                    &mut state.creatures[c.attacker],
-                    &mut heroes,
-                    &state.plan.hero_vanguard,
-                    &mut state.log,
-                );
-                state.heroes = heroes;
-            }
-        }
-        combat::tally(&mut state.heroes, &mut state.log);
-        combat::tally(&mut state.creatures, &mut state.log);
-    }
-
-    /// **Pre-empt:** the rear answers the declared charges first (counter-fire / strike-back / dodge),
-    /// then finalize deaths.
-    fn step_preempt(&self, state: &mut State) {
-        let charges = state.plan.charges.clone();
-        let mut log = std::mem::take(&mut state.log);
-        combat::resolve_volley(&mut state.heroes, &mut state.creatures, &charges, &mut log);
-        combat::tally(&mut state.heroes, &mut log);
-        combat::tally(&mut state.creatures, &mut log);
-        state.log = log;
-    }
-
-    /// **Breach:** surviving chargers land their blows on the exposed Rearguard (§4.6 #4), then tally.
-    fn step_breach(&self, state: &mut State) {
-        state.phase = Phase::Breach;
-        state.log.push("-- the Breach --".into());
-        let charges = state.plan.charges.clone();
-        let mut log = std::mem::take(&mut state.log);
-        combat::resolve_breach(&mut state.heroes, &mut state.creatures, &charges, &mut log);
-        combat::tally(&mut state.heroes, &mut log);
-        combat::tally(&mut state.creatures, &mut log);
-        state.log = log;
-    }
-
-    /// **Reckoning:** deferred spells resolve, fizzling if their caster died in the Breach (§4.6 #5),
-    /// then tally.
-    fn step_reckoning(&self, state: &mut State) {
-        state.phase = Phase::Reckoning;
-        state.log.push("-- the Reckoning --".into());
-        let deferred = state.plan.deferred.clone();
-        let mut log = std::mem::take(&mut state.log);
-        combat::resolve_reckoning(&mut state.heroes, &mut state.creatures, &deferred, &mut log);
-        combat::tally(&mut state.heroes, &mut log);
-        combat::tally(&mut state.creatures, &mut log);
-        state.log = log;
-    }
-
-    /// **Accumulator-wipe** (does ONLY this, §4): clear the per-phase pile on both sides so
-    /// sub-threshold damage never crosses a phase boundary. Its placement is the focus-fire /
-    /// Toughness-as-wall dial — moving or removing it changes how much damage accumulates before a wall.
-    fn step_clear_piles(&self, state: &mut State) {
-        combat::clear_phase_piles(&mut state.heroes);
-        combat::clear_phase_piles(&mut state.creatures);
-    }
-
-    /// PvE creature **Fray**: each living foe Vanguard strikes the first living hero Vanguard (a melee
-    /// trade), and each ranged foe Rearguard fires at the hero front. Deterministic (§0.1 fixed
-    /// instinct): a foe acts while it has Tempo and a legal target.
-    /// The living creature with the most missing Health (a healer's mend target); `None` if all are full.
-    fn most_wounded_creature(&self, state: &State) -> Option<usize> {
-        (0..state.creatures.len())
-            .filter(|&i| !state.creatures[i].fallen && !state.creatures[i].is_down())
-            .filter(|&i| {
-                state.creatures[i].defense.health.remaining < state.creatures[i].defense.health.max
-            })
-            .max_by_key(|&i| {
-                state.creatures[i].defense.health.max - state.creatures[i].defense.health.remaining
-            })
-    }
-
-    /// Choose foe `f`'s melee target among `candidates` (hero indices). An **Assassin** targets by class
-    /// priority — Mage > Assassin > Fighter — preferring a target it can actually damage (raw >=
-    /// Toughness), and otherwise falling to the lowest-priority reachable body (chip the tank). Any other
-    /// foe takes the first candidate (the front-most target). §13 deterministic enemy AI.
-    fn foe_pick_target(&self, f: usize, candidates: &[usize], state: &State) -> Option<usize> {
-        fn class_priority(name: &str) -> u8 {
-            match name {
-                "Mage" => 0,
-                "Assassin" => 1,
-                "Fighter" => 2,
-                _ => 3,
-            }
-        }
-        if candidates.is_empty() {
-            return None;
-        }
-        if state.creatures[f].name != "Assassin" {
-            return candidates.first().copied();
-        }
-        let raw = state.creatures[f].eff_might();
-        candidates
-            .iter()
-            .copied()
-            .filter(|&t| raw >= state.heroes[t].eff_toughness())
-            .min_by_key(|&t| class_priority(&state.heroes[t].name))
-            .or_else(|| {
-                candidates
-                    .iter()
-                    .copied()
-                    .max_by_key(|&t| class_priority(&state.heroes[t].name))
-            })
-    }
-
-    fn foe_fray(&self, state: &mut State) {
-        for f in 0..state.creatures.len() {
-            if state.creatures[f].fallen
-                || state.creatures[f].is_down()
-                || state.creatures[f].stunned
-            {
-                continue;
-            }
-            // §13 healer: a support creature mends its most-wounded ally instead of attacking — undoing
-            // the party's attrition, so the front never falls to damage alone and the healer must be
-            // *reached and killed*.
-            let heal = state.creatures[f].behavior().map_or(0, |b| b.heal);
-            if heal > 0 && state.creatures[f].tempo > 0 {
-                if let Some(t) = self.most_wounded_creature(state) {
-                    state.creatures[f].tempo -= 1;
-                    let restored: u32 = (0..heal)
-                        .map(|_| state.creatures[t].defense.recover_card())
-                        .sum();
-                    if restored > 0 {
-                        let hn = state.creatures[f].name.clone();
-                        let tn = state.creatures[t].name.clone();
-                        state
-                            .log
-                            .push(format!("  {hn} mends {tn} (+{restored} Health)."));
-                    }
-                }
-                continue; // a healer does not attack
-            }
-            if state.plan.foe_vanguard[f] {
-                // Front clash: an Assassin targets by class priority (Mage>Assassin>Fighter, preferring a
-                // target it can damage); any other foe strikes the front-most living hero Vanguard.
-                if state.creatures[f].tempo > 0 && state.creatures[f].can_contest_now(Range::Melee)
-                {
-                    let fronts: Vec<usize> = (0..state.heroes.len())
-                        .filter(|&h| state.plan.hero_vanguard[h] && !state.heroes[h].is_down())
-                        .collect();
-                    if let Some(t) = self.foe_pick_target(f, &fronts, state) {
-                        self.fray_strike(state, false, f, t);
-                    }
-                }
-            } else if state.creatures[f].can_contest(Range::Ranged) && state.creatures[f].tempo > 0
-            {
-                // One instant shot at the hero front this Fray.
-                if let Some(t) = self.front_target(state, 0) {
-                    self.fray_shot(state, false, f, t);
-                }
-            }
-        }
-        combat::tally(&mut state.heroes, &mut state.log);
-    }
-
-    /// PvE creature **Volley**: a free foe Vanguard charges the hero Rearguard (or flanks a surviving
-    /// hero Vanguard); a ranged foe Rearguard fires again at the hero front. Deterministic.
-    fn foe_volley(&self, state: &mut State) {
-        for f in 0..state.creatures.len() {
-            if state.creatures[f].fallen
-                || state.creatures[f].is_down()
-                || state.creatures[f].stunned
-            {
-                continue;
-            }
-            if state.plan.foe_vanguard[f]
-                && !state.plan.foe_locked[f]
-                && !state.creatures[f].routed
-                && state.creatures[f].can_contest_now(Range::Melee)
-                && state.creatures[f].tempo > 0
-            {
-                // §10 Rout refinement: a routed foe is driven off the line and **cannot charge** as a
-                // Vanguard (it neither holds the front nor crosses). Charge a hero Rearguard if one
-                // exists; else flank a surviving hero Vanguard.
-                if let Some(t) = self.rear_target(state, 0) {
-                    state.plan.charges.push(crate::state::Charge {
-                        side: 1,
-                        attacker: f,
-                        target: t,
-                        flank: false,
-                    });
-                } else if let Some(t) = (0..state.heroes.len())
-                    .find(|&h| state.plan.hero_vanguard[h] && !state.heroes[h].is_down())
-                {
-                    state.plan.charges.push(crate::state::Charge {
-                        side: 1,
-                        attacker: f,
-                        target: t,
-                        flank: true,
-                    });
-                }
-            } else if !state.plan.foe_vanguard[f]
-                && state.creatures[f].can_contest(Range::Ranged)
-                && state.creatures[f].tempo > 0
-                && let Some(t) = self.front_target(state, 0)
-            {
-                self.fray_shot(state, false, f, t);
-            }
-        }
-    }
-
-    /// The first living enemy **front** (Vanguard) of `enemy_side`, for a ranged shot.
-    fn front_target(&self, state: &State, enemy_side: u8) -> Option<usize> {
-        (0..state.s_len(enemy_side))
-            .find(|&i| state.s_vanguard(enemy_side)[i] && !state.s_pool(enemy_side)[i].is_down())
-    }
-
-    /// The first living enemy **Rearguard** of `enemy_side` (a charge target). `None` if the enemy
-    /// back is empty — then a charger must flank the front instead.
-    fn rear_target(&self, state: &State, enemy_side: u8) -> Option<usize> {
-        (0..state.s_len(enemy_side))
-            .find(|&i| !state.s_vanguard(enemy_side)[i] && !state.s_pool(enemy_side)[i].is_down())
-    }
-
-    /// A **Fray melee strike** (§4.6 #2): a trade — `attacker` strikes `target`, who strikes back if
-    /// it can. **Records the struck enemy Vanguard** in the attacked-map (the input to
-    /// [`combat::compute_locks`]) so the per-unit lock is exact: a Vanguard whose struck foe dies is
-    /// freed even while other enemy Vanguards stand.
-    fn fray_strike(&self, state: &mut State, hero_attacker: bool, attacker: usize, target: usize) {
-        // Only a Vanguard's front strike contributes a lock (attacking is what pins, §4.6).
-        let side: u8 = if hero_attacker { 0 } else { 1 };
-        if state.s_vanguard(side)[attacker] {
-            let map = state.s_attacked_mut(side);
-            if !map[attacker].contains(&target) {
-                map[attacker].push(target);
-            }
-        }
-        if hero_attacker {
-            // The defender is a creature — it answers with its fixed instinct (Trade, §0.1).
-            let mut heroes = std::mem::take(&mut state.heroes);
-            combat::fray_one(
-                &mut heroes[attacker],
-                &mut state.creatures[target],
-                combat::Guard::Trade,
-                &mut state.log,
-            );
-            state.heroes = heroes;
-        } else {
-            // The defender is a hero — it answers per its declared §4 stance (Trade / Block).
-            let guard = state.plan.hero_guard[target];
-            let mut creatures = std::mem::take(&mut state.creatures);
-            combat::fray_one(
-                &mut creatures[attacker],
-                &mut state.heroes[target],
-                guard,
-                &mut state.log,
-            );
-            state.creatures = creatures;
-        }
-    }
-
-    /// A **Fray / Volley instant ranged shot** (§4.6: `cast: Strike, resolve: OnCast`): an evade
-    /// contest, then the shot lands if not dodged.
-    fn fray_shot(&self, state: &mut State, hero_attacker: bool, attacker: usize, target: usize) {
-        if hero_attacker {
-            let mut heroes = std::mem::take(&mut state.heroes);
-            combat::ranged_one(
-                &mut heroes[attacker],
-                &mut state.creatures[target],
-                &mut state.log,
-            );
-            state.heroes = heroes;
-        } else {
-            let mut creatures = std::mem::take(&mut state.creatures);
-            combat::ranged_one(
-                &mut creatures[attacker],
-                &mut state.heroes[target],
-                &mut state.log,
-            );
-            state.creatures = creatures;
-        }
     }
 
     fn next_round(&self, state: &mut State) {
         // Round cap (§0 Ruleset): a fight not closed within `max_rounds` is a **draw** (PvE: no
-        // different from a loss). The Lull (§4.6 #6): Tempo resets, Health persists, round++.
+        // different from a loss). The Lull (§4.6 / Refresh): Tempo resets, Health persists, round++.
         if state.round >= state.ruleset.max_rounds {
             state.outcome = Some(Outcome::Tie(vec![PlayerId(0), PlayerId(1)]));
             state
@@ -744,11 +298,11 @@ impl Deckbound {
         }
         state.round += 1;
         state.plan = Round::sized(state.heroes.len(), state.creatures.len());
-        default_positions(state);
-        state.phase = Phase::Standoff;
+        default_intentions(state);
+        state.phase = Phase::DeclareIntentions;
         state
             .log
-            .push(format!("-- Round {}: the Standoff --", state.round));
+            .push(format!("-- Round {}: declare intentions --", state.round));
     }
 
     /// §4.4 — may actor `i` of `side` play this `card` right now? There is **no per-suit/per-side cap**
