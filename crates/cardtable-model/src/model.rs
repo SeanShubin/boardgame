@@ -33,16 +33,54 @@ pub enum Face {
     Down,
 }
 
-/// A single card and its place in the tree.
+/// How large a card is currently drawn. Default [`Size::Name`] — the smallest. A card grows only as
+/// far as it has content for: [`Size::Card`] needs `detail`, [`Size::Full`] needs `panel`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Size {
+    /// Just the name (plus a quantity when several of a kind stack). The default.
+    #[default]
+    Name,
+    /// A full card face: name + detail lines (stats / rules).
+    Card,
+    /// A large utility panel with no physical-card counterpart (e.g. a combat log).
+    Full,
+}
+
+/// What a card *is*, which decides what a single click on it means (the renderer reads this).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardKind {
+    /// An ordinary card (may still carry `detail` / a `panel`).
+    Regular,
+    /// A card whose job is to name its pile — and the zone you enter by drilling into that pile.
+    Zone,
+    /// A user-interface card that performs an action when clicked.
+    Utility(Utility),
+}
+
+/// The action a [`CardKind::Utility`] card performs when clicked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Utility {
+    /// Go up one zone level.
+    Back,
+    /// Quit the application (desktop only).
+    Exit,
+}
+
+/// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
+/// larger render [`Size`]s (`detail`, `panel`) and a [`CardKind`] that gives a click its meaning.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Card {
     /// This card's stable id.
     pub id: CardId,
-    /// What the card shows.
+    /// What the card shows (its name is the face title).
     pub face: Face,
     /// If `Some(i)`, this card maps to the legal action at index `i` in the source view — i.e. a
     /// click here is a legal move, not just a look. `None` means "viewable but not actionable".
     pub actionable: Option<usize>,
+    detail: Vec<String>,
+    panel: Vec<String>,
+    kind: CardKind,
+    size: Size,
     home: PileId,
 }
 
@@ -55,6 +93,39 @@ impl Card {
     /// Whether clicking this card performs a legal move.
     pub fn is_actionable(&self) -> bool {
         self.actionable.is_some()
+    }
+
+    /// The card's name — its face title, or empty when face down.
+    pub fn name(&self) -> &str {
+        match &self.face {
+            Face::Up { title } => title,
+            Face::Down => "",
+        }
+    }
+
+    /// Body lines shown at [`Size::Card`].
+    pub fn detail(&self) -> &[String] {
+        &self.detail
+    }
+
+    /// Panel lines shown at [`Size::Full`].
+    pub fn panel(&self) -> &[String] {
+        &self.panel
+    }
+
+    /// What the card is (drives click meaning).
+    pub fn kind(&self) -> CardKind {
+        self.kind
+    }
+
+    /// How large the card is drawn right now.
+    pub fn size(&self) -> Size {
+        self.size
+    }
+
+    /// Whether the card has more than a name to show, so a click can grow it.
+    pub fn is_expandable(&self) -> bool {
+        !self.detail.is_empty() || !self.panel.is_empty()
     }
 }
 
@@ -221,6 +292,10 @@ impl Tableau {
                 id,
                 face,
                 actionable,
+                detail: Vec::new(),
+                panel: Vec::new(),
+                kind: CardKind::Regular,
+                size: Size::Name,
                 home: pile,
             },
         );
@@ -441,6 +516,58 @@ impl Tableau {
             .get_mut(&pile)
             .ok_or(TableauError::UnknownPile(pile))?
             .size = Pos { x: w, y: h };
+        Ok(())
+    }
+
+    // --- card content & render size ---------------------------------------------------------
+
+    /// Sets a card's [`Size::Card`] body lines.
+    pub fn set_card_detail(
+        &mut self,
+        card: CardId,
+        lines: Vec<String>,
+    ) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .detail = lines;
+        Ok(())
+    }
+
+    /// Sets a card's [`Size::Full`] panel lines (e.g. a log).
+    pub fn set_card_panel(&mut self, card: CardId, lines: Vec<String>) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .panel = lines;
+        Ok(())
+    }
+
+    /// Sets what a card *is* (its click meaning).
+    pub fn set_card_kind(&mut self, card: CardId, kind: CardKind) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .kind = kind;
+        Ok(())
+    }
+
+    /// Advances a card to the next render size it has content for, wrapping back to [`Size::Name`]:
+    /// `Name → Card` (if it has detail) `→ Full` (if it has a panel) `→ Name`. A name-only card stays
+    /// at `Name`. This is the "click to grow, click again to shrink" cycle.
+    pub fn cycle_card_size(&mut self, card: CardId) -> Result<(), TableauError> {
+        let c = self
+            .cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?;
+        let has_detail = !c.detail.is_empty();
+        let has_panel = !c.panel.is_empty();
+        c.size = match c.size {
+            Size::Name if has_detail => Size::Card,
+            Size::Name if has_panel => Size::Full,
+            Size::Card if has_panel => Size::Full,
+            _ => Size::Name,
+        };
         Ok(())
     }
 
@@ -958,6 +1085,45 @@ mod tests {
             ox <= 0.02 || oy <= 0.02,
             "a and b must not overlap: {ap:?} {bp:?}"
         );
+    }
+
+    #[test]
+    fn card_size_cycles_through_supported_sizes() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "P").unwrap();
+        let c = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Knight".into(),
+                },
+                None,
+            )
+            .unwrap();
+
+        // Name-only card: not expandable, cycling stays at Name.
+        assert!(!t.card(c).unwrap().is_expandable());
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Name);
+
+        // With detail: Name -> Card -> Name.
+        t.set_card_detail(c, vec!["Might 4".into(), "Vitality 6".into()])
+            .unwrap();
+        assert!(t.card(c).unwrap().is_expandable());
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Card);
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Name);
+
+        // With a panel too: Name -> Card -> Full -> Name.
+        t.set_card_panel(c, vec!["round 1".into()]).unwrap();
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Card);
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Full);
+        t.cycle_card_size(c).unwrap();
+        assert_eq!(t.card(c).unwrap().size(), Size::Name);
     }
 
     #[test]

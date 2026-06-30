@@ -17,4 +17,6 @@ pub mod model;
 
 pub use binding::from_table_view;
 pub use fixtures::sample_table;
-pub use model::{Card, CardId, Face, Pile, PileId, Pos, Tableau, TableauError};
+pub use model::{
+    Card, CardId, CardKind, Face, Pile, PileId, Pos, Size, Tableau, TableauError, Utility,
+};

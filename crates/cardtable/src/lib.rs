@@ -22,7 +22,7 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, Face, PileId, Tableau};
+use cardtable_model::{Card, CardId, Face, PileId, Size, Tableau};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -185,10 +185,19 @@ fn on_click(
     let Ok((action, card, pile, is_background)) = targets.get(on.event().entity) else {
         return;
     };
-    if let Some(action) = action {
-        requests.0.push(action.0);
-    } else if card.is_some() {
-        // A non-actionable card: consume the click (don't focus a pile or close the table).
+    if let Some(card_ref) = card {
+        // A card click first tries to grow/shrink it (cycle render size); an expandable card consumes
+        // the click that way. Otherwise an actionable card fires its action; a plain name-only card
+        // just absorbs the click.
+        let id = card_ref.0;
+        if table.0.card(id).is_some_and(|c| c.is_expandable()) {
+            let _ = table.0.cycle_card_size(id);
+            rebuild.0 = true;
+        } else if let Some(action) = action {
+            requests.0.push(action.0);
+        }
+    } else if let Some(action) = action {
+        requests.0.push(action.0); // a loose action (rail button)
     } else if let Some(pile) = pile {
         let _ = table.0.focus(pile.0);
         rebuild.0 = true;
@@ -613,15 +622,45 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     }
 }
 
-/// Draws one card: a light face showing its title, or a dark back. Actionable cards get a highlight
-/// edge and become clickable.
+/// Draws one card at its current render [`Size`]: a small name chip, a detailed card face, or a full
+/// utility panel. Every form carries `CardRef`, so a click can grow/shrink it.
 fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
-    // A face-down card shows only its back — no glyph, which also reads more like a real card.
-    let (title, bg, ink) = match &card.face {
+    match card.size() {
+        Size::Name => spawn_card_name(parent, card),
+        Size::Card => spawn_card_detail(parent, card),
+        Size::Full => spawn_card_full(parent, card),
+    }
+}
+
+/// Edge colour for a card: highlighted when it carries a legal move, else the dark card edge.
+fn card_edge(card: &Card) -> Color {
+    if card.is_actionable() {
+        ACTIONABLE
+    } else {
+        CARD_EDGE
+    }
+}
+
+/// Tag a freshly-spawned card entity as actionable (so a loose action still fires), then run `build`
+/// to fill its children.
+fn finish_card(
+    mut entity: EntityCommands,
+    card: &Card,
+    build: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    if let Some(index) = card.actionable {
+        entity.insert(ActionControl(index));
+    }
+    entity.with_children(build);
+}
+
+/// Smallest form — a 96×132 card showing just the name (or a blank back when face down).
+fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card) {
+    let (label, bg, ink) = match &card.face {
         Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
         Face::Down => (None, CARD_BACK, INK),
     };
-    let mut entity = parent.spawn((
+    let entity = parent.spawn((
         CardRef(card.id),
         Node {
             width: Val::Px(96.0),
@@ -634,25 +673,97 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
             ..default()
         },
         BackgroundColor(bg),
-        BorderColor::all(if card.is_actionable() {
-            ACTIONABLE
-        } else {
-            CARD_EDGE
-        }),
+        BorderColor::all(card_edge(card)),
         card_shadow(),
     ));
-    if let Some(index) = card.actionable {
-        entity.insert(ActionControl(index));
-    }
-    entity.with_children(|c| {
-        if let Some(title) = title {
+    finish_card(entity, card, |c| {
+        if let Some(label) = label {
             c.spawn((
-                Text::new(title),
+                Text::new(label),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(ink),
+            ));
+        }
+    });
+}
+
+/// Medium form — a card face: a name header above its detail (stat / rules) lines.
+fn spawn_card_detail(parent: &mut ChildSpawnerCommands, card: &Card) {
+    let entity = parent.spawn((
+        CardRef(card.id),
+        Node {
+            width: Val::Px(200.0),
+            min_height: Val::Px(132.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(10.0)),
+            border: UiRect::all(Val::Px(2.0)),
+            row_gap: Val::Px(4.0),
+            border_radius: BorderRadius::all(Val::Px(12.0)),
+            ..default()
+        },
+        BackgroundColor(CARD_FACE),
+        BorderColor::all(card_edge(card)),
+        card_shadow(),
+    ));
+    finish_card(entity, card, |c| {
+        c.spawn((
+            Text::new(card.name().to_string()),
+            TextFont {
+                font_size: FONT_HEAD,
+                ..default()
+            },
+            TextColor(CARD_INK),
+        ));
+        for line in card.detail() {
+            c.spawn((
+                Text::new(line.clone()),
+                TextFont {
+                    font_size: FONT_BODY,
+                    ..default()
+                },
+                TextColor(CARD_INK),
+            ));
+        }
+    });
+}
+
+/// Largest form — a utility panel (e.g. a combat log): a name header above its panel lines, scrollable.
+fn spawn_card_full(parent: &mut ChildSpawnerCommands, card: &Card) {
+    let entity = parent.spawn((
+        CardRef(card.id),
+        Node {
+            width: Val::Px(320.0),
+            max_height: Val::Px(360.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(12.0)),
+            row_gap: Val::Px(4.0),
+            overflow: Overflow::scroll_y(),
+            border_radius: BorderRadius::all(Val::Px(10.0)),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        card_shadow(),
+    ));
+    finish_card(entity, card, |c| {
+        c.spawn((
+            Text::new(card.name().to_string()),
+            TextFont {
+                font_size: FONT_HEAD,
+                ..default()
+            },
+            TextColor(INK),
+        ));
+        for line in card.panel() {
+            c.spawn((
+                Text::new(line.clone()),
+                TextFont {
+                    font_size: FONT_BODY,
+                    ..default()
+                },
+                TextColor(MUTED),
             ));
         }
     });
