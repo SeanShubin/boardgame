@@ -18,7 +18,7 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
-use bevy::picking::events::{Click, DragDrop, Pointer};
+use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, Pointer};
 use bevy::prelude::*;
 use bevy::ui::BoxShadow;
 
@@ -81,10 +81,13 @@ impl Plugin for CardTablePlugin {
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
-            // Input is picking-driven (clicks open/close decks and fire actions; drags move
-            // cards/decks), so it runs in observers rather than the Input system set.
+            // Input is picking-driven, so it runs in observers rather than the Input system set:
+            // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
+            // slides it freely across the table.
             .add_observer(on_click)
-            .add_observer(on_drop);
+            .add_observer(on_drop)
+            .add_observer(on_deck_drag)
+            .add_observer(on_deck_drag_end);
     }
 }
 
@@ -105,6 +108,11 @@ struct CardRef(CardId);
 /// Marks a deck's node as a drop target: a card dropped here moves into this deck.
 #[derive(Component, Clone, Copy)]
 struct DeckDropZone(DeckId);
+
+/// Marks a top-level deck's absolutely-positioned wrapper, carrying its [`DeckId`]. Dragging it slides
+/// the deck freely across the table (live), committing the final position on release.
+#[derive(Component, Clone, Copy)]
+struct TableDeck(DeckId);
 
 // ---- systems ------------------------------------------------------------
 
@@ -156,49 +164,78 @@ fn on_click(
     on.propagate(false);
 }
 
-/// A picking drop: move the dragged card or deck into the target's deck — a deck, a card's home deck,
-/// or the table background (the root). Cards dropped on the background are ignored; invalid deck moves
-/// (cycles) are no-ops via the model. Presentation-level; mapping drops to game actions is future work.
+/// A picking drop: move a dragged **card** into the target's deck (a deck, or a card's home deck).
+/// Decks are not nested on drop — they are repositioned by [`on_deck_drag`] — so a dragged deck is
+/// ignored here. Presentation-level; mapping drops to game actions is future work.
 fn on_drop(
     mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
     decks: Query<&DeckDropZone>,
-    background: Query<(), With<CardTableRoot>>,
     mut table: ResMut<Table>,
 ) {
     let event = on.event();
-    let dropped = event.event.dropped;
-    let target = event.entity;
-
-    let dragged_card = cards.get(dropped).ok().map(|c| c.0);
-    let dragged_deck = decks.get(dropped).ok().map(|d| d.0);
-    if dragged_card.is_none() && dragged_deck.is_none() {
-        return; // dragged something that is neither a card nor a deck
-    }
-
-    let dest = if let Ok(deck) = decks.get(target) {
-        Some(deck.0)
-    } else if let Ok(card) = cards.get(target) {
-        table.0.card(card.0).map(|c| c.home())
-    } else if background.get(target).is_ok() {
-        Some(table.0.root_id())
+    let Ok(dragged) = cards.get(event.event.dropped) else {
+        return; // only cards drop *into* decks
+    };
+    let dest = if let Ok(zone) = decks.get(event.entity) {
+        zone.0
+    } else if let Ok(card) = cards.get(event.entity) {
+        match table.0.card(card.0) {
+            Some(c) => c.home(),
+            None => return,
+        }
     } else {
         return; // not a drop target — let it propagate
     };
-    let Some(dest) = dest else {
-        return;
-    };
-
     on.propagate(false);
-    if let Some(card) = dragged_card {
-        // Cards live only inside decks, and the root's own cards aren't drawn — so ignore card-on-table.
-        if dest != table.0.root_id() {
-            let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
-            let _ = table.0.move_card(card, dest, at);
-        }
-    } else if let Some(deck) = dragged_deck {
-        let at = table.0.deck(dest).map_or(0, |d| d.subdecks().len());
-        let _ = table.0.move_deck(deck, dest, at);
+    let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
+    let _ = table.0.move_card(dragged.0, dest, at);
+}
+
+/// Slide a top-level deck across the table while it is dragged. Mutates the wrapper's `Node` left/top
+/// directly (not the model), so there is no per-frame rebuild mid-drag; the final position is committed
+/// in [`on_deck_drag_end`]. A card drag is consumed here so it doesn't also slide the deck under it.
+fn on_deck_drag(
+    mut on: On<Pointer<Drag>>,
+    cards: Query<&CardRef>,
+    mut decks: Query<&mut Node, With<TableDeck>>,
+) {
+    let target = on.event().entity;
+    if cards.get(target).is_ok() {
+        on.propagate(false);
+        return;
+    }
+    if let Ok(mut node) = decks.get_mut(target) {
+        let delta = on.event().event.delta;
+        node.left = Val::Px(px(node.left) + delta.x);
+        node.top = Val::Px(px(node.top) + delta.y);
+        on.propagate(false);
+    }
+}
+
+/// Commit a dragged deck's final position to the model on release (one rebuild, at rest).
+fn on_deck_drag_end(
+    mut on: On<Pointer<DragEnd>>,
+    cards: Query<&CardRef>,
+    decks: Query<(&TableDeck, &Node)>,
+    mut table: ResMut<Table>,
+) {
+    let target = on.event().entity;
+    if cards.get(target).is_ok() {
+        on.propagate(false);
+        return;
+    }
+    if let Ok((deck, node)) = decks.get(target) {
+        let _ = table.0.set_deck_pos(deck.0, px(node.left), px(node.top));
+        on.propagate(false);
+    }
+}
+
+/// The pixel value of a `Val`, or `0.0` for the non-pixel variants (decks always use `Px`).
+fn px(value: Val) -> f32 {
+    match value {
+        Val::Px(p) => p,
+        _ => 0.0,
     }
 }
 
@@ -316,18 +353,28 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                     ));
                 }
 
+                // The table surface: a fill area holding absolutely-placed decks the player drags
+                // anywhere. Each top-level deck sits in a positioned wrapper at its model position.
                 main.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    flex_wrap: FlexWrap::Wrap,
-                    column_gap: Val::Px(12.0),
-                    row_gap: Val::Px(12.0),
-                    align_items: AlignItems::FlexStart,
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
                     ..default()
                 })
-                .with_children(|decks| {
+                .with_children(|surface| {
                     let root_deck = tree.deck(tree.root_id()).expect("root exists");
-                    for &zone in root_deck.subdecks() {
-                        spawn_deck(decks, tree, zone);
+                    for &id in root_deck.subdecks() {
+                        let pos = tree.deck(id).expect("deck id from root").pos();
+                        surface
+                            .spawn((
+                                TableDeck(id),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(pos.x),
+                                    top: Val::Px(pos.y),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|wrapper| spawn_deck(wrapper, tree, id));
                     }
                 });
             });

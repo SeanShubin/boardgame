@@ -12,10 +12,13 @@ use crate::model::{DeckTree, Face};
 pub fn from_table_view(view: &TableView) -> DeckTree {
     let mut tree = DeckTree::new();
     let root = tree.root_id();
-    for zone in &view.zones {
+    for (index, zone) in view.zones.iter().enumerate() {
         let deck = tree
             .add_deck(root, zone.label.clone())
             .expect("root deck exists");
+        // Lay the decks out in a starting row; the renderer lets the player drag them anywhere.
+        tree.set_deck_pos(deck, 24.0 + index as f32 * 180.0, 24.0)
+            .expect("just-created deck exists");
         for card in &zone.cards {
             let face = match &card.face {
                 CardFace::Up { title, .. } => Face::Up {

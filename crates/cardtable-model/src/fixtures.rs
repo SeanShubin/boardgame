@@ -52,6 +52,12 @@ pub fn sample_table() -> DeckTree {
     )
     .expect("discard exists");
 
+    // Spread the decks across the table so they start un-stacked; drag repositions them.
+    tree.set_deck_pos(hand, 40.0, 40.0).expect("hand exists");
+    tree.set_deck_pos(deck, 220.0, 40.0).expect("deck exists");
+    tree.set_deck_pos(discard, 400.0, 40.0)
+        .expect("discard exists");
+
     tree
 }
 

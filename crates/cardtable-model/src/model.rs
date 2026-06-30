@@ -15,6 +15,14 @@ pub struct CardId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DeckId(pub u64);
 
+/// A 2-D position on the table surface, in pixels from its top-left. The card-table is a physical
+/// space, so a deck has a *place*; the renderer draws it there and drag-to-place updates it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Pos {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// The model's own, minimal card face — independent of any game or of `contract::CardFace`, so the
 /// core stays dependency-free. The [`binding`](crate::binding) module maps between the two.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,7 +60,7 @@ impl Card {
 
 /// A pile of cards (and, optionally, nested decks). Collapsed = shown as a compact, counted pile;
 /// not collapsed = fanned out and attended to.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Deck {
     /// This deck's stable id.
     pub id: DeckId,
@@ -63,6 +71,7 @@ pub struct Deck {
     parent: Option<DeckId>,
     cards: Vec<CardId>,
     subdecks: Vec<DeckId>,
+    pos: Pos,
 }
 
 impl Deck {
@@ -79,6 +88,11 @@ impl Deck {
     /// The decks nested directly in this deck, in order.
     pub fn subdecks(&self) -> &[DeckId] {
         &self.subdecks
+    }
+
+    /// This deck's position on the table surface.
+    pub fn pos(&self) -> Pos {
+        self.pos
     }
 }
 
@@ -130,6 +144,7 @@ impl DeckTree {
                 parent: None,
                 cards: Vec::new(),
                 subdecks: Vec::new(),
+                pos: Pos::default(),
             },
         );
         Self {
@@ -165,6 +180,7 @@ impl DeckTree {
                 parent: Some(parent),
                 cards: Vec::new(),
                 subdecks: Vec::new(),
+                pos: Pos::default(),
             },
         );
         self.decks
@@ -390,6 +406,15 @@ impl DeckTree {
             .get_mut(&deck)
             .ok_or(DeckError::UnknownDeck(deck))?
             .collapsed = collapsed;
+        Ok(())
+    }
+
+    /// Sets `deck`'s position on the table surface (drag-to-place commits here).
+    pub fn set_deck_pos(&mut self, deck: DeckId, x: f32, y: f32) -> Result<(), DeckError> {
+        self.decks
+            .get_mut(&deck)
+            .ok_or(DeckError::UnknownDeck(deck))?
+            .pos = Pos { x, y };
         Ok(())
     }
 

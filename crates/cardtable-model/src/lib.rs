@@ -17,4 +17,4 @@ pub mod model;
 
 pub use binding::from_table_view;
 pub use fixtures::sample_table;
-pub use model::{Card, CardId, Deck, DeckError, DeckId, DeckTree, Face};
+pub use model::{Card, CardId, Deck, DeckError, DeckId, DeckTree, Face, Pos};
