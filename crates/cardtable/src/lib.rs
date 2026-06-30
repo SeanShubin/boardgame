@@ -22,7 +22,7 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, DeckId, DeckTree, Face};
+use cardtable_model::{Card, CardId, DeckId, DeckTree, Face, Pos};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -82,7 +82,7 @@ impl Plugin for CardTablePlugin {
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            .add_systems(Update, (sync_deck_sizes, animate_decks))
+            .add_systems(Update, (sync_deck_sizes, sync_surface_size, animate_decks))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
@@ -117,6 +117,11 @@ struct DeckDropZone(DeckId);
 /// the deck freely across the table (live), committing the final position on release.
 #[derive(Component, Clone, Copy)]
 struct TableDeck(DeckId);
+
+/// Marks the table surface — the positioning context for decks. Its size is fed to the model as the
+/// wall bounds that keep decks inside.
+#[derive(Component)]
+struct TableSurface;
 
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
@@ -243,10 +248,11 @@ fn on_deck_drag(
     if let Ok((deck, mut node)) = decks.get_mut(target) {
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
-        node.left = Val::Px(x);
-        node.top = Val::Px(y);
-        // Keep the model target in step with the live node so the animation doesn't drag it back.
-        let _ = table.0.set_deck_pos(deck.0, x, y);
+        // The borders shove the deck back inside; use the clamped position for the live node too, and
+        // keep the model target in step so the animation doesn't drag it back.
+        let placed = table.0.place_deck(deck.0, x, y).unwrap_or(Pos { x, y });
+        node.left = Val::Px(placed.x);
+        node.top = Val::Px(placed.y);
         on.propagate(false);
     }
 }
@@ -266,8 +272,9 @@ fn on_deck_drag_end(
         return;
     }
     if let Ok((deck, node)) = decks.get(target) {
-        let _ = table.0.set_deck_pos(deck.0, px(node.left), px(node.top));
-        // Slide everything this deck now overlaps out of the way (anchor = the deck just dropped).
+        let _ = table.0.place_deck(deck.0, px(node.left), px(node.top));
+        // Slide everything this deck now overlaps out of the way (anchor = the deck just dropped),
+        // with the borders shoving decks back inside.
         table.0.separate(deck.0);
         on.propagate(false);
     }
@@ -287,6 +294,14 @@ fn sync_deck_sizes(decks: Query<(&TableDeck, &ComputedNode)>, mut table: ResMut<
     for (deck, computed) in &decks {
         let size = computed.size * computed.inverse_scale_factor;
         let _ = table.0.set_deck_size(deck.0, size.x, size.y);
+    }
+}
+
+/// Feed the table surface's laid-out size to the model as the wall bounds that contain the decks.
+fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut table: ResMut<Table>) {
+    if let Ok(computed) = surfaces.single() {
+        let size = computed.size * computed.inverse_scale_factor;
+        table.0.set_surface(size.x, size.y);
     }
 }
 
@@ -440,11 +455,14 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
 
                 // The table surface: a fill area holding absolutely-placed decks the player drags
                 // anywhere. Each top-level deck sits in a positioned wrapper at its model position.
-                main.spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    ..default()
-                })
+                main.spawn((
+                    TableSurface,
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                ))
                 .with_children(|surface| {
                     let root_deck = tree.deck(tree.root_id()).expect("root exists");
                     for &id in root_deck.subdecks() {

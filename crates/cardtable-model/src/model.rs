@@ -128,6 +128,7 @@ pub struct DeckTree {
     selection: Vec<CardId>,
     next_deck: u64,
     next_card: u64,
+    surface: Pos,
 }
 
 impl Default for DeckTree {
@@ -162,6 +163,9 @@ impl DeckTree {
             selection: Vec::new(),
             next_deck: 1,
             next_card: 0,
+            // Effectively unbounded until the renderer reports the real table size, so decks aren't
+            // jammed to the origin before the first layout.
+            surface: Pos { x: 1.0e6, y: 1.0e6 },
         }
     }
 
@@ -435,6 +439,39 @@ impl DeckTree {
         Ok(())
     }
 
+    /// Records the table surface size (the renderer feeds this back after layout). Decks are kept
+    /// within `0..=surface-size` — the borders act as walls. See [`place_deck`] and [`separate`].
+    pub fn set_surface(&mut self, w: f32, h: f32) {
+        self.surface = Pos { x: w, y: h };
+    }
+
+    /// Places `deck` at `(x, y)` but clamps it inside the surface (the borders shove it back in),
+    /// returning the position actually used. Drag-to-place calls this each move.
+    pub fn place_deck(&mut self, deck: DeckId, x: f32, y: f32) -> Result<Pos, DeckError> {
+        if !self.decks.contains_key(&deck) {
+            return Err(DeckError::UnknownDeck(deck));
+        }
+        self.decks.get_mut(&deck).expect("checked above").pos = Pos { x, y };
+        self.clamp_within(deck);
+        Ok(self.decks[&deck].pos)
+    }
+
+    /// Clamp one deck's position inside the surface (top-left at `0,0`, bottom-right at `surface`).
+    /// Returns whether it had to move — that "had to move" is what makes a wall a participant in
+    /// [`separate`]'s relaxation. A deck wider/taller than the surface is pinned to the top-left.
+    fn clamp_within(&mut self, deck: DeckId) -> bool {
+        let surface = self.surface;
+        let d = self.decks.get_mut(&deck).expect("deck id from subdecks");
+        let max_x = (surface.x - d.size.x).max(0.0);
+        let max_y = (surface.y - d.size.y).max(0.0);
+        let nx = d.pos.x.clamp(0.0, max_x);
+        let ny = d.pos.y.clamp(0.0, max_y);
+        let changed = nx != d.pos.x || ny != d.pos.y;
+        d.pos.x = nx;
+        d.pos.y = ny;
+        changed
+    }
+
     /// Pushes overlapping **top-level** decks apart so the table reads as physical objects. `anchor`
     /// (the just-placed deck) stays put; every deck it overlaps slides away, cascading to resolve
     /// secondary overlaps (chain reactions). Iterative and capped, so a hopelessly crowded table
@@ -446,6 +483,13 @@ impl DeckTree {
         ids.sort(); // stable order → deterministic settling
         for _ in 0..MAX_PASSES {
             let mut moved = false;
+            // The borders shove decks back inside first. A deck pinned against a wall can't yield, so
+            // the next overlap pass pushes its *neighbour* instead — that's how the wall propagates.
+            for &id in &ids {
+                if self.clamp_within(id) {
+                    moved = true;
+                }
+            }
             for i in 0..ids.len() {
                 for j in (i + 1)..ids.len() {
                     let (a, b) = (ids[i], ids[j]);
@@ -488,6 +532,10 @@ impl DeckTree {
             if !moved {
                 break;
             }
+        }
+        // If we stopped at the pass cap mid-push, make sure nothing ends up poking through a wall.
+        for &id in &ids {
+            self.clamp_within(id);
         }
     }
 
@@ -730,6 +778,47 @@ mod tests {
                     "decks {i},{j} still overlap: {p:?} {q:?}"
                 );
             }
+        }
+    }
+
+    /// place_deck clamps to the surface — the borders shove a deck back inside.
+    #[test]
+    fn place_deck_clamps_to_surface() {
+        let mut t = DeckTree::new();
+        let root = t.root_id();
+        let a = t.add_deck(root, "A").unwrap();
+        t.set_deck_size(a, 100.0, 100.0).unwrap();
+        t.set_surface(300.0, 200.0);
+
+        assert_eq!(
+            t.place_deck(a, 500.0, 500.0).unwrap(),
+            Pos { x: 200.0, y: 100.0 }
+        );
+        assert_eq!(
+            t.place_deck(a, -50.0, -50.0).unwrap(),
+            Pos { x: 0.0, y: 0.0 }
+        );
+    }
+
+    /// In a bounded surface, separate keeps every deck fully inside (residual overlap is tolerated).
+    #[test]
+    fn separate_keeps_decks_within_bounds() {
+        let mut t = DeckTree::new();
+        let root = t.root_id();
+        let ids: Vec<_> = (0..3)
+            .map(|i| t.add_deck(root, format!("D{i}")).unwrap())
+            .collect();
+        for &d in &ids {
+            t.set_deck_size(d, 100.0, 100.0).unwrap();
+            t.set_deck_pos(d, 250.0, 0.0).unwrap(); // stacked near the right wall
+        }
+        t.set_surface(300.0, 200.0);
+        t.separate(ids[0]);
+
+        for &d in &ids {
+            let p = t.deck(d).unwrap().pos();
+            assert!(p.x >= -0.02 && p.x <= 200.02, "x out of bounds: {p:?}");
+            assert!(p.y >= -0.02 && p.y <= 100.02, "y out of bounds: {p:?}");
         }
     }
 
