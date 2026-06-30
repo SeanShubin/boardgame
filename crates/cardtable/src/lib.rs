@@ -22,7 +22,7 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, Face, PileId, Size, Tableau};
+use cardtable_model::{Card, CardId, CardKind, Face, PileId, Size, Tableau};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -123,6 +123,14 @@ struct TablePile(PileId);
 #[derive(Component)]
 struct TableSurface;
 
+/// A utility card that navigates up one zone level when clicked.
+#[derive(Component)]
+struct BackCard;
+
+/// A utility card that quits the app when clicked (desktop only).
+#[derive(Component)]
+struct ExitCard;
+
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
 /// treating a drag's release as a real click. Set on [`DragStart`], cleared on [`DragEnd`].
@@ -157,14 +165,14 @@ fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
         .expect("override the default font");
 }
 
-/// A picking click, resolved against the most specific target: an actionable control records its
-/// action; a (non-actionable) card consumes the click so it doesn't bubble; a pile opens (focus); the
-/// table background closes all piles. Inner nodes (e.g. a card's text) match nothing and fall through
-/// to their parent via propagation. Global observer, so it survives the per-change UI rebuild.
 fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
     guard.0 = true;
 }
 
+/// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
+/// card goes up a zone; an **Exit** card quits; an expandable **card** grows/shrinks; a loose action
+/// fires; a **pile** is entered (its zone). Inner nodes (a card's text) match nothing and propagate to
+/// their parent. Global observer, so it survives the per-change UI rebuild.
 #[allow(clippy::type_complexity)]
 fn on_click(
     mut on: On<Pointer<Click>>,
@@ -173,22 +181,28 @@ fn on_click(
         Option<&ActionControl>,
         Option<&CardRef>,
         Option<&PileDropZone>,
-        Has<CardTableRoot>,
+        Has<BackCard>,
+        Has<ExitCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, pile, is_background)) = targets.get(on.event().entity) else {
+    let Ok((action, card, pile, is_back, is_exit)) = targets.get(on.event().entity) else {
         return;
     };
-    if let Some(card_ref) = card {
+    if is_back {
+        table.0.zoom_out(); // leave this zone for its parent
+        rebuild.0 = true;
+    } else if is_exit {
+        exit.write(AppExit::Success);
+    } else if let Some(card_ref) = card {
         // A card click first tries to grow/shrink it (cycle render size); an expandable card consumes
-        // the click that way. Otherwise an actionable card fires its action; a plain name-only card
-        // just absorbs the click.
+        // the click that way. Otherwise an actionable card fires its action; a name-only card absorbs it.
         let id = card_ref.0;
         if table.0.card(id).is_some_and(|c| c.is_expandable()) {
             let _ = table.0.cycle_card_size(id);
@@ -197,16 +211,12 @@ fn on_click(
             requests.0.push(action.0);
         }
     } else if let Some(action) = action {
-        requests.0.push(action.0); // a loose action (rail button)
+        requests.0.push(action.0); // a loose action (rail item)
     } else if let Some(pile) = pile {
-        let _ = table.0.focus(pile.0);
-        rebuild.0 = true;
-    } else if is_background {
-        let root = table.0.root_id();
-        let _ = table.0.focus(root);
+        let _ = table.0.focus(pile.0); // drill in: this pile becomes the current zone
         rebuild.0 = true;
     } else {
-        return; // not interactive — let it propagate to an ancestor that is
+        return; // background / inert — nothing to do (navigation is via cards, not the felt)
     }
     on.propagate(false);
 }
@@ -388,6 +398,7 @@ fn card_shadow() -> BoxShadow {
     )
 }
 
+const FONT_DISPLAY: FontSize = FontSize::Px(26.0);
 const FONT_HEAD: FontSize = FontSize::Px(18.0);
 const FONT_TITLE: FontSize = FontSize::Px(15.0);
 const FONT_BODY: FontSize = FontSize::Px(13.0);
@@ -403,83 +414,88 @@ const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
 
 fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status: &str) {
+    let zone = tree.focus_id();
+    let at_root = zone == tree.root_id();
+
     commands
         .spawn((
             CardTableRoot,
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // LEFT: the action rail — choices not on a card. Hidden when empty (e.g. a prototype).
-            if !rail.is_empty() {
-                root.spawn((
-                    Node {
-                        width: Val::Px(280.0),
-                        height: Val::Percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(12.0)),
-                        row_gap: Val::Px(8.0),
-                        overflow: Overflow::scroll_y(),
-                        ..default()
-                    },
-                    BackgroundColor(PANEL),
-                ))
-                .with_children(|panel| {
-                    panel.spawn((
-                        Text::new("Actions"),
-                        TextFont {
-                            font_size: FONT_HEAD,
-                            ..default()
-                        },
-                        TextColor(INK),
-                    ));
-                    for action in rail {
-                        spawn_rail_button(panel, action);
-                    }
-                });
-            }
-
-            // CENTER: status, then the piles. Clicking empty space here (the felt) closes all piles.
+            // HEADER: the current zone's name, centered, with an optional caption beneath it.
             root.spawn(Node {
-                flex_grow: 1.0,
-                height: Val::Percent(100.0),
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(16.0)),
-                row_gap: Val::Px(12.0),
-                overflow: Overflow::scroll_y(),
+                align_items: AlignItems::Center,
+                padding: UiRect::axes(Val::Px(0.0), Val::Px(10.0)),
+                row_gap: Val::Px(2.0),
                 ..default()
             })
-            .with_children(|main| {
-                if !status.is_empty() {
-                    main.spawn((
-                        Text::new(status.to_string()),
-                        TextFont {
-                            font_size: FONT_HEAD,
-                            ..default()
-                        },
-                        TextColor(INK),
-                    ));
-                }
-
-                // The table surface: a fill area holding absolutely-placed piles the player drags
-                // anywhere. Each top-level pile sits in a positioned wrapper at its model position.
-                main.spawn((
-                    TableSurface,
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
+            .with_children(|head| {
+                head.spawn((
+                    Text::new(pile_display_name(tree, zone)),
+                    TextFont {
+                        font_size: FONT_DISPLAY,
                         ..default()
                     },
-                ))
-                .with_children(|surface| {
-                    let root_deck = tree.pile(tree.root_id()).expect("root exists");
-                    for &id in root_deck.subpiles() {
-                        let pos = tree.pile(id).expect("pile id from root").pos();
+                    TextColor(INK),
+                ));
+                if !status.is_empty() {
+                    head.spawn((
+                        Text::new(status.to_string()),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+                }
+            });
+
+            // NAV: utility cards (Back when inside a zone, Exit on desktop) plus any loose actions.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|nav| {
+                if !at_root {
+                    spawn_nav_card(nav, BackCard, "Back");
+                }
+                if cfg!(not(target_arch = "wasm32")) {
+                    spawn_nav_card(nav, ExitCard, "Exit");
+                }
+                for action in rail {
+                    spawn_rail_button(nav, action);
+                }
+            });
+
+            // SURFACE: the zone's contents. At the Table (root) zone, piles are freely positioned and
+            // draggable; inside a pile's zone, its cards (and any sub-piles) flow in a wrapping grid.
+            root.spawn((
+                TableSurface,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+            ))
+            .with_children(|surface| {
+                let pile = tree.pile(zone).expect("zone pile exists");
+                if at_root {
+                    for &id in pile.subpiles() {
+                        let pos = tree.pile(id).expect("pile id from zone").pos();
                         surface
                             .spawn((
                                 TablePile(id),
@@ -492,8 +508,71 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             ))
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
-                });
+                } else {
+                    surface
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            column_gap: Val::Px(10.0),
+                            row_gap: Val::Px(10.0),
+                            padding: UiRect::all(Val::Px(6.0)),
+                            align_items: AlignItems::FlexStart,
+                            ..default()
+                        })
+                        .with_children(|flow| {
+                            for &cid in pile.cards() {
+                                spawn_card(flow, tree.card(cid).expect("card id from zone"));
+                            }
+                            for &sid in pile.subpiles() {
+                                spawn_pile(flow, tree, sid);
+                            }
+                        });
+                }
             });
+        });
+}
+
+/// The display name of a pile/zone: "Table" for the root; otherwise the name of its top card when that
+/// card's job is to name it (a [`CardKind::Zone`] card), else the pile's own label.
+fn pile_display_name(tree: &Tableau, id: PileId) -> String {
+    if id == tree.root_id() {
+        return "Table".to_string();
+    }
+    let pile = tree.pile(id).expect("pile id");
+    if let Some(&top) = pile.cards().last()
+        && let Some(card) = tree.card(top)
+        && matches!(card.kind(), CardKind::Zone)
+    {
+        return card.name().to_string();
+    }
+    pile.label.clone()
+}
+
+/// A utility card (Back / Exit) drawn in the nav row — a small card-styled, clickable control.
+fn spawn_nav_card<M: Component>(parent: &mut ChildSpawnerCommands, marker: M, label: &str) {
+    parent
+        .spawn((
+            marker,
+            Node {
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(10.0)),
+                ..default()
+            },
+            BackgroundColor(CARD_BACK),
+            BorderColor::all(CARD_EDGE),
+            card_shadow(),
+        ))
+        .with_children(|c| {
+            c.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
         });
 }
 
@@ -570,56 +649,12 @@ fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, c
         });
 }
 
-/// Draws a pile: a compact, counted chip when collapsed, or a fanned panel of its cards when open.
+/// Draws a pile as a compact, counted chip showing its display name. You see its *contents* by
+/// clicking it to enter its zone — piles no longer fan open in place.
 fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
-    if pile.collapsed {
-        let count = pile.cards().len() + pile.subpiles().len();
-        spawn_pile_chip(parent, id, &pile.label, count);
-    } else {
-        parent
-            .spawn((
-                PileDropZone(id),
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(8.0),
-                    border_radius: BorderRadius::all(Val::Px(8.0)),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-            ))
-            .with_children(|panel| {
-                panel.spawn((
-                    Text::new(pile.label.clone()),
-                    TextFont {
-                        font_size: FONT_HEAD,
-                        ..default()
-                    },
-                    TextColor(INK),
-                ));
-                panel
-                    .spawn((
-                        PileDropZone(id),
-                        Node {
-                            flex_direction: FlexDirection::Row,
-                            flex_wrap: FlexWrap::Wrap,
-                            column_gap: Val::Px(8.0),
-                            row_gap: Val::Px(8.0),
-                            min_height: Val::Px(140.0),
-                            ..default()
-                        },
-                    ))
-                    .with_children(|cards| {
-                        for &cid in pile.cards() {
-                            spawn_card(cards, tree.card(cid).expect("card id from pile"));
-                        }
-                        for &sid in pile.subpiles() {
-                            spawn_pile(cards, tree, sid);
-                        }
-                    });
-            });
-    }
+    let count = pile.cards().len() + pile.subpiles().len();
+    spawn_pile_chip(parent, id, &pile_display_name(tree, id), count);
 }
 
 /// Draws one card at its current render [`Size`]: a small name chip, a detailed card face, or a full
