@@ -7,7 +7,7 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 
 ## Roles
 
-- **Declare intentions** — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together; everything after resolves in the open, nobody moves.
+- **Marshal** — The round's opening step: a hidden, simultaneous commit where each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together (the Reveal step); everything after resolves in the open, nobody moves.
 - **Vanguard** — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
 - **Outrider** — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
 - **Rearguard** — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.

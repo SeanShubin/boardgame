@@ -1,8 +1,8 @@
-//! Deckbound as an [`engine::Game`] — the §4.6 six-phase battle.
+//! Deckbound as an [`engine::Game`] — the §4 engagement-schedule battle.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
-//! §4.2) run through the six-phase round (Standoff → Fray → Volley → Breach → Reckoning → Lull,
-//! §4.6), or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All
+//! §4.2) run through the round (Marshal → Reveal → Ready → Engage → Refresh, §4 / §4.6), or a
+//! **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All
 //! numbers live in `data/booklet.ron`.
 
 use engine::{
@@ -45,7 +45,7 @@ pub enum Action {
     ToMenu,
     Back,
     Replay,
-    /// DeclareIntentions (§4): set this unit's **intention** for the round — Vanguard (hold the front),
+    /// Marshal (§4): set this unit's **intention** for the round — Vanguard (hold the front),
     /// Outrider (break the line), or Rearguard (deal from the back).
     SetVanguard(usize),
     SetOutrider(usize),
@@ -156,19 +156,16 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
         state.phase = Phase::Clash;
         state.log = vec![scenario.blurb.clone(), "-- the duel begins --".into()];
     } else {
-        state.phase = Phase::DeclareIntentions;
+        state.phase = Phase::Marshal;
         default_intentions(state);
-        state.log = vec![
-            scenario.blurb.clone(),
-            "-- Round 1: declare intentions --".into(),
-        ];
+        state.log = vec![scenario.blurb.clone(), "-- Round 1: Marshal --".into()];
     }
     state.scenario = Some(scenario);
 }
 
 /// §4 — seed each unit's default **intention** from its stats (the policy of
 /// `engagement::default_intention`): a ranged unit deals from the Rearguard, a high-Finesse melee unit
-/// breaks the line as an Outrider, everyone else holds as a Vanguard. DeclareIntentions lets the human
+/// breaks the line as an Outrider, everyone else holds as a Vanguard. Marshal lets the human
 /// (or the AI) override this per unit each round.
 fn default_intentions(state: &mut State) {
     for side in 0u8..2 {
@@ -229,9 +226,9 @@ pub fn battle_state_with(
         // "choose a scenario set" line until combat events push it off.
         state.log = vec!["-- the duel begins --".into()];
     } else {
-        state.phase = Phase::DeclareIntentions;
+        state.phase = Phase::Marshal;
         default_intentions(&mut state);
-        state.log = vec!["-- Round 1: declare intentions --".into()];
+        state.log = vec!["-- Round 1: Marshal --".into()];
     }
     state
 }
@@ -247,7 +244,7 @@ pub(crate) fn check_outcome(state: &mut State) {
 }
 
 impl Deckbound {
-    // ---- §4.6 six-phase round -------------------------------------------------
+    // ---- §4 engagement-schedule round -----------------------------------------
 
     /// Units of `side` that may still **declare an intention** this round (alive, not staggered, not yet
     /// acted). The only interactive combat choice is the declaration; the schedule then resolves (§4.6).
@@ -261,10 +258,10 @@ impl Deckbound {
     }
 
     /// All declarations are in → resolve the round over the **engagement schedule** (§4.6), finalize the
-    /// outcome, then advance to the next round's DeclareIntentions (the Lull). The foe keeps its
+    /// outcome, then advance to the next round's Marshal (via Refresh, the Lull). The foe keeps its
     /// stat-defaulted intentions in PvE.
     fn resolve_and_advance(&self, state: &mut State) {
-        state.log.push("-- the engagement --".into());
+        state.log.push("-- Engage --".into());
         combat::resolve_round(state);
         check_outcome(state);
         if state.outcome.is_some() {
@@ -275,7 +272,7 @@ impl Deckbound {
 
     fn next_round(&self, state: &mut State) {
         // Round cap (§0 Ruleset): a fight not closed within `max_rounds` is a **draw** (PvE: no
-        // different from a loss). The Lull (§4.6 / Refresh): Tempo resets, Health persists, round++.
+        // different from a loss). Refresh (§4.6, the Lull): Tempo resets, Health persists, round++.
         if state.round >= state.ruleset.max_rounds {
             state.outcome = Some(Outcome::Tie(vec![PlayerId(0), PlayerId(1)]));
             state
@@ -291,18 +288,18 @@ impl Deckbound {
         state.round += 1;
         state.plan = Round::sized(state.heroes.len(), state.creatures.len());
         default_intentions(state);
-        state.phase = Phase::DeclareIntentions;
+        state.phase = Phase::Marshal;
         state
             .log
-            .push(format!("-- Round {}: declare intentions --", state.round));
+            .push(format!("-- Round {}: Marshal --", state.round));
     }
 
     /// §4.4 — may actor `i` of `side` play this `card` right now? There is **no per-suit/per-side cap**
     /// (casting is bounded only by Tempo + evade). It enforces Disarm, the §4.6 cast window, and the
     /// **target-classification position rule**: an **offensive** (foe-targeting) card is positioned by
     /// reach (§4.2) — a **ranged** one needs the **Rearguard**, a **melee** one the **Vanguard**;
-    /// **support** (ally/self) cards are rank-free. A `cast: Standing` card is only legal in the Standoff;
-    /// a `cast: Strike` card in the Fray/Volley.
+    /// **support** (ally/self) cards are rank-free. A `cast: Standing` card is only legal at the Ready
+    /// sub-step of Marshal; a `cast: Strike` card resolves in the engagement schedule (§4.6).
     fn card_playable_now(
         &self,
         state: &State,
@@ -328,14 +325,11 @@ impl Deckbound {
         if state.s_pool(side)[i].tempo <= 0 {
             return false;
         }
-        // §4 cast window: in the engagement-schedule engine the interactive phase is DeclareIntentions,
+        // §4 cast window: in the engagement-schedule engine the interactive phase is Marshal,
         // where **Standing** (ally/self) casts go up. Offensive abilities are resolved by the engagement
         // schedule, not cast interactively — wiring ability-strikes into `resolve_round` is a follow-on
         // (see needs-merge/engine-migration-to-engagement-model.md), so only Standing casts are playable.
-        if !matches!(
-            (state.phase, card.cast),
-            (Phase::DeclareIntentions, Cast::Standing)
-        ) {
+        if !matches!((state.phase, card.cast), (Phase::Marshal, Cast::Standing)) {
             return false;
         }
         if card.is_offensive() {
@@ -536,11 +530,11 @@ impl Deckbound {
                     .unwrap_or_else(|| "Card".into())
             ),
             (None, Phase::Menu(_)) => "Pick a scenario. (Esc: back)".to_string(),
-            (None, Phase::DeclareIntentions) => format!(
-                "Round {} — declare intentions (Vanguard / Outrider / Rearguard), then advance. (Esc: menu)",
+            (None, Phase::Marshal) => format!(
+                "Round {} — Marshal: set intentions (Vanguard / Outrider / Rearguard), then advance. (Esc: menu)",
                 state.round
             ),
-            (None, Phase::Engage) => "Resolving the engagement…".to_string(),
+            (None, Phase::Engage) => "Engage — resolving the engagement schedule…".to_string(),
             (None, Phase::Clash) => match state.clash {
                 Some(c) => format!(
                     "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
@@ -552,7 +546,7 @@ impl Deckbound {
         // Hotseat: announce whose turn it is (pass-and-play); never reveal the other side's
         // committed choices — they aren't rendered until resolution. The play-by-play now lives in
         // the event feed (`TableView::log`), so the caption is just this one-line prompt.
-        if state.pvp && state.outcome.is_none() && matches!(state.phase, Phase::DeclareIntentions) {
+        if state.pvp && state.outcome.is_none() && matches!(state.phase, Phase::Marshal) {
             format!("[Player {}] {prompt}", state.plan.committing + 1)
         } else {
             prompt
@@ -630,11 +624,11 @@ impl Game for Deckbound {
                 a.push(Action::Back);
                 a
             }
-            // §4 DeclareIntentions: the next pending unit picks its **intention** (Vanguard / Outrider /
+            // §4 Marshal: the next pending unit picks its **intention** (Vanguard / Outrider /
             // Rearguard) and may cast a `Standing` buff; advancing resolves the round's engagement
             // schedule (§4.6). Declaration is sequential (one unit at a time) so the solver branches on
             // intention; Pass accepts the unit's current (defaulted) intention.
-            Phase::DeclareIntentions => {
+            Phase::Marshal => {
                 use crate::actor::Intention;
                 let side = state.plan.committing;
                 let mut a = Vec::new();
@@ -730,7 +724,7 @@ impl Game for Deckbound {
             Action::SetVanguard(h) => format!("{} holds the front (Vanguard)", hname(*h)),
             Action::SetOutrider(h) => format!("{} breaks the line (Outrider)", hname(*h)),
             Action::SetRearguard(h) => format!("{} deals from the back (Rearguard)", hname(*h)),
-            Action::Deploy => "Advance — resolve the engagement".into(),
+            Action::Deploy => "Advance — Engage (resolve the engagement schedule)".into(),
             Action::PlayCard(h, idx) => {
                 let c = state.s_pool(side).get(*h).and_then(|x| x.actions.get(*idx));
                 match c {
@@ -836,23 +830,23 @@ impl Game for Deckbound {
             }
             (Phase::Menu(_), Action::Back) => state.phase = Phase::Menu(Menu::Top),
 
-            // ---- §4 DeclareIntentions: set intentions + Standing buffs ----
-            (Phase::DeclareIntentions, Action::SetVanguard(i)) => {
+            // ---- §4 Marshal: set intentions + Standing buffs ----
+            (Phase::Marshal, Action::SetVanguard(i)) => {
                 let side = state.plan.committing;
                 state.s_intent_mut(side)[*i] = Intention::Vanguard;
                 state.s_acted_mut(side)[*i] = true;
             }
-            (Phase::DeclareIntentions, Action::SetOutrider(i)) => {
+            (Phase::Marshal, Action::SetOutrider(i)) => {
                 let side = state.plan.committing;
                 state.s_intent_mut(side)[*i] = Intention::Outrider;
                 state.s_acted_mut(side)[*i] = true;
             }
-            (Phase::DeclareIntentions, Action::SetRearguard(i)) => {
+            (Phase::Marshal, Action::SetRearguard(i)) => {
                 let side = state.plan.committing;
                 state.s_intent_mut(side)[*i] = Intention::Rearguard;
                 state.s_acted_mut(side)[*i] = true;
             }
-            (Phase::DeclareIntentions, Action::PlayCard(i, idx)) => {
+            (Phase::Marshal, Action::PlayCard(i, idx)) => {
                 let side = state.plan.committing;
                 let card = state.s_pool(side)[*i]
                     .actions
@@ -865,14 +859,14 @@ impl Game for Deckbound {
                 self.do_play_card(state, side, *i, card);
                 // A Standing cast does not lock the intention; the unit still declares it.
             }
-            (Phase::DeclareIntentions, Action::Pass(i)) => {
+            (Phase::Marshal, Action::Pass(i)) => {
                 let side = state.plan.committing;
                 state.s_acted_mut(side)[*i] = true; // accept the current (defaulted) intention
             }
-            (Phase::DeclareIntentions, Action::Deploy) => {
+            (Phase::Marshal, Action::Deploy) => {
                 if state.pvp && state.plan.committing == 0 {
                     state.plan.committing = 1;
-                    state.log.push("-- side B: declare intentions --".into());
+                    state.log.push("-- side B: Marshal --".into());
                 } else {
                     state.plan.committing = 0;
                     self.resolve_and_advance(state);
@@ -1030,9 +1024,9 @@ impl Game for Deckbound {
                     zones.push(hero_zone(state, Some(c.hero)));
                 }
             }
-            // §4 DeclareIntentions reads as **card placement**: the enemy on top, then your party, each
+            // §4 Marshal reads as **card placement**: the enemy on top, then your party, each
             // character card clickable to **cycle** its intention (Vanguard → Outrider → Rearguard).
-            Phase::DeclareIntentions => {
+            Phase::Marshal => {
                 let side = state.plan.committing;
                 zones.push(if side == 0 {
                     creature_zone(state, None)
@@ -1060,8 +1054,7 @@ impl Game for Deckbound {
                     cards.push(card);
                 }
                 zones.push(ZoneView {
-                    label: "Declare intentions (click to cycle: Vanguard / Outrider / Rearguard)"
-                        .into(),
+                    label: "Marshal (click to cycle: Vanguard / Outrider / Rearguard)".into(),
                     layout: Layout::Row,
                     owner: None,
                     cards,
@@ -1332,8 +1325,8 @@ mod tests {
                         Action::Play(Move::Anticipate)
                     }
                 }
-                // Declare intentions are stat-defaulted; Deploy resolves the engagement schedule.
-                Phase::DeclareIntentions | Phase::Engage => Action::Deploy,
+                // Marshal intentions are stat-defaulted; Deploy resolves the engagement schedule.
+                Phase::Marshal | Phase::Engage => Action::Deploy,
                 _ => break,
             };
             game.apply(s, &action).unwrap();
@@ -1473,7 +1466,7 @@ mod tests {
         hero.attack = crate::actor::Attack::Melee;
         let foe = scenarios::build_creature("Husk");
         let mut s = battle_state(vec![hero], vec![foe], false, 7);
-        assert_eq!(s.phase, Phase::DeclareIntentions);
+        assert_eq!(s.phase, Phase::Marshal);
 
         // Declare an intention or two before serializing.
         game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
@@ -1539,7 +1532,7 @@ mod tests {
         assert_eq!(s.phase, Phase::Menu(Menu::Top));
     }
 
-    /// §4 DeclareIntentions: a unit defaults to a stat-based intention; the human may re-declare it and
+    /// §4 Marshal: a unit defaults to a stat-based intention; the human may re-declare it and
     /// advance, which resolves the round's engagement schedule.
     #[test]
     fn declare_intentions_then_resolve() {
@@ -1548,7 +1541,7 @@ mod tests {
         hero.attack = crate::actor::Attack::Melee;
         let foe = scenarios::build_creature("Husk");
         let mut s = battle_state(vec![hero], vec![foe], false, 1);
-        assert_eq!(s.phase, Phase::DeclareIntentions);
+        assert_eq!(s.phase, Phase::Marshal);
         // A melee unit defaults to a front intention (Vanguard or Outrider, by Finesse).
         assert!(matches!(
             s.plan.hero_intent[0],
@@ -1558,11 +1551,11 @@ mod tests {
         game.apply(&mut s, &Action::SetVanguard(0)).unwrap();
         assert_eq!(s.plan.hero_intent[0], Intention::Vanguard);
         game.apply(&mut s, &Action::Deploy).unwrap();
-        // After Deploy the round resolved → a fresh DeclareIntentions, or an outcome.
-        assert!(matches!(s.phase, Phase::DeclareIntentions) || s.outcome.is_some());
+        // After Deploy the round resolved → a fresh Marshal, or an outcome.
+        assert!(matches!(s.phase, Phase::Marshal) || s.outcome.is_some());
     }
 
-    /// §4 cast window: a `cast: Standing` support card (Wall's Brace) is offered at DeclareIntentions
+    /// §4 cast window: a `cast: Standing` support card (Wall's Brace) is offered at Marshal
     /// (rank-free); an **offensive** ability (Artillery's Bolt) is not — offensive casting is resolved by
     /// the engagement schedule, not cast interactively (a deferred follow-on, §4.6).
     #[test]
@@ -1584,7 +1577,7 @@ mod tests {
         );
         let foe = scenarios::build_creature("Husk");
         let s = battle_state(vec![hero], vec![foe], false, 1);
-        assert_eq!(s.phase, Phase::DeclareIntentions);
+        assert_eq!(s.phase, Phase::Marshal);
 
         let brace = s.heroes[0]
             .actions
@@ -1602,7 +1595,7 @@ mod tests {
         assert!(bolt_card.is_offensive());
         assert!(
             game.card_playable_now(&s, 0, 0, &brace_card),
-            "a cast:Standing support card is offered at DeclareIntentions"
+            "a cast:Standing support card is offered at Marshal"
         );
         assert!(
             !game.card_playable_now(&s, 0, 0, &bolt_card),
@@ -1696,18 +1689,14 @@ mod tests {
         game.apply(&mut s, &Action::OpenVersus).unwrap();
         let idx = scenarios::versus().iter().position(|v| v.pvp).unwrap();
         game.apply(&mut s, &Action::PickScenario(idx)).unwrap();
-        assert_eq!(s.phase, Phase::DeclareIntentions);
+        assert_eq!(s.phase, Phase::Marshal);
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(0)),
             "side A declares first"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        assert_eq!(
-            s.phase,
-            Phase::DeclareIntentions,
-            "still declaring (side B now)"
-        );
+        assert_eq!(s.phase, Phase::Marshal, "still declaring (side B now)");
         assert_eq!(
             game.current_player(&s),
             Some(PlayerId(1)),
@@ -1726,7 +1715,7 @@ mod tests {
         let mut s = game.new_game(2, 1);
         game.apply(&mut s, &Action::OpenCooperation).unwrap();
         game.apply(&mut s, &Action::PickScenario(0)).unwrap();
-        assert_eq!(s.phase, Phase::DeclareIntentions);
+        assert_eq!(s.phase, Phase::Marshal);
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
     }

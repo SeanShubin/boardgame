@@ -1232,7 +1232,7 @@ mod tests {
         // with the player-phase/foe-phase round; the live Spec defines the declare-intentions /
         // engagement-schedule / Tempo-contest terms.)
         for term in [
-            "Declare intentions",
+            "Marshal",
             "Vanguard",
             "Outrider",
             "Rearguard",

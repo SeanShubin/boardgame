@@ -1,9 +1,9 @@
 //! The state of a combat in progress (§4 **engagement-schedule** model).
 //!
-//! A round: **DeclareIntentions** (reveal; each unit's intention — Vanguard / Outrider / Rearguard — and
-//! `cast: Standing` buffs/braces auto-land) → **Engage** (the fixed engagement schedule resolves:
-//! Intercept `V→O`, Volley `R→O`, Raid `O→R`, Clash `R→V`+`V→V`, Breach `V→R`+`O→V`+`O→O`, §4.6) →
-//! **Lull** (refresh: Tempo resets, Health persists, round++). All Tempo across the whole schedule is paid
+//! A round: **Marshal** (declare each unit's intention — Vanguard / Outrider / Rearguard; **Reveal** locks
+//! positions; **Ready** lands `cast: Standing` buffs/braces) → **Engage** (the fixed engagement schedule
+//! resolves: Intercept `V→O`, Volley `R→O`, Raid `O→R`, Clash `R→V`+`V→V`, Breach `V→R`+`O→V`+`O→O`, §4.6) →
+//! **Refresh** (the Lull: Tempo resets, Health persists, round++). All Tempo across the whole schedule is paid
 //! from **one shared per-round pool**. The optional four-card **Clash** module ([`Phase::Clash`]) replaces
 //! a same-range trade when on. Resolution is order-independent **within** an engagement (§1.9); the
 //! schedule order is the only timing.
@@ -34,16 +34,16 @@ pub enum Menu {
     CardDetail(usize),
 }
 
-/// Where the round is (§4). The interactive phase is **DeclareIntentions** (pick each unit's intention +
+/// Where the round is (§4). The interactive phase is **Marshal** (pick each unit's intention +
 /// grouping, cast `Standing` buffs); **Engage** resolves the fixed engagement schedule (§4.6) and the
-/// **Lull** (refresh) is the transition to the next round's DeclareIntentions. [`Phase::Clash`] is the
-/// optional 1v1 module.
+/// **Refresh** (the Lull) is the transition to the next round's Marshal. [`Phase::Clash`] is the
+/// optional 1v1 module. (Reveal and Ready are conceptual sub-steps of Marshal, not separate variants.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
     Menu(Menu),
-    /// §4 — reveal commitments; pick each unit's **intention** (Vanguard / Outrider / Rearguard) and
-    /// cast `Standing` buffs/braces (auto-land). Advancing begins the engagement schedule.
-    DeclareIntentions,
+    /// §4 Marshal — pick each unit's **intention** (Vanguard / Outrider / Rearguard), group them, and
+    /// cast `Standing` buffs/braces (auto-land at the Ready sub-step). Advancing begins the engagement schedule.
+    Marshal,
     /// §4.6 — the engagement schedule resolves (Intercept → Volley → Raid → Clash → Breach), each step a
     /// §1.9 boundary, over the one shared Tempo pool. Resolved by the resolver (`combat`).
     Engage,
@@ -79,7 +79,7 @@ pub struct Deferred {
 }
 
 /// The per-round working plan for the §4 engagement-schedule model. Intentions and grouping are declared
-/// at **DeclareIntentions**; the schedule then resolves over them (§4.6).
+/// at **Marshal**; the schedule then resolves over them (§4.6).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Round {
     /// Per hero: its declared **intention** this round (§4). A group shares one intention. Sized to heroes.
@@ -90,7 +90,7 @@ pub struct Round {
     /// unit's own index (ungrouped). Sized to heroes.
     pub hero_group: Vec<usize>,
     pub foe_group: Vec<usize>,
-    /// Actors who have already acted in the current interactive phase (DeclareIntentions).
+    /// Actors who have already acted in the current interactive phase (Marshal).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
     /// §4.6 — deferred (`resolve: Reckoning`) spells wound up this round (resolve in the last engagement).
@@ -126,7 +126,7 @@ pub struct State {
     pub creatures: Vec<Actor>,
     pub phase: Phase,
     /// §4.6 — the in-flight engagement-schedule resolution cursor. `Some` while a round is resolving
-    /// (between [`combat::step`](crate::combat::step) calls); `None` at rest (DeclareIntentions, Lull).
+    /// (between [`combat::step`](crate::combat::step) calls); `None` at rest (Marshal, Refresh).
     /// Today resolution runs to completion synchronously inside `apply(Deploy)`, so live play never
     /// rests with this set — it exists so the resolution is observable one atomic step at a time and so
     /// the whole machine round-trips through RON.

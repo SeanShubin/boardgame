@@ -1,9 +1,9 @@
 //! Deckbound — the cooperative card-combat game, as an [`engine::Game`].
 //!
-//! Combat is a sequence of **rounds** on the §4.6 **six-phase** model: one damage channel —
+//! Combat is a sequence of **rounds** on the §4 **engagement-schedule** model: one damage channel —
 //! untyped **Might** into the **health** pool, resolved pile→bar→pool (`stats`, §2.2); stats read off
 //! the **Form** deck (`form`, stats-as-deck §2.3); data-driven action/effect cards (`cards`); the
-//! six-phase battle (Standoff → Fray → Volley → Breach → Reckoning → Lull) on a single per-round
+//! round (Marshal → Reveal → Ready → Engage → Refresh) on a single per-round
 //! **Tempo** budget, with the one Tempo contest, charges/flanks, the breach pre-empt, and AoE
 //! (`combat`); and an optional four-card **Clash** mix-up (Strike/Anticipate/Gather/Evade + Force)
 //! that replaces a same-range trade (`duel`). Actors are Characters (human) or Creatures (scripted).

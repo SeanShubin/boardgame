@@ -144,7 +144,7 @@ pub fn transcribe(scn: &TranscriptScenario, seed: u64) -> String {
             push_line(&mut out, &round_banner(cur_round));
         }
 
-        let declaring = state.phase == Phase::DeclareIntentions;
+        let declaring = state.phase == Phase::Marshal;
         let actions = game.legal_actions(&state);
         let action = greedy(&state, &actions);
         if game.apply(&mut state, &action).is_err() {

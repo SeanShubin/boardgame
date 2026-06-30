@@ -54,11 +54,11 @@ pub fn auto_resolve_with(
 pub fn greedy(state: &State, actions: &[Action]) -> Action {
     use Action::*;
     match state.phase {
-        // §4 DeclareIntentions: each unit defaults to its stat-based intention (which is what the greedy
+        // §4 Marshal: each unit defaults to its stat-based intention (which is what the greedy
         // wants — melee fronts/flanks, ranged deals), so the greedy casts any beneficial `Standing` buff,
         // then advances. **Deploy resolves the whole engagement schedule** (targeting is the resolver's
         // job now, not an interactive choice).
-        Phase::DeclareIntentions => best_play(state, actions).unwrap_or(Deploy),
+        Phase::Marshal => best_play(state, actions).unwrap_or(Deploy),
         // Engage is transient — the round resolves inside Deploy, so this is never a resting choice.
         Phase::Engage => Deploy,
         // The Clash is off in the solver; if somehow reached, just strike.
@@ -336,7 +336,7 @@ struct StateKey {
 fn phase_tag(p: &Phase) -> u8 {
     match p {
         Phase::Menu(_) => 0,
-        Phase::DeclareIntentions => 1,
+        Phase::Marshal => 1,
         Phase::Engage => 2,
         Phase::Clash => 3,
     }

@@ -1063,17 +1063,17 @@ ineffective).
 **The structure — declare, then walk the engagement schedule.** The battle runs **five rounds, or until a
 side is dead.** Each round:
 
-1. **Declare Intentions** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors
+1. **Marshal** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors
    (§4.5) and assigns each group an intention — **Vanguard / Outrider / Rearguard** (re-declared each round).
    *(The hidden commit matters only under the Versus / Clash layers; in PvE the foe's intentions are
    scripted and open — §0.1.)*
-2. **Reveal Intentions.** Reveal together; nobody moves. Positions are now open.
-3. **Pre-Battle (Standing).** Standing effects — buffs / braces (Support mends, Wall braces) — are cast now:
-   ally-targeted, auto-land, last the round (the §4.6 Standoff / §4.4 `cast: standing`).
-4. **The engagement schedule.** The round's strikes resolve over a **fixed sequence of role-vs-role
+2. **Reveal.** Reveal intentions and groups together; nobody moves. Positions are now open.
+3. **Ready.** Standing effects — buffs / braces (Support mends, Wall braces) — are cast now:
+   ally-targeted, auto-land, last the round (§4.4 `cast: standing`).
+4. **Engage.** The round's strikes resolve over a **fixed sequence of role-vs-role
    engagements** (below). Each engagement is a §1.9 boundary: declare → resolve → apply (the per-phase pile,
    §4.6; deaths finalize, §1.3).
-5. **Reset (the Lull).** All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved
+5. **Refresh** *(the Lull).* All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved
    battle is a draw, §0.4).
 
 **The engagement schedule — the one ordering system.** Every attacker→target role-pair is resolved in a
@@ -1257,7 +1257,7 @@ At round end Tempo refreshes, Health carries over; the battle runs **five rounds
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Declare intentions` (Roles) — Each round opens with a hidden, simultaneous commit: each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together; everything after resolves in the open, nobody moves.
+- **TERM.** `Marshal` (Roles) — The round's opening step: a hidden, simultaneous commit where each side groups its Actors, assigns each group an intention — Vanguard (front), Outrider (flank), or Rearguard (back) — and plays its standing buffs / braces. Intentions are re-declared every round. Revealed together (the Reveal step); everything after resolves in the open, nobody moves.
 - **TERM.** `Vanguard` (Roles) — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
 - **TERM.** `Outrider` (Roles) — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
 - **TERM.** `Rearguard` (Roles) — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.
@@ -1586,9 +1586,9 @@ should *trade* (both land); in ordered engagements if one death should *silence*
 humans can collapse the schedule in their heads and consult the order only when an outcome is genuinely
 ambiguous — §4.)*
 
-**RULE — the round resolves over the schedule; each engagement is a boundary.** A round runs: **Declare
-Intentions** (hidden) → **Reveal** → **Pre-Battle** (Standing effects auto-land) → the **engagement
-schedule** (Intercept → Volley → Raid → Clash → Breach, §4) → **Reset** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
+**RULE — the round resolves over the schedule; each engagement is a boundary.** A round runs: **Marshal**
+(hidden) → **Reveal** → **Ready** (Standing effects auto-land) → **Engage**, the **engagement
+schedule** (Intercept → Volley → Raid → Clash → Breach, §4) → **Refresh** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
 §5.5 — Health persists, round++). Each engagement is a §1.9 boundary (declare → resolve → apply; accumulate,
 then lock; deaths finalize, §1.3). All Tempo across the whole round is paid from **one shared per-round
 pool** (no refresh between engagements, §4).
@@ -1686,7 +1686,7 @@ intact line to the Outrider who pays for it. *(This also lets two front-less all
 
 **RULE — `cast` & `resolve` (carried forward).** An ability's timing is **two fields**:
 
-- **`cast`** — where you may pay Tempo and commit it: **`standing`** (Pre-Battle — own-side buffs / braces,
+- **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Ready step — own-side buffs / braces,
   auto-land) or **`strike`** (any engagement in which the unit may act per reach + back-access; default).
 - **`resolve`** — which engagement's pile the effect lands in. A card **authors one of two**: **`on-cast`**
   (the engagement it was used — the old *instant*; a Rearguard may fire on a raider in the Volley *and* on
