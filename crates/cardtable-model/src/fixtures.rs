@@ -52,11 +52,26 @@ pub fn sample_table() -> DeckTree {
     )
     .expect("discard exists");
 
+    // A big "Locations" deck — 25 cards — to exercise the stacked-depth visual and a high count.
+    let locations = tree.add_deck(root, "Locations").expect("root exists");
+    for i in 1..=25 {
+        tree.add_card(
+            locations,
+            Face::Up {
+                title: format!("Location {i}"),
+            },
+            None,
+        )
+        .expect("locations exists");
+    }
+
     // Spread the decks across the table so they start un-stacked; drag repositions them.
     tree.set_deck_pos(hand, 40.0, 40.0).expect("hand exists");
     tree.set_deck_pos(deck, 220.0, 40.0).expect("deck exists");
     tree.set_deck_pos(discard, 400.0, 40.0)
         .expect("discard exists");
+    tree.set_deck_pos(locations, 40.0, 240.0)
+        .expect("locations exists");
 
     tree
 }
@@ -69,7 +84,7 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.deck(t.root_id()).unwrap();
-        assert_eq!(root.subdecks().len(), 3); // Hand, Deck, Discard
-        assert_eq!(t.card_count(), 3 + 6 + 1);
+        assert_eq!(root.subdecks().len(), 4); // Hand, Deck, Discard, Locations
+        assert_eq!(t.card_count(), 3 + 6 + 1 + 25);
     }
 }
