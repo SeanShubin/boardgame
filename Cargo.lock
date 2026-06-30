@@ -1771,6 +1771,7 @@ name = "boardgame"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cardtable",
  "deckbound",
  "tabletop",
 ]
@@ -1843,6 +1844,15 @@ dependencies = [
  "rustix 0.38.44",
  "wayland-backend",
  "wayland-client",
+]
+
+[[package]]
+name = "cardtable"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "cardtable-model",
+ "contract",
 ]
 
 [[package]]

@@ -1,0 +1,9 @@
+[package]
+name = "cardtable"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contract = { workspace = true }
+cardtable-model = { workspace = true }
+bevy = { workspace = true }

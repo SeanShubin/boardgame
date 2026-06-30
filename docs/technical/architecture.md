@@ -12,14 +12,16 @@ renderer; the renderer never knows which game it is showing.
 | `crates/engine`         | lib  | The shared **card-game toolkit**: reusable building blocks (`Zone`, seeded `Rng`) an implementation uses internally. Pure; does **not** depend on `contract`.                                                   |
 | `crates/deckbound`      | lib  | The game: *Deckbound*. Pure logic, fully unit-tested. Implements `contract::Game`; uses the `engine` toolkit.                                                                                                   |
 | `crates/cardtable-model`| lib  | The pure **card-table interaction model** — decks, cards, selection, reorder, move-between-decks, focus/zoom. No Bevy, no game, so behaviors unit-test in isolation. Touches `contract` only to ingest a `TableView`. |
-| `crates/tabletop`       | lib  | A Bevy plugin that renders any `contract::Game` and turns its legal actions into clickable buttons. The only crate that depends on Bevy and on a game's *shape* (not its rules).                                |
-| `crates/boardgame`      | bin  | The launcher. Wires one game into the `tabletop` renderer and runs it.                                                                                                                                          |
+| `crates/tabletop`       | lib  | The default Bevy renderer: draws any `contract::Game` and turns its legal actions into clickable buttons. Depends on Bevy and on a game's *shape* (not its rules).                                              |
+| `crates/cardtable`      | lib  | A second, opt-in Bevy renderer drawing the **card-table metaphor** — every zone a deck, collapse-the-unattended, click-to-focus / zoom-out. A thin shell over `cardtable-model`, fed by the same `TableView`. Selected with `boardgame --features cardtable`. |
+| `crates/boardgame`      | bin  | The launcher. Wires one game into a renderer (default `tabletop`, or `cardtable` under that feature) and runs it.                                                                                              |
 
-Each new game is a new pure crate that implements `contract::Game`; the renderer
+Each new game is a new pure crate that implements `contract::Game`; the renderers
 and the launcher do not change. The dependency arrows form a clean composition
 root: `boardgame` (the root) knows every implementation; the implementations
-(`deckbound`, `tabletop`, `cardtable-model`) know only `contract`, never each
-other.
+(`deckbound`, `tabletop`, `cardtable`, `cardtable-model`) know only `contract`,
+never each other. Two renderers against one `TableView` is the seam paying off —
+a new presentation never touches the rules.
 
 ## The two seams
 

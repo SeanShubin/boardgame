@@ -1,13 +1,14 @@
 //! The launcher binary.
 //!
-//! It wires [`Deckbound`] into the generic [`tabletop`] renderer and runs it. The game opens on its
-//! menu, where every mode — Duels / Cooperation / God-tier / Versus, the world-map **Campaign**, and
-//! the rules encyclopedia — is one card. Any type implementing `contract::Game` could be swapped in
-//! here.
+//! It wires [`Deckbound`] into a generic renderer and runs it. The game opens on its menu, where
+//! every mode — Duels / Cooperation / God-tier / Versus, the world-map **Campaign**, and the rules
+//! encyclopedia — is one card. Any type implementing `contract::Game` could be swapped in here.
+//!
+//! The renderer is `tabletop` by default; build with `--features cardtable` to use the experimental
+//! card-table renderer instead. Both consume the same `contract::TableView`.
 
 use bevy::prelude::*;
 use deckbound::Deckbound;
-use tabletop::TabletopPlugin;
 
 /// The seed for this match. A fixed seed makes a session reproducible; vary it
 /// to change the warband's bluffs.
@@ -17,19 +18,24 @@ const SEED: u64 = 1;
 const PLAYERS: usize = 1;
 
 fn main() -> AppExit {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Boardgame - Deckbound".into(),
-                resolution: (1320u32, 860u32).into(),
-                // On the web, track the browser viewport so resizing the window
-                // reflows the table — the parity the desktop window already has.
-                // Ignored natively, where `resolution` sets the initial size.
-                fit_canvas_to_parent: true,
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Boardgame - Deckbound".into(),
+            resolution: (1320u32, 860u32).into(),
+            // On the web, track the browser viewport so resizing the window
+            // reflows the table — the parity the desktop window already has.
+            // Ignored natively, where `resolution` sets the initial size.
+            fit_canvas_to_parent: true,
             ..default()
-        }))
-        .add_plugins(TabletopPlugin::new(Deckbound, SEED, PLAYERS))
-        .run()
+        }),
+        ..default()
+    }));
+
+    #[cfg(feature = "cardtable")]
+    app.add_plugins(cardtable::CardTablePlugin::new(Deckbound, SEED, PLAYERS));
+    #[cfg(not(feature = "cardtable"))]
+    app.add_plugins(tabletop::TabletopPlugin::new(Deckbound, SEED, PLAYERS));
+
+    app.run()
 }
