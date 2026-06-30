@@ -83,12 +83,63 @@ fn best_play(state: &State, actions: &[Action]) -> Option<Action> {
                 .s_pool(side)
                 .get(i)
                 .and_then(|act| act.actions.get(idx))
+                .filter(|c| cast_still_useful(state.s_pool(side), i, c))
                 .map(|c| (a, play_score(c))),
             _ => None,
         })
         .max_by_key(|&(_, score)| score)
         .filter(|&(_, score)| score > 0)
         .map(|(a, _)| a)
+}
+
+/// Would casting `card` from `pool[i]` still **do** anything (greedy policy)? A self-buff whose effect is
+/// already in force — or an ally-buff with no eligible ally (a solo Wall's Cover/Thorns) — is a wasted
+/// Tempo spend that, repeated, starves the caster's own strikes (a Wall that re-casts Cover every round
+/// never attacks) and can loop forever (a self-Haste/Empower). So skip re-casting a buff whose effect the
+/// caster already carries (placed Guard/Cover/Thorns token, standing Empower, held Lifeline), and skip an
+/// ally-targeting buff (Cover / Thorns) when no other living ally exists to receive it. First casts and
+/// all offensive / heal / self-or-ally cards that still land are unaffected. Used only by the greedy.
+fn cast_still_useful(pool: &[Actor], i: usize, card: &crate::cards::Card) -> bool {
+    use crate::actor::Token;
+    use crate::cards::Effect::*;
+    let caster = &pool[i];
+    let has_other_ally = pool.iter().enumerate().any(|(j, a)| j != i && !a.is_down());
+    card.effects.iter().all(|e| match e {
+        // Self-buffs that don't usefully stack — skip if already in force.
+        Empower { .. } => caster.might_bonus == 0,
+        Lifeline => !caster.cannot_fall,
+        // Tempo grants (Haste = ally, BankCadence = self) make *more* Tempo than they cost — re-casting
+        // loops forever. Useful only while a recipient is below its refresh budget; once Tempo is topped
+        // up the cast is wasted, so the greedy spends its Tempo acting instead. (Sanctuary's bundled
+        // Haste is gated by its own `one_shot`, so it is exempt from this stall test.)
+        Haste { .. } if !card.one_shot => pool
+            .iter()
+            .any(|a| !a.is_down() && a.tempo < a.eff_cadence() as i32),
+        BankCadence { .. } if !card.one_shot => caster.tempo < caster.eff_cadence() as i32,
+        Brace { .. } | Guard { .. } => !caster
+            .tokens
+            .iter()
+            .any(|t| matches!(t, Token::Guard { .. })),
+        // Cover always targets *other* allies — useless solo, and a no-op once one is placed.
+        Cover => {
+            has_other_ally
+                && !caster
+                    .tokens
+                    .iter()
+                    .any(|t| matches!(t, Token::Cover { .. }))
+        }
+        // Thorns wards the most-wounded ally (may be self); skip only once one is already in force.
+        Thorns { .. } => !pool
+            .iter()
+            .any(|a| a.tokens.iter().any(|t| matches!(t, Token::Thorns { .. }))),
+        // Reactive restores — useful only while someone is wounded; on a full-health party they heal
+        // nobody, so re-casting just burns Tempo (and loops). Skip until there is damage to undo.
+        Mend { .. } | Recover => pool
+            .iter()
+            .any(|a| !a.is_down() && a.defense.health.remaining() < a.defense.health.max()),
+        // Everything else (Damage, debuffs, Charge, the one-shot bundles, etc.) always still applies.
+        _ => true,
+    })
 }
 
 /// A heuristic value for playing `card` now (greedy policy). Damage ≫ amplification ≫ proactive debuff

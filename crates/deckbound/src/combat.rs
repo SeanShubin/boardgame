@@ -464,6 +464,7 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
 fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<String>) {
     let def_side = 1 - atk_side;
     let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
+    let def_int: Vec<Intention> = state.s_intent(def_side).to_vec();
     let dn = state.s_len(def_side);
     let mut aoe_add: Vec<u32> = vec![0; dn];
     let mut spill_add: Vec<u32> = vec![0; dn];
@@ -481,7 +482,14 @@ fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<Str
                 continue;
             }
             let soaker = front_living(def, &members).unwrap_or(d.ti);
-            if members.len() == 1 && policy::should_avoid(&def[soaker], d.might, d.fa) {
+            // §4.6 Endure-vs-Evade: a Vanguard ENDURES — it holds the line and takes the blow (keeping
+            // its Tempo for offense); only an Outrider / Rearguard evades (the sim's `default_hits`). A
+            // Vanguard that dodged would break Deal▸Hold (no blow could ever crack the front).
+            let soaker_evades = def_int.get(soaker).copied().is_none_or(policy::role_evades);
+            if members.len() == 1
+                && soaker_evades
+                && policy::should_avoid(&def[soaker], d.might, d.fa)
+            {
                 let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
                 evades.push((soaker, d.ai, cost));
                 continue;

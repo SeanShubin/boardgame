@@ -317,6 +317,12 @@ impl Deckbound {
         if state.s_pool(side)[i].disarmed {
             return false;
         }
+        // §4.6 one-shot: a `one_shot` card flips face-down for the rest of the combat once used — it is
+        // no longer playable (the tempo-gated replacement for `zone: Spend`). Without this a net-positive
+        // one-shot (e.g. Sanctuary, which Hastes its own caster) could be replayed forever.
+        if card.one_shot && state.s_pool(side)[i].spent_one_shots.contains(&card.name) {
+            return false;
+        }
         // §4.4 — casting spends a Tempo card; with no per-suit/per-side cap, **Tempo is the limiter**.
         // A unit with no Tempo cannot cast (consistent with strikes, which also need `tempo > 0`).
         if state.s_pool(side)[i].tempo <= 0 {
@@ -343,11 +349,17 @@ impl Deckbound {
     fn do_play_card(&self, state: &mut State, side: u8, i: usize, card: crate::cards::Card) {
         let off = state.s_pool(side)[i].offense;
         let name = state.s_pool(side)[i].name.clone();
-        // Casting spends a Tempo card (§4.4) — pay-after.
-        if side == 0 {
-            state.heroes[i].tempo -= 1;
+        // Casting spends a Tempo card (§4.4) — pay-after. A `one_shot` card additionally flips
+        // face-down for the rest of the combat (recorded here; see `card_playable_now`) so a
+        // net-positive one-shot (e.g. Sanctuary, which Hastes its own caster) cannot be re-cast.
+        let caster = if side == 0 {
+            &mut state.heroes[i]
         } else {
-            state.creatures[i].tempo -= 1;
+            &mut state.creatures[i]
+        };
+        caster.tempo -= 1;
+        if card.one_shot {
+            caster.spent_one_shots.push(card.name.clone());
         }
         if card.resolve == crate::cards::Resolve::Reckoning {
             state.plan.deferred.push(crate::state::Deferred {

@@ -381,6 +381,7 @@ fn build_actor_with(
         free_slip_used: false,
         might_bonus: 0,
         fallen: false,
+        spent_one_shots: Vec::new(),
     };
     actor.refresh_round();
     actor

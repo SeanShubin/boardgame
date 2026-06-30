@@ -176,10 +176,20 @@ pub fn avoid_cost(attacker_finesse: u32, defender_finesse: u32) -> i32 {
     (attacker_finesse / defender_finesse.max(1)) as i32 + 1
 }
 
+/// **The role hit policy** (§4.6, the sim's `default_hits`): a **Vanguard endures** — it holds the line
+/// and *takes* the blows, keeping all its Tempo for offense; the fragile **Outrider** and **Rearguard**
+/// evade. This is load-bearing under cycling: an *evading* Vanguard would dodge the Rearguard's fire and
+/// break Deal▸Hold (a glass cannon could never crack a turtle), so "the wall stands and takes it" is the
+/// rule. Mirrors `engagement::default_hits`. Returns `true` if the role evades.
+pub fn role_evades(role: Intention) -> bool {
+    matches!(role, Intention::Outrider | Intention::Rearguard)
+}
+
 /// **Should the soaker evade this aimed blow?** Full-cost evade only (§4.6): avoid a blow that would
 /// flip a card (Might ≥ effective Toughness — sub-threshold hits wipe harmlessly at the boundary), and
 /// only if it can afford the bid. Mirrors `engagement::should_avoid`. (A *group* never slips — that is
-/// the weakest-link rule, handled in the resolver; this is the lone-unit decision.)
+/// the weakest-link rule, handled in the resolver; this is the lone-unit decision. The **Endure vs
+/// Evade** role gate — a Vanguard never evades — is [`role_evades`], applied by the resolver.)
 pub fn should_avoid(defender: &Actor, might: u32, attacker_finesse: u32) -> bool {
     let bar = defender.eff_toughness();
     let cost = avoid_cost(attacker_finesse, defender.eff_finesse());

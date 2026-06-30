@@ -270,6 +270,11 @@ pub struct Actor {
     /// Finalized dead. Body reaching 0 is "mortally wounded" — death is tallied at the phase
     /// boundary, which sets this; once set the Actor is out of the fight.
     pub fallen: bool,
+    /// §4.6 **one-shot** bookkeeping: the names of `one_shot: true` cards this Actor has already used
+    /// this combat — flipped face-down for the rest of the fight (never reset by `refresh_round`; the
+    /// tempo-gated replacement for `zone: Spend`). A one-shot whose name is listed is no longer playable.
+    #[serde(default)]
+    pub spent_one_shots: Vec<String>,
 }
 
 impl Actor {
