@@ -1,0 +1,27 @@
+// Generic class set for the engagement sim — a "class" is nothing but an attack (range x shape) plus a
+// five-stat allocation. The role EMERGES from range + stats (intention_for): ranged -> Rearguard; melee
+// with Might >= Toughness -> Outrider (a glassy striker); melee with Toughness > Might -> Vanguard (a wall).
+// No Suit / Power identity exists here.
+//
+// stats: (Might, Vitality, Toughness, Cadence, Finesse). The weapon is power-0, so a strike's raw force is
+// Might. AoE trades Might for hitting a whole group at once (unevadable, bypasses the bodyguard) — so an
+// area class is priced down on Might versus its single-target counterpart to pay for the area.
+//
+// This is a STARTER set to iterate on. Edit the numbers and re-run:
+//   cargo run -p deckbound --example classes
+// (the binary reads this file at runtime — no rebuild).
+[
+    // Wall — durable melee front. Toughness 3 > Might 1, so it emerges Vanguard and holds the line.
+    // This is the validated re-tuned tank: V2 T2 C2 F2 lets it run down the slippery Outrider under cycling.
+    (name: "Wall",       ranged: false, aoe: false, stats: (1, 2, 3, 2, 2)),
+
+    // Skirmisher — fast melee flanker. Might 2 >= Toughness 1, so it emerges Outrider and breaks the line.
+    (name: "Skirmisher", ranged: false, aoe: false, stats: (2, 1, 1, 2, 2)),
+
+    // Marksman — ranged single-target. Might 3 cracks a tank's Toughness; emerges Rearguard, deals from behind.
+    (name: "Marksman",   ranged: true,  aoe: false, stats: (3, 1, 2, 1, 1)),
+
+    // Artillery — ranged AREA. Might priced DOWN vs the Marksman (M2 < M3) to pay for hitting a whole group
+    // at once. Emerges Rearguard. Slower to kill a lone target, but shreds a stacked group through its front.
+    (name: "Artillery",  ranged: true,  aoe: true,  stats: (2, 1, 2, 1, 1)),
+]

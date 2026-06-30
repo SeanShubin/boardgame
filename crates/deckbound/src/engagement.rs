@@ -16,6 +16,7 @@
 
 use crate::actor::{Attack, Range};
 use crate::stats::{Defense, Offense};
+use serde::Deserialize;
 
 /// A unit's declared role/position for the round. The intention *is* the role (hold/break/deal).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -80,14 +81,72 @@ pub type Stat5 = (u32, u32, u32, u32, u32);
 /// knows what their stand-in will pick. (Might-vs-Toughness, not Finesse — the re-tuned tank carries F2 to
 /// run down the Outrider, so Finesse no longer separates the wall from the skirmisher.)
 pub fn default_intention(class: &str, s: Stat5) -> Intention {
+    intention_for(class == "Mage", s)
+}
+
+/// The intention a unit emerges into, from its **explicit range** and stat line (the data-driven core of a
+/// [`ClassDef`] — the role is not a name, it falls out of range+stats): a **ranged** body deals from the
+/// Rearguard; an **aggressive** melee (Might ≥ Toughness, a glassy striker) breaks the line as an Outrider;
+/// a **durable** melee (Toughness > Might, a wall) holds as a Vanguard. [`default_intention`] delegates here
+/// (treating `class == "Mage"` as the only ranged class) so the legacy name-based call keeps its behavior.
+pub fn intention_for(ranged: bool, s: Stat5) -> Intention {
     let (might, _, toughness, _, _) = s;
-    if class == "Mage" {
+    if ranged {
         Intention::Rearguard
     } else if might >= toughness {
         Intention::Outrider
     } else {
         Intention::Vanguard
     }
+}
+
+/// A **generic class**: a combatant defined purely by an attack (range × shape) plus a 5-stat allocation —
+/// no Suit / Power identity. The role *emerges* from `ranged` + `stats` via [`intention_for`]; `aoe` flips
+/// the strike from a single aimed blow to an area strike (§4.5). Deserialized from a RON class set so the
+/// roster is editable at runtime (edit the `.ron`, re-run the `classes` example, no rebuild).
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClassDef {
+    pub name: String,
+    pub ranged: bool,
+    pub aoe: bool,
+    pub stats: Stat5,
+}
+
+/// Build a sim [`Unit`] from a [`ClassDef`]: the attack is `Ranged` iff `c.ranged` (else `Melee`); `aoe`
+/// and the stats copy across; the intention emerges from range+stats ([`intention_for`]) and the hit policy
+/// follows that role ([`default_hits`]). The weapon is implicit power-0, so a strike's raw force is Might.
+pub fn unit_from_class(c: &ClassDef, side: u8) -> Unit {
+    let (m, v, t, ca, f) = c.stats;
+    let intent = intention_for(c.ranged, c.stats);
+    Unit {
+        name: c.name.clone(),
+        side,
+        intent,
+        offense: Offense {
+            might: m,
+            cadence: ca,
+            finesse: f,
+        },
+        defense: Defense::new(v, t),
+        attack: if c.ranged {
+            Attack::Ranged
+        } else {
+            Attack::Melee
+        },
+        hits: default_hits(intent),
+        aoe: c.aoe,
+        group: None,
+        tempo: ca as i32,
+    }
+}
+
+/// Load a RON class set (a `[ClassDef]` list) from `path`. Panics with a readable message on a read/parse
+/// failure — this is a runtime balance tool, not production code. Exposed for the `classes` example runner.
+pub fn load_classes(path: &std::path::Path) -> Vec<ClassDef> {
+    let text = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("cannot read class file {}: {e}", path.display()));
+    ron::from_str(&text)
+        .unwrap_or_else(|e| panic!("cannot parse class file {}: {e}", path.display()))
 }
 
 /// The thematic **default hit policy** by role: a **Vanguard endures** — it holds the line and *takes*
@@ -523,6 +582,21 @@ pub fn battle_traced(
         }
     }
     (outcome, log.unwrap_or_default())
+}
+
+/// Run exactly `rounds` rounds (no early stop) and return `(side0_alive, side1_alive)` — a survivor count
+/// for measuring partial progress (e.g. how many of a shielded group an attacker has cracked), where a
+/// terminal [`battle`] outcome would collapse a standoff to a Draw and hide the difference.
+pub fn survivors_after(mut side0: Vec<Unit>, mut side1: Vec<Unit>, rounds: u32) -> (usize, usize) {
+    let mut units: Vec<Unit> = Vec::new();
+    units.append(&mut side0);
+    units.append(&mut side1);
+    for _ in 0..rounds {
+        run_round(&mut units);
+    }
+    let a = units.iter().filter(|u| u.side == 0 && u.alive()).count();
+    let b = units.iter().filter(|u| u.side == 1 && u.alive()).count();
+    (a, b)
 }
 
 /// Outcome of a battle for side 0's perspective.
