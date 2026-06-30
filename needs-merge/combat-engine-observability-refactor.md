@@ -132,12 +132,17 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
     (deterministic) or a **decision point** (the policy/human chooses) — human/solver/AI all plug into one
     mechanics core.
 
-**QUEUED — phase rename (behavior-neutral, do AFTER P7 to avoid file/​golden churn).** The five round
-phases get snappy one-word names (user, 2026-06-29): **Declare Intentions → Marshal · Reveal Intentions →
-Reveal · Pre-Battle/Standing → Ready · Resolve Engagements → Engage · Reset/Lull → Refresh.** (Schedule
-sub-steps unchanged: Intercept · Volley · Raid · Clash · Breach.) Thread through Spec §4/§4.6 prose + TERM
-lines, the `Phase` enum + round-flow log strings in code, then regenerate the glossary/rules-reference doc
-goldens once. (Avoided *Brace* for Ready — collides with the Iron L1 Brace card.)
+**PHASE RENAME DONE** (commit `7461346`): **Marshal · Reveal · Ready · Engage · Refresh** (`Phase::Marshal`,
+spec §4/§4.6 + `Marshal` TERM, log/status strings; glossary/rules-reference/rules-tour goldens regenerated).
+Behavior-neutral, 98/4. *Follow-up:* `rules.rs` `Rule::DeclareIntentions/RevealIntentions` + `combat-phases.md`
+still use the old names (the rules registry) — rename for consistency separately.
+
+**LAST FUNCTIONAL ITEM — the Final's headcount (4 balance reds).** P7 fixed combat; the now-effective party
+wins Husk swarms ≤8, loses 10+. The reference Final fields **32** (a comment notes it was bumped 16→32 for
+the OLD broken resolver). Re-tune the Final's count into the party's win-band (recommend ~8 = top-of-band
+climax, or ~6 with margin) — a `booklet.ron`/scenario number — and the 4 reds (`the_guide_wins`,
+`action_log`, `campaign_is_playable`, `reference_combat_bands`) go green. Awaiting the difficulty target
+(or a "buff the party instead" call). This is the only thing between the suite and all-green.
 
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
