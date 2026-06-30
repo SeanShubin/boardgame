@@ -6,7 +6,9 @@
 // same-range = trade, ranged may be evaded (the tempo contest) else auto-hit; the optional Clash
 // module (clash: true) runs the duel. Damage is UNTYPED Might into the health pile (§2.2) — no
 // armor / damage-types / fear channel (collapsed 2026; armor deferred with gear).
-//   attack: Melee / Ranged / Both / Neither  (§4.2 range)
+//   attack profile (§4.2/§4.3) DERIVES from the `weapon` strike card: its `reach` gives the range
+//   (melee (1,1) / ranged (2,2) / both (1,2)) and `targets > 1` marks area; an empty `weapon` = no
+//   strike card = Neither (a non-combatant). There is no authored `attack` field.
 //   driver: "hero" (human) or a creature keyword; aggression 0..=10 sets its charge bias.
 //   The five stats (§2.4): might · vitality · toughness · cadence · finesse.
 //
@@ -21,11 +23,14 @@ Catalog(
         Card( name: "Maul",   effects: [Damage(power: 1)], flavor: "It doesn't cut. It doesn't need to." ),
         Card( name: "Claw",   effects: [Damage(power: 0)], flavor: "What the beasts bring instead of manners." ),
         Card( name: "Spear",  effects: [Damage(power: 0)], flavor: "Reach is its own kind of courage." ),
-        Card( name: "Staff",  effects: [Damage(power: 0)], flavor: "Discipline, with two ends." ),
+        Card( name: "Staff",  reach: (2, 2), effects: [Damage(power: 0)], flavor: "Discipline, with two ends." ),
         Card( name: "Bash",   effects: [Damage(power: 0)], flavor: "The shield, offered as an opinion." ),
-        Card( name: "Bow",    effects: [Damage(power: 1)], flavor: "Death that arrives ahead of the sound of it." ),
-        Card( name: "Flame",  effects: [Damage(power: 3)], flavor: "It does not ask which armor. It asks how long." ),
-        Card( name: "Wand",   effects: [Damage(power: 2)], flavor: "It points, and something in the target quietly gives up." ),
+        Card( name: "Bow",    reach: (2, 2), effects: [Damage(power: 1)], flavor: "Death that arrives ahead of the sound of it." ),
+        Card( name: "Flame",  reach: (2, 2), effects: [Damage(power: 3)], flavor: "It does not ask which armor. It asks how long." ),
+        Card( name: "Wand",   reach: (2, 2), effects: [Damage(power: 2)], flavor: "It points, and something in the target quietly gives up." ),
+        // A both-reach strike card (reach 1–2): melee club + thrown rock. The boss Ogre's strike card,
+        // so its profile derives Both (§4.3) without forcing the shared melee Maul to gain range.
+        Card( name: "Boulder", reach: (1, 2), effects: [Damage(power: 1)], flavor: "Close enough to club; far enough to throw." ),
         // --- power cards (wired effects) ---
         Card( name: "Barrage",  targets: 3, reach: (2, 2), effects: [Damage(power: 3)], flavor: "The sky, rationed evenly across the whole front rank." ),
         Card( name: "Cleave",   targets: 3, effects: [Damage(power: 0)], flavor: "One stroke, several regrets." ),
@@ -166,50 +171,50 @@ Catalog(
         // Novice — the clean-slate character (§8.5): a BARE identity (§2.3) — a character carries NO
         // printed stats. Its baseline is the separate `clean_slate` Form card above; strength then grows
         // only by adding reward cards. (Creatures keep a printed `base`.)
-        ActorCard( name: "Novice", role: "Human", flavor: "Nothing yet but nerve and a fist. Everything it becomes, it has to buy.", driver: "hero", attack: Melee, weapon: "Fist",
+        ActorCard( name: "Novice", role: "Human", flavor: "Nothing yet but nerve and a fist. Everything it becomes, it has to buy.", driver: "hero", weapon: "Fist",
                    base: () ),
         // An Actor is a bare identity + a starting deck (stats-as-deck, §2.3/§4.3): `base` is the inline
         // fundamental Form card (its stat block over the five stats); `actions` are its Action cards;
         // `weapon` is the base attack card. Numbers: might = former power, vitality = former body.
         // ---- the specialist cast (fresh) ----
-        ActorCard( name: "Anvil", role: "Wall", flavor: "He does not advance. He does not retreat. The battle simply happens around the place he is standing.", driver: "hero", attack: Melee, weapon: "Maul",
+        ActorCard( name: "Anvil", role: "Wall", flavor: "He does not advance. He does not retreat. The battle simply happens around the place he is standing.", driver: "hero", weapon: "Maul",
                    base: (might: 4, vitality: 10, toughness: 2, cadence: 2),
                    actions: ["Brace", "Phalanx", "Bulwark", "Taunt"] ),
-        ActorCard( name: "Wisp", role: "Infiltrator", flavor: "You won't see her cross the room. You'll only notice, later, who is no longer in it.", driver: "hero", attack: Melee, weapon: "Blade",
+        ActorCard( name: "Wisp", role: "Infiltrator", flavor: "You won't see her cross the room. You'll only notice, later, who is no longer in it.", driver: "hero", weapon: "Blade",
                    base: (might: 4, vitality: 4, toughness: 1, cadence: 7, finesse: 5),
                    actions: ["Bank", "Blitz", "Shadowstep", "Backstab"] ),
-        ActorCard( name: "Sear", role: "Artillery", flavor: "Counts the range, exhales, and deletes the front rank. Keep him fed with distance.", driver: "hero", attack: Ranged, weapon: "Bow",
+        ActorCard( name: "Sear", role: "Artillery", flavor: "Counts the range, exhales, and deletes the front rank. Keep him fed with distance.", driver: "hero", weapon: "Bow",
                    base: (might: 6, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Barrage", "Longshot"] ),
-        ActorCard( name: "Vow", role: "Support", flavor: "Carries no blade and wins anyway — by making sure the ones who do are still standing.", driver: "hero", attack: Neither, weapon: "Fist",
+        ActorCard( name: "Vow", role: "Support", flavor: "Carries no blade and wins anyway — by making sure the ones who do are still standing.", driver: "hero", weapon: "",
                    base: (might: 0, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Ward", "Mend", "Haste"] ),
-        ActorCard( name: "Hex", role: "Controller", flavor: "She speaks, and the enemy's courage develops a leak. Bodies are a formality after that.", driver: "hero", attack: Ranged, weapon: "Wand",
+        ActorCard( name: "Hex", role: "Controller", flavor: "She speaks, and the enemy's courage develops a leak. Bodies are a formality after that.", driver: "hero", weapon: "Wand",
                    base: (might: 2, vitality: 4, toughness: 1, cadence: 3),
                    actions: ["Confuse", "Slow", "Terror"] ),
         // simple training heroes
-        ActorCard( name: "Recruit", role: "Militia", flavor: "Spear, nerve, and a week's drill. It is enough more often than anyone expects.", driver: "hero", attack: Melee, weapon: "Spear",
+        ActorCard( name: "Recruit", role: "Militia", flavor: "Spear, nerve, and a week's drill. It is enough more often than anyone expects.", driver: "hero", weapon: "Spear",
                    base: (might: 3, vitality: 5, toughness: 1, cadence: 3) ),
-        ActorCard( name: "Archer", role: "Bowman", flavor: "Plain bow, steady draw. Answers range with range and asks nothing fancier.", driver: "hero", attack: Ranged, weapon: "Bow",
+        ActorCard( name: "Archer", role: "Bowman", flavor: "Plain bow, steady draw. Answers range with range and asks nothing fancier.", driver: "hero", weapon: "Bow",
                    base: (might: 4, vitality: 4, toughness: 1, cadence: 4) ),
         // ---- creatures ----
-        ActorCard( name: "Husk", role: "Swarmer", flavor: "What's left when something stops being a person and keeps walking. It comes in tides.", driver: "aggressor", attack: Melee, weapon: "Claw", aggression: 6,
+        ActorCard( name: "Husk", role: "Swarmer", flavor: "What's left when something stops being a person and keeps walking. It comes in tides.", driver: "aggressor", weapon: "Claw", aggression: 6,
                    base: (might: 2, vitality: 2, toughness: 1, cadence: 3) ),
-        ActorCard( name: "Raider", role: "Infiltrator", flavor: "Fast, lean, and pointed at whoever you most need to keep alive.", driver: "skirmisher", attack: Melee, weapon: "Claw", aggression: 8,
+        ActorCard( name: "Raider", role: "Infiltrator", flavor: "Fast, lean, and pointed at whoever you most need to keep alive.", driver: "skirmisher", weapon: "Claw", aggression: 8,
                    base: (might: 3, vitality: 4, toughness: 1, cadence: 6, finesse: 5) ),
-        ActorCard( name: "Brute", role: "Bruiser", flavor: "A slab of muscle that treats your front line as a suggestion.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 6,
+        ActorCard( name: "Brute", role: "Bruiser", flavor: "A slab of muscle that treats your front line as a suggestion.", driver: "brute", weapon: "Maul", aggression: 6,
                    base: (might: 5, vitality: 8, toughness: 3, cadence: 2) ),
-        ActorCard( name: "Slinger", role: "Skirmisher", flavor: "Hangs back and plinks. Annoying alone; lethal in a chorus.", driver: "aggressor", attack: Ranged, weapon: "Bow", aggression: 2,
+        ActorCard( name: "Slinger", role: "Skirmisher", flavor: "Hangs back and plinks. Annoying alone; lethal in a chorus.", driver: "aggressor", weapon: "Bow", aggression: 2,
                    base: (might: 4, vitality: 3, toughness: 1, cadence: 4) ),
-        ActorCard( name: "Seer", role: "Hexer", flavor: "Picks the most fragile body in your line and goes to work on it first.", driver: "aggressor", attack: Ranged, weapon: "Wand", aggression: 2,
+        ActorCard( name: "Seer", role: "Hexer", flavor: "Picks the most fragile body in your line and goes to work on it first.", driver: "aggressor", weapon: "Wand", aggression: 2,
                    base: (might: 3, vitality: 4, toughness: 1, cadence: 3), target_rule: Some(LowestBody) ),
-        ActorCard( name: "Ogre", role: "Boss", flavor: "Both fists and a thrown rock, wrapped around more body than a wall. A bad afternoon, alone.", driver: "brute", attack: Both, weapon: "Maul", aggression: 6,
+        ActorCard( name: "Ogre", role: "Boss", flavor: "Both fists and a thrown rock, wrapped around more body than a wall. A bad afternoon, alone.", driver: "brute", weapon: "Boulder", aggression: 6,
                    base: (might: 6, vitality: 16, toughness: 3, cadence: 4) ),
         // A living wall: Toughness so high that blunt blows shatter against it (no card flips) — the
         // Controller's necessity foe. Only a Sunder (−Toughness) drops the per-phase wall low enough for
         // the party's strikes to land (role-redesign 2026-06-26). Modest Might/Vitality so the fight is
         // won by cracking the wall, not by out-lasting damage.
-        ActorCard( name: "Golem", role: "Bulwark", flavor: "Old siege-stone given legs and a grudge. You do not wound it; you take it apart.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 5,
+        ActorCard( name: "Golem", role: "Bulwark", flavor: "Old siege-stone given legs and a grudge. You do not wound it; you take it apart.", driver: "brute", weapon: "Maul", aggression: 5,
                    base: (might: 3, vitality: 12, toughness: 5, cadence: 2) ),
         // A **Toughness-extreme** test foe (strategy-primitive suite, 2026-06-26): Toughness 10 — above
         // any single hero hit's raw Might (so no lone strike flips a card), and high enough that only a
@@ -218,39 +223,39 @@ Catalog(
         // SPREAD — each pile then falls below Toughness 10 → nothing flips → only a **Sunder/Hex**
         // (−Toughness) opens them. The experiment that asks whether "Strip" (the Controller's Breaker
         // half) has an isolating extreme, or whether focus-fire is a universal substitute.
-        ActorCard( name: "Monolith", role: "Bulwark", flavor: "A standing stone that learned to resent you. One blow does nothing; you must wear the face off it.", driver: "brute", attack: Melee, weapon: "Maul", aggression: 4,
+        ActorCard( name: "Monolith", role: "Bulwark", flavor: "A standing stone that learned to resent you. One blow does nothing; you must wear the face off it.", driver: "brute", weapon: "Maul", aggression: 4,
                    base: (might: 3, vitality: 5, toughness: 10, cadence: 2) ),
         // An **enemy healer** (§13 enemy-roles test foe, 2026-06-27): mends 2 Health on its most-wounded
         // ally each Fray instead of attacking, so the front never falls to attrition — the party **must
         // reach and kill the Mender**. Holds the Rearguard (ranged profile → seeds back), screened by a
         // front it keeps standing. The necessity test for **reach / priority-elimination** (Infiltrator):
         // ranged fire only hits the front, so only a unit that crosses to the back removes it.
-        ActorCard( name: "Mender", role: "Healer", flavor: "It carries no blade — only the patience to undo everything you just did.", driver: "post", attack: Ranged, weapon: "Wand", aggression: 1, heal: 5,
+        ActorCard( name: "Mender", role: "Healer", flavor: "It carries no blade — only the patience to undo everything you just did.", driver: "post", weapon: "Wand", aggression: 1, heal: 5,
                    base: (might: 1, vitality: 6, toughness: 1, cadence: 3, finesse: 2) ),
         // A **high-Finesse interceptor screen** (§13, 2026-06-27): a defensive front that holds the line
         // and **cuts down runners** — its Finesse 4 makes the §4 interception costly to slip, so only a
         // higher-Finesse, high-Tempo body (the Infiltrator) crosses it. Kept standing by a Mender behind
         // it, it forces the party to *cross* rather than break through — the necessity test for **reach**.
-        ActorCard( name: "Sentry", role: "Warden", flavor: "It does not chase. It simply makes sure that what runs past it does not arrive whole.", driver: "turtle", attack: Melee, weapon: "Spear", aggression: 2,
+        ActorCard( name: "Sentry", role: "Warden", flavor: "It does not chase. It simply makes sure that what runs past it does not arrive whole.", driver: "turtle", weapon: "Spear", aggression: 2,
                    base: (might: 3, vitality: 10, toughness: 4, cadence: 4, finesse: 4) ),
         // ---- §13 simulation classes (2026-06-27): three ability-less stat blocks for the minimal-subset
         //      NvN balance study (no grouping, no AoE). Power-0 weapons, so a strike = the class's Might.
         //      Used on both sides — solver-optimized as heroes (side 0), deterministic AI as foes (side 1). ----
-        ActorCard( name: "Fighter",  role: "Fighter",  flavor: "Holds the line and trades. Tough, plain, immovable.", driver: "brute",      attack: Melee,  weapon: "Blade", aggression: 6,
+        ActorCard( name: "Fighter",  role: "Fighter",  flavor: "Holds the line and trades. Tough, plain, immovable.", driver: "brute",       weapon: "Blade", aggression: 6,
                    base: (might: 1, vitality: 2, toughness: 3, cadence: 1, finesse: 2) ),
-        ActorCard( name: "Assassin", role: "Assassin", flavor: "Fast and pointed — goes for the soft target behind the line.", driver: "skirmisher", attack: Melee,  weapon: "Claw",  aggression: 8,
+        ActorCard( name: "Assassin", role: "Assassin", flavor: "Fast and pointed — goes for the soft target behind the line.", driver: "skirmisher",  weapon: "Claw",  aggression: 8,
                    base: (might: 2, vitality: 2, toughness: 2, cadence: 2, finesse: 3) ),
-        ActorCard( name: "Mage",     role: "Mage",     flavor: "Frail, deadly, and only safe while the front holds.", driver: "aggressor",  attack: Ranged, weapon: "Staff", aggression: 1,
+        ActorCard( name: "Mage",     role: "Mage",     flavor: "Frail, deadly, and only safe while the front holds.", driver: "aggressor",  weapon: "Staff", aggression: 1,
                    base: (might: 3, vitality: 1, toughness: 1, cadence: 1, finesse: 1) ),
         // ---- Clash-module duelists (1v1; attack unused — the Clash runs regardless) ----
-        ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", attack: Both, weapon: "Blade",
+        ActorCard( name: "Vael", role: "Duelist", flavor: "The student duelist — your hands in the Clash. Reads, commits, and lives or dies by it.", driver: "hero", weapon: "Blade",
                    base: (might: 3, vitality: 8, toughness: 1, cadence: 4) ),
-        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
-        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
-        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
-        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
-        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
-        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  attack: Melee, weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Pell",   role: "Charger", flavor: "Winds up like a storm and lands like one. Catch the gather or wear the blow.", driver: "charger",  weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Bron",   role: "Leader",  flavor: "Leads every exchange and never chases. Punishes the eager.", driver: "leader",   weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Hollow", role: "Counter", flavor: "Gives ground, then makes you pay for taking it. Never swing first.", driver: "counter",  weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Maw",    role: "Brawler", flavor: "Swings on every beat and thinks on none. Outlast it; don't trade with it.", driver: "brawler",  weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Rage",   role: "Feinter", flavor: "Strikes, feints, strikes again — the first opponent that makes you guess.", driver: "feint",    weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
+        ActorCard( name: "Sable",  role: "Duelist", flavor: "Plays the whole instrument. By the time you've read the move, it was the wrong move.", driver: "duelist",  weapon: "Claw", base: (might: 1, vitality: 8, toughness: 1, cadence: 2) ),
     ],
     campaign: [
         ScenarioCard(

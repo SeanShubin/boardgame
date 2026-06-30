@@ -73,10 +73,6 @@ fn stat_is_empty(s: &StatCard) -> bool {
 fn five() -> u32 {
     5
 }
-fn melee() -> Attack {
-    Attack::Melee
-}
-
 #[derive(Debug, Deserialize)]
 struct ActorCard {
     name: String,
@@ -90,12 +86,11 @@ struct ActorCard {
     /// (§2.3, locked 2026-06-21), so the identity card carries no stats.
     #[serde(default)]
     base: StatCard,
+    /// The **strike card** (§4.2/§4.3): names the weapon Card whose `reach` (range) and `targets` (area)
+    /// give the actor's attack profile. Empty = no strike card → `Neither` (a non-combatant body).
     weapon: String,
     #[serde(default)]
     actions: Vec<String>,
-    /// Attack profile (§4.2): Melee / Ranged / Both / Neither. Defaults to Melee.
-    #[serde(default = "melee")]
-    attack: Attack,
     /// Creature commitment bias 0..=10 (how many Vanguard it fields, how readily it slips).
     #[serde(default = "five")]
     aggression: u32,
@@ -360,17 +355,26 @@ fn build_actor_with(
         })
     };
 
+    // §4.3 — the **strike card** (the weapon) is the source of the attack profile: an empty `weapon`
+    // names no strike card (a blank card with no `Damage` → `Neither`); otherwise it resolves from the
+    // catalog. `attack`/`aoe` derive from it (`strike_profile`), never from an authored field.
+    let weapon = if c.weapon.is_empty() {
+        Card::default()
+    } else {
+        find_card(cat, &c.weapon)
+    };
+    let (attack, aoe) = strike_profile(&weapon);
     let mut actor = Actor {
         name: c.name.clone(),
         role: c.role.clone(),
         offense,
         defense,
         form,
-        weapon: find_card(cat, &c.weapon),
+        weapon,
         actions: c.actions.iter().map(|n| find_card(cat, n)).collect(),
         driver,
-        attack: c.attack,
-        aoe: false,
+        attack,
+        aoe,
         tokens: Vec::new(),
         tempo: 0,
         cannot_fall: false,
@@ -469,9 +473,24 @@ pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
         && let Some(w) = tracks.into_iter().next().and_then(Currency::ranged_weapon)
     {
         actor.weapon = find_card(cat, w);
-        actor.attack = Attack::Ranged;
+        // Re-derive the attack profile from the swapped-in strike card (§4.3), not a hard-set value.
+        let (attack, aoe) = strike_profile(&actor.weapon);
+        actor.attack = attack;
+        actor.aoe = aoe;
     }
     actor
+}
+
+/// §4.3 — derive a body's **strike profile** (attack type + area) from its **strike card** (the weapon):
+/// a card with no `Damage` effect — or a blank "no weapon" — cannot strike (`Neither`); otherwise the
+/// card's `reach` gives the range ([`Attack::from_reach`]) and `targets > 1` marks an **area** strike
+/// (§4.5). The single source for `Actor.attack` / `Actor.aoe`, mirroring how `offense`/`defense` derive
+/// from the `Form`.
+fn strike_profile(weapon: &Card) -> (Attack, bool) {
+    match weapon.primary_damage() {
+        Some(_) => (Attack::from_reach(weapon.reach), weapon.targets > 1),
+        None => (Attack::Neither, false),
+    }
 }
 
 /// Build a **creature** (§2.3 carve-out): a non-progressing foe whose stats are **printed** on its

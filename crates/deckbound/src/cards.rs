@@ -136,7 +136,9 @@ pub enum Resolve {
 }
 
 /// An Action card: its effect(s), how many foes it hits, its §5 zone behavior, and tags.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// `Default` yields a blank card (no effects, no `Damage`) — used as the "no strike card" sentinel for a
+/// `Neither` (non-striking) body, §4.3.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
     pub name: String,
     /// A human rules description, used to generate the encyclopedia's **Powers** entries from

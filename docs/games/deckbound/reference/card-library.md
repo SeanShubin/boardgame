@@ -13,10 +13,10 @@
 | Brass — Artillery | 10 |
 | Bone — Controller | 10 |
 | Salt — Support | 10 |
-| Weapons | 8 |
+| Weapons | 9 |
 | Pool | 20 |
 | Cast | 28 |
-| **Total** | **108** |
+| **Total** | **109** |
 
 ## Baseline (1 cards)
 
@@ -100,7 +100,7 @@
 | 5 | Sanctuary | action | empower +3 might, haste +3, mend +4, x99 targets |
 | 5 | Salt L5 | stat | vitality 2 |
 
-## Weapons (8 cards)
+## Weapons (9 cards)
 
 | Level | Card | Kind | Effect |
 | ---: | --- | --- | --- |
@@ -112,6 +112,7 @@
 | — | Staff | weapon | might weapon (+0) |
 | — | Bow | weapon | might weapon (+1) |
 | — | Wand | weapon | might weapon (+2) |
+| — | Boulder | weapon | might weapon (+1) |
 
 ## Pool (20 cards)
 
@@ -146,7 +147,7 @@
 | — | Anvil | character | Wall · Maul |
 | — | Wisp | character | Infiltrator · Blade |
 | — | Sear | character | Artillery · Bow |
-| — | Vow | character | Support · Fist |
+| — | Vow | character | Support ·  |
 | — | Hex | character | Controller · Wand |
 | — | Recruit | character | Militia · Spear |
 | — | Archer | character | Bowman · Bow |
@@ -155,7 +156,7 @@
 | — | Brute | character | Bruiser · Maul |
 | — | Slinger | character | Skirmisher · Bow |
 | — | Seer | character | Hexer · Wand |
-| — | Ogre | character | Boss · Maul |
+| — | Ogre | character | Boss · Boulder |
 | — | Golem | character | Bulwark · Maul |
 | — | Monolith | character | Bulwark · Maul |
 | — | Mender | character | Healer · Wand |

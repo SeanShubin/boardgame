@@ -122,6 +122,21 @@ impl Attack {
             Attack::Neither => "support",
         }
     }
+
+    /// Derive the attack profile from a **strike card's `reach`** (§4.3 — the attack type is read from the
+    /// strike card, not an authored field): it can **melee** if the reach extends to the adjacent rank
+    /// (`reach[0] <= 1`) and **ranged** if it extends to the back (`reach[1] >= 2`). Both → `Both`; one →
+    /// that range; neither (e.g. a degenerate `[2,1]`) → `Neither`. A unit with **no** strike card resolves
+    /// to `Neither` upstream (a card with no `Damage` effect cannot strike) — this maps a card that *does*
+    /// strike to its range.
+    pub fn from_reach(reach: [u32; 2]) -> Attack {
+        match (reach[0] <= 1, reach[1] >= 2) {
+            (true, true) => Attack::Both,
+            (true, false) => Attack::Melee,
+            (false, true) => Attack::Ranged,
+            (false, false) => Attack::Neither,
+        }
+    }
 }
 
 /// Who drives an Actor's choices.

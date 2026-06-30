@@ -24,7 +24,7 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 - **Trade** — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **Evade** — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **Auto-hit** — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
-- **Attack type** — Each Actor is Melee, Ranged, Both, or Neither. Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
+- **Attack type** — Each Actor is Melee, Ranged, Both, or Neither, **read from its strike card** (the weapon's `reach`; no strike card = Neither, §4.3). Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ## Resources
 

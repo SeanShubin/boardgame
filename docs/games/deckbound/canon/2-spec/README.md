@@ -60,7 +60,7 @@ front-liner). A card never *silently* contradicts the core; an unstated conflict
 | **Defense model** (pile → bar → pool, one channel)       | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                                                                                                                                                                                                         |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                                                                                                                                                                                                |
 | **Cadence/Tempo** (one breadth pool)                     | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                                                                            |
-| **The battle — hold / break / deal**                     | 🟡 seeded    | §4 **respecced to the engagement-schedule model 2026** — three declared intentions (Vanguard / Outrider / Rearguard), one Tempo contest, a five-round battle resolved over a fixed engagement schedule (supersedes the attrition model); **code pending**. §4.6 the engagement schedule, §4.5 groups (spillover · sum-vs-min · Hoard), §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current |
+| **The battle — hold / break / deal**                     | 🟡 seeded    | §4 **respecced to the engagement-schedule model 2026** — three declared intentions (Vanguard / Outrider / Rearguard), one Tempo contest, a five-round battle resolved over a fixed engagement schedule (supersedes the attrition model); **code pending**. §4.6 the engagement schedule, §4.5 groups (spillover · sum-vs-min · Hoard), §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current — **attack derives from the strike card** (the `attack` field folds into the weapon's `reach`/`targets`; no strike card = Neither) |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                                                                                                                                                                                                    |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                                                                                                                                                                                                       |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                                                                                                                                                                                                 |
@@ -1374,12 +1374,13 @@ hybrids, and pure-support "neither" kits — each re-derivable from "do you have
 - **TERM.** `Trade` (Combat) — A same-range melee engagement: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **TERM.** `Evade` (Combat) — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **TERM.** `Auto-hit` (Combat) — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
-- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither. Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
+- **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither, **read from its strike card** (the weapon's `reach`; no strike card = Neither, §4.3). Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
 
 ### 4.3 Actors are decks — *stats-as-deck & the schema*
 
 **RULE.** An **Actor is a deck**, not a stat-block. In `booklet.ron` the actor entry is a **bare
-identity** — `name`, `role`, `driver`, **attack type** (§4.2) — that **carries no flat stat fields**;
+identity** — `name`, `role`, `driver`, and its **`weapon`** (the **strike card**, §4.2) — that **carries no
+flat stat fields**, and **no authored attack type** (the attack profile derives from the strike card);
 its stats live on **build cards**. Its numbers are **read off the Form** (§2.3 / §5.2): a **fundamental**
 build card (base stats, incl. Health = Vitality × Toughness, §5.5) plus any **attachment** cards, summed
 commutatively (§5.5). Per §2.3 the fundamental rides as the actor's inline **`base`** build card — *empty*
@@ -1388,24 +1389,38 @@ fixed scenario kit. The §3 / §4 economy reads stats from the Form exactly as b
 Tempo**); only the *source* moved from flat fields to the deck.
 
 **Schema migration (this `/spec-sync` pass).**
-- `ActorCard`: **drop** every flat stat field (`might / vitality / toughness / cadence / finesse`) and
-  `weapon / traits`; **keep** `name / role / driver / attack`; carry stats **only** via the inline
-  **`base`** build card (a `StatCard`) plus reward / attachment cards.
+- `ActorCard`: **drop** every flat stat field (`might / vitality / toughness / cadence / finesse`), the
+  redundant **`attack`** field, and `traits`; **keep** `name / role / driver` and the **`weapon`** — its
+  **strike card** (§4.2). Carry stats **only** via the inline **`base`** build card (a `StatCard`) plus
+  reward / attachment cards.
+- The **attack profile derives from the strike card**, not from an authored field: the weapon's `reach` →
+  **melee** (`[1,1]`) / **ranged** (`[2,2]`) / **both** (`[1,2]`), and `targets > 1` → **area** (`aoe`).
+  A unit whose strike card carries no `Damage` (or who holds none) is **`Neither`** — it cannot strike
+  (auto-hit in melee, may still evade ranged, §4.2).
 - A **`StatCard`** carries one card's contribution over the **five** stats and **nothing else** — no
   channel / armor / damage-type fields (deferred with gear, §2.2). A **`Form`** = `base` + attachments,
-  summed into the `Offense` / `Defense` the engine reads.
-- The runtime **`Actor` derives `offense` / `defense` from its `Form`** at build time (commutative sum) —
-  the totals are always recomputable from the cards, never an independently-authored block.
+  summed into the `Offense` / `Defense` the engine reads. (The strike card is a **`Card`**, not a `StatCard`
+  — capability rides the card layer, §4.4, exactly as the abilities do.)
+- The runtime **`Actor` derives `offense` / `defense` from its `Form`**, and its **`attack` / `aoe` from its
+  strike card**, at build time (commutative sum / reach read) — always recomputable from the cards, never an
+  independently-authored block.
 - The `booklet.ron` data, the Rust `ActorCard` / `StatCard` structs, and the §4 reader land **together**
   in this pass; this Spec is what they conform to.
 
 **WHY.** One representation — the deck — for what a character *is* and *does*; the authored stat-block
 was a redundant parallel that drift could split from the cards (§2.1, #10). It also makes the Upgrade
-economy (§8) mechanically real: buying a card literally raises a stat.
+economy (§8) mechanically real: buying a card literally raises a stat. The standalone **`attack`** field was
+the same redundancy for *capability* — a parallel to the strike card's own `reach` that drift could split —
+so it folds into the card too: **#8 generalized — every point of strength, stat *or* strike, is a card you
+can point to.** A unit with no strike card then simply *is* a non-combatant (`Neither`), with no
+special-case flag.
 
 **GUARANTEES.**
 - An Actor's numbers are always recomputable from its deck — no hidden stat-block.
-- The §3 / §4 economy is unchanged in *behavior*; only the stat **source** moved (card → deck).
+- An Actor's **attack profile** (melee / ranged / both / neither, and area) is **recomputable from its strike
+  card** — no authored `attack`; a unit holding no strike card **cannot strike** (`Neither`).
+- The §3 / §4 economy is unchanged in *behavior*; only the **source** moved (field → card) — the resolver's
+  attack-type reads (`can_contest` / position-determination / trade-evade-auto-hit, §4.2) are untouched.
 - A card works identically on a player and a creature (§8.4 deck-recipe creatures also build decks).
 
 ### 4.4 Role-card play — the ability layer 🟡 *(respecced 2026-06-20; per-side cap 2026-06-23; **cap removed → tempo-gated, offensive spells Rearguard-cast 2026**; **abilities are tempo-gated Form cards, no card-spend 2026-06-25**; code pending)*

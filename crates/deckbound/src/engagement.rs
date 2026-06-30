@@ -18,6 +18,7 @@
 
 pub use crate::actor::Intention;
 use crate::actor::{Actor, Attack};
+use crate::cards::{Card, Effect};
 use crate::combat;
 use crate::game::battle_state_with;
 use crate::ruleset::Ruleset;
@@ -188,17 +189,41 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
 /// [`combat::resolve_round`]), so the exact value does not matter — only that it is stable.
 const SIM_SEED: u64 = 1;
 
-/// Build a real [`Actor`] from a sim [`Unit`] spec: a bare clean-slate body whose five stats, attack
-/// profile, and area flag are overridden from the spec (the implicit weapon is the Fist, power 0, so a
-/// strike's raw force is exactly Might — matching the sim's pricing). Tempo is set from Cadence by
+/// A generic, suit-free **strike card** for the balance harness — the capability that grants the base
+/// strike (§4.3). Its `reach` sets the range (melee `[1,1]` / ranged `[2,2]`) and `targets` the shape
+/// (single `1` / area `2`), so the four cards cover the whole **melee/ranged × single/aoe** matrix. The
+/// weapon is power 0, so a strike's raw force is exactly Might (the sim's pricing). An Actor's
+/// `attack`/`aoe` derive from this card (§4.3), the same as in the live build path.
+fn strike_card(ranged: bool, aoe: bool) -> Card {
+    let name = match (ranged, aoe) {
+        (false, false) => "Jab",  // melee · single
+        (true, false) => "Shot",  // ranged · single
+        (false, true) => "Sweep", // melee · area
+        (true, true) => "Salvo",  // ranged · area
+    };
+    Card {
+        name: name.to_string(),
+        reach: if ranged { [2, 2] } else { [1, 1] },
+        targets: if aoe { 2 } else { 1 },
+        effects: vec![Effect::Damage { power: 0 }],
+        ..Card::default()
+    }
+}
+
+/// Build a real [`Actor`] from a sim [`Unit`] spec: a bare clean-slate body whose five stats and
+/// **strike card** come from the spec. The generic strike card ([`strike_card`]) is the **source** of the
+/// attack profile — `attack`/`aoe` derive from its `reach`/`targets` (§4.3), exactly as the live build
+/// path does — so the harness exercises capabilities-as-cards end to end. Tempo is set from Cadence by
 /// `refresh_round`.
 fn unit_to_actor(u: &Unit) -> Actor {
     let mut a = crate::scenarios::build_character("Novice", &[]);
     a.name = u.name.clone();
-    a.attack = u.attack;
     a.offense = u.offense;
     a.defense = u.defense.clone();
-    a.aoe = u.aoe;
+    let weapon = strike_card(matches!(u.attack, Attack::Ranged), u.aoe);
+    a.attack = Attack::from_reach(weapon.reach);
+    a.aoe = weapon.targets > 1;
+    a.weapon = weapon;
     a.refresh_round();
     a
 }
