@@ -79,7 +79,7 @@ impl Plugin for CardTablePlugin {
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
-            .add_systems(Startup, setup_camera)
+            .add_systems(Startup, (setup_camera, install_ui_font))
             .add_systems(
                 Update,
                 (handle_focus, handle_zoom_out, collect_action_clicks).in_set(CardTableSet::Input),
@@ -119,6 +119,21 @@ struct DeckDropZone(DeckId);
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
+
+/// A clean UI typeface bundled in the crate, for crisp small text on cards. Covers the punctuation and
+/// arrows the renderer uses (em dashes, curly quotes, arrows) that Bevy's built-in `FiraMono-subset`
+/// font lacks — otherwise they show as tofu boxes. SIL Open Font License; see `fonts/Inter-LICENSE.txt`.
+const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
+
+/// Replace Bevy's ASCII-only default font with the bundled Inter face. Bevy registers its default font
+/// at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting that
+/// one asset reskins all UI text without threading a font handle through each label.
+fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
+    let font = Font::try_from_bytes(UI_FONT.to_vec()).expect("bundled UI font is valid");
+    fonts
+        .insert(AssetId::default(), font)
+        .expect("override the default font");
 }
 
 /// Click a collapsed deck → focus it (fan it open, collapse the rest).
@@ -311,7 +326,7 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                     ))
                     .with_children(|b| {
                         b.spawn((
-                            Text::new("\u{25B2} Zoom out"),
+                            Text::new("\u{2191} Zoom out"),
                             TextFont {
                                 font_size: FONT_TITLE,
                                 ..default()
@@ -427,9 +442,10 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
 /// Draws one card: a light face showing its title, or a dark back. Actionable cards get a highlight
 /// edge and become clickable.
 fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
-    let (label, bg, ink) = match &card.face {
-        Face::Up { title } => (title.clone(), CARD_FACE, CARD_INK),
-        Face::Down => ("\u{25AF}".to_string(), CARD_BACK, INK),
+    // A face-down card shows only its back — no glyph, which also reads more like a real card.
+    let (title, bg, ink) = match &card.face {
+        Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
+        Face::Down => (None, CARD_BACK, INK),
     };
     let mut entity = parent.spawn((
         CardRef(card.id),
@@ -455,14 +471,16 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
         entity.insert((Button, ActionControl(index)));
     }
     entity.with_children(|c| {
-        c.spawn((
-            Text::new(label),
-            TextFont {
-                font_size: FONT_TITLE,
-                ..default()
-            },
-            TextColor(ink),
-        ));
+        if let Some(title) = title {
+            c.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(ink),
+            ));
+        }
     });
 }
 
