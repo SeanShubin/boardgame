@@ -18,9 +18,11 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
+use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
+use bevy::ui::BoxShadow;
 
-use cardtable_model::{Card, DeckId, DeckTree, Face};
+use cardtable_model::{Card, CardId, DeckId, DeckTree, Face};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -82,7 +84,8 @@ impl Plugin for CardTablePlugin {
                 Update,
                 (handle_focus, handle_zoom_out, collect_action_clicks).in_set(CardTableSet::Input),
             )
-            .add_systems(Update, redraw.in_set(CardTableSet::Draw));
+            .add_systems(Update, redraw.in_set(CardTableSet::Draw))
+            .add_observer(on_card_drop);
     }
 }
 
@@ -103,6 +106,14 @@ struct ZoomOutButton;
 /// A clickable card or rail button bound to the action at this opaque index.
 #[derive(Component)]
 struct ActionControl(usize);
+
+/// Links a card's node back to its model [`CardId`] — the handle drag/drop moves.
+#[derive(Component, Clone, Copy)]
+struct CardRef(CardId);
+
+/// Marks a deck's node as a drop target: a card dropped here moves into this deck.
+#[derive(Component, Clone, Copy)]
+struct DeckDropZone(DeckId);
 
 // ---- systems ------------------------------------------------------------
 
@@ -144,6 +155,33 @@ fn collect_action_clicks(
     }
 }
 
+/// Drop a dragged card onto a deck (or onto a card, meaning *that card's* deck) → move it there,
+/// appended. Presentation-level: it rearranges the [`Table`] directly; mapping a drop to a game
+/// action is future work. Global observer, so it survives the per-change UI rebuild.
+fn on_card_drop(
+    on: On<Pointer<DragDrop>>,
+    cards: Query<&CardRef>,
+    zones: Query<&DeckDropZone>,
+    mut table: ResMut<Table>,
+) {
+    let event = on.event();
+    let Ok(dragged) = cards.get(event.event.dropped) else {
+        return;
+    };
+    let dest = if let Ok(zone) = zones.get(event.entity) {
+        zone.0
+    } else if let Ok(target_card) = cards.get(event.entity) {
+        match table.0.card(target_card.0) {
+            Some(card) => card.home(),
+            None => return,
+        }
+    } else {
+        return;
+    };
+    let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
+    let _ = table.0.move_card(dragged.0, dest, at);
+}
+
 /// Rebuild the UI whenever the presentation state changes (focus/zoom mutate `Table`; a consumer may
 /// replace `Table`/`ActionRail`/`StatusLine`). Change-detection drives this — no manual dirty flag.
 fn redraw(
@@ -174,6 +212,21 @@ const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
 /// Highlight edge for a card/deck that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
+/// A dark edge around every card so overlapping cards stay distinct.
+const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
+/// Soft drop shadow lifting cards and decks off the felt.
+const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
+
+/// A soft drop shadow used on cards and deck chips (offset down, blurred).
+fn card_shadow() -> BoxShadow {
+    BoxShadow::new(
+        SHADOW,
+        Val::Px(0.0),
+        Val::Px(3.0),
+        Val::Px(0.0),
+        Val::Px(6.0),
+    )
+}
 
 const FONT_HEAD: f32 = 18.0;
 const FONT_TITLE: f32 = 15.0;
@@ -295,15 +348,17 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
             .spawn((
                 Button,
                 FocusButton(id),
+                DeckDropZone(id),
                 Node {
                     width: Val::Px(120.0),
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.0)),
                     row_gap: Val::Px(4.0),
-                    border_radius: BorderRadius::all(Val::Px(8.0)),
+                    border_radius: BorderRadius::all(Val::Px(10.0)),
                     ..default()
                 },
                 BackgroundColor(CARD_BACK),
+                card_shadow(),
             ))
             .with_children(|chip| {
                 chip.spawn((
@@ -326,6 +381,7 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
     } else {
         parent
             .spawn((
+                DeckDropZone(id),
                 Node {
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.0)),
@@ -345,13 +401,17 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
                     TextColor(INK),
                 ));
                 panel
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        column_gap: Val::Px(8.0),
-                        row_gap: Val::Px(8.0),
-                        ..default()
-                    })
+                    .spawn((
+                        DeckDropZone(id),
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            column_gap: Val::Px(8.0),
+                            row_gap: Val::Px(8.0),
+                            min_height: Val::Px(140.0),
+                            ..default()
+                        },
+                    ))
                     .with_children(|cards| {
                         for &cid in deck.cards() {
                             spawn_card(cards, tree.card(cid).expect("card id from deck"));
@@ -372,6 +432,7 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
         Face::Down => ("\u{25AF}".to_string(), CARD_BACK, INK),
     };
     let mut entity = parent.spawn((
+        CardRef(card.id),
         Node {
             width: Val::Px(96.0),
             height: Val::Px(132.0),
@@ -379,11 +440,16 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
             border: UiRect::all(Val::Px(2.0)),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
-            border_radius: BorderRadius::all(Val::Px(10.0)),
+            border_radius: BorderRadius::all(Val::Px(12.0)),
             ..default()
         },
         BackgroundColor(bg),
-        BorderColor::all(if card.is_actionable() { ACTIONABLE } else { bg }),
+        BorderColor::all(if card.is_actionable() {
+            ACTIONABLE
+        } else {
+            CARD_EDGE
+        }),
+        card_shadow(),
     ));
     if let Some(index) = card.actionable {
         entity.insert((Button, ActionControl(index)));
