@@ -472,19 +472,20 @@ impl DeckTree {
         changed
     }
 
-    /// Pushes overlapping **top-level** decks apart so the table reads as physical objects. `anchor`
-    /// (the just-placed deck) stays put; every deck it overlaps slides away, cascading to resolve
-    /// secondary overlaps (chain reactions). Iterative and capped, so a hopelessly crowded table
-    /// settles with some residual overlap rather than looping forever. Uses each deck's `pos`/`size`.
+    /// Pushes overlapping **top-level** decks apart so the table reads as physical objects, keeping
+    /// every deck inside the surface. `anchor` (the just-placed deck) stays put; each overlap is
+    /// resolved by sliding a *non-anchor* deck just clear of the other along whichever of the four
+    /// sides is cheapest **and** stays in bounds — so a deck shoved toward a wall is routed around it
+    /// rather than jammed against it. Resolving one overlap can create another, which the next pass
+    /// fixes (chain reactions). Iterative and capped: if the space is genuinely too crowded to fully
+    /// separate, it settles with some residual overlap (still in bounds) instead of looping.
     pub fn separate(&mut self, anchor: DeckId) {
         const MAX_PASSES: usize = 64;
-        const EPS: f32 = 0.01;
         let mut ids = self.decks[&self.root].subdecks.clone();
         ids.sort(); // stable order → deterministic settling
         for _ in 0..MAX_PASSES {
             let mut moved = false;
-            // The borders shove decks back inside first. A deck pinned against a wall can't yield, so
-            // the next overlap pass pushes its *neighbour* instead — that's how the wall propagates.
+            // Pull anything outside back in first — a wall can't be crossed.
             for &id in &ids {
                 if self.clamp_within(id) {
                     moved = true;
@@ -493,60 +494,161 @@ impl DeckTree {
             for i in 0..ids.len() {
                 for j in (i + 1)..ids.len() {
                     let (a, b) = (ids[i], ids[j]);
-                    let (ap, asz) = (self.decks[&a].pos, self.decks[&a].size);
-                    let (bp, bsz) = (self.decks[&b].pos, self.decks[&b].size);
-                    let overlap_x = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
-                    let overlap_y = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
-                    if overlap_x <= EPS || overlap_y <= EPS {
-                        continue; // not actually overlapping
+                    if !self.overlaps(a, b) {
+                        continue;
                     }
-                    // Minimum-translation: separate along the axis of least overlap.
-                    let (mut push_x, mut push_y) = (0.0, 0.0);
-                    if overlap_x < overlap_y {
-                        let dir = if bp.x + bsz.x / 2.0 >= ap.x + asz.x / 2.0 {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                        push_x = dir * overlap_x;
-                    } else {
-                        let dir = if bp.y + bsz.y / 2.0 >= ap.y + asz.y / 2.0 {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                        push_y = dir * overlap_y;
+                    if let Some((deck, to)) = self.resolve_pair(a, b, anchor) {
+                        self.decks
+                            .get_mut(&deck)
+                            .expect("deck id from subdecks")
+                            .pos = to;
+                        moved = true;
                     }
-                    match (a == anchor, b == anchor) {
-                        (true, true) => {} // distinct ids, unreachable
-                        (true, false) => self.shift(b, push_x, push_y),
-                        (false, true) => self.shift(a, -push_x, -push_y),
-                        (false, false) => {
-                            self.shift(a, -push_x / 2.0, -push_y / 2.0);
-                            self.shift(b, push_x / 2.0, push_y / 2.0);
-                        }
-                    }
-                    moved = true;
                 }
             }
             if !moved {
                 break;
             }
         }
-        // If we stopped at the pass cap mid-push, make sure nothing ends up poking through a wall.
+        // If we stopped at the pass cap mid-push, make sure nothing pokes through a wall.
         for &id in &ids {
             self.clamp_within(id);
         }
     }
 
-    fn shift(&mut self, deck: DeckId, dx: f32, dy: f32) {
-        let pos = &mut self
-            .decks
-            .get_mut(&deck)
-            .expect("deck id from subdecks")
-            .pos;
-        pos.x += dx;
-        pos.y += dy;
+    /// Whether two decks' AABBs overlap by more than a hair.
+    fn overlaps(&self, a: DeckId, b: DeckId) -> bool {
+        const EPS: f32 = 0.01;
+        let (ap, asz) = (self.decks[&a].pos, self.decks[&a].size);
+        let (bp, bsz) = (self.decks[&b].pos, self.decks[&b].size);
+        let ox = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
+        let oy = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
+        ox > EPS && oy > EPS
+    }
+
+    /// Whether `deck` fits fully inside the surface at `(x, y)` — i.e. no wall is crossed.
+    fn fits(&self, deck: DeckId, x: f32, y: f32) -> bool {
+        let surface = self.surface;
+        let sz = self.decks[&deck].size;
+        x >= 0.0 && y >= 0.0 && x <= surface.x - sz.x && y <= surface.y - sz.y
+    }
+
+    /// Whether `deck` at `(x, y)` is inside the surface *and* clear of every other top-level deck.
+    fn clear_at(&self, deck: DeckId, x: f32, y: f32) -> bool {
+        if !self.fits(deck, x, y) {
+            return false;
+        }
+        let sz = self.decks[&deck].size;
+        for (&other, od) in &self.decks {
+            if other == deck || od.parent != Some(self.root) {
+                continue;
+            }
+            let ox = (x + sz.x).min(od.pos.x + od.size.x) - x.max(od.pos.x);
+            let oy = (y + sz.y).min(od.pos.y + od.size.y) - y.max(od.pos.y);
+            if ox > 0.01 && oy > 0.01 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Pick the single cheapest way to un-overlap one pair: slide a *non-anchor* deck just clear of the
+    /// other along one of the four sides. In-bounds destinations win over out-of-bounds ones, so a
+    /// deck shoved toward a wall is routed around it (a perpendicular side); only if no side fits
+    /// (genuinely no room) is the least-bad move taken, for the next pass / final clamp to tidy. The
+    /// anchor is never a candidate, so it stays put — but because *either* non-anchor deck of the pair
+    /// can be the one that moves, a deck wedged between the anchor and a wall escapes by sliding along
+    /// the wall instead of deadlocking.
+    fn resolve_pair(&self, a: DeckId, b: DeckId, anchor: DeckId) -> Option<(DeckId, Pos)> {
+        let (ap, asz) = (self.decks[&a].pos, self.decks[&a].size);
+        let (bp, bsz) = (self.decks[&b].pos, self.decks[&b].size);
+        let mut candidates: Vec<(DeckId, Pos)> = Vec::new();
+        if a != anchor {
+            candidates.push((
+                a,
+                Pos {
+                    x: bp.x - asz.x,
+                    y: ap.y,
+                },
+            )); // a left of b
+            candidates.push((
+                a,
+                Pos {
+                    x: bp.x + bsz.x,
+                    y: ap.y,
+                },
+            )); // a right of b
+            candidates.push((
+                a,
+                Pos {
+                    x: ap.x,
+                    y: bp.y - asz.y,
+                },
+            )); // a above b
+            candidates.push((
+                a,
+                Pos {
+                    x: ap.x,
+                    y: bp.y + bsz.y,
+                },
+            )); // a below b
+        }
+        if b != anchor {
+            candidates.push((
+                b,
+                Pos {
+                    x: ap.x - bsz.x,
+                    y: bp.y,
+                },
+            )); // b left of a
+            candidates.push((
+                b,
+                Pos {
+                    x: ap.x + asz.x,
+                    y: bp.y,
+                },
+            )); // b right of a
+            candidates.push((
+                b,
+                Pos {
+                    x: bp.x,
+                    y: ap.y - bsz.y,
+                },
+            )); // b above a
+            candidates.push((
+                b,
+                Pos {
+                    x: bp.x,
+                    y: ap.y + asz.y,
+                },
+            )); // b below a
+        }
+        // Rank: a fully-clear in-bounds spot beats one that merely fits, which beats out-of-bounds;
+        // ties go to the smallest move. Preferring a *clear* landing is what stops a deck from being
+        // shoved straight back onto the anchor (or another deck) next pass — the loop that otherwise
+        // leaves the pile stuck. The anchor and walls are fixed, so the mover routes around them.
+        let mut best: Option<(u8, f32, DeckId, Pos)> = None;
+        for (deck, to) in candidates {
+            let from = self.decks[&deck].pos;
+            let cost = (to.x - from.x).hypot(to.y - from.y);
+            let rank = if self.clear_at(deck, to.x, to.y) {
+                2
+            } else if self.fits(deck, to.x, to.y) {
+                1
+            } else {
+                0
+            };
+            let take = match best {
+                None => true,
+                Some((best_rank, best_cost, _, _)) => {
+                    rank > best_rank || (rank == best_rank && cost < best_cost)
+                }
+            };
+            if take {
+                best = Some((rank, cost, deck, to));
+            }
+        }
+        best.map(|(_, _, deck, to)| (deck, to))
     }
 
     fn apply_collapse(&mut self) {
@@ -820,6 +922,37 @@ mod tests {
             assert!(p.x >= -0.02 && p.x <= 200.02, "x out of bounds: {p:?}");
             assert!(p.y >= -0.02 && p.y <= 100.02, "y out of bounds: {p:?}");
         }
+    }
+
+    /// A deck wedged between the anchor and a wall can't go the "natural" way, so it must route around
+    /// (here: downward) and end up clear and in bounds — not deadlocked against the wall.
+    #[test]
+    fn separate_routes_around_a_wall_instead_of_deadlocking() {
+        let mut t = DeckTree::new();
+        let root = t.root_id();
+        let a = t.add_deck(root, "A").unwrap(); // anchor, top-left corner
+        let b = t.add_deck(root, "B").unwrap();
+        t.set_deck_size(a, 100.0, 100.0).unwrap();
+        t.set_deck_size(b, 100.0, 100.0).unwrap();
+        t.set_surface(150.0, 300.0); // only 50px right of A — B (100 wide) can't slide right
+        t.set_deck_pos(a, 0.0, 0.0).unwrap();
+        t.set_deck_pos(b, 10.0, 0.0).unwrap(); // overlapping A, pinned near the right wall
+
+        t.separate(a);
+
+        assert_eq!(t.deck(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        let (ap, asz) = (t.deck(a).unwrap().pos(), t.deck(a).unwrap().size());
+        let (bp, bsz) = (t.deck(b).unwrap().pos(), t.deck(b).unwrap().size());
+        assert!(
+            bp.x >= -0.02 && bp.x <= 50.02 && bp.y >= -0.02,
+            "b out of bounds: {bp:?}"
+        );
+        let ox = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
+        let oy = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
+        assert!(
+            ox <= 0.02 || oy <= 0.02,
+            "a and b must not overlap: {ap:?} {bp:?}"
+        );
     }
 
     #[test]
