@@ -63,6 +63,51 @@ can't do:
 - **Rules are discoverable in context** — a keyword's manual text surfaces on hover.
 - **Options are shown** — legal targets / plays are highlighted.
 
+## Observable combat resolution — the Step machine
+
+Combat is a **two-layer API** so one resolution serves play, debugging, and tooling:
+
+- **High level** — `Game::apply(state, action)` resolves a whole round at the phase boundary, exactly as a
+  player sees it (`Deploy` runs the round synchronously).
+- **Low level** — it *delegates* to `combat::step(state)`, which advances **one atomic transition** and
+  leaves `State` in a fully serializable resting micro-state (`resolve_round` is literally
+  `while step(state) {}`). A debugger, the `sim` CLI, or a UI can snapshot **between** transitions.
+
+A `step` is one **engagement-cycle** (every eligible strike on both sides declared against the same
+pre-apply board, then applied — order-independent within the engagement, §1.9) or an engagement
+**boundary** (finalize deaths, wipe the per-engagement pile). Each engagement **cycles to exhaustion** —
+units keep committing positive-effect strikes until no one will spend Tempo — the force-not-fiat lever
+(enough Tempo overwhelms any Toughness). The cursor lives in `State.resolution` and serializes, so
+resolution is resumable and inspectable. (Round phases: **Marshal → Reveal → Ready → Engage → Refresh**;
+the Engage schedule is Intercept · Volley · Raid · Clash · Breach.)
+
+### Mechanics vs. policy — the seam
+
+| Layer         | Is                                                                 | Where                  | Swappable?                                            |
+| ------------- | ------------------------------------------------------------------ | ---------------------- | ----------------------------------------------------- |
+| **Mechanics** | the rules — what a strike / group / AoE *does* (canon §4.5 / §4.6) | `combat.rs` (resolver) | no — it's the game                                    |
+| **Policy**    | the decisions — which target, whether to evade, when to cast       | `policy.rs`            | yes — human / scripted AI / solver feed the same core |
+
+The resolver is **decision-agnostic**: it applies *committed* decisions per the rules, the same whoever
+chose them. *Grouping is a mechanic; target priority is policy* — swap the chooser and the mechanics don't
+move. The PvE stand-in is the predictable default that proxies balance (policy, not law: a player may go
+around the role-priority lists at their Tempo cost).
+
+### The observable state
+
+`State` and everything it owns (incl. the engine `Rng`) serializes through **RON**, so a combat is
+save / load / replayable. It exposes the **1D decks** (Health as a deck of face-up/down cards with
+per-card Toughness; Tempo as a count-deck), the **pending-damage counters** split as `PendingDamage {
+aoe, targeted }` (AoE banked to every group member, aimed fire cascading front-to-back), and a derived
+**2D `CombatLayout`** (side × rank × slot, group adjacency). The **`sim`** example binary is the
+scriptable handle — `apply` / `run` / `step` / `layout`, reading a `State` from a file or stdin and writing
+the result back (RON throughout).
+
+*Deferred (not yet wired):* casting **offensive** abilities in combat and **Reckoning** firing
+(`resolve: reckoning` spells resolving in the Breach) — the cast/resolve ability layer; today the resolver
+does base strikes + Standing casts. *(Combat-engine observability refactor, 2026 — P1–P7; the staged plan
+in `needs-merge/` is folded here.)*
+
 ## The rulebook spine (next)
 
 Two notes define the rulebook: the **[resolution procedure](resolution.md)** (the
