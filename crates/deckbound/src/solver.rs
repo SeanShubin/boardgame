@@ -510,7 +510,7 @@ impl Solver<'_> {
                 }
             }
             // Highest value first; among those, the first that reaches an unvisited material state.
-            cands.sort_by(|a, b| b.1.cmp(&a.1));
+            cands.sort_by_key(|c| std::cmp::Reverse(c.1));
             match cands
                 .into_iter()
                 .find(|(_, _, child)| !seen.contains(&mat(child)))

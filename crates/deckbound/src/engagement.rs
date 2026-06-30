@@ -487,10 +487,10 @@ fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
                 }
             }
             // Spillover cascades front-to-back through each targeted group, overflowing only on a death.
-            for s in 0..n {
-                if spill_add[s] > 0 {
+            for (s, &spill) in spill_add.iter().enumerate() {
+                if spill > 0 {
                     let members = group_of(units, s);
-                    cascade(units, &members, spill_add[s]);
+                    cascade(units, &members, spill);
                 }
             }
             // Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for

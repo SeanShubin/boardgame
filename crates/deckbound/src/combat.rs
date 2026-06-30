@@ -531,15 +531,15 @@ fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<Str
                 );
             }
         }
-        for s in 0..def_pool.len() {
-            if spill_add[s] > 0 {
+        for (s, &spill) in spill_add.iter().enumerate() {
+            if spill > 0 {
                 // Cascade head: the soaker first, then the rest of its group behind it.
                 let head: Vec<usize> = group_of(&def_grp, s)
                     .into_iter()
                     .skip_while(|&m| m != s)
                     .collect();
                 let head = if head.is_empty() { vec![s] } else { head };
-                cascade(def_pool, &head, spill_add[s], "strike", log);
+                cascade(def_pool, &head, spill, "strike", log);
             }
         }
     }
