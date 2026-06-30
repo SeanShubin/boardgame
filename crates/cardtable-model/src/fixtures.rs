@@ -52,13 +52,40 @@ pub fn sample_table() -> Tableau {
     )
     .expect("discard exists");
 
-    // A big "Locations" pile — 25 cards — to exercise the stacked-depth visual and a high count.
+    // A "Locations" pile of 25 fantasy places — exercises the stacked-depth visual and a high count.
     let locations = tree.add_pile(root, "Locations").expect("root exists");
-    for i in 1..=25 {
+    const PLACES: [&str; 25] = [
+        "Emberfall",
+        "Thornwood",
+        "Greymarsh",
+        "Duskhollow",
+        "Frostspire",
+        "Ravenmoor",
+        "Ashen Reach",
+        "Mistveil",
+        "Stonewatch",
+        "Wyrmrest",
+        "Shadowfen",
+        "Goldvale",
+        "Ironhold",
+        "Stormhaven",
+        "Witchlight Bog",
+        "Hollow Crown",
+        "Sablewood",
+        "Brackenmere",
+        "Sunken Spire",
+        "Cinderhall",
+        "Briargate",
+        "Moonwell",
+        "Drakes Hollow",
+        "Veiled Pass",
+        "Thunderstep",
+    ];
+    for place in PLACES {
         tree.add_card(
             locations,
             Face::Up {
-                title: format!("Location {i}"),
+                title: place.to_string(),
             },
             None,
         )
