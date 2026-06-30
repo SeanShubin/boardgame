@@ -163,9 +163,11 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
 }
 
 /// §4 — seed each unit's default **intention** from its stats (the policy of
-/// `engagement::default_intention`): a ranged unit deals from the Rearguard, a high-Finesse melee unit
-/// breaks the line as an Outrider, everyone else holds as a Vanguard. Marshal lets the human
-/// (or the AI) override this per unit each round.
+/// `engagement::intention_for`): a ranged unit deals from the Rearguard; an **aggressive** melee unit
+/// (Might ≥ Toughness — a glassy striker) breaks the line as an Outrider; a **durable** melee unit
+/// (Toughness > Might — a wall) holds as a Vanguard. Marshal lets the human (or the AI) override this
+/// per unit each round. (Might-vs-Toughness, not Finesse — the re-tuned tank carries C2F2 to run down
+/// the Outrider, so Finesse no longer separates the wall from the skirmisher; §4 amendment, `5e396fc`.)
 fn default_intentions(state: &mut State) {
     for side in 0u8..2 {
         let n = state.s_len(side);
@@ -174,7 +176,7 @@ fn default_intentions(state: &mut State) {
             let ranged = a.can_contest(Range::Ranged) && !a.can_contest(Range::Melee);
             let intent = if ranged {
                 Intention::Rearguard
-            } else if a.offense.finesse >= 2 {
+            } else if a.eff_might() >= a.eff_toughness() {
                 Intention::Outrider
             } else {
                 Intention::Vanguard

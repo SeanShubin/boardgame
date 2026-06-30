@@ -20,7 +20,7 @@ HEROES
       Silver L4   Coiled Strike           might 2
       Silver L5   Assassinate             might 2, cadence 1
       Totals                              might 6, vitality 5, toughness 1, cadence 9, finesse 4
-  Sear — Human · Fist [melee]  (12 cards)   cardsets: Brass
+  Sear — Human · Bow [ranged]  (12 cards)   cardsets: Brass
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Brass L1    Bolt                    might 2
       Brass L2    Volley                  might 2
@@ -28,7 +28,7 @@ HEROES
       Brass L4    Longshot                might 2
       Brass L5    Bombardment             might 2
       Totals                              might 12, vitality 5, toughness 1, cadence 3
-  Hex — Human · Fist [melee]  (12 cards)   cardsets: Bone
+  Hex — Human · Wand [ranged]  (12 cards)   cardsets: Bone
       Human                               might 1, vitality 5, toughness 1, cadence 3
       Bone L1     Sunder                  might 1
       Bone L2     Mire                    might 1
@@ -69,156 +69,149 @@ FOES
     covers Sear (damage spills to Anvil).
   Anvil plays Brace.
     braces (+3 Toughness this round).
-RANKS    heroes — vanguard: Anvil   outrider: Wisp   rearguard: —
-         foes   — vanguard: Brute, Husk   outrider: Raider   rearguard: Slinger, Seer
-  Raider avoids Sear's strike (-1t).
-  Raider avoids Hex's strike (-1t).
-    strike hits Raider: 1 might — damage accumulates. [health 124/124]
-    Raider hits Vow: 3 might — turns 3 health cards face down. [health 9/12]
+RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
+         foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-  Raider avoids Sear's strike (-1t).
-  Raider avoids Hex's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 123/124]
-    Raider hits Vow: 3 might — turns 3 health cards face down. [health 6/12]
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 19 might — turns 9 health cards face down. [health 114/124]
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 113/124]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 121/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 119/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 117/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 115/123]
-    strike hits Sear: 10 might — turns 5 health cards face down. [health 0/5]
-    strike hits Hex: 10 might — turns 5 health cards face down. [health 0/5]
-    strike hits Vow: 10 might — turns 6 health cards face down. [health 0/12]
-    strike hits Anvil: 5 might — damage accumulates. [health 18/18]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 121/123]
+  Sear avoids Husk's strike (-2t).
+    strike hits Sear: 3 might — turns 3 health cards face down. [health 2/5]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 119/123]
+    strike hits Sear: 5 might — turns 2 health cards face down. [health 0/5]
+    strike hits Slinger: 7 might — turns 3 health cards face down. [health 116/123]
+  Hex avoids Husk's strike (-2t).
+    strike hits Hex: 3 might — turns 3 health cards face down. [health 2/5]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 114/123]
+    strike hits Hex: 3 might — turns 2 health cards face down. [health 0/5]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 112/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 110/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 108/123]
   Sear — all its health cards are face down; defeated.
   Hex — all its health cards are face down; defeated.
-  Vow — all its health cards are face down; defeated.
-ENDROUND heroes: Anvil 18/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 113/124  Slinger 115/123  Seer 124/124  Husk 122/122
-
-── round 2 ──────────────────────────────────────
-  Anvil plays Brace.
-    braces (+3 Toughness this round).
-RANKS    heroes — vanguard: Anvil   outrider: Wisp   rearguard: —
-         foes   — vanguard: Brute, Husk   outrider: Raider   rearguard: Slinger, Seer
-    strike hits Raider: 1 might — damage accumulates. [health 113/124]
-  Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 112/124]
-  Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 113/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 111/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 109/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 107/123]
     strike hits Anvil: 10 might — turns a health card face down. [health 17/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 16/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 15/18]
     strike hits Anvil: 5 might — damage accumulates. [health 15/18]
     strike hits Anvil: 3 might — damage accumulates. [health 15/18]
     strike hits Anvil: 3 might — damage accumulates. [health 15/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 15/18]
-    strike hits Anvil: 3 might — turns a health card face down. [health 14/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 14/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 14/18]
-ENDROUND heroes: Anvil 14/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 112/124  Slinger 107/123  Seer 124/124  Husk 122/122
+ENDROUND heroes: Anvil 15/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 128/128  Raider 124/124  Slinger 108/123  Seer 124/124  Husk 122/122
+
+── round 2 ──────────────────────────────────────
+  Anvil plays Brace.
+    braces (+3 Toughness this round).
+RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
+         foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
+  Husk avoids Anvil's strike (-2t).
+  Wisp avoids Brute's strike (-1t).
+    strike hits Husk: 1 might — turns a health card face down. [health 121/122]
+  Wisp avoids Brute's strike (-1t).
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 106/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 104/123]
+    strike hits Slinger: 7 might — turns 3 health cards face down. [health 101/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 99/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 97/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 95/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 93/123]
+    strike hits Anvil: 10 might — turns a health card face down. [health 14/18]
+    strike hits Anvil: 10 might — turns a health card face down. [health 13/18]
+    strike hits Anvil: 10 might — turns a health card face down. [health 12/18]
+    strike hits Anvil: 5 might — damage accumulates. [health 12/18]
+    strike hits Anvil: 5 might — damage accumulates. [health 12/18]
+    strike hits Anvil: 3 might — damage accumulates. [health 12/18]
+    strike hits Anvil: 3 might — turns a health card face down. [health 11/18]
+    strike hits Anvil: 3 might — damage accumulates. [health 11/18]
+    strike hits Anvil: 3 might — damage accumulates. [health 11/18]
+    strike hits Anvil: 3 might — turns a health card face down. [health 10/18]
+ENDROUND heroes: Anvil 10/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 128/128  Raider 124/124  Slinger 93/123  Seer 124/124  Husk 121/122
 
 ── round 3 ──────────────────────────────────────
   Anvil plays Brace.
     braces (+3 Toughness this round).
-RANKS    heroes — vanguard: Anvil   outrider: Wisp   rearguard: —
-         foes   — vanguard: Brute, Husk   outrider: Raider   rearguard: Slinger, Seer
-    strike hits Raider: 1 might — damage accumulates. [health 112/124]
+RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
+         foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
+  Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 111/124]
+    strike hits Husk: 1 might — turns a health card face down. [health 120/122]
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 105/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 103/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 101/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 99/123]
-    strike hits Anvil: 10 might — turns a health card face down. [health 13/18]
-    strike hits Anvil: 10 might — turns a health card face down. [health 12/18]
-    strike hits Anvil: 10 might — turns a health card face down. [health 11/18]
-    strike hits Anvil: 5 might — damage accumulates. [health 11/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 11/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 11/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 11/18]
-    strike hits Anvil: 3 might — turns a health card face down. [health 10/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 10/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 10/18]
-ENDROUND heroes: Anvil 10/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 111/124  Slinger 99/123  Seer 124/124  Husk 122/122
-
-── round 4 ──────────────────────────────────────
-  Anvil plays Brace.
-    braces (+3 Toughness this round).
-RANKS    heroes — vanguard: Anvil   outrider: Wisp   rearguard: —
-         foes   — vanguard: Brute, Husk   outrider: Raider   rearguard: Slinger, Seer
-    strike hits Raider: 1 might — damage accumulates. [health 111/124]
-  Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 110/124]
-  Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 97/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 95/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 93/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 91/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 91/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 89/123]
+    strike hits Slinger: 7 might — turns 3 health cards face down. [health 86/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 84/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 82/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 80/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 78/123]
     strike hits Anvil: 10 might — turns a health card face down. [health 9/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 8/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 7/18]
     strike hits Anvil: 5 might — damage accumulates. [health 7/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 7/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 7/18]
+    strike hits Anvil: 5 might — damage accumulates. [health 7/18]
     strike hits Anvil: 3 might — damage accumulates. [health 7/18]
     strike hits Anvil: 3 might — turns a health card face down. [health 6/18]
     strike hits Anvil: 3 might — damage accumulates. [health 6/18]
     strike hits Anvil: 3 might — damage accumulates. [health 6/18]
-ENDROUND heroes: Anvil 6/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 110/124  Slinger 91/123  Seer 124/124  Husk 122/122
+    strike hits Anvil: 3 might — turns a health card face down. [health 5/18]
+ENDROUND heroes: Anvil 5/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 128/128  Raider 124/124  Slinger 78/123  Seer 124/124  Husk 120/122
 
-── round 5 ──────────────────────────────────────
+── round 4 ──────────────────────────────────────
   Anvil plays Brace.
     braces (+3 Toughness this round).
-RANKS    heroes — vanguard: Anvil   outrider: Wisp   rearguard: —
-         foes   — vanguard: Brute, Husk   outrider: Raider   rearguard: Slinger, Seer
-    strike hits Raider: 1 might — damage accumulates. [health 110/124]
+RANKS    heroes — vanguard: —   outrider: Wisp, Vow   rearguard: —
+         foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
+  Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Raider: 1 might — turns a health card face down. [health 109/124]
+    strike hits Husk: 1 might — turns a health card face down. [health 119/122]
   Wisp avoids Brute's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-  Wisp avoids Husk's strike (-1t).
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 89/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 87/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 85/123]
-    strike hits Slinger: 6 might — turns 2 health cards face down. [health 83/123]
-    strike hits Anvil: 10 might — turns a health card face down. [health 5/18]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 76/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 74/123]
+    strike hits Slinger: 7 might — turns 3 health cards face down. [health 71/123]
+    strike hits Slinger: 7 might — turns 2 health cards face down. [health 69/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 67/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 65/123]
+    strike hits Slinger: 6 might — turns 2 health cards face down. [health 63/123]
     strike hits Anvil: 10 might — turns a health card face down. [health 4/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 3/18]
-    strike hits Anvil: 5 might — damage accumulates. [health 3/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 3/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 3/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 3/18]
-    strike hits Anvil: 3 might — turns a health card face down. [health 2/18]
+    strike hits Anvil: 10 might — turns a health card face down. [health 2/18]
+    strike hits Anvil: 5 might — damage accumulates. [health 2/18]
+    strike hits Anvil: 5 might — damage accumulates. [health 2/18]
     strike hits Anvil: 3 might — damage accumulates. [health 2/18]
-    strike hits Anvil: 3 might — damage accumulates. [health 2/18]
-  The battle reaches the round cap — a draw.
-FINAL    heroes: Anvil 2/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 109/124  Slinger 83/123  Seer 124/124  Husk 122/122
+    strike hits Anvil: 3 might — turns a health card face down. [health 1/18]
+    strike hits Anvil: 3 might — damage accumulates. [health 1/18]
+    strike hits Anvil: 3 might — damage accumulates. [health 1/18]
+    strike hits Anvil: 3 might — turns a health card face down. [health 0/18]
+  Anvil — all its health cards are face down; defeated.
+ENDROUND heroes: Anvil 0/18 down  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 128/128  Raider 124/124  Slinger 63/123  Seer 124/124  Husk 119/122
 
-OUTCOME  DRAW (round cap reached) — round 5
+── round 5 ──────────────────────────────────────
+RANKS    heroes — vanguard: —   outrider: —   rearguard: —
+         foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
+  Wisp avoids Brute's strike (-1t).
+  Wisp avoids Brute's strike (-1t).
+  Wisp avoids Slinger's strike (-1t).
+  Wisp avoids Seer's strike (-1t).
+  Wisp avoids Slinger's strike (-1t).
+  Wisp avoids Seer's strike (-1t).
+  Wisp avoids Slinger's strike (-1t).
+  Wisp avoids Seer's strike (-1t).
+  Wisp avoids Slinger's strike (-1t).
+    strike hits Slinger: 1 might — damage accumulates. [health 63/123]
+    strike hits Slinger: 1 might — damage accumulates. [health 63/123]
+    strike hits Slinger: 1 might — turns a health card face down. [health 62/123]
+    strike hits Slinger: 1 might — damage accumulates. [health 62/123]
+    strike hits Wisp: 5 might — turns 5 health cards face down. [health 0/5]
+    strike hits Vow: 5 might — turns 5 health cards face down. [health 7/12]
+    strike hits Vow: 5 might — turns 5 health cards face down. [health 2/12]
+    strike hits Vow: 3 might — turns 2 health cards face down. [health 0/12]
+  Wisp — all its health cards are face down; defeated.
+  Vow — all its health cards are face down; defeated.
+  The party has fallen.
+FINAL    heroes: Anvil 0/18 down  Wisp 0/5 down  Sear 0/5 down  Hex 0/5 down  Vow 0/12 down  |  foes: Brute 128/128  Raider 124/124  Slinger 62/123  Seer 124/124  Husk 119/122
+
+OUTCOME  LOSS (the party fell) — round 5
 
 CARDS USED   (every card played, plus the chargers' weapons and powers)
   Action  Bastion        [Iron L4]   cover an ally, x2 targets       (played by Anvil)
   Action  Brace          [Iron L1]   brace +3 tough                  (played by Anvil)
   Action  Last Stand     [Iron L5]   cannot fall                     (played by Anvil)
-  Weapon  Claw                       might weapon (+0)               (wielded by Husk)
   Weapon  Fist                       might weapon (+0)               (wielded by Anvil)
   Weapon  Maul                       might weapon (+1)               (wielded by Brute)
   Power   Phalanx        [Iron L2]   passive power                   (carried by Anvil)

@@ -114,14 +114,15 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: level,
     });
-    encounters.push(make_encounter("Final", Currency::Gold, 9)); // boss: needs the full party
-    // (9 — re-tuned down from 32 after the engagement-schedule resolver was fixed (Endure-vs-Evade gate,
-    // anti-starvation, cycling). Swept by `probe_final_window`: with the now-correct combat, 9 is the
-    // **unique** count where the full party wins but a path-missing party loses — at ≤8 both win (too
-    // easy), at ≥10 the full party loses too (too hard). The old 32 was inflated for the broken
-    // static-ranks/single-strike resolver where glass cannons dealt ~nothing. The band is one Husk wide
-    // because this Final still separates parties by raw headcount, not by the absent role's mechanic
-    // (§8.6 note below — the lattice form is the durable fix).)
+    encounters.push(make_encounter("Final", Currency::Gold, 19)); // boss: needs the full party
+    // (19 — re-tuned after the §4 default-intention fix (melee classed by Might-vs-Toughness, not
+    // Finesse) + giving the ranged-role specialists their ranged weapons (Artillery's Bow, Controller's
+    // Wand), so the Rearguard dealers now fire from the back instead of stalling as mis-classed melee
+    // Outriders. Swept by `probe_final_window`: the full party wins but a path-missing (Wall-less) party
+    // loses across the window **11–27**; 19 is its center (±8 Husks of margin either side). Earlier
+    // counts (the old `9`, before that `32`) tracked older resolvers; this band is wide because the
+    // Final still separates parties by raw headcount, not by the absent role's mechanic — §8.6 note
+    // below: the lattice form is the durable fix.)
     demands.push(Demand::AllTracks);
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);
@@ -343,6 +344,37 @@ mod tests {
         let s = reference_scenario(&five_roles());
         let v = check_combat_bands(&s, 1);
         println!("combat band violations ({}): {v:#?}", v.len());
+    }
+
+    /// Sweep each C[p] gate's Husk count to find the window where a bare party loses but a p-invested
+    /// party wins (the gate band). `cargo test -p deckbound probe_c_window -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_c_window() {
+        use crate::scenarios::{build_character, build_encounter_foes, rewards_for};
+        use crate::solver::auto_resolve;
+        let novice = || build_character("Novice", &[]);
+        let specialist = |p: Currency| build_character("Novice", &rewards_for(p));
+        let effect = |p: Currency| matches!(p, Currency::Bone | Currency::Salt);
+        for &p in &five_roles() {
+            println!("C[{}]:", p.label());
+            for c in 1..=8u32 {
+                let enc = make_encounter(&format!("C[{}]", p.label()), p, c);
+                let foes = || build_encounter_foes(&enc, 1);
+                let invested = if effect(p) {
+                    vec![specialist(p), novice()]
+                } else {
+                    vec![specialist(p)]
+                };
+                let bare = auto_resolve(vec![novice()], foes(), 1);
+                let inv = auto_resolve(invested, foes(), 1);
+                let band = bare != Some(true) && inv == Some(true);
+                println!(
+                    "  count {c:>2}: bare={bare:?} invested={inv:?} {}",
+                    if band { "<-- BAND" } else { "" }
+                );
+            }
+        }
     }
 
     #[test]

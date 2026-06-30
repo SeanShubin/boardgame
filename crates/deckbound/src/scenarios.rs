@@ -459,6 +459,18 @@ pub fn build_character(base: &str, rewards: &[RewardId]) -> Actor {
     }
     let mut actor = build_actor_with(cat, base, &stats, None);
     actor.actions.extend(role_cards);
+    // §8.5 — a character *is* its role: investing in a Rearguard track confers that role's ranged
+    // weapon (Artillery's Bow, Controller's Wand), so the body deals from the back and its intention
+    // defaults to Rearguard rather than being mis-classed melee from the generic Fist base. Applies
+    // only to a focused specialist (all rewards from one ranged track); a bare or mixed build keeps
+    // its base weapon. Mirrors the booklet's role actors (Sear / Hex).
+    let tracks: std::collections::HashSet<Currency> = rewards.iter().map(|r| r.track).collect();
+    if tracks.len() == 1
+        && let Some(w) = tracks.into_iter().next().and_then(Currency::ranged_weapon)
+    {
+        actor.weapon = find_card(cat, w);
+        actor.attack = Attack::Ranged;
+    }
     actor
 }
 
