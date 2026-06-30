@@ -53,7 +53,7 @@ pub struct TranscriptScenario {
 
 /// The catalogue of transcribable scenarios. Starts deliberately small: a single **rules tour** that
 /// exercises the core machinery (the §4.6 six phases — Standoff positions, the Fray clash, the Volley
-/// charge / flank / pre-empt, the Breach, the Reckoning — evade, defeat, refresh, outcome). The
+/// charge / flank / pre-empt, the Breach where deferred `resolve: Reckoning` effects land — evade, defeat, refresh, outcome). The
 /// per-skill and power-scaling scenarios are later additions.
 pub fn transcript_scenarios() -> Vec<TranscriptScenario> {
     vec![rules_tour()]

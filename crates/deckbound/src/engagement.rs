@@ -191,7 +191,7 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
 /// One engagement pair: an attacker intention strikes a target intention.
 type Pair = (Intention, Intention);
 
-/// The fixed schedule, in resolution order — the *ordering* is the whole interception/Reckoning system.
+/// The fixed schedule, in resolution order — the *ordering* is the whole interception / pre-empt / deferred-resolution system.
 /// Each step may hold several role-pairs; each step **cycles to exhaustion** (units keep committing
 /// positive-effect strikes until no one will spend Tempo), and the per-phase pile wipes at the step
 /// boundary. `Rearguard → Rearguard` is legal **only in the Breach, and only once the enemy Vanguard has

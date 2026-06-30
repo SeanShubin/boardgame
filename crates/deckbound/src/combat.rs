@@ -144,18 +144,18 @@ fn cover_redirect(pool: &[Actor], aimed: usize) -> usize {
     aimed
 }
 
-/// §10 **Burn** DoT tick (Artillery): at the Reckoning, **one** Burn stack on each living member of
-/// `pool` deals its `power` Might into that bearer's (Reckoning-phase) pile, then **one stack is
-/// removed** (a `stacks`-deep Burn therefore burns for `stacks` Reckonings). Caster-independent once
-/// placed. Call just before [`tally`] at the Reckoning boundary. A bearer with several distinct Burns
-/// ticks each (one stack of each) this Reckoning.
+/// §10 **Burn** DoT tick (Artillery): in the last engagement (the Breach), **one** Burn stack on each
+/// living member of `pool` deals its `power` Might into that bearer's per-engagement pile, then **one
+/// stack is removed** (a `stacks`-deep Burn therefore burns for `stacks` Reckonings). Caster-independent
+/// once placed. Call just before [`tally`] at the last engagement's (Breach) boundary. A bearer with
+/// several distinct Burns ticks each (one stack of each) this engagement.
 pub fn tick_burn(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
         if a.is_down() {
             continue;
         }
         // Tick the first Burn stack, then remove it (−1 stack). Repeat so multiple *distinct* Burn
-        // effects each tick once — but the same effect's extra stacks persist to later Reckonings.
+        // effects each tick once — but the same effect's extra stacks persist to later engagements' ticks.
         // We model this simply: tick & drop exactly one stack per call (the common single-Burn case).
         if let Some(p) = a
             .tokens
@@ -731,8 +731,8 @@ pub fn resolve_reckoning(
     deferred: &[Deferred],
     log: &mut Vec<String>,
 ) {
-    // §10 Artillery DoT — Burn ticks into the Reckoning pile first (caster-independent), then the
-    // deferred spells release. Both land in this phase; deaths finalize at the Reckoning boundary.
+    // §10 Artillery DoT — Burn ticks into the per-engagement pile first (caster-independent), then the
+    // deferred spells release. Both land in this (last) engagement; deaths finalize at its (Breach) boundary.
     tick_burn(heroes, log);
     tick_burn(foes, log);
     for d in deferred {

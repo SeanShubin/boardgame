@@ -338,7 +338,7 @@ impl Deckbound {
     }
 
     /// Play `card` from actor `i` of `side`. A `resolve: Reckoning` card is **wound up** (deferred to
-    /// the Reckoning, disruptable); everything else resolves immediately (`resolve: OnCast`).
+    /// resolve in the last engagement, the Breach — disruptable); everything else resolves immediately (`resolve: OnCast`).
     fn do_play_card(&self, state: &mut State, side: u8, i: usize, card: crate::cards::Card) {
         let off = state.s_pool(side)[i].offense;
         let name = state.s_pool(side)[i].name.clone();
@@ -363,7 +363,7 @@ impl Deckbound {
                 name: name.clone(),
             });
             state.log.push(format!(
-                "{name} winds up a held effect (resolves at the Reckoning)."
+                "{name} winds up a held effect (resolves in the last engagement, its `Reckoning` resolve)."
             ));
             return;
         }

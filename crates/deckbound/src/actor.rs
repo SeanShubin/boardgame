@@ -81,8 +81,8 @@ pub enum Token {
     Sunder { toughness: u32 },
     /// **Defang** (Controller): −`might` Might (floor 1) to this body's strike magnitude while present.
     Defang { might: u32 },
-    /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's Reckoning-phase
-    /// pile and remove one stack. Caster-independent once placed.
+    /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's per-engagement
+    /// pile (it ticks in the last engagement, the Breach) and remove one stack. Caster-independent once placed.
     Burn { power: u32 },
     /// **Thorns** (Support): when this ally is struck, the attacker takes `power` Might into the
     /// attacker's own current-phase pile (Support's reflected "offense").
