@@ -5,3 +5,5 @@ dist/
 .claude/settings.local.json
 .claude/worktrees/
 **/*.rs.bk
+# Throwaway font-evaluation assets for the `fontshow` example — re-fetchable, not shipped.
+crates/cardtable/examples/fonts/*.ttf

@@ -27,6 +27,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
 use contract::{Accent, CardFace, CardView, Game, MapView, ProseLine, TableView, ZoneView};
 use std::cell::Cell;
+use std::num::NonZero;
 use std::time::Duration;
 
 /// Drives a single match of `G` on a Bevy app.
@@ -316,7 +317,7 @@ const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
 /// one asset reskins all UI text without threading a font handle through each
 /// label. Runs in `Startup`, after `TextPlugin` has inserted the original.
 fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
-    let font = Font::try_from_bytes(UI_FONT.to_vec()).expect("bundled UI font is valid");
+    let font = Font::from_bytes(UI_FONT.to_vec());
     fonts
         .insert(AssetId::default(), font)
         .expect("override the default font");
@@ -927,10 +928,10 @@ struct TableControls {
 // A deliberately small set of font sizes. Every distinct (font, size) pair is its own set of
 // glyphs in the text atlas; keeping the scale tight keeps atlas pressure low so glyphs render
 // reliably on text-heavy screens (many cards / a long log), instead of mis-sizing under load.
-const FONT_DISPLAY: f32 = 24.0; // page titles, prose headings
-const FONT_HEAD: f32 = 18.0; // status line, section headings, prose terms
-const FONT_TITLE: f32 = 15.0; // card titles, zone labels, buttons, badges
-const FONT_BODY: f32 = 13.0; // card body, type lines, prose body, grid cells
+const FONT_DISPLAY: FontSize = FontSize::Px(24.0); // page titles, prose headings
+const FONT_HEAD: FontSize = FontSize::Px(18.0); // status line, section headings, prose terms
+const FONT_TITLE: FontSize = FontSize::Px(15.0); // card titles, zone labels, buttons, badges
+const FONT_BODY: FontSize = FontSize::Px(13.0); // card body, type lines, prose body, grid cells
 
 // ---- palette ------------------------------------------------------------
 
@@ -1202,16 +1203,16 @@ impl Iterator for Blip {
 }
 
 impl Source for Blip {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         Some((self.len - self.pos) as usize)
     }
 
-    fn channels(&self) -> u16 {
-        1
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(1).unwrap()
     }
 
-    fn sample_rate(&self) -> u32 {
-        SFX_RATE
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(SFX_RATE).unwrap()
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -1230,7 +1231,6 @@ struct Sfx {
 }
 
 impl Decodable for Sfx {
-    type DecoderItem = f32;
     type Decoder = Blip;
 
     fn decoder(&self) -> Blip {
@@ -1654,7 +1654,11 @@ fn spawn_grid(parent: &mut ChildSpawnerCommands, grid: &contract::Grid) {
             },
             Text::new(text.to_string()),
             TextFont {
-                font_size: if header { 14.0 } else { 13.0 },
+                font_size: if header {
+                    FontSize::Px(14.0)
+                } else {
+                    FontSize::Px(13.0)
+                },
                 ..default()
             },
             TextColor(color),

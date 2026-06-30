@@ -26,6 +26,44 @@ while keeping everything else present-but-compact. That representation is what a
 
 ---
 
+## 0.5 Permit, then settle — agency over enforcement (servant, not warden)
+
+The rules should be felt as **the player's convenience, not an opponent**. So the UI's stance on any
+constraint is **permit, then settle**: never block, disable, or clamp an input to keep state legal —
+**accept the action as given (even the "wrong" one), then visibly reconcile to a legal state.** The end
+state is identical to what a hard constraint would have forced; only the *feeling* changes. A blocked
+input says "you may not"; permit-then-settle says "go ahead — I've got the rest."
+
+Why it matters: a physical table grants total agency (put anything anywhere) but no help (you tidy it
+yourself). The digital table's job is to **keep the agency and add the help** — the one thing a real
+table can't do. The software earns its place by *absorbing the inconvenience* of the rules (service),
+not by *enforcing* them (authority), even though both reach the same legal arrangement.
+
+Three things make it work — and all three must be present:
+
+1. **No hard walls during a gesture.** Don't disable, grey out, or clamp mid-action. *(Example: a deck
+   drags freely past the table edge; the border does not stop it.)*
+2. **Reconcile visibly.** The slide/settle animation *is* the feature, not polish — it is the servant
+   doing the work where you can watch. Instant snapping reads as denial or jank; motion reads as help.
+3. **Same legal end state.** The authority and the servant arrive at the same place; the only thing
+   produced is the *perception* — and it is a large one.
+
+Realised today: dropping a deck **off the table edge** is permitted; on release the **settling** logic
+(overlap separation + wall containment) clamps it back inside and the animation slides it into view.
+[Collapse-the-unattended](#collapse-the-unattended) is the same idea applied to attention.
+
+How it generalises (apply it to every new rule): a "full" zone **accepts** a dropped card and then
+redistributes, rather than rejecting it; a sloppy stack is **tidied after**, not prevented; even an
+illegal *game* move is better **attempted-then-gently-reverted-with-a-reason** than greyed out in
+advance.
+
+The boundary: this holds only when the correction is **cheap, unambiguous, and legible**. If
+reconciliation would be ambiguous or destructive, make the result **obvious and reversible**, or
+**refuse gracefully** (let them try, show why) — never silently rearrange the player's things. Some game
+rules must refuse; refuse like a servant explaining, not a warden barring the door.
+
+---
+
 ## 1. The primitives — **cards** and **decks**
 
 - **Card** — already exists (a [`CardView`]). A single face-up or face-down card.

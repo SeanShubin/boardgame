@@ -24,7 +24,7 @@ fn main() {
         .add_plugins(CardTablePlugin)
         .insert_resource(Table(sample_table()))
         .insert_resource(StatusLine(
-            "Sandbox — click a deck to focus; actionable cards report their index".into(),
+            "Click a pile to enter it · click a card to grow it · Back / Exit to navigate".into(),
         ))
         // Stand in for a game: drain the core's click outbox. Runs in `Apply`, after the core's input.
         .add_systems(Update, log_actions.in_set(CardTableSet::Apply))

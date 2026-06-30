@@ -1,11 +1,13 @@
-//! A Bevy renderer that draws the **card-table metaphor** — every zone a deck, the unattended
-//! collapsed into labelled, counted piles. Click a deck to open it, click the table to close them all,
-//! and drag cards (and whole decks) between decks.
+//! A Bevy renderer that draws the **card-table metaphor** — everything is a card; a pile is a stack of
+//! cards in one footprint. You navigate with **single-click and drag only**: click a pile to drill into
+//! its zone, click a card to grow it through its sizes, click Back / Exit cards to move around, and drag
+//! piles to arrange them on the table. The current zone's name sits centered at the top (default
+//! "Table"). Meaning comes from *what* you click, never a second gesture.
 //!
 //! # Two layers
 //!
 //! - **The core (this module) is game-agnostic.** It draws whatever is in the [`Table`] resource (a
-//!   [`DeckTree`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
+//!   [`Tableau`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
 //!   itself, and reports clicks on actionable controls by pushing their index into [`ActionRequests`].
 //!   It never mentions `Game`. This is the shared code: `boardgame` and feature prototypes both drive
 //!   it. Prototype a feature with [`CardTablePlugin`] + a hand-built `Table` (see
@@ -14,7 +16,7 @@
 //!   core — building the `Table`/`ActionRail`/`StatusLine` from the game's view and draining
 //!   `ActionRequests` into `Game::apply`. Only the launcher needs it.
 //!
-//! Rendering is `bevy_ui` (flexbox), matching `tabletop`; the deck model is renderer-agnostic, so a
+//! Rendering is `bevy_ui` (flexbox), matching `tabletop`; the pile model is renderer-agnostic, so a
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
@@ -22,17 +24,17 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, DeckId, DeckTree, Face, Pos};
+use cardtable_model::{Card, CardId, CardKind, Face, PileId, Size, Tableau};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
 
 // ---- public presentation state (the shared inputs) ----------------------
 
-/// The board: the deck tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
+/// The board: the pile tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
 /// the source (a game, or a prototype) rebuilds it.
 #[derive(Resource, Default)]
-pub struct Table(pub DeckTree);
+pub struct Table(pub Tableau);
 
 /// Loose actions shown as an always-visible rail (choices not represented by a card on the table).
 /// Each carries an opaque `index` the core echoes back in [`ActionRequests`] when clicked.
@@ -65,7 +67,7 @@ pub enum CardTableSet {
     Draw,
 }
 
-/// The game-agnostic renderer. Add it, put a [`DeckTree`] in [`Table`], and you have a clickable card
+/// The game-agnostic renderer. Add it, put a [`Tableau`] in [`Table`], and you have a clickable card
 /// table. Add [`GamePlugin`] (feature `game`) on top to drive it from a [`contract::Game`].
 pub struct CardTablePlugin;
 
@@ -76,22 +78,33 @@ impl Plugin for CardTablePlugin {
             .init_resource::<StatusLine>()
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
+            .init_resource::<DraggingCard>()
             .insert_resource(NeedsRebuild(true))
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            .add_systems(Update, (sync_deck_sizes, sync_surface_size, animate_decks))
+            .add_systems(
+                Update,
+                (
+                    sync_pile_sizes,
+                    sync_surface_size,
+                    animate_piles,
+                    animate_cards,
+                ),
+            )
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
-            // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
+            // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
             // slides it freely across the table.
             .add_observer(on_drag_start)
             .add_observer(on_click)
             .add_observer(on_drop)
-            .add_observer(on_deck_drag)
-            .add_observer(on_deck_drag_end);
+            .add_observer(on_pile_drag)
+            .add_observer(on_pile_drag_end)
+            .add_observer(on_card_drag)
+            .add_observer(on_card_drag_end);
     }
 }
 
@@ -109,19 +122,32 @@ struct ActionControl(usize);
 #[derive(Component, Clone, Copy)]
 struct CardRef(CardId);
 
-/// Marks a deck's node as a drop target: a card dropped here moves into this deck.
+/// Marks a pile's node as a drop target: a card dropped here moves into this pile.
 #[derive(Component, Clone, Copy)]
-struct DeckDropZone(DeckId);
+struct PileDropZone(PileId);
 
-/// Marks a top-level deck's absolutely-positioned wrapper, carrying its [`DeckId`]. Dragging it slides
-/// the deck freely across the table (live), committing the final position on release.
+/// Marks a top-level pile's absolutely-positioned wrapper, carrying its [`PileId`]. Dragging it slides
+/// the pile freely across the table (live), committing the final position on release.
 #[derive(Component, Clone, Copy)]
-struct TableDeck(DeckId);
+struct TablePile(PileId);
 
-/// Marks the table surface — the positioning context for decks. Its size is fed to the model as the
-/// wall bounds that keep decks inside.
+/// Marks the table surface — the positioning context for piles. Its size is fed to the model as the
+/// wall bounds that keep piles inside.
 #[derive(Component)]
 struct TableSurface;
+
+/// A utility card that navigates up one zone level when clicked.
+#[derive(Component)]
+struct BackCard;
+
+/// A utility card that quits the app when clicked (desktop only).
+#[derive(Component)]
+struct ExitCard;
+
+/// Marks a card's grid tile inside a drilled zone, carrying its [`CardId`]. Dragging it slides the
+/// card freely; on release it reorders into the nearest grid cell and the rest reflow.
+#[derive(Component, Clone, Copy)]
+struct TableCard(CardId);
 
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
@@ -129,11 +155,16 @@ struct TableSurface;
 #[derive(Resource, Default)]
 struct DragGuard(bool);
 
-/// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a deck, move
-/// a card, a new game snapshot). Deck positions are not structural; they animate, so repositioning
-/// never sets this. See [`redraw`] and [`animate_decks`].
+/// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a pile, move
+/// a card, a new game snapshot). Pile positions are not structural; they animate, so repositioning
+/// never sets this. See [`redraw`] and [`animate_piles`].
 #[derive(Resource)]
 struct NeedsRebuild(bool);
+
+/// The card currently being dragged in a zone grid (if any), so its tile isn't snapped to the grid by
+/// the animation while the pointer holds it.
+#[derive(Resource, Default)]
+struct DraggingCard(Option<CardId>);
 
 // ---- systems ------------------------------------------------------------
 
@@ -141,29 +172,30 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// A clean UI typeface bundled in the crate, for crisp small text on cards. Covers the punctuation and
-/// arrows the renderer uses (em dashes, curly quotes, arrows) that Bevy's built-in `FiraMono-subset`
-/// font lacks — otherwise they show as tofu boxes. SIL Open Font License; see `fonts/Inter-LICENSE.txt`.
-const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
+/// The bundled UI typeface — **Nunito Sans** (a warm, friendly humanist sans that's still crisp for
+/// small text on cards). Covers the punctuation the renderer uses (em dashes, curly quotes) that
+/// Bevy's built-in `FiraMono-subset` lacks, which would otherwise show as tofu boxes. SIL Open Font
+/// License; see `fonts/NunitoSans-OFL.txt`. A Latin static instance (~33 KB) keeps the wasm small.
+const UI_FONT: &[u8] = include_bytes!("../fonts/NunitoSans-Regular.ttf");
 
-/// Replace Bevy's ASCII-only default font with the bundled Inter face. Bevy registers its default font
-/// at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting that
-/// one asset reskins all UI text without threading a font handle through each label.
+/// Replace Bevy's ASCII-only default font with the bundled Nunito Sans face. Bevy registers its default
+/// font at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting
+/// that one asset reskins all UI text without threading a font handle through each label.
 fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
-    let font = Font::try_from_bytes(UI_FONT.to_vec()).expect("bundled UI font is valid");
+    let font = Font::from_bytes(UI_FONT.to_vec());
     fonts
         .insert(AssetId::default(), font)
         .expect("override the default font");
 }
 
-/// A picking click, resolved against the most specific target: an actionable control records its
-/// action; a (non-actionable) card consumes the click so it doesn't bubble; a deck opens (focus); the
-/// table background closes all decks. Inner nodes (e.g. a card's text) match nothing and fall through
-/// to their parent via propagation. Global observer, so it survives the per-change UI rebuild.
 fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
     guard.0 = true;
 }
 
+/// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
+/// card goes up a zone; an **Exit** card quits; an expandable **card** grows/shrinks; a loose action
+/// fires; a **pile** is entered (its zone). Inner nodes (a card's text) match nothing and propagate to
+/// their parent. Global observer, so it survives the per-change UI rebuild.
 #[allow(clippy::type_complexity)]
 fn on_click(
     mut on: On<Pointer<Click>>,
@@ -171,116 +203,114 @@ fn on_click(
     targets: Query<(
         Option<&ActionControl>,
         Option<&CardRef>,
-        Option<&DeckDropZone>,
-        Has<CardTableRoot>,
+        Option<&PileDropZone>,
+        Has<BackCard>,
+        Has<ExitCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, deck, is_background)) = targets.get(on.event().entity) else {
+    let Ok((action, card, pile, is_back, is_exit)) = targets.get(on.event().entity) else {
         return;
     };
-    if let Some(action) = action {
-        requests.0.push(action.0);
-    } else if card.is_some() {
-        // A non-actionable card: consume the click (don't focus a deck or close the table).
-    } else if let Some(deck) = deck {
-        let _ = table.0.focus(deck.0);
+    if is_back {
+        table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
-    } else if is_background {
-        let root = table.0.root_id();
-        let _ = table.0.focus(root);
+    } else if is_exit {
+        exit.write(AppExit::Success);
+    } else if let Some(card_ref) = card {
+        // A card click first tries to grow/shrink it (cycle render size); an expandable card consumes
+        // the click that way. Otherwise an actionable card fires its action; a name-only card absorbs it.
+        let id = card_ref.0;
+        if table.0.card(id).is_some_and(|c| c.is_expandable()) {
+            let _ = table.0.cycle_card_size(id);
+            rebuild.0 = true;
+        } else if let Some(action) = action {
+            requests.0.push(action.0);
+        }
+    } else if let Some(action) = action {
+        requests.0.push(action.0); // a loose action (rail item)
+    } else if let Some(pile) = pile {
+        let _ = table.0.focus(pile.0); // drill in: this pile becomes the current zone
         rebuild.0 = true;
     } else {
-        return; // not interactive — let it propagate to an ancestor that is
+        return; // background / inert — nothing to do (navigation is via cards, not the felt)
     }
     on.propagate(false);
 }
 
-/// A picking drop: move a dragged **card** into the target's deck (a deck, or a card's home deck).
-/// Decks are not nested on drop — they are repositioned by [`on_deck_drag`] — so a dragged deck is
-/// ignored here. Presentation-level; mapping drops to game actions is future work.
+/// A picking drop: move a dragged **card** into the pile it was dropped *onto*. Dropping a card onto
+/// another card (or the felt) is not a move — that's an in-zone reorder, handled by [`on_card_drag_end`]
+/// against the grid. Piles aren't nested on drop (they reposition via [`on_pile_drag`]), so a dragged
+/// pile is ignored. Presentation-level; mapping drops to game actions is future work.
 fn on_drop(
     mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
-    decks: Query<&DeckDropZone>,
+    piles: Query<&PileDropZone>,
     mut table: ResMut<Table>,
     mut rebuild: ResMut<NeedsRebuild>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
-        return; // only cards drop *into* decks
+        return; // only cards drop *into* piles
     };
-    let dest = if let Ok(zone) = decks.get(event.entity) {
+    let dest = if let Ok(zone) = piles.get(event.entity) {
         zone.0
-    } else if let Ok(card) = cards.get(event.entity) {
-        match table.0.card(card.0) {
-            Some(c) => c.home(),
-            None => return,
-        }
     } else {
-        return; // not a drop target — let it propagate
+        return; // dropped onto a card or the felt — in-zone reordering is handled by the grid
     };
     on.propagate(false);
-    let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
+    let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
     let _ = table.0.move_card(dragged.0, dest, at);
     rebuild.0 = true;
 }
 
-/// Slide a top-level deck across the table while it is dragged. Mutates the wrapper's `Node` left/top
-/// directly (not the model), so there is no per-frame rebuild mid-drag; the final position is committed
-/// in [`on_deck_drag_end`]. A card drag is consumed here so it doesn't also slide the deck under it.
-fn on_deck_drag(
+/// Slide a top-level pile across the table while it is dragged — freely, even off the edge. Moves the
+/// wrapper's `Node` and the model position together (a position change is not structural, so there is
+/// no rebuild mid-drag); settling on release brings an off-edge pile back. A card drag is consumed
+/// here so it doesn't also slide the pile under it.
+fn on_pile_drag(
     mut on: On<Pointer<Drag>>,
-    cards: Query<&CardRef>,
-    mut decks: Query<(&TableDeck, &mut Node)>,
+    mut piles: Query<(&TablePile, &mut Node)>,
     mut table: ResMut<Table>,
 ) {
-    let target = on.event().entity;
-    if cards.get(target).is_ok() {
-        on.propagate(false);
-        return;
-    }
-    if let Ok((deck, mut node)) = decks.get_mut(target) {
+    if let Ok((pile, mut node)) = piles.get_mut(on.event().entity) {
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
-        // The borders shove the deck back inside; use the clamped position for the live node too, and
-        // keep the model target in step so the animation doesn't drag it back.
-        let placed = table.0.place_deck(deck.0, x, y).unwrap_or(Pos { x, y });
-        node.left = Val::Px(placed.x);
-        node.top = Val::Px(placed.y);
+        // Follow the cursor anywhere — even past the table edge. The settling on release clamps it
+        // back inside and the animation slides it into view. Keep the model in step with the live
+        // node so the animation doesn't fight the drag.
+        node.left = Val::Px(x);
+        node.top = Val::Px(y);
+        let _ = table.0.set_pile_pos(pile.0, x, y);
         on.propagate(false);
     }
 }
 
-/// Commit a dragged deck's final position to the model on release (one rebuild, at rest).
-fn on_deck_drag_end(
+/// Commit a dragged pile's final position to the model on release (one rebuild, at rest).
+fn on_pile_drag_end(
     mut on: On<Pointer<DragEnd>>,
-    cards: Query<&CardRef>,
-    decks: Query<(&TableDeck, &Node)>,
+    piles: Query<(&TablePile, &Node)>,
     mut table: ResMut<Table>,
     mut guard: ResMut<DragGuard>,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
-    let target = on.event().entity;
-    if cards.get(target).is_ok() {
-        on.propagate(false);
-        return;
-    }
-    if let Ok((deck, node)) = decks.get(target) {
-        let _ = table.0.place_deck(deck.0, px(node.left), px(node.top));
-        // Slide everything this deck now overlaps out of the way (anchor = the deck just dropped),
-        // with the borders shoving decks back inside.
-        table.0.separate(deck.0);
+    if let Ok((pile, node)) = piles.get(on.event().entity) {
+        let _ = table.0.set_pile_pos(pile.0, px(node.left), px(node.top));
+        // Settle: clamp the (possibly off-edge) pile back inside and shove overlaps clear — the
+        // anchor included, so a pile dropped past the border is pulled into view, then the animation
+        // slides it the rest of the way.
+        table.0.separate(pile.0);
         on.propagate(false);
     }
 }
 
-/// The pixel value of a `Val`, or `0.0` for the non-pixel variants (decks always use `Px`).
+/// The pixel value of a `Val`, or `0.0` for the non-pixel variants (piles always use `Px`).
 fn px(value: Val) -> f32 {
     match value {
         Val::Px(p) => p,
@@ -288,16 +318,16 @@ fn px(value: Val) -> f32 {
     }
 }
 
-/// Feed each top-level deck's laid-out size back into the model (logical px), so [`DeckTree::separate`]
-/// works on real AABBs. Runs every frame; deck sizes are stable, so it's cheap.
-fn sync_deck_sizes(decks: Query<(&TableDeck, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (deck, computed) in &decks {
+/// Feed each top-level pile's laid-out size back into the model (logical px), so [`Tableau::separate`]
+/// works on real AABBs. Runs every frame; pile sizes are stable, so it's cheap.
+fn sync_pile_sizes(piles: Query<(&TablePile, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (pile, computed) in &piles {
         let size = computed.size * computed.inverse_scale_factor;
-        let _ = table.0.set_deck_size(deck.0, size.x, size.y);
+        let _ = table.0.set_pile_size(pile.0, size.x, size.y);
     }
 }
 
-/// Feed the table surface's laid-out size to the model as the wall bounds that contain the decks.
+/// Feed the table surface's laid-out size to the model as the wall bounds that contain the piles.
 fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut table: ResMut<Table>) {
     if let Ok(computed) = surfaces.single() {
         let size = computed.size * computed.inverse_scale_factor;
@@ -305,13 +335,13 @@ fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut tab
     }
 }
 
-/// Ease each deck's wrapper toward its model position, so a separation (or any reposition) *slides*
-/// into place instead of snapping. The dragged deck keeps target == position, so it doesn't ease;
-/// decks already at rest are skipped so the node (and its layout) isn't touched every frame.
-fn animate_decks(time: Res<Time>, table: Res<Table>, mut decks: Query<(&TableDeck, &mut Node)>) {
+/// Ease each pile's wrapper toward its model position, so a separation (or any reposition) *slides*
+/// into place instead of snapping. The dragged pile keeps target == position, so it doesn't ease;
+/// piles already at rest are skipped so the node (and its layout) isn't touched every frame.
+fn animate_piles(time: Res<Time>, table: Res<Table>, mut piles: Query<(&TablePile, &mut Node)>) {
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (deck, mut node) in &mut decks {
-        let Some(d) = table.0.deck(deck.0) else {
+    for (pile, mut node) in &mut piles {
+        let Some(d) = table.0.pile(pile.0) else {
             continue;
         };
         let target = d.pos();
@@ -324,8 +354,86 @@ fn animate_decks(time: Res<Time>, table: Res<Table>, mut decks: Query<(&TableDec
     }
 }
 
-/// Rebuild the whole UI only on a *structural* change (open/close a deck, move a card, a new game
-/// snapshot). Deck positions are not structural — they animate (see [`animate_decks`]) — so
+/// Slide a card freely while it is dragged — the tile follows the cursor anywhere, no rebuild. The
+/// grab lands on the inner card visual; the event propagates up to the `TableCard` tile, which is the
+/// node we actually move. Marking it the dragging card stops [`animate_cards`] from fighting the drag.
+fn on_card_drag(
+    mut on: On<Pointer<Drag>>,
+    mut cards: Query<(&TableCard, &mut Node)>,
+    mut dragging: ResMut<DraggingCard>,
+) {
+    if let Ok((card, mut node)) = cards.get_mut(on.event().entity) {
+        let delta = on.event().event.delta;
+        node.left = Val::Px(px(node.left) + delta.x);
+        node.top = Val::Px(px(node.top) + delta.y);
+        dragging.0 = Some(card.0);
+        on.propagate(false);
+    }
+}
+
+/// On release, snap a dragged card to the nearest grid cell by reordering it within its home pile; the
+/// other cards then *slide* to their new cells ([`animate_cards`]). Reordering is not structural, so
+/// there is no rebuild — that would kill the slide.
+fn on_card_drag_end(
+    mut on: On<Pointer<DragEnd>>,
+    cards: Query<(&TableCard, &Node)>,
+    mut table: ResMut<Table>,
+    mut dragging: ResMut<DraggingCard>,
+) {
+    if let Ok((card, node)) = cards.get(on.event().entity) {
+        on.propagate(false);
+        dragging.0 = None;
+        let cols = grid_cols(table.0.surface().x);
+        // Nearest cell from the tile's dropped centre.
+        let col = (((px(node.left) + CARD_W / 2.0) / (CARD_W + GRID_GAP))
+            .floor()
+            .max(0.0) as usize)
+            .min(cols - 1);
+        let row = ((px(node.top) + CARD_H / 2.0) / (CARD_H + GRID_GAP))
+            .floor()
+            .max(0.0) as usize;
+        let (Some(home), Some(from)) = (
+            table.0.card(card.0).map(|c| c.home()),
+            table.0.card_index(card.0),
+        ) else {
+            return;
+        };
+        let len = table.0.pile(home).map_or(0, |pile| pile.cards().len());
+        let to = (row * cols + col).min(len.saturating_sub(1));
+        let _ = table.0.reorder(home, from, to);
+    }
+}
+
+/// Ease each card tile toward the grid cell its index in the pile names — so a reorder *slides* the
+/// other cards into their new cells instead of snapping. The card being dragged is left alone (it
+/// follows the cursor); tiles already at rest are skipped so layout isn't touched every frame.
+fn animate_cards(
+    time: Res<Time>,
+    table: Res<Table>,
+    dragging: Res<DraggingCard>,
+    mut cards: Query<(&TableCard, &mut Node)>,
+) {
+    let cols = grid_cols(table.0.surface().x);
+    let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
+    for (card, mut node) in &mut cards {
+        if dragging.0 == Some(card.0) {
+            continue; // free while held
+        }
+        let Some(index) = table.0.card_index(card.0) else {
+            continue;
+        };
+        let (tx, ty) = grid_cell(index, cols);
+        let (cx, cy) = (px(node.left), px(node.top));
+        if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
+            continue; // at rest
+        }
+        node.left = Val::Px(cx + (tx - cx) * t);
+        node.top = Val::Px(cy + (ty - cy) * t);
+    }
+}
+
+/// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
+/// snapshot). Pile positions are not structural — they animate (see [`animate_piles`]) — so
 /// repositioning never triggers a rebuild.
 fn redraw(
     mut commands: Commands,
@@ -355,16 +463,16 @@ const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
 const CARD_FACE: Color = Color::srgb(0.94, 0.92, 0.84);
 const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
-/// A second back shade so alternating layers in a deck's stack read as distinct cards.
+/// A second back shade so alternating layers in a pile's stack read as distinct cards.
 const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
-/// Highlight edge for a card/deck that carries a legal move.
+/// Highlight edge for a card/pile that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.
 const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
-/// Soft drop shadow lifting cards and decks off the felt.
+/// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 
-/// A soft drop shadow used on cards and deck chips (offset down, blurred).
+/// A soft drop shadow used on cards and pile chips (offset down, blurred).
 fn card_shadow() -> BoxShadow {
     BoxShadow::new(
         SHADOW,
@@ -375,101 +483,130 @@ fn card_shadow() -> BoxShadow {
     )
 }
 
-const FONT_HEAD: f32 = 18.0;
-const FONT_TITLE: f32 = 15.0;
-const FONT_BODY: f32 = 13.0;
+const FONT_DISPLAY: FontSize = FontSize::Px(26.0);
+const FONT_HEAD: FontSize = FontSize::Px(18.0);
+const FONT_TITLE: FontSize = FontSize::Px(15.0);
+const FONT_BODY: FontSize = FontSize::Px(13.0);
 
-/// How fast a deck eases toward its target position, as a fraction closed per second (higher = snappier).
+/// How fast a pile eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
 
-/// A collapsed deck's front-face footprint, the per-card stack step (offset along two edges), and the
-/// visual depth cap so a deep deck doesn't grow without bound.
+/// A collapsed pile's front-face footprint, the per-card stack step (offset along two edges), and the
+/// visual depth cap so a deep pile doesn't grow without bound.
 const CHIP_W: f32 = 120.0;
 const CHIP_H: f32 = 64.0;
 const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
 
-fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], status: &str) {
+/// A card's footprint and the gap between grid cells in a drilled zone. A grid cell is card+gap.
+const CARD_W: f32 = 96.0;
+const CARD_H: f32 = 132.0;
+const GRID_GAP: f32 = 14.0;
+/// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
+/// card in one enormous row.
+const MAX_COLS: usize = 16;
+
+/// How many columns the card grid uses for a surface `width` (at least one, capped).
+fn grid_cols(width: f32) -> usize {
+    (((width / (CARD_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
+}
+
+/// The top-left position of grid cell `index` in a grid of `cols` columns (row-major).
+fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
+    let col = index % cols;
+    let row = index / cols;
+    (
+        col as f32 * (CARD_W + GRID_GAP),
+        row as f32 * (CARD_H + GRID_GAP),
+    )
+}
+
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status: &str) {
+    let zone = tree.focus_id();
+    let at_root = zone == tree.root_id();
+
     commands
         .spawn((
             CardTableRoot,
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // LEFT: the action rail — choices not on a card. Hidden when empty (e.g. a prototype).
-            if !rail.is_empty() {
-                root.spawn((
-                    Node {
-                        width: Val::Px(280.0),
-                        height: Val::Percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(12.0)),
-                        row_gap: Val::Px(8.0),
-                        overflow: Overflow::scroll_y(),
-                        ..default()
-                    },
-                    BackgroundColor(PANEL),
-                ))
-                .with_children(|panel| {
-                    panel.spawn((
-                        Text::new("Actions"),
-                        TextFont {
-                            font_size: FONT_HEAD,
-                            ..default()
-                        },
-                        TextColor(INK),
-                    ));
-                    for action in rail {
-                        spawn_rail_button(panel, action);
-                    }
-                });
-            }
-
-            // CENTER: status, then the decks. Clicking empty space here (the felt) closes all decks.
+            // HEADER: the current zone's name, centered, with an optional caption beneath it.
             root.spawn(Node {
-                flex_grow: 1.0,
-                height: Val::Percent(100.0),
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(16.0)),
-                row_gap: Val::Px(12.0),
-                overflow: Overflow::scroll_y(),
+                align_items: AlignItems::Center,
+                padding: UiRect::axes(Val::Px(0.0), Val::Px(10.0)),
+                row_gap: Val::Px(2.0),
                 ..default()
             })
-            .with_children(|main| {
-                if !status.is_empty() {
-                    main.spawn((
-                        Text::new(status.to_string()),
-                        TextFont {
-                            font_size: FONT_HEAD,
-                            ..default()
-                        },
-                        TextColor(INK),
-                    ));
-                }
-
-                // The table surface: a fill area holding absolutely-placed decks the player drags
-                // anywhere. Each top-level deck sits in a positioned wrapper at its model position.
-                main.spawn((
-                    TableSurface,
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
+            .with_children(|head| {
+                head.spawn((
+                    Text::new(pile_display_name(tree, zone)),
+                    TextFont {
+                        font_size: FONT_DISPLAY,
                         ..default()
                     },
-                ))
-                .with_children(|surface| {
-                    let root_deck = tree.deck(tree.root_id()).expect("root exists");
-                    for &id in root_deck.subdecks() {
-                        let pos = tree.deck(id).expect("deck id from root").pos();
+                    TextColor(INK),
+                ));
+                if !status.is_empty() {
+                    head.spawn((
+                        Text::new(status.to_string()),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+                }
+            });
+
+            // NAV: utility cards (Back when inside a zone, Exit on desktop) plus any loose actions.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|nav| {
+                if !at_root {
+                    spawn_nav_card(nav, BackCard, "Back");
+                }
+                if cfg!(not(target_arch = "wasm32")) {
+                    spawn_nav_card(nav, ExitCard, "Exit");
+                }
+                for action in rail {
+                    spawn_rail_button(nav, action);
+                }
+            });
+
+            // SURFACE: the zone's contents. At the Table (root) zone, piles are freely positioned and
+            // draggable; inside a pile's zone, its cards (and any sub-piles) flow in a wrapping grid.
+            root.spawn((
+                TableSurface,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+            ))
+            .with_children(|surface| {
+                let pile = tree.pile(zone).expect("zone pile exists");
+                if at_root {
+                    for &id in pile.subpiles() {
+                        let pos = tree.pile(id).expect("pile id from zone").pos();
                         surface
                             .spawn((
-                                TableDeck(id),
+                                TablePile(id),
                                 Node {
                                     position_type: PositionType::Absolute,
                                     left: Val::Px(pos.x),
@@ -477,22 +614,99 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                                     ..default()
                                 },
                             ))
-                            .with_children(|wrapper| spawn_deck(wrapper, tree, id));
+                            .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
-                });
+                } else {
+                    // The zone's cards lay out in a row-major grid; each is its own draggable tile that
+                    // reorders (others reflow) on drop. ×N grouping doesn't apply here — every card is a
+                    // stable tile so the reflow can animate smoothly.
+                    let cols = grid_cols(tree.surface().x);
+                    for (index, &cid) in pile.cards().iter().enumerate() {
+                        let (x, y) = grid_cell(index, cols);
+                        surface
+                            .spawn((
+                                TableCard(cid),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(x),
+                                    top: Val::Px(y),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|tile| {
+                                spawn_card(tile, tree.card(cid).expect("card id from zone"));
+                            });
+                    }
+                    // Any sub-piles follow the cards in the grid as (clickable) chips.
+                    let base = pile.cards().len();
+                    for (k, &sid) in pile.subpiles().iter().enumerate() {
+                        let (x, y) = grid_cell(base + k, cols);
+                        surface
+                            .spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x),
+                                top: Val::Px(y),
+                                ..default()
+                            })
+                            .with_children(|wrapper| spawn_pile(wrapper, tree, sid));
+                    }
+                }
             });
         });
 }
 
-/// Draws a collapsed deck as a short stack of offset layers — two alternating colors, stepped along
+/// The display name of a pile/zone: "Table" for the root; otherwise the name of its top card when that
+/// card's job is to name it (a [`CardKind::Zone`] card), else the pile's own label.
+fn pile_display_name(tree: &Tableau, id: PileId) -> String {
+    if id == tree.root_id() {
+        return "Table".to_string();
+    }
+    let pile = tree.pile(id).expect("pile id");
+    if let Some(&top) = pile.cards().last()
+        && let Some(card) = tree.card(top)
+        && matches!(card.kind(), CardKind::Zone)
+    {
+        return card.name().to_string();
+    }
+    pile.label.clone()
+}
+
+/// A utility card (Back / Exit) drawn in the nav row — a small card-styled, clickable control.
+fn spawn_nav_card<M: Component>(parent: &mut ChildSpawnerCommands, marker: M, label: &str) {
+    parent
+        .spawn((
+            marker,
+            Node {
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(10.0)),
+                ..default()
+            },
+            BackgroundColor(CARD_BACK),
+            BorderColor::all(CARD_EDGE),
+            card_shadow(),
+        ))
+        .with_children(|c| {
+            c.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+        });
+}
+
+/// Draws a collapsed pile as a short stack of offset layers — two alternating colors, stepped along
 /// the left and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
 /// front layer (top-right, on top) carries the label and count; the whole stack is one drop target.
-fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, count: usize) {
+fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, count: usize) {
     let depth = count.clamp(1, MAX_STACK);
     let spread = (depth - 1) as f32 * STACK_OFFSET;
     parent
         .spawn((
-            DeckDropZone(id),
+            PileDropZone(id),
             Node {
                 width: Val::Px(CHIP_W + spread),
                 height: Val::Px(CHIP_H + spread),
@@ -557,98 +771,169 @@ fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, c
         });
 }
 
-/// Draws a deck: a compact, counted chip when collapsed, or a fanned panel of its cards when open.
-fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
-    let deck = tree.deck(id).expect("deck id from tree");
-    if deck.collapsed {
-        let count = deck.cards().len() + deck.subdecks().len();
-        spawn_deck_chip(parent, id, &deck.label, count);
-    } else {
-        parent
-            .spawn((
-                DeckDropZone(id),
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(8.0),
-                    border_radius: BorderRadius::all(Val::Px(8.0)),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-            ))
-            .with_children(|panel| {
-                panel.spawn((
-                    Text::new(deck.label.clone()),
-                    TextFont {
-                        font_size: FONT_HEAD,
-                        ..default()
-                    },
-                    TextColor(INK),
-                ));
-                panel
-                    .spawn((
-                        DeckDropZone(id),
-                        Node {
-                            flex_direction: FlexDirection::Row,
-                            flex_wrap: FlexWrap::Wrap,
-                            column_gap: Val::Px(8.0),
-                            row_gap: Val::Px(8.0),
-                            min_height: Val::Px(140.0),
-                            ..default()
-                        },
-                    ))
-                    .with_children(|cards| {
-                        for &cid in deck.cards() {
-                            spawn_card(cards, tree.card(cid).expect("card id from deck"));
-                        }
-                        for &sid in deck.subdecks() {
-                            spawn_deck(cards, tree, sid);
-                        }
-                    });
-            });
+/// Draws a pile as a compact, counted chip showing its display name. You see its *contents* by
+/// clicking it to enter its zone — piles no longer fan open in place.
+fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
+    let pile = tree.pile(id).expect("pile id from tree");
+    let count = pile.cards().len() + pile.subpiles().len();
+    spawn_pile_chip(parent, id, &pile_display_name(tree, id), count);
+}
+
+/// Draws one card at its current render [`Size`]: a small name chip, a detailed card face, or a full
+/// utility panel. Every form carries `CardRef`, so a click can grow/shrink it.
+fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
+    match card.size() {
+        Size::Name => spawn_card_name(parent, card, 1),
+        Size::Card => spawn_card_detail(parent, card),
+        Size::Full => spawn_card_full(parent, card),
     }
 }
 
-/// Draws one card: a light face showing its title, or a dark back. Actionable cards get a highlight
-/// edge and become clickable.
-fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
-    // A face-down card shows only its back — no glyph, which also reads more like a real card.
-    let (title, bg, ink) = match &card.face {
+/// Edge colour for a card: highlighted when it carries a legal move, else the dark card edge.
+fn card_edge(card: &Card) -> Color {
+    if card.is_actionable() {
+        ACTIONABLE
+    } else {
+        CARD_EDGE
+    }
+}
+
+/// Tag a freshly-spawned card entity as actionable (so a loose action still fires), then run `build`
+/// to fill its children.
+fn finish_card(
+    mut entity: EntityCommands,
+    card: &Card,
+    build: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    if let Some(index) = card.actionable {
+        entity.insert(ActionControl(index));
+    }
+    entity.with_children(build);
+}
+
+/// Smallest form — a 96×132 card showing just the name (or a blank back when face down), plus a `×N`
+/// quantity beneath it when `quantity > 1` (several identical cards stacked into one chip).
+fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
+    let (label, bg, ink) = match &card.face {
         Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
         Face::Down => (None, CARD_BACK, INK),
     };
-    let mut entity = parent.spawn((
+    let entity = parent.spawn((
         CardRef(card.id),
         Node {
             width: Val::Px(96.0),
             height: Val::Px(132.0),
             padding: UiRect::all(Val::Px(8.0)),
             border: UiRect::all(Val::Px(2.0)),
+            flex_direction: FlexDirection::Column,
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
+            row_gap: Val::Px(2.0),
             border_radius: BorderRadius::all(Val::Px(12.0)),
             ..default()
         },
         BackgroundColor(bg),
-        BorderColor::all(if card.is_actionable() {
-            ACTIONABLE
-        } else {
-            CARD_EDGE
-        }),
+        BorderColor::all(card_edge(card)),
         card_shadow(),
     ));
-    if let Some(index) = card.actionable {
-        entity.insert(ActionControl(index));
-    }
-    entity.with_children(|c| {
-        if let Some(title) = title {
+    finish_card(entity, card, |c| {
+        if let Some(label) = label {
             c.spawn((
-                Text::new(title),
+                Text::new(label),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
                 },
                 TextColor(ink),
+            ));
+        }
+        if quantity > 1 {
+            c.spawn((
+                Text::new(format!("×{quantity}")),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(ink),
+            ));
+        }
+    });
+}
+
+/// Medium form — a card face: a name header above its detail (stat / rules) lines.
+fn spawn_card_detail(parent: &mut ChildSpawnerCommands, card: &Card) {
+    let entity = parent.spawn((
+        CardRef(card.id),
+        Node {
+            width: Val::Px(200.0),
+            min_height: Val::Px(132.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(10.0)),
+            border: UiRect::all(Val::Px(2.0)),
+            row_gap: Val::Px(4.0),
+            border_radius: BorderRadius::all(Val::Px(12.0)),
+            ..default()
+        },
+        BackgroundColor(CARD_FACE),
+        BorderColor::all(card_edge(card)),
+        card_shadow(),
+    ));
+    finish_card(entity, card, |c| {
+        c.spawn((
+            Text::new(card.name().to_string()),
+            TextFont {
+                font_size: FONT_HEAD,
+                ..default()
+            },
+            TextColor(CARD_INK),
+        ));
+        for line in card.detail() {
+            c.spawn((
+                Text::new(line.clone()),
+                TextFont {
+                    font_size: FONT_BODY,
+                    ..default()
+                },
+                TextColor(CARD_INK),
+            ));
+        }
+    });
+}
+
+/// Largest form — a utility panel (e.g. a combat log): a name header above its panel lines, scrollable.
+fn spawn_card_full(parent: &mut ChildSpawnerCommands, card: &Card) {
+    let entity = parent.spawn((
+        CardRef(card.id),
+        Node {
+            width: Val::Px(320.0),
+            max_height: Val::Px(360.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(12.0)),
+            row_gap: Val::Px(4.0),
+            overflow: Overflow::scroll_y(),
+            border_radius: BorderRadius::all(Val::Px(10.0)),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        card_shadow(),
+    ));
+    finish_card(entity, card, |c| {
+        c.spawn((
+            Text::new(card.name().to_string()),
+            TextFont {
+                font_size: FONT_HEAD,
+                ..default()
+            },
+            TextColor(INK),
+        ));
+        for line in card.panel() {
+            c.spawn((
+                Text::new(line.clone()),
+                TextFont {
+                    font_size: FONT_BODY,
+                    ..default()
+                },
+                TextColor(MUTED),
             ));
         }
     });
@@ -688,7 +973,7 @@ mod game {
     use bevy::prelude::*;
     use std::collections::HashSet;
 
-    use cardtable_model::{DeckTree, from_table_view};
+    use cardtable_model::{Tableau, from_table_view};
     use contract::Game;
 
     use crate::{
@@ -774,9 +1059,9 @@ mod game {
         }
     }
 
-    /// Build the presentation state from a game state: the board (zones → decks), the loose-action
+    /// Build the presentation state from a game state: the board (zones → piles), the loose-action
     /// rail (legal actions not bound to a card), and the status caption.
-    fn snapshot<G: Game>(game: &G, state: &G::State) -> (DeckTree, Vec<RailAction>, String) {
+    fn snapshot<G: Game>(game: &G, state: &G::State) -> (Tableau, Vec<RailAction>, String) {
         let view = game.view(state, None);
         let table = from_table_view(&view);
         let bound: HashSet<usize> = view
