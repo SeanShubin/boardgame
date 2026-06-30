@@ -62,11 +62,11 @@ validated **`engagement.rs` is the reference to port from** (it already conforms
 The smallest triad that proves the triangle in the validated sim (stats `(Might, Vitality, Toughness,
 Cadence, Finesse)`):
 
-| Role / intention | class | M | V | T | C | F |
-|---|---|---|---|---|---|---|
-| Hold (Vanguard) | Fighter | 1 | 2 | 3 | 1 | 1 |
-| Break (Outrider) | Assassin | 2 | 1 | 1 | 2 | 2 |
-| Deal (Rearguard) | Mage | 3 | 1 | 2 | 1 | 1 |
+| Role / intention | class    | M   | V   | T   | C   | F   |
+| ---------------- | -------- | --- | --- | --- | --- | --- |
+| Hold (Vanguard)  | Fighter  | 1   | 2   | 3   | 1   | 1   |
+| Break (Outrider) | Assassin | 2   | 1   | 1   | 2   | 2   |
+| Deal (Rearguard) | Mage     | 3   | 1   | 2   | 1   | 1   |
 
 Gradient: `M_breaker(2) ≥ T_dealer(2) > M_tank(1)`; only `M_deal(3) ≥ T_hold(3)`. (Mage T was 1 in the
 sim's last committed triad; **T2** is the §4 value so the tank's fallback breach bounces — re-validate at

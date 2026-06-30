@@ -64,8 +64,8 @@ pre-empt at #13, disrupt at #16, flank-intercept at #17 — and stated outright 
 
 ## Capstone
 
-| #      | Teaches                                                                                             | Needs | Scenario                                            |
-| ------ | --------------------------------------------------------------------------------------------------- | ----- | --------------------------------------------------- |
+| #      | Teaches                                                                                             | Needs | Scenario                                                        |
+| ------ | --------------------------------------------------------------------------------------------------- | ----- | --------------------------------------------------------------- |
 | **20** | **The full round** — all six phases and every mechanic in one battle; the PRINCIPLE stated outright | all   | = `../designer/card-combat-all-mechanics.md` (already written). |
 
 ---
