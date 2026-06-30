@@ -132,14 +132,26 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
             line(root, "Font showcase", 22.0, &label, INK);
             line(
                 root,
-                "Same card-like text in each candidate. Drop TTFs in examples/fonts/ (see README) to fill in the rest.",
+                "Same card-like text in each candidate (all SIL OFL). Resize the window to reflow the columns.",
                 13.0,
                 &label,
                 MUTED,
             );
-            for (cand, handle, found) in &resolved {
-                block(root, &label, cand, handle, found);
-            }
+            // Adaptive grid: fixed-width blocks that wrap into as many columns as the window fits.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(16.0),
+                row_gap: Val::Px(16.0),
+                align_items: AlignItems::FlexStart,
+                ..default()
+            })
+            .with_children(|grid| {
+                for (cand, handle, found) in &resolved {
+                    block(grid, &label, cand, handle, found);
+                }
+            });
         });
 }
 
@@ -155,7 +167,7 @@ fn block(
     parent
         .spawn((
             Node {
-                width: Val::Percent(100.0),
+                width: Val::Px(340.0),
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(14.0)),
                 row_gap: Val::Px(5.0),
@@ -215,7 +227,16 @@ fn line(
     if let Some(handle) = font {
         text_font.font = FontSource::Handle(handle.clone());
     }
-    parent.spawn((Text::new(text.to_string()), text_font, TextColor(color)));
+    // Full width of the (now narrow) column so long lines wrap instead of overflowing.
+    parent.spawn((
+        Text::new(text.to_string()),
+        text_font,
+        TextColor(color),
+        Node {
+            width: Val::Percent(100.0),
+            ..default()
+        },
+    ));
 }
 
 /// Try each path in turn; load the first that reads into an `Assets<Font>` handle.
