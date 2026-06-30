@@ -100,6 +100,19 @@ pub fn sample_table() -> Tableau {
     )
     .expect("log card");
 
+    // A "Quiver" of 5 identical Arrows — drilling in shows them grouped as "Arrow ×5".
+    let quiver = tree.add_pile(root, "Quiver").expect("root exists");
+    for _ in 0..5 {
+        tree.add_card(
+            quiver,
+            Face::Up {
+                title: "Arrow".into(),
+            },
+            None,
+        )
+        .expect("quiver exists");
+    }
+
     // A "Locations" pile of 25 fantasy places — exercises the stacked-depth visual and a high count.
     let locations = tree.add_pile(root, "Locations").expect("root exists");
     const PLACES: [&str; 25] = [
@@ -149,6 +162,8 @@ pub fn sample_table() -> Tableau {
         .expect("locations exists");
     tree.set_pile_pos(utility, 220.0, 240.0)
         .expect("utility exists");
+    tree.set_pile_pos(quiver, 400.0, 240.0)
+        .expect("quiver exists");
 
     tree
 }
@@ -161,7 +176,7 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        assert_eq!(root.subpiles().len(), 5); // Hand, Deck, Discard, Utility, Locations
-        assert_eq!(t.card_count(), 3 + 6 + 1 + 1 + 25);
+        assert_eq!(root.subpiles().len(), 6); // Hand, Deck, Discard, Utility, Quiver, Locations
+        assert_eq!(t.card_count(), 3 + 6 + 1 + 1 + 5 + 25);
     }
 }

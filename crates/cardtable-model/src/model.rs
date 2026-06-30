@@ -129,6 +129,11 @@ impl Card {
     }
 }
 
+/// Whether two cards are the same *type* for Name-view grouping: same face (up/down) and same name.
+fn same_type(a: &Card, b: &Card) -> bool {
+    matches!(a.face, Face::Down) == matches!(b.face, Face::Down) && a.name() == b.name()
+}
+
 /// A pile of cards (and, optionally, nested piles). Collapsed = shown as a compact, counted pile;
 /// not collapsed = fanned out and attended to.
 #[derive(Clone, Debug, PartialEq)]
@@ -569,6 +574,30 @@ impl Tableau {
             _ => Size::Name,
         };
         Ok(())
+    }
+
+    /// Group a pile's cards into runs for the Name view: adjacent cards that are at [`Size::Name`] and
+    /// of the same *type* (same face-up/down and name) collapse into one entry, returned as
+    /// `(representative card, quantity)`. A card grown past `Name` is its own run of 1 (it renders
+    /// individually), and it breaks any run around it. The renderer shows "Name ×N" when quantity > 1.
+    pub fn name_runs(&self, pile: PileId) -> Vec<(CardId, usize)> {
+        let Some(p) = self.piles.get(&pile) else {
+            return Vec::new();
+        };
+        let mut runs: Vec<(CardId, usize)> = Vec::new();
+        for &cid in &p.cards {
+            let card = &self.cards[&cid];
+            if card.size == Size::Name
+                && let Some(&(prev, _)) = runs.last()
+                && self.cards[&prev].size == Size::Name
+                && same_type(&self.cards[&prev], card)
+            {
+                runs.last_mut().expect("just checked non-empty").1 += 1;
+            } else {
+                runs.push((cid, 1));
+            }
+        }
+        runs
     }
 
     /// Records the table surface size (the renderer feeds this back after layout). Decks are kept
@@ -1124,6 +1153,66 @@ mod tests {
         assert_eq!(t.card(c).unwrap().size(), Size::Full);
         t.cycle_card_size(c).unwrap();
         assert_eq!(t.card(c).unwrap().size(), Size::Name);
+    }
+
+    #[test]
+    fn name_runs_group_adjacent_identical_name_cards() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "Quiver").unwrap();
+        let a1 = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Arrow".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.add_card(
+            p,
+            Face::Up {
+                title: "Arrow".into(),
+            },
+            None,
+        )
+        .unwrap();
+        t.add_card(
+            p,
+            Face::Up {
+                title: "Arrow".into(),
+            },
+            None,
+        )
+        .unwrap();
+        let bow = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Bow".into(),
+                },
+                None,
+            )
+            .unwrap();
+        let a4 = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Arrow".into(),
+                },
+                None,
+            )
+            .unwrap();
+
+        // [Arrow×3, Bow, Arrow]
+        assert_eq!(t.name_runs(p), vec![(a1, 3), (bow, 1), (a4, 1)]);
+
+        // Growing the first Arrow breaks its run; the two later Arrows still group.
+        t.set_card_detail(a1, vec!["1 damage".into()]).unwrap();
+        t.cycle_card_size(a1).unwrap(); // a1 now Size::Card
+        let runs = t.name_runs(p);
+        assert_eq!(runs[0], (a1, 1)); // expanded card stands alone
+        assert_eq!(runs.last().unwrap().1, 1); // trailing lone Arrow
     }
 
     #[test]

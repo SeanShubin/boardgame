@@ -1,6 +1,8 @@
-//! A Bevy renderer that draws the **card-table metaphor** — every zone a pile, the unattended
-//! collapsed into labelled, counted piles. Click a pile to open it, click the table to close them all,
-//! and drag cards (and whole piles) between piles.
+//! A Bevy renderer that draws the **card-table metaphor** — everything is a card; a pile is a stack of
+//! cards in one footprint. You navigate with **single-click and drag only**: click a pile to drill into
+//! its zone, click a card to grow it through its sizes, click Back / Exit cards to move around, and drag
+//! piles to arrange them on the table. The current zone's name sits centered at the top (default
+//! "Table"). Meaning comes from *what* you click, never a second gesture.
 //!
 //! # Two layers
 //!
@@ -521,8 +523,14 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             ..default()
                         })
                         .with_children(|flow| {
-                            for &cid in pile.cards() {
-                                spawn_card(flow, tree.card(cid).expect("card id from zone"));
+                            // Identical Name-size cards collapse into one chip with a ×N quantity.
+                            for (id, qty) in tree.name_runs(zone) {
+                                let card = tree.card(id).expect("card id from run");
+                                if card.size() == Size::Name {
+                                    spawn_card_name(flow, card, qty);
+                                } else {
+                                    spawn_card(flow, card);
+                                }
                             }
                             for &sid in pile.subpiles() {
                                 spawn_pile(flow, tree, sid);
@@ -661,7 +669,7 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
 /// utility panel. Every form carries `CardRef`, so a click can grow/shrink it.
 fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
     match card.size() {
-        Size::Name => spawn_card_name(parent, card),
+        Size::Name => spawn_card_name(parent, card, 1),
         Size::Card => spawn_card_detail(parent, card),
         Size::Full => spawn_card_full(parent, card),
     }
@@ -689,8 +697,9 @@ fn finish_card(
     entity.with_children(build);
 }
 
-/// Smallest form — a 96×132 card showing just the name (or a blank back when face down).
-fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card) {
+/// Smallest form — a 96×132 card showing just the name (or a blank back when face down), plus a `×N`
+/// quantity beneath it when `quantity > 1` (several identical cards stacked into one chip).
+fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
     let (label, bg, ink) = match &card.face {
         Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
         Face::Down => (None, CARD_BACK, INK),
@@ -702,8 +711,10 @@ fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card) {
             height: Val::Px(132.0),
             padding: UiRect::all(Val::Px(8.0)),
             border: UiRect::all(Val::Px(2.0)),
+            flex_direction: FlexDirection::Column,
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
+            row_gap: Val::Px(2.0),
             border_radius: BorderRadius::all(Val::Px(12.0)),
             ..default()
         },
@@ -715,6 +726,16 @@ fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card) {
         if let Some(label) = label {
             c.spawn((
                 Text::new(label),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(ink),
+            ));
+        }
+        if quantity > 1 {
+            c.spawn((
+                Text::new(format!("×{quantity}")),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
