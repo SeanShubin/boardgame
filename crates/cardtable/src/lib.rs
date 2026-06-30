@@ -150,7 +150,7 @@ const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
 /// at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting that
 /// one asset reskins all UI text without threading a font handle through each label.
 fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
-    let font = Font::try_from_bytes(UI_FONT.to_vec()).expect("bundled UI font is valid");
+    let font = Font::from_bytes(UI_FONT.to_vec());
     fonts
         .insert(AssetId::default(), font)
         .expect("override the default font");
@@ -375,9 +375,9 @@ fn card_shadow() -> BoxShadow {
     )
 }
 
-const FONT_HEAD: f32 = 18.0;
-const FONT_TITLE: f32 = 15.0;
-const FONT_BODY: f32 = 13.0;
+const FONT_HEAD: FontSize = FontSize::Px(18.0);
+const FONT_TITLE: FontSize = FontSize::Px(15.0);
+const FONT_BODY: FontSize = FontSize::Px(13.0);
 
 /// How fast a deck eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
