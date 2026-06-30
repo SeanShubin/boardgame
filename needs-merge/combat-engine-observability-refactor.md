@@ -132,6 +132,13 @@ driver loops `Step` until it rests. Every micro-step is a serializable, observab
     (deterministic) or a **decision point** (the policy/human chooses) — human/solver/AI all plug into one
     mechanics core.
 
+**QUEUED — phase rename (behavior-neutral, do AFTER P7 to avoid file/​golden churn).** The five round
+phases get snappy one-word names (user, 2026-06-29): **Declare Intentions → Marshal · Reveal Intentions →
+Reveal · Pre-Battle/Standing → Ready · Resolve Engagements → Engage · Reset/Lull → Refresh.** (Schedule
+sub-steps unchanged: Intercept · Volley · Raid · Clash · Breach.) Thread through Spec §4/§4.6 prose + TERM
+lines, the `Phase` enum + round-flow log strings in code, then regenerate the glossary/rules-reference doc
+goldens once. (Avoided *Brace* for Ready — collides with the Iron L1 Brace card.)
+
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
 `apply`/`run` with `--state`/`--out` file-or-stdio. Suite 87/9 (the 9 are the known migration follow-ups).
