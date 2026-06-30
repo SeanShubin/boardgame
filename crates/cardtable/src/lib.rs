@@ -340,6 +340,8 @@ const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
 const CARD_FACE: Color = Color::srgb(0.94, 0.92, 0.84);
 const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
+/// A second back shade so alternating layers in a deck's stack read as distinct cards.
+const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
 /// Highlight edge for a card/deck that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.
@@ -364,6 +366,13 @@ const FONT_BODY: f32 = 13.0;
 
 /// How fast a deck eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
+
+/// A collapsed deck's front-face footprint, the per-card stack step (offset along two edges), and the
+/// visual depth cap so a deep deck doesn't grow without bound.
+const CHIP_W: f32 = 120.0;
+const CHIP_H: f32 = 64.0;
+const STACK_OFFSET: f32 = 2.0;
+const MAX_STACK: usize = 10;
 
 fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], status: &str) {
     commands
@@ -457,43 +466,83 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
         });
 }
 
+/// Draws a collapsed deck as a short stack of offset layers — two alternating colors, stepped along
+/// the right and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
+/// front layer (offset 0, on top) carries the label and count; the whole stack is one drop target.
+fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, count: usize) {
+    let depth = count.clamp(1, MAX_STACK);
+    let spread = (depth - 1) as f32 * STACK_OFFSET;
+    parent
+        .spawn((
+            DeckDropZone(id),
+            Node {
+                width: Val::Px(CHIP_W + spread),
+                height: Val::Px(CHIP_H + spread),
+                ..default()
+            },
+        ))
+        .with_children(|stack| {
+            // Deepest layer first so it renders behind; the front layer (offset 0) is spawned last.
+            for layer in (0..depth).rev() {
+                let offset = layer as f32 * STACK_OFFSET;
+                let color = if layer % 2 == 0 {
+                    CARD_BACK
+                } else {
+                    CARD_BACK_ALT
+                };
+                let bundle = (
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(offset),
+                        top: Val::Px(offset),
+                        width: Val::Px(CHIP_W),
+                        height: Val::Px(CHIP_H),
+                        border: UiRect::all(Val::Px(1.0)),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Center,
+                        padding: UiRect::all(Val::Px(10.0)),
+                        row_gap: Val::Px(4.0),
+                        border_radius: BorderRadius::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    BackgroundColor(color),
+                    BorderColor::all(CARD_EDGE),
+                );
+                if layer == 0 {
+                    stack
+                        .spawn(bundle)
+                        .insert(card_shadow())
+                        .with_children(|face| {
+                            face.spawn((
+                                Text::new(label.to_string()),
+                                TextFont {
+                                    font_size: FONT_TITLE,
+                                    ..default()
+                                },
+                                TextColor(INK),
+                            ));
+                            face.spawn((
+                                Text::new(format!("{count} cards")),
+                                TextFont {
+                                    font_size: FONT_BODY,
+                                    ..default()
+                                },
+                                TextColor(MUTED),
+                            ));
+                        });
+                } else {
+                    stack.spawn(bundle);
+                }
+            }
+        });
+}
+
 /// Draws a deck: a compact, counted chip when collapsed, or a fanned panel of its cards when open.
 fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
     let deck = tree.deck(id).expect("deck id from tree");
     if deck.collapsed {
         let count = deck.cards().len() + deck.subdecks().len();
-        parent
-            .spawn((
-                DeckDropZone(id),
-                Node {
-                    width: Val::Px(120.0),
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(4.0),
-                    border_radius: BorderRadius::all(Val::Px(10.0)),
-                    ..default()
-                },
-                BackgroundColor(CARD_BACK),
-                card_shadow(),
-            ))
-            .with_children(|chip| {
-                chip.spawn((
-                    Text::new(deck.label.clone()),
-                    TextFont {
-                        font_size: FONT_TITLE,
-                        ..default()
-                    },
-                    TextColor(INK),
-                ));
-                chip.spawn((
-                    Text::new(format!("{count} cards")),
-                    TextFont {
-                        font_size: FONT_BODY,
-                        ..default()
-                    },
-                    TextColor(MUTED),
-                ));
-            });
+        spawn_deck_chip(parent, id, &deck.label, count);
     } else {
         parent
             .spawn((
