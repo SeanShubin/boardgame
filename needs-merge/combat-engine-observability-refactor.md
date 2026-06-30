@@ -137,12 +137,25 @@ spec §4/§4.6 + `Marshal` TERM, log/status strings; glossary/rules-reference/ru
 Behavior-neutral, 98/4. *Follow-up:* `rules.rs` `Rule::DeclareIntentions/RevealIntentions` + `combat-phases.md`
 still use the old names (the rules registry) — rename for consistency separately.
 
-**LAST FUNCTIONAL ITEM — the Final's headcount (4 balance reds).** P7 fixed combat; the now-effective party
-wins Husk swarms ≤8, loses 10+. The reference Final fields **32** (a comment notes it was bumped 16→32 for
-the OLD broken resolver). Re-tune the Final's count into the party's win-band (recommend ~8 = top-of-band
-climax, or ~6 with margin) — a `booklet.ron`/scenario number — and the 4 reds (`the_guide_wins`,
-`action_log`, `campaign_is_playable`, `reference_combat_bands`) go green. Awaiting the difficulty target
-(or a "buff the party instead" call). This is the only thing between the suite and all-green.
+**FINAL RE-TUNE DONE** (commit `8b7f288`): Final 32 → **9** Husks (`reference.rs:117`). `probe_final_window`
+found 9 is the *unique* count where the full party wins but a path-missing party loses (≤8 both win, ≥10
+both lose). **Suite all-green: deckbound 102/0, workspace clean.** The whole 9-test migration backlog is
+resolved (combat fixed + goldens regenerated + Final re-tuned).
+
+---
+
+## DONE — the refactor (P1–P7 + rename + Final) is complete; suite 102/0.
+
+**Remaining optional follow-ups (none blocking):**
+- **Deferred ability layer** — offensive-ability *casting* in combat + Reckoning firing (`resolve_reckoning`
+  still uncalled). Confirmed NOT needed for any current test (a treasure's Might is a passive stat grant);
+  it's future content depth, not a gap. Pairs with the §4.6 cast/resolve model.
+- **rules.rs registry rename** — `Rule::DeclareIntentions`/`RevealIntentions` + `combat-phases.md` still use
+  the pre-rename phase names (the self-documenting rules registry); rename for consistency with
+  Marshal/Reveal/Ready/Engage/Refresh.
+- **The Final lattice** (§8.6) — the Final separates full-vs-missing party by *raw headcount* (a 1-Husk-wide
+  band), not by the absent role's mechanic; the durable form is the emergent lock (Charter #12).
+- **Merge this doc** into `docs/` and clear `needs-merge/` (I own it).
 
 **Status:** **P1 DONE** (commit `96d0e74`): `State` serializes through RON (serde across the ownership
 tree + engine `Rng`/`Outcome`; `scenario`/`campaign` are `#[serde(skip)]`); `examples/sim.rs` gives
