@@ -78,13 +78,22 @@ impl Plugin for CardTablePlugin {
             .init_resource::<StatusLine>()
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
+            .init_resource::<DraggingCard>()
             .insert_resource(NeedsRebuild(true))
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            .add_systems(Update, (sync_pile_sizes, sync_surface_size, animate_piles))
+            .add_systems(
+                Update,
+                (
+                    sync_pile_sizes,
+                    sync_surface_size,
+                    animate_piles,
+                    animate_cards,
+                ),
+            )
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
@@ -93,7 +102,9 @@ impl Plugin for CardTablePlugin {
             .add_observer(on_click)
             .add_observer(on_drop)
             .add_observer(on_pile_drag)
-            .add_observer(on_pile_drag_end);
+            .add_observer(on_pile_drag_end)
+            .add_observer(on_card_drag)
+            .add_observer(on_card_drag_end);
     }
 }
 
@@ -133,6 +144,11 @@ struct BackCard;
 #[derive(Component)]
 struct ExitCard;
 
+/// Marks a card's grid tile inside a drilled zone, carrying its [`CardId`]. Dragging it slides the
+/// card freely; on release it reorders into the nearest grid cell and the rest reflow.
+#[derive(Component, Clone, Copy)]
+struct TableCard(CardId);
+
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
 /// treating a drag's release as a real click. Set on [`DragStart`], cleared on [`DragEnd`].
@@ -144,6 +160,11 @@ struct DragGuard(bool);
 /// never sets this. See [`redraw`] and [`animate_piles`].
 #[derive(Resource)]
 struct NeedsRebuild(bool);
+
+/// The card currently being dragged in a zone grid (if any), so its tile isn't snapped to the grid by
+/// the animation while the pointer holds it.
+#[derive(Resource, Default)]
+struct DraggingCard(Option<CardId>);
 
 // ---- systems ------------------------------------------------------------
 
@@ -223,9 +244,10 @@ fn on_click(
     on.propagate(false);
 }
 
-/// A picking drop: move a dragged **card** into the target's pile (a pile, or a card's home pile).
-/// Decks are not nested on drop — they are repositioned by [`on_pile_drag`] — so a dragged pile is
-/// ignored here. Presentation-level; mapping drops to game actions is future work.
+/// A picking drop: move a dragged **card** into the pile it was dropped *onto*. Dropping a card onto
+/// another card (or the felt) is not a move — that's an in-zone reorder, handled by [`on_card_drag_end`]
+/// against the grid. Piles aren't nested on drop (they reposition via [`on_pile_drag`]), so a dragged
+/// pile is ignored. Presentation-level; mapping drops to game actions is future work.
 fn on_drop(
     mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
@@ -239,13 +261,8 @@ fn on_drop(
     };
     let dest = if let Ok(zone) = piles.get(event.entity) {
         zone.0
-    } else if let Ok(card) = cards.get(event.entity) {
-        match table.0.card(card.0) {
-            Some(c) => c.home(),
-            None => return,
-        }
     } else {
-        return; // not a drop target — let it propagate
+        return; // dropped onto a card or the felt — in-zone reordering is handled by the grid
     };
     on.propagate(false);
     let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
@@ -259,16 +276,10 @@ fn on_drop(
 /// here so it doesn't also slide the pile under it.
 fn on_pile_drag(
     mut on: On<Pointer<Drag>>,
-    cards: Query<&CardRef>,
     mut piles: Query<(&TablePile, &mut Node)>,
     mut table: ResMut<Table>,
 ) {
-    let target = on.event().entity;
-    if cards.get(target).is_ok() {
-        on.propagate(false);
-        return;
-    }
-    if let Ok((pile, mut node)) = piles.get_mut(target) {
+    if let Ok((pile, mut node)) = piles.get_mut(on.event().entity) {
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
         // Follow the cursor anywhere — even past the table edge. The settling on release clamps it
@@ -284,18 +295,12 @@ fn on_pile_drag(
 /// Commit a dragged pile's final position to the model on release (one rebuild, at rest).
 fn on_pile_drag_end(
     mut on: On<Pointer<DragEnd>>,
-    cards: Query<&CardRef>,
     piles: Query<(&TablePile, &Node)>,
     mut table: ResMut<Table>,
     mut guard: ResMut<DragGuard>,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
-    let target = on.event().entity;
-    if cards.get(target).is_ok() {
-        on.propagate(false);
-        return;
-    }
-    if let Ok((pile, node)) = piles.get(target) {
+    if let Ok((pile, node)) = piles.get(on.event().entity) {
         let _ = table.0.set_pile_pos(pile.0, px(node.left), px(node.top));
         // Settle: clamp the (possibly off-edge) pile back inside and shove overlaps clear — the
         // anchor included, so a pile dropped past the border is pulled into view, then the animation
@@ -346,6 +351,84 @@ fn animate_piles(time: Res<Time>, table: Res<Table>, mut piles: Query<(&TablePil
         }
         node.left = Val::Px(cx + (target.x - cx) * t);
         node.top = Val::Px(cy + (target.y - cy) * t);
+    }
+}
+
+/// Slide a card freely while it is dragged — the tile follows the cursor anywhere, no rebuild. The
+/// grab lands on the inner card visual; the event propagates up to the `TableCard` tile, which is the
+/// node we actually move. Marking it the dragging card stops [`animate_cards`] from fighting the drag.
+fn on_card_drag(
+    mut on: On<Pointer<Drag>>,
+    mut cards: Query<(&TableCard, &mut Node)>,
+    mut dragging: ResMut<DraggingCard>,
+) {
+    if let Ok((card, mut node)) = cards.get_mut(on.event().entity) {
+        let delta = on.event().event.delta;
+        node.left = Val::Px(px(node.left) + delta.x);
+        node.top = Val::Px(px(node.top) + delta.y);
+        dragging.0 = Some(card.0);
+        on.propagate(false);
+    }
+}
+
+/// On release, snap a dragged card to the nearest grid cell by reordering it within its home pile; the
+/// other cards then *slide* to their new cells ([`animate_cards`]). Reordering is not structural, so
+/// there is no rebuild — that would kill the slide.
+fn on_card_drag_end(
+    mut on: On<Pointer<DragEnd>>,
+    cards: Query<(&TableCard, &Node)>,
+    mut table: ResMut<Table>,
+    mut dragging: ResMut<DraggingCard>,
+) {
+    if let Ok((card, node)) = cards.get(on.event().entity) {
+        on.propagate(false);
+        dragging.0 = None;
+        let cols = grid_cols(table.0.surface().x);
+        // Nearest cell from the tile's dropped centre.
+        let col = (((px(node.left) + CARD_W / 2.0) / (CARD_W + GRID_GAP))
+            .floor()
+            .max(0.0) as usize)
+            .min(cols - 1);
+        let row = ((px(node.top) + CARD_H / 2.0) / (CARD_H + GRID_GAP))
+            .floor()
+            .max(0.0) as usize;
+        let (Some(home), Some(from)) = (
+            table.0.card(card.0).map(|c| c.home()),
+            table.0.card_index(card.0),
+        ) else {
+            return;
+        };
+        let len = table.0.pile(home).map_or(0, |pile| pile.cards().len());
+        let to = (row * cols + col).min(len.saturating_sub(1));
+        let _ = table.0.reorder(home, from, to);
+    }
+}
+
+/// Ease each card tile toward the grid cell its index in the pile names — so a reorder *slides* the
+/// other cards into their new cells instead of snapping. The card being dragged is left alone (it
+/// follows the cursor); tiles already at rest are skipped so layout isn't touched every frame.
+fn animate_cards(
+    time: Res<Time>,
+    table: Res<Table>,
+    dragging: Res<DraggingCard>,
+    mut cards: Query<(&TableCard, &mut Node)>,
+) {
+    let cols = grid_cols(table.0.surface().x);
+    let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
+    for (card, mut node) in &mut cards {
+        if dragging.0 == Some(card.0) {
+            continue; // free while held
+        }
+        let Some(index) = table.0.card_index(card.0) else {
+            continue;
+        };
+        let (tx, ty) = grid_cell(index, cols);
+        let (cx, cy) = (px(node.left), px(node.top));
+        if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
+            continue; // at rest
+        }
+        node.left = Val::Px(cx + (tx - cx) * t);
+        node.top = Val::Px(cy + (ty - cy) * t);
     }
 }
 
@@ -414,6 +497,29 @@ const CHIP_W: f32 = 120.0;
 const CHIP_H: f32 = 64.0;
 const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
+
+/// A card's footprint and the gap between grid cells in a drilled zone. A grid cell is card+gap.
+const CARD_W: f32 = 96.0;
+const CARD_H: f32 = 132.0;
+const GRID_GAP: f32 = 14.0;
+/// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
+/// card in one enormous row.
+const MAX_COLS: usize = 16;
+
+/// How many columns the card grid uses for a surface `width` (at least one, capped).
+fn grid_cols(width: f32) -> usize {
+    (((width / (CARD_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
+}
+
+/// The top-left position of grid cell `index` in a grid of `cols` columns (row-major).
+fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
+    let col = index % cols;
+    let row = index / cols;
+    (
+        col as f32 * (CARD_W + GRID_GAP),
+        row as f32 * (CARD_H + GRID_GAP),
+    )
+}
 
 fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status: &str) {
     let zone = tree.focus_id();
@@ -511,31 +617,39 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
                 } else {
-                    surface
-                        .spawn(Node {
-                            width: Val::Percent(100.0),
-                            flex_direction: FlexDirection::Row,
-                            flex_wrap: FlexWrap::Wrap,
-                            column_gap: Val::Px(10.0),
-                            row_gap: Val::Px(10.0),
-                            padding: UiRect::all(Val::Px(6.0)),
-                            align_items: AlignItems::FlexStart,
-                            ..default()
-                        })
-                        .with_children(|flow| {
-                            // Identical Name-size cards collapse into one chip with a ×N quantity.
-                            for (id, qty) in tree.name_runs(zone) {
-                                let card = tree.card(id).expect("card id from run");
-                                if card.size() == Size::Name {
-                                    spawn_card_name(flow, card, qty);
-                                } else {
-                                    spawn_card(flow, card);
-                                }
-                            }
-                            for &sid in pile.subpiles() {
-                                spawn_pile(flow, tree, sid);
-                            }
-                        });
+                    // The zone's cards lay out in a row-major grid; each is its own draggable tile that
+                    // reorders (others reflow) on drop. ×N grouping doesn't apply here — every card is a
+                    // stable tile so the reflow can animate smoothly.
+                    let cols = grid_cols(tree.surface().x);
+                    for (index, &cid) in pile.cards().iter().enumerate() {
+                        let (x, y) = grid_cell(index, cols);
+                        surface
+                            .spawn((
+                                TableCard(cid),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(x),
+                                    top: Val::Px(y),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|tile| {
+                                spawn_card(tile, tree.card(cid).expect("card id from zone"));
+                            });
+                    }
+                    // Any sub-piles follow the cards in the grid as (clickable) chips.
+                    let base = pile.cards().len();
+                    for (k, &sid) in pile.subpiles().iter().enumerate() {
+                        let (x, y) = grid_cell(base + k, cols);
+                        surface
+                            .spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x),
+                                top: Val::Px(y),
+                                ..default()
+                            })
+                            .with_children(|wrapper| spawn_pile(wrapper, tree, sid));
+                    }
                 }
             });
         });

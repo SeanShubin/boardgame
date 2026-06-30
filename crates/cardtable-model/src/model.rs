@@ -606,6 +606,18 @@ impl Tableau {
         self.surface = Pos { x: w, y: h };
     }
 
+    /// The current table surface size (as last reported by the renderer). Used to lay cards out into a
+    /// grid of as many columns as fit.
+    pub fn surface(&self) -> Pos {
+        self.surface
+    }
+
+    /// The index of a card within its home pile (0 = bottom), if it exists. Drives its grid cell.
+    pub fn card_index(&self, card: CardId) -> Option<usize> {
+        let home = self.cards.get(&card)?.home;
+        self.piles[&home].cards.iter().position(|c| *c == card)
+    }
+
     /// Places `pile` at `(x, y)` but clamps it inside the surface (the borders shove it back in),
     /// returning the position actually used. Drag-to-place calls this each move.
     pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {
