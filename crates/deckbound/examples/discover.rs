@@ -1,33 +1,38 @@
 //! **Class-discovery sweep** — generate-and-test over the capability matrix to see whether a *balanced
-//! RPS ecology* of classes emerges, instead of hand-authoring them.
+//! RPS ecology* of classes emerges, and to **price the area capability**.
 //!
-//! A "class" is a generic, suit-free body: a **strike card** (one of the melee/ranged × single/aoe matrix,
-//! §4.3 capabilities-as-cards) plus an 8-point five-stat allocation. Its **role emerges** from range+stats
-//! (it is never a free input). Every candidate is built and fought on the **real engine** (via the
-//! `engagement` front-end → `combat::resolve_round`), so these are the shipped game's numbers.
+//! A "class" is a generic, suit-free body: a **strike card** (melee/ranged × single/aoe, §4.3
+//! capabilities-as-cards) plus a five-stat allocation. Its **role emerges** from range+stats. Capability
+//! *budgeting*: **range is free** (melee↔ranged is a positional tradeoff, priced structurally by §4.2, not
+//! by points), but **area costs `K` of the budget** — AoE hits the whole enemy group, unevadable, past the
+//! bodyguard, so at equal stats it is *weakly dominant*; charging it `K` points (an AoE class gets `8−K`
+//! stat points) restores a real tradeoff (better vs clusters, worse vs a lone tough wall).
 //!
-//! It enumerates all candidates, round-robins them 1v1 (both side-assignments, to cancel side bias), and
-//! reports the tournament's shape:
-//!   - **dominant** classes (beat the entire field) — a balance red flag (a strictly-best class);
-//!   - **dead** classes (lose to the entire field);
-//!   - a representative **RPS cycle** (A▸B▸C▸A) spanning as many distinct capability cells / roles as
-//!     possible — the evidence that no single class is best (a non-transitive, balanced ecology);
-//!   - a per-cell **balanced exemplar** (win-rate nearest 50%).
+//! Combat is **NvN** (each class fielded as a grouped party of [`PARTY`]), on the **real engine** — AoE's
+//! advantage only exists against a group, so a 1v1 sweep cannot price it. The sweep **scans `K`**: at each
+//! cost it round-robins the field (both side-assignments, to cancel side bias) and reports whether AoE
+//! still dominates (mean win-rate of the AoE cells vs the single cells) and whether a non-transitive RPS
+//! cycle spanning distinct cells/roles exists. The smallest `K` that levels AoE↔single is the price.
 //!
 //! Run: `cargo run -p deckbound --example discover`
 
 use deckbound::balance::compositions_k;
-use deckbound::engagement::{ClassDef, Intention, Outcome, Stat5, battle, unit_from_class};
+use deckbound::engagement::{ClassDef, Intention, Outcome, Stat5, Unit, battle, unit_from_class};
 
-/// Total stat points each class is allowed (summed over the five stats), each stat ≥ 1.
+/// Total stat points a class gets (each stat ≥ 1) before any capability cost.
 const BUDGET: u32 = 8;
-/// Per-matchup round cap (matches the RPS-triangle probe).
+/// Party size per side (NvN). AoE needs a group to matter, so this must be > 1.
+const PARTY: usize = 3;
+/// Per-matchup round cap.
 const ROUNDS: u32 = 8;
+/// AoE budget costs to scan (points removed from an AoE class's stat budget).
+const COSTS: [u32; 4] = [0, 1, 2, 3];
 
 struct Candidate {
     def: ClassDef,
     role: Intention,
     cell: &'static str,
+    aoe: bool,
 }
 
 fn cell_name(ranged: bool, aoe: bool) -> &'static str {
@@ -47,13 +52,14 @@ fn role_tag(r: Intention) -> &'static str {
     }
 }
 
-/// Enumerate every candidate: the 4 capability cells × all 8-point stat allocations (each stat ≥ 1).
-fn candidates() -> Vec<Candidate> {
+/// Every candidate at AoE cost `k`: the 4 cells × all stat allocations of that cell's budget (each stat
+/// ≥ 1). Range is free (budget `BUDGET`); area pays `k` (budget `BUDGET − k`).
+fn candidates(k: u32) -> Vec<Candidate> {
     let cells = [(false, false), (true, false), (false, true), (true, true)];
     let mut out = Vec::new();
     for &(ranged, aoe) in &cells {
-        // Each stat ≥ 1: distribute the BUDGET-5 surplus over 5 stats, then add 1 back to each.
-        for c in compositions_k(BUDGET - 5, 5) {
+        let budget = BUDGET - if aoe { k } else { 0 };
+        for c in compositions_k(budget - 5, 5) {
             let stats: Stat5 = (c[0] + 1, c[1] + 1, c[2] + 1, c[3] + 1, c[4] + 1);
             let (m, v, t, ca, f) = stats;
             let def = ClassDef {
@@ -67,22 +73,30 @@ fn candidates() -> Vec<Candidate> {
                 def,
                 role,
                 cell: cell_name(ranged, aoe),
+                aoe,
             });
         }
     }
     out
 }
 
-/// Net 1v1 result of `a` vs `b`, side bias cancelled by playing both side-assignments: `+1` a beats b,
-/// `-1` b beats a, `0` even (split or mutual draw).
+/// A grouped party of `PARTY` copies of a class on `side` — one shared group, so AoE hits all members and
+/// single fire is walled by the front (the §4.5 bodyguard).
+fn party(def: &ClassDef, side: u8) -> Vec<Unit> {
+    (0..PARTY)
+        .map(|_| {
+            let mut u = unit_from_class(def, side);
+            u.group = Some(0);
+            u
+        })
+        .collect()
+}
+
+/// Net NvN result of `a` vs `b`, side bias cancelled by playing both side-assignments: `+1` a beats b,
+/// `-1` b beats a, `0` even.
 fn duel(a: &ClassDef, b: &ClassDef) -> i8 {
     let side_win = |x: &ClassDef, y: &ClassDef| -> i32 {
-        // x on side 0, y on side 1: +1 if x wins, -1 if x loses, 0 draw.
-        match battle(
-            vec![unit_from_class(x, 0)],
-            vec![unit_from_class(y, 1)],
-            ROUNDS,
-        ) {
+        match battle(party(x, 0), party(y, 1), ROUNDS) {
             Outcome::Win => 1,
             Outcome::Loss => -1,
             Outcome::Draw => 0,
@@ -91,110 +105,166 @@ fn duel(a: &ClassDef, b: &ClassDef) -> i8 {
     (side_win(a, b) - side_win(b, a)).signum() as i8
 }
 
-fn main() {
-    let cands = candidates();
-    let n = cands.len();
-    println!(
-        "Class-discovery sweep — {n} candidates ({} cells × 8-point allocations, each stat ≥ 1), on the real engine\n",
-        4
-    );
+/// One AoE-cost setting's tournament: the full pairwise dominance matrix + per-candidate win counts.
+struct Tournament {
+    cands: Vec<Candidate>,
+    beat: Vec<Vec<i8>>,
+}
 
-    // Full pairwise dominance matrix (symmetric): beat[i][j] = +1 if i beats j, -1 if j beats i, 0 even.
-    let mut beat = vec![vec![0i8; n]; n];
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let r = duel(&cands[i].def, &cands[j].def);
-            beat[i][j] = r;
-            beat[j][i] = -r;
+impl Tournament {
+    fn run(k: u32) -> Tournament {
+        let cands = candidates(k);
+        let n = cands.len();
+        let mut beat = vec![vec![0i8; n]; n];
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let r = duel(&cands[i].def, &cands[j].def);
+                beat[i][j] = r;
+                beat[j][i] = -r;
+            }
+        }
+        Tournament { cands, beat }
+    }
+    fn wins(&self, i: usize) -> usize {
+        self.beat[i].iter().filter(|&&x| x > 0).count()
+    }
+    fn losses(&self, i: usize) -> usize {
+        self.beat[i].iter().filter(|&&x| x < 0).count()
+    }
+    /// Mean win-rate (wins / decisive-others) over candidates matching `pred` — the cell's strength.
+    fn mean_winrate(&self, pred: impl Fn(&Candidate) -> bool) -> f64 {
+        let rs: Vec<f64> = (0..self.cands.len())
+            .filter(|&i| pred(&self.cands[i]))
+            .map(|i| {
+                let w = self.wins(i) as f64;
+                let l = self.losses(i) as f64;
+                if w + l == 0.0 { 0.5 } else { w / (w + l) }
+            })
+            .collect();
+        if rs.is_empty() {
+            0.0
+        } else {
+            rs.iter().sum::<f64>() / rs.len() as f64
         }
     }
-    let wins = |i: usize| (0..n).filter(|&j| beat[i][j] > 0).count();
-    let losses = |i: usize| (0..n).filter(|&j| beat[i][j] < 0).count();
-
-    // --- Dominators / dead weight (the balance red flags) ---
-    let dominators: Vec<usize> = (0..n).filter(|&i| wins(i) == n - 1).collect();
-    let dead: Vec<usize> = (0..n).filter(|&i| losses(i) == n - 1).collect();
-    println!("DOMINANT (beat the whole field): {}", dominators.len());
-    for &i in dominators.iter().take(6) {
-        println!("  !! {} [{}]", cands[i].def.name, role_tag(cands[i].role));
-    }
-    println!("DEAD (lose to the whole field): {}", dead.len());
-
-    // --- Role spread across the viable field ---
-    let viable: Vec<usize> = (0..n).filter(|&i| wins(i) > 0 && losses(i) > 0).collect();
-    println!("\nViable (win some & lose some): {}/{n}", viable.len());
-
-    // --- A representative RPS cycle: A▸B▸C▸A, maximizing distinct capability cells, then distinct roles. ---
-    let mut best: Option<(usize, usize, usize, usize, usize)> = None; // (a,b,c, #cells, #roles)
-    'search: for &a in &viable {
-        for &b in &viable {
-            if beat[a][b] <= 0 {
-                continue;
-            }
-            for &c in &viable {
-                if beat[b][c] <= 0 || beat[c][a] <= 0 {
+    /// An RPS 3-cycle among viable candidates, maximizing distinct cells then roles. Returns the trio.
+    fn rps_cycle(&self) -> Option<(usize, usize, usize, usize, usize)> {
+        let n = self.cands.len();
+        let viable: Vec<usize> = (0..n)
+            .filter(|&i| self.wins(i) > 0 && self.losses(i) > 0)
+            .collect();
+        let mut best: Option<(usize, usize, usize, usize, usize)> = None;
+        for &a in &viable {
+            for &b in &viable {
+                if self.beat[a][b] <= 0 {
                     continue;
                 }
-                let cells = {
-                    let mut v = vec![cands[a].cell, cands[b].cell, cands[c].cell];
-                    v.sort_unstable();
-                    v.dedup();
-                    v.len()
-                };
-                let roles = {
-                    let mut v = vec![cands[a].role, cands[b].role, cands[c].role];
-                    v.sort_unstable();
-                    v.dedup();
-                    v.len()
-                };
-                let score = (cells, roles);
-                if best.is_none_or(|(_, _, _, bc, br)| score > (bc, br)) {
-                    best = Some((a, b, c, cells, roles));
-                    if cells == 3 && roles == 3 {
-                        break 'search; // can't do better than 3 distinct cells AND 3 roles
+                for &c in &viable {
+                    if self.beat[b][c] <= 0 || self.beat[c][a] <= 0 {
+                        continue;
+                    }
+                    let mut cv = vec![self.cands[a].cell, self.cands[b].cell, self.cands[c].cell];
+                    cv.sort_unstable();
+                    cv.dedup();
+                    let mut rv = vec![self.cands[a].role, self.cands[b].role, self.cands[c].role];
+                    rv.sort_unstable();
+                    rv.dedup();
+                    let score = (cv.len(), rv.len());
+                    if best.is_none_or(|(_, _, _, bc, br)| score > (bc, br)) {
+                        best = Some((a, b, c, cv.len(), rv.len()));
+                        if score == (3, 3) {
+                            return best;
+                        }
                     }
                 }
             }
         }
+        best
     }
-    match best {
-        Some((a, b, c, cells, roles)) => {
-            println!(
-                "\nRPS ECOLOGY found — a non-transitive cycle ({cells} cells, {roles} roles), so no class is strictly best:"
-            );
-            for &i in &[a, b, c] {
-                let (m, v, t, ca, f) = cands[i].def.stats;
-                println!(
-                    "  {:<14} M{m}V{v}T{t}C{ca}F{f} -> {}",
-                    cands[i].cell,
-                    role_tag(cands[i].role)
-                );
-            }
-            println!(
-                "  cycle: {} ▸ {} ▸ {} ▸ (back to first)",
-                cands[a].cell, cands[b].cell, cands[c].cell
-            );
-        }
-        None => println!(
-            "\nNO RPS cycle among viable candidates — the field is transitive (a strict pecking order)."
-        ),
+}
+
+fn main() {
+    println!(
+        "Class-discovery sweep — NvN ({PARTY}v{PARTY}, grouped) on the real engine; pricing the AoE capability.\n"
+    );
+    println!("AoE cost K (points removed from an AoE class's {BUDGET}-pt budget):");
+    println!(
+        "{:>3}  {:>5}  {:>9}  {:>10}  {:>11}  {:>5}",
+        "K", "cands", "dominant", "AoE win%", "single win%", "cycle"
+    );
+
+    let mut tournaments = Vec::new();
+    for &k in &COSTS {
+        let t = Tournament::run(k);
+        let n = t.cands.len();
+        let dominant = (0..n).filter(|&i| t.wins(i) == n - 1).count();
+        let aoe_wr = t.mean_winrate(|c| c.aoe) * 100.0;
+        let single_wr = t.mean_winrate(|c| !c.aoe) * 100.0;
+        let cyc = t
+            .rps_cycle()
+            .map(|(_, _, _, cells, roles)| format!("{cells}c/{roles}r"))
+            .unwrap_or_else(|| "none".into());
+        println!("{k:>3}  {n:>5}  {dominant:>9}  {aoe_wr:>7.0}%  {single_wr:>9.0}%  {cyc:>5}");
+        tournaments.push((k, t, aoe_wr, single_wr));
     }
 
-    // --- Per-cell balanced exemplar: the allocation whose win-rate is nearest 50%. ---
+    // The price: smallest K where AoE no longer out-performs single (within 5 points) — i.e. area is paid
+    // for, not free-and-dominant.
+    let chosen = tournaments
+        .iter()
+        .find(|(_, _, aoe, single)| *aoe <= *single + 5.0)
+        .or_else(|| tournaments.last());
+    let Some((k, t, _, _)) = chosen else { return };
+    println!("\nChosen AoE cost K = {k} (smallest where AoE win% ≤ single win% + 5). Details:\n");
+
+    let n = t.cands.len();
+    let dominant: Vec<usize> = (0..n).filter(|&i| t.wins(i) == n - 1).collect();
+    let dead: Vec<usize> = (0..n).filter(|&i| t.losses(i) == n - 1).collect();
+    println!("dominant (beat the whole field): {}", dominant.len());
+    for &i in dominant.iter().take(6) {
+        println!(
+            "  !! {} [{}]",
+            t.cands[i].def.name,
+            role_tag(t.cands[i].role)
+        );
+    }
+    println!("dead (lose to the whole field): {}", dead.len());
+
+    if let Some((a, b, c, cells, roles)) = t.rps_cycle() {
+        println!("\nRPS ecology ({cells} cells, {roles} roles) — no class is strictly best:");
+        for &i in &[a, b, c] {
+            let (m, v, tg, ca, f) = t.cands[i].def.stats;
+            println!(
+                "  {:<14} M{m}V{v}T{tg}C{ca}F{f} -> {}",
+                t.cands[i].cell,
+                role_tag(t.cands[i].role)
+            );
+        }
+        println!(
+            "  cycle: {} ▸ {} ▸ {} ▸ (back to first)",
+            t.cands[a].cell, t.cands[b].cell, t.cands[c].cell
+        );
+    } else {
+        println!("\nNo RPS cycle — the field is transitive (a strict pecking order).");
+    }
+
     println!("\nPer-cell balanced exemplar (win-rate nearest 50%):");
     for &cell in &["melee·single", "ranged·single", "melee·aoe", "ranged·aoe"] {
-        let pick = (0..n).filter(|&i| cands[i].cell == cell).min_by_key(|&i| {
-            let w = wins(i) as i64;
-            let l = losses(i) as i64;
-            ((w - l).abs(), -(w + l)) // closest to even, prefer more decisive matchups
-        });
+        let pick = (0..n)
+            .filter(|&i| t.cands[i].cell == cell)
+            .min_by_key(|&i| {
+                (
+                    (t.wins(i) as i64 - t.losses(i) as i64).abs(),
+                    -((t.wins(i) + t.losses(i)) as i64),
+                )
+            });
         if let Some(i) = pick {
-            let (m, v, t, ca, f) = cands[i].def.stats;
+            let (m, v, tg, ca, f) = t.cands[i].def.stats;
             println!(
-                "  {cell:<14} M{m}V{v}T{t}C{ca}F{f} -> {:<9} ({}W {}L of {})",
-                role_tag(cands[i].role),
-                wins(i),
-                losses(i),
+                "  {cell:<14} M{m}V{v}T{tg}C{ca}F{f} -> {:<9} ({}W {}L of {})",
+                role_tag(t.cands[i].role),
+                t.wins(i),
+                t.losses(i),
                 n - 1
             );
         }

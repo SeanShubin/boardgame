@@ -287,23 +287,38 @@ is nothing but **a strike card from the matrix (melee/ranged × single/aoe) plus
 **role emerges** from range+stats (never a free input). So the whole class space is finite and enumerable —
 and every candidate is **built and fought on the real engine** (no parallel sim to drift, §11).
 
-**METHOD.** Enumerate every candidate (the 4 capability cells × all allocations of a fixed stat budget),
-**round-robin** them 1v1 (both side-assignments, to cancel side bias), and read the **tournament's shape**:
+**Capability budgeting — range is free, area is paid.** The two capability axes are *not* symmetric.
+**Melee↔ranged is a positional tradeoff** priced **structurally by §4.2** (ranged is safe but evadable and
+needs a living screen; melee is the shield with the reflexive trade but can't reach the back) — neither
+strictly beats the other, so it costs **no** points. **Area is different:** an AoE strike hits the *whole*
+enemy group, unevadable, past the bodyguard, with no Might cut — at equal stats it is **weakly dominant**
+(never worse, often much better). A free strictly-better capability is a degeneracy, so the area card costs
+**`K` of the stat budget**: an AoE class gets `BUDGET − K` points. This is capabilities-as-cards taken to its
+conclusion — a capability you can't out-trade is a capability you must *pay* for.
+
+**METHOD.** Enumerate every candidate (the 4 capability cells × all allocations of that cell's budget),
+field each as a **grouped party** (NvN — AoE's advantage *only exists against a group*, so a 1v1 sweep
+cannot price it), **round-robin** them (both side-assignments, to cancel side bias), and **scan `K`**. At
+each cost read the **tournament's shape**:
 
 - **No dominant class** — none beats the entire field (a strictly-best class is a balance failure);
 - **No dead class** — none loses to the entire field (dead weight);
-- **A non-transitive RPS cycle** `A ▸ B ▸ C ▸ A` spanning **distinct cells and roles** — the positive
-  evidence that the field has *no* strict pecking order, i.e. a balanced ecology emerges rather than a
-  single best build. (A purely transitive field — a total order — is the failure mode: someone is best.)
+- **AoE win% ≈ single win%** — the area price is right when the AoE cells no longer out-perform the single
+  cells (at `K=0` they do, by construction); the smallest `K` that levels them is the capability's cost;
+- **A non-transitive RPS cycle** `A ▸ B ▸ C ▸ A` spanning **distinct cells and roles** — positive evidence
+  the field has *no* strict pecking order (a total order is the failure mode: someone is best).
 
 This is the **ecology-level** analogue of the §6 closure check (no dominant *strategy*) and the §6.1
-necessity test (no dead *mechanic*): here it is no dominant / dead **class**, plus a live counter-cycle.
+necessity test (no dead *mechanic*): here it is no dominant / dead **class**, a priced area capability, and a
+live counter-cycle.
 
-**TOOL.** `cargo run -p deckbound --example discover` runs the sweep on the real engine. First result (8-point
-budget, each stat ≥ 1, 140 candidates): **0 dominant, 0 dead, 126/140 viable**, and a 3-cell / 3-role RPS
-cycle exists (e.g. a melee·single Outrider ▸ ranged·single Rearguard ▸ melee·aoe Vanguard) — so meaningful
-balanced classes *do* emerge from combining range × shape × stats; they need not be fiat-authored. The
-discovered exemplars are candidates for the hand-tuned roster, then locked by the §6 / §6.1 checks.
+**TOOL.** `cargo run -p deckbound --example discover` runs the NvN sweep on the real engine and scans the AoE
+cost. First result (8-point budget, 3v3, each stat ≥ 1): the AoE cells' mean win-rate falls **61% → 57% →
+49% → 34%** as `K` goes `0 → 1 → 2 → 3` while the single cells hold ~**40–50%** — so **area is worth ~2 stat
+points**. At `K=2` AoE (49%) ↔ single (50%) level out, **0 dominant, 0 dead**, and a 3-cell / 3-role RPS
+cycle survives (e.g. melee·single Outrider ▸ ranged·single Rearguard ▸ melee·aoe Vanguard). So meaningful
+balanced classes emerge from combining range × shape × stats *once area is priced* — they need not be
+fiat-authored. The per-cell exemplars are candidates for the hand-tuned roster, then locked by §6 / §6.1.
 
 ---
 
