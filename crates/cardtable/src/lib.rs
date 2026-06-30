@@ -20,7 +20,7 @@
 
 use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
-use bevy::ui::BoxShadow;
+use bevy::ui::{BoxShadow, ComputedNode};
 
 use cardtable_model::{Card, CardId, DeckId, DeckTree, Face};
 
@@ -76,11 +76,13 @@ impl Plugin for CardTablePlugin {
             .init_resource::<StatusLine>()
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
+            .insert_resource(NeedsRebuild(true))
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
+            .add_systems(Update, (sync_deck_sizes, animate_decks))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
@@ -121,6 +123,12 @@ struct TableDeck(DeckId);
 /// treating a drag's release as a real click. Set on [`DragStart`], cleared on [`DragEnd`].
 #[derive(Resource, Default)]
 struct DragGuard(bool);
+
+/// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a deck, move
+/// a card, a new game snapshot). Deck positions are not structural; they animate, so repositioning
+/// never sets this. See [`redraw`] and [`animate_decks`].
+#[derive(Resource)]
+struct NeedsRebuild(bool);
 
 // ---- systems ------------------------------------------------------------
 
@@ -163,6 +171,7 @@ fn on_click(
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
+    mut rebuild: ResMut<NeedsRebuild>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
@@ -176,9 +185,11 @@ fn on_click(
         // A non-actionable card: consume the click (don't focus a deck or close the table).
     } else if let Some(deck) = deck {
         let _ = table.0.focus(deck.0);
+        rebuild.0 = true;
     } else if is_background {
         let root = table.0.root_id();
         let _ = table.0.focus(root);
+        rebuild.0 = true;
     } else {
         return; // not interactive — let it propagate to an ancestor that is
     }
@@ -193,6 +204,7 @@ fn on_drop(
     cards: Query<&CardRef>,
     decks: Query<&DeckDropZone>,
     mut table: ResMut<Table>,
+    mut rebuild: ResMut<NeedsRebuild>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
@@ -211,6 +223,7 @@ fn on_drop(
     on.propagate(false);
     let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
     let _ = table.0.move_card(dragged.0, dest, at);
+    rebuild.0 = true;
 }
 
 /// Slide a top-level deck across the table while it is dragged. Mutates the wrapper's `Node` left/top
@@ -219,17 +232,21 @@ fn on_drop(
 fn on_deck_drag(
     mut on: On<Pointer<Drag>>,
     cards: Query<&CardRef>,
-    mut decks: Query<&mut Node, With<TableDeck>>,
+    mut decks: Query<(&TableDeck, &mut Node)>,
+    mut table: ResMut<Table>,
 ) {
     let target = on.event().entity;
     if cards.get(target).is_ok() {
         on.propagate(false);
         return;
     }
-    if let Ok(mut node) = decks.get_mut(target) {
+    if let Ok((deck, mut node)) = decks.get_mut(target) {
         let delta = on.event().event.delta;
-        node.left = Val::Px(px(node.left) + delta.x);
-        node.top = Val::Px(px(node.top) + delta.y);
+        let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
+        node.left = Val::Px(x);
+        node.top = Val::Px(y);
+        // Keep the model target in step with the live node so the animation doesn't drag it back.
+        let _ = table.0.set_deck_pos(deck.0, x, y);
         on.propagate(false);
     }
 }
@@ -250,6 +267,8 @@ fn on_deck_drag_end(
     }
     if let Ok((deck, node)) = decks.get(target) {
         let _ = table.0.set_deck_pos(deck.0, px(node.left), px(node.top));
+        // Slide everything this deck now overlaps out of the way (anchor = the deck just dropped).
+        table.0.separate(deck.0);
         on.propagate(false);
     }
 }
@@ -262,18 +281,49 @@ fn px(value: Val) -> f32 {
     }
 }
 
-/// Rebuild the UI whenever the presentation state changes (focus/zoom mutate `Table`; a consumer may
-/// replace `Table`/`ActionRail`/`StatusLine`). Change-detection drives this — no manual dirty flag.
+/// Feed each top-level deck's laid-out size back into the model (logical px), so [`DeckTree::separate`]
+/// works on real AABBs. Runs every frame; deck sizes are stable, so it's cheap.
+fn sync_deck_sizes(decks: Query<(&TableDeck, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (deck, computed) in &decks {
+        let size = computed.size * computed.inverse_scale_factor;
+        let _ = table.0.set_deck_size(deck.0, size.x, size.y);
+    }
+}
+
+/// Ease each deck's wrapper toward its model position, so a separation (or any reposition) *slides*
+/// into place instead of snapping. The dragged deck keeps target == position, so it doesn't ease;
+/// decks already at rest are skipped so the node (and its layout) isn't touched every frame.
+fn animate_decks(time: Res<Time>, table: Res<Table>, mut decks: Query<(&TableDeck, &mut Node)>) {
+    let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
+    for (deck, mut node) in &mut decks {
+        let Some(d) = table.0.deck(deck.0) else {
+            continue;
+        };
+        let target = d.pos();
+        let (cx, cy) = (px(node.left), px(node.top));
+        if (target.x - cx).abs() < 0.5 && (target.y - cy).abs() < 0.5 {
+            continue; // at rest
+        }
+        node.left = Val::Px(cx + (target.x - cx) * t);
+        node.top = Val::Px(cy + (target.y - cy) * t);
+    }
+}
+
+/// Rebuild the whole UI only on a *structural* change (open/close a deck, move a card, a new game
+/// snapshot). Deck positions are not structural — they animate (see [`animate_decks`]) — so
+/// repositioning never triggers a rebuild.
 fn redraw(
     mut commands: Commands,
+    mut rebuild: ResMut<NeedsRebuild>,
     table: Res<Table>,
     rail: Res<ActionRail>,
     status: Res<StatusLine>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
-    if !(table.is_changed() || rail.is_changed() || status.is_changed()) {
+    if !rebuild.0 {
         return;
     }
+    rebuild.0 = false;
     for entity in &roots {
         commands.entity(entity).despawn();
     }
@@ -311,6 +361,9 @@ fn card_shadow() -> BoxShadow {
 const FONT_HEAD: f32 = 18.0;
 const FONT_TITLE: f32 = 15.0;
 const FONT_BODY: f32 = 13.0;
+
+/// How fast a deck eases toward its target position, as a fraction closed per second (higher = snappier).
+const SLIDE_SPEED: f32 = 12.0;
 
 fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], status: &str) {
     commands
@@ -570,7 +623,8 @@ mod game {
     use contract::Game;
 
     use crate::{
-        ActionRail, ActionRequests, CardTablePlugin, CardTableSet, RailAction, StatusLine, Table,
+        ActionRail, ActionRequests, CardTablePlugin, CardTableSet, NeedsRebuild, RailAction,
+        StatusLine, Table,
     };
 
     /// The immutable rules of the running game.
@@ -626,6 +680,7 @@ mod game {
         mut table: ResMut<Table>,
         mut rail: ResMut<ActionRail>,
         mut status: ResMut<StatusLine>,
+        mut rebuild: ResMut<NeedsRebuild>,
     ) {
         if requests.0.is_empty() {
             return;
@@ -646,6 +701,7 @@ mod game {
             table.0 = t;
             rail.0 = r;
             status.0 = s;
+            rebuild.0 = true;
         }
     }
 

@@ -72,6 +72,7 @@ pub struct Deck {
     cards: Vec<CardId>,
     subdecks: Vec<DeckId>,
     pos: Pos,
+    size: Pos,
 }
 
 impl Deck {
@@ -93,6 +94,11 @@ impl Deck {
     /// This deck's position on the table surface.
     pub fn pos(&self) -> Pos {
         self.pos
+    }
+
+    /// This deck's rendered size (`x` = width, `y` = height), fed back by the renderer after layout.
+    pub fn size(&self) -> Pos {
+        self.size
     }
 }
 
@@ -145,6 +151,7 @@ impl DeckTree {
                 cards: Vec::new(),
                 subdecks: Vec::new(),
                 pos: Pos::default(),
+                size: Pos::default(),
             },
         );
         Self {
@@ -181,6 +188,7 @@ impl DeckTree {
                 cards: Vec::new(),
                 subdecks: Vec::new(),
                 pos: Pos::default(),
+                size: Pos::default(),
             },
         );
         self.decks
@@ -418,6 +426,81 @@ impl DeckTree {
         Ok(())
     }
 
+    /// Records `deck`'s rendered size (the renderer feeds this back after layout, for [`separate`]).
+    pub fn set_deck_size(&mut self, deck: DeckId, w: f32, h: f32) -> Result<(), DeckError> {
+        self.decks
+            .get_mut(&deck)
+            .ok_or(DeckError::UnknownDeck(deck))?
+            .size = Pos { x: w, y: h };
+        Ok(())
+    }
+
+    /// Pushes overlapping **top-level** decks apart so the table reads as physical objects. `anchor`
+    /// (the just-placed deck) stays put; every deck it overlaps slides away, cascading to resolve
+    /// secondary overlaps (chain reactions). Iterative and capped, so a hopelessly crowded table
+    /// settles with some residual overlap rather than looping forever. Uses each deck's `pos`/`size`.
+    pub fn separate(&mut self, anchor: DeckId) {
+        const MAX_PASSES: usize = 64;
+        const EPS: f32 = 0.01;
+        let mut ids = self.decks[&self.root].subdecks.clone();
+        ids.sort(); // stable order → deterministic settling
+        for _ in 0..MAX_PASSES {
+            let mut moved = false;
+            for i in 0..ids.len() {
+                for j in (i + 1)..ids.len() {
+                    let (a, b) = (ids[i], ids[j]);
+                    let (ap, asz) = (self.decks[&a].pos, self.decks[&a].size);
+                    let (bp, bsz) = (self.decks[&b].pos, self.decks[&b].size);
+                    let overlap_x = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
+                    let overlap_y = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
+                    if overlap_x <= EPS || overlap_y <= EPS {
+                        continue; // not actually overlapping
+                    }
+                    // Minimum-translation: separate along the axis of least overlap.
+                    let (mut push_x, mut push_y) = (0.0, 0.0);
+                    if overlap_x < overlap_y {
+                        let dir = if bp.x + bsz.x / 2.0 >= ap.x + asz.x / 2.0 {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        push_x = dir * overlap_x;
+                    } else {
+                        let dir = if bp.y + bsz.y / 2.0 >= ap.y + asz.y / 2.0 {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        push_y = dir * overlap_y;
+                    }
+                    match (a == anchor, b == anchor) {
+                        (true, true) => {} // distinct ids, unreachable
+                        (true, false) => self.shift(b, push_x, push_y),
+                        (false, true) => self.shift(a, -push_x, -push_y),
+                        (false, false) => {
+                            self.shift(a, -push_x / 2.0, -push_y / 2.0);
+                            self.shift(b, push_x / 2.0, push_y / 2.0);
+                        }
+                    }
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+    }
+
+    fn shift(&mut self, deck: DeckId, dx: f32, dy: f32) {
+        let pos = &mut self
+            .decks
+            .get_mut(&deck)
+            .expect("deck id from subdecks")
+            .pos;
+        pos.x += dx;
+        pos.y += dy;
+    }
+
     fn apply_collapse(&mut self) {
         let focus = self.focus;
         let ids: Vec<DeckId> = self.decks.keys().copied().collect();
@@ -594,6 +677,60 @@ mod tests {
         assert_eq!(t.move_deck(root, deck, 0), Err(DeckError::InvalidMove));
         assert_eq!(t.deck(hand).unwrap().parent(), Some(root));
         assert_eq!(t.deck(nested).unwrap().parent(), Some(hand));
+    }
+
+    /// Two 100×100 decks overlapping; the anchor stays, the other slides clear on the x axis.
+    #[test]
+    fn separate_keeps_anchor_and_clears_overlap() {
+        let mut t = DeckTree::new();
+        let root = t.root_id();
+        let a = t.add_deck(root, "A").unwrap();
+        let b = t.add_deck(root, "B").unwrap();
+        for d in [a, b] {
+            t.set_deck_size(d, 100.0, 100.0).unwrap();
+        }
+        t.set_deck_pos(a, 0.0, 0.0).unwrap();
+        t.set_deck_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
+
+        t.separate(a);
+
+        assert_eq!(t.deck(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor unmoved
+        let bp = t.deck(b).unwrap().pos();
+        assert!(bp.x >= 100.0 - 0.02, "b should clear a on x, got {bp:?}");
+        assert!(
+            (bp.y - 0.0).abs() < 0.02,
+            "b should not drift on y, got {bp:?}"
+        );
+    }
+
+    /// Three stacked decks: the anchor holds and the chain pushes the rest apart (no pair overlaps).
+    #[test]
+    fn separate_resolves_chain_reactions() {
+        let mut t = DeckTree::new();
+        let root = t.root_id();
+        let ids: Vec<_> = (0..3)
+            .map(|i| t.add_deck(root, format!("D{i}")).unwrap())
+            .collect();
+        for &d in &ids {
+            t.set_deck_size(d, 100.0, 100.0).unwrap();
+            t.set_deck_pos(d, 0.0, 0.0).unwrap(); // all stacked at the origin
+        }
+        let anchor = ids[0];
+        t.separate(anchor);
+
+        assert_eq!(t.deck(anchor).unwrap().pos(), Pos { x: 0.0, y: 0.0 });
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                let p = t.deck(ids[i]).unwrap().pos();
+                let q = t.deck(ids[j]).unwrap().pos();
+                let ox = (p.x + 100.0).min(q.x + 100.0) - p.x.max(q.x);
+                let oy = (p.y + 100.0).min(q.y + 100.0) - p.y.max(q.y);
+                assert!(
+                    ox <= 0.02 || oy <= 0.02,
+                    "decks {i},{j} still overlap: {p:?} {q:?}"
+                );
+            }
+        }
     }
 
     #[test]
