@@ -24,4 +24,10 @@
     // Artillery — ranged AREA. Might priced DOWN vs the Marksman (M2 < M3) to pay for hitting a whole group
     // at once. Emerges Rearguard. Slower to kill a lone target, but shreds a stacked group through its front.
     (name: "Artillery",  ranged: true,  aoe: true,  stats: (2, 1, 2, 1, 1)),
+
+    // Cleaver — melee AREA (fills the melee+aoe cell of the matrix). A front-line cleave: Toughness 3 > Might 2,
+    // so it emerges Vanguard and holds the line while its area hits the WHOLE enemy rank it faces (every
+    // crossing Outrider in the Intercept, every clashing Vanguard in the Clash) — the melee answer to a
+    // clustered front. Might priced down (M2) vs a single-target striker to pay for the area, like Artillery.
+    (name: "Cleaver",    ranged: false, aoe: true,  stats: (2, 2, 3, 1, 1)),
 ]

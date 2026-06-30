@@ -210,6 +210,33 @@ fn counters(classes: &[ClassDef]) {
     println!();
 }
 
+/// 0. Attack-type coverage — every loaded class binned into the {melee,ranged} × {single,aoe} matrix,
+/// with its emergent role, so the four-cell coverage (and any empty cell) is visible at a glance.
+fn attack_matrix(classes: &[ClassDef]) {
+    println!("0. Attack-type coverage (melee/ranged × single/aoe)");
+    for &ranged in &[false, true] {
+        for &aoe in &[false, true] {
+            let cell: Vec<String> = classes
+                .iter()
+                .filter(|c| c.ranged == ranged && c.aoe == aoe)
+                .map(|c| format!("{} ({:?})", c.name, unit_from_class(c, 0).intent))
+                .collect();
+            let kind = format!(
+                "{}·{}",
+                if ranged { "ranged" } else { "melee" },
+                if aoe { "aoe" } else { "single" }
+            );
+            let fill = if cell.is_empty() {
+                "— (no class — combo unrepresented)".to_string()
+            } else {
+                cell.join(", ")
+            };
+            println!("   {kind:<14} {fill}");
+        }
+    }
+    println!();
+}
+
 fn main() {
     let path = std::env::args()
         .nth(1)
@@ -224,6 +251,7 @@ fn main() {
         classes.len(),
         path.display()
     );
+    attack_matrix(&classes);
     rps_triangle(&classes);
     single_vs_aoe(&classes);
     counters(&classes);
