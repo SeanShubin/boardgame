@@ -278,6 +278,33 @@ the emergent-not-fiat removal test executed, not argued.
 already-tested mechanics as prerequisites but must **force exactly one new** one. A topological sort gives
 both the test order and the tutorial order at once.
 
+### 6.2 Class discovery — generate-and-test for a balanced ecology
+
+The two checks above tune a **named** roster. The dual question is generative: *does a balanced roster even
+exist in the design space, or must classes be hand-propped?* Once **capabilities are cards** (the base
+strike included — its range and area are read from the strike card, §4.3 / [[role-card-redesign]]), a class
+is nothing but **a strike card from the matrix (melee/ranged × single/aoe) plus a stat allocation**, and its
+**role emerges** from range+stats (never a free input). So the whole class space is finite and enumerable —
+and every candidate is **built and fought on the real engine** (no parallel sim to drift, §11).
+
+**METHOD.** Enumerate every candidate (the 4 capability cells × all allocations of a fixed stat budget),
+**round-robin** them 1v1 (both side-assignments, to cancel side bias), and read the **tournament's shape**:
+
+- **No dominant class** — none beats the entire field (a strictly-best class is a balance failure);
+- **No dead class** — none loses to the entire field (dead weight);
+- **A non-transitive RPS cycle** `A ▸ B ▸ C ▸ A` spanning **distinct cells and roles** — the positive
+  evidence that the field has *no* strict pecking order, i.e. a balanced ecology emerges rather than a
+  single best build. (A purely transitive field — a total order — is the failure mode: someone is best.)
+
+This is the **ecology-level** analogue of the §6 closure check (no dominant *strategy*) and the §6.1
+necessity test (no dead *mechanic*): here it is no dominant / dead **class**, plus a live counter-cycle.
+
+**TOOL.** `cargo run -p deckbound --example discover` runs the sweep on the real engine. First result (8-point
+budget, each stat ≥ 1, 140 candidates): **0 dominant, 0 dead, 126/140 viable**, and a 3-cell / 3-role RPS
+cycle exists (e.g. a melee·single Outrider ▸ ranged·single Rearguard ▸ melee·aoe Vanguard) — so meaningful
+balanced classes *do* emerge from combining range × shape × stats; they need not be fiat-authored. The
+discovered exemplars are candidates for the hand-tuned roster, then locked by the §6 / §6.1 checks.
+
 ---
 
 ## 7. What is allowed to break the rules (quarantined modes)
