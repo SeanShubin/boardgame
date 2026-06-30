@@ -18,7 +18,7 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
-use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, Pointer};
+use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::BoxShadow;
 
@@ -75,6 +75,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<ActionRail>()
             .init_resource::<StatusLine>()
             .init_resource::<ActionRequests>()
+            .init_resource::<DragGuard>()
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
@@ -84,6 +85,7 @@ impl Plugin for CardTablePlugin {
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
             // slides it freely across the table.
+            .add_observer(on_drag_start)
             .add_observer(on_click)
             .add_observer(on_drop)
             .add_observer(on_deck_drag)
@@ -114,6 +116,12 @@ struct DeckDropZone(DeckId);
 #[derive(Component, Clone, Copy)]
 struct TableDeck(DeckId);
 
+/// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
+/// and release over the same entity, regardless of the drag), so this guards the click handler from
+/// treating a drag's release as a real click. Set on [`DragStart`], cleared on [`DragEnd`].
+#[derive(Resource, Default)]
+struct DragGuard(bool);
+
 // ---- systems ------------------------------------------------------------
 
 fn setup_camera(mut commands: Commands) {
@@ -139,23 +147,36 @@ fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
 /// action; a (non-actionable) card consumes the click so it doesn't bubble; a deck opens (focus); the
 /// table background closes all decks. Inner nodes (e.g. a card's text) match nothing and fall through
 /// to their parent via propagation. Global observer, so it survives the per-change UI rebuild.
+fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
+    guard.0 = true;
+}
+
+#[allow(clippy::type_complexity)]
 fn on_click(
     mut on: On<Pointer<Click>>,
-    actions: Query<&ActionControl>,
-    cards: Query<&CardRef>,
-    decks: Query<&DeckDropZone>,
-    background: Query<(), With<CardTableRoot>>,
+    guard: Res<DragGuard>,
+    targets: Query<(
+        Option<&ActionControl>,
+        Option<&CardRef>,
+        Option<&DeckDropZone>,
+        Has<CardTableRoot>,
+    )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
 ) {
-    let target = on.event().entity;
-    if let Ok(action) = actions.get(target) {
+    if guard.0 {
+        return; // the release that ends a drag also fires Click — that's not an intentional click
+    }
+    let Ok((action, card, deck, is_background)) = targets.get(on.event().entity) else {
+        return;
+    };
+    if let Some(action) = action {
         requests.0.push(action.0);
-    } else if cards.get(target).is_ok() {
+    } else if card.is_some() {
         // A non-actionable card: consume the click (don't focus a deck or close the table).
-    } else if let Ok(deck) = decks.get(target) {
+    } else if let Some(deck) = deck {
         let _ = table.0.focus(deck.0);
-    } else if background.get(target).is_ok() {
+    } else if is_background {
         let root = table.0.root_id();
         let _ = table.0.focus(root);
     } else {
@@ -219,7 +240,9 @@ fn on_deck_drag_end(
     cards: Query<&CardRef>,
     decks: Query<(&TableDeck, &Node)>,
     mut table: ResMut<Table>,
+    mut guard: ResMut<DragGuard>,
 ) {
+    guard.0 = false; // the drag is over; let real clicks through again
     let target = on.event().entity;
     if cards.get(target).is_ok() {
         on.propagate(false);
