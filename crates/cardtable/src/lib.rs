@@ -1,6 +1,6 @@
 //! A Bevy renderer that draws the **card-table metaphor** — every zone a deck, the unattended
-//! collapsed into labelled, counted piles, click a deck to fan it (focus) and a control to zoom back
-//! out.
+//! collapsed into labelled, counted piles. Click a deck to open it, click the table to close them all,
+//! and drag cards (and whole decks) between decks.
 //!
 //! # Two layers
 //!
@@ -18,7 +18,7 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
-use bevy::picking::events::{DragDrop, Pointer};
+use bevy::picking::events::{Click, DragDrop, Pointer};
 use bevy::prelude::*;
 use bevy::ui::BoxShadow;
 
@@ -80,12 +80,11 @@ impl Plugin for CardTablePlugin {
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            .add_systems(
-                Update,
-                (handle_focus, handle_zoom_out, collect_action_clicks).in_set(CardTableSet::Input),
-            )
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
-            .add_observer(on_card_drop);
+            // Input is picking-driven (clicks open/close decks and fire actions; drags move
+            // cards/decks), so it runs in observers rather than the Input system set.
+            .add_observer(on_click)
+            .add_observer(on_drop);
     }
 }
 
@@ -95,15 +94,7 @@ impl Plugin for CardTablePlugin {
 #[derive(Component)]
 struct CardTableRoot;
 
-/// A clickable collapsed deck — clicking focuses (fans) it.
-#[derive(Component)]
-struct FocusButton(DeckId);
-
-/// A clickable control that zooms out one level.
-#[derive(Component)]
-struct ZoomOutButton;
-
-/// A clickable card or rail button bound to the action at this opaque index.
+/// A card or rail button bound to the action at this opaque index.
 #[derive(Component)]
 struct ActionControl(usize);
 
@@ -136,65 +127,79 @@ fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
         .expect("override the default font");
 }
 
-/// Click a collapsed deck → focus it (fan it open, collapse the rest).
-fn handle_focus(
-    buttons: Query<(&Interaction, &FocusButton), Changed<Interaction>>,
+/// A picking click, resolved against the most specific target: an actionable control records its
+/// action; a (non-actionable) card consumes the click so it doesn't bubble; a deck opens (focus); the
+/// table background closes all decks. Inner nodes (e.g. a card's text) match nothing and fall through
+/// to their parent via propagation. Global observer, so it survives the per-change UI rebuild.
+fn on_click(
+    mut on: On<Pointer<Click>>,
+    actions: Query<&ActionControl>,
+    cards: Query<&CardRef>,
+    decks: Query<&DeckDropZone>,
+    background: Query<(), With<CardTableRoot>>,
     mut table: ResMut<Table>,
-) {
-    for (interaction, button) in &buttons {
-        if *interaction == Interaction::Pressed {
-            let _ = table.0.focus(button.0);
-        }
-    }
-}
-
-/// Click the zoom-out control → focus moves to the current focus's parent.
-fn handle_zoom_out(
-    buttons: Query<&Interaction, (Changed<Interaction>, With<ZoomOutButton>)>,
-    mut table: ResMut<Table>,
-) {
-    if buttons.iter().any(|i| *i == Interaction::Pressed) {
-        table.0.zoom_out();
-    }
-}
-
-/// Click an actionable card or rail button → record its index for a consumer to act on.
-fn collect_action_clicks(
-    controls: Query<(&Interaction, &ActionControl), Changed<Interaction>>,
     mut requests: ResMut<ActionRequests>,
 ) {
-    for (interaction, control) in &controls {
-        if *interaction == Interaction::Pressed {
-            requests.0.push(control.0);
-        }
+    let target = on.event().entity;
+    if let Ok(action) = actions.get(target) {
+        requests.0.push(action.0);
+    } else if cards.get(target).is_ok() {
+        // A non-actionable card: consume the click (don't focus a deck or close the table).
+    } else if let Ok(deck) = decks.get(target) {
+        let _ = table.0.focus(deck.0);
+    } else if background.get(target).is_ok() {
+        let root = table.0.root_id();
+        let _ = table.0.focus(root);
+    } else {
+        return; // not interactive — let it propagate to an ancestor that is
     }
+    on.propagate(false);
 }
 
-/// Drop a dragged card onto a deck (or onto a card, meaning *that card's* deck) → move it there,
-/// appended. Presentation-level: it rearranges the [`Table`] directly; mapping a drop to a game
-/// action is future work. Global observer, so it survives the per-change UI rebuild.
-fn on_card_drop(
-    on: On<Pointer<DragDrop>>,
+/// A picking drop: move the dragged card or deck into the target's deck — a deck, a card's home deck,
+/// or the table background (the root). Cards dropped on the background are ignored; invalid deck moves
+/// (cycles) are no-ops via the model. Presentation-level; mapping drops to game actions is future work.
+fn on_drop(
+    mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
-    zones: Query<&DeckDropZone>,
+    decks: Query<&DeckDropZone>,
+    background: Query<(), With<CardTableRoot>>,
     mut table: ResMut<Table>,
 ) {
     let event = on.event();
-    let Ok(dragged) = cards.get(event.event.dropped) else {
-        return;
-    };
-    let dest = if let Ok(zone) = zones.get(event.entity) {
-        zone.0
-    } else if let Ok(target_card) = cards.get(event.entity) {
-        match table.0.card(target_card.0) {
-            Some(card) => card.home(),
-            None => return,
-        }
+    let dropped = event.event.dropped;
+    let target = event.entity;
+
+    let dragged_card = cards.get(dropped).ok().map(|c| c.0);
+    let dragged_deck = decks.get(dropped).ok().map(|d| d.0);
+    if dragged_card.is_none() && dragged_deck.is_none() {
+        return; // dragged something that is neither a card nor a deck
+    }
+
+    let dest = if let Ok(deck) = decks.get(target) {
+        Some(deck.0)
+    } else if let Ok(card) = cards.get(target) {
+        table.0.card(card.0).map(|c| c.home())
+    } else if background.get(target).is_ok() {
+        Some(table.0.root_id())
     } else {
+        return; // not a drop target — let it propagate
+    };
+    let Some(dest) = dest else {
         return;
     };
-    let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
-    let _ = table.0.move_card(dragged.0, dest, at);
+
+    on.propagate(false);
+    if let Some(card) = dragged_card {
+        // Cards live only inside decks, and the root's own cards aren't drawn — so ignore card-on-table.
+        if dest != table.0.root_id() {
+            let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
+            let _ = table.0.move_card(card, dest, at);
+        }
+    } else if let Some(deck) = dragged_deck {
+        let at = table.0.deck(dest).map_or(0, |d| d.subdecks().len());
+        let _ = table.0.move_deck(deck, dest, at);
+    }
 }
 
 /// Rebuild the UI whenever the presentation state changes (focus/zoom mutate `Table`; a consumer may
@@ -248,7 +253,6 @@ const FONT_TITLE: f32 = 15.0;
 const FONT_BODY: f32 = 13.0;
 
 fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], status: &str) {
-    let at_root = tree.focus_id() == tree.root_id();
     commands
         .spawn((
             CardTableRoot,
@@ -290,7 +294,7 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                 });
             }
 
-            // CENTER: status, a zoom-out control, then the decks.
+            // CENTER: status, then the decks. Clicking empty space here (the felt) closes all decks.
             root.spawn(Node {
                 flex_grow: 1.0,
                 height: Val::Percent(100.0),
@@ -310,30 +314,6 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                         },
                         TextColor(INK),
                     ));
-                }
-
-                if !at_root {
-                    main.spawn((
-                        Button,
-                        ZoomOutButton,
-                        Node {
-                            padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
-                            border_radius: BorderRadius::all(Val::Px(6.0)),
-                            align_self: AlignSelf::FlexStart,
-                            ..default()
-                        },
-                        BackgroundColor(BUTTON),
-                    ))
-                    .with_children(|b| {
-                        b.spawn((
-                            Text::new("\u{2191} Zoom out"),
-                            TextFont {
-                                font_size: FONT_TITLE,
-                                ..default()
-                            },
-                            TextColor(INK),
-                        ));
-                    });
                 }
 
                 main.spawn(Node {
@@ -361,8 +341,6 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
         let count = deck.cards().len() + deck.subdecks().len();
         parent
             .spawn((
-                Button,
-                FocusButton(id),
                 DeckDropZone(id),
                 Node {
                     width: Val::Px(120.0),
@@ -468,7 +446,7 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
         card_shadow(),
     ));
     if let Some(index) = card.actionable {
-        entity.insert((Button, ActionControl(index)));
+        entity.insert(ActionControl(index));
     }
     entity.with_children(|c| {
         if let Some(title) = title {
@@ -488,7 +466,6 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
 fn spawn_rail_button(parent: &mut ChildSpawnerCommands, action: &RailAction) {
     parent
         .spawn((
-            Button,
             ActionControl(action.index),
             Node {
                 width: Val::Percent(100.0),

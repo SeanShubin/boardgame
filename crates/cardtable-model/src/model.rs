@@ -92,6 +92,9 @@ pub enum DeckError {
     UnknownDeck(DeckId),
     /// An index was outside the valid range for the operation.
     IndexOutOfRange,
+    /// A deck move that would break the tree — moving the root, or moving a deck into itself or one
+    /// of its own descendants (a cycle).
+    InvalidMove,
 }
 
 /// A tree of decks and cards, plus the current attention state (which deck is focused, which cards
@@ -312,6 +315,54 @@ impl DeckTree {
         Ok(())
     }
 
+    /// Moves a whole deck under `new_parent` at index `at` — re-parenting it, or reordering it when
+    /// the parent is unchanged. Rejects moving the root, or moving a deck into itself or one of its own
+    /// descendants (each would break the tree): [`DeckError::InvalidMove`], leaving the tree unchanged.
+    pub fn move_deck(
+        &mut self,
+        deck: DeckId,
+        new_parent: DeckId,
+        at: usize,
+    ) -> Result<(), DeckError> {
+        if deck == self.root {
+            return Err(DeckError::InvalidMove);
+        }
+        if !self.decks.contains_key(&deck) {
+            return Err(DeckError::UnknownDeck(deck));
+        }
+        if !self.decks.contains_key(&new_parent) {
+            return Err(DeckError::UnknownDeck(new_parent));
+        }
+        // Moving a deck onto itself or into one of its descendants would create a cycle.
+        if self.is_ancestor_or_self(deck, new_parent) {
+            return Err(DeckError::InvalidMove);
+        }
+        let old_parent = self.decks[&deck]
+            .parent
+            .expect("a non-root deck has a parent");
+        let pos = self.decks[&old_parent]
+            .subdecks
+            .iter()
+            .position(|d| *d == deck)
+            .expect("child invariant: deck is in its parent's subdecks");
+        self.decks
+            .get_mut(&old_parent)
+            .expect("old parent exists")
+            .subdecks
+            .remove(pos);
+        let dest = self
+            .decks
+            .get_mut(&new_parent)
+            .expect("new parent checked above");
+        let at = at.min(dest.subdecks.len());
+        dest.subdecks.insert(at, deck);
+        self.decks
+            .get_mut(&deck)
+            .expect("deck checked above")
+            .parent = Some(new_parent);
+        Ok(())
+    }
+
     // --- focus / zoom -----------------------------------------------------------------------
 
     /// Focuses `deck`: it (and its ancestors, the path back to the root) are fanned open; every other
@@ -484,6 +535,40 @@ mod tests {
         // unchanged
         assert_eq!(t.deck(hand).unwrap().cards(), &[c0, c1]);
         assert_eq!(t.card(c0).unwrap().home(), hand);
+    }
+
+    #[test]
+    fn move_deck_nests_under_a_new_parent() {
+        let (mut t, hand, deck, _c0, _c1) = fixture();
+        let root = t.root_id();
+        // nest `hand` inside `deck`
+        t.move_deck(hand, deck, 0).unwrap();
+        assert_eq!(t.deck(hand).unwrap().parent(), Some(deck));
+        assert!(t.deck(deck).unwrap().subdecks().contains(&hand));
+        assert!(!t.deck(root).unwrap().subdecks().contains(&hand));
+    }
+
+    #[test]
+    fn move_deck_reorders_among_siblings() {
+        let (mut t, hand, deck, _c0, _c1) = fixture();
+        let root = t.root_id();
+        // root.subdecks starts as [hand, deck]; move `deck` to the front (same parent = reorder).
+        assert_eq!(t.deck(root).unwrap().subdecks(), &[hand, deck]);
+        t.move_deck(deck, root, 0).unwrap();
+        assert_eq!(t.deck(root).unwrap().subdecks(), &[deck, hand]);
+    }
+
+    #[test]
+    fn move_deck_rejects_cycles_and_root() {
+        let (mut t, hand, deck, _c0, _c1) = fixture();
+        let root = t.root_id();
+        let nested = t.add_deck(hand, "Nested").unwrap();
+        // into itself, into a descendant, and moving the root: all rejected, tree unchanged.
+        assert_eq!(t.move_deck(hand, hand, 0), Err(DeckError::InvalidMove));
+        assert_eq!(t.move_deck(hand, nested, 0), Err(DeckError::InvalidMove));
+        assert_eq!(t.move_deck(root, deck, 0), Err(DeckError::InvalidMove));
+        assert_eq!(t.deck(hand).unwrap().parent(), Some(root));
+        assert_eq!(t.deck(nested).unwrap().parent(), Some(hand));
     }
 
     #[test]
