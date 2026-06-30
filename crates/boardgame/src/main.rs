@@ -2,7 +2,7 @@
 //!
 //! It wires [`Deckbound`] into the generic [`tabletop`] renderer and runs it. The game opens on its
 //! menu, where every mode — Duels / Cooperation / God-tier / Versus, the world-map **Campaign**, and
-//! the rules encyclopedia — is one card. Any type implementing `engine::Game` could be swapped in
+//! the rules encyclopedia — is one card. Any type implementing `contract::Game` could be swapped in
 //! here.
 
 use bevy::prelude::*;

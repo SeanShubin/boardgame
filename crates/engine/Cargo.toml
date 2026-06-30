@@ -4,6 +4,3 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-# The action stream is the canonical, replayable record of a game (everything is a deterministic
-# fold of actions over the seed), so `Game::Action` must serialize — see the trait bound.
-serde = { workspace = true }

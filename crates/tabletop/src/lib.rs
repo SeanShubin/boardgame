@@ -1,17 +1,17 @@
-//! A Bevy presentation layer that can draw and drive any [`engine::Game`].
+//! A Bevy presentation layer that can draw and drive any [`contract::Game`].
 //!
 //! [`TabletopPlugin`] is generic over the game. It holds the game's rules, runs
-//! a fresh match, renders the game's [`TableView`](engine::TableView), and
+//! a fresh match, renders the game's [`TableView`](contract::TableView), and
 //! offers the current player's legal actions as buttons. Clicking a button
 //! applies that action and the table redraws. Each scenario is a sticky
 //! [session](Game::session_key) with its own local undo: Back / Forward (or `Z` /
 //! `Y`) undo and redo moves within it, while Esc leaves to the menu and keeps your
 //! place (see [`history_controls`] and [`commit`]). Because the plugin only ever
-//! talks to the [`engine::Game`] trait, it never needs to know which game it is.
+//! talks to the [`contract::Game`] trait, it never needs to know which game it is.
 //!
 //! Cards are drawn collectible-card-game style — a title bar, a type line, a
 //! body of stat / rules lines, and a corner badge — coloured by the card's
-//! [`Accent`](engine::Accent). There is no art, so the space is information.
+//! [`Accent`](contract::Accent). There is no art, so the space is information.
 //!
 //! Presentation aims for *tactile* cards rather than flat sprites: rounded
 //! corners, drop-shadows, a settle-in "deal" when the board redraws, and a
@@ -25,7 +25,7 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, GlobalZIndex, OverflowAxis, ScrollPosition};
-use engine::{Accent, CardFace, CardView, Game, MapView, ProseLine, TableView, ZoneView};
+use contract::{Accent, CardFace, CardView, Game, MapView, ProseLine, TableView, ZoneView};
 use std::cell::Cell;
 use std::time::Duration;
 
@@ -593,7 +593,7 @@ fn key_char(key: KeyCode) -> Option<char> {
 /// empty query shows everything; otherwise an entry survives if its category, term, or text
 /// contains the query (case-insensitive). Generic over the game — the content is its [`reference`].
 ///
-/// [`reference`]: engine::Game::reference
+/// [`reference`]: contract::Game::reference
 #[allow(clippy::too_many_arguments)]
 fn refresh_rules<G: Game + Clone>(
     mut commands: Commands,
@@ -632,7 +632,7 @@ fn refresh_rules<G: Game + Clone>(
     };
     let q = query.0.to_lowercase();
     let entries = game.0.reference();
-    let matches = |e: &engine::RefEntry| {
+    let matches = |e: &contract::RefEntry| {
         q.is_empty()
             || e.term.to_lowercase().contains(&q)
             || e.text.to_lowercase().contains(&q)
@@ -706,7 +706,7 @@ fn refresh_rules<G: Game + Clone>(
 /// from the game's [`reference`] each time it changes. Lives outside [`TableRoot`] so redraws
 /// never tear it down. Generic over the game — the content is whatever it exposes.
 ///
-/// [`reference`]: engine::Game::reference
+/// [`reference`]: contract::Game::reference
 fn setup_rules(mut commands: Commands) {
     commands
         .spawn((
@@ -1642,8 +1642,8 @@ fn spawn_prose_pane(parent: &mut ChildSpawnerCommands, prose: &[ProseLine]) {
 const GRID_CELL_W: f32 = 96.0;
 
 /// Draw a comparison [`Grid`] as an aligned table: a header row (blank corner + column labels),
-/// then one labelled row per [`engine::GridRow`], each cell tinted by its accent.
-fn spawn_grid(parent: &mut ChildSpawnerCommands, grid: &engine::Grid) {
+/// then one labelled row per [`contract::GridRow`], each cell tinted by its accent.
+fn spawn_grid(parent: &mut ChildSpawnerCommands, grid: &contract::Grid) {
     let cell = |row: &mut ChildSpawnerCommands, text: &str, color: Color, header: bool| {
         row.spawn((
             Node {
@@ -2332,7 +2332,7 @@ fn spawn_control_button(parent: &mut ChildSpawnerCommands, marker: impl Bundle, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::{GameError, Outcome, PlayerId};
+    use contract::{GameError, Outcome, PlayerId};
 
     /// A toy game whose state is `(session_key, counter)`. `Switch(k)` moves to session `k` (its
     /// counter resets); `Bump` is an in-session move. Enough to drive sessions + local undo.

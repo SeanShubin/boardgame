@@ -2,14 +2,14 @@
 //! battle, **assigning the role-card rewards** a clear unlocks (§8.3, no currency), toward a run
 //! victory (clear the objective).
 //!
-//! An `engine::Game` that **embeds** the combat game ([`battle_state`]) and folds its result back
+//! An `contract::Game` that **embeds** the combat game ([`battle_state`]) and folds its result back
 //! into the run. A `suggest()` **guide** walks the reference scenario's scripted path
 //! (A → B[p] → C[p] → final), so the UI can highlight the next on-script move.
 //!
 //! Tokens are general (each holds ≥1 member): this scenario uses **one token = the whole party**
 //! (move/fight together); a future scenario can use one token per member (split up) with no rewrite.
 
-use engine::{Accent, Game, GameError, MapTile, MapView, Outcome, PlayerId, TableView};
+use contract::{Accent, Game, GameError, MapTile, MapView, Outcome, PlayerId, TableView};
 
 use crate::actor::Actor;
 use crate::currency::Currency;

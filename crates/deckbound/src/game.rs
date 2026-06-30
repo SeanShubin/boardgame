@@ -1,13 +1,12 @@
-//! Deckbound as an [`engine::Game`] — the §4.6 six-phase battle.
+//! Deckbound as an [`contract::Game`] — the §4.6 six-phase battle.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
 //! §4.2) run through the six-phase round (Standoff → Fray → Volley → Breach → Reckoning → Lull,
 //! §4.6), or a **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All
 //! numbers live in `data/booklet.ron`.
 
-use engine::{
-    Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, Rng, TableView, ZoneView,
-};
+use contract::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, TableView, ZoneView};
+use engine::Rng;
 
 use crate::actor::{Actor, Range};
 use crate::campaign::{Campaign, reference_campaign};
@@ -127,7 +126,7 @@ fn categories() -> Vec<String> {
 }
 
 /// The rules entries within one category.
-fn entries_in(category: &str) -> Vec<engine::RefEntry> {
+fn entries_in(category: &str) -> Vec<contract::RefEntry> {
     scenarios::glossary()
         .into_iter()
         .filter(|e| e.category == category)
@@ -1501,7 +1500,7 @@ impl Game for Deckbound {
         matches!(action, Action::Exit)
     }
 
-    fn reference(&self) -> Vec<engine::RefEntry> {
+    fn reference(&self) -> Vec<contract::RefEntry> {
         scenarios::glossary()
     }
 
@@ -1510,7 +1509,7 @@ impl Game for Deckbound {
             return CAMPAIGN.view(camp, perspective);
         }
         let mut zones = Vec::new();
-        let mut prose: Vec<engine::ProseLine> = Vec::new();
+        let mut prose: Vec<contract::ProseLine> = Vec::new();
         match &state.phase {
             Phase::Menu(Menu::Top) => zones.push(menu_zone()),
             // Categories are just names → clickable cards; the *content* of a category is the
@@ -1518,11 +1517,11 @@ impl Game for Deckbound {
             Phase::Menu(Menu::Rules) => zones.push(category_zone()),
             Phase::Menu(Menu::Category(i)) => {
                 let cat = categories().into_iter().nth(*i).unwrap_or_default();
-                prose.push(engine::ProseLine::Heading(cat.clone()));
+                prose.push(contract::ProseLine::Heading(cat.clone()));
                 for e in entries_in(&cat) {
-                    prose.push(engine::ProseLine::Term(e.term));
-                    prose.push(engine::ProseLine::Body(e.text));
-                    prose.push(engine::ProseLine::Gap);
+                    prose.push(contract::ProseLine::Term(e.term));
+                    prose.push(contract::ProseLine::Body(e.text));
+                    prose.push(contract::ProseLine::Gap);
                 }
                 // RPS-ish charts, shown in the category they belong to (discoverable in place):
                 // the role triangle under Roles, the Clash counter-grid under the Clash module.
@@ -1809,31 +1808,31 @@ fn scenario_zone(menu: Menu) -> ZoneView {
 
 /// The §4 / §8.5 **playstyle triangle** (Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor) as a small
 /// chart — the three damage Roles mediated by the Tempo economy.
-fn append_triangle_chart(prose: &mut Vec<engine::ProseLine>) {
-    prose.push(engine::ProseLine::Gap);
-    prose.push(engine::ProseLine::Heading("The triangle".into()));
+fn append_triangle_chart(prose: &mut Vec<contract::ProseLine>) {
+    prose.push(contract::ProseLine::Gap);
+    prose.push(contract::ProseLine::Heading("The triangle".into()));
     for line in [
         "Aggressor (Infiltrator) ▸ beats Glass-Cannon — cracks the thin shield before the cannons win",
         "Glass-Cannon (Artillery) ▸ beats Turtle — out-guns a passive defender it never has to reach",
         "Turtle (Wall) ▸ beats Aggressor — drains the pusher dry, so it reaches the back empty",
     ] {
-        prose.push(engine::ProseLine::Body(line.into()));
+        prose.push(contract::ProseLine::Body(line.into()));
     }
 }
 
 /// The Clash four-card counter-grid ("what beats what"): row vs column, from the row's view.
-fn append_clash_chart(prose: &mut Vec<engine::ProseLine>) {
-    let win = |t: &str| engine::GridCell::new(t, Accent::Good);
-    let lose = engine::GridCell::new("lose", Accent::Foe);
-    let trade = engine::GridCell::new("trade", Accent::Warn);
-    let none = engine::GridCell::new("—", Accent::Neutral);
-    let row = |label: &str, cells: Vec<engine::GridCell>| engine::GridRow {
+fn append_clash_chart(prose: &mut Vec<contract::ProseLine>) {
+    let win = |t: &str| contract::GridCell::new(t, Accent::Good);
+    let lose = contract::GridCell::new("lose", Accent::Foe);
+    let trade = contract::GridCell::new("trade", Accent::Warn);
+    let none = contract::GridCell::new("—", Accent::Neutral);
+    let row = |label: &str, cells: Vec<contract::GridCell>| contract::GridRow {
         label: label.into(),
         cells,
     };
-    prose.push(engine::ProseLine::Gap);
-    prose.push(engine::ProseLine::Heading("What beats what".into()));
-    prose.push(engine::ProseLine::Grid(engine::Grid {
+    prose.push(contract::ProseLine::Gap);
+    prose.push(contract::ProseLine::Heading("What beats what".into()));
+    prose.push(contract::ProseLine::Grid(contract::Grid {
         headers: ["Strike", "Antic.", "Gather", "Evade"]
             .iter()
             .map(|s| s.to_string())
@@ -1857,7 +1856,7 @@ fn append_clash_chart(prose: &mut Vec<engine::ProseLine>) {
             ),
         ],
     }));
-    prose.push(engine::ProseLine::Body(
+    prose.push(contract::ProseLine::Body(
         "Strike vs Strike trades; Evade vs a Strike also steals the striker's Force.".into(),
     ));
 }

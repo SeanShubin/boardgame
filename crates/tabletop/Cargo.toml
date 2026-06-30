@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-engine = { workspace = true }
+contract = { workspace = true }
 bevy = { workspace = true }
 
 # System clipboard for the "Copy feed" button — desktop only; the web build no-ops (it would use the

@@ -3,4 +3,5 @@
 dist/
 /.idea/
 .claude/settings.local.json
+.claude/worktrees/
 **/*.rs.bk

@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use engine::{Accent, CardView, ProseLine};
+use contract::{Accent, CardView, ProseLine};
 
 use crate::actor::{Actor, Attack, Behavior, Driver, Instinct, Script, TargetRule};
 use crate::cards::{Card, Effect, RoleKind};
@@ -181,8 +181,8 @@ const CATEGORY_ORDER: &[&str] = &[
 ///   the source of truth for what it does).
 ///
 /// Entries are grouped by [`CATEGORY_ORDER`]; order within a category is source order.
-pub fn glossary() -> Vec<engine::RefEntry> {
-    static GLOSSARY: OnceLock<Vec<engine::RefEntry>> = OnceLock::new();
+pub fn glossary() -> Vec<contract::RefEntry> {
+    static GLOSSARY: OnceLock<Vec<contract::RefEntry>> = OnceLock::new();
     GLOSSARY
         .get_or_init(|| {
             let mut entries = parse_spec_terms(SPEC);
@@ -192,7 +192,7 @@ pub fn glossary() -> Vec<engine::RefEntry> {
                 .iter()
                 .filter(|c| c.passive && !c.text.is_empty())
             {
-                entries.push(engine::RefEntry::new(
+                entries.push(contract::RefEntry::new(
                     "Powers",
                     card.name.as_str(),
                     card.text.as_str(),
@@ -214,7 +214,7 @@ pub fn glossary() -> Vec<engine::RefEntry> {
 /// (optionally bulleted) line of the form `**TERM.** \`Name\` (Category) — readable text`. Lines
 /// inside a **superseded** section (one whose blockquote banner begins `> **SUPERSEDED` /
 /// `> **PARTIALLY SUPERSEDED`) are skipped, so the encyclopedia tracks only the live rules.
-fn parse_spec_terms(spec: &str) -> Vec<engine::RefEntry> {
+fn parse_spec_terms(spec: &str) -> Vec<contract::RefEntry> {
     let mut out = Vec::new();
     let mut superseded = false;
     for line in spec.lines() {
@@ -243,7 +243,7 @@ fn parse_spec_terms(spec: &str) -> Vec<engine::RefEntry> {
 }
 
 /// Parse the part of a `**TERM.**` line after the marker: `` `Name` (Category) — text ``.
-fn parse_term_line(rest: &str) -> Option<engine::RefEntry> {
+fn parse_term_line(rest: &str) -> Option<contract::RefEntry> {
     let rest = rest.trim_start();
     // `Name` in backticks.
     let rest = rest.strip_prefix('`')?;
@@ -256,7 +256,7 @@ fn parse_term_line(rest: &str) -> Option<engine::RefEntry> {
     if term.trim().is_empty() || category.trim().is_empty() || text.is_empty() {
         return None;
     }
-    Some(engine::RefEntry::new(category.trim(), term.trim(), text))
+    Some(contract::RefEntry::new(category.trim(), term.trim(), text))
 }
 
 fn catalog() -> &'static Catalog {
@@ -1190,8 +1190,8 @@ mod tests {
             assert!(!e.name.is_empty());
             assert!(!e.detail.is_empty(), "{} has no rules detail", e.name);
             match &e.view.face {
-                engine::CardFace::Up { title, .. } => assert_eq!(title, &e.name),
-                engine::CardFace::Down => panic!("{} is face-down in the catalog", e.name),
+                contract::CardFace::Up { title, .. } => assert_eq!(title, &e.name),
+                contract::CardFace::Down => panic!("{} is face-down in the catalog", e.name),
             }
         }
     }

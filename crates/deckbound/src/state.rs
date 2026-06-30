@@ -10,7 +10,8 @@
 //! The optional four-card **Clash** module ([`Phase::Clash`]) replaces a same-range trade when on.
 //! Resolution is order-independent **within** a phase (§1.9); the phase order is the only timing.
 
-use engine::{Outcome, Rng};
+use contract::Outcome;
+use engine::Rng;
 
 use crate::actor::Actor;
 use crate::campaign::CampaignState;
