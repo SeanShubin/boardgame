@@ -4,11 +4,11 @@
 
 ## Phases (in round order)
 
-1. **Declare intentions** — Each unit is secretly assigned an **intention** — Vanguard (hold the front), Outrider (break the line) or Rearguard (deal from the back) — and may be bound into a group. Re-declared every round; declaring is free and may fail (a misplaced unit is idle, not barred).
+1. **Marshal** — Each unit is secretly assigned an **intention** — Vanguard (hold the front), Outrider (break the line) or Rearguard (deal from the back) — and may be bound into a group. Re-declared every round; declaring is free and may fail (a misplaced unit is idle, not barred).
 
-2. **Reveal intentions** — Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.
+2. **Reveal** — Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.
 
-3. **Standing casts** — Standing abilities (a Wall's brace, a Support's ally buff) are cast now. They are ally-targeted, auto-land, and last the round.
+3. **Ready** — Standing abilities (a Wall's brace, a Support's ally buff) are cast now. They are ally-targeted, auto-land, and last the round.
 
 4. **Intercept** — The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid. An Outrider cut down here never reaches the back.
 

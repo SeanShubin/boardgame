@@ -27,12 +27,12 @@ pub enum RuleKind {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum Rule {
     // ---- set up the round ----
-    /// Secretly assign each unit an intention (Vanguard / Outrider / Rearguard) and group them.
-    DeclareIntentions,
-    /// Reveal intentions and groups; positions lock. Nobody moves.
-    RevealIntentions,
-    /// Cast Standing abilities (braces / ally buffs).
-    StandingCasts,
+    /// Marshal: secretly assign each unit an intention (Vanguard / Outrider / Rearguard) and group them.
+    Marshal,
+    /// Reveal: reveal intentions and groups; positions lock. Nobody moves.
+    Reveal,
+    /// Ready: cast Standing abilities (braces / ally buffs).
+    Ready,
     // ---- the engagement schedule (§4.6) ----
     /// Intercept: each Vanguard strikes an enemy Outrider (the front screens the crossers).
     Intercept,
@@ -73,22 +73,22 @@ impl Rule {
     pub fn info(self) -> RuleInfo {
         use RuleKind::{Behavior, Phase};
         let (name, description, kind) = match self {
-            Rule::DeclareIntentions => (
-                "Declare intentions",
+            Rule::Marshal => (
+                "Marshal",
                 "Each unit is secretly assigned an **intention** — Vanguard (hold the front), Outrider \
                  (break the line) or Rearguard (deal from the back) — and may be bound into a group. \
                  Re-declared every round; declaring is free and may fail (a misplaced unit is idle, not \
                  barred).",
                 Phase,
             ),
-            Rule::RevealIntentions => (
-                "Reveal intentions",
+            Rule::Reveal => (
+                "Reveal",
                 "Intentions and groups are revealed together and positions lock. Nobody moves; everything \
                  after resolves in the open.",
                 Phase,
             ),
-            Rule::StandingCasts => (
-                "Standing casts",
+            Rule::Ready => (
+                "Ready",
                 "Standing abilities (a Wall's brace, a Support's ally buff) are cast now. They are \
                  ally-targeted, auto-land, and last the round.",
                 Phase,
@@ -200,9 +200,9 @@ impl Rule {
 /// Every combat rule, in **round order** for the phases (the appendix and the engine read it in
 /// sequence — the five engagement steps are the §4.6 schedule), with the cross-cutting behaviors last.
 pub const ALL_RULES: &[Rule] = &[
-    Rule::DeclareIntentions,
-    Rule::RevealIntentions,
-    Rule::StandingCasts,
+    Rule::Marshal,
+    Rule::Reveal,
+    Rule::Ready,
     Rule::Intercept,
     Rule::Volley,
     Rule::Raid,
