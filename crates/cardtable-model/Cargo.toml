@@ -1,0 +1,9 @@
+[package]
+name = "cardtable-model"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Used ONLY by the `binding` module (TableView -> DeckTree). The core model is dependency-free, so
+# card/deck behaviors test with no game and no renderer.
+contract = { workspace = true }

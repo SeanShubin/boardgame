@@ -1771,6 +1771,7 @@ name = "boardgame"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cardtable",
  "deckbound",
  "tabletop",
 ]
@@ -1843,6 +1844,22 @@ dependencies = [
  "rustix 0.38.44",
  "wayland-backend",
  "wayland-client",
+]
+
+[[package]]
+name = "cardtable"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "cardtable-model",
+ "contract",
+]
+
+[[package]]
+name = "cardtable-model"
+version = "0.1.0"
+dependencies = [
+ "contract",
 ]
 
 [[package]]
@@ -1987,6 +2004,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1aaf9b65849a68662ac6c0810c8893a765c960b907dd7cfab9c4a50bf764fbc"
 dependencies = [
  "const_soft_float",
+]
+
+[[package]]
+name = "contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2222,6 +2246,7 @@ checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 name = "deckbound"
 version = "0.1.0"
 dependencies = [
+ "contract",
  "engine",
  "ron 0.8.1",
  "serde",
@@ -4710,7 +4735,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "bevy",
- "engine",
+ "contract",
  "serde",
 ]
 

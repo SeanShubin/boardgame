@@ -21,7 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use engine::{Game, Outcome, PlayerId};
+use contract::{Game, Outcome, PlayerId};
 
 use crate::actor::Actor;
 use crate::cards::{Card, Effect};

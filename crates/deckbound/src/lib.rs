@@ -1,4 +1,4 @@
-//! Deckbound — the cooperative card-combat game, as an [`engine::Game`].
+//! Deckbound — the cooperative card-combat game, as an [`contract::Game`].
 //!
 //! Combat is a sequence of **rounds** on the §4 **engagement-schedule** model: one damage channel —
 //! untyped **Might** into the **health** pool, resolved pile→bar→pool (`stats`, §2.2); stats read off

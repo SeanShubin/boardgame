@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/contract",
     "crates/engine",
+    "crates/cardtable-model",
+    "crates/cardtable",
     "crates/tabletop",
     "crates/deckbound",
     "crates/boardgame",
@@ -14,7 +17,10 @@ edition = "2024"
 
 [workspace.dependencies]
 bevy = { version = "0.18.0", features = ["wav"] }
+contract = { path = "crates/contract" }
 engine = { path = "crates/engine" }
+cardtable-model = { path = "crates/cardtable-model" }
+cardtable = { path = "crates/cardtable" }
 tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
 serde = { version = "1", features = ["derive"] }

@@ -11,8 +11,8 @@
 //! Add `--quiet` to print only the per-day milestones and the final par; the default prints every
 //! scripted action and the new log lines it produced.
 
+use contract::{Game, Outcome, PlayerId};
 use deckbound::{CampAction, Campaign, reference_campaign};
-use engine::{Game, Outcome, PlayerId};
 
 fn main() {
     let quiet = std::env::args().any(|a| a == "--quiet");

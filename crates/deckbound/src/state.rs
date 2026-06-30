@@ -8,7 +8,8 @@
 //! a same-range trade when on. Resolution is order-independent **within** an engagement (§1.9); the
 //! schedule order is the only timing.
 
-use engine::{Outcome, Rng};
+use contract::Outcome;
+use engine::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::actor::{Actor, Intention};

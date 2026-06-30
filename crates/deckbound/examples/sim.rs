@@ -1,7 +1,7 @@
 //! `sim` — a headless combat-state simulator (Phase 1 of the combat-engine observability refactor).
 //!
 //! Loads a serialized combat [`State`] (RON), applies one or more [`Action`]s through the live
-//! [`Deckbound`] `engine::Game` impl, and writes the resulting `State` (RON) back out. This is the
+//! [`Deckbound`] `contract::Game` impl, and writes the resulting `State` (RON) back out. This is the
 //! load → apply → write loop the refactor plan calls for: state in, action(s) in, state out, all over
 //! the filesystem or stdin/stdout so the engine is observable from a shell.
 //!
@@ -39,8 +39,8 @@
 use std::io::{Read, Write};
 use std::process::exit;
 
+use contract::Game;
 use deckbound::{Action, Deckbound, State, combat};
-use engine::Game;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

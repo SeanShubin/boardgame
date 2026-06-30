@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use engine::{Game, Outcome, PlayerId};
+use contract::{Game, Outcome, PlayerId};
 
 use crate::actor::{Actor, Token};
 use crate::duel::Move;

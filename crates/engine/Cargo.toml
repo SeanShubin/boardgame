@@ -4,6 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-# The action stream is the canonical, replayable record of a game (everything is a deterministic
-# fold of actions over the seed), so `Game::Action` must serialize — see the trait bound.
+# Rng serializes (its u64 state) so a combat State round-trips through RON — see deckbound's
+# state-serialization. (The Game/TableView contract moved to the `contract` crate; this crate is helpers.)
 serde = { workspace = true }
