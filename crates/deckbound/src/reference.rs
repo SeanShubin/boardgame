@@ -114,10 +114,14 @@ pub fn reference_scenario(paths: &[Currency]) -> ReferenceScenario {
         currency: Currency::Gold,
         max_level: level,
     });
-    encounters.push(make_encounter("Final", Currency::Gold, 32)); // boss: needs the full party
-    // (32, up from 16: the static-ranks resolver — card-bound crossing + "act while you have Tempo"
-    // multi-strike — makes a party stronger, so the band's lower edge, where a path-missing party still
-    // loses, rose to ~30; 32 keeps margin while the full party wins far past it.)
+    encounters.push(make_encounter("Final", Currency::Gold, 9)); // boss: needs the full party
+    // (9 — re-tuned down from 32 after the engagement-schedule resolver was fixed (Endure-vs-Evade gate,
+    // anti-starvation, cycling). Swept by `probe_final_window`: with the now-correct combat, 9 is the
+    // **unique** count where the full party wins but a path-missing party loses — at ≤8 both win (too
+    // easy), at ≥10 the full party loses too (too hard). The old 32 was inflated for the broken
+    // static-ranks/single-strike resolver where glass cannons dealt ~nothing. The band is one Husk wide
+    // because this Final still separates parties by raw headcount, not by the absent role's mechanic
+    // (§8.6 note below — the lattice form is the durable fix).)
     demands.push(Demand::AllTracks);
 
     let run = Run::new(Layout::Grid, locations, final_index, a_index, 1);
@@ -309,6 +313,28 @@ mod tests {
             Currency::Bone,
             Currency::Salt,
         ]
+    }
+
+    /// Sweep the Final's Husk count to find the window where the full party wins but a path-missing
+    /// party loses. `cargo test -p deckbound probe_final_window -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_final_window() {
+        use crate::scenarios::{build_character, build_encounter_foes, rewards_for};
+        use crate::solver::auto_resolve;
+        let s = reference_scenario(&five_roles());
+        let specialist = |p: Currency| build_character("Novice", &rewards_for(p));
+        let full: Vec<_> = s.paths.iter().map(|&p| specialist(p)).collect();
+        let short = full[1..].to_vec();
+        for c in 1..=32u32 {
+            let enc = make_encounter("Final", Currency::Gold, c);
+            let fw = auto_resolve(full.clone(), build_encounter_foes(&enc, 1), 1) == Some(true);
+            let sw = auto_resolve(short.clone(), build_encounter_foes(&enc, 1), 1) == Some(true);
+            println!(
+                "count {c:>2}: full_wins={fw:<5} short_wins={sw:<5} {}",
+                if fw && !sw { "<-- WINDOW" } else { "" }
+            );
+        }
     }
 
     #[test]
