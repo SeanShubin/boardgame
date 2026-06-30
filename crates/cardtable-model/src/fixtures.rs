@@ -1,17 +1,17 @@
-//! Sample [`DeckTree`]s for prototyping and tests — a shared source of truth so feature prototypes
+//! Sample [`Tableau`]s for prototyping and tests — a shared source of truth so feature prototypes
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::model::{DeckTree, Face};
+use crate::model::{Face, Tableau};
 
 /// A small, representative table: a `Hand` of face-up cards (two actionable), a face-down `Deck`, and
-/// a `Discard`. Enough to exercise focus/zoom, collapsed-vs-fanned decks, actionable highlighting, and
-/// moving cards between decks.
-pub fn sample_table() -> DeckTree {
-    let mut tree = DeckTree::new();
+/// a `Discard`. Enough to exercise focus/zoom, collapsed-vs-fanned piles, actionable highlighting, and
+/// moving cards between piles.
+pub fn sample_table() -> Tableau {
+    let mut tree = Tableau::new();
     let root = tree.root_id();
 
-    let hand = tree.add_deck(root, "Hand").expect("root exists");
+    let hand = tree.add_pile(root, "Hand").expect("root exists");
     tree.add_card(
         hand,
         Face::Up {
@@ -37,12 +37,12 @@ pub fn sample_table() -> DeckTree {
     )
     .expect("hand exists");
 
-    let deck = tree.add_deck(root, "Deck").expect("root exists");
+    let pile = tree.add_pile(root, "Deck").expect("root exists");
     for _ in 0..6 {
-        tree.add_card(deck, Face::Down, None).expect("deck exists");
+        tree.add_card(pile, Face::Down, None).expect("pile exists");
     }
 
-    let discard = tree.add_deck(root, "Discard").expect("root exists");
+    let discard = tree.add_pile(root, "Discard").expect("root exists");
     tree.add_card(
         discard,
         Face::Up {
@@ -52,8 +52,8 @@ pub fn sample_table() -> DeckTree {
     )
     .expect("discard exists");
 
-    // A big "Locations" deck — 25 cards — to exercise the stacked-depth visual and a high count.
-    let locations = tree.add_deck(root, "Locations").expect("root exists");
+    // A big "Locations" pile — 25 cards — to exercise the stacked-depth visual and a high count.
+    let locations = tree.add_pile(root, "Locations").expect("root exists");
     for i in 1..=25 {
         tree.add_card(
             locations,
@@ -65,12 +65,12 @@ pub fn sample_table() -> DeckTree {
         .expect("locations exists");
     }
 
-    // Spread the decks across the table so they start un-stacked; drag repositions them.
-    tree.set_deck_pos(hand, 40.0, 40.0).expect("hand exists");
-    tree.set_deck_pos(deck, 220.0, 40.0).expect("deck exists");
-    tree.set_deck_pos(discard, 400.0, 40.0)
+    // Spread the piles across the table so they start un-stacked; drag repositions them.
+    tree.set_pile_pos(hand, 40.0, 40.0).expect("hand exists");
+    tree.set_pile_pos(pile, 220.0, 40.0).expect("pile exists");
+    tree.set_pile_pos(discard, 400.0, 40.0)
         .expect("discard exists");
-    tree.set_deck_pos(locations, 40.0, 240.0)
+    tree.set_pile_pos(locations, 40.0, 240.0)
         .expect("locations exists");
 
     tree
@@ -83,8 +83,8 @@ mod tests {
     #[test]
     fn sample_table_is_well_formed() {
         let t = sample_table();
-        let root = t.deck(t.root_id()).unwrap();
-        assert_eq!(root.subdecks().len(), 4); // Hand, Deck, Discard, Locations
+        let root = t.pile(t.root_id()).unwrap();
+        assert_eq!(root.subpiles().len(), 4); // Hand, Deck, Discard, Locations
         assert_eq!(t.card_count(), 3 + 6 + 1 + 25);
     }
 }

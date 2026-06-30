@@ -1,11 +1,11 @@
-//! A Bevy renderer that draws the **card-table metaphor** — every zone a deck, the unattended
-//! collapsed into labelled, counted piles. Click a deck to open it, click the table to close them all,
-//! and drag cards (and whole decks) between decks.
+//! A Bevy renderer that draws the **card-table metaphor** — every zone a pile, the unattended
+//! collapsed into labelled, counted piles. Click a pile to open it, click the table to close them all,
+//! and drag cards (and whole piles) between piles.
 //!
 //! # Two layers
 //!
 //! - **The core (this module) is game-agnostic.** It draws whatever is in the [`Table`] resource (a
-//!   [`DeckTree`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
+//!   [`Tableau`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
 //!   itself, and reports clicks on actionable controls by pushing their index into [`ActionRequests`].
 //!   It never mentions `Game`. This is the shared code: `boardgame` and feature prototypes both drive
 //!   it. Prototype a feature with [`CardTablePlugin`] + a hand-built `Table` (see
@@ -14,7 +14,7 @@
 //!   core — building the `Table`/`ActionRail`/`StatusLine` from the game's view and draining
 //!   `ActionRequests` into `Game::apply`. Only the launcher needs it.
 //!
-//! Rendering is `bevy_ui` (flexbox), matching `tabletop`; the deck model is renderer-agnostic, so a
+//! Rendering is `bevy_ui` (flexbox), matching `tabletop`; the pile model is renderer-agnostic, so a
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
@@ -22,17 +22,17 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, DeckId, DeckTree, Face};
+use cardtable_model::{Card, CardId, Face, PileId, Tableau};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
 
 // ---- public presentation state (the shared inputs) ----------------------
 
-/// The board: the deck tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
+/// The board: the pile tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
 /// the source (a game, or a prototype) rebuilds it.
 #[derive(Resource, Default)]
-pub struct Table(pub DeckTree);
+pub struct Table(pub Tableau);
 
 /// Loose actions shown as an always-visible rail (choices not represented by a card on the table).
 /// Each carries an opaque `index` the core echoes back in [`ActionRequests`] when clicked.
@@ -65,7 +65,7 @@ pub enum CardTableSet {
     Draw,
 }
 
-/// The game-agnostic renderer. Add it, put a [`DeckTree`] in [`Table`], and you have a clickable card
+/// The game-agnostic renderer. Add it, put a [`Tableau`] in [`Table`], and you have a clickable card
 /// table. Add [`GamePlugin`] (feature `game`) on top to drive it from a [`contract::Game`].
 pub struct CardTablePlugin;
 
@@ -82,16 +82,16 @@ impl Plugin for CardTablePlugin {
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            .add_systems(Update, (sync_deck_sizes, sync_surface_size, animate_decks))
+            .add_systems(Update, (sync_pile_sizes, sync_surface_size, animate_piles))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
-            // clicks open/close decks and fire actions; a card drag drops into a deck; a deck drag
+            // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
             // slides it freely across the table.
             .add_observer(on_drag_start)
             .add_observer(on_click)
             .add_observer(on_drop)
-            .add_observer(on_deck_drag)
-            .add_observer(on_deck_drag_end);
+            .add_observer(on_pile_drag)
+            .add_observer(on_pile_drag_end);
     }
 }
 
@@ -109,17 +109,17 @@ struct ActionControl(usize);
 #[derive(Component, Clone, Copy)]
 struct CardRef(CardId);
 
-/// Marks a deck's node as a drop target: a card dropped here moves into this deck.
+/// Marks a pile's node as a drop target: a card dropped here moves into this pile.
 #[derive(Component, Clone, Copy)]
-struct DeckDropZone(DeckId);
+struct PileDropZone(PileId);
 
-/// Marks a top-level deck's absolutely-positioned wrapper, carrying its [`DeckId`]. Dragging it slides
-/// the deck freely across the table (live), committing the final position on release.
+/// Marks a top-level pile's absolutely-positioned wrapper, carrying its [`PileId`]. Dragging it slides
+/// the pile freely across the table (live), committing the final position on release.
 #[derive(Component, Clone, Copy)]
-struct TableDeck(DeckId);
+struct TablePile(PileId);
 
-/// Marks the table surface — the positioning context for decks. Its size is fed to the model as the
-/// wall bounds that keep decks inside.
+/// Marks the table surface — the positioning context for piles. Its size is fed to the model as the
+/// wall bounds that keep piles inside.
 #[derive(Component)]
 struct TableSurface;
 
@@ -129,9 +129,9 @@ struct TableSurface;
 #[derive(Resource, Default)]
 struct DragGuard(bool);
 
-/// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a deck, move
-/// a card, a new game snapshot). Deck positions are not structural; they animate, so repositioning
-/// never sets this. See [`redraw`] and [`animate_decks`].
+/// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a pile, move
+/// a card, a new game snapshot). Pile positions are not structural; they animate, so repositioning
+/// never sets this. See [`redraw`] and [`animate_piles`].
 #[derive(Resource)]
 struct NeedsRebuild(bool);
 
@@ -158,8 +158,8 @@ fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
 }
 
 /// A picking click, resolved against the most specific target: an actionable control records its
-/// action; a (non-actionable) card consumes the click so it doesn't bubble; a deck opens (focus); the
-/// table background closes all decks. Inner nodes (e.g. a card's text) match nothing and fall through
+/// action; a (non-actionable) card consumes the click so it doesn't bubble; a pile opens (focus); the
+/// table background closes all piles. Inner nodes (e.g. a card's text) match nothing and fall through
 /// to their parent via propagation. Global observer, so it survives the per-change UI rebuild.
 fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
     guard.0 = true;
@@ -172,7 +172,7 @@ fn on_click(
     targets: Query<(
         Option<&ActionControl>,
         Option<&CardRef>,
-        Option<&DeckDropZone>,
+        Option<&PileDropZone>,
         Has<CardTableRoot>,
     )>,
     mut table: ResMut<Table>,
@@ -182,15 +182,15 @@ fn on_click(
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, deck, is_background)) = targets.get(on.event().entity) else {
+    let Ok((action, card, pile, is_background)) = targets.get(on.event().entity) else {
         return;
     };
     if let Some(action) = action {
         requests.0.push(action.0);
     } else if card.is_some() {
-        // A non-actionable card: consume the click (don't focus a deck or close the table).
-    } else if let Some(deck) = deck {
-        let _ = table.0.focus(deck.0);
+        // A non-actionable card: consume the click (don't focus a pile or close the table).
+    } else if let Some(pile) = pile {
+        let _ = table.0.focus(pile.0);
         rebuild.0 = true;
     } else if is_background {
         let root = table.0.root_id();
@@ -202,21 +202,21 @@ fn on_click(
     on.propagate(false);
 }
 
-/// A picking drop: move a dragged **card** into the target's deck (a deck, or a card's home deck).
-/// Decks are not nested on drop — they are repositioned by [`on_deck_drag`] — so a dragged deck is
+/// A picking drop: move a dragged **card** into the target's pile (a pile, or a card's home pile).
+/// Decks are not nested on drop — they are repositioned by [`on_pile_drag`] — so a dragged pile is
 /// ignored here. Presentation-level; mapping drops to game actions is future work.
 fn on_drop(
     mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
-    decks: Query<&DeckDropZone>,
+    piles: Query<&PileDropZone>,
     mut table: ResMut<Table>,
     mut rebuild: ResMut<NeedsRebuild>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
-        return; // only cards drop *into* decks
+        return; // only cards drop *into* piles
     };
-    let dest = if let Ok(zone) = decks.get(event.entity) {
+    let dest = if let Ok(zone) = piles.get(event.entity) {
         zone.0
     } else if let Ok(card) = cards.get(event.entity) {
         match table.0.card(card.0) {
@@ -227,19 +227,19 @@ fn on_drop(
         return; // not a drop target — let it propagate
     };
     on.propagate(false);
-    let at = table.0.deck(dest).map_or(0, |deck| deck.cards().len());
+    let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
     let _ = table.0.move_card(dragged.0, dest, at);
     rebuild.0 = true;
 }
 
-/// Slide a top-level deck across the table while it is dragged — freely, even off the edge. Moves the
+/// Slide a top-level pile across the table while it is dragged — freely, even off the edge. Moves the
 /// wrapper's `Node` and the model position together (a position change is not structural, so there is
-/// no rebuild mid-drag); settling on release brings an off-edge deck back. A card drag is consumed
-/// here so it doesn't also slide the deck under it.
-fn on_deck_drag(
+/// no rebuild mid-drag); settling on release brings an off-edge pile back. A card drag is consumed
+/// here so it doesn't also slide the pile under it.
+fn on_pile_drag(
     mut on: On<Pointer<Drag>>,
     cards: Query<&CardRef>,
-    mut decks: Query<(&TableDeck, &mut Node)>,
+    mut piles: Query<(&TablePile, &mut Node)>,
     mut table: ResMut<Table>,
 ) {
     let target = on.event().entity;
@@ -247,7 +247,7 @@ fn on_deck_drag(
         on.propagate(false);
         return;
     }
-    if let Ok((deck, mut node)) = decks.get_mut(target) {
+    if let Ok((pile, mut node)) = piles.get_mut(target) {
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
         // Follow the cursor anywhere — even past the table edge. The settling on release clamps it
@@ -255,16 +255,16 @@ fn on_deck_drag(
         // node so the animation doesn't fight the drag.
         node.left = Val::Px(x);
         node.top = Val::Px(y);
-        let _ = table.0.set_deck_pos(deck.0, x, y);
+        let _ = table.0.set_pile_pos(pile.0, x, y);
         on.propagate(false);
     }
 }
 
-/// Commit a dragged deck's final position to the model on release (one rebuild, at rest).
-fn on_deck_drag_end(
+/// Commit a dragged pile's final position to the model on release (one rebuild, at rest).
+fn on_pile_drag_end(
     mut on: On<Pointer<DragEnd>>,
     cards: Query<&CardRef>,
-    decks: Query<(&TableDeck, &Node)>,
+    piles: Query<(&TablePile, &Node)>,
     mut table: ResMut<Table>,
     mut guard: ResMut<DragGuard>,
 ) {
@@ -274,17 +274,17 @@ fn on_deck_drag_end(
         on.propagate(false);
         return;
     }
-    if let Ok((deck, node)) = decks.get(target) {
-        let _ = table.0.set_deck_pos(deck.0, px(node.left), px(node.top));
-        // Settle: clamp the (possibly off-edge) deck back inside and shove overlaps clear — the
-        // anchor included, so a deck dropped past the border is pulled into view, then the animation
+    if let Ok((pile, node)) = piles.get(target) {
+        let _ = table.0.set_pile_pos(pile.0, px(node.left), px(node.top));
+        // Settle: clamp the (possibly off-edge) pile back inside and shove overlaps clear — the
+        // anchor included, so a pile dropped past the border is pulled into view, then the animation
         // slides it the rest of the way.
-        table.0.separate(deck.0);
+        table.0.separate(pile.0);
         on.propagate(false);
     }
 }
 
-/// The pixel value of a `Val`, or `0.0` for the non-pixel variants (decks always use `Px`).
+/// The pixel value of a `Val`, or `0.0` for the non-pixel variants (piles always use `Px`).
 fn px(value: Val) -> f32 {
     match value {
         Val::Px(p) => p,
@@ -292,16 +292,16 @@ fn px(value: Val) -> f32 {
     }
 }
 
-/// Feed each top-level deck's laid-out size back into the model (logical px), so [`DeckTree::separate`]
-/// works on real AABBs. Runs every frame; deck sizes are stable, so it's cheap.
-fn sync_deck_sizes(decks: Query<(&TableDeck, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (deck, computed) in &decks {
+/// Feed each top-level pile's laid-out size back into the model (logical px), so [`Tableau::separate`]
+/// works on real AABBs. Runs every frame; pile sizes are stable, so it's cheap.
+fn sync_pile_sizes(piles: Query<(&TablePile, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (pile, computed) in &piles {
         let size = computed.size * computed.inverse_scale_factor;
-        let _ = table.0.set_deck_size(deck.0, size.x, size.y);
+        let _ = table.0.set_pile_size(pile.0, size.x, size.y);
     }
 }
 
-/// Feed the table surface's laid-out size to the model as the wall bounds that contain the decks.
+/// Feed the table surface's laid-out size to the model as the wall bounds that contain the piles.
 fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut table: ResMut<Table>) {
     if let Ok(computed) = surfaces.single() {
         let size = computed.size * computed.inverse_scale_factor;
@@ -309,13 +309,13 @@ fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut tab
     }
 }
 
-/// Ease each deck's wrapper toward its model position, so a separation (or any reposition) *slides*
-/// into place instead of snapping. The dragged deck keeps target == position, so it doesn't ease;
-/// decks already at rest are skipped so the node (and its layout) isn't touched every frame.
-fn animate_decks(time: Res<Time>, table: Res<Table>, mut decks: Query<(&TableDeck, &mut Node)>) {
+/// Ease each pile's wrapper toward its model position, so a separation (or any reposition) *slides*
+/// into place instead of snapping. The dragged pile keeps target == position, so it doesn't ease;
+/// piles already at rest are skipped so the node (and its layout) isn't touched every frame.
+fn animate_piles(time: Res<Time>, table: Res<Table>, mut piles: Query<(&TablePile, &mut Node)>) {
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (deck, mut node) in &mut decks {
-        let Some(d) = table.0.deck(deck.0) else {
+    for (pile, mut node) in &mut piles {
+        let Some(d) = table.0.pile(pile.0) else {
             continue;
         };
         let target = d.pos();
@@ -328,8 +328,8 @@ fn animate_decks(time: Res<Time>, table: Res<Table>, mut decks: Query<(&TableDec
     }
 }
 
-/// Rebuild the whole UI only on a *structural* change (open/close a deck, move a card, a new game
-/// snapshot). Deck positions are not structural — they animate (see [`animate_decks`]) — so
+/// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
+/// snapshot). Pile positions are not structural — they animate (see [`animate_piles`]) — so
 /// repositioning never triggers a rebuild.
 fn redraw(
     mut commands: Commands,
@@ -359,16 +359,16 @@ const BUTTON: Color = Color::srgb(0.18, 0.40, 0.60);
 const CARD_FACE: Color = Color::srgb(0.94, 0.92, 0.84);
 const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
-/// A second back shade so alternating layers in a deck's stack read as distinct cards.
+/// A second back shade so alternating layers in a pile's stack read as distinct cards.
 const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
-/// Highlight edge for a card/deck that carries a legal move.
+/// Highlight edge for a card/pile that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.
 const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
-/// Soft drop shadow lifting cards and decks off the felt.
+/// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 
-/// A soft drop shadow used on cards and deck chips (offset down, blurred).
+/// A soft drop shadow used on cards and pile chips (offset down, blurred).
 fn card_shadow() -> BoxShadow {
     BoxShadow::new(
         SHADOW,
@@ -383,17 +383,17 @@ const FONT_HEAD: FontSize = FontSize::Px(18.0);
 const FONT_TITLE: FontSize = FontSize::Px(15.0);
 const FONT_BODY: FontSize = FontSize::Px(13.0);
 
-/// How fast a deck eases toward its target position, as a fraction closed per second (higher = snappier).
+/// How fast a pile eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
 
-/// A collapsed deck's front-face footprint, the per-card stack step (offset along two edges), and the
-/// visual depth cap so a deep deck doesn't grow without bound.
+/// A collapsed pile's front-face footprint, the per-card stack step (offset along two edges), and the
+/// visual depth cap so a deep pile doesn't grow without bound.
 const CHIP_W: f32 = 120.0;
 const CHIP_H: f32 = 64.0;
 const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
 
-fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], status: &str) {
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status: &str) {
     commands
         .spawn((
             CardTableRoot,
@@ -435,7 +435,7 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                 });
             }
 
-            // CENTER: status, then the decks. Clicking empty space here (the felt) closes all decks.
+            // CENTER: status, then the piles. Clicking empty space here (the felt) closes all piles.
             root.spawn(Node {
                 flex_grow: 1.0,
                 height: Val::Percent(100.0),
@@ -457,8 +457,8 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                     ));
                 }
 
-                // The table surface: a fill area holding absolutely-placed decks the player drags
-                // anywhere. Each top-level deck sits in a positioned wrapper at its model position.
+                // The table surface: a fill area holding absolutely-placed piles the player drags
+                // anywhere. Each top-level pile sits in a positioned wrapper at its model position.
                 main.spawn((
                     TableSurface,
                     Node {
@@ -468,12 +468,12 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                     },
                 ))
                 .with_children(|surface| {
-                    let root_deck = tree.deck(tree.root_id()).expect("root exists");
-                    for &id in root_deck.subdecks() {
-                        let pos = tree.deck(id).expect("deck id from root").pos();
+                    let root_deck = tree.pile(tree.root_id()).expect("root exists");
+                    for &id in root_deck.subpiles() {
+                        let pos = tree.pile(id).expect("pile id from root").pos();
                         surface
                             .spawn((
-                                TableDeck(id),
+                                TablePile(id),
                                 Node {
                                     position_type: PositionType::Absolute,
                                     left: Val::Px(pos.x),
@@ -481,22 +481,22 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
                                     ..default()
                                 },
                             ))
-                            .with_children(|wrapper| spawn_deck(wrapper, tree, id));
+                            .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
                 });
             });
         });
 }
 
-/// Draws a collapsed deck as a short stack of offset layers — two alternating colors, stepped along
+/// Draws a collapsed pile as a short stack of offset layers — two alternating colors, stepped along
 /// the left and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
 /// front layer (top-right, on top) carries the label and count; the whole stack is one drop target.
-fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, count: usize) {
+fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, count: usize) {
     let depth = count.clamp(1, MAX_STACK);
     let spread = (depth - 1) as f32 * STACK_OFFSET;
     parent
         .spawn((
-            DeckDropZone(id),
+            PileDropZone(id),
             Node {
                 width: Val::Px(CHIP_W + spread),
                 height: Val::Px(CHIP_H + spread),
@@ -561,16 +561,16 @@ fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, c
         });
 }
 
-/// Draws a deck: a compact, counted chip when collapsed, or a fanned panel of its cards when open.
-fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
-    let deck = tree.deck(id).expect("deck id from tree");
-    if deck.collapsed {
-        let count = deck.cards().len() + deck.subdecks().len();
-        spawn_deck_chip(parent, id, &deck.label, count);
+/// Draws a pile: a compact, counted chip when collapsed, or a fanned panel of its cards when open.
+fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
+    let pile = tree.pile(id).expect("pile id from tree");
+    if pile.collapsed {
+        let count = pile.cards().len() + pile.subpiles().len();
+        spawn_pile_chip(parent, id, &pile.label, count);
     } else {
         parent
             .spawn((
-                DeckDropZone(id),
+                PileDropZone(id),
                 Node {
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.0)),
@@ -582,7 +582,7 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
             ))
             .with_children(|panel| {
                 panel.spawn((
-                    Text::new(deck.label.clone()),
+                    Text::new(pile.label.clone()),
                     TextFont {
                         font_size: FONT_HEAD,
                         ..default()
@@ -591,7 +591,7 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
                 ));
                 panel
                     .spawn((
-                        DeckDropZone(id),
+                        PileDropZone(id),
                         Node {
                             flex_direction: FlexDirection::Row,
                             flex_wrap: FlexWrap::Wrap,
@@ -602,11 +602,11 @@ fn spawn_deck(parent: &mut ChildSpawnerCommands, tree: &DeckTree, id: DeckId) {
                         },
                     ))
                     .with_children(|cards| {
-                        for &cid in deck.cards() {
-                            spawn_card(cards, tree.card(cid).expect("card id from deck"));
+                        for &cid in pile.cards() {
+                            spawn_card(cards, tree.card(cid).expect("card id from pile"));
                         }
-                        for &sid in deck.subdecks() {
-                            spawn_deck(cards, tree, sid);
+                        for &sid in pile.subpiles() {
+                            spawn_pile(cards, tree, sid);
                         }
                     });
             });
@@ -692,7 +692,7 @@ mod game {
     use bevy::prelude::*;
     use std::collections::HashSet;
 
-    use cardtable_model::{DeckTree, from_table_view};
+    use cardtable_model::{Tableau, from_table_view};
     use contract::Game;
 
     use crate::{
@@ -778,9 +778,9 @@ mod game {
         }
     }
 
-    /// Build the presentation state from a game state: the board (zones → decks), the loose-action
+    /// Build the presentation state from a game state: the board (zones → piles), the loose-action
     /// rail (legal actions not bound to a card), and the status caption.
-    fn snapshot<G: Game>(game: &G, state: &G::State) -> (DeckTree, Vec<RailAction>, String) {
+    fn snapshot<G: Game>(game: &G, state: &G::State) -> (Tableau, Vec<RailAction>, String) {
         let view = game.view(state, None);
         let table = from_table_view(&view);
         let bound: HashSet<usize> = view
