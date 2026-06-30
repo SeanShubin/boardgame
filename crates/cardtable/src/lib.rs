@@ -22,7 +22,7 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, DeckId, DeckTree, Face, Pos};
+use cardtable_model::{Card, CardId, DeckId, DeckTree, Face};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -231,9 +231,10 @@ fn on_drop(
     rebuild.0 = true;
 }
 
-/// Slide a top-level deck across the table while it is dragged. Mutates the wrapper's `Node` left/top
-/// directly (not the model), so there is no per-frame rebuild mid-drag; the final position is committed
-/// in [`on_deck_drag_end`]. A card drag is consumed here so it doesn't also slide the deck under it.
+/// Slide a top-level deck across the table while it is dragged — freely, even off the edge. Moves the
+/// wrapper's `Node` and the model position together (a position change is not structural, so there is
+/// no rebuild mid-drag); settling on release brings an off-edge deck back. A card drag is consumed
+/// here so it doesn't also slide the deck under it.
 fn on_deck_drag(
     mut on: On<Pointer<Drag>>,
     cards: Query<&CardRef>,
@@ -248,11 +249,12 @@ fn on_deck_drag(
     if let Ok((deck, mut node)) = decks.get_mut(target) {
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
-        // The borders shove the deck back inside; use the clamped position for the live node too, and
-        // keep the model target in step so the animation doesn't drag it back.
-        let placed = table.0.place_deck(deck.0, x, y).unwrap_or(Pos { x, y });
-        node.left = Val::Px(placed.x);
-        node.top = Val::Px(placed.y);
+        // Follow the cursor anywhere — even past the table edge. The settling on release clamps it
+        // back inside and the animation slides it into view. Keep the model in step with the live
+        // node so the animation doesn't fight the drag.
+        node.left = Val::Px(x);
+        node.top = Val::Px(y);
+        let _ = table.0.set_deck_pos(deck.0, x, y);
         on.propagate(false);
     }
 }
@@ -272,9 +274,10 @@ fn on_deck_drag_end(
         return;
     }
     if let Ok((deck, node)) = decks.get(target) {
-        let _ = table.0.place_deck(deck.0, px(node.left), px(node.top));
-        // Slide everything this deck now overlaps out of the way (anchor = the deck just dropped),
-        // with the borders shoving decks back inside.
+        let _ = table.0.set_deck_pos(deck.0, px(node.left), px(node.top));
+        // Settle: clamp the (possibly off-edge) deck back inside and shove overlaps clear — the
+        // anchor included, so a deck dropped past the border is pulled into view, then the animation
+        // slides it the rest of the way.
         table.0.separate(deck.0);
         on.propagate(false);
     }
