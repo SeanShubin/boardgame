@@ -1,7 +1,10 @@
-//! Data-driven **generic-class** balance runner for the engagement sim. A "class" here is nothing but an
-//! attack (range x shape) plus a five-stat allocation — the role *emerges* from range+stats (see
-//! [`deckbound::engagement::intention_for`]). The class set is loaded from a RON file at runtime, so
-//! iterating on numbers needs no rebuild: edit the `.ron`, re-run, read the report.
+//! Data-driven **generic-class** balance runner. A "class" here is nothing but an attack (range x shape)
+//! plus a five-stat allocation — the role *emerges* from range+stats (see
+//! [`deckbound::engagement::intention_for`]) — with **no Suit / Power identity**, so melee/ranged ×
+//! single/aoe can be balanced in isolation. The matchups run on the **real combat engine**
+//! (`deckbound::combat::resolve_round` via the engagement front-end), not a parallel sim, so the numbers
+//! match the shipped game. The class set is loaded from a RON file at runtime, so iterating on numbers
+//! needs no rebuild: edit the `.ron`, re-run, read the report.
 //!
 //! Usage:
 //!   cargo run -p deckbound --example classes                          # defaults to data/balance/generic-classes.ron

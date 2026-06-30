@@ -1,33 +1,29 @@
-//! The **engagement-schedule** combat model (canon — Spec §4 / §4.5 / §4.6), kept here as an **isolated
-//! balance sim** (separate from the live engine) so the hold/break/deal triangle and the counterability of
-//! extreme formations can be probed quickly without the full game loop.
+//! A **balance front-end** over the canon engagement-schedule combat model (Spec §4 / §4.5 / §4.6). It is
+//! a thin authoring + reporting layer: a "class" is an attack (range × shape) plus a five-stat allocation,
+//! the role *emerges* from range+stats ([`intention_for`]), and the hold/break/deal triangle, the
+//! single-vs-AoE trade, and the counterability of extreme formations are probed without the full game loop.
 //!
-//! A round: declare intentions (V/O/R) → resolve a fixed engagement **schedule** (Intercept → Volley →
-//! Raid → Clash → Breach), each step **cycling to exhaustion**, over one shared per-round **Tempo** pool →
-//! reset. The damage core is unchanged (Might into a per-engagement pile, Toughness gates the flip — reused
-//! from [`crate::stats`]). The schedule is **permissive on purpose**: balance emerges from the **efficiency
-//! gradient** in the *order* (an Outrider raids in `Raid` before the back fires in `Clash`; a Vanguard only
-//! reaches the back in `Breach`, too late), never from banning a pair — **force, not fiat**. The lone
-//! conditional pair is `Rearguard → Rearguard`, legal only in the Breach once the enemy Vanguard has fallen.
+//! **It runs on the REAL engine.** Earlier this module re-implemented the whole resolver (its own schedule,
+//! cycling, groups, policy) as a parallel copy that had to be hand-synced — and drifted (the
+//! default-intention rule fell behind canon). That copy is **gone**: [`battle`] / [`survivors_after`] /
+//! [`battle_traced`] now build real [`Actor`]s from the [`Unit`] specs and drive the live
+//! [`combat::resolve_round`], so a balance number here is exactly what the shipped game produces. The only
+//! thing this layer still owns is the **default policy** stand-in (which intention a body declares, via
+//! [`intention_for`]) — the load-bearing assumption for approximating uncomputable hidden-simultaneous PvP.
 //!
-//! Because true PvP is simultaneous + hidden (not computable), balance is approximated by a **default
-//! policy** (a reasonable, predictable human stand-in) playing both sides; we then check the roster is
-//! balanced *under that policy*. The policy is the load-bearing assumption — kept simple and documented.
+//! The damage core (Might into a per-engagement pile, Toughness gates the flip) and the evade/endure rule
+//! (a Vanguard endures, others evade — [`crate::policy::role_evades`]) live in the engine. The per-unit
+//! [`HitMode`] / `hits` field on [`Unit`] is therefore **informational** (the role default); the resolver
+//! does not read it.
 
-use crate::actor::{Attack, Range};
+pub use crate::actor::Intention;
+use crate::actor::{Actor, Attack};
+use crate::combat;
+use crate::game::battle_state_with;
+use crate::ruleset::Ruleset;
+use crate::state::State;
 use crate::stats::{Defense, Offense};
 use serde::Deserialize;
-
-/// A unit's declared role/position for the round. The intention *is* the role (hold/break/deal).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Intention {
-    /// Hold the line (front).
-    Vanguard,
-    /// Break the line (flank/raid).
-    Outrider,
-    /// Deal from behind (back).
-    Rearguard,
-}
 
 /// How a unit answers incoming blows (the **hit policy**, part of a [`Strategy`]) — the one card-writable
 /// reaction knob. `Evade`: spend Tempo to dodge a blow that would flip a card, when affordable (and so
@@ -61,15 +57,6 @@ pub struct Unit {
     pub group: Option<u32>,
     /// Round-scoped Tempo pool (= Cadence), shared across the whole schedule.
     pub tempo: i32,
-}
-
-impl Unit {
-    fn alive(&self) -> bool {
-        !self.defense.is_down()
-    }
-    fn is_melee(&self) -> bool {
-        self.attack.has(Range::Melee)
-    }
 }
 
 /// `(Might, Vitality, Toughness, Cadence, Finesse)` — same tuning tuple as the level harness.
@@ -188,414 +175,117 @@ pub fn make_unit(class: &str, s: Stat5, side: u8) -> Unit {
     }
 }
 
-/// One engagement pair: an attacker intention strikes a target intention.
-type Pair = (Intention, Intention);
+// ====================================================================================================
+// Delegation to the REAL engine. The sim no longer re-implements the resolver/policy/schedule — it
+// builds real [`Actor`]s from the [`Unit`] specs, drops them into a combat [`State`], and runs the live
+// [`combat::resolve_round`] (the same code the game ships). So the balance numbers come from the engine
+// itself, not a hand-synced copy that can drift (it once did — the default-intention rule). The per-unit
+// `hits` field is informational here: the real resolver derives Endure/Evade from role
+// ([`crate::policy::role_evades`] — a Vanguard endures, others evade), not from a per-Actor knob.
+// ====================================================================================================
 
-/// The fixed schedule, in resolution order — the *ordering* is the whole interception / pre-empt / deferred-resolution system.
-/// Each step may hold several role-pairs; each step **cycles to exhaustion** (units keep committing
-/// positive-effect strikes until no one will spend Tempo), and the per-phase pile wipes at the step
-/// boundary. `Rearguard → Rearguard` is legal **only in the Breach, and only once the enemy Vanguard has
-/// fallen** (the dropped screen opens the back-line to fire — gated in [`choose_target`]).
-const SCHEDULE: &[(&str, &[Pair])] = {
-    use Intention::{Outrider as O, Rearguard as R, Vanguard as V};
-    &[
-        ("Intercept", &[(V, O)]),
-        ("Volley", &[(R, O)]),
-        ("Raid", &[(O, R)]),
-        ("Clash", &[(R, V), (V, V)]),
-        ("Breach", &[(V, R), (O, V), (O, O), (R, R)]),
-    ]
-};
+/// A fixed seed for the headless battles. Combat with the Clash module off is deterministic (no rng in
+/// [`combat::resolve_round`]), so the exact value does not matter — only that it is stable.
+const SIM_SEED: u64 = 1;
 
-/// Tempo a defender must spend to **avoid** one attack: it out-bids by `cards × Finesse`, strictly
-/// exceeding the attack's Finesse (one card per declared attack). So `cards × Fd > Fa` → the minimum
-/// `cards` is `floor(Fa / Fd) + 1`. High defender Finesse makes dodging cheap; a high-Finesse attack
-/// makes itself expensive to dodge.
-fn avoid_cost(attacker_finesse: u32, defender_finesse: u32) -> i32 {
-    let fd = defender_finesse.max(1);
-    (attacker_finesse / fd) as i32 + 1
+/// Build a real [`Actor`] from a sim [`Unit`] spec: a bare clean-slate body whose five stats, attack
+/// profile, and area flag are overridden from the spec (the implicit weapon is the Fist, power 0, so a
+/// strike's raw force is exactly Might — matching the sim's pricing). Tempo is set from Cadence by
+/// `refresh_round`.
+fn unit_to_actor(u: &Unit) -> Actor {
+    let mut a = crate::scenarios::build_character("Novice", &[]);
+    a.name = u.name.clone();
+    a.attack = u.attack;
+    a.offense = u.offense;
+    a.defense = u.defense.clone();
+    a.aoe = u.aoe;
+    a.refresh_round();
+    a
 }
 
-/// A declared attack, pending resolution.
-struct Decl {
-    atk: usize,
-    def: usize,
-    might: u32,
-    finesse: u32,
-    melee: bool,
-    aoe: bool,
-}
-
-// ---- groups (§4.5): bind for defense + position, target individually ----
-
-/// The members of `i`'s group, in declared (vector / front-to-back) order. A lone unit (`group: None`)
-/// is its own singleton.
-fn group_of(units: &[Unit], i: usize) -> Vec<usize> {
-    match units[i].group {
-        None => vec![i],
-        Some(g) => (0..units.len())
-            .filter(|&j| units[j].side == units[i].side && units[j].group == Some(g))
-            .collect(),
-    }
-}
-
-/// A stable per-group key (its lowest member index) — used to pay the **collective melee crossing** once
-/// per cycle rather than once per striking member.
-fn group_rep(units: &[Unit], i: usize) -> usize {
-    group_of(units, i).into_iter().min().unwrap_or(i)
-}
-
-/// The front-most **living** member of a group — the bodyguard that soaks aimed (single-target) blows.
-fn front_living(units: &[Unit], members: &[usize]) -> Option<usize> {
-    members.iter().copied().find(|&j| units[j].alive())
-}
-
-/// Does `side`'s **enemy** still field a living Vanguard? The back-access gate: a Rearguard is shielded
-/// while its own side's Vanguard lives (§4.6) — checked against the *target's* side.
-fn vanguard_alive(units: &[Unit], side: u8) -> bool {
-    units
-        .iter()
-        .any(|u| u.alive() && u.side == side && u.intent == Intention::Vanguard)
-}
-
-/// Is `(atk, tgt)` a legal pair anywhere in the schedule? (Reach upper-bound for the focus-fire estimate;
-/// the actual strike is still gated by [`choose_target`]'s back-access and the schedule order.)
-fn role_can_attack(atk: Intention, tgt: Intention) -> bool {
-    SCHEDULE
-        .iter()
-        .any(|(_, pairs)| pairs.iter().any(|&(a, t)| a == atk && t == tgt))
-}
-
-/// **Focus-fire test (the positive-effect rule judged at the target, §4.6).** A weak strike that cannot
-/// flip a card *alone* is still worth committing if the **combined** Might the team can pile onto this
-/// target — plus what is already banked in its pile — crosses its Toughness. Sums the Might of living
-/// allies that can reach this target's role; the per-engagement pile persists across cycles, so chip
-/// ganging up on a wall converges.
-fn team_can_crack(units: &[Unit], attacker: usize, target: usize) -> bool {
-    let side = units[attacker].side;
-    let role = units[target].intent;
-    let tough = units[target].defense.health.toughness();
-    let pile = units[target].defense.health_pile();
-    let sum: u32 = units
-        .iter()
-        .filter(|u| u.alive() && u.side == side && role_can_attack(u.intent, role))
-        .map(|u| u.offense.might)
-        .sum();
-    sum + pile >= tough
-}
-
-// ---- the default policy (the reasonable, predictable human stand-in) ----
-
-/// Pick the best target for `attacker` among living enemies of `tgt_role`. Three gates: **back-access**
-/// (a Rearguard is reachable only by an Outrider's raid, or once its side's Vanguard has fallen, §4.6);
-/// **crackability** judged at the target (it flips to this strike given its banked pile, *or* the team's
-/// combined Might can crack it — focus-fire); then pick the **lowest remaining health** to finish kills.
-/// Returns the chosen enemy (single-target damage routes to that enemy's group **front** at apply).
-fn choose_target(units: &[Unit], attacker: usize, tgt_role: Intention) -> Option<usize> {
-    let side = units[attacker].side;
-    let might = units[attacker].offense.might;
-    let atk_intent = units[attacker].intent;
+/// Map the sim's `Option<u32>` group tags to the engine's per-unit group-id vector (units sharing a tag
+/// share a group; an untagged unit is its own singleton at its index — the engine's `group_of` keys off
+/// equal ids). Same-tag units collapse to the first such index.
+fn group_ids(units: &[Unit]) -> Vec<usize> {
     units
         .iter()
         .enumerate()
-        .filter(|(_, u)| u.alive() && u.side != side && u.intent == tgt_role)
-        // back-access: the back is shielded while its own Vanguard lives, unless this is an Outrider's raid.
-        .filter(|(_, u)| {
-            tgt_role != Intention::Rearguard
-                || atk_intent == Intention::Outrider
-                || !vanguard_alive(units, u.side)
+        .map(|(i, u)| match u.group {
+            None => i,
+            Some(g) => units.iter().position(|v| v.group == Some(g)).unwrap_or(i),
         })
-        // crackable now (pile + this strike), or by the team's combined Might (focus-fire).
-        .filter(|(i, u)| {
-            might + u.defense.health_pile() >= u.defense.health.toughness()
-                || team_can_crack(units, attacker, *i)
-        })
-        .min_by_key(|(i, u)| (u.defense.health.remaining(), *i))
-        .map(|(i, _)| i)
+        .collect()
 }
 
-/// The **role priority list** (§4.6): each role's ordered target preference. The Outrider alone puts the
-/// back first (its raid); every other role puts it last (a mop-up through a broken line). The default
-/// follows this order, holding Tempo for a higher priority still to come rather than spending it on a lower
-/// one now; going around the order stays legal, just unspent-on by the default.
-fn priorities(i: Intention) -> [Intention; 3] {
-    use Intention::{Outrider as O, Rearguard as R, Vanguard as V};
-    match i {
-        V => [O, V, R], // screen the flankers → clash the front → breach the back
-        O => [R, V, O], // raid the back → flank the front → hunt stragglers
-        R => [V, O, R], // destroy the front → hunt flankers → finish the back
+/// Assemble a combat [`State`] from the two sides' [`Unit`] specs: real Actors, the declared intentions,
+/// and the group layout, under the analysis [`Ruleset`]. The round loop drives [`combat::resolve_round`]
+/// over it directly (no Marshal/Deploy action layer — these are stat-only bodies with no cards to play).
+fn battle_state_from(side0: &[Unit], side1: &[Unit]) -> State {
+    let heroes: Vec<Actor> = side0.iter().map(unit_to_actor).collect();
+    let foes: Vec<Actor> = side1.iter().map(unit_to_actor).collect();
+    let mut state = battle_state_with(heroes, foes, false, SIM_SEED, Ruleset::analysis());
+    state.plan.hero_intent = side0.iter().map(|u| u.intent).collect();
+    state.plan.foe_intent = side1.iter().map(|u| u.intent).collect();
+    state.plan.hero_group = group_ids(side0);
+    state.plan.foe_group = group_ids(side1);
+    state
+}
+
+/// Read the side-0 outcome from a resolved board, or `None` if both sides still stand (fight continues).
+fn decide(state: &State) -> Option<Outcome> {
+    let a = state.heroes.iter().any(|u| !u.is_down());
+    let b = state.creatures.iter().any(|u| !u.is_down());
+    match (a, b) {
+        (true, false) => Some(Outcome::Win),
+        (false, true) => Some(Outcome::Loss),
+        (false, false) => Some(Outcome::Draw),
+        (true, true) => None,
     }
 }
 
-/// The schedule step (index) in which the pair `(atk, tgt)` resolves, or `None` if it is never a legal
-/// pair. Used to time the priority list against the schedule: a unit strikes a priority when *its* step is
-/// now, holds for it when its step is still to come, and skips it once its step has passed.
-fn step_of(atk: Intention, tgt: Intention) -> Option<usize> {
-    SCHEDULE
-        .iter()
-        .position(|(_, pairs)| pairs.iter().any(|&(a, t)| a == atk && t == tgt))
-}
-
-/// Should `defender` spend Tempo to avoid this incoming attack? Avoid only blows that would actually flip
-/// a Health card (Might ≥ effective Toughness — sub-threshold hits wipe harmlessly at the step boundary),
-/// and only if it can afford the bid. Keep the cheapest, most-dangerous dodges.
-fn should_avoid(d: &Unit, might: u32, finesse: u32) -> bool {
-    let cost = avoid_cost(finesse, d.offense.finesse);
-    might >= d.defense.health.toughness() && d.tempo >= cost
-}
-
-/// Resolve one round in place: refresh Tempo, walk the schedule, declare→resolve→apply each step.
-fn run_round(units: &mut [Unit]) {
-    run_round_logged(units, &mut None);
-}
-
-/// As [`run_round`], but if `log` is `Some`, append a human-readable trace of each step's declarations
-/// and outcomes — for tuning by inspection.
-fn run_round_logged(units: &mut [Unit], log: &mut Option<Vec<String>>) {
-    macro_rules! note {
-        ($($a:tt)*) => { if let Some(l) = log.as_mut() { l.push(format!($($a)*)); } };
-    }
-    let uid = |units: &[Unit], i: usize| format!("s{}:{}", units[i].side, units[i].name);
-
-    for u in units.iter_mut() {
-        u.tempo = u.offense.cadence as i32;
-    }
-
-    for (step_idx, (sname, _pairs)) in SCHEDULE.iter().enumerate() {
-        note!("-- {sname} --");
-        // Each step CYCLES to exhaustion (§4.6): keep committing positive-effect strikes until no one
-        // will spend Tempo. The per-phase pile persists across cycles (chip combines) and wipes only at
-        // the step boundary. Deaths finalize at each cycle's apply, so a unit's committed blows land but
-        // a corpse cannot open a new cycle.
-        loop {
-            let n = units.len();
-            // --- DECLARE one pass: units target individually; a melee group pays the crossing (every
-            // member −1 Tempo) once per cycle, then each member with a target strikes. ---
-            let mut decls: Vec<Decl> = Vec::new();
-            let mut crossed = vec![false; n]; // by group_rep — the collective melee move, paid once
-            let mut struck = vec![false; n]; // each unit strikes at most once per cycle
-            let mut committed = false;
-            for i in 0..n {
-                if !units[i].alive() || struck[i] {
-                    continue;
-                }
-                // Target by the role priority list (§4.6): walk the priorities in order; the first one with
-                // a crackable target sets the goal. Strike it if its engagement is *this* step; **hold** (do
-                // nothing) if its step is still to come; **skip** to the next priority if its step has passed.
-                let mut target = None;
-                for &role in &priorities(units[i].intent) {
-                    let Some(st) = step_of(units[i].intent, role) else {
-                        continue;
-                    };
-                    if choose_target(units, i, role).is_none() {
-                        continue; // no crackable target of this role — try the next priority
-                    }
-                    if st == step_idx {
-                        target = choose_target(units, i, role); // its window is now — strike
-                    }
-                    if st >= step_idx {
-                        break; // now (struck) or later (hold) — either way this is the governing priority
-                    }
-                    // st < step_idx: this priority's window has passed — fall through to the next
-                }
-                let Some(t) = target else {
-                    continue;
-                };
-                let melee = units[i].is_melee();
-                let rep = group_rep(units, i);
-                // Tempo eligibility: ranged pays its own card; a melee unit pays the crossing unless its
-                // group already crossed this cycle (then its strike rides the same move, free).
-                let affordable = if melee {
-                    crossed[rep] || units[i].tempo >= 1
-                } else {
-                    units[i].tempo >= 1
-                };
-                if !affordable {
-                    continue;
-                }
-                if melee {
-                    if !crossed[rep] {
-                        // The whole group crosses as one — every living member spends one Tempo, even those
-                        // with no attack (§4.5 collective reposition). Tempo-hungry by design.
-                        for m in group_of(units, i) {
-                            if units[m].alive() {
-                                units[m].tempo = (units[m].tempo - 1).max(0);
-                            }
-                        }
-                        crossed[rep] = true;
-                    }
-                } else {
-                    units[i].tempo -= 1;
-                }
-                struck[i] = true;
-                committed = true;
-                note!(
-                    "  {} -> {} (M{}{})",
-                    uid(units, i),
-                    uid(units, t),
-                    units[i].offense.might,
-                    if units[i].aoe { " AoE" } else { "" }
-                );
-                decls.push(Decl {
-                    atk: i,
-                    def: t,
-                    might: units[i].offense.might,
-                    finesse: units[i].offense.finesse,
-                    melee,
-                    aoe: units[i].aoe,
-                });
-            }
-            if !committed {
-                break;
-            }
-
-            // --- APPLY this cycle (the two-pool accumulator, §4.6). AoE banks full Might into every
-            // target-group member's pile; aimed fire banks into the group's spillover, routed to the
-            // living front. A lone Evade unit may dodge an aimed blow; a group walls (weakest-link slip,
-            // so it eats) and AoE is unevadable. ---
-            let mut aoe_add = vec![0u32; n]; // per-member area damage
-            let mut spill_add = vec![0u32; n]; // aimed damage, keyed by the front soaker it routes to
-            let mut sbacks: Vec<(usize, usize)> = Vec::new(); // (soaker, attacker) reflexive melee answers
-            for d in &decls {
-                if d.aoe {
-                    for m in group_of(units, d.def) {
-                        aoe_add[m] += d.might; // unevadable, full value to each (§4.5)
-                    }
-                    continue;
-                }
-                let members = group_of(units, d.def);
-                let soaker = front_living(units, &members).unwrap_or(d.def);
-                if members.len() == 1
-                    && units[soaker].hits == HitMode::Evade
-                    && should_avoid(&units[soaker], d.might, d.finesse)
-                {
-                    let cost = avoid_cost(d.finesse, units[soaker].offense.finesse);
-                    units[soaker].tempo -= cost;
-                    note!("  {} avoids (-{}t)", uid(units, soaker), cost);
-                    continue;
-                }
-                spill_add[soaker] += d.might;
-                if d.melee {
-                    sbacks.push((soaker, d.atk));
-                }
-            }
-            // AoE first — counted in each member's pile before spillover cascades (§4.6 worked example).
-            for m in 0..n {
-                if aoe_add[m] > 0 && units[m].alive() {
-                    let bar = units[m].defense.health.toughness();
-                    units[m].defense.take_with_toughness(aoe_add[m], bar);
-                }
-            }
-            // Spillover cascades front-to-back through each targeted group, overflowing only on a death.
-            for (s, &spill) in spill_add.iter().enumerate() {
-                if spill > 0 {
-                    let members = group_of(units, s);
-                    cascade(units, &members, spill);
-                }
-            }
-            // Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for
-            // one Tempo, and only when it can crack the attacker (positive-effect). A soaker that committed
-            // before dying still answers (§1.3), so this is not gated on it surviving the blow.
-            for (soaker, atk) in sbacks {
-                if units[soaker].is_melee()
-                    && units[soaker].tempo >= 1
-                    && units[atk].alive()
-                    && units[soaker].offense.might + units[atk].defense.health_pile()
-                        >= units[atk].defense.health.toughness()
-                {
-                    units[soaker].tempo -= 1;
-                    let bar = units[atk].defense.health.toughness();
-                    let mb = units[soaker].offense.might;
-                    units[atk].defense.take_with_toughness(mb, bar);
-                    note!(
-                        "  {} strikes back M{} on {}",
-                        uid(units, soaker),
-                        mb,
-                        uid(units, atk)
-                    );
-                }
-            }
-        }
-
-        // --- Step boundary: wipe every per-phase pile (sub-threshold damage does not carry). ---
-        for u in units.iter_mut() {
-            u.defense.clear_pile();
-        }
-    }
-}
-
-/// Spillover cascade (§4.6): apply `amount` of aimed Might to a group front-to-back. The front living
-/// member absorbs into its pile (which already holds any AoE) until it **dies**; only then does the
-/// unflipped leftover overflow to the next. A surviving front soaks the rest (the bodyguard).
-fn cascade(units: &mut [Unit], members: &[usize], mut amount: u32) {
-    for &m in members {
-        if amount == 0 {
-            break;
-        }
-        if !units[m].alive() {
-            continue;
-        }
-        let bar = units[m].defense.health.toughness();
-        let out = units[m].defense.take_with_toughness(amount, bar);
-        if out.down {
-            amount = units[m].defense.health_pile(); // unflipped remainder overflows
-            units[m].defense.clear_pile();
-        } else {
-            amount = 0; // fully absorbed by the surviving front
+/// Refresh every living body's per-round state (Tempo back to Cadence) between rounds — the engine's
+/// resolver assumes Tempo is refreshed at the round start.
+fn refresh(state: &mut State) {
+    for a in state.heroes.iter_mut().chain(state.creatures.iter_mut()) {
+        if !a.is_down() {
+            a.refresh_round();
         }
     }
 }
 
 /// Run a battle while collecting a step-by-step trace (for tuning by inspection). Returns the outcome
-/// and the log.
+/// and the engine's per-round combat log.
 pub fn battle_traced(
-    mut side0: Vec<Unit>,
-    mut side1: Vec<Unit>,
+    side0: Vec<Unit>,
+    side1: Vec<Unit>,
     max_rounds: u32,
 ) -> (Outcome, Vec<String>) {
-    let mut units: Vec<Unit> = Vec::new();
-    units.append(&mut side0);
-    units.append(&mut side1);
-    let mut log = Some(Vec::new());
-    let mut outcome = Outcome::Draw;
+    let mut state = battle_state_from(&side0, &side1);
+    state.log.clear();
+    let mut log = Vec::new();
     for r in 0..max_rounds {
-        if let Some(l) = log.as_mut() {
-            l.push(format!("== round {} ==", r + 1));
+        log.push(format!("== round {} ==", r + 1));
+        combat::resolve_round(&mut state);
+        log.append(&mut state.log);
+        if let Some(o) = decide(&state) {
+            return (o, log);
         }
-        run_round_logged(&mut units, &mut log);
-        let a = units.iter().any(|u| u.side == 0 && u.alive());
-        let b = units.iter().any(|u| u.side == 1 && u.alive());
-        match (a, b) {
-            (true, false) => {
-                outcome = Outcome::Win;
-                break;
-            }
-            (false, true) => {
-                outcome = Outcome::Loss;
-                break;
-            }
-            (false, false) => {
-                outcome = Outcome::Draw;
-                break;
-            }
-            (true, true) => {}
-        }
+        refresh(&mut state);
     }
-    (outcome, log.unwrap_or_default())
+    (Outcome::Draw, log)
 }
 
 /// Run exactly `rounds` rounds (no early stop) and return `(side0_alive, side1_alive)` — a survivor count
 /// for measuring partial progress (e.g. how many of a shielded group an attacker has cracked), where a
 /// terminal [`battle`] outcome would collapse a standoff to a Draw and hide the difference.
-pub fn survivors_after(mut side0: Vec<Unit>, mut side1: Vec<Unit>, rounds: u32) -> (usize, usize) {
-    let mut units: Vec<Unit> = Vec::new();
-    units.append(&mut side0);
-    units.append(&mut side1);
+pub fn survivors_after(side0: Vec<Unit>, side1: Vec<Unit>, rounds: u32) -> (usize, usize) {
+    let mut state = battle_state_from(&side0, &side1);
     for _ in 0..rounds {
-        run_round(&mut units);
+        combat::resolve_round(&mut state);
+        refresh(&mut state);
     }
-    let a = units.iter().filter(|u| u.side == 0 && u.alive()).count();
-    let b = units.iter().filter(|u| u.side == 1 && u.alive()).count();
+    let a = state.heroes.iter().filter(|u| !u.is_down()).count();
+    let b = state.creatures.iter().filter(|u| !u.is_down()).count();
     (a, b)
 }
 
@@ -609,20 +299,14 @@ pub enum Outcome {
 
 /// Run a battle to a decision or the round cap. Win = the enemy is wiped and you have survivors; a mutual
 /// wipe or a timeout is a Draw (PvE convention: a Draw is not a Win).
-pub fn battle(mut side0: Vec<Unit>, mut side1: Vec<Unit>, max_rounds: u32) -> Outcome {
-    let mut units: Vec<Unit> = Vec::new();
-    units.append(&mut side0);
-    units.append(&mut side1);
+pub fn battle(side0: Vec<Unit>, side1: Vec<Unit>, max_rounds: u32) -> Outcome {
+    let mut state = battle_state_from(&side0, &side1);
     for _ in 0..max_rounds {
-        run_round(&mut units);
-        let a = units.iter().any(|u| u.side == 0 && u.alive());
-        let b = units.iter().any(|u| u.side == 1 && u.alive());
-        match (a, b) {
-            (true, false) => return Outcome::Win,
-            (false, true) => return Outcome::Loss,
-            (false, false) => return Outcome::Draw,
-            (true, true) => {}
+        combat::resolve_round(&mut state);
+        if let Some(o) = decide(&state) {
+            return o;
         }
+        refresh(&mut state);
     }
     Outcome::Draw
 }
@@ -896,15 +580,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn avoid_cost_is_a_threshold() {
-        // cards × Fd > Fa.  Fa2/Fd2 → 2; Fa2/Fd1 → 3; Fa1/Fd2 → 1; Fa1/Fd1 → 2.
-        assert_eq!(avoid_cost(2, 2), 2);
-        assert_eq!(avoid_cost(2, 1), 3);
-        assert_eq!(avoid_cost(1, 2), 1);
-        assert_eq!(avoid_cost(1, 1), 2);
-    }
-
-    #[test]
     fn default_intentions_match_the_triad() {
         assert_eq!(
             default_intention("Fighter", (1, 2, 3, 1, 1)),
@@ -961,103 +636,13 @@ mod tests {
         for aoe in [false, true] {
             let mut atk = vec![lone("Mage", (3, 1, 2, 1, 1), Rearguard, 0)];
             atk[0].aoe = aoe;
-            let mut all: Vec<Unit> = Vec::new();
-            all.append(&mut atk);
-            let mut g = group();
-            all.append(&mut g);
-            for _ in 0..4 {
-                run_round(&mut all);
-            }
-            let backs = all
-                .iter()
-                .filter(|u| u.side == 1 && u.name == "Mage" && u.alive())
-                .count();
+            // The T4 front survives both (M3 < T4); the two soft backs live under aimed fire (walled by
+            // the bodyguard) but die under AoE — so the 3-body group leaves 3 survivors aimed, 1 under AoE.
+            let (_, group_alive) = survivors_after(atk, group(), 4);
             println!(
-                "{} attacker → shielded back Mages alive after 4 rounds: {}/2",
+                "{} attacker → group survivors after 4 rounds: {}/3 (front + back Mages)",
                 if aoe { "AoE  " } else { "aimed" },
-                backs
-            );
-        }
-    }
-
-    /// Sweep Fighter stat lines to find a triad where the RPS triangle is **decisive** under cycling
-    /// (Hold>Break, Break>Deal, Deal>Hold all WIN; the anti-legs not WIN). Assassin/Mage held fixed.
-    /// `cargo test -p deckbound probe_retune -- --ignored --nocapture`.
-    #[test]
-    #[ignore]
-    fn probe_retune() {
-        use Intention::{Outrider, Rearguard, Vanguard};
-        let assassin = (2u32, 1, 1, 2, 2);
-        let mage = (3u32, 1, 2, 1, 1);
-        let mk = |s: Stat5, intent: Intention, side: u8, h: HitMode| {
-            let class = match intent {
-                Vanguard => "Fighter",
-                Outrider => "Assassin",
-                Rearguard => "Mage",
-            };
-            let mut u = lone(class, s, intent, side);
-            u.hits = h;
-            u
-        };
-        let bd = battle(
-            vec![mk(assassin, Outrider, 0, HitMode::Evade)],
-            vec![mk(mage, Rearguard, 1, HitMode::Evade)],
-            8,
-        );
-        let db = battle(
-            vec![mk(mage, Rearguard, 0, HitMode::Evade)],
-            vec![mk(assassin, Outrider, 1, HitMode::Evade)],
-            8,
-        );
-        println!("fixed: Break>Deal {bd:?}  (anti Deal>Break {db:?})");
-        let mut found: Vec<(Stat5, HitMode, u32)> = Vec::new();
-        for v in 1..=3u32 {
-            for t in 3..=4u32 {
-                for c in 1..=3u32 {
-                    for f in 1..=2u32 {
-                        for &hit in &[HitMode::Evade, HitMode::Endure] {
-                            let fs = (1u32, v, t, c, f);
-                            let hb = battle(
-                                vec![mk(fs, Vanguard, 0, hit)],
-                                vec![mk(assassin, Outrider, 1, HitMode::Evade)],
-                                8,
-                            );
-                            let bh = battle(
-                                vec![mk(assassin, Outrider, 0, HitMode::Evade)],
-                                vec![mk(fs, Vanguard, 1, hit)],
-                                8,
-                            );
-                            let dh = battle(
-                                vec![mk(mage, Rearguard, 0, HitMode::Evade)],
-                                vec![mk(fs, Vanguard, 1, hit)],
-                                8,
-                            );
-                            let hd = battle(
-                                vec![mk(fs, Vanguard, 0, hit)],
-                                vec![mk(mage, Rearguard, 1, HitMode::Evade)],
-                                8,
-                            );
-                            if hb == Outcome::Win
-                                && dh == Outcome::Win
-                                && bd == Outcome::Win
-                                && bh != Outcome::Win
-                                && hd != Outcome::Win
-                                && db != Outcome::Win
-                            {
-                                found.push((fs, hit, 1 + v + t + c + f));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        found.sort_by_key(|x| x.2);
-        for (fs, hit, budget) in found.iter().take(10) {
-            println!("clean triangle: Fighter {fs:?} {hit:?} (budget {budget})");
-        }
-        if found.is_empty() {
-            println!(
-                "no clean triangle in the swept range — widen the sweep or re-tune Assassin/Mage"
+                group_alive,
             );
         }
     }
