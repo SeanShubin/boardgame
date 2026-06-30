@@ -467,8 +467,8 @@ fn build_ui(commands: &mut Commands, tree: &DeckTree, rail: &[RailAction], statu
 }
 
 /// Draws a collapsed deck as a short stack of offset layers — two alternating colors, stepped along
-/// the right and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
-/// front layer (offset 0, on top) carries the label and count; the whole stack is one drop target.
+/// the left and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
+/// front layer (top-right, on top) carries the label and count; the whole stack is one drop target.
 fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, count: usize) {
     let depth = count.clamp(1, MAX_STACK);
     let spread = (depth - 1) as f32 * STACK_OFFSET;
@@ -493,7 +493,9 @@ fn spawn_deck_chip(parent: &mut ChildSpawnerCommands, id: DeckId, label: &str, c
                 let bundle = (
                     Node {
                         position_type: PositionType::Absolute,
-                        left: Val::Px(offset),
+                        // Front layer sits at top-right; deeper layers step down-left, so the stack
+                        // peeks out along the left and bottom edges.
+                        left: Val::Px(spread - offset),
                         top: Val::Px(offset),
                         width: Val::Px(CHIP_W),
                         height: Val::Px(CHIP_H),
