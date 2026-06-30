@@ -141,14 +141,15 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// A clean UI typeface bundled in the crate, for crisp small text on cards. Covers the punctuation and
-/// arrows the renderer uses (em dashes, curly quotes, arrows) that Bevy's built-in `FiraMono-subset`
-/// font lacks — otherwise they show as tofu boxes. SIL Open Font License; see `fonts/Inter-LICENSE.txt`.
-const UI_FONT: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
+/// The bundled UI typeface — **Nunito Sans** (a warm, friendly humanist sans that's still crisp for
+/// small text on cards). Covers the punctuation the renderer uses (em dashes, curly quotes) that
+/// Bevy's built-in `FiraMono-subset` lacks, which would otherwise show as tofu boxes. SIL Open Font
+/// License; see `fonts/NunitoSans-OFL.txt`. A Latin static instance (~33 KB) keeps the wasm small.
+const UI_FONT: &[u8] = include_bytes!("../fonts/NunitoSans-Regular.ttf");
 
-/// Replace Bevy's ASCII-only default font with the bundled Inter face. Bevy registers its default font
-/// at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting that
-/// one asset reskins all UI text without threading a font handle through each label.
+/// Replace Bevy's ASCII-only default font with the bundled Nunito Sans face. Bevy registers its default
+/// font at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting
+/// that one asset reskins all UI text without threading a font handle through each label.
 fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
     let font = Font::from_bytes(UI_FONT.to_vec());
     fonts
