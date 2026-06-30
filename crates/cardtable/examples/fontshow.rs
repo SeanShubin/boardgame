@@ -3,11 +3,23 @@
 //!
 //! Run: `cargo run -p cardtable --example fontshow`
 //!
-//! Most candidates are free/OFL fonts that aren't on this machine. Drop their `.ttf` files into
-//! `crates/cardtable/examples/fonts/` (exact filenames + sources are in that folder's `README.md`) and
-//! re-run — each present font renders a sample block; missing ones show a "drop me here" placeholder.
-//! Inter (already bundled) and Cascadia Mono (an OFL mono usually installed on Windows) work out of
-//! the box.
+//! The candidate `.ttf`s live in `crates/cardtable/examples/fonts/` and are **git-ignored** — they are
+//! throwaway evaluation assets, not shipped; only the chosen font gets vendored into the crate proper
+//! (with its license). Any candidate not present renders a "drop me here" placeholder. To (re)fetch
+//! them, pull from the sources below; the folder's `README.md` lists the exact filenames.
+//!
+//! ## Provenance — where each font came from (all SIL Open Font License)
+//!
+//! - **Inter** — bundled at `crates/cardtable/fonts/Inter-Regular.ttf` (orig. github.com/rsms/inter).
+//! - **Atkinson Hyperlegible** — Braille Institute; `google/fonts` `ofl/atkinsonhyperlegible/`.
+//! - **IBM Plex Sans** — IBM; `google/fonts` `ofl/ibmplexsans/IBMPlexSans[wdth,wght].ttf` (variable).
+//! - **IBM Plex Mono** — IBM; `google/fonts` `ofl/ibmplexmono/`.
+//! - **Source Sans 3** — Adobe; `google/fonts` `ofl/sourcesans3/SourceSans3[wght].ttf` (variable).
+//! - **Figtree** — Erik D. Kennedy; `google/fonts` `ofl/figtree/Figtree[wght].ttf` (variable).
+//! - **Nunito Sans** — `google/fonts` `ofl/nunitosans/NunitoSans[…].ttf` (variable).
+//!
+//! Base URL for the `google/fonts` files: `https://raw.githubusercontent.com/google/fonts/main/`.
+//! Variable fonts are saved here under a `-Regular.ttf` name and render at their default instance.
 
 use bevy::prelude::*;
 
@@ -48,6 +60,7 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
     // The label/UI font for headings and notes — Inter from the crate (else Bevy's default font).
     let (label, _) = load_first(&mut fonts, &[format!("{dir}/fonts/Inter-Regular.ttf")]);
 
+    // Provenance + license for every entry is in the module doc comment above (all SIL OFL).
     let candidates = vec![
         Candidate {
             name: "Inter (current)",

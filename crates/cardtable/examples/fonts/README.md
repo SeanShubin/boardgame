@@ -15,12 +15,12 @@ Drop the regular weight here with these names, then re-run:
 | Figtree                | `Figtree-Regular.ttf`                | fonts.google.com/specimen/Figtree                     |
 | Nunito Sans            | `NunitoSans-Regular.ttf`             | fonts.google.com/specimen/Nunito+Sans                 |
 
-Already available without dropping anything:
+The `.ttf`s here are **git-ignored** (see root `.gitignore`) — throwaway evaluation assets, re-fetchable
+from the sources above. The six candidates were fetched from the `google/fonts` repo:
+`https://raw.githubusercontent.com/google/fonts/main/ofl/<dir>/<File>.ttf` (the Plex/Source/Figtree/
+Nunito ones are **variable** fonts, saved under a `-Regular.ttf` name; they render at their default
+instance). Inter is already bundled at `crates/cardtable/fonts/Inter-Regular.ttf`.
 
-- **Inter** — loaded from `crates/cardtable/fonts/Inter-Regular.ttf` (already bundled).
-- **IBM Plex Mono row** — falls back to `C:/Windows/Fonts/CascadiaMono.ttf` (an OFL mono usually
-  installed on Windows) so you can see number alignment until you add Plex Mono.
-
-This folder is for the **dev showcase only**. Whatever font we pick gets bundled into the `cardtable`
-crate proper (via `include_bytes!`, like Inter is now) so it ships embedded — see the note on web below.
-Keep each font's `OFL.txt` / license alongside the `.ttf` if you commit them.
+This folder is for the **dev showcase only**. Whatever font we pick gets vendored into the `cardtable`
+crate proper (via `include_bytes!`, like Inter) so it ships embedded — and *then* we add that one
+font's `OFL.txt` alongside it. (Nothing here is committed, so no license files are needed yet.)
