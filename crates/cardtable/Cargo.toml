@@ -7,3 +7,8 @@ edition.workspace = true
 contract = { workspace = true }
 cardtable-model = { workspace = true }
 bevy = { workspace = true }
+
+[features]
+# The game adapter (GamePlugin): binds a `contract::Game` to the renderer core. Off by default so the
+# core (and feature prototypes / examples) need no game.
+game = []

@@ -33,7 +33,7 @@ fn main() -> AppExit {
     }));
 
     #[cfg(feature = "cardtable")]
-    app.add_plugins(cardtable::CardTablePlugin::new(Deckbound, SEED, PLAYERS));
+    app.add_plugins(cardtable::GamePlugin::new(Deckbound, SEED, PLAYERS));
     #[cfg(not(feature = "cardtable"))]
     app.add_plugins(tabletop::TabletopPlugin::new(Deckbound, SEED, PLAYERS));
 
