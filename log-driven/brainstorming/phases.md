@@ -77,12 +77,12 @@ Walk the schedule a–e in order. Each engagement runs:
 Resolved in order. Every legal attacker→target role-pair appears exactly once
 (Rearguard→Rearguard is the only illegal pair — it needs an enabling effect).
 
-| Step | Engagements |
-|------|-------------|
-| **Intercept** | Vanguard → Outrider |
-| **Volley**    | Rearguard → Outrider |
-| **Raid**      | Outrider → Rearguard |
-| **Clash**     | Rearguard → Vanguard, Vanguard → Vanguard |
+| Step          | Engagements                                                    |
+| ------------- | -------------------------------------------------------------- |
+| **Intercept** | Vanguard → Outrider                                            |
+| **Volley**    | Rearguard → Outrider                                           |
+| **Raid**      | Outrider → Rearguard                                           |
+| **Clash**     | Rearguard → Vanguard, Vanguard → Vanguard                      |
 | **Breach**    | Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider |
 
 Because Outriders are *targets* in a/b before they are *attackers* in c/e, a
