@@ -455,7 +455,9 @@ fn on_card_drag_end(
         ) else {
             return;
         };
-        let len = table.0.pile(home).map_or(0, |pile| pile.cards().len());
+        // Reorder among the *contents* only, so a drag can never push a card above a zone card and
+        // steal its place as the pile's label.
+        let len = table.0.content_cards(home).len();
         let to = (row * cols + col).min(len.saturating_sub(1));
         let _ = table.0.reorder(home, from, to);
     }
@@ -882,9 +884,11 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                 } else {
                     // The zone's cards lay out in a row-major grid; each is its own draggable tile that
                     // reorders (others reflow) on drop. ×N grouping doesn't apply here — every card is a
-                    // stable tile so the reflow can animate smoothly.
+                    // stable tile so the reflow can animate smoothly. A zone card on top is the pile's
+                    // label (it named this zone), so it is not shown among the contents.
                     let cols = grid_cols(tree.surface().x);
-                    for (index, &cid) in pile.cards().iter().enumerate() {
+                    let content = tree.content_cards(zone);
+                    for (index, &cid) in content.iter().enumerate() {
                         let (x, y) = grid_cell(index, cols);
                         surface
                             .spawn((
@@ -901,7 +905,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             });
                     }
                     // Any sub-piles follow the cards in the grid as (clickable) chips.
-                    let base = pile.cards().len();
+                    let base = content.len();
                     for (k, &sid) in pile.subpiles().iter().enumerate() {
                         let (x, y) = grid_cell(base + k, cols);
                         surface
@@ -1088,7 +1092,8 @@ fn spawn_pile_chip(
 /// so a face-down deck reveals nothing.
 fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
-    let count = pile.cards().len() + pile.subpiles().len();
+    // Count the *contents*: a zone card on top is the label, not one of the cards it fronts.
+    let count = tree.content_cards(id).len() + pile.subpiles().len();
     let top = pile.cards().last().and_then(|&cid| tree.card(cid));
     let (name, card_type) = match top {
         Some(card) if matches!(card.face, Face::Up { .. }) => {

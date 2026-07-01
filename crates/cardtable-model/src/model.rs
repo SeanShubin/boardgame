@@ -650,6 +650,26 @@ impl Tableau {
         self.piles[&home].cards.iter().position(|c| *c == card)
     }
 
+    /// The pile's **zone card** — a trailing [`CardKind::Zone`] card that *names* the pile rather than
+    /// being one of its contents — if it has one. It is the top (last) card, when that card is a Zone.
+    /// The zone card is the pile's label: it titles the zone you drill into, and it is neither counted
+    /// nor shown among the contents.
+    pub fn zone_card(&self, pile: PileId) -> Option<CardId> {
+        let p = self.piles.get(&pile)?;
+        let &top = p.cards.last()?;
+        (self.cards[&top].kind == CardKind::Zone).then_some(top)
+    }
+
+    /// The pile's **content** cards — every card except a trailing [`zone_card`](Self::zone_card).
+    /// This is what drilling into the pile shows, and what its deck count reflects.
+    pub fn content_cards(&self, pile: PileId) -> &[CardId] {
+        match self.piles.get(&pile) {
+            Some(p) if self.zone_card(pile).is_some() => &p.cards[..p.cards.len() - 1],
+            Some(p) => &p.cards,
+            None => &[],
+        }
+    }
+
     /// Places `pile` at `(x, y)` but clamps it inside the surface (the borders shove it back in),
     /// returning the position actually used. Drag-to-place calls this each move.
     pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {
@@ -1280,6 +1300,48 @@ mod tests {
         assert_eq!(t.focus_id(), a);
         assert!(!t.pile(a).unwrap().collapsed);
         assert!(t.pile(b).unwrap().collapsed); // no longer on the path
+    }
+
+    #[test]
+    fn zone_card_names_the_pile_and_is_not_content() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "Locations").unwrap();
+        let a = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Alpha".into(),
+                },
+                None,
+            )
+            .unwrap();
+        let b = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Bravo".into(),
+                },
+                None,
+            )
+            .unwrap();
+        // No zone card yet: content is every card.
+        assert_eq!(t.zone_card(p), None);
+        assert_eq!(t.content_cards(p), &[a, b]);
+
+        // Cap the pile with a Zone card: it is the zone card, and drops out of the content.
+        let z = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Location".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_kind(z, CardKind::Zone).unwrap();
+        assert_eq!(t.zone_card(p), Some(z));
+        assert_eq!(t.content_cards(p), &[a, b]);
     }
 
     #[test]
