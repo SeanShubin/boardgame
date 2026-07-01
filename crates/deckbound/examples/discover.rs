@@ -14,13 +14,24 @@
 //! still dominates (mean win-rate of the AoE cells vs the single cells) and whether a non-transitive RPS
 //! cycle spanning distinct cells/roles exists. The smallest `K` that levels AoE↔single is the price.
 //!
+//! The **4-cell roster** (one class per cell forming a directed cycle) is chosen for **balanced stat
+//! investment**: for each stat, sum `(value − 1)` across the four; the pick **minimizes the spread** of
+//! those five totals, so no stat is dead across the roster (an all-Might-1 roster has a Might total of 0).
+//!
 //! Run: `cargo run -p deckbound --example discover`
 
 use deckbound::balance::compositions_k;
 use deckbound::engagement::{ClassDef, Intention, Outcome, Stat5, Unit, battle, unit_from_class};
 
-/// Total stat points a class gets (each stat ≥ 1) before any capability cost.
+/// Single-class stat sum (an AoE class pays `K` off it). Each class spends this over 5 stats, each ≥ 1.
 const BUDGET: u32 = 8;
+/// Per-stat clamp — a stat is never **dumped to 0** or **spiked to 5+** (stays in [1,4]).
+const STAT_LO: u32 = 1;
+const STAT_HI: u32 = 4;
+
+// Roster stat-investment balance (the selection constraint): for each stat, sum `(value − 1)` across the
+// chosen archetypes; the five per-stat totals must sit in a narrow range. An all-Might-1 roster has a Might
+// total of 0 (a dead stat) — we minimize the *spread* of these totals so every stat is used evenly.
 /// Party size per side (NvN). AoE needs a group to matter, so this must be > 1.
 const PARTY: usize = 3;
 /// Per-matchup round cap.
@@ -61,8 +72,11 @@ fn candidates(k: u32) -> Vec<Candidate> {
     let mut out = Vec::new();
     for &(ranged, aoe) in &cells {
         let budget = BUDGET - if aoe { k } else { 0 };
-        for c in compositions_k(budget - 5, 5) {
-            let stats: Stat5 = (c[0] + 1, c[1] + 1, c[2] + 1, c[3] + 1, c[4] + 1);
+        for c in compositions_k(budget, 5) {
+            if c.iter().any(|&x| !(STAT_LO..=STAT_HI).contains(&x)) {
+                continue; // no stat dumped to 0 or spiked past 4
+            }
+            let stats: Stat5 = (c[0], c[1], c[2], c[3], c[4]);
             let (m, v, t, ca, f) = stats;
             let def = ClassDef {
                 name: format!("{} M{m}V{v}T{t}C{ca}F{f}", cell_name(ranged, aoe)),
@@ -161,10 +175,32 @@ impl Tournament {
             .collect()
     }
 
+    /// Roster **stat-investment totals**: for each stat, `Σ (value − 1)` over the given classes. `0` for a
+    /// stat means every member has it at 1 (a dead stat across the roster).
+    fn aggregates(&self, roster: &[usize]) -> [i32; 5] {
+        let mut a = [0i32; 5];
+        for &i in roster {
+            let (m, v, t, c, f) = self.cands[i].def.stats;
+            a[0] += m as i32 - 1;
+            a[1] += v as i32 - 1;
+            a[2] += t as i32 - 1;
+            a[3] += c as i32 - 1;
+            a[4] += f as i32 - 1;
+        }
+        a
+    }
+
+    /// The **spread** of a roster's stat-investment totals (max − min) — small = every stat used evenly.
+    fn spread(agg: [i32; 5]) -> i32 {
+        agg.iter().max().unwrap() - agg.iter().min().unwrap()
+    }
+
     /// A **4-cell cycle**: one class per cell (all four cells) forming a *directed Hamiltonian 4-cycle*
     /// `A ▸ B ▸ C ▸ D ▸ A` (every edge a strict beat). A Hamiltonian cycle ⟹ the quartet is strongly
     /// connected (Moon), i.e. no cell dominates or is dominated — every capability cell holds a niche.
-    /// Prefers a cycle with the most distinct roles (max 3). Returns the four indices in cycle order.
+    /// Among all such cycles, picks the one with the **most balanced stat investment** (smallest
+    /// [`Self::spread`] of the per-stat `Σ(value−1)` totals — so no stat is dead across the roster), then
+    /// the most distinct roles. Returns the four indices in cycle order.
     fn four_cell_cycle(&self) -> Option<[usize; 4]> {
         let b = self.buckets();
         if b.iter().any(|bk| bk.is_empty()) {
@@ -179,7 +215,7 @@ impl Tournament {
             [0, 3, 1, 2],
             [0, 3, 2, 1],
         ];
-        let mut best: Option<([usize; 4], usize)> = None;
+        let mut best: Option<([usize; 4], i32, usize)> = None; // (cycle, spread, roles)
         for &r0 in &b[0] {
             for &r1 in &b[1] {
                 for &r2 in &b[2] {
@@ -188,25 +224,27 @@ impl Tournament {
                         for ord in &ORDERS {
                             let cyc = [rep[ord[0]], rep[ord[1]], rep[ord[2]], rep[ord[3]]];
                             let edge = |x: usize, y: usize| self.beat[cyc[x]][cyc[y]] > 0;
-                            if edge(0, 1) && edge(1, 2) && edge(2, 3) && edge(3, 0) {
-                                let mut rv: Vec<Intention> =
-                                    cyc.iter().map(|&i| self.cands[i].role).collect();
-                                rv.sort_unstable();
-                                rv.dedup();
-                                let roles = rv.len();
-                                if best.is_none_or(|(_, br)| roles > br) {
-                                    best = Some((cyc, roles));
-                                    if roles == 3 {
-                                        return Some(cyc); // best possible (only 3 roles exist)
-                                    }
-                                }
+                            if !(edge(0, 1) && edge(1, 2) && edge(2, 3) && edge(3, 0)) {
+                                continue;
+                            }
+                            let sp = Self::spread(self.aggregates(&cyc));
+                            let mut rv: Vec<Intention> =
+                                cyc.iter().map(|&i| self.cands[i].role).collect();
+                            rv.sort_unstable();
+                            rv.dedup();
+                            let roles = rv.len();
+                            // Prefer the most balanced stat investment (smallest spread), then more roles.
+                            if best.is_none_or(|(_, bsp, br)| {
+                                (sp, -(roles as i32)) < (bsp, -(br as i32))
+                            }) {
+                                best = Some((cyc, sp, roles));
                             }
                         }
                     }
                 }
             }
         }
-        best.map(|(c, _)| c)
+        best.map(|(c, _, _)| c)
     }
 
     /// The cell (if any) that cannot hold a niche: every one of its candidates either beats all four
@@ -267,7 +305,9 @@ fn main() {
     println!(
         "Class-discovery sweep — NvN ({PARTY}v{PARTY}, grouped) on the real engine; pricing the AoE capability.\n"
     );
-    println!("AoE cost K (points removed from an AoE class's {BUDGET}-pt budget):");
+    println!(
+        "Per-class sum {BUDGET}, stats [{STAT_LO},{STAT_HI}] (no 0/5); AoE sum {BUDGET}−K; roster picked for balanced stat investment (min spread of Σ(stat−1)):"
+    );
     println!(
         "{:>3}  {:>5}  {:>9}  {:>10}  {:>11}  {:>5}",
         "K", "cands", "dominant", "AoE win%", "single win%", "cycle"
@@ -347,6 +387,41 @@ fn main() {
                 "  cycle: {} ▸ {} ▸ {} ▸ {} ▸ (back to first)",
                 names[0], names[1], names[2], names[3]
             );
+            let agg = t.aggregates(&cyc);
+            println!(
+                "  stat investment Σ(stat−1)  M{} V{} T{} C{} F{}   (spread {}, smaller = every stat used evenly)",
+                agg[0],
+                agg[1],
+                agg[2],
+                agg[3],
+                agg[4],
+                Tournament::spread(agg)
+            );
+            // Head-to-head among the roster (row vs each column, in cycle order) + standing vs the field.
+            println!("  head-to-head (row beats col = W; columns in cycle order) + field record:");
+            for &i in &cyc {
+                let hh: String = cyc
+                    .iter()
+                    .map(|&j| {
+                        if i == j {
+                            "  —".to_string()
+                        } else {
+                            match t.beat[i][j].cmp(&0) {
+                                std::cmp::Ordering::Greater => "  W".to_string(),
+                                std::cmp::Ordering::Less => "  L".to_string(),
+                                std::cmp::Ordering::Equal => "  ·".to_string(),
+                            }
+                        }
+                    })
+                    .collect();
+                println!(
+                    "    {:<14}{hh}   field {}W {}L of {}",
+                    t.cands[i].cell,
+                    t.wins(i),
+                    t.losses(i),
+                    n - 1
+                );
+            }
         }
         None => match t.stuck_cell() {
             Some(cell) => println!(

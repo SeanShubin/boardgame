@@ -717,4 +717,46 @@ mod tests {
         let s1 = vec![make_unit("Fighter", (1, 2, 3, 1, 1), 1)];
         assert_eq!(battle(s0, s1, 8), Outcome::Draw);
     }
+
+    /// Trace the four suitless starters' RPS cycle as the sweep tests them: mono-parties of 3 (one group),
+    /// each vs the next in the cycle. Shows what a class-vs-class matchup looks like on the real engine.
+    /// `cargo test -p deckbound probe_starter_matchups -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_starter_matchups() {
+        let starter = |name: &str, ranged, aoe, stats: Stat5| ClassDef {
+            name: name.into(),
+            ranged,
+            aoe,
+            stats,
+        };
+        let skirmisher = starter("Skirmisher", false, false, (2, 2, 1, 2, 1));
+        let sentinel = starter("Sentinel", true, false, (1, 2, 2, 1, 2));
+        let tempest = starter("Tempest", true, true, (1, 1, 1, 1, 2));
+        let cleaver = starter("Cleaver", false, true, (1, 1, 2, 1, 1));
+        // Field each as a party of 3 clones in one group (how the sweep tests a class).
+        let party = |c: &ClassDef, side: u8| -> Vec<Unit> {
+            (0..3)
+                .map(|_| {
+                    let mut u = unit_from_class(c, side);
+                    u.group = Some(0);
+                    u
+                })
+                .collect()
+        };
+        let cycle = [
+            (&skirmisher, &sentinel),
+            (&sentinel, &tempest),
+            (&tempest, &cleaver),
+            (&cleaver, &skirmisher),
+        ];
+        for (a, b) in cycle {
+            let (o, log) = battle_traced(party(a, 0), party(b, 1), 8);
+            println!("### {} ×3  vs  {} ×3  =>  {o:?}", a.name, b.name);
+            for line in log {
+                println!("{line}");
+            }
+            println!();
+        }
+    }
 }
