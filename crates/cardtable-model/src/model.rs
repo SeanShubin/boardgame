@@ -79,7 +79,7 @@ pub enum Utility {
 
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
 /// larger render [`Size`]s (`detail`, `panel`) and a [`CardKind`] that gives a click its meaning.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Card {
     /// This card's stable id.
     pub id: CardId,
@@ -96,6 +96,10 @@ pub struct Card {
     card_type: String,
     size: Size,
     home: PileId,
+    /// Free position on the drilled-in surface and rendered footprint — used only by an
+    /// [`Arrangement::Free`] deck, where cards are placed and shoved like the top-level piles.
+    pos: Pos,
+    footprint: Pos,
 }
 
 impl Card {
@@ -142,6 +146,16 @@ impl Card {
         self.size
     }
 
+    /// The card's free position on the drilled-in surface (an [`Arrangement::Free`] deck only).
+    pub fn pos(&self) -> Pos {
+        self.pos
+    }
+
+    /// The card's rendered footprint (`x` = width, `y` = height), fed back by the renderer for shoving.
+    pub fn footprint(&self) -> Pos {
+        self.footprint
+    }
+
     /// Whether the card has more than a name to show, so a click can grow it.
     pub fn is_expandable(&self) -> bool {
         !self.detail.is_empty() || !self.panel.is_empty()
@@ -155,6 +169,118 @@ fn same_type(a: &Card, b: &Card) -> bool {
         && a.card_type == b.card_type
 }
 
+// ---- shared box geometry (piles and cards separate against these) ----------------------------
+
+/// The centre point of a box `(pos, size)`.
+fn box_center(pos: Pos, size: Pos) -> Pos {
+    Pos {
+        x: pos.x + size.x * 0.5,
+        y: pos.y + size.y * 0.5,
+    }
+}
+
+/// Clamp a box of `size` at `pos` fully inside `surface` (top-left origin). A box larger than the
+/// surface pins to the top-left.
+fn clamp_box(pos: Pos, size: Pos, surface: Pos) -> Pos {
+    let max_x = (surface.x - size.x).max(0.0);
+    let max_y = (surface.y - size.y).max(0.0);
+    Pos {
+        x: pos.x.clamp(0.0, max_x),
+        y: pos.y.clamp(0.0, max_y),
+    }
+}
+
+/// Total area by which a box `(pos, size)` overlaps the `locked` boxes.
+fn overlap_area(pos: Pos, size: Pos, locked: &[(Pos, Pos)]) -> f32 {
+    let mut total = 0.0;
+    for &(lp, lsz) in locked {
+        let ox = (pos.x + size.x).min(lp.x + lsz.x) - pos.x.max(lp.x);
+        let oy = (pos.y + size.y).min(lp.y + lsz.y) - pos.y.max(lp.y);
+        if ox > 0.01 && oy > 0.01 {
+            total += ox * oy;
+        }
+    }
+    total
+}
+
+/// The position nearest `cur` for a box of `size` that is fully inside `surface` *and* clear of every
+/// `locked` box; if none is fully clear, the in-bounds spot of least total overlap. The free region for
+/// an axis-aligned box among static boxes is rectilinear, so its nearest point lies on a candidate
+/// coordinate line: the box's own coordinate, each locked box's near/far edge in configuration space, or
+/// a wall. We test that grid of lines (straight slides *and* go-around-a-corner spots) and keep the
+/// clear one closest to where the box already is.
+fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> Pos {
+    let max_x = (surface.x - size.x).max(0.0);
+    let max_y = (surface.y - size.y).max(0.0);
+    let cx = cur.x.clamp(0.0, max_x);
+    let cy = cur.y.clamp(0.0, max_y);
+    let mut xs = vec![cx, 0.0, max_x];
+    let mut ys = vec![cy, 0.0, max_y];
+    for &(lp, lsz) in locked {
+        xs.push(lp.x - size.x); // just left of the locked box
+        xs.push(lp.x + lsz.x); // just right of it
+        ys.push(lp.y - size.y); // just above it
+        ys.push(lp.y + lsz.y); // just below it
+    }
+    xs.retain(|&x| x >= 0.0 && x <= max_x);
+    ys.retain(|&y| y >= 0.0 && y <= max_y);
+
+    let mut best_clear: Option<(f32, Pos)> = None; // (dist², pos)
+    let mut best_any: Option<(f32, f32, Pos)> = None; // (overlap area, dist², pos)
+    for &x in &xs {
+        for &y in &ys {
+            let pos = Pos { x, y };
+            let overlap = overlap_area(pos, size, locked);
+            let dist_sq = (x - cur.x).powi(2) + (y - cur.y).powi(2);
+            if overlap <= 0.0 {
+                if best_clear.is_none_or(|(d, _)| dist_sq < d) {
+                    best_clear = Some((dist_sq, pos));
+                }
+            } else if best_any.is_none_or(|(o, d, _)| overlap < o || (overlap == o && dist_sq < d))
+            {
+                best_any = Some((overlap, dist_sq, pos));
+            }
+        }
+    }
+    best_clear
+        .map(|(_, p)| p)
+        .or(best_any.map(|(_, _, p)| p))
+        .unwrap_or(Pos { x: cx, y: cy })
+}
+
+/// Lock-as-you-go separation of `boxes` (`(pos, size)`) inside `surface`, pinning `anchor` and shoving
+/// the rest clear nearest-first (a wavefront outward from the anchor). Returns each box's settled
+/// position, index-aligned with `boxes`. The shared core of [`Tableau::separate`] (piles) and
+/// [`Tableau::separate_cards`] (cards): because each box is placed clear of all already-settled boxes
+/// and never disturbed afterward, no two overlap once the space allows it. Terminates in one placement
+/// per box.
+fn separate_boxes(boxes: &[(Pos, Pos)], anchor: usize, surface: Pos) -> Vec<Pos> {
+    let mut result: Vec<Pos> = boxes.iter().map(|&(p, _)| p).collect();
+    if boxes.is_empty() {
+        return result;
+    }
+    let (anchor_pos, anchor_size) = boxes[anchor];
+    let anchor_center = box_center(anchor_pos, anchor_size);
+    // Pin the anchor at its in-bounds position; it is a fixed obstacle for everything else.
+    let anchor_pos = clamp_box(anchor_pos, anchor_size, surface);
+    result[anchor] = anchor_pos;
+    let mut order: Vec<usize> = (0..boxes.len()).filter(|&i| i != anchor).collect();
+    order.sort_by(|&i, &j| {
+        let di = box_center(boxes[i].0, boxes[i].1).dist_sq(anchor_center);
+        let dj = box_center(boxes[j].0, boxes[j].1).dist_sq(anchor_center);
+        di.partial_cmp(&dj)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(i.cmp(&j))
+    });
+    let mut locked: Vec<(Pos, Pos)> = vec![(anchor_pos, anchor_size)];
+    for i in order {
+        let pos = place_clear_of(boxes[i].0, boxes[i].1, &locked, surface);
+        result[i] = pos;
+        locked.push((pos, boxes[i].1));
+    }
+    result
+}
+
 /// How a pile arranges its contents when you drill into it — the shape half of a [`Layout`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Arrangement {
@@ -165,6 +291,10 @@ pub enum Arrangement {
     /// **Two-dimensional**: a grid `columns` wide, where a card's row *and* column are both meaningful
     /// and kept as cards come and go.
     Grid { columns: usize },
+    /// **Unordered**: cards are freely positioned and dragged at will — order is irrelevant. Overlaps
+    /// shove apart ([`separate_cards`](Tableau::separate_cards)), exactly as the top-level piles do on
+    /// the table, whatever each card's current size.
+    Free,
 }
 
 /// How a pile presents its contents: an [`Arrangement`] (1-D list or 2-D grid) plus whether the
@@ -362,6 +492,8 @@ impl Tableau {
                 card_type: String::new(),
                 size: Size::Small,
                 home: pile,
+                pos: Pos::default(),
+                footprint: Pos::default(),
             },
         );
         self.piles
@@ -639,6 +771,24 @@ impl Tableau {
         Ok(())
     }
 
+    /// Sets a card's free position on the drilled-in surface (an [`Arrangement::Free`] deck).
+    pub fn set_card_pos(&mut self, card: CardId, x: f32, y: f32) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .pos = Pos { x, y };
+        Ok(())
+    }
+
+    /// Records a card's rendered footprint (the renderer feeds this back after layout, for shoving).
+    pub fn set_card_footprint(&mut self, card: CardId, w: f32, h: f32) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .footprint = Pos { x: w, y: h };
+        Ok(())
+    }
+
     /// Advances a card to the next render size it has content for, wrapping back to [`Size::Small`]:
     /// `Name → Card` (if it has detail) `→ Full` (if it has a panel) `→ Name`. A name-only card stays
     /// at `Name`. This is the "click to grow, click again to shrink" cycle.
@@ -720,148 +870,59 @@ impl Tableau {
         }
     }
 
-    /// Places `pile` at `(x, y)` but clamps it inside the surface (the borders shove it back in),
-    /// returning the position actually used. Drag-to-place calls this each move.
+    /// Places `pile` at `(x, y)`, clamped inside the surface (the borders shove it back in), returning
+    /// the position actually used. Drag-to-place calls this each move.
     pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {
-        if !self.piles.contains_key(&pile) {
-            return Err(TableauError::UnknownPile(pile));
-        }
-        self.piles.get_mut(&pile).expect("checked above").pos = Pos { x, y };
-        self.clamp_within(pile);
-        Ok(self.piles[&pile].pos)
+        let size = self
+            .piles
+            .get(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?
+            .size;
+        let pos = clamp_box(Pos { x, y }, size, self.surface);
+        self.piles.get_mut(&pile).expect("checked above").pos = pos;
+        Ok(pos)
     }
 
-    /// Clamp one pile's position inside the surface (top-left at `0,0`, bottom-right at `surface`).
-    /// Returns whether it had to move — that "had to move" is what makes a wall a participant in
-    /// [`separate`]'s relaxation. A pile wider/taller than the surface is pinned to the top-left.
-    fn clamp_within(&mut self, pile: PileId) -> bool {
-        let surface = self.surface;
-        let d = self.piles.get_mut(&pile).expect("pile id from subpiles");
-        let max_x = (surface.x - d.size.x).max(0.0);
-        let max_y = (surface.y - d.size.y).max(0.0);
-        let nx = d.pos.x.clamp(0.0, max_x);
-        let ny = d.pos.y.clamp(0.0, max_y);
-        let changed = nx != d.pos.x || ny != d.pos.y;
-        d.pos.x = nx;
-        d.pos.y = ny;
-        changed
-    }
-
-    /// Pushes overlapping **top-level** piles apart so the table reads as physical objects, keeping
-    /// every pile inside the surface. Lock-as-you-go, outward from the `anchor` (the just-placed pile):
-    ///
-    /// 1. Pin the anchor at its in-bounds position and treat it as immovable.
-    /// 2. Take the remaining piles nearest-first by center distance from the anchor (ties by id) — a
-    ///    wavefront, so the drop reads as shoving neighbours outward in a cascade.
-    /// 3. Place each one at the position nearest its own current spot that is fully inside the surface
-    ///    **and** clear of every already-locked pile, then lock it and never move it again.
-    ///
-    /// Because each pile is placed clear of all locked piles and is never disturbed afterward, no two
-    /// piles overlap once the space allows it — the guarantee the old pairwise relaxation lacked. When
-    /// the table is genuinely too crowded (or a pile is larger than the surface), a pile settles at the
-    /// in-bounds spot of least overlap instead of looping. Terminates in one placement per pile.
+    /// Pushes overlapping **top-level piles** apart so the table reads as physical objects, keeping
+    /// every pile inside the surface: lock-as-you-go outward from the `anchor` (see [`separate_boxes`]).
+    /// The anchor is pinned; each other pile settles at the nearest spot clear of every already-settled
+    /// pile, so no two overlap once the space allows it.
     pub fn separate(&mut self, anchor: PileId) {
-        let mut ids = self.piles[&self.root].subpiles.clone();
-        ids.retain(|&id| id != anchor);
-        // Outward wavefront: nearest to the anchor settles first, ties broken by id for determinism.
-        let anchor_center = self.center(anchor);
-        ids.sort_by(|&p, &q| {
-            let dp = self.center(p).dist_sq(anchor_center);
-            let dq = self.center(q).dist_sq(anchor_center);
-            dp.partial_cmp(&dq)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(p.cmp(&q))
-        });
-
-        // Lock the anchor at its in-bounds position; it is a fixed obstacle for everything else.
-        self.clamp_within(anchor);
-        let mut locked: Vec<PileId> = vec![anchor];
-
-        for id in ids {
-            let pos = self.place_clear_of(id, &locked);
-            self.piles.get_mut(&id).expect("pile id from subpiles").pos = pos;
-            locked.push(id);
+        let ids = self.piles[&self.root].subpiles.clone();
+        let Some(anchor_idx) = ids.iter().position(|&id| id == anchor) else {
+            return;
+        };
+        let boxes: Vec<(Pos, Pos)> = ids
+            .iter()
+            .map(|&id| (self.piles[&id].pos, self.piles[&id].size))
+            .collect();
+        for (&id, pos) in ids
+            .iter()
+            .zip(separate_boxes(&boxes, anchor_idx, self.surface))
+        {
+            self.piles.get_mut(&id).expect("subpile id").pos = pos;
         }
     }
 
-    /// The center point of a pile's AABB — the metric [`separate`] orders its wavefront by.
-    fn center(&self, pile: PileId) -> Pos {
-        let d = &self.piles[&pile];
-        Pos {
-            x: d.pos.x + d.size.x * 0.5,
-            y: d.pos.y + d.size.y * 0.5,
+    /// Pushes overlapping **cards within a pile** apart — the [`Arrangement::Free`] counterpart of
+    /// [`separate`]. The `anchor` card is pinned and the rest settle clear of one another, by each
+    /// card's [`pos`](Card::pos) and [`footprint`](Card::footprint). Operates on the pile's content
+    /// cards (a trailing zone card is the label, not shoved). No-op if the pile or anchor is unknown.
+    pub fn separate_cards(&mut self, pile: PileId, anchor: CardId) {
+        let cards: Vec<CardId> = self.content_cards(pile).to_vec();
+        let Some(anchor_idx) = cards.iter().position(|&c| c == anchor) else {
+            return;
+        };
+        let boxes: Vec<(Pos, Pos)> = cards
+            .iter()
+            .map(|&c| (self.cards[&c].pos, self.cards[&c].footprint))
+            .collect();
+        for (&c, pos) in cards
+            .iter()
+            .zip(separate_boxes(&boxes, anchor_idx, self.surface))
+        {
+            self.cards.get_mut(&c).expect("card id").pos = pos;
         }
-    }
-
-    /// The position nearest `pile`'s current spot that is fully inside the surface *and* clear of every
-    /// pile in `locked`. If nothing is fully clear (the space is too crowded, or `pile` is larger than
-    /// the surface), returns the in-bounds spot of least total overlap — best-effort degradation.
-    ///
-    /// The free region for an axis-aligned box among static boxes is rectilinear, so its nearest point
-    /// lies on a candidate coordinate line: the pile's own coordinate, each locked pile's near/far edge
-    /// in configuration space (the edge offset by this pile's size), or a wall. We test the grid of
-    /// those `x`/`y` lines — which contains both the straight slides and the go-around-a-corner spots —
-    /// and keep the clear one closest to where the pile already is.
-    fn place_clear_of(&self, pile: PileId, locked: &[PileId]) -> Pos {
-        let cur = self.piles[&pile].pos;
-        let sz = self.piles[&pile].size;
-        let surface = self.surface;
-        let max_x = (surface.x - sz.x).max(0.0);
-        let max_y = (surface.y - sz.y).max(0.0);
-        let cx = cur.x.clamp(0.0, max_x);
-        let cy = cur.y.clamp(0.0, max_y);
-
-        // Candidate coordinate lines, kept in bounds. Start from the pile's own clamped position so
-        // "already clear → stay put" falls out for free.
-        let mut xs = vec![cx, 0.0, max_x];
-        let mut ys = vec![cy, 0.0, max_y];
-        for &l in locked {
-            let lp = self.piles[&l].pos;
-            let lsz = self.piles[&l].size;
-            xs.push(lp.x - sz.x); // this pile just left of l
-            xs.push(lp.x + lsz.x); // just right of l
-            ys.push(lp.y - sz.y); // just above l
-            ys.push(lp.y + lsz.y); // just below l
-        }
-        xs.retain(|&x| x >= 0.0 && x <= max_x);
-        ys.retain(|&y| y >= 0.0 && y <= max_y);
-
-        let mut best_clear: Option<(f32, Pos)> = None; // (dist², pos)
-        let mut best_any: Option<(f32, f32, Pos)> = None; // (overlap area, dist², pos)
-        for &x in &xs {
-            for &y in &ys {
-                let overlap = self.overlap_area(x, y, sz, locked);
-                let dist_sq = (x - cur.x).powi(2) + (y - cur.y).powi(2);
-                if overlap <= 0.0 {
-                    if best_clear.is_none_or(|(d, _)| dist_sq < d) {
-                        best_clear = Some((dist_sq, Pos { x, y }));
-                    }
-                } else if best_any
-                    .is_none_or(|(o, d, _)| overlap < o || (overlap == o && dist_sq < d))
-                {
-                    best_any = Some((overlap, dist_sq, Pos { x, y }));
-                }
-            }
-        }
-        best_clear
-            .map(|(_, p)| p)
-            .or(best_any.map(|(_, _, p)| p))
-            .unwrap_or(Pos { x: cx, y: cy })
-    }
-
-    /// Total area by which `pile` (size `sz`) at `(x, y)` overlaps the piles in `locked`.
-    fn overlap_area(&self, x: f32, y: f32, sz: Pos, locked: &[PileId]) -> f32 {
-        let mut total = 0.0;
-        for &l in locked {
-            let lp = self.piles[&l].pos;
-            let lsz = self.piles[&l].size;
-            let ox = (x + sz.x).min(lp.x + lsz.x) - x.max(lp.x);
-            let oy = (y + sz.y).min(lp.y + lsz.y) - y.max(lp.y);
-            if ox > 0.01 && oy > 0.01 {
-                total += ox * oy;
-            }
-        }
-        total
     }
 
     fn apply_collapse(&mut self) {
@@ -1373,6 +1434,37 @@ mod tests {
             t.set_layout(PileId(999), grid),
             Err(TableauError::UnknownPile(PileId(999)))
         );
+    }
+
+    #[test]
+    fn separate_cards_clears_overlapping_cards_and_holds_anchor() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "Scatter").unwrap();
+        t.set_layout(
+            p,
+            Layout {
+                arrangement: Arrangement::Free,
+                editable: true,
+            },
+        )
+        .unwrap();
+        t.set_surface(1000.0, 1000.0);
+        let a = t.add_card(p, Face::Up { title: "A".into() }, None).unwrap();
+        let b = t.add_card(p, Face::Up { title: "B".into() }, None).unwrap();
+        for c in [a, b] {
+            t.set_card_footprint(c, 100.0, 100.0).unwrap();
+        }
+        t.set_card_pos(a, 0.0, 0.0).unwrap();
+        t.set_card_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
+
+        t.separate_cards(p, a);
+
+        assert_eq!(t.card(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        let bp = t.card(b).unwrap().pos();
+        let ox = (0.0f32 + 100.0).min(bp.x + 100.0) - 0.0f32.max(bp.x);
+        let oy = (0.0f32 + 100.0).min(bp.y + 100.0) - 0.0f32.max(bp.y);
+        assert!(ox <= 0.02 || oy <= 0.02, "cards must not overlap: {bp:?}");
     }
 
     #[test]

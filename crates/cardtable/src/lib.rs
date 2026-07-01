@@ -1,9 +1,9 @@
 //! A Bevy renderer that draws the **card-table metaphor** — everything is a card; a pile is a stack of
 //! cards in one footprint. You navigate with **single-click and drag only**: click a pile to drill into
 //! its zone, click a card to grow it through its sizes, click the Back card to move up, and drag piles
-//! to arrange them on the table. **Exit** is itself a pile on the felt — drag it like any other; to quit,
-//! press it so its "Leave" card pops out beside it, then drag the deck onto that card. A stray click
-//! never quits. The current zone's name sits centered at the top (default "Table").
+//! to arrange them on the table. **System** is itself a pile on the felt — drag it like any other; to
+//! quit, press it so its "Exit" card pops out beside it, then drag the deck onto that card. A stray
+//! click never quits. The current zone's name sits centered at the top (default "Table").
 //!
 //! # Two layers
 //!
@@ -25,6 +25,8 @@ use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer, 
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
+
+use std::collections::HashMap;
 
 use cardtable_model::{Arrangement, Card, CardId, CardKind, Face, PileId, Pos, Size, Tableau};
 
@@ -98,6 +100,8 @@ impl Plugin for CardTablePlugin {
                     animate_leave,
                 ),
             )
+            // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
+            .add_systems(Update, (sync_card_sizes, settle_free_cards).chain())
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
@@ -206,17 +210,11 @@ fn inject_exit_deck(mut table: ResMut<Table>, mut state: ResMut<ExitDeckState>) 
         return;
     }
     let root = table.0.root_id();
-    let Ok(pile) = table.0.add_pile(root, "Exit") else {
+    let Ok(pile) = table.0.add_pile(root, "System") else {
         return;
     };
-    // Two cards so it reads as a small deck: the hidden "Leave" beneath the "Exit" face.
-    let _ = table.0.add_card(
-        pile,
-        Face::Up {
-            title: "Leave".into(),
-        },
-        None,
-    );
+    // An "Exit" card sits under the "System" face. "System" is a Zone (naming) card — the deck's label,
+    // not one of its contents — so the deck reads "System · 1 card" (the single Exit card beneath it).
     let _ = table.0.add_card(
         pile,
         Face::Up {
@@ -224,6 +222,15 @@ fn inject_exit_deck(mut table: ResMut<Table>, mut state: ResMut<ExitDeckState>) 
         },
         None,
     );
+    if let Ok(system) = table.0.add_card(
+        pile,
+        Face::Up {
+            title: "System".into(),
+        },
+        None,
+    ) {
+        let _ = table.0.set_card_kind(system, CardKind::Zone);
+    }
     let _ = table.0.set_pile_pos(pile, 40.0, 470.0);
     state.pile = Some(pile);
 }
@@ -418,19 +425,23 @@ fn on_card_drag(
     mut on: On<Pointer<Drag>>,
     mut cards: Query<(&TableCard, &mut Node)>,
     mut dragging: ResMut<DraggingCard>,
+    mut table: ResMut<Table>,
 ) {
     if let Ok((card, mut node)) = cards.get_mut(on.event().entity) {
         let delta = on.event().event.delta;
-        node.left = Val::Px(px(node.left) + delta.x);
-        node.top = Val::Px(px(node.top) + delta.y);
+        let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
+        node.left = Val::Px(x);
+        node.top = Val::Px(y);
+        // Keep the model position in step — a Free deck reads it to shove and to animate at rest.
+        let _ = table.0.set_card_pos(card.0, x, y);
         dragging.0 = Some(card.0);
         on.propagate(false);
     }
 }
 
-/// On release, snap a dragged card to the nearest grid cell by reordering it within its home pile; the
-/// other cards then *slide* to their new cells ([`animate_cards`]). Reordering is not structural, so
-/// there is no rebuild — that would kill the slide.
+/// On release: a **Free** deck commits the dropped position and shoves overlapping cards clear
+/// ([`separate_cards`]); any other layout snaps the card into the nearest grid cell by reordering. In
+/// both cases the others then *slide* into place ([`animate_cards`]) — no rebuild, which would kill the slide.
 fn on_card_drag_end(
     mut on: On<Pointer<DragEnd>>,
     cards: Query<(&TableCard, &Node)>,
@@ -440,8 +451,21 @@ fn on_card_drag_end(
     if let Ok((card, node)) = cards.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
+        let Some(home) = table.0.card(card.0).map(|c| c.home()) else {
+            return;
+        };
+        if matches!(
+            table.0.pile(home).map(|p| p.layout().arrangement),
+            Some(Arrangement::Free)
+        ) {
+            // Unordered: keep it where dropped, then shove the rest out of its way.
+            let _ = table.0.set_card_pos(card.0, px(node.left), px(node.top));
+            table.0.separate_cards(home, card.0);
+            return;
+        }
+        // Ordered grid: snap into the nearest cell by reordering among the *contents* only, so a drag
+        // can never push a card above a zone card and steal its place as the pile's label.
         let cols = zone_cols(&table.0);
-        // Nearest cell from the tile's dropped centre.
         let col = (((px(node.left) + SMALL_W / 2.0) / (SMALL_W + GRID_GAP))
             .floor()
             .max(0.0) as usize)
@@ -449,14 +473,9 @@ fn on_card_drag_end(
         let row = ((px(node.top) + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
             .floor()
             .max(0.0) as usize;
-        let (Some(home), Some(from)) = (
-            table.0.card(card.0).map(|c| c.home()),
-            table.0.card_index(card.0),
-        ) else {
+        let Some(from) = table.0.card_index(card.0) else {
             return;
         };
-        // Reorder among the *contents* only, so a drag can never push a card above a zone card and
-        // steal its place as the pile's label.
         let len = table.0.content_cards(home).len();
         let to = (row * cols + col).min(len.saturating_sub(1));
         let _ = table.0.reorder(home, from, to);
@@ -583,31 +602,93 @@ fn animate_leave(time: Res<Time>, mut leaves: Query<(&LeaveTarget, &mut Node)>) 
     }
 }
 
-/// Ease each card tile toward the grid cell its index in the pile names — so a reorder *slides* the
-/// other cards into their new cells instead of snapping. The card being dragged is left alone (it
-/// follows the cursor); tiles already at rest are skipped so layout isn't touched every frame.
+/// Ease each drilled-in card tile toward its target — its **grid cell** (ordered layouts) or its free
+/// **model position** (a [`Arrangement::Free`] deck) — so a reorder or a shove *slides* the cards into
+/// place instead of snapping. The dragged card is left alone (it follows the cursor); tiles already at
+/// rest are skipped so layout isn't touched every frame.
 fn animate_cards(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<DraggingCard>,
     mut cards: Query<(&TableCard, &mut Node)>,
 ) {
+    let free = matches!(
+        table
+            .0
+            .pile(table.0.focus_id())
+            .map(|p| p.layout().arrangement),
+        Some(Arrangement::Free)
+    );
     let cols = zone_cols(&table.0);
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
     for (card, mut node) in &mut cards {
         if dragging.0 == Some(card.0) {
             continue; // free while held
         }
-        let Some(index) = table.0.card_index(card.0) else {
-            continue;
+        let (tx, ty) = if free {
+            match table.0.card(card.0) {
+                Some(c) => (c.pos().x, c.pos().y),
+                None => continue,
+            }
+        } else {
+            match table.0.card_index(card.0) {
+                Some(index) => grid_cell(index, cols),
+                None => continue,
+            }
         };
-        let (tx, ty) = grid_cell(index, cols);
         let (cx, cy) = (px(node.left), px(node.top));
         if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
             continue; // at rest
         }
         node.left = Val::Px(cx + (tx - cx) * t);
         node.top = Val::Px(cy + (ty - cy) * t);
+    }
+}
+
+/// Feed each drilled-in card tile's laid-out footprint back to the model (logical px), so a Free deck's
+/// [`separate_cards`](Tableau::separate_cards) shoves on real AABBs. Runs every frame; cheap.
+fn sync_card_sizes(cards: Query<(&TableCard, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (card, computed) in &cards {
+        let size = computed.size * computed.inverse_scale_factor;
+        let _ = table.0.set_card_footprint(card.0, size.x, size.y);
+    }
+}
+
+/// Keep a **Free** deck's cards shoved apart when they first lay out or change size (a card expands or
+/// collapses): when a card's footprint changes and nothing is being dragged, re-run [`separate_cards`]
+/// anchored on the changed card — so a grown card holds its place and pushes its neighbours out. This
+/// is what makes the shove trigger "whether expanded or not". `prev` remembers last-seen footprints.
+fn settle_free_cards(
+    mut table: ResMut<Table>,
+    dragging: Res<DraggingCard>,
+    mut prev: Local<HashMap<CardId, Pos>>,
+) {
+    if dragging.0.is_some() {
+        return;
+    }
+    let focus = table.0.focus_id();
+    if !matches!(
+        table.0.pile(focus).map(|p| p.layout().arrangement),
+        Some(Arrangement::Free)
+    ) {
+        return;
+    }
+    let cards: Vec<CardId> = table.0.content_cards(focus).to_vec();
+    let mut changed: Option<CardId> = None;
+    for &c in &cards {
+        let Some(footprint) = table.0.card(c).map(|k| k.footprint()) else {
+            continue;
+        };
+        if footprint.x < 1.0 {
+            continue; // not laid out yet
+        }
+        let was = prev.insert(c, footprint).unwrap_or_default();
+        if (was.x - footprint.x).abs() > 0.5 || (was.y - footprint.y).abs() > 0.5 {
+            changed = Some(c);
+        }
+    }
+    if let Some(anchor) = changed {
+        table.0.separate_cards(focus, anchor);
     }
 }
 
@@ -664,6 +745,9 @@ fn type_accent(card_type: &str) -> Color {
     match card_type.to_ascii_lowercase().as_str() {
         "location" => Color::srgb(0.36, 0.52, 0.34), // mossy green
         "adventurer" => Color::srgb(0.28, 0.46, 0.68), // heroic blue
+        "hero" => Color::srgb(0.70, 0.32, 0.32),     // crimson
+        "starter kit" => Color::srgb(0.28, 0.52, 0.52), // teal
+        "ability" => Color::srgb(0.68, 0.36, 0.52),  // magenta
         "item" => Color::srgb(0.74, 0.58, 0.26),     // gold
         "log" => Color::srgb(0.44, 0.44, 0.52),      // slate
         "zone" => Color::srgb(0.50, 0.40, 0.62),     // violet — a structural / naming card
@@ -898,24 +982,29 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
                 } else {
-                    // The zone lays its contents out on a row-major grid — one shared path for every
-                    // layout. The pile's `Layout` supplies the column count (a responsive List vs a
-                    // fixed Grid, via `zone_cols`) and whether cards are editable. A zone card on top is
-                    // the pile's label, so it is not among the contents (see `content_cards`).
-                    let editable = pile.layout().editable;
+                    // The zone lays its contents out — one shared path for every layout. An ordered
+                    // layout (List / Grid) places cards on a row-major grid via `zone_cols`; a Free
+                    // (unordered) deck places each card at its own model position and shoves overlaps.
+                    // A zone card on top is the pile's label, not a content card (see `content_cards`).
+                    let free = matches!(pile.layout().arrangement, Arrangement::Free);
+                    // Free decks are drag-at-will; an ordered layout is draggable only when editable.
+                    let draggable = free || pile.layout().editable;
                     let cols = zone_cols(tree);
                     let content = tree.content_cards(zone);
                     for (index, &cid) in content.iter().enumerate() {
-                        let (x, y) = grid_cell(index, cols);
+                        let (x, y) = if free {
+                            let p = tree.card(cid).map(|c| c.pos()).unwrap_or_default();
+                            (p.x, p.y)
+                        } else {
+                            grid_cell(index, cols)
+                        };
                         let mut tile = surface.spawn(Node {
                             position_type: PositionType::Absolute,
                             left: Val::Px(x),
                             top: Val::Px(y),
                             ..default()
                         });
-                        // An editable layout makes each card a draggable tile that reorders on drop;
-                        // a fixed layout (e.g. the locations grid) omits that, so row/column stay put.
-                        if editable {
+                        if draggable {
                             tile.insert(TableCard(cid));
                         }
                         tile.with_children(|tile| {
@@ -1012,7 +1101,7 @@ fn spawn_leave_card(commands: &mut Commands, from: Pos, target: Pos, size: Pos) 
         ))
         .with_children(|c| {
             c.spawn((
-                Text::new("Leave"),
+                Text::new("Exit"),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
@@ -1077,12 +1166,14 @@ fn spawn_pile_chip(
                 );
                 if layer == 0 {
                     // The front layer is a Small card face — the same [`small_face`] a lone card draws,
-                    // with the pile's card count as its sub-line.
+                    // with the pile's card count as its sub-line (omitted when empty, so a place with
+                    // nothing under it reads as a plain named card).
+                    let sub = (count > 0).then(|| format!("{count} cards"));
                     stack
                         .spawn(bundle)
                         .insert(card_shadow())
                         .with_children(|face| {
-                            small_face(face, label, card_type, INK, Some(format!("{count} cards")));
+                            small_face(face, label, card_type, INK, sub);
                         });
                 } else {
                     stack.spawn(bundle);
