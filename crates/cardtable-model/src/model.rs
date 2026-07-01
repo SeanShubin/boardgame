@@ -155,6 +155,36 @@ fn same_type(a: &Card, b: &Card) -> bool {
         && a.card_type == b.card_type
 }
 
+/// How a pile arranges its contents when you drill into it — the shape half of a [`Layout`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Arrangement {
+    /// **One-dimensional**: an ordered list that wraps across rows to fit the width. A card's place is
+    /// a single linear index; reordering slides it along that sequence. The default.
+    #[default]
+    List,
+    /// **Two-dimensional**: a grid `columns` wide, where a card's row *and* column are both meaningful
+    /// and kept as cards come and go.
+    Grid { columns: usize },
+}
+
+/// How a pile presents its contents: an [`Arrangement`] (1-D list or 2-D grid) plus whether the
+/// contents are `editable` (can be dragged to reorder). The four combinations share one layout path —
+/// only these two switches differ. Default: an editable list (the original behaviour).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Layout {
+    pub arrangement: Arrangement,
+    pub editable: bool,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            arrangement: Arrangement::List,
+            editable: true,
+        }
+    }
+}
+
 /// A pile of cards (and, optionally, nested piles). Collapsed = shown as a compact, counted pile;
 /// not collapsed = fanned out and attended to.
 #[derive(Clone, Debug, PartialEq)]
@@ -170,6 +200,7 @@ pub struct Pile {
     subpiles: Vec<PileId>,
     pos: Pos,
     size: Pos,
+    layout: Layout,
 }
 
 impl Pile {
@@ -196,6 +227,11 @@ impl Pile {
     /// This pile's rendered size (`x` = width, `y` = height), fed back by the renderer after layout.
     pub fn size(&self) -> Pos {
         self.size
+    }
+
+    /// How this pile arranges its contents when drilled into, and whether they can be rearranged.
+    pub fn layout(&self) -> Layout {
+        self.layout
     }
 }
 
@@ -250,6 +286,7 @@ impl Tableau {
                 subpiles: Vec::new(),
                 pos: Pos::default(),
                 size: Pos::default(),
+                layout: Layout::default(),
             },
         );
         Self {
@@ -290,6 +327,7 @@ impl Tableau {
                 subpiles: Vec::new(),
                 pos: Pos::default(),
                 size: Pos::default(),
+                layout: Layout::default(),
             },
         );
         self.piles
@@ -517,6 +555,15 @@ impl Tableau {
             self.focus = parent;
             self.apply_collapse();
         }
+    }
+
+    /// Sets how `pile` arranges its contents and whether they can be reordered (see [`Layout`]).
+    pub fn set_layout(&mut self, pile: PileId, layout: Layout) -> Result<(), TableauError> {
+        self.piles
+            .get_mut(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?
+            .layout = layout;
+        Ok(())
     }
 
     /// Sets `pile`'s collapsed flag directly (a manual fan/collapse, independent of focus).
@@ -1303,6 +1350,29 @@ mod tests {
         assert_eq!(t.focus_id(), a);
         assert!(!t.pile(a).unwrap().collapsed);
         assert!(t.pile(b).unwrap().collapsed); // no longer on the path
+    }
+
+    #[test]
+    fn layout_defaults_to_editable_list_and_can_be_set() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "Locations").unwrap();
+        // Piles start as editable 1-D lists (the original behaviour).
+        assert_eq!(t.pile(p).unwrap().layout(), Layout::default());
+        assert_eq!(t.pile(p).unwrap().layout().arrangement, Arrangement::List);
+        assert!(t.pile(p).unwrap().layout().editable);
+
+        // A fixed 2-D grid: three columns, not reorderable.
+        let grid = Layout {
+            arrangement: Arrangement::Grid { columns: 3 },
+            editable: false,
+        };
+        t.set_layout(p, grid).unwrap();
+        assert_eq!(t.pile(p).unwrap().layout(), grid);
+        assert_eq!(
+            t.set_layout(PileId(999), grid),
+            Err(TableauError::UnknownPile(PileId(999)))
+        );
     }
 
     #[test]

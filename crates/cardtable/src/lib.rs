@@ -26,7 +26,7 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode};
 
-use cardtable_model::{Card, CardId, CardKind, Face, PileId, Pos, Size, Tableau};
+use cardtable_model::{Arrangement, Card, CardId, CardKind, Face, PileId, Pos, Size, Tableau};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -440,7 +440,7 @@ fn on_card_drag_end(
     if let Ok((card, node)) = cards.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
-        let cols = grid_cols(table.0.surface().x);
+        let cols = zone_cols(&table.0);
         // Nearest cell from the tile's dropped centre.
         let col = (((px(node.left) + SMALL_W / 2.0) / (SMALL_W + GRID_GAP))
             .floor()
@@ -592,7 +592,7 @@ fn animate_cards(
     dragging: Res<DraggingCard>,
     mut cards: Query<(&TableCard, &mut Node)>,
 ) {
-    let cols = grid_cols(table.0.surface().x);
+    let cols = zone_cols(&table.0);
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
     for (card, mut node) in &mut cards {
         if dragging.0 == Some(card.0) {
@@ -784,6 +784,16 @@ fn grid_cols(width: f32) -> usize {
     (((width / (SMALL_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
 }
 
+/// Columns the **focused zone** lays its cards out in — the single source every layout path (draw,
+/// drag-drop, animate) reads, so they always agree: a fixed count for a 2-D [`Arrangement::Grid`], or
+/// a width-responsive count for a 1-D [`Arrangement::List`].
+fn zone_cols(tree: &Tableau) -> usize {
+    match tree.pile(tree.focus_id()).map(|p| p.layout().arrangement) {
+        Some(Arrangement::Grid { columns }) => columns.max(1),
+        _ => grid_cols(tree.surface().x),
+    }
+}
+
 /// The top-left position of grid cell `index` in a grid of `cols` columns (row-major).
 fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     let col = index % cols;
@@ -888,27 +898,29 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
                 } else {
-                    // The zone's cards lay out in a row-major grid; each is its own draggable tile that
-                    // reorders (others reflow) on drop. ×N grouping doesn't apply here — every card is a
-                    // stable tile so the reflow can animate smoothly. A zone card on top is the pile's
-                    // label (it named this zone), so it is not shown among the contents.
-                    let cols = grid_cols(tree.surface().x);
+                    // The zone lays its contents out on a row-major grid — one shared path for every
+                    // layout. The pile's `Layout` supplies the column count (a responsive List vs a
+                    // fixed Grid, via `zone_cols`) and whether cards are editable. A zone card on top is
+                    // the pile's label, so it is not among the contents (see `content_cards`).
+                    let editable = pile.layout().editable;
+                    let cols = zone_cols(tree);
                     let content = tree.content_cards(zone);
                     for (index, &cid) in content.iter().enumerate() {
                         let (x, y) = grid_cell(index, cols);
-                        surface
-                            .spawn((
-                                TableCard(cid),
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(x),
-                                    top: Val::Px(y),
-                                    ..default()
-                                },
-                            ))
-                            .with_children(|tile| {
-                                spawn_card(tile, tree.card(cid).expect("card id from zone"));
-                            });
+                        let mut tile = surface.spawn(Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(x),
+                            top: Val::Px(y),
+                            ..default()
+                        });
+                        // An editable layout makes each card a draggable tile that reorders on drop;
+                        // a fixed layout (e.g. the locations grid) omits that, so row/column stay put.
+                        if editable {
+                            tile.insert(TableCard(cid));
+                        }
+                        tile.with_children(|tile| {
+                            spawn_card(tile, tree.card(cid).expect("card id from zone"));
+                        });
                     }
                     // Any sub-piles follow the cards in the grid as (clickable) chips.
                     let base = content.len();

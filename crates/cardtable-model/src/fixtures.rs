@@ -2,7 +2,7 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::model::{CardId, CardKind, Face, PileId, Tableau};
+use crate::model::{Arrangement, CardId, CardKind, Face, Layout, PileId, Tableau};
 
 /// Add a face-up card with a name and a [`type`](crate::model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -109,6 +109,15 @@ pub fn sample_table() -> Tableau {
     let loc_zone = typed(&mut tree, locations, "Location", "Zone");
     tree.set_card_kind(loc_zone, CardKind::Zone)
         .expect("zone card exists");
+    // The nine locations read as a fixed 3×3 grid that can't be reordered — a 2-D, non-editable deck.
+    tree.set_layout(
+        locations,
+        Layout {
+            arrangement: Arrangement::Grid { columns: 3 },
+            editable: false,
+        },
+    )
+    .expect("locations exists");
 
     // Spread the piles across the table so they start un-stacked; drag repositions them.
     tree.set_pile_pos(hand, 40.0, 40.0).expect("hand exists");
