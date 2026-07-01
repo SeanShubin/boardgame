@@ -1,0 +1,167 @@
+name: CI & Deploy
+
+# One pipeline. A minimal gate protects production; we deploy as soon as it
+# passes; then the fuller verification runs afterward as NOTIFY-ONLY — a failure
+# there reds the run but never undoes an already-published deploy.
+#
+#   gate ──▶ deploy ──▶ verify: sample-tests
+#                   └──▶ verify: native-build (3-OS)
+#
+# On pull requests the deploy job is skipped, but the gate and both verify jobs
+# still run — so PRs get full coverage without publishing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Required for actions/deploy-pages: write Pages, and id-token for its OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Cancel a superseded run of the same branch/PR (a newer push wins). Keyed per
+# ref so pull requests and main never cancel each other — the Pages singleton is
+# handled separately on the deploy job below.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: v0.21.7
+
+jobs:
+  # ── Gate ──────────────────────────────────────────────────────────────────
+  # The minimal check that must hold for production: the product crates lint, the
+  # pure card-table model passes its tests, and the WASM bundle actually builds.
+  # The bundle it builds IS the artifact we deploy — no rebuild downstream.
+  gate:
+    name: Gate (lint · model tests · WASM build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Clippy compiles the card-table crates (cardtable, boardgame) natively and
+      # those pull Bevy, so this job needs Bevy's Linux system libraries. The
+      # wasm32 Trunk build links none of them, but installing here is harmless.
+      - name: Install Bevy Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust toolchain (wasm32 + lint components)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: gate
+
+      - name: Install Trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xzf - -C /usr/local/bin
+          trunk --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (card-table product)
+        run: cargo clippy -p cardtable-model -p cardtable -p boardgame -- -D warnings
+
+      - name: Test (cardtable-model)
+        run: cargo test -p cardtable-model
+
+      # Run from the crate dir: Trunk resolves the cargo manifest from its working
+      # directory, and the workspace root is a virtual manifest with no root
+      # package. --public-url makes asset URLs resolve under the project subpath
+      # at https://seanshubin.github.io/boardgame/.
+      - name: Build (WASM, release)
+        working-directory: crates/boardgame
+        run: trunk build --release --public-url /boardgame/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/boardgame/dist
+
+  # ── Deploy ────────────────────────────────────────────────────────────────
+  # Publishes the gate's artifact. Skipped on pull requests. Its own concurrency
+  # group makes Pages deploys a repo-wide singleton — never two at once.
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ── Verify (notify-only) ────────────────────────────────────────────────────
+  # The remaining work, run AFTER deploy so production ships as fast as the gate
+  # allows. `always() && gate succeeded` lets these run even when `deploy` is
+  # skipped (pull requests); a failure here does not undo the deploy — it only
+  # reds the run so you get notified and fix forward.
+  sample-tests:
+    name: Verify · sample + framework tests
+    needs: [gate, deploy]
+    if: always() && needs.gate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: sample-tests
+
+      # engine + deckbound are pure crates (no Bevy) — no system libraries needed.
+      - name: Clippy (engine, deckbound)
+        run: cargo clippy -p engine -p deckbound -- -D warnings
+
+      - name: Test (engine, deckbound)
+        run: cargo test -p engine -p deckbound
+
+  native-build:
+    name: Verify · native build (${{ matrix.os }})
+    needs: [gate, deploy]
+    if: always() && needs.gate.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bevy Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: native
+
+      - name: Build the card-table app and the deckbound sample
+        run: cargo build --release -p boardgame -p deckbound-sample
