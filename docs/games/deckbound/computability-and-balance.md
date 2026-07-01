@@ -324,6 +324,11 @@ melee·single Outrider ▸ ranged·single Rearguard ▸ ranged·aoe Rearguard �
 balanced classes emerge from combining range × shape × stats *once area is priced* — they need not be
 fiat-authored. The per-cell exemplars are candidates for the hand-tuned roster, then locked by §6 / §6.1.
 
+> **The asymmetric, two-population successor to this section** — party compositions *vs* creature
+> compositions as the rows and columns of a matrix game, dual-tuned via double-oracle / EGTA, with RPS
+> read off as the matrix's cyclic component — is written up as a deferred build in
+> [§10.8](#108-the-composition-metagame--dual-tuning-parties-vs-creatures-the-game-theory).
+
 ---
 
 ## 7. What is allowed to break the rules (quarantined modes)
@@ -593,6 +598,99 @@ solver validates the suite's niches).
 2. **First cut** — **luck-off deterministic only** (Phases A–C); defer luck-on expectimax (D).
 3. **Pruning** — start with **provably-exact** levers only (transposition + order-independence); add
    dominance pruning **only if** Phase B shows width pressure.
+
+### 10.8 The composition metagame — dual-tuning parties vs creatures (the game theory)
+
+**Status: deferred (the natural successor to §6.2).** §6.2 discovers a balanced *class* ecology by a
+symmetric class-vs-class round-robin. The dual, harder question the designer actually wants is
+**asymmetric and two-population:** given the whole design space, does a set of **party compositions** and
+a set of **creature compositions** exist that *hard-counter each other in an RPS-style cycle* — and can we
+find those "interesting" pairings without brute force? The full space (5 stats × melee/ranged ×
+single/aoe × party grouping × in-combat decisions, on both sides) is uncountable by enumeration. It is not
+uncountable by **game theory**: what looks impossible is a stack of three nested games, only the outermost
+of which we search.
+
+**The three nested games (only the inner one is already built).**
+
+1. **Combat (inner).** Fixed party vs fixed creature group → who wins. This is the **exact solver**
+   (`deckbound::{solve, winnable}`, §10.7). It emits a *scalar* — win / margin / rounds-to-clear. Perfect
+   PvE play is the whole point: the cell value must be the *skill ceiling*, not a heuristic, or the
+   metagame above measures the AI's mistakes instead of the design.
+2. **Composition (middle).** Rows = party comps, columns = creature comps, each cell = the solved combat
+   value. This is a **zero-sum matrix game**; von Neumann **minimax** applies verbatim. "Balance" here is
+   *not vibes* — it is measurable structure on this matrix (below).
+3. **Parameter tuning (outer).** Choosing stat costs, the AoE price `K` (§6.2), range/shape availability,
+   creature budgets — so that the matrix at layer 2 has the shape we want. This is the only layer a human
+   taste-judgment enters; it is a **coevolutionary** search (below).
+
+**What "balanced + interesting" means precisely on the layer-2 matrix.** Fill the cells with the solver,
+then read the matrix as a game, not a spreadsheet:
+
+- **Dominance** — a party (or creature) comp that is weakly dominated appears in *no* equilibrium: dead
+  design weight. Killing dominated comps is the rigorous form of §6.2's "no dead class," lifted to
+  compositions.
+- **Equilibrium support** — solve the matrix game (an LP for zero-sum) for its mixed-strategy Nash; the
+  **number of comps with positive probability** is the diversity metric. A flat pecking order collapses to
+  support 1; a healthy metagame has broad support.
+- **Exploitability** — how much a best-responder gains against a fixed strategy; low across the board ⇒ no
+  degenerate meta.
+- **RPS = the cyclic component of the matrix.** Any pairwise-outcome matrix splits into a **transitive
+  part** (a global power ranking — this *is* power creep / a pecking order) plus a **cyclic/intransitive
+  part** (genuine A ▸ B ▸ C ▸ A) plus a harmonic remainder. The formal tools: **combinatorial Hodge
+  decomposition** (Jiang–Lim–Yao–Ye, *Statistical ranking and combinatorial Hodge theory*) and, for games
+  specifically, **Candogan–Menache–Ozdaglar–Parrilo, *Flows and Decompositions of Games* (2011)** —
+  potential (transitive) + harmonic (RPS-like) + nonstrategic. Czarnecki et al., *Real World Games Look
+  Like Spinning Tops* (2020) is the geometry we're aiming the design at: a modest transitive axis wrapped
+  in a *fat cyclic disk* of viable counters. So **"find the interesting hard counters that pop out" =
+  maximize the cyclic energy of the composition matrix while keeping the transitive component small.**
+  That is a *number* to tune against, and it is the same object §6.2 already gropes at by hand with its RPS
+  cycle and its Moon's-theorem Hamiltonian witness (a Hamiltonian cycle ⟹ strongly connected ⟹ nonzero
+  cyclic energy).
+
+**Searching it without brute force — the designer's own instinct, named.** "Start with a sample party and
+creature set, run a subset, tune, expand" is a published method:
+
+- **Empirical Game-Theoretic Analysis (EGTA)** (Wellman) — never enumerate the space; sample a *restricted*
+  set of comps, fill that submatrix with the solver, solve it, treat it as an approximation of the true
+  metagame. §6.2's round-robin tournament *is* an EGTA payoff matrix already.
+- **Double Oracle / PSRO** (McMahan; Lanctot et al., DeepMind) — iterate: (1) compute the Nash equilibrium
+  over the current pool, (2) use the solver as a **best-response oracle** to find the strongest *new* party
+  vs the current creature meta, and the strongest new creature vs the current party meta, (3) add both,
+  repeat. Provably converges to the full-game equilibrium while only ever touching a tiny submatrix. This
+  is the principled engine for **"dual-tuning party vs creature compositions simultaneously,"** and the
+  exact combat solver (§10.7) is exactly the oracle it needs.
+
+**The dual tuning itself is competitive coevolution — with a known failure mode.** Tuning both populations
+against each other is **coevolution**, whose classic hazard is **Red Queen dynamics**: both sides chase
+each other in a cycle and *relative* progress masquerades as *absolute* balance, or the search loses
+gradient and oscillates. Standard fixes, all worth building in: keep a **Hall of Fame / Nash memory**
+(evaluate each candidate against a frozen historical archive, not just today's opponent), and make the
+**equilibrium** the evaluation target rather than the latest opponent — which is precisely what PSRO does,
+and why it is preferred over naive coevolution.
+
+**Design caution — counter hardness is a knob, not a goal.** Deterministic 100/0 counters maximize cyclic
+energy but degrade the game to a pre-combat guessing match: whoever reads the opponent wins and in-combat
+skill (layer 1) goes vestigial. Softer counters (≈65/35) keep the cycle *and* preserve mixed strategies
+and live decisions. This is the same tension §5.1 and §7 already fence off: **the solver measures the raw
+transitive/structural axis exactly and is blind to the blind-bid / Clash layer** — so it is the right
+instrument for the matrix's *structure* (steps below) but it will not price the mind-game for you. Balance
+in isolation is a floor, not the target (§11).
+
+**Concrete build (a new `examples/` consumer, or an extension of `discover` — never an ad-hoc script, repo
+guardrail).**
+
+1. Seed a pool of hand-built party comps and creature comps.
+2. Fill the matrix with `deckbound::solve` (exact value per cell).
+3. Solve the zero-sum matrix game (LP) → equilibrium, support size, exploitability.
+4. Run the Hodge / Candogan split → report **transitive vs cyclic energy**.
+5. **Double-oracle expand:** the solver returns the best-response party to the creature meta and vice
+   versa; add both; repeat until no profitable deviation.
+6. **Tune the layer-3 parameters** (stat costs, the §6.2 AoE price `K`, creature budgets) to push the
+   objective: *shrink the transitive axis, grow the cyclic disk, raise support, kill dominated comps.*
+
+The result generalizes §6.2 from "does a balanced *roster* exist" to "does a balanced *matchup ecology*
+exist, and where are its hard counters" — with the solver as the oracle throughout and the human owning
+only the objective (§11).
 
 ---
 
