@@ -442,11 +442,11 @@ fn on_card_drag_end(
         dragging.0 = None;
         let cols = grid_cols(table.0.surface().x);
         // Nearest cell from the tile's dropped centre.
-        let col = (((px(node.left) + CARD_W / 2.0) / (CARD_W + GRID_GAP))
+        let col = (((px(node.left) + SMALL_W / 2.0) / (SMALL_W + GRID_GAP))
             .floor()
             .max(0.0) as usize)
             .min(cols - 1);
-        let row = ((px(node.top) + CARD_H / 2.0) / (CARD_H + GRID_GAP))
+        let row = ((px(node.top) + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
             .floor()
             .max(0.0) as usize;
         let (Some(home), Some(from)) = (
@@ -753,10 +753,18 @@ const FONT_BADGE: FontSize = FontSize::Px(10.0);
 /// How fast a pile eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
 
-/// A collapsed pile's front-face footprint, the per-card stack step (offset along two edges), and the
-/// visual depth cap so a deep pile doesn't grow without bound.
-const CHIP_W: f32 = 120.0;
-const CHIP_H: f32 = 64.0;
+/// The three planned **card footprints** (logical px). Every card, pile, and deck draws at one of
+/// these — see [`Size`]. **Small** is the compact name+type form a deck and its contents share;
+/// **Medium** is a full individual card face (adds detail lines); **Large** is a document / log panel.
+const SMALL_W: f32 = 120.0;
+const SMALL_H: f32 = 96.0;
+const MEDIUM_W: f32 = 200.0;
+const MEDIUM_MIN_H: f32 = 132.0;
+const LARGE_W: f32 = 320.0;
+const LARGE_MAX_H: f32 = 360.0;
+
+/// The per-card stack step (offset along two edges) and the visual depth cap, so a deck reads as a
+/// stack of Small cards without growing without bound.
 const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
 
@@ -765,9 +773,7 @@ const LEAVE_W: f32 = 120.0;
 const LEAVE_H: f32 = 56.0;
 const LEAVE_GAP: f32 = 14.0;
 
-/// A card's footprint and the gap between grid cells in a drilled zone. A grid cell is card+gap.
-const CARD_W: f32 = 96.0;
-const CARD_H: f32 = 132.0;
+/// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
 const GRID_GAP: f32 = 14.0;
 /// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
 /// card in one enormous row.
@@ -775,7 +781,7 @@ const MAX_COLS: usize = 16;
 
 /// How many columns the card grid uses for a surface `width` (at least one, capped).
 fn grid_cols(width: f32) -> usize {
-    (((width / (CARD_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
+    (((width / (SMALL_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
 }
 
 /// The top-left position of grid cell `index` in a grid of `cols` columns (row-major).
@@ -783,8 +789,8 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     let col = index % cols;
     let row = index / cols;
     (
-        col as f32 * (CARD_W + GRID_GAP),
-        row as f32 * (CARD_H + GRID_GAP),
+        col as f32 * (SMALL_W + GRID_GAP),
+        row as f32 * (SMALL_H + GRID_GAP),
     )
 }
 
@@ -1006,9 +1012,10 @@ fn spawn_leave_card(commands: &mut Commands, from: Pos, target: Pos, size: Pos) 
         .id()
 }
 
-/// Draws a collapsed pile as a short stack of offset layers — two alternating colors, stepped along
-/// the left and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
-/// front layer (top-right, on top) carries the label and count; the whole stack is one drop target.
+/// Draws a deck as a stack of **Small cards**: offset layers (two alternating colors, stepped along
+/// the left and bottom edges, capped at [`MAX_STACK`]) hint at the depth, and the front layer is a
+/// Small-card face ([`small_face`]) showing the top card's name, type, and count. The whole stack is
+/// one drop target — a deck is a Small card wearing a stack.
 fn spawn_pile_chip(
     parent: &mut ChildSpawnerCommands,
     id: PileId,
@@ -1022,8 +1029,8 @@ fn spawn_pile_chip(
         .spawn((
             PileDropZone(id),
             Node {
-                width: Val::Px(CHIP_W + spread),
-                height: Val::Px(CHIP_H + spread),
+                width: Val::Px(SMALL_W + spread),
+                height: Val::Px(SMALL_H + spread),
                 ..default()
             },
         ))
@@ -1043,8 +1050,8 @@ fn spawn_pile_chip(
                         // peeks out along the left and bottom edges.
                         left: Val::Px(spread - offset),
                         top: Val::Px(offset),
-                        width: Val::Px(CHIP_W),
-                        height: Val::Px(CHIP_H),
+                        width: Val::Px(SMALL_W),
+                        height: Val::Px(SMALL_H),
                         border: UiRect::all(Val::Px(1.0)),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::Center,
@@ -1057,27 +1064,13 @@ fn spawn_pile_chip(
                     BorderColor::all(CARD_EDGE),
                 );
                 if layer == 0 {
+                    // The front layer is a Small card face — the same [`small_face`] a lone card draws,
+                    // with the pile's card count as its sub-line.
                     stack
                         .spawn(bundle)
                         .insert(card_shadow())
                         .with_children(|face| {
-                            face.spawn((
-                                Text::new(label.to_string()),
-                                TextFont {
-                                    font_size: FONT_TITLE,
-                                    ..default()
-                                },
-                                TextColor(INK),
-                            ));
-                            spawn_type_badge(face, card_type);
-                            face.spawn((
-                                Text::new(format!("{count} cards")),
-                                TextFont {
-                                    font_size: FONT_BODY,
-                                    ..default()
-                                },
-                                TextColor(MUTED),
-                            ));
+                            small_face(face, label, card_type, INK, Some(format!("{count} cards")));
                         });
                 } else {
                     stack.spawn(bundle);
@@ -1104,13 +1097,14 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     spawn_pile_chip(parent, id, &name, &card_type, count);
 }
 
-/// Draws one card at its current render [`Size`]: a small name chip, a detailed card face, or a full
-/// utility panel. Every form carries `CardRef`, so a click can grow/shrink it.
+/// Draws one card at its current render [`Size`]: **Small** (name + type), **Medium** (a full card
+/// face with detail), or **Large** (a document / log panel). Every form carries `CardRef`, so a click
+/// can grow/shrink it.
 fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
     match card.size() {
-        Size::Name => spawn_card_name(parent, card, 1),
-        Size::Card => spawn_card_detail(parent, card),
-        Size::Full => spawn_card_full(parent, card),
+        Size::Small => spawn_card_small(parent, card, 1),
+        Size::Medium => spawn_card_medium(parent, card),
+        Size::Large => spawn_card_large(parent, card),
     }
 }
 
@@ -1136,9 +1130,41 @@ fn finish_card(
     entity.with_children(build);
 }
 
-/// Smallest form — a 96×132 card showing just the name (or a blank back when face down), plus a `×N`
-/// quantity beneath it when `quantity > 1` (several identical cards stacked into one chip).
-fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
+/// The **shared Small-card face** — the one content-rendering logic that lone cards *and* deck/pile
+/// fronts delegate to: the name on top, the type badge beneath, and an optional sub-line (a deck's
+/// card count, or a card's `×N` quantity). `ink` colours the name to suit the fill it sits on.
+fn small_face(
+    c: &mut ChildSpawnerCommands,
+    name: &str,
+    card_type: &str,
+    ink: Color,
+    sub: Option<String>,
+) {
+    c.spawn((
+        Text::new(name.to_string()),
+        TextFont {
+            font_size: FONT_TITLE,
+            ..default()
+        },
+        TextColor(ink),
+    ));
+    spawn_type_badge(c, card_type);
+    if let Some(sub) = sub {
+        c.spawn((
+            Text::new(sub),
+            TextFont {
+                font_size: FONT_BODY,
+                ..default()
+            },
+            TextColor(MUTED),
+        ));
+    }
+}
+
+/// Small form — a [`SMALL_W`]×[`SMALL_H`] card showing name over type (or a blank back when face
+/// down), plus a `×N` line when `quantity > 1`. Its face is drawn by [`small_face`], the same content
+/// a deck's front layer uses — a lone card and a deck render the same way.
+fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
     let (label, bg, ink) = match &card.face {
         Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
         Face::Down => (None, CARD_BACK, INK),
@@ -1146,8 +1172,8 @@ fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usi
     let entity = parent.spawn((
         CardRef(card.id),
         Node {
-            width: Val::Px(96.0),
-            height: Val::Px(132.0),
+            width: Val::Px(SMALL_W),
+            height: Val::Px(SMALL_H),
             padding: UiRect::all(Val::Px(8.0)),
             border: UiRect::all(Val::Px(2.0)),
             flex_direction: FlexDirection::Column,
@@ -1162,39 +1188,21 @@ fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usi
         card_shadow(),
     ));
     finish_card(entity, card, |c| {
-        if matches!(card.face, Face::Up { .. }) {
-            spawn_type_badge(c, card.card_type());
-        }
+        // Face down shows only the blank back; face up delegates to the shared Small face.
         if let Some(label) = label {
-            c.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FONT_TITLE,
-                    ..default()
-                },
-                TextColor(ink),
-            ));
-        }
-        if quantity > 1 {
-            c.spawn((
-                Text::new(format!("×{quantity}")),
-                TextFont {
-                    font_size: FONT_TITLE,
-                    ..default()
-                },
-                TextColor(ink),
-            ));
+            let sub = (quantity > 1).then(|| format!("×{quantity}"));
+            small_face(c, &label, card.card_type(), ink, sub);
         }
     });
 }
 
 /// Medium form — a card face: a name header above its detail (stat / rules) lines.
-fn spawn_card_detail(parent: &mut ChildSpawnerCommands, card: &Card) {
+fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
     let entity = parent.spawn((
         CardRef(card.id),
         Node {
-            width: Val::Px(200.0),
-            min_height: Val::Px(132.0),
+            width: Val::Px(MEDIUM_W),
+            min_height: Val::Px(MEDIUM_MIN_H),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(10.0)),
             border: UiRect::all(Val::Px(2.0)),
@@ -1230,12 +1238,12 @@ fn spawn_card_detail(parent: &mut ChildSpawnerCommands, card: &Card) {
 }
 
 /// Largest form — a utility panel (e.g. a combat log): a name header above its panel lines, scrollable.
-fn spawn_card_full(parent: &mut ChildSpawnerCommands, card: &Card) {
+fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
     let entity = parent.spawn((
         CardRef(card.id),
         Node {
-            width: Val::Px(320.0),
-            max_height: Val::Px(360.0),
+            width: Val::Px(LARGE_W),
+            max_height: Val::Px(LARGE_MAX_H),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(12.0)),
             row_gap: Val::Px(4.0),

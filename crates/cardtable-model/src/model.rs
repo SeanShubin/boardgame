@@ -41,17 +41,20 @@ pub enum Face {
     Down,
 }
 
-/// How large a card is currently drawn. Default [`Size::Name`] — the smallest. A card grows only as
-/// far as it has content for: [`Size::Card`] needs `detail`, [`Size::Full`] needs `panel`.
+/// How large a card is currently drawn — the three planned card sizes. Default [`Size::Small`], the
+/// compact form. A card grows only as far as it has content for: [`Size::Medium`] needs `detail`,
+/// [`Size::Large`] needs `panel`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Size {
-    /// Just the name (plus a quantity when several of a kind stack). The default.
+    /// **Small** — the compact form: just the name and type (plus a quantity when several of a kind
+    /// stack). What decks and their contents (e.g. location cards) render as. The default.
     #[default]
-    Name,
-    /// A full card face: name + detail lines (stats / rules).
-    Card,
-    /// A large utility panel with no physical-card counterpart (e.g. a combat log).
-    Full,
+    Small,
+    /// **Medium** — a full individual card face: name and type over its detail lines (stats / rules).
+    Medium,
+    /// **Large** — a document-sized panel for special content with no physical-card counterpart, e.g.
+    /// documentation or a combat log.
+    Large,
 }
 
 /// What a card *is*, which decides what a single click on it means (the renderer reads this).
@@ -114,12 +117,12 @@ impl Card {
         }
     }
 
-    /// Body lines shown at [`Size::Card`].
+    /// Body lines shown at [`Size::Medium`].
     pub fn detail(&self) -> &[String] {
         &self.detail
     }
 
-    /// Panel lines shown at [`Size::Full`].
+    /// Panel lines shown at [`Size::Large`].
     pub fn panel(&self) -> &[String] {
         &self.panel
     }
@@ -319,7 +322,7 @@ impl Tableau {
                 panel: Vec::new(),
                 kind: CardKind::Regular,
                 card_type: String::new(),
-                size: Size::Name,
+                size: Size::Small,
                 home: pile,
             },
         );
@@ -545,7 +548,7 @@ impl Tableau {
 
     // --- card content & render size ---------------------------------------------------------
 
-    /// Sets a card's [`Size::Card`] body lines.
+    /// Sets a card's [`Size::Medium`] body lines.
     pub fn set_card_detail(
         &mut self,
         card: CardId,
@@ -558,7 +561,7 @@ impl Tableau {
         Ok(())
     }
 
-    /// Sets a card's [`Size::Full`] panel lines (e.g. a log).
+    /// Sets a card's [`Size::Large`] panel lines (e.g. a log).
     pub fn set_card_panel(&mut self, card: CardId, lines: Vec<String>) -> Result<(), TableauError> {
         self.cards
             .get_mut(&card)
@@ -589,7 +592,7 @@ impl Tableau {
         Ok(())
     }
 
-    /// Advances a card to the next render size it has content for, wrapping back to [`Size::Name`]:
+    /// Advances a card to the next render size it has content for, wrapping back to [`Size::Small`]:
     /// `Name → Card` (if it has detail) `→ Full` (if it has a panel) `→ Name`. A name-only card stays
     /// at `Name`. This is the "click to grow, click again to shrink" cycle.
     pub fn cycle_card_size(&mut self, card: CardId) -> Result<(), TableauError> {
@@ -600,15 +603,15 @@ impl Tableau {
         let has_detail = !c.detail.is_empty();
         let has_panel = !c.panel.is_empty();
         c.size = match c.size {
-            Size::Name if has_detail => Size::Card,
-            Size::Name if has_panel => Size::Full,
-            Size::Card if has_panel => Size::Full,
-            _ => Size::Name,
+            Size::Small if has_detail => Size::Medium,
+            Size::Small if has_panel => Size::Large,
+            Size::Medium if has_panel => Size::Large,
+            _ => Size::Small,
         };
         Ok(())
     }
 
-    /// Group a pile's cards into runs for the Name view: adjacent cards that are at [`Size::Name`] and
+    /// Group a pile's cards into runs for the Name view: adjacent cards that are at [`Size::Small`] and
     /// of the same *type* (same face-up/down and name) collapse into one entry, returned as
     /// `(representative card, quantity)`. A card grown past `Name` is its own run of 1 (it renders
     /// individually), and it breaks any run around it. The renderer shows "Name ×N" when quantity > 1.
@@ -619,9 +622,9 @@ impl Tableau {
         let mut runs: Vec<(CardId, usize)> = Vec::new();
         for &cid in &p.cards {
             let card = &self.cards[&cid];
-            if card.size == Size::Name
+            if card.size == Size::Small
                 && let Some(&(prev, _)) = runs.last()
-                && self.cards[&prev].size == Size::Name
+                && self.cards[&prev].size == Size::Small
                 && same_type(&self.cards[&prev], card)
             {
                 runs.last_mut().expect("just checked non-empty").1 += 1;
@@ -1200,25 +1203,25 @@ mod tests {
         // Name-only card: not expandable, cycling stays at Name.
         assert!(!t.card(c).unwrap().is_expandable());
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Name);
+        assert_eq!(t.card(c).unwrap().size(), Size::Small);
 
         // With detail: Name -> Card -> Name.
         t.set_card_detail(c, vec!["Might 4".into(), "Vitality 6".into()])
             .unwrap();
         assert!(t.card(c).unwrap().is_expandable());
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Card);
+        assert_eq!(t.card(c).unwrap().size(), Size::Medium);
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Name);
+        assert_eq!(t.card(c).unwrap().size(), Size::Small);
 
         // With a panel too: Name -> Card -> Full -> Name.
         t.set_card_panel(c, vec!["round 1".into()]).unwrap();
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Card);
+        assert_eq!(t.card(c).unwrap().size(), Size::Medium);
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Full);
+        assert_eq!(t.card(c).unwrap().size(), Size::Large);
         t.cycle_card_size(c).unwrap();
-        assert_eq!(t.card(c).unwrap().size(), Size::Name);
+        assert_eq!(t.card(c).unwrap().size(), Size::Small);
     }
 
     #[test]
@@ -1275,7 +1278,7 @@ mod tests {
 
         // Growing the first Arrow breaks its run; the two later Arrows still group.
         t.set_card_detail(a1, vec!["1 damage".into()]).unwrap();
-        t.cycle_card_size(a1).unwrap(); // a1 now Size::Card
+        t.cycle_card_size(a1).unwrap(); // a1 now Size::Medium
         let runs = t.name_runs(p);
         assert_eq!(runs[0], (a1, 1)); // expanded card stands alone
         assert_eq!(runs.last().unwrap().1, 1); // trailing lone Arrow
