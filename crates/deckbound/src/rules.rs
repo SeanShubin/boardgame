@@ -247,7 +247,7 @@ pub fn appendix() -> String {
             s.push_str(&format!("- **{}** — {}\n\n", info.name, info.description));
         }
     }
-    s
+    engine::markdown::pad_tables(&s)
 }
 
 #[cfg(test)]
