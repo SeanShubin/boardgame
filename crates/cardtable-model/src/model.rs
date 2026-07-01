@@ -68,13 +68,15 @@ pub enum CardKind {
     Utility(Utility),
 }
 
-/// The action a [`CardKind::Utility`] card performs when clicked.
+/// The action a [`CardKind::Utility`] card performs — e.g. a card in an [`Arrangement::Actions`] deck.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Utility {
     /// Go up one zone level.
     Back,
     /// Quit the application (desktop only).
     Exit,
+    /// Reset the game to its original state.
+    Reset,
 }
 
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
@@ -295,6 +297,10 @@ pub enum Arrangement {
     /// shove apart ([`separate_cards`](Tableau::separate_cards)), exactly as the top-level piles do on
     /// the table, whatever each card's current size.
     Free,
+    /// **Actions menu**: the deck is not drilled into; instead pressing it slides its content cards out
+    /// as a menu, and dragging the deck onto one performs that card's [`Utility`] action. The behavior
+    /// the System deck uses (Exit / Reset).
+    Actions,
 }
 
 /// How a pile presents its contents: an [`Arrangement`] (1-D list or 2-D grid) plus whether the

@@ -28,7 +28,9 @@ use bevy::ui::{BoxShadow, ComputedNode};
 
 use std::collections::HashMap;
 
-use cardtable_model::{Arrangement, Card, CardId, CardKind, Face, PileId, Pos, Size, Tableau};
+use cardtable_model::{
+    Arrangement, Card, CardId, CardKind, Face, Layout, PileId, Pos, Size, Tableau, Utility,
+};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -83,13 +85,16 @@ impl Plugin for CardTablePlugin {
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
             .init_resource::<DraggingCard>()
-            .init_resource::<ExitDeckState>()
+            .init_resource::<ActionsDeckState>()
+            .init_resource::<InitialTable>()
             .insert_resource(NeedsRebuild(true))
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
-            .add_systems(Startup, (setup_camera, install_ui_font, inject_exit_deck))
+            .add_systems(Startup, (setup_camera, install_ui_font))
+            // Inject the System deck, then snapshot the initial table for Reset (order matters).
+            .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
             .add_systems(
                 Update,
                 (
@@ -97,7 +102,7 @@ impl Plugin for CardTablePlugin {
                     sync_surface_size,
                     animate_piles,
                     animate_cards,
-                    animate_leave,
+                    animate_popped,
                 ),
             )
             // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
@@ -113,9 +118,9 @@ impl Plugin for CardTablePlugin {
             .add_observer(on_pile_drag_end)
             .add_observer(on_card_drag)
             .add_observer(on_card_drag_end)
-            .add_observer(on_exit_press)
-            .add_observer(on_exit_release)
-            .add_observer(on_exit_drag_end);
+            .add_observer(on_actions_press)
+            .add_observer(on_actions_release)
+            .add_observer(on_actions_drag_end);
     }
 }
 
@@ -151,11 +156,11 @@ struct TableSurface;
 #[derive(Component)]
 struct BackCard;
 
-/// The popped-out "Leave" card spawned beside a pressed Exit deck — a *free* surface entity (not a model
-/// pile, so popping it never shoves the game piles), drawn above everything, that [`animate_leave`]
-/// slides into place and the deck is dropped onto to quit. Carries the spot it eases toward.
+/// A popped-out action card spawned beside a pressed [`Arrangement::Actions`] deck — a *free* surface
+/// entity (not a model pile, so popping it never shoves the game piles), drawn above everything, that
+/// [`animate_popped`] slides into place and the deck is dropped onto to fire. Carries the spot it eases toward.
 #[derive(Component)]
-struct LeaveTarget {
+struct PoppedTarget {
     target: Pos,
 }
 
@@ -181,17 +186,27 @@ struct NeedsRebuild(bool);
 #[derive(Resource, Default)]
 struct DraggingCard(Option<CardId>);
 
-/// State of the **Exit deck** — a real pile on the surface that quits when you drag it onto its own
-/// popped-out "Leave" card. `pile` is the deck's id (set once at injection). While `pressed`, the Leave
-/// card is popped out at `leave_pos`/`leave_size` as the spawned `leave_entity`; on release the deck is
-/// quit if it overlaps that rectangle. All transient fields reset when the gesture ends or the UI rebuilds.
+/// The initial table, snapshotted once at startup so a **Reset** action can restore it. Game-agnostic:
+/// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
 #[derive(Resource, Default)]
-struct ExitDeckState {
-    pile: Option<PileId>,
-    pressed: bool,
-    leave_pos: Pos,
-    leave_size: Pos,
-    leave_entity: Option<Entity>,
+struct InitialTable(Tableau);
+
+/// One card popped out from a pressed [`Arrangement::Actions`] deck: the [`Utility`] it fires, the
+/// rectangle it occupies (for the drop hit-test), and its spawned surface entity.
+struct PoppedAction {
+    utility: Utility,
+    pos: Pos,
+    size: Pos,
+    entity: Entity,
+}
+
+/// Live state of the pressed **Actions** deck (e.g. System). While pressed, each of its content cards is
+/// popped out as a [`PoppedAction`]; on release the deck fires the action of whichever popped card it
+/// overlaps. All of it clears when the gesture ends or the UI rebuilds.
+#[derive(Resource, Default)]
+struct ActionsDeckState {
+    pressed_pile: Option<PileId>,
+    popped: Vec<PoppedAction>,
 }
 
 // ---- systems ------------------------------------------------------------
@@ -200,28 +215,41 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// Inject the **Exit deck** as a real pile on the table surface (desktop only): a two-card stack
-/// ("Leave" beneath "Exit") that drags and is shoved by `separate` like any other pile. Quitting is a
-/// deliberate gesture *on it* — press to pop the Leave card out, then drag the deck onto it (see
-/// [`on_exit_press`]). Runs once at startup; the deck's id is remembered in [`ExitDeckState`]. Browsers
-/// can't quit the app, so it's skipped there.
-fn inject_exit_deck(mut table: ResMut<Table>, mut state: ResMut<ExitDeckState>) {
-    if cfg!(target_arch = "wasm32") || state.pile.is_some() {
-        return;
-    }
+/// Inject the **System deck** — an [`Arrangement::Actions`] pile on the surface: press it to slide out
+/// its action cards, then drag the deck onto one to fire it (see [`on_actions_press`]). It holds
+/// **Reset** everywhere and **Exit** on desktop only — a browser can't quit its own tab, so the Exit
+/// card never appears there. Runs once at startup.
+fn inject_system_deck(mut table: ResMut<Table>) {
     let root = table.0.root_id();
     let Ok(pile) = table.0.add_pile(root, "System") else {
         return;
     };
-    // An "Exit" card sits under the "System" face. "System" is a Zone (naming) card — the deck's label,
-    // not one of its contents — so the deck reads "System · 1 card" (the single Exit card beneath it).
-    let _ = table.0.add_card(
+    // Action cards sit under the "System" label. Reset is available everywhere; Exit is desktop-only.
+    if let Ok(reset) = table.0.add_card(
         pile,
         Face::Up {
-            title: "Exit".into(),
+            title: "Reset".into(),
         },
         None,
-    );
+    ) {
+        let _ = table
+            .0
+            .set_card_kind(reset, CardKind::Utility(Utility::Reset));
+    }
+    if !cfg!(target_arch = "wasm32")
+        && let Ok(exit) = table.0.add_card(
+            pile,
+            Face::Up {
+                title: "Exit".into(),
+            },
+            None,
+        )
+    {
+        let _ = table
+            .0
+            .set_card_kind(exit, CardKind::Utility(Utility::Exit));
+    }
+    // "System" is a Zone (naming) card — the deck's label, not one of its actions.
     if let Ok(system) = table.0.add_card(
         pile,
         Face::Up {
@@ -231,8 +259,19 @@ fn inject_exit_deck(mut table: ResMut<Table>, mut state: ResMut<ExitDeckState>) 
     ) {
         let _ = table.0.set_card_kind(system, CardKind::Zone);
     }
+    let _ = table.0.set_layout(
+        pile,
+        Layout {
+            arrangement: Arrangement::Actions,
+            editable: false,
+        },
+    );
     let _ = table.0.set_pile_pos(pile, 40.0, 470.0);
-    state.pile = Some(pile);
+}
+
+/// Snapshot the fully-initialised table (after [`inject_system_deck`]) so a **Reset** can restore it.
+fn snapshot_initial(table: Res<Table>, mut initial: ResMut<InitialTable>) {
+    initial.0 = table.0.clone();
 }
 
 /// The bundled UI typeface — **Nunito Sans** (a warm, friendly humanist sans that's still crisp for
@@ -257,9 +296,9 @@ fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
 
 /// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
 /// card goes up a zone; an expandable **card** grows/shrinks; a loose action fires; a **pile** is entered
-/// (its zone). The Exit deck is the one pile a click does *nothing* to — it has its own press/drag gesture
-/// (see [`on_exit_press`]) so a click can never quit or drill into it. Inner nodes (a card's text) match
-/// nothing and propagate to their parent. Global observer, so it survives the per-change UI rebuild.
+/// (its zone) — unless it is an [`Arrangement::Actions`] deck (press-driven, see [`on_actions_press`]) or
+/// has nothing under its label to show. Inner nodes (a card's text) match nothing and propagate to their
+/// parent. Global observer, so it survives the per-change UI rebuild.
 #[allow(clippy::type_complexity)]
 fn on_click(
     mut on: On<Pointer<Click>>,
@@ -273,7 +312,6 @@ fn on_click(
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
-    exit_deck: Res<ExitDeckState>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
@@ -297,11 +335,16 @@ fn on_click(
     } else if let Some(action) = action {
         requests.0.push(action.0); // a loose action (rail item)
     } else if let Some(pile) = pile {
-        if exit_deck.pile == Some(pile.0) {
-            return; // the Exit deck is driven by press/drag, not a click — don't drill into it
+        let id = pile.0;
+        // An Actions deck is press-driven (its slide-out menu), not click-to-drill; and a deck with
+        // nothing under its label has nothing to show. Either way, a click does not drill in.
+        let arrangement = table.0.pile(id).map(|p| p.layout().arrangement);
+        let nothing_under = table.0.content_cards(id).is_empty()
+            && table.0.pile(id).is_some_and(|p| p.subpiles().is_empty());
+        if !matches!(arrangement, Some(Arrangement::Actions)) && !nothing_under {
+            let _ = table.0.focus(id); // drill in: this pile becomes the current zone
+            rebuild.0 = true;
         }
-        let _ = table.0.focus(pile.0); // drill in: this pile becomes the current zone
-        rebuild.0 = true;
     } else {
         return; // background / inert — nothing to do (navigation is via cards, not the felt)
     }
@@ -482,16 +525,16 @@ fn on_card_drag_end(
     }
 }
 
-/// Press the Exit deck to pop its "Leave" card out beside it — clearing the deck (not the game piles),
-/// and arming the quit. While held, drag the deck onto that card to leave; a press let go without
-/// reaching it just tucks the card away (see [`settle_exit_deck`]), so a click never quits. The Leave
-/// card is a free surface entity drawn above the piles, since popping it doesn't shove them aside.
-fn on_exit_press(
+/// Press an [`Arrangement::Actions`] deck (e.g. System) to slide its action cards out beside it, arming
+/// them. While held, drag the deck onto one to fire it; letting go without reaching one just tucks them
+/// away (see [`settle_actions_deck`]), so a click never fires an action. The popped cards are free
+/// surface entities drawn above the piles, since popping them doesn't shove the game piles aside.
+fn on_actions_press(
     on: On<Pointer<Press>>,
     piles: Query<&TablePile>,
     surfaces: Query<Entity, With<TableSurface>>,
     table: Res<Table>,
-    mut state: ResMut<ExitDeckState>,
+    mut state: ResMut<ActionsDeckState>,
     mut commands: Commands,
 ) {
     if on.event().event.button != PointerButton::Primary {
@@ -500,83 +543,158 @@ fn on_exit_press(
     let Ok(pile) = piles.get(on.event().entity) else {
         return; // press wasn't on a top-level pile
     };
-    if Some(pile.0) != state.pile || state.pressed {
-        return; // not the Exit deck, or already popped
-    }
     let Some(deck) = table.0.pile(pile.0) else {
         return;
     };
+    if state.pressed_pile.is_some() || deck.layout().arrangement != Arrangement::Actions {
+        return; // already popped, or not an Actions deck
+    }
+    // The cards to pop: each content card that carries a Utility action.
+    let actions: Vec<(Utility, String)> = table
+        .0
+        .content_cards(pile.0)
+        .iter()
+        .filter_map(|&cid| match table.0.card(cid)?.kind() {
+            CardKind::Utility(utility) => Some((utility, table.0.card(cid)?.name().to_string())),
+            _ => None,
+        })
+        .collect();
+    let Ok(surface_e) = surfaces.single() else {
+        return;
+    };
+    if actions.is_empty() {
+        return;
+    }
     let (pos, size) = (deck.pos(), deck.size());
     let surface = table.0.surface();
-    // Pop the Leave just below the deck — or above it if there's no room below — clamped to the surface.
-    let leave_size = Pos {
+    let card_size = Pos {
         x: LEAVE_W,
         y: LEAVE_H,
     };
+    // Stack the menu below the deck — or above it if there is no room below — clamped to the surface.
+    let menu_h = actions.len() as f32 * (card_size.y + LEAVE_GAP);
     let below = pos.y + size.y + LEAVE_GAP;
-    let ly = if below + leave_size.y <= surface.y {
+    let start_y = if below + menu_h <= surface.y {
         below
     } else {
-        (pos.y - leave_size.y - LEAVE_GAP).max(0.0)
+        (pos.y - LEAVE_GAP - menu_h).max(0.0)
     };
-    let leave_pos = Pos { x: pos.x, y: ly };
-    state.leave_pos = leave_pos;
-    state.leave_size = leave_size;
-    state.pressed = true;
-    if let Ok(surface_e) = surfaces.single() {
-        let leave = spawn_leave_card(&mut commands, pos, leave_pos, leave_size);
-        commands.entity(surface_e).add_child(leave);
-        state.leave_entity = Some(leave);
+    state.pressed_pile = Some(pile.0);
+    for (i, (utility, label)) in actions.into_iter().enumerate() {
+        let target = Pos {
+            x: pos.x,
+            y: start_y + i as f32 * (card_size.y + LEAVE_GAP),
+        };
+        let entity = spawn_popped_card(
+            &mut commands,
+            pos,
+            target,
+            card_size,
+            &label,
+            action_color(utility),
+        );
+        commands.entity(surface_e).add_child(entity);
+        state.popped.push(PoppedAction {
+            utility,
+            pos: target,
+            size: card_size,
+            entity,
+        });
     }
 }
 
-/// On a primary release, settle the Exit deck (handles a press let go without dragging onto the Leave).
-fn on_exit_release(
+/// The fill colour for a popped action card, by what it does.
+fn action_color(utility: Utility) -> Color {
+    match utility {
+        Utility::Exit => EXIT_CONFIRM_BG, // warm red — "this is the way out"
+        Utility::Reset => Color::srgb(0.28, 0.42, 0.60), // blue
+        Utility::Back => Color::srgb(0.30, 0.40, 0.45),
+    }
+}
+
+/// On a primary release, settle the Actions deck (handles a press let go without reaching a card).
+#[allow(clippy::too_many_arguments)]
+fn on_actions_release(
     on: On<Pointer<Release>>,
-    mut state: ResMut<ExitDeckState>,
-    table: Res<Table>,
+    mut state: ResMut<ActionsDeckState>,
+    mut table: ResMut<Table>,
+    initial: Res<InitialTable>,
+    mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
     if on.event().event.button == PointerButton::Primary {
-        settle_exit_deck(&mut state, &table.0, &mut commands, &mut exit);
+        settle_actions_deck(
+            &mut state,
+            &mut table,
+            &initial.0,
+            &mut rebuild,
+            &mut commands,
+            &mut exit,
+        );
     }
 }
 
-/// The drag counterpart of [`on_exit_release`]: when any drag ends (including off-window, where
-/// `Release` may not fire), settle the Exit deck.
-fn on_exit_drag_end(
+/// The drag counterpart of [`on_actions_release`]: when any drag ends (including off-window, where
+/// `Release` may not fire), settle the Actions deck.
+fn on_actions_drag_end(
     _on: On<Pointer<DragEnd>>,
-    mut state: ResMut<ExitDeckState>,
-    table: Res<Table>,
+    mut state: ResMut<ActionsDeckState>,
+    mut table: ResMut<Table>,
+    initial: Res<InitialTable>,
+    mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
-    settle_exit_deck(&mut state, &table.0, &mut commands, &mut exit);
+    settle_actions_deck(
+        &mut state,
+        &mut table,
+        &initial.0,
+        &mut rebuild,
+        &mut commands,
+        &mut exit,
+    );
 }
 
-/// Settle the Exit deck once a press/drag ends: if the deck was dragged onto its popped-out Leave card,
-/// quit; either way despawn the Leave card and disarm. Called from both the release and drag-end paths —
-/// whichever fires first does the work, the other sees `pressed == false` and no-ops — so the quit
-/// doesn't depend on their ordering.
-fn settle_exit_deck(
-    state: &mut ExitDeckState,
-    table: &Tableau,
+/// Settle a pressed Actions deck once the press/drag ends: fire the action of whichever popped card the
+/// deck overlaps (Exit quits; Reset restores the initial table), then despawn the popped cards and
+/// disarm. Called from both the release and drag-end paths — whichever fires first does the work, the
+/// other finds `pressed_pile == None` and no-ops — so the outcome doesn't depend on their ordering.
+fn settle_actions_deck(
+    state: &mut ActionsDeckState,
+    table: &mut Table,
+    initial: &Tableau,
+    rebuild: &mut NeedsRebuild,
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
 ) {
-    if !state.pressed {
+    let Some(pile) = state.pressed_pile.take() else {
         return;
+    };
+    let fired = table.0.pile(pile).and_then(|deck| {
+        let (dp, dsz) = (deck.pos(), deck.size());
+        state
+            .popped
+            .iter()
+            .find(|p| rects_overlap(dp, dsz, p.pos, p.size))
+            .map(|p| p.utility)
+    });
+    for popped in state.popped.drain(..) {
+        commands.entity(popped.entity).despawn();
     }
-    state.pressed = false;
-    if let Some(id) = state.pile
-        && let Some(deck) = table.pile(id)
-        && rects_overlap(deck.pos(), deck.size(), state.leave_pos, state.leave_size)
-    {
-        exit.write(AppExit::Success);
-    }
-    if let Some(entity) = state.leave_entity.take() {
-        commands.entity(entity).despawn();
+    match fired {
+        Some(Utility::Exit) => {
+            exit.write(AppExit::Success);
+        }
+        Some(Utility::Reset) => {
+            table.0 = initial.clone();
+            rebuild.0 = true;
+        }
+        Some(Utility::Back) => {
+            table.0.zoom_out();
+            rebuild.0 = true;
+        }
+        None => {}
     }
 }
 
@@ -587,13 +705,13 @@ fn rects_overlap(ap: Pos, asz: Pos, bp: Pos, bsz: Pos) -> bool {
     ox > 0.01 && oy > 0.01
 }
 
-/// Ease the popped-out Leave card from the deck toward its target spot — the same eased settle the
-/// table piles use. It only eases outward; on release it's despawned outright (see [`settle_exit_deck`]).
-fn animate_leave(time: Res<Time>, mut leaves: Query<(&LeaveTarget, &mut Node)>) {
+/// Ease each popped-out action card from the deck toward its target spot — the same eased settle the
+/// table piles use. It only eases outward; on release it's despawned outright (see [`settle_actions_deck`]).
+fn animate_popped(time: Res<Time>, mut popped: Query<(&PoppedTarget, &mut Node)>) {
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (leave, mut node) in &mut leaves {
+    for (card, mut node) in &mut popped {
         let (cx, cy) = (px(node.left), px(node.top));
-        let (tx, ty) = (leave.target.x, leave.target.y);
+        let (tx, ty) = (card.target.x, card.target.y);
         if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
             continue;
         }
@@ -701,17 +819,17 @@ fn redraw(
     table: Res<Table>,
     rail: Res<ActionRail>,
     status: Res<StatusLine>,
-    mut exit_deck: ResMut<ExitDeckState>,
+    mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
         return;
     }
     rebuild.0 = false;
-    // The Leave card is a child of the surface we're about to despawn; forget it (and cancel any
-    // in-flight quit gesture) so we never try to despawn a now-dead entity.
-    exit_deck.leave_entity = None;
-    exit_deck.pressed = false;
+    // The popped action cards are children of the surface we're about to despawn; forget them (and
+    // cancel any in-flight gesture) so we never try to despawn a now-dead entity.
+    actions_deck.popped.clear();
+    actions_deck.pressed_pile = None;
     for entity in &roots {
         commands.entity(entity).despawn();
     }
@@ -1073,14 +1191,21 @@ fn spawn_nav_card<B: Bundle>(parent: &mut ChildSpawnerCommands, marker: B, label
         });
 }
 
-/// Spawn the popped-out "Leave" card as a free entity on the surface, starting at the deck (`from`) so
-/// [`animate_leave`] can slide it out to `target`. A high [`GlobalZIndex`] keeps it above every pile —
-/// since the pop-out doesn't shove the game piles aside, it must instead be drawn on top of them. It's
-/// transparent to picking (the quit is detected by overlap geometry, not a hit-test).
-fn spawn_leave_card(commands: &mut Commands, from: Pos, target: Pos, size: Pos) -> Entity {
+/// Spawn a popped-out action card (`label`, `bg`) as a free entity on the surface, starting at the deck
+/// (`from`) so [`animate_popped`] can slide it out to `target`. A high [`GlobalZIndex`] keeps it above
+/// every pile — since the pop-out doesn't shove the game piles aside, it must instead be drawn on top of
+/// them. It's transparent to picking (the drop is detected by overlap geometry, not a hit-test).
+fn spawn_popped_card(
+    commands: &mut Commands,
+    from: Pos,
+    target: Pos,
+    size: Pos,
+    label: &str,
+    bg: Color,
+) -> Entity {
     commands
         .spawn((
-            LeaveTarget { target },
+            PoppedTarget { target },
             GlobalZIndex(100),
             Pickable::IGNORE,
             Node {
@@ -1095,13 +1220,13 @@ fn spawn_leave_card(commands: &mut Commands, from: Pos, target: Pos, size: Pos) 
                 border_radius: BorderRadius::all(Val::Px(10.0)),
                 ..default()
             },
-            BackgroundColor(EXIT_CONFIRM_BG),
+            BackgroundColor(bg),
             BorderColor::all(CARD_EDGE),
             card_shadow(),
         ))
         .with_children(|c| {
             c.spawn((
-                Text::new("Exit"),
+                Text::new(label.to_string()),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
