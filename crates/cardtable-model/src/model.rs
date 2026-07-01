@@ -88,6 +88,9 @@ pub struct Card {
     detail: Vec<String>,
     panel: Vec<String>,
     kind: CardKind,
+    /// The card's **type** — a short category shown on the card and used as the deck's top-card label
+    /// (e.g. "Location", "Adventurer"). Every card has one; empty means untyped (no badge drawn).
+    card_type: String,
     size: Size,
     home: PileId,
 }
@@ -126,6 +129,11 @@ impl Card {
         self.kind
     }
 
+    /// The card's type — a short category (e.g. "Location"). Empty when untyped.
+    pub fn card_type(&self) -> &str {
+        &self.card_type
+    }
+
     /// How large the card is drawn right now.
     pub fn size(&self) -> Size {
         self.size
@@ -137,9 +145,11 @@ impl Card {
     }
 }
 
-/// Whether two cards are the same *type* for Name-view grouping: same face (up/down) and same name.
+/// Whether two cards group as one entry in the Name view: same face (up/down), name, and type.
 fn same_type(a: &Card, b: &Card) -> bool {
-    matches!(a.face, Face::Down) == matches!(b.face, Face::Down) && a.name() == b.name()
+    matches!(a.face, Face::Down) == matches!(b.face, Face::Down)
+        && a.name() == b.name()
+        && a.card_type == b.card_type
 }
 
 /// A pile of cards (and, optionally, nested piles). Collapsed = shown as a compact, counted pile;
@@ -308,6 +318,7 @@ impl Tableau {
                 detail: Vec::new(),
                 panel: Vec::new(),
                 kind: CardKind::Regular,
+                card_type: String::new(),
                 size: Size::Name,
                 home: pile,
             },
@@ -562,6 +573,19 @@ impl Tableau {
             .get_mut(&card)
             .ok_or(TableauError::UnknownCard(card))?
             .kind = kind;
+        Ok(())
+    }
+
+    /// Sets a card's [`type`](Card::card_type) — a short category shown on the card (e.g. "Location").
+    pub fn set_card_type(
+        &mut self,
+        card: CardId,
+        card_type: impl Into<String>,
+    ) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .card_type = card_type.into();
         Ok(())
     }
 

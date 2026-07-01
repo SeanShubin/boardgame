@@ -20,14 +20,24 @@ pub fn from_table_view(view: &TableView) -> Tableau {
         tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
             .expect("just-created pile exists");
         for card in &zone.cards {
-            let face = match &card.face {
-                CardFace::Up { title, .. } => Face::Up {
-                    title: title.clone(),
-                },
-                CardFace::Down => Face::Down,
+            let (face, card_type) = match &card.face {
+                CardFace::Up {
+                    title, type_line, ..
+                } => (
+                    Face::Up {
+                        title: title.clone(),
+                    },
+                    type_line.clone(),
+                ),
+                CardFace::Down => (Face::Down, None),
             };
-            tree.add_card(pile, face, card.action)
+            let id = tree
+                .add_card(pile, face, card.action)
                 .expect("just-created pile exists");
+            if let Some(card_type) = card_type {
+                tree.set_card_type(id, card_type)
+                    .expect("just-created card exists");
+            }
         }
     }
     tree

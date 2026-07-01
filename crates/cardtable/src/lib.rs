@@ -656,6 +656,80 @@ const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
 /// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 
+/// The accent colour for a card **type** — a small designed palette for the common types, with a
+/// stable hashed hue for any other type so a new type still reads as its own colour.
+fn type_accent(card_type: &str) -> Color {
+    match card_type.to_ascii_lowercase().as_str() {
+        "location" => Color::srgb(0.36, 0.52, 0.34), // mossy green
+        "adventurer" => Color::srgb(0.28, 0.46, 0.68), // heroic blue
+        "item" => Color::srgb(0.74, 0.58, 0.26),     // gold
+        "log" => Color::srgb(0.44, 0.44, 0.52),      // slate
+        "zone" => Color::srgb(0.50, 0.40, 0.62),     // violet — a structural / naming card
+        other => hashed_accent(other),
+    }
+}
+
+/// A stable, pleasant accent colour derived from a type name (FNV-1a hue at fixed saturation/value),
+/// so any unlisted type still gets its own consistent colour instead of a shared default.
+fn hashed_accent(s: &str) -> Color {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in s.bytes() {
+        h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    hsv_to_rgb((h % 360) as f32, 0.45, 0.62)
+}
+
+/// Ink colour that reads on a given badge fill — dark on light fills, light on dark ones.
+fn badge_ink(bg: Color) -> Color {
+    let c = bg.to_srgba();
+    let luminance = 0.299 * c.red + 0.587 * c.green + 0.114 * c.blue;
+    if luminance > 0.6 { CARD_INK } else { INK }
+}
+
+/// HSV (hue in degrees, saturation and value in `0..=1`) to an sRGB [`Color`].
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Color {
+    let c = v * s;
+    let x = c * (1.0 - (((h / 60.0) % 2.0) - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match (h as u32 / 60) % 6 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    Color::srgb(r + m, g + m, b + m)
+}
+
+/// A small colour-filled pill showing a card's **type** — the visual type indicator (colour + label).
+/// A no-op for an untyped card (empty type draws no badge).
+fn spawn_type_badge(parent: &mut ChildSpawnerCommands, card_type: &str) {
+    if card_type.is_empty() {
+        return;
+    }
+    let bg = type_accent(card_type);
+    parent
+        .spawn((
+            Node {
+                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
+                ..default()
+            },
+            BackgroundColor(bg),
+        ))
+        .with_children(|b| {
+            b.spawn((
+                Text::new(card_type.to_string()),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(badge_ink(bg)),
+            ));
+        });
+}
+
 /// A soft drop shadow used on cards and pile chips (offset down, blurred).
 fn card_shadow() -> BoxShadow {
     BoxShadow::new(
@@ -671,6 +745,8 @@ const FONT_DISPLAY: FontSize = FontSize::Px(26.0);
 const FONT_HEAD: FontSize = FontSize::Px(18.0);
 const FONT_TITLE: FontSize = FontSize::Px(15.0);
 const FONT_BODY: FontSize = FontSize::Px(13.0);
+/// The small type-badge caption.
+const FONT_BADGE: FontSize = FontSize::Px(10.0);
 
 /// How fast a pile eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
@@ -929,7 +1005,13 @@ fn spawn_leave_card(commands: &mut Commands, from: Pos, target: Pos, size: Pos) 
 /// Draws a collapsed pile as a short stack of offset layers — two alternating colors, stepped along
 /// the left and bottom edges, capped at [`MAX_STACK`] — hinting at how many cards are inside. The
 /// front layer (top-right, on top) carries the label and count; the whole stack is one drop target.
-fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, count: usize) {
+fn spawn_pile_chip(
+    parent: &mut ChildSpawnerCommands,
+    id: PileId,
+    label: &str,
+    card_type: &str,
+    count: usize,
+) {
     let depth = count.clamp(1, MAX_STACK);
     let spread = (depth - 1) as f32 * STACK_OFFSET;
     parent
@@ -983,6 +1065,7 @@ fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, c
                                 },
                                 TextColor(INK),
                             ));
+                            spawn_type_badge(face, card_type);
                             face.spawn((
                                 Text::new(format!("{count} cards")),
                                 TextFont {
@@ -999,12 +1082,21 @@ fn spawn_pile_chip(parent: &mut ChildSpawnerCommands, id: PileId, label: &str, c
         });
 }
 
-/// Draws a pile as a compact, counted chip showing its display name. You see its *contents* by
-/// clicking it to enter its zone — piles no longer fan open in place.
+/// Draws a pile as a compact, counted chip: the **name and type of its top card** over the card count.
+/// You see its *contents* by clicking it to enter its zone — piles no longer fan open in place. A pile
+/// whose top card is face-down (or that is empty) falls back to the pile's own display name, no type,
+/// so a face-down deck reveals nothing.
 fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
     let count = pile.cards().len() + pile.subpiles().len();
-    spawn_pile_chip(parent, id, &pile_display_name(tree, id), count);
+    let top = pile.cards().last().and_then(|&cid| tree.card(cid));
+    let (name, card_type) = match top {
+        Some(card) if matches!(card.face, Face::Up { .. }) => {
+            (card.name().to_string(), card.card_type().to_string())
+        }
+        _ => (pile_display_name(tree, id), String::new()),
+    };
+    spawn_pile_chip(parent, id, &name, &card_type, count);
 }
 
 /// Draws one card at its current render [`Size`]: a small name chip, a detailed card face, or a full
@@ -1065,6 +1157,9 @@ fn spawn_card_name(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usi
         card_shadow(),
     ));
     finish_card(entity, card, |c| {
+        if matches!(card.face, Face::Up { .. }) {
+            spawn_type_badge(c, card.card_type());
+        }
         if let Some(label) = label {
             c.spawn((
                 Text::new(label),
@@ -1115,6 +1210,7 @@ fn spawn_card_detail(parent: &mut ChildSpawnerCommands, card: &Card) {
             },
             TextColor(CARD_INK),
         ));
+        spawn_type_badge(c, card.card_type());
         for line in card.detail() {
             c.spawn((
                 Text::new(line.clone()),

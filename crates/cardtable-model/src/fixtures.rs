@@ -2,11 +2,41 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::model::{Face, Tableau};
+use crate::model::{CardId, CardKind, Face, PileId, Tableau};
+
+/// Add a face-up card with a name and a [`type`](crate::model::Card::card_type) to `pile`, returning
+/// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
+fn typed(tree: &mut Tableau, pile: PileId, title: &str, card_type: &str) -> CardId {
+    let id = tree
+        .add_card(
+            pile,
+            Face::Up {
+                title: title.into(),
+            },
+            None,
+        )
+        .expect("pile exists");
+    tree.set_card_type(id, card_type).expect("card just added");
+    id
+}
+
+/// The authored location names from the Deckbound Name Bank
+/// (`docs/games/deckbound/name-bank.md` § Locations).
+const LOCATIONS: [&str; 9] = [
+    "Ashfen Crossing",
+    "The Hollow Rampart",
+    "Cinderwatch Keep",
+    "Greywater Ford",
+    "The Sundered Vault",
+    "Thornmarch Gate",
+    "Emberfall Hollow",
+    "The Salt Barrows",
+    "Ninefold Deep",
+];
 
 /// A small, representative table: a `Hand` of face-up cards (two actionable), a face-down `Deck`, and
 /// a `Discard`. Enough to exercise focus/zoom, collapsed-vs-fanned piles, actionable highlighting, and
-/// moving cards between piles.
+/// moving cards between piles. Every card carries a type, shown as a badge and as the deck's top label.
 pub fn sample_table() -> Tableau {
     let mut tree = Tableau::new();
     let root = tree.root_id();
@@ -14,15 +44,7 @@ pub fn sample_table() -> Tableau {
     // Hand: face-up cards. Knight and Mage carry detail (click to grow to the Card size); Healer is
     // name-only (clicking it does nothing — a good contrast).
     let hand = tree.add_pile(root, "Hand").expect("root exists");
-    let knight = tree
-        .add_card(
-            hand,
-            Face::Up {
-                title: "Knight".into(),
-            },
-            None,
-        )
-        .expect("hand exists");
+    let knight = typed(&mut tree, hand, "Knight", "Adventurer");
     tree.set_card_detail(
         knight,
         vec![
@@ -32,15 +54,7 @@ pub fn sample_table() -> Tableau {
         ],
     )
     .expect("knight exists");
-    let mage = tree
-        .add_card(
-            hand,
-            Face::Up {
-                title: "Mage".into(),
-            },
-            None,
-        )
-        .expect("hand exists");
+    let mage = typed(&mut tree, hand, "Mage", "Adventurer");
     tree.set_card_detail(
         mage,
         vec![
@@ -50,14 +64,7 @@ pub fn sample_table() -> Tableau {
         ],
     )
     .expect("mage exists");
-    tree.add_card(
-        hand,
-        Face::Up {
-            title: "Healer".into(),
-        },
-        None,
-    )
-    .expect("hand exists");
+    typed(&mut tree, hand, "Healer", "Adventurer");
 
     let pile = tree.add_pile(root, "Deck").expect("root exists");
     for _ in 0..6 {
@@ -65,27 +72,12 @@ pub fn sample_table() -> Tableau {
     }
 
     let discard = tree.add_pile(root, "Discard").expect("root exists");
-    tree.add_card(
-        discard,
-        Face::Up {
-            title: "Spent Bolt".into(),
-        },
-        None,
-    )
-    .expect("discard exists");
+    typed(&mut tree, discard, "Spent Bolt", "Item");
 
     // A "Combat Log" — a utility card with no physical counterpart: only a Full panel, no card detail,
     // so clicking it cycles Name -> Full -> Name.
     let utility = tree.add_pile(root, "Utility").expect("root exists");
-    let log = tree
-        .add_card(
-            utility,
-            Face::Up {
-                title: "Combat Log".into(),
-            },
-            None,
-        )
-        .expect("utility exists");
+    let log = typed(&mut tree, utility, "Combat Log", "Log");
     tree.set_card_panel(
         log,
         vec![
@@ -103,55 +95,20 @@ pub fn sample_table() -> Tableau {
     // A "Quiver" of 5 identical Arrows — drilling in shows them grouped as "Arrow ×5".
     let quiver = tree.add_pile(root, "Quiver").expect("root exists");
     for _ in 0..5 {
-        tree.add_card(
-            quiver,
-            Face::Up {
-                title: "Arrow".into(),
-            },
-            None,
-        )
-        .expect("quiver exists");
+        typed(&mut tree, quiver, "Arrow", "Item");
     }
 
-    // A "Locations" pile of 25 fantasy places — exercises the stacked-depth visual and a high count.
+    // A "Locations" pile drawn from the authored Name Bank — each a small Location card; the deck chip
+    // shows its top card's name and type over the count.
     let locations = tree.add_pile(root, "Locations").expect("root exists");
-    const PLACES: [&str; 25] = [
-        "Emberfall",
-        "Thornwood",
-        "Greymarsh",
-        "Duskhollow",
-        "Frostspire",
-        "Ravenmoor",
-        "Ashen Reach",
-        "Mistveil",
-        "Stonewatch",
-        "Wyrmrest",
-        "Shadowfen",
-        "Goldvale",
-        "Ironhold",
-        "Stormhaven",
-        "Witchlight Bog",
-        "Hollow Crown",
-        "Sablewood",
-        "Brackenmere",
-        "Sunken Spire",
-        "Cinderhall",
-        "Briargate",
-        "Moonwell",
-        "Drakes Hollow",
-        "Veiled Pass",
-        "Thunderstep",
-    ];
-    for place in PLACES {
-        tree.add_card(
-            locations,
-            Face::Up {
-                title: place.to_string(),
-            },
-            None,
-        )
-        .expect("locations exists");
+    for place in LOCATIONS {
+        typed(&mut tree, locations, place, "Location");
     }
+    // A zone-naming card on top of the deck: because it is a `Zone` card, drilling into the pile shows
+    // its name ("Location") as the zone header, and its type badge reads "Zone".
+    let loc_zone = typed(&mut tree, locations, "Location", "Zone");
+    tree.set_card_kind(loc_zone, CardKind::Zone)
+        .expect("zone card exists");
 
     // Spread the piles across the table so they start un-stacked; drag repositions them.
     tree.set_pile_pos(hand, 40.0, 40.0).expect("hand exists");
@@ -177,6 +134,25 @@ mod tests {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
         assert_eq!(root.subpiles().len(), 6); // Hand, Deck, Discard, Utility, Quiver, Locations
-        assert_eq!(t.card_count(), 3 + 6 + 1 + 1 + 5 + 25);
+        assert_eq!(t.card_count(), 3 + 6 + 1 + 1 + 5 + (9 + 1)); // Locations: 9 places + a Zone card
+    }
+
+    #[test]
+    fn locations_are_typed_from_the_name_bank() {
+        let t = sample_table();
+        let root = t.pile(t.root_id()).unwrap();
+        // Locations is the last sub-pile added.
+        let locations = t.pile(*root.subpiles().last().unwrap()).unwrap();
+        // The 9 authored places sit at the bottom; a Zone card ("Location") caps the deck.
+        assert_eq!(locations.cards().len(), LOCATIONS.len() + 1);
+        for (&cid, name) in locations.cards().iter().zip(LOCATIONS) {
+            let card = t.card(cid).unwrap();
+            assert_eq!(card.name(), name);
+            assert_eq!(card.card_type(), "Location");
+        }
+        let top = t.card(*locations.cards().last().unwrap()).unwrap();
+        assert_eq!(top.name(), "Location");
+        assert_eq!(top.card_type(), "Zone");
+        assert_eq!(top.kind(), CardKind::Zone);
     }
 }
