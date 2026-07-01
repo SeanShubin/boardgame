@@ -112,6 +112,7 @@ impl Plugin for CardTablePlugin {
             // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
             // slides it freely across the table.
             .add_observer(on_drag_start)
+            .add_observer(on_drag_end_clear_guard)
             .add_observer(on_click)
             .add_observer(on_drop)
             .add_observer(on_pile_drag)
@@ -294,6 +295,13 @@ fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
     guard.0 = true;
 }
 
+/// Clear the drag guard whenever *any* drag ends, so only the click that ends a drag is suppressed and
+/// real clicks work again afterward. Covers every draggable — piles, grid cards, and projection cards
+/// (which carry no `TableCard`, so the specific card-drag handler never runs for them).
+fn on_drag_end_clear_guard(_on: On<Pointer<DragEnd>>, mut guard: ResMut<DragGuard>) {
+    guard.0 = false;
+}
+
 /// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
 /// card goes up a zone; an expandable **card** grows/shrinks; a loose action fires; a **pile** is entered
 /// (its zone) — unless it is an [`Arrangement::Actions`] deck (press-driven, see [`on_actions_press`]) or
@@ -340,7 +348,8 @@ fn on_click(
         // nothing under its label has nothing to show. Either way, a click does not drill in.
         let arrangement = table.0.pile(id).map(|p| p.layout().arrangement);
         let nothing_under = table.0.content_cards(id).is_empty()
-            && table.0.pile(id).is_some_and(|p| p.subpiles().is_empty());
+            && table.0.pile(id).is_some_and(|p| p.subpiles().is_empty())
+            && table.0.pile(id).is_some_and(|p| p.projection().is_empty());
         if !matches!(arrangement, Some(Arrangement::Actions)) && !nothing_under {
             let _ = table.0.focus(id); // drill in: this pile becomes the current zone
             rebuild.0 = true;
@@ -366,10 +375,36 @@ fn on_drop(
     let Ok(dragged) = cards.get(event.event.dropped) else {
         return; // only cards drop *into* piles
     };
+    // A card dropped *onto another card* inside a projection view (the inn) is an **equip**: pair the
+    // one carrying a recipe (the kit) with the other (the hero identity) into a character deck. Either
+    // drag direction works. The location for the recruit is the projection pile itself.
+    if let Ok(target) = cards.get(event.entity) {
+        let inn = table.0.focus_id();
+        let is_projection = table
+            .0
+            .pile(inn)
+            .is_some_and(|p| !p.projection().is_empty());
+        if is_projection {
+            let (a, b) = (dragged.0, target.0);
+            let a_kit = table.0.card(a).is_some_and(|c| !c.recipe().is_empty());
+            let b_kit = table.0.card(b).is_some_and(|c| !c.recipe().is_empty());
+            let pair = match (a_kit, b_kit) {
+                (true, false) => Some((b, a)), // a is the kit, b the identity
+                (false, true) => Some((a, b)), // b is the kit, a the identity
+                _ => None,                     // two kits or two heroes — nothing to equip
+            };
+            if let Some((identity, kit)) = pair {
+                on.propagate(false);
+                let _ = table.0.combine(identity, kit, inn);
+                rebuild.0 = true;
+            }
+        }
+        return;
+    }
     let dest = if let Ok(zone) = piles.get(event.entity) {
         zone.0
     } else {
-        return; // dropped onto a card or the felt — in-zone reordering is handled by the grid
+        return; // dropped onto the felt — in-zone reordering is handled by the grid
     };
     on.propagate(false);
     let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
@@ -490,10 +525,23 @@ fn on_card_drag_end(
     cards: Query<(&TableCard, &Node)>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<DraggingCard>,
+    mut rebuild: ResMut<NeedsRebuild>,
+    mut guard: ResMut<DragGuard>,
 ) {
+    guard.0 = false; // the drag is over; let real clicks through again (as on_pile_drag_end does)
     if let Ok((card, node)) = cards.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
+        // In a projection view (the inn) a card drag is only ever an equip attempt (handled by
+        // [`on_drop`]), never a reorder of the projected source deck. Rebuild to snap the tile back.
+        if table
+            .0
+            .pile(table.0.focus_id())
+            .is_some_and(|p| !p.projection().is_empty())
+        {
+            rebuild.0 = true;
+            return;
+        }
         let Some(home) = table.0.card(card.0).map(|c| c.home()) else {
             return;
         };
@@ -730,6 +778,14 @@ fn animate_cards(
     dragging: Res<DraggingCard>,
     mut cards: Query<(&TableCard, &mut Node)>,
 ) {
+    // A projection view lays its cards out with flexbox, not by model position — leave them alone.
+    if table
+        .0
+        .pile(table.0.focus_id())
+        .is_some_and(|p| !p.projection().is_empty())
+    {
+        return;
+    }
     let free = matches!(
         table
             .0
@@ -1099,6 +1155,68 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             ))
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
+                } else if !pile.projection().is_empty() {
+                    // A projection view (the inn): each source deck's cards under a header, plus this
+                    // pile's own cards ("Here" — characters standing at the location). Every card is
+                    // draggable so you can drop a hero onto a kit (or a kit onto a hero) to equip — see
+                    // `on_drop`. The cards keep their real home; the projection only shows them.
+                    surface
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            width: Val::Percent(100.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            row_gap: Val::Px(14.0),
+                            ..default()
+                        })
+                        .with_children(|col| {
+                            let mut sections: Vec<(String, Vec<CardId>)> = tree
+                                .projection_groups(zone)
+                                .into_iter()
+                                .map(|(src, cards)| (pile_display_name(tree, src), cards))
+                                .collect();
+                            let own = tree.content_cards(zone).to_vec();
+                            if !own.is_empty() {
+                                sections.push(("Here".to_string(), own));
+                            }
+                            for (header, group) in sections {
+                                col.spawn(Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    ..default()
+                                })
+                                .with_children(|section| {
+                                    section.spawn((
+                                        Text::new(header),
+                                        TextFont {
+                                            font_size: FONT_HEAD,
+                                            ..default()
+                                        },
+                                        TextColor(INK),
+                                    ));
+                                    section
+                                        .spawn(Node {
+                                            flex_direction: FlexDirection::Row,
+                                            flex_wrap: FlexWrap::Wrap,
+                                            column_gap: Val::Px(10.0),
+                                            row_gap: Val::Px(10.0),
+                                            ..default()
+                                        })
+                                        .with_children(|row| {
+                                            // Projection cards are NOT `TableCard`s: they stay put while
+                                            // dragged (no cursor-follow), so the card you release *onto*
+                                            // is reliably the drop target — the equip in `on_drop`. The
+                                            // drag itself is picking-level, so it still fires.
+                                            for cid in group {
+                                                spawn_card(
+                                                    row,
+                                                    tree.card(cid)
+                                                        .expect("card id from projection"),
+                                                );
+                                            }
+                                        });
+                                });
+                            }
+                        });
                 } else {
                     // The zone lays its contents out — one shared path for every layout. An ordered
                     // layout (List / Grid) places cards on a row-major grid via `zone_cols`; a Free

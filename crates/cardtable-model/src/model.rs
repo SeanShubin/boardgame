@@ -102,6 +102,9 @@ pub struct Card {
     /// [`Arrangement::Free`] deck, where cards are placed and shoved like the top-level piles.
     pos: Pos,
     footprint: Pos,
+    /// An ordered list of card names this card **yields when combined** — a recipe. A starting kit
+    /// carries the cards a character gains when equipped with it; an ordinary card's recipe is empty.
+    recipe: Vec<String>,
 }
 
 impl Card {
@@ -156,6 +159,11 @@ impl Card {
     /// The card's rendered footprint (`x` = width, `y` = height), fed back by the renderer for shoving.
     pub fn footprint(&self) -> Pos {
         self.footprint
+    }
+
+    /// The card names this card yields when combined (a kit's recipe). Empty for an ordinary card.
+    pub fn recipe(&self) -> &[String] {
+        &self.recipe
     }
 
     /// Whether the card has more than a name to show, so a click can grow it.
@@ -337,6 +345,10 @@ pub struct Pile {
     pos: Pos,
     size: Pos,
     layout: Layout,
+    /// If non-empty, this pile is a **projection**: instead of its own contents, drilling into it shows
+    /// the [content cards](Tableau::content_cards) of these source piles (grouped, still owned by the
+    /// sources). A projection gathers relevant cards from several decks into one view without moving them.
+    projection: Vec<PileId>,
 }
 
 impl Pile {
@@ -368,6 +380,11 @@ impl Pile {
     /// How this pile arranges its contents when drilled into, and whether they can be rearranged.
     pub fn layout(&self) -> Layout {
         self.layout
+    }
+
+    /// The source piles this pile **projects** (shows the cards of). Empty for an ordinary pile.
+    pub fn projection(&self) -> &[PileId] {
+        &self.projection
     }
 }
 
@@ -423,6 +440,7 @@ impl Tableau {
                 pos: Pos::default(),
                 size: Pos::default(),
                 layout: Layout::default(),
+                projection: Vec::new(),
             },
         );
         Self {
@@ -464,6 +482,7 @@ impl Tableau {
                 pos: Pos::default(),
                 size: Pos::default(),
                 layout: Layout::default(),
+                projection: Vec::new(),
             },
         );
         self.piles
@@ -500,6 +519,7 @@ impl Tableau {
                 home: pile,
                 pos: Pos::default(),
                 footprint: Pos::default(),
+                recipe: Vec::new(),
             },
         );
         self.piles
@@ -704,6 +724,109 @@ impl Tableau {
         Ok(())
     }
 
+    /// Makes `pile` a **projection** of `sources` — drilling into it shows those piles' cards (see
+    /// [`projection_groups`](Self::projection_groups)) rather than its own. Pass an empty vec to clear.
+    pub fn set_projection(
+        &mut self,
+        pile: PileId,
+        sources: Vec<PileId>,
+    ) -> Result<(), TableauError> {
+        self.piles
+            .get_mut(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?
+            .projection = sources;
+        Ok(())
+    }
+
+    /// The cards a projection `pile` shows, grouped by source: `(source pile, its content cards)` for
+    /// each source in [`projection`](Pile::projection), skipping unknown sources. The cards keep their
+    /// home (the source) — a projection displays them, it doesn't own them. Empty for a normal pile.
+    pub fn projection_groups(&self, pile: PileId) -> Vec<(PileId, Vec<CardId>)> {
+        let Some(p) = self.piles.get(&pile) else {
+            return Vec::new();
+        };
+        p.projection
+            .iter()
+            .filter(|&&src| self.piles.contains_key(&src))
+            .map(|&src| (src, self.content_cards(src).to_vec()))
+            .collect()
+    }
+
+    /// **Combine** an `identity` card with a `recipe` card (e.g. a hero with a starting kit) into a new
+    /// top-level **character deck**, returning its id. The character deck is a [`Free`](Arrangement::Free)
+    /// deck holding the recipe's cards, a reserved battle-rank identity copy, and the identity itself as
+    /// its top [`Zone`](CardKind::Zone) label; one more identity copy is placed at `location` (the
+    /// character now stands there). The identity leaves its old home — so a recruited hero exits the inn.
+    /// The recipe card is untouched (a kit is reusable).
+    pub fn combine(
+        &mut self,
+        identity: CardId,
+        recipe: CardId,
+        location: PileId,
+    ) -> Result<PileId, TableauError> {
+        let name = self
+            .cards
+            .get(&identity)
+            .ok_or(TableauError::UnknownCard(identity))?
+            .name()
+            .to_string();
+        let card_type = self.cards[&identity].card_type.clone();
+        let recipe_cards = self
+            .cards
+            .get(&recipe)
+            .ok_or(TableauError::UnknownCard(recipe))?
+            .recipe
+            .clone();
+        if !self.piles.contains_key(&location) {
+            return Err(TableauError::UnknownPile(location));
+        }
+
+        let character = self.add_pile(self.root, name.clone())?;
+        // The kit's cards, in order (bottom → top).
+        for card_name in &recipe_cards {
+            self.add_card(
+                character,
+                Face::Up {
+                    title: card_name.clone(),
+                },
+                None,
+            )?;
+        }
+        // A reserved battle-rank identity copy...
+        let rank = self.add_card(
+            character,
+            Face::Up {
+                title: name.clone(),
+            },
+            None,
+        )?;
+        self.set_card_type(rank, card_type.clone())?;
+        // ...then the identity itself, moved on top as the deck's Zone label (its Attributes copy).
+        let at = self.piles[&character].cards.len();
+        self.move_card(identity, character, at)?;
+        self.set_card_kind(identity, CardKind::Zone)?;
+        // One identity copy stands at the location (the character is now on the overworld there).
+        let here = self.add_card(
+            location,
+            Face::Up {
+                title: name.clone(),
+            },
+            None,
+        )?;
+        self.set_card_type(here, card_type)?;
+
+        // A character's cards are an ordered line (stat name, value, …), so the deck is a List.
+        self.set_layout(
+            character,
+            Layout {
+                arrangement: Arrangement::List,
+                editable: true,
+            },
+        )?;
+        self.set_pile_pos(character, 40.0, 320.0)?;
+        Ok(character)
+    }
+
     /// Sets `pile`'s collapsed flag directly (a manual fan/collapse, independent of focus).
     pub fn set_collapsed(&mut self, pile: PileId, collapsed: bool) -> Result<(), TableauError> {
         self.piles
@@ -792,6 +915,19 @@ impl Tableau {
             .get_mut(&card)
             .ok_or(TableauError::UnknownCard(card))?
             .footprint = Pos { x: w, y: h };
+        Ok(())
+    }
+
+    /// Sets a card's [`recipe`](Card::recipe) — the ordered card names it yields when combined.
+    pub fn set_card_recipe(
+        &mut self,
+        card: CardId,
+        recipe: Vec<String>,
+    ) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .recipe = recipe;
         Ok(())
     }
 
@@ -1471,6 +1607,61 @@ mod tests {
         let ox = (0.0f32 + 100.0).min(bp.x + 100.0) - 0.0f32.max(bp.x);
         let oy = (0.0f32 + 100.0).min(bp.y + 100.0) - 0.0f32.max(bp.y);
         assert!(ox <= 0.02 || oy <= 0.02, "cards must not overlap: {bp:?}");
+    }
+
+    #[test]
+    fn projection_shows_sources_and_combine_recruits() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let identity = t.add_pile(root, "Identity").unwrap();
+        let hero = t
+            .add_card(
+                identity,
+                Face::Up {
+                    title: "Vael".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_type(hero, "hero").unwrap();
+        let kits = t.add_pile(root, "Starting Kit").unwrap();
+        let kit = t
+            .add_card(
+                kits,
+                Face::Up {
+                    title: "Skirmisher".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_recipe(kit, vec!["Might".into(), "2".into(), "Jab".into()])
+            .unwrap();
+        // The inn projects both decks.
+        let inn = t.add_pile(root, "Inn").unwrap();
+        t.set_projection(inn, vec![identity, kits]).unwrap();
+        let groups = t.projection_groups(inn);
+        assert_eq!(groups, vec![(identity, vec![hero]), (kits, vec![kit])]);
+
+        // Recruit: combine the hero with the kit (location = the inn, for the test).
+        let character = t.combine(hero, kit, inn).unwrap();
+        assert!(t.content_cards(identity).is_empty()); // hero left the inn
+        let top = t
+            .card(*t.pile(character).unwrap().cards().last().unwrap())
+            .unwrap();
+        assert_eq!(top.name(), "Vael");
+        assert_eq!(top.kind(), CardKind::Zone);
+        let content: Vec<&str> = t
+            .content_cards(character)
+            .iter()
+            .map(|&c| t.card(c).unwrap().name())
+            .collect();
+        assert_eq!(content, ["Might", "2", "Jab", "Vael"]); // kit's cards, then the rank copy
+        assert!(
+            t.content_cards(inn)
+                .iter()
+                .any(|&c| t.card(c).unwrap().name() == "Vael")
+        ); // a copy stands at the location
+        assert_eq!(t.card(kit).unwrap().name(), "Skirmisher"); // kit untouched (reusable)
     }
 
     #[test]
