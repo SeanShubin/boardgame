@@ -27,6 +27,8 @@ const PARTY: usize = 3;
 const ROUNDS: u32 = 8;
 /// AoE budget costs to scan (points removed from an AoE class's stat budget).
 const COSTS: [u32; 4] = [0, 1, 2, 3];
+/// The four capability cells, in a fixed order (used for bucketing + the 4-cell search).
+const CELLS: [&str; 4] = ["melee·single", "ranged·single", "melee·aoe", "ranged·aoe"];
 
 struct Candidate {
     def: ClassDef,
@@ -147,6 +149,84 @@ impl Tournament {
             rs.iter().sum::<f64>() / rs.len() as f64
         }
     }
+    /// Candidate indices bucketed by cell, in `CELLS` order.
+    fn buckets(&self) -> Vec<Vec<usize>> {
+        CELLS
+            .iter()
+            .map(|&cn| {
+                (0..self.cands.len())
+                    .filter(|&i| self.cands[i].cell == cn)
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A **4-cell cycle**: one class per cell (all four cells) forming a *directed Hamiltonian 4-cycle*
+    /// `A ▸ B ▸ C ▸ D ▸ A` (every edge a strict beat). A Hamiltonian cycle ⟹ the quartet is strongly
+    /// connected (Moon), i.e. no cell dominates or is dominated — every capability cell holds a niche.
+    /// Prefers a cycle with the most distinct roles (max 3). Returns the four indices in cycle order.
+    fn four_cell_cycle(&self) -> Option<[usize; 4]> {
+        let b = self.buckets();
+        if b.iter().any(|bk| bk.is_empty()) {
+            return None;
+        }
+        // The 6 directed cyclic orders of the 4 cells (fix cell 0 first; permute the rest).
+        const ORDERS: [[usize; 4]; 6] = [
+            [0, 1, 2, 3],
+            [0, 1, 3, 2],
+            [0, 2, 1, 3],
+            [0, 2, 3, 1],
+            [0, 3, 1, 2],
+            [0, 3, 2, 1],
+        ];
+        let mut best: Option<([usize; 4], usize)> = None;
+        for &r0 in &b[0] {
+            for &r1 in &b[1] {
+                for &r2 in &b[2] {
+                    for &r3 in &b[3] {
+                        let rep = [r0, r1, r2, r3]; // rep[cell]
+                        for ord in &ORDERS {
+                            let cyc = [rep[ord[0]], rep[ord[1]], rep[ord[2]], rep[ord[3]]];
+                            let edge = |x: usize, y: usize| self.beat[cyc[x]][cyc[y]] > 0;
+                            if edge(0, 1) && edge(1, 2) && edge(2, 3) && edge(3, 0) {
+                                let mut rv: Vec<Intention> =
+                                    cyc.iter().map(|&i| self.cands[i].role).collect();
+                                rv.sort_unstable();
+                                rv.dedup();
+                                let roles = rv.len();
+                                if best.is_none_or(|(_, br)| roles > br) {
+                                    best = Some((cyc, roles));
+                                    if roles == 3 {
+                                        return Some(cyc); // best possible (only 3 roles exist)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|(c, _)| c)
+    }
+
+    /// The cell (if any) that cannot hold a niche: every one of its candidates either beats all four
+    /// cells' fields or loses to them — reported when no 4-cell cycle exists, to name the culprit.
+    fn stuck_cell(&self) -> Option<&'static str> {
+        CELLS.iter().copied().find(|&cn| {
+            let mine: Vec<usize> = (0..self.cands.len())
+                .filter(|&i| self.cands[i].cell == cn)
+                .collect();
+            // "stuck" = no member of this cell both beats and loses to some *other-cell* candidate.
+            mine.iter().all(|&i| {
+                let beats_other =
+                    (0..self.cands.len()).any(|j| self.cands[j].cell != cn && self.beat[i][j] > 0);
+                let loses_other =
+                    (0..self.cands.len()).any(|j| self.cands[j].cell != cn && self.beat[i][j] < 0);
+                !(beats_other && loses_other)
+            })
+        })
+    }
+
     /// An RPS 3-cycle among viable candidates, maximizing distinct cells then roles. Returns the trio.
     fn rps_cycle(&self) -> Option<(usize, usize, usize, usize, usize)> {
         let n = self.cands.len();
@@ -248,8 +328,38 @@ fn main() {
         println!("\nNo RPS cycle — the field is transitive (a strict pecking order).");
     }
 
+    // 4-cell coexistence: a directed Hamiltonian 4-cycle with one class per cell (all four hold a niche).
+    match t.four_cell_cycle() {
+        Some(cyc) => {
+            println!(
+                "\n4-CELL COEXISTENCE — a directed 4-cycle, one class per cell (every capability cell holds a niche):"
+            );
+            for &i in &cyc {
+                let (m, v, tg, ca, f) = t.cands[i].def.stats;
+                println!(
+                    "  {:<14} M{m}V{v}T{tg}C{ca}F{f} -> {}",
+                    t.cands[i].cell,
+                    role_tag(t.cands[i].role)
+                );
+            }
+            let names: Vec<&str> = cyc.iter().map(|&i| t.cands[i].cell).collect();
+            println!(
+                "  cycle: {} ▸ {} ▸ {} ▸ {} ▸ (back to first)",
+                names[0], names[1], names[2], names[3]
+            );
+        }
+        None => match t.stuck_cell() {
+            Some(cell) => println!(
+                "\nNo 4-cell cycle at K={k}: the '{cell}' cell can't hold a non-dominated niche (it only beats, or only loses)."
+            ),
+            None => println!(
+                "\nNo 4-cell cycle at K={k} (no one-per-cell quartet forms a directed 4-cycle), though each cell is individually viable."
+            ),
+        },
+    }
+
     println!("\nPer-cell balanced exemplar (win-rate nearest 50%):");
-    for &cell in &["melee·single", "ranged·single", "melee·aoe", "ranged·aoe"] {
+    for &cell in &CELLS {
         let pick = (0..n)
             .filter(|&i| t.cands[i].cell == cell)
             .min_by_key(|&i| {

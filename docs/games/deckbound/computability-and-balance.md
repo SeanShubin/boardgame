@@ -316,7 +316,11 @@ live counter-cycle.
 cost. First result (8-point budget, 3v3, each stat ≥ 1): the AoE cells' mean win-rate falls **61% → 57% →
 49% → 34%** as `K` goes `0 → 1 → 2 → 3` while the single cells hold ~**40–50%** — so **area is worth ~2 stat
 points**. At `K=2` AoE (49%) ↔ single (50%) level out, **0 dominant, 0 dead**, and a 3-cell / 3-role RPS
-cycle survives (e.g. melee·single Outrider ▸ ranged·single Rearguard ▸ melee·aoe Vanguard). So meaningful
+cycle survives (e.g. melee·single Outrider ▸ ranged·single Rearguard ▸ melee·aoe Vanguard). The sweep also
+searches for a **4-cell Hamiltonian cycle** — one class per cell forming a directed loop `A ▸ B ▸ C ▸ D ▸ A`
+(a Hamiltonian cycle ⟹ the quartet is strongly connected, Moon's theorem, so *no* cell dominates or is
+dominated) — the stronger witness that **all four** capability cells coexist; at `K=2` one exists (e.g.
+melee·single Outrider ▸ ranged·single Rearguard ▸ ranged·aoe Rearguard ▸ melee·aoe Vanguard). So meaningful
 balanced classes emerge from combining range × shape × stats *once area is priced* — they need not be
 fiat-authored. The per-cell exemplars are candidates for the hand-tuned roster, then locked by §6 / §6.1.
 
