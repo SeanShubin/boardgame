@@ -50,6 +50,9 @@ The documentation is split by **authority**:
   clean-slate deck-as-stats characters), [zones-exhaustion-design.md](zones-exhaustion-design.md)
   (the card zone/exhaustion machinery + resources, i.e. Spec §5), and
   [reference-scenario.md](reference-scenario.md) (a full-game balance harness, maintained as a test).
+- **[name-bank.md](name-bank.md) — authored flavor names.** A curated, living pool of
+  setting names (locations, adventurers, …) to draw on when authoring decks, characters,
+  and scenarios. Non-canonical until a card actually uses a name.
 - **[roadmap.md](roadmap.md) — undefined mechanics & planned features.** A living to-do
   list of what doesn't exist yet (geography, travel, loot, progression, world events,
   run-level victory/defeat; plus features like a human-emulating AI, an in-game
