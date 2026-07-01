@@ -1,18 +1,38 @@
 # Boardgame
 
-A framework for turn-based tabletop board games in Rust + Bevy. See `README.md`
+A **card-table application** in Rust + Bevy, deployed to the web, built on a
+small framework that separates game rules from presentation. The card-table UI
+is the product and the main thrust of development, grown one feature at a time;
+Deckbound (the full combat game) is kept as a reference sample. See `README.md`
 for the full layout and design.
 
 ## Architecture in one breath
 
-- `crates/engine` — pure framework. The `Game` trait, `Zone`, seeded `Rng`, and
-  `TableView`. **No Bevy dependency** — keep it that way so games stay
-  unit-testable.
-- `crates/<game>` — one pure crate per game (e.g. `deckbound`), implementing
-  `engine::Game`. No Bevy; all randomness flows from the seed.
-- `crates/tabletop` — the only Bevy crate that renders games. Generic over
-  `Game`; never reference a specific game here.
-- `crates/boardgame` — the binary that picks a game and runs it.
+The product:
+
+- `crates/boardgame` — **the deployed binary**: the card-table app. Drives the
+  `cardtable` renderer with a `Tableau`. No game wired in yet — this is the small
+  seed the UI grows from. Built to WebAssembly with Trunk (see `deploy.yml`).
+- `crates/cardtable` — the card-table Bevy renderer (the product's UI): every
+  zone a deck, click-to-focus / drag-to-arrange. A shell over `cardtable-model`.
+- `crates/cardtable-model` — the pure card-table interaction model (decks, cards,
+  focus/zoom, move/reorder). No Bevy.
+
+The framework underneath:
+
+- `crates/contract` — the pure rules↔presentation interface: the `Game` trait and
+  the `TableView` snapshot. No Bevy, no logic.
+- `crates/engine` — the pure card-game toolkit: `Zone`, seeded `Rng`. **No Bevy** —
+  keep it that way so games stay unit-testable.
+
+The reference sample:
+
+- `crates/deckbound` — one pure crate for the game, implementing `contract::Game`.
+  No Bevy; all randomness flows from the seed.
+- `crates/tabletop` — the button-based Bevy renderer the sample uses. Generic over
+  `contract::Game`; never reference a specific game here.
+- `crates/deckbound-sample` — the sample launcher binary: wires `Deckbound` into a
+  renderer (default `tabletop`, or `cardtable` under `--features cardtable`).
 
 ## Conventions
 

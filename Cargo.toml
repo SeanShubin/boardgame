@@ -8,6 +8,7 @@ members = [
     "crates/tabletop",
     "crates/deckbound",
     "crates/boardgame",
+    "crates/deckbound-sample",
     "crates/combat-lab",
 ]
 

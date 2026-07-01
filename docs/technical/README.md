@@ -7,9 +7,9 @@ those.
 
 ## Contents
 
-- [Architecture](architecture.md) — the workspace crates, the `Game` trait that
-  every game implements, and the `TableView` seam that lets one renderer draw
-  any game.
+- [Architecture](architecture.md) — the workspace crates (the card-table product
+  and the reference sample), the `Game` trait that every game implements, and the
+  `TableView` seam that lets either renderer draw any game.
 - [Adding a game](adding-a-game.md) — a step-by-step recipe for a new game crate.
 
 ## Suggested topics for later

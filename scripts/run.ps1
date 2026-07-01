@@ -1,5 +1,5 @@
-# Run the game (the boardgame launcher). Extra args pass through to cargo,
-# e.g. scripts\run.ps1 --release
+# Run the card-table app — the product (the boardgame bin). Extra args pass
+# through to cargo, e.g. scripts\run.ps1 --release
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 

@@ -1,27 +1,37 @@
 # Architecture
 
 The framework separates a game's **rules** (pure, testable, no Bevy) from its
-**presentation** (a single generic Bevy renderer). A game is plugged into the
-renderer; the renderer never knows which game it is showing.
+**presentation** (a generic Bevy renderer). Rules are plugged into a renderer;
+the renderer never knows which game it is showing.
+
+Two things are built on that seam:
+
+- **The product** — the **card-table app** (`boardgame`), the deployed binary. It
+  drives the `cardtable` renderer directly with a `Tableau`. No game is wired in
+  yet; the UI grows one feature at a time.
+- **The reference sample** — `deckbound-sample`, which wires the full *Deckbound*
+  game into a renderer end to end. Kept for reference and compatibility.
 
 ## Workspace crates
 
-| Crate                   | Kind | What it is                                                                                                                                                                                                       |
-| ----------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crates/contract`       | lib  | **The contract** — the pure rules↔presentation interface: the [`Game`](#the-game-trait) trait and the `TableView` snapshot family. No logic, no Bevy. The one thing both sides must agree on.                  |
-| `crates/engine`         | lib  | The shared **card-game toolkit**: reusable building blocks (`Zone`, seeded `Rng`) an implementation uses internally. Pure; does **not** depend on `contract`.                                                   |
-| `crates/deckbound`      | lib  | The game: *Deckbound*. Pure logic, fully unit-tested. Implements `contract::Game`; uses the `engine` toolkit.                                                                                                   |
-| `crates/cardtable-model`| lib  | The pure **card-table interaction model** — decks, cards, selection, reorder, move-between-decks, focus/zoom. No Bevy, no game, so behaviors unit-test in isolation. Touches `contract` only to ingest a `TableView`. |
-| `crates/tabletop`       | lib  | The default Bevy renderer: draws any `contract::Game` and turns its legal actions into clickable buttons. Depends on Bevy and on a game's *shape* (not its rules).                                              |
-| `crates/cardtable`      | lib  | A second, opt-in Bevy renderer drawing the **card-table metaphor** — every zone a deck, collapse-the-unattended, click-to-focus / zoom-out. A thin shell over `cardtable-model`, fed by the same `TableView`. Selected with `boardgame --features cardtable`. |
-| `crates/boardgame`      | bin  | The launcher. Wires one game into a renderer (default `tabletop`, or `cardtable` under that feature) and runs it.                                                                                              |
+| Crate                     | Kind | What it is                                                                                                                                                                                                                             |
+| ------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/contract`         | lib  | **The contract** — the pure rules↔presentation interface: the [`Game`](#the-game-trait) trait and the `TableView` snapshot family. No logic, no Bevy. The one thing both sides must agree on.                                          |
+| `crates/engine`           | lib  | The shared **card-game toolkit**: reusable building blocks (`Zone`, seeded `Rng`) an implementation uses internally. Pure; does **not** depend on `contract`.                                                                          |
+| `crates/deckbound`        | lib  | The game: *Deckbound*. Pure logic, fully unit-tested. Implements `contract::Game`; uses the `engine` toolkit.                                                                                                                          |
+| `crates/cardtable-model`  | lib  | The pure **card-table interaction model** — decks, cards, selection, reorder, move-between-decks, focus/zoom. No Bevy, no game, so behaviors unit-test in isolation. Touches `contract` only to ingest a `TableView`.                  |
+| `crates/cardtable`        | lib  | **The product's renderer** — the Bevy renderer drawing the **card-table metaphor**: every zone a deck, collapse-the-unattended, click-to-focus / zoom-out, drag-to-arrange. A thin shell over `cardtable-model`, fed by a `TableView`. |
+| `crates/tabletop`         | lib  | The button-based Bevy renderer used by the reference sample: draws any `contract::Game` and turns its legal actions into clickable buttons. Depends on Bevy and on a game's *shape* (not its rules).                                   |
+| `crates/boardgame`        | bin  | **The deployed product** — the card-table app. Drives the `cardtable` renderer with a starting `Tableau`; no game wired in yet. Built to WebAssembly with Trunk.                                                                       |
+| `crates/deckbound-sample` | bin  | The reference sample launcher. Wires `Deckbound` into a renderer (default `tabletop`, or `cardtable` under `--features cardtable`) and runs it.                                                                                        |
 
 Each new game is a new pure crate that implements `contract::Game`; the renderers
-and the launcher do not change. The dependency arrows form a clean composition
-root: `boardgame` (the root) knows every implementation; the implementations
-(`deckbound`, `tabletop`, `cardtable`, `cardtable-model`) know only `contract`,
-never each other. Two renderers against one `TableView` is the seam paying off —
-a new presentation never touches the rules.
+do not change. The dependency arrows form clean composition roots: each **bin**
+(`boardgame`, `deckbound-sample`) wires implementations together, while the
+implementations (`deckbound`, `tabletop`, `cardtable`, `cardtable-model`) know
+only `contract`, never each other. Two renderers against one `TableView` is the
+seam paying off — a new presentation never touches the rules, and the card-table
+product and the button-based sample share the same model of the table.
 
 ## The two seams
 
@@ -48,7 +58,9 @@ line. The presentation layer draws a `TableView` without knowing any game's
 rules, and a game produces one without knowing how it will be drawn. This is the
 seam that lets one renderer display every game.
 
-## How a turn flows
+## How a turn flows (the reference sample)
+
+This is the game-driven path, exercised end to end by `deckbound-sample`:
 
 ```text
         contract::Game  (the interface)
@@ -58,7 +70,7 @@ seam that lets one renderer display every game.
           |           v
         tabletop  (Bevy: draws TableView, sends legal_actions back as buttons)
           |
-       boardgame  (binary)
+    deckbound-sample  (binary)
 ```
 
 1. `tabletop` asks the game for a `TableView` and draws it.
@@ -69,6 +81,19 @@ seam that lets one renderer display every game.
 
 See [`crates/tabletop/src/lib.rs`](../../crates/tabletop/src/lib.rs) for the
 plugin, resources, and systems.
+
+## The product path (the card-table app)
+
+The deployed `boardgame` bin does **not** wire a game in yet. It drives the
+`cardtable` renderer directly with a hand-built `Tableau` (see
+[`crates/cardtable-model/src/fixtures.rs`](../../crates/cardtable-model/src/fixtures.rs)),
+reporting clicks on actionable controls back to the app. The same renderer can be
+driven from a `contract::Game` through `cardtable`'s `game` feature — the path the
+sample uses under `--features cardtable` — so when the card-table UI is ready to
+host real rules, the seam is already in place.
+
+See [`crates/cardtable/src/lib.rs`](../../crates/cardtable/src/lib.rs) for the
+renderer core and the game adapter.
 
 ## Determinism
 

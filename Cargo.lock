@@ -1906,8 +1906,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "cardtable",
- "deckbound",
- "tabletop",
+ "cardtable-model",
 ]
 
 [[package]]
@@ -2331,6 +2330,16 @@ dependencies = [
  "engine",
  "ron 0.8.1",
  "serde",
+]
+
+[[package]]
+name = "deckbound-sample"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "cardtable",
+ "deckbound",
+ "tabletop",
 ]
 
 [[package]]

@@ -1,0 +1,19 @@
+[package]
+name = "deckbound-sample"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "deckbound-sample"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { workspace = true }
+tabletop = { workspace = true }
+deckbound = { workspace = true }
+cardtable = { workspace = true, optional = true, features = ["game"] }
+
+[features]
+# Swap the default `tabletop` renderer for the card-table renderer:
+#   cargo run -p deckbound-sample --features cardtable
+cardtable = ["dep:cardtable"]

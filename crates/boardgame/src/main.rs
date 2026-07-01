@@ -1,41 +1,45 @@
-//! The launcher binary.
+//! The **card-table application** — the first-class entry point and the deployed product.
 //!
-//! It wires [`Deckbound`] into a generic renderer and runs it. The game opens on its menu, where
-//! every mode — Duels / Cooperation / God-tier / Versus, the world-map **Campaign**, and the rules
-//! encyclopedia — is one card. Any type implementing `contract::Game` could be swapped in here.
+//! It drives the game-agnostic card-table renderer ([`cardtable::CardTablePlugin`]) with a starting
+//! [`Tableau`]. No game is wired in yet: this is the small seed the UI grows from, one feature at a
+//! time. The full Deckbound combat game now lives as a reference scenario in the `deckbound-sample`
+//! crate.
 //!
-//! The renderer is `tabletop` by default; build with `--features cardtable` to use the experimental
-//! card-table renderer instead. Both consume the same `contract::TableView`.
+//! Runs natively and on the web — Trunk builds this bin to WebAssembly (see `index.html` and
+//! `.github/workflows/deploy.yml`).
 
 use bevy::prelude::*;
-use deckbound::Deckbound;
-
-/// The seed for this match. A fixed seed makes a session reproducible; vary it
-/// to change the warband's bluffs.
-const SEED: u64 = 1;
-
-/// Deckbound's combat menu seats one player who commands the whole party.
-const PLAYERS: usize = 1;
+use cardtable::{ActionRequests, CardTablePlugin, CardTableSet, StatusLine, Table};
+use cardtable_model::sample_table;
 
 fn main() -> AppExit {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Boardgame - Deckbound".into(),
+            title: "Boardgame".into(),
             resolution: (1320u32, 860u32).into(),
             // On the web, track the browser viewport so resizing the window
-            // reflows the table — the parity the desktop window already has.
-            // Ignored natively, where `resolution` sets the initial size.
+            // reflows the table. Ignored natively, where `resolution` sets the
+            // initial size.
             fit_canvas_to_parent: true,
             ..default()
         }),
         ..default()
     }));
 
-    #[cfg(feature = "cardtable")]
-    app.add_plugins(cardtable::GamePlugin::new(Deckbound, SEED, PLAYERS));
-    #[cfg(not(feature = "cardtable"))]
-    app.add_plugins(tabletop::TabletopPlugin::new(Deckbound, SEED, PLAYERS));
+    app.add_plugins(CardTablePlugin)
+        .insert_resource(Table(sample_table()))
+        .insert_resource(StatusLine(
+            "Click a pile to enter it · click a card to grow it · drag to arrange".into(),
+        ))
+        // No game yet: drain the core's click outbox each frame so requests don't accumulate. A
+        // future feature (or a game adapter) will consume these instead of discarding them.
+        .add_systems(Update, drain_requests.in_set(CardTableSet::Apply));
 
     app.run()
+}
+
+/// Placeholder consumer of the core's action outbox until a real feature handles clicks.
+fn drain_requests(mut requests: ResMut<ActionRequests>) {
+    requests.0.clear();
 }

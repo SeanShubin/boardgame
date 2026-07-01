@@ -11,10 +11,15 @@ env:
 
 jobs:
   test:
-    name: Test (logic crates)
+    name: Lint & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Clippy now compiles the card-table crates (cardtable, boardgame), which pull Bevy — so this
+      # job needs Bevy's Linux system libraries just like the build job does.
+      - name: Install Bevy Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -34,9 +39,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      # The pure logic crates are quick and have no system dependencies.
-      - name: Clippy (engine, deckbound)
-        run: cargo clippy -p engine -p deckbound -- -D warnings
+      # Lint the logic crates and the card-table product (mirrors scripts/verify).
+      - name: Clippy (logic + card-table product)
+        run: cargo clippy -p engine -p deckbound -p cardtable-model -p cardtable -p boardgame -- -D warnings
 
       - name: Test (engine, deckbound)
         run: cargo test -p engine -p deckbound
@@ -68,5 +73,5 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Build boardgame
-        run: cargo build --release -p boardgame
+      - name: Build the card-table app and the deckbound sample
+        run: cargo build --release -p boardgame -p deckbound-sample

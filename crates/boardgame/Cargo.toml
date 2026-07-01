@@ -9,11 +9,5 @@ path = "src/main.rs"
 
 [dependencies]
 bevy = { workspace = true }
-tabletop = { workspace = true }
-deckbound = { workspace = true }
-cardtable = { workspace = true, optional = true, features = ["game"] }
-
-[features]
-# Swap the default `tabletop` renderer for the experimental card-table renderer:
-#   cargo run -p boardgame --features cardtable
-cardtable = ["dep:cardtable"]
+cardtable = { workspace = true }
+cardtable-model = { workspace = true }
