@@ -23,6 +23,14 @@ pub struct Pos {
     pub y: f32,
 }
 
+impl Pos {
+    /// Squared distance to `other` — used to order [`Tableau::separate`]'s outward wavefront without a
+    /// square root (only the ordering matters).
+    fn dist_sq(self, other: Pos) -> f32 {
+        (self.x - other.x).powi(2) + (self.y - other.y).powi(2)
+    }
+}
+
 /// The model's own, minimal card face — independent of any game or of `contract::CardFace`, so the
 /// core stays dependency-free. The [`binding`](crate::binding) module maps between the two.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -646,182 +654,120 @@ impl Tableau {
     }
 
     /// Pushes overlapping **top-level** piles apart so the table reads as physical objects, keeping
-    /// every pile inside the surface. `anchor` (the just-placed pile) stays put; each overlap is
-    /// resolved by sliding a *non-anchor* pile just clear of the other along whichever of the four
-    /// sides is cheapest **and** stays in bounds — so a pile shoved toward a wall is routed around it
-    /// rather than jammed against it. Resolving one overlap can create another, which the next pass
-    /// fixes (chain reactions). Iterative and capped: if the space is genuinely too crowded to fully
-    /// separate, it settles with some residual overlap (still in bounds) instead of looping.
+    /// every pile inside the surface. Lock-as-you-go, outward from the `anchor` (the just-placed pile):
+    ///
+    /// 1. Pin the anchor at its in-bounds position and treat it as immovable.
+    /// 2. Take the remaining piles nearest-first by center distance from the anchor (ties by id) — a
+    ///    wavefront, so the drop reads as shoving neighbours outward in a cascade.
+    /// 3. Place each one at the position nearest its own current spot that is fully inside the surface
+    ///    **and** clear of every already-locked pile, then lock it and never move it again.
+    ///
+    /// Because each pile is placed clear of all locked piles and is never disturbed afterward, no two
+    /// piles overlap once the space allows it — the guarantee the old pairwise relaxation lacked. When
+    /// the table is genuinely too crowded (or a pile is larger than the surface), a pile settles at the
+    /// in-bounds spot of least overlap instead of looping. Terminates in one placement per pile.
     pub fn separate(&mut self, anchor: PileId) {
-        const MAX_PASSES: usize = 64;
         let mut ids = self.piles[&self.root].subpiles.clone();
-        ids.sort(); // stable order → deterministic settling
-        for _ in 0..MAX_PASSES {
-            let mut moved = false;
-            // Pull anything outside back in first — a wall can't be crossed.
-            for &id in &ids {
-                if self.clamp_within(id) {
-                    moved = true;
-                }
-            }
-            for i in 0..ids.len() {
-                for j in (i + 1)..ids.len() {
-                    let (a, b) = (ids[i], ids[j]);
-                    if !self.overlaps(a, b) {
-                        continue;
-                    }
-                    if let Some((pile, to)) = self.resolve_pair(a, b, anchor) {
-                        self.piles
-                            .get_mut(&pile)
-                            .expect("pile id from subpiles")
-                            .pos = to;
-                        moved = true;
-                    }
-                }
-            }
-            if !moved {
-                break;
-            }
-        }
-        // If we stopped at the pass cap mid-push, make sure nothing pokes through a wall.
-        for &id in &ids {
-            self.clamp_within(id);
+        ids.retain(|&id| id != anchor);
+        // Outward wavefront: nearest to the anchor settles first, ties broken by id for determinism.
+        let anchor_center = self.center(anchor);
+        ids.sort_by(|&p, &q| {
+            let dp = self.center(p).dist_sq(anchor_center);
+            let dq = self.center(q).dist_sq(anchor_center);
+            dp.partial_cmp(&dq)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(p.cmp(&q))
+        });
+
+        // Lock the anchor at its in-bounds position; it is a fixed obstacle for everything else.
+        self.clamp_within(anchor);
+        let mut locked: Vec<PileId> = vec![anchor];
+
+        for id in ids {
+            let pos = self.place_clear_of(id, &locked);
+            self.piles.get_mut(&id).expect("pile id from subpiles").pos = pos;
+            locked.push(id);
         }
     }
 
-    /// Whether two piles' AABBs overlap by more than a hair.
-    fn overlaps(&self, a: PileId, b: PileId) -> bool {
-        const EPS: f32 = 0.01;
-        let (ap, asz) = (self.piles[&a].pos, self.piles[&a].size);
-        let (bp, bsz) = (self.piles[&b].pos, self.piles[&b].size);
-        let ox = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
-        let oy = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
-        ox > EPS && oy > EPS
+    /// The center point of a pile's AABB — the metric [`separate`] orders its wavefront by.
+    fn center(&self, pile: PileId) -> Pos {
+        let d = &self.piles[&pile];
+        Pos {
+            x: d.pos.x + d.size.x * 0.5,
+            y: d.pos.y + d.size.y * 0.5,
+        }
     }
 
-    /// Whether `pile` fits fully inside the surface at `(x, y)` — i.e. no wall is crossed.
-    fn fits(&self, pile: PileId, x: f32, y: f32) -> bool {
+    /// The position nearest `pile`'s current spot that is fully inside the surface *and* clear of every
+    /// pile in `locked`. If nothing is fully clear (the space is too crowded, or `pile` is larger than
+    /// the surface), returns the in-bounds spot of least total overlap — best-effort degradation.
+    ///
+    /// The free region for an axis-aligned box among static boxes is rectilinear, so its nearest point
+    /// lies on a candidate coordinate line: the pile's own coordinate, each locked pile's near/far edge
+    /// in configuration space (the edge offset by this pile's size), or a wall. We test the grid of
+    /// those `x`/`y` lines — which contains both the straight slides and the go-around-a-corner spots —
+    /// and keep the clear one closest to where the pile already is.
+    fn place_clear_of(&self, pile: PileId, locked: &[PileId]) -> Pos {
+        let cur = self.piles[&pile].pos;
+        let sz = self.piles[&pile].size;
         let surface = self.surface;
-        let sz = self.piles[&pile].size;
-        x >= 0.0 && y >= 0.0 && x <= surface.x - sz.x && y <= surface.y - sz.y
-    }
+        let max_x = (surface.x - sz.x).max(0.0);
+        let max_y = (surface.y - sz.y).max(0.0);
+        let cx = cur.x.clamp(0.0, max_x);
+        let cy = cur.y.clamp(0.0, max_y);
 
-    /// Whether `pile` at `(x, y)` is inside the surface *and* clear of every other top-level pile.
-    fn clear_at(&self, pile: PileId, x: f32, y: f32) -> bool {
-        if !self.fits(pile, x, y) {
-            return false;
+        // Candidate coordinate lines, kept in bounds. Start from the pile's own clamped position so
+        // "already clear → stay put" falls out for free.
+        let mut xs = vec![cx, 0.0, max_x];
+        let mut ys = vec![cy, 0.0, max_y];
+        for &l in locked {
+            let lp = self.piles[&l].pos;
+            let lsz = self.piles[&l].size;
+            xs.push(lp.x - sz.x); // this pile just left of l
+            xs.push(lp.x + lsz.x); // just right of l
+            ys.push(lp.y - sz.y); // just above l
+            ys.push(lp.y + lsz.y); // just below l
         }
-        let sz = self.piles[&pile].size;
-        for (&other, od) in &self.piles {
-            if other == pile || od.parent != Some(self.root) {
-                continue;
-            }
-            let ox = (x + sz.x).min(od.pos.x + od.size.x) - x.max(od.pos.x);
-            let oy = (y + sz.y).min(od.pos.y + od.size.y) - y.max(od.pos.y);
-            if ox > 0.01 && oy > 0.01 {
-                return false;
-            }
-        }
-        true
-    }
+        xs.retain(|&x| x >= 0.0 && x <= max_x);
+        ys.retain(|&y| y >= 0.0 && y <= max_y);
 
-    /// Pick the single cheapest way to un-overlap one pair: slide a *non-anchor* pile just clear of the
-    /// other along one of the four sides. In-bounds destinations win over out-of-bounds ones, so a
-    /// pile shoved toward a wall is routed around it (a perpendicular side); only if no side fits
-    /// (genuinely no room) is the least-bad move taken, for the next pass / final clamp to tidy. The
-    /// anchor is never a candidate, so it stays put — but because *either* non-anchor pile of the pair
-    /// can be the one that moves, a pile wedged between the anchor and a wall escapes by sliding along
-    /// the wall instead of deadlocking.
-    fn resolve_pair(&self, a: PileId, b: PileId, anchor: PileId) -> Option<(PileId, Pos)> {
-        let (ap, asz) = (self.piles[&a].pos, self.piles[&a].size);
-        let (bp, bsz) = (self.piles[&b].pos, self.piles[&b].size);
-        let mut candidates: Vec<(PileId, Pos)> = Vec::new();
-        if a != anchor {
-            candidates.push((
-                a,
-                Pos {
-                    x: bp.x - asz.x,
-                    y: ap.y,
-                },
-            )); // a left of b
-            candidates.push((
-                a,
-                Pos {
-                    x: bp.x + bsz.x,
-                    y: ap.y,
-                },
-            )); // a right of b
-            candidates.push((
-                a,
-                Pos {
-                    x: ap.x,
-                    y: bp.y - asz.y,
-                },
-            )); // a above b
-            candidates.push((
-                a,
-                Pos {
-                    x: ap.x,
-                    y: bp.y + bsz.y,
-                },
-            )); // a below b
-        }
-        if b != anchor {
-            candidates.push((
-                b,
-                Pos {
-                    x: ap.x - bsz.x,
-                    y: bp.y,
-                },
-            )); // b left of a
-            candidates.push((
-                b,
-                Pos {
-                    x: ap.x + asz.x,
-                    y: bp.y,
-                },
-            )); // b right of a
-            candidates.push((
-                b,
-                Pos {
-                    x: bp.x,
-                    y: ap.y - bsz.y,
-                },
-            )); // b above a
-            candidates.push((
-                b,
-                Pos {
-                    x: bp.x,
-                    y: ap.y + asz.y,
-                },
-            )); // b below a
-        }
-        // Rank: a fully-clear in-bounds spot beats one that merely fits, which beats out-of-bounds;
-        // ties go to the smallest move. Preferring a *clear* landing is what stops a pile from being
-        // shoved straight back onto the anchor (or another pile) next pass — the loop that otherwise
-        // leaves the pile stuck. The anchor and walls are fixed, so the mover routes around them.
-        let mut best: Option<(u8, f32, PileId, Pos)> = None;
-        for (pile, to) in candidates {
-            let from = self.piles[&pile].pos;
-            let cost = (to.x - from.x).hypot(to.y - from.y);
-            let rank = if self.clear_at(pile, to.x, to.y) {
-                2
-            } else if self.fits(pile, to.x, to.y) {
-                1
-            } else {
-                0
-            };
-            let take = match best {
-                None => true,
-                Some((best_rank, best_cost, _, _)) => {
-                    rank > best_rank || (rank == best_rank && cost < best_cost)
+        let mut best_clear: Option<(f32, Pos)> = None; // (dist², pos)
+        let mut best_any: Option<(f32, f32, Pos)> = None; // (overlap area, dist², pos)
+        for &x in &xs {
+            for &y in &ys {
+                let overlap = self.overlap_area(x, y, sz, locked);
+                let dist_sq = (x - cur.x).powi(2) + (y - cur.y).powi(2);
+                if overlap <= 0.0 {
+                    if best_clear.is_none_or(|(d, _)| dist_sq < d) {
+                        best_clear = Some((dist_sq, Pos { x, y }));
+                    }
+                } else if best_any
+                    .is_none_or(|(o, d, _)| overlap < o || (overlap == o && dist_sq < d))
+                {
+                    best_any = Some((overlap, dist_sq, Pos { x, y }));
                 }
-            };
-            if take {
-                best = Some((rank, cost, pile, to));
             }
         }
-        best.map(|(_, _, pile, to)| (pile, to))
+        best_clear
+            .map(|(_, p)| p)
+            .or(best_any.map(|(_, _, p)| p))
+            .unwrap_or(Pos { x: cx, y: cy })
+    }
+
+    /// Total area by which `pile` (size `sz`) at `(x, y)` overlaps the piles in `locked`.
+    fn overlap_area(&self, x: f32, y: f32, sz: Pos, locked: &[PileId]) -> f32 {
+        let mut total = 0.0;
+        for &l in locked {
+            let lp = self.piles[&l].pos;
+            let lsz = self.piles[&l].size;
+            let ox = (x + sz.x).min(lp.x + lsz.x) - x.max(lp.x);
+            let oy = (y + sz.y).min(lp.y + lsz.y) - y.max(lp.y);
+            if ox > 0.01 && oy > 0.01 {
+                total += ox * oy;
+            }
+        }
+        total
     }
 
     fn apply_collapse(&mut self) {
@@ -1126,6 +1072,70 @@ mod tests {
             ox <= 0.02 || oy <= 0.02,
             "a and b must not overlap: {ap:?} {bp:?}"
         );
+    }
+
+    /// Assert no two of `ids` overlap (each 100×100). Shared by the dense-pack cases.
+    fn assert_no_overlaps(t: &Tableau, ids: &[PileId]) {
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                let p = t.pile(ids[i]).unwrap().pos();
+                let q = t.pile(ids[j]).unwrap().pos();
+                let ox = (p.x + 100.0).min(q.x + 100.0) - p.x.max(q.x);
+                let oy = (p.y + 100.0).min(q.y + 100.0) - p.y.max(q.y);
+                assert!(
+                    ox <= 0.02 || oy <= 0.02,
+                    "piles {i},{j} overlap: {p:?} {q:?}"
+                );
+            }
+        }
+    }
+
+    /// Regression for the old pairwise relaxation: a dense stack that its 4-candidate, either-pile
+    /// moves could leave overlapping within the pass cap. Lock-as-you-go must fully separate all six.
+    #[test]
+    fn separate_fully_clears_a_dense_stack() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let ids: Vec<_> = (0..6)
+            .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
+            .collect();
+        for (i, &d) in ids.iter().enumerate() {
+            t.set_pile_size(d, 100.0, 100.0).unwrap();
+            // Tightly clustered so every pile overlaps several others.
+            t.set_pile_pos(d, i as f32 * 12.0, i as f32 * 9.0).unwrap();
+        }
+        t.set_surface(1000.0, 1000.0);
+        t.separate(ids[0]);
+
+        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        assert_no_overlaps(&t, &ids);
+    }
+
+    /// Regression for the old terminal wall-clamp, which could shove a pile onto another with no pass
+    /// left to fix it. Here the surface is exactly two piles wide/tall, so the clamp path is exercised;
+    /// lock-as-you-go folds the walls into placement, so nothing overlaps after clamping.
+    #[test]
+    fn separate_no_overlap_after_wall_clamp() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let ids: Vec<_> = (0..4)
+            .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
+            .collect();
+        for &d in &ids {
+            t.set_pile_size(d, 100.0, 100.0).unwrap();
+            t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the surface's center
+        }
+        t.set_surface(200.0, 200.0); // a 2×2 grid of 100×100 cells is the only clear packing
+        t.separate(ids[0]);
+
+        for &d in &ids {
+            let p = t.pile(d).unwrap().pos();
+            assert!(
+                p.x >= -0.02 && p.x <= 100.02 && p.y >= -0.02 && p.y <= 100.02,
+                "pile out of bounds: {p:?}"
+            );
+        }
+        assert_no_overlaps(&t, &ids);
     }
 
     #[test]
