@@ -1,33 +1,28 @@
-// Generic class set for the engagement sim — a "class" is nothing but an attack (range x shape) plus a
-// five-stat allocation. The role EMERGES from range + stats (intention_for): ranged -> Rearguard; melee
-// with Might >= Toughness -> Outrider (a glassy striker); melee with Toughness > Might -> Vanguard (a wall).
-// No Suit / Power identity exists here.
+// Suitless STARTER ROSTER — the balance-discovered classes (see examples/discover.rs), one per capability
+// cell (melee/ranged × single/aoe). Chosen to form a non-transitive RPS cycle with **balanced stat
+// investment** (for each stat, Σ(value−1) across the four sits in a narrow range — spread 1 — so no stat is
+// dead across the roster). Priced at an 8-point stat budget with the **area capability costing 2 points**
+// (an AoE class gets 6). The role EMERGES from range + stats (intention_for); the strike card carries range
+// and area (§4.3 capabilities-as-cards). A "class" is nothing but that strike card + a five-stat line.
 //
-// stats: (Might, Vitality, Toughness, Cadence, Finesse). The weapon is power-0, so a strike's raw force is
-// Might. AoE trades Might for hitting a whole group at once (unevadable, bypasses the bodyguard) — so an
-// area class is priced down on Might versus its single-target counterpart to pay for the area.
-//
-// This is a STARTER set to iterate on. Edit the numbers and re-run:
-//   cargo run -p deckbound --example classes
-// (the binary reads this file at runtime — no rebuild).
+// stats: (Might, Vitality, Toughness, Cadence, Finesse). Edit and re-run — no rebuild:
+//   cargo run -p deckbound --example classes             # this roster
+//   cargo run -p deckbound --example classes -- x.ron    # any class file
+// The generative search that produced it: cargo run -p deckbound --example discover
 [
-    // Wall — durable melee front. Toughness 3 > Might 1, so it emerges Vanguard and holds the line.
-    // This is the validated re-tuned tank: V2 T2 C2 F2 lets it run down the slippery Outrider under cycling.
-    (name: "Wall",       ranged: false, aoe: false, stats: (1, 2, 3, 2, 2)),
+    // Skirmisher — melee single-target flanker. Might 2 ≥ Toughness 1 ⇒ Outrider: it breaks the line and
+    // raids the enemy Rearguard. Fastish (C2) but fragile (T1) — the aggressive, high-risk pick.
+    (name: "Skirmisher", ranged: false, aoe: false, stats: (2, 2, 1, 2, 1)),
 
-    // Skirmisher — fast melee flanker. Might 2 >= Toughness 1, so it emerges Outrider and breaks the line.
-    (name: "Skirmisher", ranged: false, aoe: false, stats: (2, 1, 1, 2, 2)),
+    // Sentinel — ranged single-target. Ranged ⇒ Rearguard: deals from the safe back. Statted to endure
+    // (V2 T2) and evade (F2) rather than hit hard — a resilient picket that out-lasts a ranged duel.
+    (name: "Sentinel", ranged: true, aoe: false, stats: (1, 2, 2, 1, 2)),
 
-    // Marksman — ranged single-target. Might 3 cracks a tank's Toughness; emerges Rearguard, deals from behind.
-    (name: "Marksman",   ranged: true,  aoe: false, stats: (3, 1, 2, 1, 1)),
+    // Tempest — ranged AREA. Ranged ⇒ Rearguard: fires from the back, its area hitting the whole enemy
+    // group at once (unevadable, past the bodyguard). Glass (V1 T1) — priced 2 lighter for the area.
+    (name: "Tempest", ranged: true, aoe: true, stats: (1, 1, 1, 1, 2)),
 
-    // Artillery — ranged AREA. Might priced DOWN vs the Marksman (M2 < M3) to pay for hitting a whole group
-    // at once. Emerges Rearguard. Slower to kill a lone target, but shreds a stacked group through its front.
-    (name: "Artillery",  ranged: true,  aoe: true,  stats: (2, 1, 2, 1, 1)),
-
-    // Cleaver — melee AREA (fills the melee+aoe cell of the matrix). A front-line cleave: Toughness 3 > Might 2,
-    // so it emerges Vanguard and holds the line while its area hits the WHOLE enemy rank it faces (every
-    // crossing Outrider in the Intercept, every clashing Vanguard in the Clash) — the melee answer to a
-    // clustered front. Might priced down (M2) vs a single-target striker to pay for the area, like Artillery.
-    (name: "Cleaver",    ranged: false, aoe: true,  stats: (2, 2, 3, 1, 1)),
+    // Cleaver — melee AREA. Toughness 2 > Might 1 ⇒ Vanguard: holds the front and cleaves the whole rank
+    // it faces. The melee answer to a clustered enemy line; priced 2 lighter for the area.
+    (name: "Cleaver", ranged: false, aoe: true, stats: (1, 1, 2, 1, 1)),
 ]
