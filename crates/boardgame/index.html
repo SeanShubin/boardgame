@@ -4,6 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Boardgame</title>
+
+    <!--
+      Build provenance. CI replaces these placeholders in the built
+      dist/index.html (see the "build provenance" step in pipeline.yml); a local
+      `trunk build` leaves them, which the diagnostics script below reads as
+      "(local dev)". A matching /boardgame/build-info.json is emitted alongside.
+    -->
+    <meta name="build-commit" content="__BUILD_COMMIT__" />
+    <meta name="build-time" content="__BUILD_TIME__" />
+
     <style>
       html,
       body {
@@ -20,7 +30,76 @@
         height: 100%;
         outline: none;
       }
+      /* Diagnostics overlay: hidden until a startup error surfaces, then it
+         paints the message over the (otherwise black) canvas. */
+      #diag-overlay {
+        position: fixed;
+        inset: 0;
+        margin: 0;
+        padding: 1rem;
+        z-index: 9999;
+        background: #111;
+        color: #f66;
+        font: 12px/1.5 ui-monospace, monospace;
+        white-space: pre-wrap;
+        overflow: auto;
+      }
     </style>
+
+    <!--
+      Tier-0 diagnostics. Registered before the wasm module so a failed boot is
+      not a silent black screen: any error / unhandled rejection (Rust panics
+      cross the JS boundary as these) is painted onto the page, tagged with the
+      build commit and the browser's GPU-backend availability. Also logs the
+      same facts to the console and exposes window.__BUILD__ / window.__GPU__.
+    -->
+    <script>
+      (function () {
+        function meta(name) {
+          var el = document.querySelector('meta[name="' + name + '"]');
+          return el ? el.content : "(unknown)";
+        }
+        var rawCommit = meta("build-commit");
+        var build = {
+          commit: rawCommit.indexOf("__BUILD") === 0 ? "(local dev)" : rawCommit,
+          time: meta("build-time").indexOf("__BUILD") === 0 ? "(local dev)" : meta("build-time"),
+        };
+        window.__BUILD__ = build;
+        console.info("boardgame build:", build.commit, "·", build.time);
+
+        // Which GPU backend does this browser actually expose? Distinguishes
+        // "no WebGL2/WebGPU here" (environment) from "backend present but Bevy
+        // still failed" (build) — the exact ambiguity behind the GPU panic.
+        var gpu = {
+          webgl2: !!document.createElement("canvas").getContext("webgl2"),
+          webgpu: !!navigator.gpu,
+        };
+        window.__GPU__ = gpu;
+        console.info("gpu backends:", gpu);
+
+        function show(title, detail) {
+          var pre = document.getElementById("diag-overlay");
+          if (!pre) {
+            pre = document.createElement("pre");
+            pre.id = "diag-overlay";
+            (document.body || document.documentElement).appendChild(pre);
+          }
+          pre.textContent =
+            "boardgame " + build.commit + " · built " + build.time + "\n" +
+            "gpu: webgl2=" + gpu.webgl2 + " webgpu=" + gpu.webgpu + "\n\n" +
+            title + "\n" + (detail || "");
+        }
+
+        window.addEventListener("error", function (e) {
+          show("Error:", (e.message || "") + "\n" + ((e.error && e.error.stack) || ""));
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e.reason;
+          show("Unhandled promise rejection:", (r && (r.stack || r.message)) || String(r));
+        });
+      })();
+    </script>
+
     <!--
       Trunk entry point. It lives next to this crate's Cargo.toml so Trunk
       resolves `boardgame` as the target package (the workspace root is a

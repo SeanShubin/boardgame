@@ -85,6 +85,28 @@ jobs:
         working-directory: crates/boardgame
         run: trunk build --release --public-url /boardgame/
 
+      # Build provenance (Tier-0 diagnostics): emit a wasm-independent
+      # build-info.json and fill the placeholder <meta> tags Trunk copied into
+      # dist/index.html, so the served page always reveals which commit is live
+      # even when the wasm fails to boot.
+      - name: Write build provenance
+        working-directory: crates/boardgame
+        run: |
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          SHORT="${GITHUB_SHA:0:7}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          cat > dist/build-info.json <<JSON
+          {
+            "commit": "${GITHUB_SHA}",
+            "shortCommit": "${SHORT}",
+            "ref": "${GITHUB_REF_NAME}",
+            "builtAt": "${NOW}",
+            "runUrl": "${RUN_URL}"
+          }
+          JSON
+          sed -i "s|__BUILD_COMMIT__|${SHORT}|g; s|__BUILD_TIME__|${NOW}|g" dist/index.html
+          echo "Wrote provenance for ${SHORT} @ ${NOW}"
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
