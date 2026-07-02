@@ -24,7 +24,7 @@
 use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer, Press, Release};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::{BoxShadow, ComputedNode};
+use bevy::ui::{BoxShadow, ComputedNode, UiGlobalTransform};
 
 use std::collections::HashMap;
 
@@ -88,6 +88,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
             .insert_resource(NeedsRebuild(true))
+            .insert_resource(make_debug_log())
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
@@ -169,6 +170,49 @@ struct PoppedTarget {
 /// card freely; on release it reorders into the nearest grid cell and the rest reflow.
 #[derive(Component, Clone, Copy)]
 struct TableCard(CardId);
+
+/// Marks one row of a [`Rows`](Arrangement::Rows) view for drop resolution: on release, the card lands
+/// in the row the cursor is over. `active` marks the row that accepts drops (the Active row); a drop over
+/// a non-active row either does nothing or, for a card dragged *out* of Active, puts its pairing back.
+#[derive(Component, Clone, Copy)]
+struct RowRegion {
+    active: bool,
+}
+
+/// A **debug event log** written to `cardtable-debug.log` next to the launch dir (truncated each launch,
+/// with a launch stamp), recording drags, drops (cursor position + each row's hover state) and the
+/// resulting Active-row state — so drop behaviour can be traced exactly. No file on the web.
+#[derive(Resource)]
+struct DebugLog(std::sync::Mutex<Option<std::fs::File>>);
+
+impl DebugLog {
+    fn line(&self, msg: impl AsRef<str>) {
+        if let Ok(mut guard) = self.0.lock()
+            && let Some(file) = guard.as_mut()
+        {
+            use std::io::Write;
+            let _ = writeln!(file, "{}", msg.as_ref());
+            let _ = file.flush();
+        }
+    }
+}
+
+/// Create the debug log, truncating `cardtable-debug.log` and stamping the launch so the file always
+/// reflects the current run.
+fn make_debug_log() -> DebugLog {
+    let file = if cfg!(target_arch = "wasm32") {
+        None
+    } else {
+        std::fs::File::create("cardtable-debug.log").ok()
+    };
+    let log = DebugLog(std::sync::Mutex::new(file));
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    log.line(format!("=== cardtable debug log — launch {stamp} ==="));
+    log
+}
 
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
@@ -504,8 +548,28 @@ fn on_card_drag(
     mut cards: Query<(&TableCard, &mut Node)>,
     mut dragging: ResMut<DraggingCard>,
     mut table: ResMut<Table>,
+    log: Res<DebugLog>,
 ) {
     if let Ok((card, mut node)) = cards.get_mut(on.event().entity) {
+        // First frame of a new drag: log what was picked up and from where.
+        if dragging.0 != Some(card.0) {
+            let (name, kind) = table
+                .0
+                .card(card.0)
+                .map(|c| {
+                    let k = if !c.recipe().is_empty() {
+                        "kit"
+                    } else {
+                        "card"
+                    };
+                    (c.name().to_string(), k)
+                })
+                .unwrap_or_default();
+            log.line(format!(
+                "DRAG_START card={name:?}({kind}) at cursor={:?}",
+                on.event().pointer_location.position
+            ));
+        }
         let delta = on.event().event.delta;
         let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
         node.left = Val::Px(x);
@@ -517,23 +581,218 @@ fn on_card_drag(
     }
 }
 
+/// Move a dragged card into the Active row's pile `inn`. A **hero** (no recipe) moves in, leaving the
+/// Identity deck / Hero row; a **kit** (has a recipe) is *copied* in, since kits are reusable, so the
+/// original stays in the Kit deck.
+fn drop_card_into_active(table: &mut Tableau, card: CardId, inn: PileId) {
+    let is_kit = table.card(card).is_some_and(|c| !c.recipe().is_empty());
+    // The Active row's cards (row Headers aside) group into hero-kit pairs by position. An even count
+    // means every pair is complete, so a new card of either kind starts a fresh pair; an odd count means
+    // the last card is a lone half-pair, so only the *opposite* kind may be dropped to complete it.
+    let active: Vec<CardId> = table
+        .pile(inn)
+        .map(|p| {
+            p.cards()
+                .iter()
+                .copied()
+                .filter(|&c| table.card(c).is_some_and(|k| k.kind() != CardKind::Header))
+                .collect()
+        })
+        .unwrap_or_default();
+    if active.len() % 2 == 1 {
+        let last_is_kit = active
+            .last()
+            .and_then(|&c| table.card(c))
+            .map(|c| !c.recipe().is_empty())
+            .unwrap_or(false);
+        if last_is_kit == is_kit {
+            return; // a lone half-pair can only be completed by the opposite kind
+        }
+    }
+    if is_kit {
+        let name = table
+            .card(card)
+            .map(|c| c.name().to_string())
+            .unwrap_or_default();
+        let card_type = table
+            .card(card)
+            .map(|c| c.card_type().to_string())
+            .unwrap_or_default();
+        let recipe = table
+            .card(card)
+            .map(|c| c.recipe().to_vec())
+            .unwrap_or_default();
+        if let Ok(copy) = table.add_card(inn, Face::Up { title: name }, None) {
+            let _ = table.set_card_type(copy, card_type);
+            let _ = table.set_card_recipe(copy, recipe);
+        }
+    } else {
+        let at = table.pile(inn).map_or(0, |p| p.cards().len());
+        let _ = table.move_card(card, inn, at);
+    }
+}
+
+/// Put a pairing back: the dragged Active card **and its position-pair partner** both leave the Active
+/// row — a **hero** returns to the Identity deck (the inn's first projection source), a **kit** copy is
+/// discarded. So dragging either half of a pair out of Active un-recruits the whole character.
+fn put_pair_back(table: &mut Tableau, inn: PileId, card: CardId) {
+    let active: Vec<CardId> = table
+        .pile(inn)
+        .map(|p| {
+            p.cards()
+                .iter()
+                .copied()
+                .filter(|&c| table.card(c).is_some_and(|k| k.kind() != CardKind::Header))
+                .collect()
+        })
+        .unwrap_or_default();
+    let Some(i) = active.iter().position(|&c| c == card) else {
+        return;
+    };
+    let identity = table
+        .pile(inn)
+        .and_then(|p| p.projection().first().copied());
+    let mut leaving = vec![card];
+    if let Some(&partner) = active.get(i ^ 1) {
+        leaving.push(partner);
+    }
+    for c in leaving {
+        let is_kit = table.card(c).is_some_and(|k| !k.recipe().is_empty());
+        if is_kit {
+            let _ = table.remove_card(c); // a kit copy — discard it
+        } else if let Some(identity) = identity {
+            // A hero — move it back into the Identity deck, beneath its trailing Zone label.
+            let cards = table
+                .pile(identity)
+                .map(|p| p.cards().to_vec())
+                .unwrap_or_default();
+            let under_zone = cards
+                .last()
+                .and_then(|&z| table.card(z))
+                .map(|z| z.kind() == CardKind::Zone)
+                .unwrap_or(false);
+            let at = if under_zone {
+                cards.len().saturating_sub(1)
+            } else {
+                cards.len()
+            };
+            let _ = table.move_card(c, identity, at);
+        }
+    }
+}
+
 /// On release: a **Free** deck commits the dropped position and shoves overlapping cards clear
 /// ([`separate_cards`]); any other layout snaps the card into the nearest grid cell by reordering. In
 /// both cases the others then *slide* into place ([`animate_cards`]) — no rebuild, which would kill the slide.
+#[allow(clippy::too_many_arguments)]
 fn on_card_drag_end(
     mut on: On<Pointer<DragEnd>>,
     cards: Query<(&TableCard, &Node)>,
+    transforms: Query<&UiGlobalTransform>,
+    rows_q: Query<(&RowRegion, &UiGlobalTransform, &ComputedNode)>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<DraggingCard>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
+    log: Res<DebugLog>,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again (as on_pile_drag_end does)
     if let Ok((card, node)) = cards.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
-        // In a projection view (the inn) a card drag is only ever an equip attempt (handled by
-        // [`on_drop`]), never a reorder of the projected source deck. Rebuild to snap the tile back.
+        let dropped_name = table
+            .0
+            .card(card.0)
+            .map(|c| c.name().to_string())
+            .unwrap_or_default();
+        log.line(format!(
+            "DROP_END card={dropped_name:?} at cursor={:?}",
+            on.event().pointer_location.position
+        ));
+        // A **Rows** view (the inn): dropping a card over the Active row moves it in. Detect the drop by
+        // geometry — the dragged tile's centre inside a `DropRow`'s rectangle — since the tile follows
+        // the cursor and would otherwise occlude a picking hit-test. Both rects share the same transform
+        // space, so the comparison is robust to origin conventions.
+        if matches!(
+            table
+                .0
+                .pile(table.0.focus_id())
+                .map(|p| p.layout().arrangement),
+            Some(Arrangement::Rows)
+        ) {
+            // The row the cursor is over on release is the drop target. Dropping a Hero/Kit card onto the
+            // Active row brings it down (`drop_card_into_active`); dragging an Active card out onto another
+            // row puts that pairing back (`put_pair_back`). Anything else stays put (rebuild re-lays it).
+            let inn = table.0.focus_id();
+            let from_active = table.0.card(card.0).map(|c| c.home()) == Some(inn);
+            // The drop row is chosen by the dragged **card tile's** vertical centre, not the cursor: the
+            // cursor sits where you grabbed the card (often its top edge), reading one row too high, while
+            // the card's body is what you see landing. Card- and row-transforms share one coordinate space,
+            // so this also dodges the cursor/UI mismatch. `dist` is 0 when the card centre is inside a row's
+            // vertical span, else how far outside; the nearest row wins, so a release in a gap still lands.
+            let card_y = transforms
+                .get(on.event().entity)
+                .ok()
+                .map(|t| t.translation.y);
+            let mut over = None;
+            let mut best = f32::INFINITY;
+            for (i, (region, gt, computed)) in rows_q.iter().enumerate() {
+                let center = gt.translation.y;
+                let half = computed.size().y * 0.5;
+                let (top, bottom) = (center - half, center + half);
+                let vdist = match card_y {
+                    Some(y) if y < top => top - y,
+                    Some(y) if y > bottom => y - bottom,
+                    Some(_) => 0.0,
+                    None => f32::INFINITY,
+                };
+                log.line(format!(
+                    "  row[{i}] active={} span=[{top:.0},{bottom:.0}] card_y={card_y:?} vdist={vdist:.1}",
+                    region.active
+                ));
+                if vdist < best {
+                    best = vdist;
+                    over = Some(*region);
+                }
+            }
+            let action = match over {
+                Some(region) if region.active && !from_active => {
+                    drop_card_into_active(&mut table.0, card.0, inn);
+                    "add_to_active"
+                }
+                Some(region) if !region.active && from_active => {
+                    put_pair_back(&mut table.0, inn, card.0);
+                    "put_pair_back"
+                }
+                Some(region) => {
+                    if region.active {
+                        "no-op (already in active)"
+                    } else {
+                        "no-op (dropped on a source row)"
+                    }
+                }
+                None => "no-op (cursor over no row)",
+            };
+            let active_now: Vec<String> = table
+                .0
+                .pile(inn)
+                .map(|p| {
+                    p.cards()
+                        .iter()
+                        .filter_map(|&c| table.0.card(c))
+                        .filter(|c| c.kind() != CardKind::Header)
+                        .map(|c| c.name().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            log.line(format!(
+                "  from_active={from_active} action={action} active_now={active_now:?}"
+            ));
+            rebuild.0 = true;
+            return;
+        }
+        // In a projection view (the inn's old equip view) a card drag is only ever an equip attempt
+        // (handled by [`on_drop`]), never a reorder of the projected source deck. Rebuild to snap back.
         if table
             .0
             .pile(table.0.focus_id())
@@ -920,7 +1179,7 @@ fn type_accent(card_type: &str) -> Color {
         "location" => Color::srgb(0.36, 0.52, 0.34), // mossy green
         "adventurer" => Color::srgb(0.28, 0.46, 0.68), // heroic blue
         "hero" => Color::srgb(0.70, 0.32, 0.32),     // crimson
-        "starter kit" => Color::srgb(0.28, 0.52, 0.52), // teal
+        "kit" => Color::srgb(0.28, 0.52, 0.52),      // teal
         "ability" => Color::srgb(0.68, 0.36, 0.52),  // magenta
         "item" => Color::srgb(0.74, 0.58, 0.26),     // gold
         "log" => Color::srgb(0.44, 0.44, 0.52),      // slate
@@ -1155,6 +1414,52 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                             ))
                             .with_children(|wrapper| spawn_pile(wrapper, tree, id));
                     }
+                } else if matches!(pile.layout().arrangement, Arrangement::Rows) {
+                    // A Rows view (the inn's assignment view): a column of horizontal rows, each led by
+                    // its Header card, then its cards. The Hero and Kit rows come from the projection,
+                    // the Active row from the pile's own cards (see `Tableau::row_groups`).
+                    surface
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            width: Val::Percent(100.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            row_gap: Val::Px(14.0),
+                            ..default()
+                        })
+                        .with_children(|col| {
+                            let projected = pile.projection().len();
+                            for (i, (header, cards)) in
+                                tree.row_groups(zone).into_iter().enumerate()
+                            {
+                                // Rows span the full width; the Active row (past the projected rows) is
+                                // the one that accepts drops.
+                                let mut row = col.spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Row,
+                                        align_items: AlignItems::Center,
+                                        column_gap: Val::Px(8.0),
+                                        overflow: Overflow::scroll_x(),
+                                        ..default()
+                                    },
+                                    RowRegion {
+                                        active: i >= projected,
+                                    },
+                                ));
+                                row.with_children(|row| {
+                                    // The header names the row and isn't draggable.
+                                    spawn_card(row, tree.card(header).expect("row header"));
+                                    // Content cards are draggable — drop one on the Active row to move it.
+                                    for cid in cards {
+                                        row.spawn((TableCard(cid), Node::default())).with_children(
+                                            |tile| {
+                                                spawn_card(tile, tree.card(cid).expect("row card"));
+                                            },
+                                        );
+                                    }
+                                });
+                            }
+                        });
                 } else if !pile.projection().is_empty() {
                     // A projection view (the inn): each source deck's cards under a header, plus this
                     // pile's own cards ("Here" — characters standing at the location). Every card is
@@ -1434,11 +1739,23 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     // Count the *contents*: a zone card on top is the label, not one of the cards it fronts.
     let count = tree.content_cards(id).len() + pile.subpiles().len();
     let top = pile.cards().last().and_then(|&cid| tree.card(cid));
-    let (name, card_type) = match top {
-        Some(card) if matches!(card.face, Face::Up { .. }) => {
-            (card.name().to_string(), card.card_type().to_string())
+    let (name, card_type) = if matches!(pile.layout().arrangement, Arrangement::Rows)
+        || !pile.projection().is_empty()
+    {
+        // An organizational view (the inn): named by its own label and typed as a "Label" — content
+        // dropped into it (a recruited hero landing on top) must never hijack the chip's name.
+        (pile_display_name(tree, id), "Label".to_string())
+    } else {
+        match top {
+            // A face-up top card names the deck — unless it's a row Header (a Rows pile whose top card is
+            // just its last row label); then use the pile's own name.
+            Some(card)
+                if matches!(card.face, Face::Up { .. }) && card.kind() != CardKind::Header =>
+            {
+                (card.name().to_string(), card.card_type().to_string())
+            }
+            _ => (pile_display_name(tree, id), String::new()),
         }
-        _ => (pile_display_name(tree, id), String::new()),
     };
     spawn_pile_chip(parent, id, &name, &card_type, count);
 }

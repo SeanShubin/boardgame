@@ -66,6 +66,9 @@ pub enum CardKind {
     Zone,
     /// A user-interface card that performs an action when clicked.
     Utility(Utility),
+    /// A **row header** in an [`Arrangement::Rows`] pile: the first card of a row, naming it. Not a
+    /// content card — it isn't dragged or counted.
+    Header,
 }
 
 /// The action a [`CardKind::Utility`] card performs — e.g. a card in an [`Arrangement::Actions`] deck.
@@ -309,6 +312,10 @@ pub enum Arrangement {
     /// as a menu, and dragging the deck onto one performs that card's [`Utility`] action. The behavior
     /// the System deck uses (Exit / Reset).
     Actions,
+    /// **Rows**: a stack of horizontal rows. Each row is led by a [`Header`](CardKind::Header) card that
+    /// names it; the rest of the row's cards follow, overlapping when the row is too narrow (the renderer
+    /// floats the card nearest the cursor fully into view on hover). See [`Tableau::row_groups`].
+    Rows,
 }
 
 /// How a pile presents its contents: an [`Arrangement`] (1-D list or 2-D grid) plus whether the
@@ -646,6 +653,22 @@ impl Tableau {
         Ok(())
     }
 
+    /// Removes `card` from its home pile and from the tableau entirely — it is discarded, not moved
+    /// (e.g. a reusable kit's copy when its pairing is taken apart).
+    pub fn remove_card(&mut self, card: CardId) -> Result<(), TableauError> {
+        let home = self
+            .cards
+            .get(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .home;
+        if let Some(p) = self.piles.get_mut(&home) {
+            p.cards.retain(|&c| c != card);
+        }
+        self.cards.remove(&card);
+        self.selection.retain(|&c| c != card);
+        Ok(())
+    }
+
     /// Moves a whole pile under `new_parent` at index `at` — re-parenting it, or reordering it when
     /// the parent is unchanged. Rejects moving the root, or moving a pile into itself or one of its own
     /// descendants (each would break the tree): [`TableauError::InvalidMove`], leaving the tree unchanged.
@@ -749,6 +772,53 @@ impl Tableau {
             .iter()
             .filter(|&&src| self.piles.contains_key(&src))
             .map(|&src| (src, self.content_cards(src).to_vec()))
+            .collect()
+    }
+
+    /// The rows of an [`Arrangement::Rows`] pile: each `(header, cards)` where `header` is a
+    /// [`Header`](CardKind::Header) card and `cards` are the cards on that row. The pile's header cards
+    /// (in order) name the rows; each of the first *projected* rows shows a
+    /// [`projection`](Pile::projection) source's cards, and the last header's row shows the pile's own
+    /// non-header content. (For the inn: **Hero** → the Identity deck, **Kit** → the Kit deck, **Active**
+    /// → the recruited pairs the inn owns.)
+    pub fn row_groups(&self, pile: PileId) -> Vec<(CardId, Vec<CardId>)> {
+        let Some(p) = self.piles.get(&pile) else {
+            return Vec::new();
+        };
+        let headers: Vec<CardId> = p
+            .cards
+            .iter()
+            .copied()
+            .filter(|c| {
+                self.cards
+                    .get(c)
+                    .is_some_and(|k| k.kind == CardKind::Header)
+            })
+            .collect();
+        let own: Vec<CardId> = p
+            .cards
+            .iter()
+            .copied()
+            .filter(|c| {
+                self.cards
+                    .get(c)
+                    .is_some_and(|k| k.kind != CardKind::Header)
+            })
+            .collect();
+        let projected = self.projection_groups(pile);
+        headers
+            .iter()
+            .enumerate()
+            .map(|(i, &header)| {
+                let cards = if i < projected.len() {
+                    projected[i].1.clone()
+                } else if i + 1 == headers.len() {
+                    own.clone()
+                } else {
+                    Vec::new()
+                };
+                (header, cards)
+            })
             .collect()
     }
 

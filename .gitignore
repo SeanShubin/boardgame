@@ -5,5 +5,7 @@ dist/
 .claude/settings.local.json
 .claude/worktrees/
 **/*.rs.bk
+# Debug event log written by the card-table renderer (overwritten each launch).
+cardtable-debug.log
 # Throwaway font-evaluation assets for the `fontshow` example — re-fetchable, not shipped.
 crates/cardtable/examples/fonts/*.ttf

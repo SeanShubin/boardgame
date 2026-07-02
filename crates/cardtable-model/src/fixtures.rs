@@ -20,11 +20,11 @@ fn typed(tree: &mut Tableau, pile: PileId, title: &str, card_type: &str) -> Card
     id
 }
 
-/// Add a **Starter Kit** card: a Small card (name + type) that grows to show its five-stat line and
+/// Add a **Kit** card: a Small card (name + type) that grows to show its five-stat line and
 /// ability. `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` — the suitless-roster order
 /// from `data/balance/generic-classes.ron`; `ability` is the derived strike card (Jab / Shot / …).
 fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
-    let id = typed(tree, pile, name, "Starter Kit");
+    let id = typed(tree, pile, name, "Kit");
     let [might, vitality, toughness, cadence, finesse] = stats;
     tree.set_card_detail(
         id,
@@ -87,7 +87,7 @@ const HEROES: [&str; 9] = [
 ];
 
 /// The abilities currently in play — the derived strike cards (one per range × area cell; see
-/// `deckbound::engagement`) that the Starting Kit starters carry — each with a one-line description.
+/// `deckbound::engagement`) that the Kit starters carry — each with a one-line description.
 const ABILITIES: [(&str, &str); 4] = [
     ("Jab", "Melee · single target"),
     ("Shot", "Ranged · single target"),
@@ -96,8 +96,8 @@ const ABILITIES: [(&str, &str); 4] = [
 ];
 
 /// A small, representative table for the card-table game: an **Identity** deck of unrecruited heroes, a
-/// **Starting Kit** deck, an **Abilities** deck, and a **Locations** grid whose centre, **Ashfen
-/// Crossing**, is the *inn* — a projection of the Identity and Starting Kit decks where you drag a hero
+/// **Kit** deck, an **Abilities** deck, and a **Locations** grid whose centre, **Ashfen
+/// Crossing**, is the *inn* — a projection of the Identity and Kit decks where you drag a hero
 /// onto a kit (or vice versa) to recruit them into a character deck. Every card is a physical,
 /// single-homed card; a projection only *shows* other decks' cards, it doesn't move them.
 pub fn sample_table() -> Tableau {
@@ -110,7 +110,7 @@ pub fn sample_table() -> Tableau {
     for hero in HEROES {
         typed(&mut tree, identity, hero, "hero");
     }
-    let identity_zone = typed(&mut tree, identity, "Identity", "Zone");
+    let identity_zone = typed(&mut tree, identity, "Identity", "Label");
     tree.set_card_kind(identity_zone, CardKind::Zone)
         .expect("identity zone card");
     tree.set_layout(
@@ -122,10 +122,10 @@ pub fn sample_table() -> Tableau {
     )
     .expect("identity exists");
 
-    // A "Starting Kit" deck: one card per generic starter (the suitless roster from
+    // A "Kit" deck: one card per generic starter (the suitless roster from
     // `data/balance/generic-classes.ron`). Each is a Small card that grows to its five-stat line and
     // ability, and carries a **recipe** — the cards a character gains when equipped with it.
-    let starting_kit = tree.add_pile(root, "Starting Kit").expect("root exists");
+    let starting_kit = tree.add_pile(root, "Kit").expect("root exists");
     starter(
         &mut tree,
         starting_kit,
@@ -136,7 +136,7 @@ pub fn sample_table() -> Tableau {
     starter(&mut tree, starting_kit, "Sentinel", [1, 2, 2, 1, 2], "Shot");
     starter(&mut tree, starting_kit, "Tempest", [1, 1, 1, 1, 2], "Salvo");
     starter(&mut tree, starting_kit, "Cleaver", [1, 1, 2, 1, 1], "Sweep");
-    let kit_zone = typed(&mut tree, starting_kit, "Starting Kit", "Zone");
+    let kit_zone = typed(&mut tree, starting_kit, "Kit", "Label");
     tree.set_card_kind(kit_zone, CardKind::Zone)
         .expect("kit zone card");
     tree.set_layout(
@@ -156,7 +156,7 @@ pub fn sample_table() -> Tableau {
         tree.set_card_detail(id, vec![description.to_string()])
             .expect("ability card just added");
     }
-    let abilities_zone = typed(&mut tree, abilities, "Abilities", "Zone");
+    let abilities_zone = typed(&mut tree, abilities, "Abilities", "Label");
     tree.set_card_kind(abilities_zone, CardKind::Zone)
         .expect("abilities zone card");
     tree.set_layout(
@@ -170,7 +170,7 @@ pub fn sample_table() -> Tableau {
 
     // The "Locations" deck: a fixed 3×3 grid (2-D, non-editable) of place-piles from the Name Bank,
     // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the *inn*: a
-    // projection of the Identity and Starting Kit decks — drill in to see the heroes and the kits
+    // projection of the Identity and Kit decks — drill in to see the heroes and the kits
     // together and drag one onto the other to recruit (see `on_drop` / `Tableau::combine`).
     let locations = tree.add_pile(root, "Locations").expect("root exists");
     for place in LOCATIONS {
@@ -179,11 +179,38 @@ pub fn sample_table() -> Tableau {
         tree.set_card_kind(name, CardKind::Zone)
             .expect("place name card");
         if place == "Ashfen Crossing" {
-            tree.set_projection(place_pile, vec![identity, starting_kit])
-                .expect("ashfen exists");
+            // Ashfen holds one card, the **Inn** — drill into it to reach the assignment view: a
+            // `Rows` pile whose Hero / Kit rows project the Identity and Kit decks, and whose Active
+            // row (its own cards) holds the recruited hero-kit pairs (empty at first).
+            let inn = tree.add_pile(place_pile, "Inn").expect("ashfen exists");
+            for header in ["Hero", "Kit", "Active"] {
+                let h = tree
+                    .add_card(
+                        inn,
+                        Face::Up {
+                            title: header.into(),
+                        },
+                        None,
+                    )
+                    .expect("inn exists");
+                tree.set_card_kind(h, CardKind::Header)
+                    .expect("header card");
+                // Row headers are organizational, not playable — they print the "Label" type.
+                tree.set_card_type(h, "Label").expect("header card");
+            }
+            tree.set_projection(inn, vec![identity, starting_kit])
+                .expect("inn exists");
+            tree.set_layout(
+                inn,
+                Layout {
+                    arrangement: Arrangement::Rows,
+                    editable: false,
+                },
+            )
+            .expect("inn exists");
         }
     }
-    let loc_zone = typed(&mut tree, locations, "Location", "Zone");
+    let loc_zone = typed(&mut tree, locations, "Location", "Label");
     tree.set_card_kind(loc_zone, CardKind::Zone)
         .expect("zone card exists");
     tree.set_layout(
@@ -216,11 +243,11 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        assert_eq!(root.subpiles().len(), 4); // Identity, Starting Kit, Abilities, Locations
-        // Identity: 9 heroes + a Zone card. Starting Kit: 4 starters + a Zone card. Abilities: 4 + a
-        // Zone card. Locations: a "Location" Zone card + 9 place name cards (Ashfen holds none — it
-        // projects the Identity + Starting Kit decks).
-        assert_eq!(t.card_count(), (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9));
+        assert_eq!(root.subpiles().len(), 4); // Identity, Kit, Abilities, Locations
+        // Identity: 9 heroes + a Zone card. Kit: 4 starters + a Zone card. Abilities: 4 + a Zone card.
+        // Locations: a "Location" Zone card + 9 place name cards + the inn's 3 row-header cards
+        // (Hero / Kit / Active) under Ashfen Crossing.
+        assert_eq!(t.card_count(), (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3));
     }
 
     #[test]
@@ -253,11 +280,11 @@ mod tests {
         let kit_id = *root
             .subpiles()
             .iter()
-            .find(|&&id| t.pile(id).unwrap().label == "Starting Kit")
+            .find(|&&id| t.pile(id).unwrap().label == "Kit")
             .unwrap();
         let kit = t.pile(kit_id).unwrap();
 
-        // Four starter cards under a "Starting Kit" Zone card.
+        // Four starter cards under a "Kit" Zone card.
         let starters = t.content_cards(kit.id);
         assert_eq!(starters.len(), 4);
         let names: Vec<&str> = starters
@@ -266,7 +293,7 @@ mod tests {
             .collect();
         assert_eq!(names, ["Skirmisher", "Sentinel", "Tempest", "Cleaver"]);
         for &c in starters {
-            assert_eq!(t.card(c).unwrap().card_type(), "Starter Kit");
+            assert_eq!(t.card(c).unwrap().card_type(), "Kit");
         }
 
         // Skirmisher grows to its stat line + ability.
@@ -280,7 +307,7 @@ mod tests {
         );
 
         let top = t.card(*kit.cards().last().unwrap()).unwrap();
-        assert_eq!(top.name(), "Starting Kit");
+        assert_eq!(top.name(), "Kit");
         assert_eq!(top.kind(), CardKind::Zone);
     }
 
@@ -307,7 +334,7 @@ mod tests {
         }
 
         // The Locations grid: 9 place-piles labelled by Location Zone cards; Ashfen (centre, index 4)
-        // is the inn — a projection of the Identity and Starting Kit decks, owning no cards of its own.
+        // holds one card — the Inn.
         let locations = t.pile(find("Locations")).unwrap();
         assert_eq!(locations.subpiles().len(), LOCATIONS.len());
         let ashfen = t.pile(locations.subpiles()[4]).unwrap();
@@ -315,13 +342,19 @@ mod tests {
             t.card(*ashfen.cards().last().unwrap()).unwrap().name(),
             "Ashfen Crossing"
         );
-        assert_eq!(ashfen.projection(), &[identity, find("Starting Kit")]);
-        assert!(t.content_cards(ashfen.id).is_empty());
+        let inn_id = ashfen.subpiles()[0];
+        assert_eq!(t.pile(inn_id).unwrap().label, "Inn");
 
-        // The projection gathers the heroes and the kits into two groups.
-        let groups = t.projection_groups(ashfen.id);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].1.len(), HEROES.len()); // heroes
-        assert_eq!(groups[1].1.len(), 4); // starting kits
+        // The Inn is a Rows pile projecting Identity + Kit; its rows are Hero, Kit, Active.
+        let inn = t.pile(inn_id).unwrap();
+        assert_eq!(inn.layout().arrangement, Arrangement::Rows);
+        assert_eq!(inn.projection(), &[identity, find("Kit")]);
+        let rows = t.row_groups(inn_id);
+        assert_eq!(rows.len(), 3);
+        let header = |i: usize| t.card(rows[i].0).unwrap().name();
+        assert_eq!((header(0), header(1), header(2)), ("Hero", "Kit", "Active"));
+        assert_eq!(rows[0].1.len(), HEROES.len()); // Hero row ← Identity deck
+        assert_eq!(rows[1].1.len(), 4); // Kit row ← Kit deck
+        assert!(rows[2].1.is_empty()); // Active row starts empty
     }
 }
