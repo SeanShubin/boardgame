@@ -200,11 +200,14 @@ impl DebugLog {
 /// Create the debug log, truncating `cardtable-debug.log` and stamping the launch so the file always
 /// reflects the current run.
 fn make_debug_log() -> DebugLog {
-    let file = if cfg!(target_arch = "wasm32") {
-        None
-    } else {
-        std::fs::File::create("cardtable-debug.log").ok()
-    };
+    // Native-only convenience: the web build has no filesystem, and
+    // `SystemTime::now()` panics on wasm32-unknown-unknown (it aborts app
+    // startup, which then cascades into a bogus "Unable to find a GPU!"). So on
+    // wasm the log stays empty — no file, no wall-clock stamp.
+    if cfg!(target_arch = "wasm32") {
+        return DebugLog(std::sync::Mutex::new(None));
+    }
+    let file = std::fs::File::create("cardtable-debug.log").ok();
     let log = DebugLog(std::sync::Mutex::new(file));
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
