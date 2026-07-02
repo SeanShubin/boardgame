@@ -5,7 +5,11 @@ edition.workspace = true
 
 [dependencies]
 contract = { workspace = true }
-bevy = { workspace = true }
+# The workspace default drops Bevy's `audio` feature (it broke the wasm deploy and
+# the card-table product doesn't use it). This sample renderer plays click/hover
+# SFX, so it opts audio back in — safe because the wasm `boardgame` build never
+# pulls `tabletop`, so audio stays out of the deployed bundle.
+bevy = { workspace = true, features = ["audio"] }
 
 # System clipboard for the "Copy feed" button — desktop only; the web build no-ops (it would use the
 # browser clipboard API, not wired yet).
