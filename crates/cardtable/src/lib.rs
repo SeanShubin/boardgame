@@ -96,17 +96,12 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck, then snapshot the initial table for Reset (order matters).
             .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
+            .add_systems(Update, (animate_piles, animate_cards, animate_popped))
+            // Table shove: feed surface + pile sizes, then re-settle on a new/resized deck or a window resize.
             .add_systems(
                 Update,
-                (
-                    sync_surface_size,
-                    animate_piles,
-                    animate_cards,
-                    animate_popped,
-                ),
+                (sync_surface_size, sync_pile_sizes, settle_table_piles).chain(),
             )
-            // Table shove: feed pile sizes, then re-settle when one first lays out or changes (a new deck).
-            .add_systems(Update, (sync_pile_sizes, settle_table_piles).chain())
             // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
             .add_systems(Update, (sync_card_sizes, settle_free_cards).chain())
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
@@ -1132,16 +1127,19 @@ fn settle_free_cards(
     }
 }
 
-/// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size — the pile
-/// counterpart of [`settle_free_cards`]. When a pile's size changes (a brand-new character-reflection
-/// deck appearing, or a deck growing) and nothing is being dragged, re-run [`Tableau::separate`] anchored
-/// on the changed pile, so the newcomer holds its spot and pushes overlapping piles clear. This is what
-/// makes a freshly-rendered deck trigger the shove without hooking each site that creates one. `prev`
-/// remembers last-seen sizes; only runs at the Table (root), where these piles are shown and sized.
+/// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size, or when the
+/// window (surface) resizes — the pile counterpart of [`settle_free_cards`]. When a pile's size changes (a
+/// brand-new character-reflection deck appearing, or a deck growing), or the surface bounds move, and
+/// nothing is being dragged, re-run [`Tableau::separate`] so every pile is re-clamped inside the surface
+/// and pushed clear of its neighbours. A size-changed pile anchors the shove (the newcomer holds its
+/// spot); a bare resize anchors the first pile. This is what makes both a freshly-rendered deck and a
+/// window resize trigger the shove without hooking each site. `prev`/`prev_surface` remember last-seen
+/// sizes; only runs at the Table (root), where these piles are shown and sized.
 fn settle_table_piles(
     mut table: ResMut<Table>,
     guard: Res<DragGuard>,
     mut prev: Local<HashMap<PileId, Pos>>,
+    mut prev_surface: Local<Pos>,
 ) {
     if guard.0 {
         return; // a drag is in progress — don't fight it
@@ -1155,7 +1153,7 @@ fn settle_table_piles(
         .pile(root)
         .map(|p| p.subpiles().to_vec())
         .unwrap_or_default();
-    let mut changed: Option<PileId> = None;
+    let mut anchor: Option<PileId> = None;
     for &p in &piles {
         let Some(size) = table.0.pile(p).map(|d| d.size()) else {
             continue;
@@ -1165,10 +1163,16 @@ fn settle_table_piles(
         }
         let was = prev.insert(p, size).unwrap_or_default();
         if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
-            changed = Some(p);
+            anchor = Some(p);
         }
     }
-    if let Some(anchor) = changed {
+    // A window resize moves the surface bounds — re-clamp and de-overlap every pile against the new size.
+    let surface = table.0.surface();
+    if (surface.x - prev_surface.x).abs() > 0.5 || (surface.y - prev_surface.y).abs() > 0.5 {
+        *prev_surface = surface;
+        anchor = anchor.or_else(|| piles.first().copied());
+    }
+    if let Some(anchor) = anchor {
         table.0.separate(anchor);
     }
 }
