@@ -356,6 +356,10 @@ pub struct Pile {
     /// the [content cards](Tableau::content_cards) of these source piles (grouped, still owned by the
     /// sources). A projection gathers relevant cards from several decks into one view without moving them.
     projection: Vec<PileId>,
+    /// If set, this pile is a **character reflection** derived from an active inn pairing — the
+    /// [`CardId`] of the hero it mirrors. [`sync_character_decks`](Tableau::sync_character_decks) creates
+    /// and removes these to track the pairs; nothing else should carry this.
+    reflects: Option<CardId>,
 }
 
 impl Pile {
@@ -392,6 +396,12 @@ impl Pile {
     /// The source piles this pile **projects** (shows the cards of). Empty for an ordinary pile.
     pub fn projection(&self) -> &[PileId] {
         &self.projection
+    }
+
+    /// The hero this pile is a **character reflection** of, or `None` for an ordinary pile. See
+    /// [`Tableau::sync_character_decks`].
+    pub fn reflects(&self) -> Option<CardId> {
+        self.reflects
     }
 }
 
@@ -448,6 +458,7 @@ impl Tableau {
                 size: Pos::default(),
                 layout: Layout::default(),
                 projection: Vec::new(),
+                reflects: None,
             },
         );
         Self {
@@ -490,6 +501,7 @@ impl Tableau {
                 size: Pos::default(),
                 layout: Layout::default(),
                 projection: Vec::new(),
+                reflects: None,
             },
         );
         self.piles
@@ -895,6 +907,163 @@ impl Tableau {
         )?;
         self.set_pile_pos(character, 40.0, 320.0)?;
         Ok(character)
+    }
+
+    /// Removes `pile` and everything under it — its cards, and recursively its sub-piles — and unlinks it
+    /// from its parent. The root cannot be removed.
+    pub fn remove_pile(&mut self, pile: PileId) -> Result<(), TableauError> {
+        if pile == self.root {
+            return Err(TableauError::UnknownPile(pile));
+        }
+        let p = self
+            .piles
+            .get(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?;
+        let parent = p.parent;
+        let subpiles = p.subpiles.clone();
+        let cards = p.cards.clone();
+        for sub in subpiles {
+            self.remove_pile(sub)?;
+        }
+        for card in cards {
+            self.cards.remove(&card);
+            self.selection.retain(|&c| c != card);
+        }
+        if let Some(parent) = parent
+            && let Some(pp) = self.piles.get_mut(&parent)
+        {
+            pp.subpiles.retain(|&s| s != pile);
+        }
+        self.piles.remove(&pile);
+        Ok(())
+    }
+
+    /// Reconcile the Table's **character reflection decks** with `inn`'s active hero/kit pairs: every
+    /// *complete* pair gets one top-level deck mirroring its hero (the hero's name as the deck's
+    /// [`Zone`](CardKind::Zone) label over copies of the kit's cards), and any reflection whose pair has
+    /// been put back is removed. Keyed by the hero [`CardId`], so it is idempotent — safe to call on
+    /// every change. The pair itself stays in the inn (the reflection never consumes it).
+    pub fn sync_character_decks(&mut self, inn: PileId) -> Result<(), TableauError> {
+        // The inn's active content (row headers aside) groups into hero/kit pairs by position.
+        let content: Vec<CardId> = self
+            .content_cards(inn)
+            .iter()
+            .copied()
+            .filter(|&c| {
+                self.cards
+                    .get(&c)
+                    .is_some_and(|k| k.kind != CardKind::Header)
+            })
+            .collect();
+        // For each *complete* pair, the hero is the member without a recipe (the kit carries one).
+        let mut active_heroes: Vec<CardId> = Vec::new();
+        for pair in content.chunks_exact(2) {
+            let hero = pair
+                .iter()
+                .copied()
+                .find(|&c| self.cards.get(&c).is_some_and(|k| k.recipe.is_empty()));
+            if let Some(hero) = hero {
+                active_heroes.push(hero);
+            }
+        }
+        // Drop reflections whose pair is gone.
+        let stale: Vec<PileId> = self.piles[&self.root]
+            .subpiles
+            .iter()
+            .copied()
+            .filter(|&s| {
+                self.piles[&s]
+                    .reflects
+                    .is_some_and(|h| !active_heroes.contains(&h))
+            })
+            .collect();
+        for pile in stale {
+            self.remove_pile(pile)?;
+        }
+        // Add a reflection for each newly-paired hero.
+        let reflected: Vec<CardId> = self.piles[&self.root]
+            .subpiles
+            .iter()
+            .filter_map(|&s| self.piles[&s].reflects)
+            .collect();
+        for &hero in &active_heroes {
+            if reflected.contains(&hero) {
+                continue;
+            }
+            let kit = self.paired_kit(inn, hero);
+            // Offset each fresh deck past the reflections already on the table (including this pass's).
+            let idx = self.piles[&self.root]
+                .subpiles
+                .iter()
+                .filter(|&&s| self.piles[&s].reflects.is_some())
+                .count();
+            self.build_character_reflection(hero, kit, idx)?;
+        }
+        Ok(())
+    }
+
+    /// The kit card paired with `hero` in `inn`'s active row (its position-partner), if any.
+    fn paired_kit(&self, inn: PileId, hero: CardId) -> Option<CardId> {
+        let content: Vec<CardId> = self
+            .content_cards(inn)
+            .iter()
+            .copied()
+            .filter(|&c| {
+                self.cards
+                    .get(&c)
+                    .is_some_and(|k| k.kind != CardKind::Header)
+            })
+            .collect();
+        let i = content.iter().position(|&c| c == hero)?;
+        content.get(i ^ 1).copied()
+    }
+
+    /// Build one character reflection deck on the root, mirroring `hero` equipped with `kit`: the kit's
+    /// cards (copies), then the hero's name as the deck's [`Zone`](CardKind::Zone) label. Marked with
+    /// `reflects = Some(hero)` and laid out as a [`List`](Arrangement::List). `index` spreads the decks
+    /// so a fresh one does not land exactly on the last.
+    fn build_character_reflection(
+        &mut self,
+        hero: CardId,
+        kit: Option<CardId>,
+        index: usize,
+    ) -> Result<PileId, TableauError> {
+        let name = self.cards[&hero].name().to_string();
+        let card_type = self.cards[&hero].card_type.clone();
+        let recipe = kit
+            .and_then(|k| self.cards.get(&k))
+            .map(|k| k.recipe.clone())
+            .unwrap_or_default();
+
+        let deck = self.add_pile(self.root, name.clone())?;
+        for card_name in &recipe {
+            self.add_card(
+                deck,
+                Face::Up {
+                    title: card_name.clone(),
+                },
+                None,
+            )?;
+        }
+        let label = self.add_card(
+            deck,
+            Face::Up {
+                title: name.clone(),
+            },
+            None,
+        )?;
+        self.set_card_type(label, card_type)?;
+        self.set_card_kind(label, CardKind::Zone)?;
+        self.set_layout(
+            deck,
+            Layout {
+                arrangement: Arrangement::List,
+                editable: true,
+            },
+        )?;
+        self.piles.get_mut(&deck).expect("just created").reflects = Some(hero);
+        self.set_pile_pos(deck, 40.0 + index as f32 * 40.0, 360.0)?;
+        Ok(deck)
     }
 
     /// Sets `pile`'s collapsed flag directly (a manual fan/collapse, independent of focus).

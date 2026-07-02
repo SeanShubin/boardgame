@@ -357,4 +357,84 @@ mod tests {
         assert_eq!(rows[1].1.len(), 4); // Kit row ← Kit deck
         assert!(rows[2].1.is_empty()); // Active row starts empty
     }
+
+    #[test]
+    fn active_pairs_reflect_as_character_decks_on_the_table() {
+        let mut t = sample_table();
+        let inn = {
+            let root = t.pile(t.root_id()).unwrap();
+            let locations = *root
+                .subpiles()
+                .iter()
+                .find(|&&id| t.pile(id).unwrap().label == "Locations")
+                .unwrap();
+            let ashfen = t.pile(t.pile(locations).unwrap().subpiles()[4]).unwrap();
+            ashfen.subpiles()[0]
+        };
+
+        // No pairs yet → no reflection decks.
+        t.sync_character_decks(inn).unwrap();
+        let reflections = |t: &Tableau| -> Vec<PileId> {
+            t.pile(t.root_id())
+                .unwrap()
+                .subpiles()
+                .iter()
+                .copied()
+                .filter(|&s| t.pile(s).unwrap().reflects().is_some())
+                .collect()
+        };
+        assert!(reflections(&t).is_empty());
+
+        // Form one active pair in the inn: a hero moved in + a kit copy with a recipe.
+        let identity = *t
+            .pile(t.root_id())
+            .unwrap()
+            .subpiles()
+            .iter()
+            .find(|&&id| t.pile(id).unwrap().label == "Identity")
+            .unwrap();
+        let hero = t.content_cards(identity)[0];
+        let hero_name = t.card(hero).unwrap().name().to_string();
+        let at = t.pile(inn).unwrap().cards().len();
+        t.move_card(hero, inn, at).unwrap();
+        let kit = t
+            .add_card(
+                inn,
+                Face::Up {
+                    title: "Cleaver".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_recipe(kit, vec!["Might".into(), "1".into()])
+            .unwrap();
+
+        // Reflecting yields exactly one deck for that hero: the kit's cards under the hero's Zone label.
+        t.sync_character_decks(inn).unwrap();
+        let decks = reflections(&t);
+        assert_eq!(decks.len(), 1);
+        let deck = t.pile(decks[0]).unwrap();
+        assert_eq!(deck.reflects(), Some(hero));
+        assert_eq!(deck.label, hero_name);
+        let names: Vec<&str> = t
+            .content_cards(deck.id)
+            .iter()
+            .map(|&c| t.card(c).unwrap().name())
+            .collect();
+        assert_eq!(names, ["Might", "1"]); // the kit's recipe, copied
+        assert_eq!(
+            t.card(*deck.cards().last().unwrap()).unwrap().name(),
+            hero_name // topped by the hero's Zone label
+        );
+
+        // Idempotent: reflecting again does not duplicate the deck.
+        t.sync_character_decks(inn).unwrap();
+        assert_eq!(reflections(&t).len(), 1);
+
+        // Put the pair back (un-recruit) → the reflection deck disappears.
+        t.remove_card(kit).unwrap();
+        t.remove_card(hero).unwrap();
+        t.sync_character_decks(inn).unwrap();
+        assert!(reflections(&t).is_empty());
+    }
 }

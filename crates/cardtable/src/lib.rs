@@ -99,13 +99,14 @@ impl Plugin for CardTablePlugin {
             .add_systems(
                 Update,
                 (
-                    sync_pile_sizes,
                     sync_surface_size,
                     animate_piles,
                     animate_cards,
                     animate_popped,
                 ),
             )
+            // Table shove: feed pile sizes, then re-settle when one first lays out or changes (a new deck).
+            .add_systems(Update, (sync_pile_sizes, settle_table_piles).chain())
             // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
             .add_systems(Update, (sync_card_sizes, settle_free_cards).chain())
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
@@ -788,6 +789,9 @@ fn on_card_drag_end(
                         .collect()
                 })
                 .unwrap_or_default();
+            // Reflect the (possibly changed) active pairs onto the Table: a character deck per complete
+            // pair, and none for a pair just put back.
+            let _ = table.0.sync_character_decks(inn);
             log.line(format!(
                 "  from_active={from_active} action={action} active_now={active_now:?}"
             ));
@@ -1125,6 +1129,47 @@ fn settle_free_cards(
     }
     if let Some(anchor) = changed {
         table.0.separate_cards(focus, anchor);
+    }
+}
+
+/// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size — the pile
+/// counterpart of [`settle_free_cards`]. When a pile's size changes (a brand-new character-reflection
+/// deck appearing, or a deck growing) and nothing is being dragged, re-run [`Tableau::separate`] anchored
+/// on the changed pile, so the newcomer holds its spot and pushes overlapping piles clear. This is what
+/// makes a freshly-rendered deck trigger the shove without hooking each site that creates one. `prev`
+/// remembers last-seen sizes; only runs at the Table (root), where these piles are shown and sized.
+fn settle_table_piles(
+    mut table: ResMut<Table>,
+    guard: Res<DragGuard>,
+    mut prev: Local<HashMap<PileId, Pos>>,
+) {
+    if guard.0 {
+        return; // a drag is in progress — don't fight it
+    }
+    let root = table.0.root_id();
+    if table.0.focus_id() != root {
+        return; // top-level piles are only shown (and sized) at the Table
+    }
+    let piles: Vec<PileId> = table
+        .0
+        .pile(root)
+        .map(|p| p.subpiles().to_vec())
+        .unwrap_or_default();
+    let mut changed: Option<PileId> = None;
+    for &p in &piles {
+        let Some(size) = table.0.pile(p).map(|d| d.size()) else {
+            continue;
+        };
+        if size.x < 1.0 {
+            continue; // not laid out yet
+        }
+        let was = prev.insert(p, size).unwrap_or_default();
+        if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
+            changed = Some(p);
+        }
+    }
+    if let Some(anchor) = changed {
+        table.0.separate(anchor);
     }
 }
 
