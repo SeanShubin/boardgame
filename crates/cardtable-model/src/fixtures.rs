@@ -86,6 +86,52 @@ const HEROES: [&str; 9] = [
     "Osric Vane",
 ];
 
+/// The round's phases in order, each with a one-line mechanical summary (condensed from
+/// `docs/games/deckbound/reference/combat-phases.md`, the canonical text). The Rules deck renders one
+/// card per phase; in combat we will surface these and cycle which one is active.
+const PHASES: [(&str, &str); 10] = [
+    (
+        "Marshal",
+        "Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round.",
+    ),
+    (
+        "Reveal",
+        "Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.",
+    ),
+    (
+        "Ready",
+        "Standing abilities cast now (a Wall's brace, a Support's buff): ally-targeted, auto-land, last the round.",
+    ),
+    (
+        "Intercept",
+        "The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid.",
+    ),
+    (
+        "Volley",
+        "The back fires on the flankers: each Rearguard shoots an enemy Outrider — the pre-empt, before it arrives.",
+    ),
+    (
+        "Raid",
+        "Surviving Outriders strike the enemy Rearguard they crossed for — the breaker lands on the exposed back.",
+    ),
+    (
+        "Clash",
+        "The lines meet: each Rearguard fires an enemy Vanguard, and each engaging Vanguard strikes an enemy Vanguard.",
+    ),
+    (
+        "Breach",
+        "The deep blows land last: a Vanguard crosses to an exposed enemy Rearguard; stranded Outriders fall on the front.",
+    ),
+    (
+        "Wipe pile",
+        "At each engagement boundary the per-phase damage pile clears — sub-threshold damage does not carry; only Health persists.",
+    ),
+    (
+        "Refresh",
+        "Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
+    ),
+];
+
 /// The abilities currently in play — the derived strike cards (one per range × area cell; see
 /// `deckbound::engagement`) that the Kit starters carry — each with a one-line description.
 const ABILITIES: [(&str, &str); 4] = [
@@ -222,6 +268,48 @@ pub fn sample_table() -> Tableau {
     )
     .expect("locations exists");
 
+    // A "Rules" deck: combat reference cards. The first card shows the order damage lands across the
+    // round's phases; the rest are one card per phase (see `PHASES`). A **Free** deck so expanding a card
+    // to read it shoves its neighbours clear (rather than rendering under them); the phase order lives in
+    // `PHASES`, not the layout, so combat cycling still has it. Cards are seeded in reading order.
+    let rules = tree.add_pile(root, "Rules").expect("root exists");
+    let order = typed(&mut tree, rules, "Damage Order", "sequence");
+    tree.set_card_detail(
+        order,
+        vec![
+            "Intercept — Vanguard -> Outrider".into(),
+            "Volley — Rearguard -> Outrider".into(),
+            "Raid — Outrider -> Rearguard".into(),
+            "Clash — Rearguard / Vanguard -> Vanguard".into(),
+            "Breach — the trailing blows land".into(),
+        ],
+    )
+    .expect("order card just added");
+    let mut rule_cards = vec![order];
+    for (name, text) in PHASES {
+        let id = typed(&mut tree, rules, name, "phase");
+        tree.set_card_detail(id, vec![text.to_string()])
+            .expect("phase card just added");
+        rule_cards.push(id);
+    }
+    // Lay them out in reading order (a 4-wide grid) so the deck opens tidy; drag rearranges from there.
+    for (i, &id) in rule_cards.iter().enumerate() {
+        let (col, row) = (i % 4, i / 4);
+        tree.set_card_pos(id, 20.0 + col as f32 * 150.0, 20.0 + row as f32 * 90.0)
+            .expect("rules card just added");
+    }
+    let rules_zone = typed(&mut tree, rules, "Rules", "Label");
+    tree.set_card_kind(rules_zone, CardKind::Zone)
+        .expect("rules zone card");
+    tree.set_layout(
+        rules,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("rules exists");
+
     // Spread the piles across the table so they start un-stacked; drag repositions them.
     tree.set_pile_pos(identity, 40.0, 40.0)
         .expect("identity exists");
@@ -231,6 +319,7 @@ pub fn sample_table() -> Tableau {
         .expect("abilities exists");
     tree.set_pile_pos(locations, 580.0, 40.0)
         .expect("locations exists");
+    tree.set_pile_pos(rules, 760.0, 40.0).expect("rules exists");
 
     tree
 }
@@ -243,11 +332,14 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        assert_eq!(root.subpiles().len(), 4); // Identity, Kit, Abilities, Locations
+        assert_eq!(root.subpiles().len(), 5); // Identity, Kit, Abilities, Locations, Rules
         // Identity: 9 heroes + a Zone card. Kit: 4 starters + a Zone card. Abilities: 4 + a Zone card.
         // Locations: a "Location" Zone card + 9 place name cards + the inn's 3 row-header cards
-        // (Hero / Kit / Active) under Ashfen Crossing.
-        assert_eq!(t.card_count(), (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3));
+        // (Hero / Kit / Active) under Ashfen Crossing. Rules: 1 order card + 10 phase cards + a Zone card.
+        assert_eq!(
+            t.card_count(),
+            (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3) + (1 + 10 + 1)
+        );
     }
 
     #[test]
@@ -270,6 +362,42 @@ mod tests {
         }
         let top = t.card(*abilities.cards().last().unwrap()).unwrap();
         assert_eq!(top.name(), "Abilities");
+        assert_eq!(top.kind(), CardKind::Zone);
+    }
+
+    #[test]
+    fn rules_deck_leads_with_the_damage_order_then_one_card_per_phase() {
+        let t = sample_table();
+        let root = t.pile(t.root_id()).unwrap();
+        let rules = t
+            .pile(
+                *root
+                    .subpiles()
+                    .iter()
+                    .find(|&&id| t.pile(id).unwrap().label == "Rules")
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(rules.layout().arrangement, Arrangement::Free);
+
+        // First the damage-order overview, then the ten phases in round order.
+        let cards = t.content_cards(rules.id);
+        assert_eq!(cards.len(), 1 + PHASES.len());
+        let first = t.card(cards[0]).unwrap();
+        assert_eq!(first.name(), "Damage Order");
+        assert!(
+            first
+                .detail()
+                .iter()
+                .any(|l| l.contains("Vanguard -> Outrider"))
+        );
+        for (&cid, (name, _)) in cards[1..].iter().zip(PHASES) {
+            assert_eq!(t.card(cid).unwrap().name(), name);
+            assert_eq!(t.card(cid).unwrap().card_type(), "phase");
+        }
+        // Topped by a "Rules" Zone label.
+        let top = t.card(*rules.cards().last().unwrap()).unwrap();
+        assert_eq!(top.name(), "Rules");
         assert_eq!(top.kind(), CardKind::Zone);
     }
 
@@ -372,7 +500,7 @@ mod tests {
             ashfen.subpiles()[0]
         };
 
-        // No pairs yet → no reflection decks.
+        // No pairs yet -> no reflection decks.
         t.sync_character_decks(inn).unwrap();
         let reflections = |t: &Tableau| -> Vec<PileId> {
             t.pile(t.root_id())
@@ -431,7 +559,7 @@ mod tests {
         t.sync_character_decks(inn).unwrap();
         assert_eq!(reflections(&t).len(), 1);
 
-        // Put the pair back (un-recruit) → the reflection deck disappears.
+        // Put the pair back (un-recruit) -> the reflection deck disappears.
         t.remove_card(kit).unwrap();
         t.remove_card(hero).unwrap();
         t.sync_character_decks(inn).unwrap();

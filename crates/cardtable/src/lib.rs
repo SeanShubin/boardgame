@@ -97,10 +97,17 @@ impl Plugin for CardTablePlugin {
             // Inject the System deck, then snapshot the initial table for Reset (order matters).
             .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
             .add_systems(Update, (animate_piles, animate_cards, animate_popped))
-            // Table shove: feed surface + pile sizes, then re-settle on a new/resized deck or a window resize.
+            // Table shove: feed surface + pile sizes + overlay obstacles, then re-settle on a new/resized
+            // deck, a window resize, or a moved obstacle (the floating title).
             .add_systems(
                 Update,
-                (sync_surface_size, sync_pile_sizes, settle_table_piles).chain(),
+                (
+                    sync_surface_size,
+                    sync_pile_sizes,
+                    sync_obstacles,
+                    settle_table_piles,
+                )
+                    .chain(),
             )
             // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
             .add_systems(Update, (sync_card_sizes, settle_free_cards).chain())
@@ -153,6 +160,11 @@ struct TableSurface;
 /// A utility card that navigates up one zone level when clicked.
 #[derive(Component)]
 struct BackCard;
+
+/// A floating overlay (the zone title, Back) whose on-screen rectangle is fed to the model as a felt
+/// **obstacle**, so top-level piles are shoved clear of it ([`sync_obstacles`], [`Tableau::separate`]).
+#[derive(Component)]
+struct SurfaceObstacle;
 
 /// A popped-out action card spawned beside a pressed [`Arrangement::Actions`] deck — a *free* surface
 /// entity (not a model pile, so popping it never shoves the game piles), drawn above everything, that
@@ -518,6 +530,43 @@ fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut tab
         let size = computed.size * computed.inverse_scale_factor;
         table.0.set_surface(size.x, size.y);
     }
+}
+
+/// Feed the floating overlays' on-screen rectangles to the model as felt **obstacles** — in the surface's
+/// logical coordinate space, matching pile positions — so [`Tableau::separate`] shoves the top-level piles
+/// clear of the zone title and Back. Runs every frame; the overlays are few and their sizes are stable.
+fn sync_obstacles(
+    obstacles: Query<(&ComputedNode, &UiGlobalTransform), With<SurfaceObstacle>>,
+    surface: Query<(&ComputedNode, &UiGlobalTransform), With<TableSurface>>,
+    mut table: ResMut<Table>,
+) {
+    // The surface's top-left (physical), so an overlay rect converts into the same origin as pile positions.
+    let Some(origin) = surface
+        .single()
+        .ok()
+        .map(|(cn, gt)| gt.translation - cn.size() * 0.5)
+    else {
+        return;
+    };
+    let rects: Vec<(Pos, Pos)> = obstacles
+        .iter()
+        .map(|(cn, gt)| {
+            let sf = cn.inverse_scale_factor; // physical → logical, matching model positions
+            let size = cn.size();
+            let top_left = (gt.translation - size * 0.5 - origin) * sf;
+            (
+                Pos {
+                    x: top_left.x,
+                    y: top_left.y,
+                },
+                Pos {
+                    x: size.x * sf,
+                    y: size.y * sf,
+                },
+            )
+        })
+        .collect();
+    table.0.set_obstacles(rects);
 }
 
 /// Ease each pile's wrapper toward its model position, so a separation (or any reposition) *slides*
@@ -1090,13 +1139,16 @@ fn sync_card_sizes(cards: Query<(&TableCard, &ComputedNode)>, mut table: ResMut<
 }
 
 /// Keep a **Free** deck's cards shoved apart when they first lay out or change size (a card expands or
-/// collapses): when a card's footprint changes and nothing is being dragged, re-run [`separate_cards`]
-/// anchored on the changed card — so a grown card holds its place and pushes its neighbours out. This
-/// is what makes the shove trigger "whether expanded or not". `prev` remembers last-seen footprints.
+/// collapses), or when a floating overlay moves — when a card's footprint changes, or the obstacles do
+/// (the title/Back the zone's cards must dodge), and nothing is being dragged, re-run [`separate_cards`]
+/// anchored on the changed card (else the first). So a grown card holds its place and pushes its
+/// neighbours out, and the cards keep clear of Back and the title. `prev`/`prev_obstacles` remember the
+/// last-seen footprints/obstacles.
 fn settle_free_cards(
     mut table: ResMut<Table>,
     dragging: Res<DraggingCard>,
     mut prev: Local<HashMap<CardId, Pos>>,
+    mut prev_obstacles: Local<Vec<(Pos, Pos)>>,
 ) {
     if dragging.0.is_some() {
         return;
@@ -1109,7 +1161,7 @@ fn settle_free_cards(
         return;
     }
     let cards: Vec<CardId> = table.0.content_cards(focus).to_vec();
-    let mut changed: Option<CardId> = None;
+    let mut anchor: Option<CardId> = None;
     for &c in &cards {
         let Some(footprint) = table.0.card(c).map(|k| k.footprint()) else {
             continue;
@@ -1119,10 +1171,23 @@ fn settle_free_cards(
         }
         let was = prev.insert(c, footprint).unwrap_or_default();
         if (was.x - footprint.x).abs() > 0.5 || (was.y - footprint.y).abs() > 0.5 {
-            changed = Some(c);
+            anchor = Some(c);
         }
     }
-    if let Some(anchor) = changed {
+    // A moved obstacle (Back appearing on zone entry, the title reflowing) re-shoves the zone's cards.
+    let obstacles = table.0.obstacles();
+    let obstacles_changed = obstacles.len() != prev_obstacles.len()
+        || obstacles.iter().zip(prev_obstacles.iter()).any(|(a, b)| {
+            (a.0.x - b.0.x).abs() > 0.5
+                || (a.0.y - b.0.y).abs() > 0.5
+                || (a.1.x - b.1.x).abs() > 0.5
+                || (a.1.y - b.1.y).abs() > 0.5
+        });
+    if obstacles_changed {
+        *prev_obstacles = obstacles.to_vec();
+        anchor = anchor.or_else(|| cards.first().copied());
+    }
+    if let Some(anchor) = anchor {
         table.0.separate_cards(focus, anchor);
     }
 }
@@ -1140,6 +1205,7 @@ fn settle_table_piles(
     guard: Res<DragGuard>,
     mut prev: Local<HashMap<PileId, Pos>>,
     mut prev_surface: Local<Pos>,
+    mut prev_obstacles: Local<Vec<(Pos, Pos)>>,
 ) {
     if guard.0 {
         return; // a drag is in progress — don't fight it
@@ -1172,6 +1238,19 @@ fn settle_table_piles(
         *prev_surface = surface;
         anchor = anchor.or_else(|| piles.first().copied());
     }
+    // A moved/resized obstacle (the floating title reflowing on a zone change) re-shoves the piles clear.
+    let obstacles = table.0.obstacles();
+    let obstacles_changed = obstacles.len() != prev_obstacles.len()
+        || obstacles.iter().zip(prev_obstacles.iter()).any(|(a, b)| {
+            (a.0.x - b.0.x).abs() > 0.5
+                || (a.0.y - b.0.y).abs() > 0.5
+                || (a.1.x - b.1.x).abs() > 0.5
+                || (a.1.y - b.1.y).abs() > 0.5
+        });
+    if obstacles_changed {
+        *prev_obstacles = obstacles.to_vec();
+        anchor = anchor.or_else(|| piles.first().copied());
+    }
     if let Some(anchor) = anchor {
         table.0.separate(anchor);
     }
@@ -1185,7 +1264,6 @@ fn redraw(
     mut rebuild: ResMut<NeedsRebuild>,
     table: Res<Table>,
     rail: Res<ActionRail>,
-    status: Res<StatusLine>,
     mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
@@ -1200,7 +1278,7 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
-    build_ui(&mut commands, &table.0, &rail.0, &status.0);
+    build_ui(&mut commands, &table.0, &rail.0);
 }
 
 // ---- drawing ------------------------------------------------------------
@@ -1312,7 +1390,6 @@ fn card_shadow() -> BoxShadow {
     )
 }
 
-const FONT_DISPLAY: FontSize = FontSize::Px(26.0);
 const FONT_HEAD: FontSize = FontSize::Px(18.0);
 const FONT_TITLE: FontSize = FontSize::Px(15.0);
 const FONT_BODY: FontSize = FontSize::Px(13.0);
@@ -1373,7 +1450,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     )
 }
 
-fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status: &str) {
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
     let zone = tree.focus_id();
     let at_root = zone == tree.root_id();
 
@@ -1389,57 +1466,10 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // HEADER: the current zone's name, centered, with an optional caption beneath it.
-            root.spawn(Node {
-                width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(0.0), Val::Px(10.0)),
-                row_gap: Val::Px(2.0),
-                ..default()
-            })
-            .with_children(|head| {
-                head.spawn((
-                    Text::new(pile_display_name(tree, zone)),
-                    TextFont {
-                        font_size: FONT_DISPLAY,
-                        ..default()
-                    },
-                    TextColor(INK),
-                ));
-                if !status.is_empty() {
-                    head.spawn((
-                        Text::new(status.to_string()),
-                        TextFont {
-                            font_size: FONT_BODY,
-                            ..default()
-                        },
-                        TextColor(MUTED),
-                    ));
-                }
-            });
-
-            // NAV: the Back card (only inside a zone) plus any loose actions. Exit is no longer here —
-            // it's a pile on the surface below (see `inject_exit_deck`).
-            root.spawn(Node {
-                width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(10.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                align_items: AlignItems::Center,
-                ..default()
-            })
-            .with_children(|nav| {
-                if !at_root {
-                    spawn_nav_card(nav, BackCard, "Back");
-                }
-                for action in rail {
-                    spawn_rail_button(nav, action);
-                }
-            });
-
-            // SURFACE: the zone's contents. At the Table (root) zone, piles are freely positioned and
-            // draggable; inside a pile's zone, its cards (and any sub-piles) flow in a wrapping grid.
+            // SURFACE: the whole window is felt — no title bar. At the Table (root) zone, piles are freely
+            // positioned and draggable; inside a pile's zone, its cards (and any sub-piles) flow in a grid.
+            // The zone title and Back live as *floating overlays* drawn on top (see below), fed to the
+            // model as shove obstacles so the piles keep clear of them.
             root.spawn((
                 TableSurface,
                 Node {
@@ -1503,11 +1533,13 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                                     spawn_card(row, tree.card(header).expect("row header"));
                                     // Content cards are draggable — drop one on the Active row to move it.
                                     for cid in cards {
-                                        row.spawn((TableCard(cid), Node::default())).with_children(
-                                            |tile| {
-                                                spawn_card(tile, tree.card(cid).expect("row card"));
-                                            },
-                                        );
+                                        let card = tree.card(cid).expect("row card");
+                                        row.spawn((
+                                            TableCard(cid),
+                                            Node::default(),
+                                            card_elevation(card),
+                                        ))
+                                        .with_children(|tile| spawn_card(tile, card));
                                     }
                                 });
                             }
@@ -1585,24 +1617,27 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                     let cols = zone_cols(tree);
                     let content = tree.content_cards(zone);
                     for (index, &cid) in content.iter().enumerate() {
+                        let card = tree.card(cid).expect("card id from zone");
                         let (x, y) = if free {
-                            let p = tree.card(cid).map(|c| c.pos()).unwrap_or_default();
+                            let p = card.pos();
                             (p.x, p.y)
                         } else {
                             grid_cell(index, cols)
                         };
-                        let mut tile = surface.spawn(Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(x),
-                            top: Val::Px(y),
-                            ..default()
-                        });
+                        let mut tile = surface.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x),
+                                top: Val::Px(y),
+                                ..default()
+                            },
+                            // An expanded card lifts above its neighbours so it stays readable.
+                            card_elevation(card),
+                        ));
                         if draggable {
                             tile.insert(TableCard(cid));
                         }
-                        tile.with_children(|tile| {
-                            spawn_card(tile, tree.card(cid).expect("card id from zone"));
-                        });
+                        tile.with_children(|tile| spawn_card(tile, card));
                     }
                     // Any sub-piles follow the cards in the grid as (clickable) chips.
                     let base = content.len();
@@ -1619,6 +1654,65 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], status
                     }
                 }
             });
+
+            // FLOATING OVERLAYS, drawn above the felt and out of flow: the zone title centered at the top
+            // (plain text, no bar), Back at the top-left inside a zone, and any loose actions at the
+            // top-right. Each carries `SurfaceObstacle` so `sync_obstacles` reserves its rectangle and the
+            // top-level piles are shoved clear of it — the title has priority, the space stays all felt.
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(6.0),
+                    left: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                GlobalZIndex(10),
+                Pickable::IGNORE,
+            ))
+            .with_children(|title| {
+                title.spawn((
+                    SurfaceObstacle,
+                    Text::new(pile_display_name(tree, zone)),
+                    TextFont {
+                        font_size: FONT_HEAD,
+                        ..default()
+                    },
+                    TextColor(INK),
+                    Pickable::IGNORE,
+                ));
+            });
+            if !at_root {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(6.0),
+                        left: Val::Px(8.0),
+                        ..default()
+                    },
+                    GlobalZIndex(10),
+                ))
+                .with_children(|slot| spawn_nav_card(slot, (BackCard, SurfaceObstacle), "Back"));
+            }
+            if !rail.is_empty() {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(6.0),
+                        right: Val::Px(8.0),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        ..default()
+                    },
+                    GlobalZIndex(10),
+                ))
+                .with_children(|slot| {
+                    for action in rail {
+                        spawn_rail_button(slot, action);
+                    }
+                });
+            }
         });
 }
 
@@ -1810,6 +1904,17 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
         }
     };
     spawn_pile_chip(parent, id, &name, &card_type, count);
+}
+
+/// Draw order for a card tile: an **expanded** (non-Small) card lifts above its siblings, so the card
+/// you just grew to read is never buried under a neighbour it now overlaps. Small cards stay at the base
+/// layer, preserving spawn order among themselves.
+fn card_elevation(card: &Card) -> ZIndex {
+    ZIndex(if matches!(card.size(), Size::Small) {
+        0
+    } else {
+        1
+    })
 }
 
 /// Draws one card at its current render [`Size`]: **Small** (name + type), **Medium** (a full card
