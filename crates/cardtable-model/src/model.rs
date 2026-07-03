@@ -8,16 +8,20 @@
 use std::collections::HashMap;
 
 /// A stable handle to a card within a [`Tableau`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct CardId(pub u64);
 
 /// A stable handle to a pile within a [`Tableau`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct PileId(pub u64);
 
 /// A 2-D position on the table surface, in pixels from its top-left. The card-table is a physical
 /// space, so a pile has a *place*; the renderer draws it there and drag-to-place updates it.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pos {
     pub x: f32,
     pub y: f32,
@@ -33,7 +37,7 @@ impl Pos {
 
 /// The model's own, minimal card face — independent of any game or of `contract::CardFace`, so the
 /// core stays dependency-free. The [`binding`](crate::binding) module maps between the two.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Face {
     /// Face up, showing at least a title.
     Up { title: String },
@@ -44,7 +48,7 @@ pub enum Face {
 /// How large a card is currently drawn — the three planned card sizes. Default [`Size::Small`], the
 /// compact form. A card grows only as far as it has content for: [`Size::Medium`] needs `detail`,
 /// [`Size::Large`] needs `panel`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Size {
     /// **Small** — the compact form: just the name and type (plus a quantity when several of a kind
     /// stack). What decks and their contents (e.g. location cards) render as. The default.
@@ -58,7 +62,7 @@ pub enum Size {
 }
 
 /// What a card *is*, which decides what a single click on it means (the renderer reads this).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CardKind {
     /// An ordinary card (may still carry `detail` / a `panel`).
     Regular,
@@ -72,7 +76,7 @@ pub enum CardKind {
 }
 
 /// The action a [`CardKind::Utility`] card performs — e.g. a card in an [`Arrangement::Actions`] deck.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Utility {
     /// Go up one zone level.
     Back,
@@ -84,7 +88,7 @@ pub enum Utility {
 
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
 /// larger render [`Size`]s (`detail`, `panel`) and a [`CardKind`] that gives a click its meaning.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Card {
     /// This card's stable id.
     pub id: CardId,
@@ -303,7 +307,7 @@ fn separate_boxes(
 }
 
 /// How a pile arranges its contents when you drill into it — the shape half of a [`Layout`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Arrangement {
     /// **One-dimensional**: an ordered list that wraps across rows to fit the width. A card's place is
     /// a single linear index; reordering slides it along that sequence. The default.
@@ -329,7 +333,7 @@ pub enum Arrangement {
 /// How a pile presents its contents: an [`Arrangement`] (1-D list or 2-D grid) plus whether the
 /// contents are `editable` (can be dragged to reorder). The four combinations share one layout path —
 /// only these two switches differ. Default: an editable list (the original behaviour).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     pub arrangement: Arrangement,
     pub editable: bool,
@@ -346,7 +350,7 @@ impl Default for Layout {
 
 /// A pile of cards (and, optionally, nested piles). Collapsed = shown as a compact, counted pile;
 /// not collapsed = fanned out and attended to.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pile {
     /// This pile's stable id.
     pub id: PileId,
@@ -430,7 +434,7 @@ pub enum TableauError {
 
 /// A tree of piles and cards, plus the current attention state (which pile is focused, which cards
 /// are selected). All behaviors are methods here; the renderer reads the resulting state to draw.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Tableau {
     piles: HashMap<PileId, Pile>,
     cards: HashMap<CardId, Card>,
@@ -439,11 +443,20 @@ pub struct Tableau {
     selection: Vec<CardId>,
     next_pile: u64,
     next_card: u64,
+    // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without it.
+    #[serde(skip, default = "unbounded_surface")]
     surface: Pos,
     /// Fixed rectangles (`(top-left, size)`) that top-level piles must be shoved clear of — the felt's
     /// **obstacles**, e.g. the floating zone title. Pre-locked before any pile in [`separate`], so they
     /// take priority: a pile never settles under one. Fed by the renderer; empty means no reservations.
+    #[serde(skip)]
     obstacles: Vec<(Pos, Pos)>,
+}
+
+/// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
+/// value a deserialized [`Tableau`] gets, since `surface` is not persisted.
+fn unbounded_surface() -> Pos {
+    Pos { x: 1.0e6, y: 1.0e6 }
 }
 
 impl Default for Tableau {
@@ -483,7 +496,7 @@ impl Tableau {
             next_card: 0,
             // Effectively unbounded until the renderer reports the real table size, so piles aren't
             // jammed to the origin before the first layout.
-            surface: Pos { x: 1.0e6, y: 1.0e6 },
+            surface: unbounded_surface(),
             obstacles: Vec::new(),
         }
     }

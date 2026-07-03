@@ -7,3 +7,9 @@ edition.workspace = true
 # Used ONLY by the `binding` module (TableView -> DeckTree). The core model is dependency-free, so
 # card/deck behaviors test with no game and no renderer.
 contract = { workspace = true }
+# Serialize the tableau for persistence (RON). Derive-only; no runtime behavior.
+serde = { workspace = true }
+
+[dev-dependencies]
+# Round-trip the tableau through RON in tests (the format the app persists with).
+ron = { workspace = true }

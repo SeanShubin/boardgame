@@ -11,3 +11,13 @@ path = "src/main.rs"
 bevy = { workspace = true }
 cardtable = { workspace = true }
 cardtable-model = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }
+
+# Native persistence: write the RON save to the OS data directory.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+directories = "5"
+
+# Web persistence: the RON save lives in the browser's localStorage.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Storage"] }

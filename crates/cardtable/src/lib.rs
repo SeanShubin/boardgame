@@ -277,6 +277,16 @@ fn setup_camera(mut commands: Commands) {
 /// card never appears there. Runs once at startup.
 fn inject_system_deck(mut table: ResMut<Table>) {
     let root = table.0.root_id();
+    // Idempotent: a resumed table (loaded from a save) already carries its System deck, so don't add a
+    // second one.
+    let already = table.0.pile(root).is_some_and(|p| {
+        p.subpiles()
+            .iter()
+            .any(|&s| table.0.pile(s).is_some_and(|d| d.label == "System"))
+    });
+    if already {
+        return;
+    }
     let Ok(pile) = table.0.add_pile(root, "System") else {
         return;
     };
@@ -871,7 +881,7 @@ fn on_card_drag_end(
             .floor()
             .max(0.0) as usize)
             .min(cols - 1);
-        let row = ((px(node.top) + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
+        let row = ((px(node.top) - GRID_TOP + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
             .floor()
             .max(0.0) as usize;
         let Some(from) = table.0.card_index(card.0) else {
@@ -1421,6 +1431,10 @@ const LEAVE_GAP: f32 = 14.0;
 
 /// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
 const GRID_GAP: f32 = 14.0;
+/// Top inset for an **ordered** zone's grid, reserving the band where the floating overlays (the
+/// centered title, the Back card) sit — ordered cards are at fixed cells and can't dodge obstacles the
+/// way a Free zone's cards do, so the grid simply starts below them.
+const GRID_TOP: f32 = 44.0;
 /// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
 /// card in one enormous row.
 const MAX_COLS: usize = 16;
@@ -1446,7 +1460,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     let row = index / cols;
     (
         col as f32 * (SMALL_W + GRID_GAP),
-        row as f32 * (SMALL_H + GRID_GAP),
+        GRID_TOP + row as f32 * (SMALL_H + GRID_GAP),
     )
 }
 

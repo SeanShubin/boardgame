@@ -366,6 +366,26 @@ mod tests {
     }
 
     #[test]
+    fn sample_table_round_trips_through_ron() {
+        let t = sample_table();
+        let text = ron::to_string(&t).expect("serialize to RON");
+        let back: Tableau = ron::from_str(&text).expect("deserialize from RON");
+        // Structure survives the round-trip (HashMaps keyed by integer ids and all card/pile data).
+        assert_eq!(back.card_count(), t.card_count());
+        let subs = |t: &Tableau| t.pile(t.root_id()).unwrap().subpiles().len();
+        assert_eq!(subs(&back), subs(&t));
+        // A known card comes back intact.
+        let root = t.pile(t.root_id()).unwrap();
+        let rules_id = *root
+            .subpiles()
+            .iter()
+            .find(|&&id| t.pile(id).unwrap().label == "Rules")
+            .unwrap();
+        let order = t.content_cards(rules_id)[0];
+        assert_eq!(back.card(order).unwrap().name(), "Damage Order");
+    }
+
+    #[test]
     fn rules_deck_leads_with_the_damage_order_then_one_card_per_phase() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
