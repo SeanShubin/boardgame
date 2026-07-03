@@ -87,6 +87,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<DraggingCard>()
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
+            .init_resource::<FactoryBase>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
@@ -242,10 +243,17 @@ struct NeedsRebuild(bool);
 #[derive(Resource, Default)]
 struct DraggingCard(Option<CardId>);
 
-/// The initial table, snapshotted once at startup so a **Reset** action can restore it. Game-agnostic:
+/// The initial table, snapshotted once at startup so a **Revert** action can restore it. Game-agnostic:
 /// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
 #[derive(Resource, Default)]
 struct InitialTable(Tableau);
+
+/// A **pristine "factory" table** the embedder supplies (e.g. `boardgame` inserts a fresh `sample_table`)
+/// — the target of **Start Over**, which discards this session *and* the loaded save. Distinct from
+/// [`InitialTable`], which is the session-start snapshot (a loaded save, if any). The System deck is
+/// (re)installed onto it when Start Over fires, so it need not carry one.
+#[derive(Resource, Default)]
+pub struct FactoryBase(pub Tableau);
 
 /// One card popped out from a pressed [`Arrangement::Actions`] deck: the [`Utility`] it fires, the
 /// rectangle it occupies (for the drop hit-test), and its spawned surface entity.
@@ -276,63 +284,62 @@ fn setup_camera(mut commands: Commands) {
 /// **Reset** everywhere and **Exit** on desktop only — a browser can't quit its own tab, so the Exit
 /// card never appears there. Runs once at startup.
 fn inject_system_deck(mut table: ResMut<Table>) {
-    let root = table.0.root_id();
-    // Idempotent: a resumed table (loaded from a save) already carries its System deck, so don't add a
-    // second one.
-    let already = table.0.pile(root).is_some_and(|p| {
+    install_system_deck(&mut table.0);
+}
+
+/// Add one [`Utility`] action card (face-up `title`) to `pile`.
+fn add_util(table: &mut Tableau, pile: PileId, title: &str, utility: Utility) {
+    if let Ok(id) = table.add_card(
+        pile,
+        Face::Up {
+            title: title.into(),
+        },
+        None,
+    ) {
+        let _ = table.set_card_kind(id, CardKind::Utility(utility));
+    }
+}
+
+/// Install the **System deck** into `table` — idempotent, so a resumed or rebuilt table isn't doubled up.
+/// Holds **Revert** (undo this session) and **Start Over** (pristine table) everywhere, plus **Exit** on
+/// desktop (a browser can't quit its own tab). Called at startup and by Start Over (which rebuilds a
+/// fresh table and reinstalls this deck).
+fn install_system_deck(table: &mut Tableau) {
+    let root = table.root_id();
+    let already = table.pile(root).is_some_and(|p| {
         p.subpiles()
             .iter()
-            .any(|&s| table.0.pile(s).is_some_and(|d| d.label == "System"))
+            .any(|&s| table.pile(s).is_some_and(|d| d.label == "System"))
     });
     if already {
         return;
     }
-    let Ok(pile) = table.0.add_pile(root, "System") else {
+    let Ok(pile) = table.add_pile(root, "System") else {
         return;
     };
-    // Action cards sit under the "System" label. Reset is available everywhere; Exit is desktop-only.
-    if let Ok(reset) = table.0.add_card(
-        pile,
-        Face::Up {
-            title: "Reset".into(),
-        },
-        None,
-    ) {
-        let _ = table
-            .0
-            .set_card_kind(reset, CardKind::Utility(Utility::Reset));
-    }
-    if !cfg!(target_arch = "wasm32")
-        && let Ok(exit) = table.0.add_card(
-            pile,
-            Face::Up {
-                title: "Exit".into(),
-            },
-            None,
-        )
-    {
-        let _ = table
-            .0
-            .set_card_kind(exit, CardKind::Utility(Utility::Exit));
+    add_util(table, pile, "Revert", Utility::Revert);
+    add_util(table, pile, "Start Over", Utility::StartOver);
+    if !cfg!(target_arch = "wasm32") {
+        add_util(table, pile, "Exit", Utility::Exit);
     }
     // "System" is a Zone (naming) card — the deck's label, not one of its actions.
-    if let Ok(system) = table.0.add_card(
+    if let Ok(system) = table.add_card(
         pile,
         Face::Up {
             title: "System".into(),
         },
         None,
     ) {
-        let _ = table.0.set_card_kind(system, CardKind::Zone);
+        let _ = table.set_card_kind(system, CardKind::Zone);
     }
-    let _ = table.0.set_layout(
+    let _ = table.set_layout(
         pile,
         Layout {
             arrangement: Arrangement::Actions,
             editable: false,
         },
     );
-    let _ = table.0.set_pile_pos(pile, 40.0, 470.0);
+    let _ = table.set_pile_pos(pile, 40.0, 470.0);
 }
 
 /// Snapshot the fully-initialised table (after [`inject_system_deck`]) so a **Reset** can restore it.
@@ -975,7 +982,8 @@ fn on_actions_press(
 fn action_color(utility: Utility) -> Color {
     match utility {
         Utility::Exit => EXIT_CONFIRM_BG, // warm red — "this is the way out"
-        Utility::Reset => Color::srgb(0.28, 0.42, 0.60), // blue
+        Utility::StartOver => Color::srgb(0.62, 0.44, 0.24), // amber — a bigger, permanent wipe
+        Utility::Revert => Color::srgb(0.28, 0.42, 0.60), // blue — a soft undo
         Utility::Back => Color::srgb(0.30, 0.40, 0.45),
     }
 }
@@ -987,6 +995,7 @@ fn on_actions_release(
     mut state: ResMut<ActionsDeckState>,
     mut table: ResMut<Table>,
     initial: Res<InitialTable>,
+    factory: Res<FactoryBase>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -996,6 +1005,7 @@ fn on_actions_release(
             &mut state,
             &mut table,
             &initial.0,
+            &factory.0,
             &mut rebuild,
             &mut commands,
             &mut exit,
@@ -1005,11 +1015,13 @@ fn on_actions_release(
 
 /// The drag counterpart of [`on_actions_release`]: when any drag ends (including off-window, where
 /// `Release` may not fire), settle the Actions deck.
+#[allow(clippy::too_many_arguments)]
 fn on_actions_drag_end(
     _on: On<Pointer<DragEnd>>,
     mut state: ResMut<ActionsDeckState>,
     mut table: ResMut<Table>,
     initial: Res<InitialTable>,
+    factory: Res<FactoryBase>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -1018,6 +1030,7 @@ fn on_actions_drag_end(
         &mut state,
         &mut table,
         &initial.0,
+        &factory.0,
         &mut rebuild,
         &mut commands,
         &mut exit,
@@ -1025,13 +1038,16 @@ fn on_actions_drag_end(
 }
 
 /// Settle a pressed Actions deck once the press/drag ends: fire the action of whichever popped card the
-/// deck overlaps (Exit quits; Reset restores the initial table), then despawn the popped cards and
-/// disarm. Called from both the release and drag-end paths — whichever fires first does the work, the
-/// other finds `pressed_pile == None` and no-ops — so the outcome doesn't depend on their ordering.
+/// deck overlaps (Exit quits; Revert restores the session-start table; Start Over rebuilds a pristine
+/// one), then despawn the popped cards and disarm. Called from both the release and drag-end paths —
+/// whichever fires first does the work, the other finds `pressed_pile == None` and no-ops — so the
+/// outcome doesn't depend on their ordering.
+#[allow(clippy::too_many_arguments)]
 fn settle_actions_deck(
     state: &mut ActionsDeckState,
     table: &mut Table,
     initial: &Tableau,
+    factory: &Tableau,
     rebuild: &mut NeedsRebuild,
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
@@ -1054,8 +1070,14 @@ fn settle_actions_deck(
         Some(Utility::Exit) => {
             exit.write(AppExit::Success);
         }
-        Some(Utility::Reset) => {
+        Some(Utility::Revert) => {
             table.0 = initial.clone();
+            rebuild.0 = true;
+        }
+        Some(Utility::StartOver) => {
+            // Pristine table, discarding this session; the autosave then overwrites the save with it.
+            table.0 = factory.clone();
+            install_system_deck(&mut table.0);
             rebuild.0 = true;
         }
         Some(Utility::Back) => {

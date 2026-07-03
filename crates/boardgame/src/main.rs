@@ -11,7 +11,7 @@
 mod persistence;
 
 use bevy::prelude::*;
-use cardtable::{ActionRequests, CardTablePlugin, CardTableSet, StatusLine, Table};
+use cardtable::{ActionRequests, CardTablePlugin, CardTableSet, FactoryBase, StatusLine, Table};
 use cardtable_model::sample_table;
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
@@ -36,6 +36,8 @@ fn main() -> AppExit {
     // sample table. The System deck is re-injected idempotently, so a resumed table isn't doubled up.
     app.add_plugins(CardTablePlugin)
         .insert_resource(Table(persistence::load().unwrap_or_else(sample_table)))
+        // The pristine table "Start Over" resets to (a fresh sample, discarding save + session).
+        .insert_resource(FactoryBase(sample_table()))
         .insert_resource(StatusLine(
             "Click a pile to enter it · click a card to grow it · drag to arrange".into(),
         ))

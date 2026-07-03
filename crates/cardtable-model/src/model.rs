@@ -82,8 +82,10 @@ pub enum Utility {
     Back,
     /// Quit the application (desktop only).
     Exit,
-    /// Reset the game to its original state.
-    Reset,
+    /// Revert the table to how it was when this session started (undo this session's changes).
+    Revert,
+    /// Start over from a pristine table, discarding this session's changes and the saved game.
+    StartOver,
 }
 
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
