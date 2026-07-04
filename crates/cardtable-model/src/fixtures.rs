@@ -539,7 +539,7 @@ mod tests {
             .map(|&c| t.card(c).unwrap().name())
             .collect();
         assert_eq!(names, ["Skirmisher", "Sentinel", "Tempest", "Cleaver"]);
-        for &c in starters {
+        for &c in &starters {
             assert_eq!(t.card(c).unwrap().card_type(), "Kit");
         }
 

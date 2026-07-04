@@ -29,7 +29,8 @@ use bevy::ui::{BoxShadow, ComputedNode, UiGlobalTransform};
 use std::collections::HashMap;
 
 use cardtable_model::{
-    Arrangement, Card, CardId, CardKind, Face, Layout, PileId, Pos, Size, Tableau, Utility,
+    Arrangement, Card, CardId, CardKind, Face, Layout, Node as TableNode, PileId, Pos, Size,
+    Tableau, Utility,
 };
 
 #[cfg(feature = "game")]
@@ -516,10 +517,16 @@ fn on_pile_drag_end(
     guard.0 = false; // the drag is over; let real clicks through again
     if let Ok((pile, node)) = piles.get(on.event().entity) {
         let _ = table.0.set_pile_pos(pile.0, px(node.left), px(node.top));
-        // Settle: clamp the (possibly off-edge) pile back inside and shove overlaps clear — the
-        // anchor included, so a pile dropped past the border is pulled into view, then the animation
-        // slides it the rest of the way.
-        table.0.separate(pile.0);
+        // Settle: clamp the (possibly off-edge) pile back inside and shove overlapping siblings clear —
+        // the anchor included, so a pile dropped past the border is pulled into view, then the animation
+        // slides it the rest of the way. Separate the pile among its parent's children (a card or pile,
+        // same treatment).
+        let parent = table
+            .0
+            .pile(pile.0)
+            .and_then(|p| p.parent())
+            .unwrap_or(table.0.root_id());
+        table.0.separate(parent, TableNode::Pile(pile.0));
         on.propagate(false);
     }
 }
@@ -878,7 +885,7 @@ fn on_card_drag_end(
         ) {
             // Unordered: keep it where dropped, then shove the rest out of its way.
             let _ = table.0.set_card_pos(card.0, px(node.left), px(node.top));
-            table.0.separate_cards(home, card.0);
+            table.0.separate(home, TableNode::Card(card.0));
             return;
         }
         // Ordered grid: snap into the nearest cell by reordering among the *contents* only, so a drag
@@ -1225,7 +1232,7 @@ fn settle_free_cards(
         anchor = anchor.or_else(|| cards.first().copied());
     }
     if let Some(anchor) = anchor {
-        table.0.separate_cards(focus, anchor);
+        table.0.separate(focus, TableNode::Card(anchor));
     }
 }
 
@@ -1289,7 +1296,7 @@ fn settle_table_piles(
         anchor = anchor.or_else(|| piles.first().copied());
     }
     if let Some(anchor) = anchor {
-        table.0.separate(anchor);
+        table.0.separate(root, TableNode::Pile(anchor));
     }
 }
 
@@ -1523,7 +1530,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
             .with_children(|surface| {
                 let pile = tree.pile(zone).expect("zone pile exists");
                 if at_root {
-                    for &id in pile.subpiles() {
+                    for id in pile.subpiles() {
                         let pos = tree.pile(id).expect("pile id from zone").pos();
                         surface
                             .spawn((
@@ -1656,48 +1663,44 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                     // Free decks are drag-at-will; an ordered layout is draggable only when editable.
                     let draggable = free || pile.layout().editable;
                     let cols = zone_cols(tree);
-                    let content = tree.content_cards(zone);
-                    for (index, &cid) in content.iter().enumerate() {
-                        let card = tree.card(cid).expect("card id from zone");
+                    // One uniform pass over the movable children: a card and a nested pile alike get a
+                    // position, a drag marker, and (Free) shove — they differ only in their leaf face (a
+                    // card grows; a pile is a drillable chip). A Free layout reads each node's own model
+                    // position; an ordered one places them on the grid in child order.
+                    for (index, node) in tree.movable_children(zone).into_iter().enumerate() {
                         let (x, y) = if free {
-                            let p = card.pos();
+                            let p = match node {
+                                TableNode::Card(cid) => tree.card(cid).map(|c| c.pos()),
+                                TableNode::Pile(pid) => tree.pile(pid).map(|d| d.pos()),
+                            }
+                            .unwrap_or_default();
                             (p.x, p.y)
                         } else {
                             grid_cell(index, cols)
                         };
-                        let mut tile = surface.spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(x),
-                                top: Val::Px(y),
-                                ..default()
-                            },
-                            // An expanded card lifts above its neighbours so it stays readable.
-                            card_elevation(card),
-                        ));
-                        if draggable {
-                            tile.insert(TableCard(cid));
+                        let mut tile = surface.spawn(Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(x),
+                            top: Val::Px(y),
+                            ..default()
+                        });
+                        match node {
+                            TableNode::Card(cid) => {
+                                let card = tree.card(cid).expect("card id from zone");
+                                // An expanded card lifts above its neighbours so it stays readable.
+                                tile.insert(card_elevation(card));
+                                if draggable {
+                                    tile.insert(TableCard(cid));
+                                }
+                                tile.with_children(|tile| spawn_card(tile, card));
+                            }
+                            TableNode::Pile(pid) => {
+                                if draggable {
+                                    tile.insert(TablePile(pid));
+                                }
+                                tile.with_children(|tile| spawn_pile(tile, tree, pid));
+                            }
                         }
-                        tile.with_children(|tile| spawn_card(tile, card));
-                    }
-                    // Sub-piles: in a Free deck they sit at their own model position (like the cards),
-                    // else they follow the cards in the grid as (clickable) chips.
-                    let base = content.len();
-                    for (k, &sid) in pile.subpiles().iter().enumerate() {
-                        let (x, y) = if free {
-                            let p = tree.pile(sid).map(|d| d.pos()).unwrap_or_default();
-                            (p.x, p.y)
-                        } else {
-                            grid_cell(base + k, cols)
-                        };
-                        surface
-                            .spawn(Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(x),
-                                top: Val::Px(y),
-                                ..default()
-                            })
-                            .with_children(|wrapper| spawn_pile(wrapper, tree, sid));
                     }
                 }
             });

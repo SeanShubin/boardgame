@@ -19,6 +19,34 @@ pub struct CardId(pub u64);
 )]
 pub struct PileId(pub u64);
 
+/// A **child of a pile** — one entry in its single ordered [`children`](Pile::children) list. A pile's
+/// contents are a homogeneous sequence of nodes, each either a leaf [`Card`] or a nested [`Pile`]; both
+/// are positioned, sized, movable, and shoved *uniformly* (see [`Tableau::separate`]). The card-vs-pile
+/// distinction only decides leaf behavior — a card grows, a pile drills in — not whether it can move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum Node {
+    Card(CardId),
+    Pile(PileId),
+}
+
+impl Node {
+    /// The card this node is, if it is a leaf card.
+    pub fn card(self) -> Option<CardId> {
+        match self {
+            Node::Card(id) => Some(id),
+            Node::Pile(_) => None,
+        }
+    }
+
+    /// The pile this node is, if it is a nested pile.
+    pub fn pile(self) -> Option<PileId> {
+        match self {
+            Node::Pile(id) => Some(id),
+            Node::Card(_) => None,
+        }
+    }
+}
+
 /// A 2-D position on the table surface, in pixels from its top-left. The card-table is a physical
 /// space, so a pile has a *place*; the renderer draws it there and drag-to-place updates it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -361,8 +389,9 @@ pub struct Pile {
     /// `true` = compact pile; `false` = fanned/attended.
     pub collapsed: bool,
     parent: Option<PileId>,
-    cards: Vec<CardId>,
-    subpiles: Vec<PileId>,
+    /// This pile's contents, in one ordered list: cards and nested piles interleaved, positioned and
+    /// shoved uniformly. [`cards`](Pile::cards) / [`subpiles`](Pile::subpiles) are filtered views of it.
+    children: Vec<Node>,
     pos: Pos,
     size: Pos,
     layout: Layout,
@@ -382,14 +411,19 @@ impl Pile {
         self.parent
     }
 
-    /// The cards directly in this pile, in order (bottom to top).
-    pub fn cards(&self) -> &[CardId] {
-        &self.cards
+    /// This pile's contents in order — cards and nested piles interleaved.
+    pub fn children(&self) -> &[Node] {
+        &self.children
     }
 
-    /// The piles nested directly in this pile, in order.
-    pub fn subpiles(&self) -> &[PileId] {
-        &self.subpiles
+    /// The cards directly in this pile, in order (bottom to top) — the card nodes of [`children`](Pile::children).
+    pub fn cards(&self) -> Vec<CardId> {
+        self.children.iter().filter_map(|n| n.card()).collect()
+    }
+
+    /// The piles nested directly in this pile, in order — the pile nodes of [`children`](Pile::children).
+    pub fn subpiles(&self) -> Vec<PileId> {
+        self.children.iter().filter_map(|n| n.pile()).collect()
     }
 
     /// This pile's position on the table surface.
@@ -479,8 +513,7 @@ impl Tableau {
                 label: "table".to_string(),
                 collapsed: false,
                 parent: None,
-                cards: Vec::new(),
-                subpiles: Vec::new(),
+                children: Vec::new(),
                 pos: Pos::default(),
                 size: Pos::default(),
                 layout: Layout::default(),
@@ -523,8 +556,7 @@ impl Tableau {
                 label: label.into(),
                 collapsed: true,
                 parent: Some(parent),
-                cards: Vec::new(),
-                subpiles: Vec::new(),
+                children: Vec::new(),
                 pos: Pos::default(),
                 size: Pos::default(),
                 layout: Layout::default(),
@@ -535,8 +567,8 @@ impl Tableau {
         self.piles
             .get_mut(&parent)
             .expect("parent checked above")
-            .subpiles
-            .push(id);
+            .children
+            .push(Node::Pile(id));
         Ok(id)
     }
 
@@ -572,8 +604,8 @@ impl Tableau {
         self.piles
             .get_mut(&pile)
             .expect("pile checked above")
-            .cards
-            .push(id);
+            .children
+            .push(Node::Card(id));
         Ok(id)
     }
 
@@ -639,18 +671,19 @@ impl Tableau {
 
     // --- reordering & moving ----------------------------------------------------------------
 
-    /// Reorders a card within `pile` so the card at `from` ends up at index `to`. Both indices must
-    /// be in range for the pile's cards, else [`TableauError::IndexOutOfRange`] and no change.
+    /// Reorders a child within `pile` so the node at `from` ends up at index `to`. Indices are into the
+    /// pile's [`children`](Pile::children) (cards and sub-piles alike); both must be in range, else
+    /// [`TableauError::IndexOutOfRange`] and no change.
     pub fn reorder(&mut self, pile: PileId, from: usize, to: usize) -> Result<(), TableauError> {
         let d = self
             .piles
             .get_mut(&pile)
             .ok_or(TableauError::UnknownPile(pile))?;
-        if from >= d.cards.len() || to >= d.cards.len() {
+        if from >= d.children.len() || to >= d.children.len() {
             return Err(TableauError::IndexOutOfRange);
         }
-        let id = d.cards.remove(from);
-        d.cards.insert(to, id);
+        let node = d.children.remove(from);
+        d.children.insert(to, node);
         Ok(())
     }
 
@@ -671,24 +704,24 @@ impl Tableau {
         if !self.piles.contains_key(&to_deck) {
             return Err(TableauError::UnknownPile(to_deck));
         }
-        if at > self.piles[&to_deck].cards.len() {
+        if at > self.piles[&to_deck].children.len() {
             return Err(TableauError::IndexOutOfRange);
         }
         // Remove from source (home invariant guarantees it is present).
         let pos = self.piles[&from_deck]
-            .cards
+            .children
             .iter()
-            .position(|c| *c == card)
+            .position(|n| *n == Node::Card(card))
             .expect("home invariant: card is in its home pile");
         self.piles
             .get_mut(&from_deck)
             .expect("from exists")
-            .cards
+            .children
             .remove(pos);
         // Insert into destination, clamping for the same-pile shift after removal.
         let dst = self.piles.get_mut(&to_deck).expect("to checked above");
-        let at = at.min(dst.cards.len());
-        dst.cards.insert(at, card);
+        let at = at.min(dst.children.len());
+        dst.children.insert(at, Node::Card(card));
         self.cards.get_mut(&card).expect("card checked above").home = to_deck;
         Ok(())
     }
@@ -702,7 +735,7 @@ impl Tableau {
             .ok_or(TableauError::UnknownCard(card))?
             .home;
         if let Some(p) = self.piles.get_mut(&home) {
-            p.cards.retain(|&c| c != card);
+            p.children.retain(|&n| n != Node::Card(card));
         }
         self.cards.remove(&card);
         self.selection.retain(|&c| c != card);
@@ -735,21 +768,21 @@ impl Tableau {
             .parent
             .expect("a non-root pile has a parent");
         let pos = self.piles[&old_parent]
-            .subpiles
+            .children
             .iter()
-            .position(|d| *d == pile)
-            .expect("child invariant: pile is in its parent's subpiles");
+            .position(|n| *n == Node::Pile(pile))
+            .expect("child invariant: pile is in its parent's children");
         self.piles
             .get_mut(&old_parent)
             .expect("old parent exists")
-            .subpiles
+            .children
             .remove(pos);
         let dest = self
             .piles
             .get_mut(&new_parent)
             .expect("new parent checked above");
-        let at = at.min(dest.subpiles.len());
-        dest.subpiles.insert(at, pile);
+        let at = at.min(dest.children.len());
+        dest.children.insert(at, Node::Pile(pile));
         self.piles
             .get_mut(&pile)
             .expect("pile checked above")
@@ -826,9 +859,8 @@ impl Tableau {
             return Vec::new();
         };
         let headers: Vec<CardId> = p
-            .cards
-            .iter()
-            .copied()
+            .cards()
+            .into_iter()
             .filter(|c| {
                 self.cards
                     .get(c)
@@ -836,9 +868,8 @@ impl Tableau {
             })
             .collect();
         let own: Vec<CardId> = p
-            .cards
-            .iter()
-            .copied()
+            .cards()
+            .into_iter()
             .filter(|c| {
                 self.cards
                     .get(c)
@@ -912,7 +943,7 @@ impl Tableau {
         )?;
         self.set_card_type(rank, card_type.clone())?;
         // ...then the identity itself, moved on top as the deck's Zone label (its Attributes copy).
-        let at = self.piles[&character].cards.len();
+        let at = self.piles[&character].children.len();
         self.move_card(identity, character, at)?;
         self.set_card_kind(identity, CardKind::Zone)?;
         // One identity copy stands at the location (the character is now on the overworld there).
@@ -948,8 +979,8 @@ impl Tableau {
             .get(&pile)
             .ok_or(TableauError::UnknownPile(pile))?;
         let parent = p.parent;
-        let subpiles = p.subpiles.clone();
-        let cards = p.cards.clone();
+        let subpiles = p.subpiles();
+        let cards = p.cards();
         for sub in subpiles {
             self.remove_pile(sub)?;
         }
@@ -960,7 +991,7 @@ impl Tableau {
         if let Some(parent) = parent
             && let Some(pp) = self.piles.get_mut(&parent)
         {
-            pp.subpiles.retain(|&s| s != pile);
+            pp.children.retain(|&n| n != Node::Pile(pile));
         }
         self.piles.remove(&pile);
         Ok(())
@@ -996,9 +1027,8 @@ impl Tableau {
         }
         // Drop reflections whose pair is gone.
         let stale: Vec<PileId> = self.piles[&self.root]
-            .subpiles
-            .iter()
-            .copied()
+            .subpiles()
+            .into_iter()
             .filter(|&s| {
                 self.piles[&s]
                     .reflects
@@ -1010,9 +1040,9 @@ impl Tableau {
         }
         // Add a reflection for each newly-paired hero.
         let reflected: Vec<CardId> = self.piles[&self.root]
-            .subpiles
-            .iter()
-            .filter_map(|&s| self.piles[&s].reflects)
+            .subpiles()
+            .into_iter()
+            .filter_map(|s| self.piles[&s].reflects)
             .collect();
         for &hero in &active_heroes {
             if reflected.contains(&hero) {
@@ -1021,9 +1051,9 @@ impl Tableau {
             let kit = self.paired_kit(inn, hero);
             // Offset each fresh deck past the reflections already on the table (including this pass's).
             let idx = self.piles[&self.root]
-                .subpiles
-                .iter()
-                .filter(|&&s| self.piles[&s].reflects.is_some())
+                .subpiles()
+                .into_iter()
+                .filter(|&s| self.piles[&s].reflects.is_some())
                 .count();
             self.build_character_reflection(hero, kit, idx)?;
         }
@@ -1226,7 +1256,7 @@ impl Tableau {
             return Vec::new();
         };
         let mut runs: Vec<(CardId, usize)> = Vec::new();
-        for &cid in &p.cards {
+        for cid in p.cards() {
             let card = &self.cards[&cid];
             if card.size == Size::Small
                 && let Some(&(prev, _)) = runs.last()
@@ -1264,29 +1294,38 @@ impl Tableau {
         self.surface
     }
 
-    /// The index of a card within its home pile (0 = bottom), if it exists. Drives its grid cell.
+    /// The index of a card within its home pile's [`children`](Pile::children) (0 = bottom), if it
+    /// exists. Drives its grid cell — the same child ordering the renderer lays out.
     pub fn card_index(&self, card: CardId) -> Option<usize> {
         let home = self.cards.get(&card)?.home;
-        self.piles[&home].cards.iter().position(|c| *c == card)
+        self.piles[&home]
+            .children
+            .iter()
+            .position(|n| *n == Node::Card(card))
     }
 
     /// The pile's **zone card** — a trailing [`CardKind::Zone`] card that *names* the pile rather than
-    /// being one of its contents — if it has one. It is the top (last) card, when that card is a Zone.
+    /// being one of its contents — if it has one. It is the last child, when that child is a Zone card.
     /// The zone card is the pile's label: it titles the zone you drill into, and it is neither counted
     /// nor shown among the contents.
     pub fn zone_card(&self, pile: PileId) -> Option<CardId> {
         let p = self.piles.get(&pile)?;
-        let &top = p.cards.last()?;
+        let top = p.children.last()?.card()?;
         (self.cards[&top].kind == CardKind::Zone).then_some(top)
     }
 
     /// The pile's **content** cards — every card except a trailing [`zone_card`](Self::zone_card).
     /// This is what drilling into the pile shows, and what its deck count reflects.
-    pub fn content_cards(&self, pile: PileId) -> &[CardId] {
+    pub fn content_cards(&self, pile: PileId) -> Vec<CardId> {
+        let zone = self.zone_card(pile);
         match self.piles.get(&pile) {
-            Some(p) if self.zone_card(pile).is_some() => &p.cards[..p.cards.len() - 1],
-            Some(p) => &p.cards,
-            None => &[],
+            Some(p) => p
+                .children
+                .iter()
+                .filter_map(|n| n.card())
+                .filter(|&c| Some(c) != zone)
+                .collect(),
+            None => Vec::new(),
         }
     }
 
@@ -1303,45 +1342,63 @@ impl Tableau {
         Ok(pos)
     }
 
-    /// Pushes overlapping **top-level piles** apart so the table reads as physical objects, keeping
-    /// every pile inside the surface *and clear of the felt's [obstacles](Self::set_obstacles)* (e.g. the
-    /// floating title): lock-as-you-go outward from the `anchor` (see [`separate_boxes`]). Each pile
-    /// settles at the nearest spot clear of every already-settled pile and every obstacle, so no two
-    /// overlap and none sits under a reserved rectangle once the space allows it.
-    pub fn separate(&mut self, anchor: PileId) {
-        let ids = self.piles[&self.root].subpiles.clone();
-        let Some(anchor_idx) = ids.iter().position(|&id| id == anchor) else {
-            return;
-        };
-        let boxes: Vec<(Pos, Pos)> = ids
-            .iter()
-            .map(|&id| (self.piles[&id].pos, self.piles[&id].size))
-            .collect();
-        let settled = separate_boxes(&boxes, anchor_idx, self.surface, &self.obstacles);
-        for (&id, pos) in ids.iter().zip(settled) {
-            self.piles.get_mut(&id).expect("subpile id").pos = pos;
+    /// The movable children of `pile` — every child *except* a trailing [`zone_card`](Self::zone_card),
+    /// which is the pile's label, not a thing on the felt. This is the single set that [`separate`] shoves
+    /// and the renderer lays out, so a nested pile and a card are first-class alike.
+    pub fn movable_children(&self, pile: PileId) -> Vec<Node> {
+        let zone = self.zone_card(pile).map(Node::Card);
+        self.piles.get(&pile).map_or(Vec::new(), |p| {
+            p.children
+                .iter()
+                .copied()
+                .filter(|&n| Some(n) != zone)
+                .collect()
+        })
+    }
+
+    /// The box (`pos`, `size`) a node occupies on the felt: a card by its [`footprint`](Card::footprint),
+    /// a pile by its rendered [`size`](Pile::size). `None` if the node is unknown.
+    fn node_box(&self, node: Node) -> Option<(Pos, Pos)> {
+        match node {
+            Node::Card(c) => self.cards.get(&c).map(|k| (k.pos, k.footprint)),
+            Node::Pile(p) => self.piles.get(&p).map(|d| (d.pos, d.size)),
         }
     }
 
-    /// Pushes overlapping **cards within a pile** apart — the [`Arrangement::Free`] counterpart of
-    /// [`separate`]. The `anchor` card is pinned and the rest settle clear of one another *and of the
-    /// felt's [obstacles](Self::set_obstacles)* (the floating title and Back overlay share the surface's
-    /// coordinate space), by each card's [`pos`](Card::pos) and [`footprint`](Card::footprint). Operates
-    /// on the pile's content cards (a trailing zone card is the label, not shoved). No-op if the pile or
-    /// anchor is unknown.
-    pub fn separate_cards(&mut self, pile: PileId, anchor: CardId) {
-        let cards: Vec<CardId> = self.content_cards(pile).to_vec();
-        let Some(anchor_idx) = cards.iter().position(|&c| c == anchor) else {
+    /// Sets a node's position — a card's [`pos`](Card::pos) or a pile's [`pos`](Pile::pos).
+    fn set_node_pos(&mut self, node: Node, pos: Pos) {
+        match node {
+            Node::Card(c) => {
+                if let Some(k) = self.cards.get_mut(&c) {
+                    k.pos = pos;
+                }
+            }
+            Node::Pile(p) => {
+                if let Some(d) = self.piles.get_mut(&p) {
+                    d.pos = pos;
+                }
+            }
+        }
+    }
+
+    /// Pushes the overlapping **children of `pile`** apart so the felt reads as physical objects — cards
+    /// and nested piles *alike*, since both are [`movable_children`](Self::movable_children). The `anchor`
+    /// node is pinned; the rest settle at the nearest spot clear of every already-settled sibling and of
+    /// the felt's [obstacles](Self::set_obstacles) (the floating title / Back), all kept inside the
+    /// surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any drilled
+    /// zone are just piles whose children get separated.
+    pub fn separate(&mut self, pile: PileId, anchor: Node) {
+        let nodes = self.movable_children(pile);
+        let Some(anchor_idx) = nodes.iter().position(|&n| n == anchor) else {
             return;
         };
-        let boxes: Vec<(Pos, Pos)> = cards
+        let boxes: Vec<(Pos, Pos)> = nodes
             .iter()
-            .map(|&c| (self.cards[&c].pos, self.cards[&c].footprint))
+            .map(|&n| self.node_box(n).unwrap_or_default())
             .collect();
-        // The overlays (title, Back) float over the focused zone too, so its cards dodge them as well.
         let settled = separate_boxes(&boxes, anchor_idx, self.surface, &self.obstacles);
-        for (&c, pos) in cards.iter().zip(settled) {
-            self.cards.get_mut(&c).expect("card id").pos = pos;
+        for (&n, pos) in nodes.iter().zip(settled) {
+            self.set_node_pos(n, pos);
         }
     }
 
@@ -1536,7 +1593,7 @@ mod tests {
         t.set_pile_pos(a, 0.0, 0.0).unwrap();
         t.set_pile_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
 
-        t.separate(a);
+        t.separate(t.root_id(), Node::Pile(a));
 
         assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor unmoved
         let bp = t.pile(b).unwrap().pos();
@@ -1559,7 +1616,7 @@ mod tests {
         t.set_obstacles(vec![(Pos { x: 180.0, y: 20.0 }, Pos { x: 160.0, y: 60.0 })]);
 
         // Even as the anchor, the pile is pushed clear of the obstacle (obstacles outrank piles).
-        t.separate(a);
+        t.separate(t.root_id(), Node::Pile(a));
         let p = t.pile(a).unwrap().pos();
         let ox = (p.x + 100.0).min(180.0 + 160.0) - p.x.max(180.0);
         let oy = (p.y + 100.0).min(20.0 + 60.0) - p.y.max(20.0);
@@ -1571,7 +1628,7 @@ mod tests {
         // With the obstacle cleared, a pile at that spot is left in place (nothing to dodge).
         t.set_obstacles(vec![]);
         t.set_pile_pos(a, 200.0, 40.0).unwrap();
-        t.separate(a);
+        t.separate(t.root_id(), Node::Pile(a));
         assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 200.0, y: 40.0 });
     }
 
@@ -1588,7 +1645,7 @@ mod tests {
             t.set_pile_pos(d, 0.0, 0.0).unwrap(); // all stacked at the origin
         }
         let anchor = ids[0];
-        t.separate(anchor);
+        t.separate(t.root_id(), Node::Pile(anchor));
 
         assert_eq!(t.pile(anchor).unwrap().pos(), Pos { x: 0.0, y: 0.0 });
         for i in 0..ids.len() {
@@ -1637,7 +1694,7 @@ mod tests {
             t.set_pile_pos(d, 250.0, 0.0).unwrap(); // stacked near the right wall
         }
         t.set_surface(300.0, 200.0);
-        t.separate(ids[0]);
+        t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
             let p = t.pile(d).unwrap().pos();
@@ -1660,7 +1717,7 @@ mod tests {
         t.set_pile_pos(a, 0.0, 0.0).unwrap();
         t.set_pile_pos(b, 10.0, 0.0).unwrap(); // overlapping A, pinned near the right wall
 
-        t.separate(a);
+        t.separate(t.root_id(), Node::Pile(a));
 
         assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
         let (ap, asz) = (t.pile(a).unwrap().pos(), t.pile(a).unwrap().size());
@@ -1708,7 +1765,7 @@ mod tests {
             t.set_pile_pos(d, i as f32 * 12.0, i as f32 * 9.0).unwrap();
         }
         t.set_surface(1000.0, 1000.0);
-        t.separate(ids[0]);
+        t.separate(t.root_id(), Node::Pile(ids[0]));
 
         assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
         assert_no_overlaps(&t, &ids);
@@ -1729,7 +1786,7 @@ mod tests {
             t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the surface's center
         }
         t.set_surface(200.0, 200.0); // a 2×2 grid of 100×100 cells is the only clear packing
-        t.separate(ids[0]);
+        t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
             let p = t.pile(d).unwrap().pos();
@@ -1906,7 +1963,7 @@ mod tests {
         t.set_card_pos(a, 0.0, 0.0).unwrap();
         t.set_card_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
 
-        t.separate_cards(p, a);
+        t.separate(p, Node::Card(a));
 
         assert_eq!(t.card(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
         let bp = t.card(b).unwrap().pos();
