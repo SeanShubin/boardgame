@@ -301,16 +301,31 @@ fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> P
 /// [`Tableau::separate`] (cards): because each box is placed clear of all already-settled boxes
 /// and never disturbed afterward, no two overlap once the space allows it. Terminates in one placement
 /// per box.
-fn separate_boxes(boxes: &[(Pos, Pos)], anchor: usize, surface: Pos) -> Vec<Pos> {
+fn separate_boxes(
+    boxes: &[(Pos, Pos)],
+    anchor: usize,
+    surface: Pos,
+    pinned: &[(Pos, Pos)],
+) -> Vec<Pos> {
     let mut result: Vec<Pos> = boxes.iter().map(|&(p, _)| p).collect();
     if boxes.is_empty() {
         return result;
     }
+    // Priority order, lock-as-you-go: whoever is placed first wins its spot; everyone after settles clear.
+    let mut locked: Vec<(Pos, Pos)> = Vec::with_capacity(pinned.len() + boxes.len());
+    // (1) Pinned fixtures — highest priority. Placed *through the same clear-rule* (not dumped raw), so a
+    // lower-priority pinned box yields to a higher one and two pinned boxes can never overlap.
+    for &(p, s) in pinned {
+        let pos = place_clear_of(p, s, &locked, surface);
+        locked.push((pos, s));
+    }
+    // (2) The anchor (the just-dropped / just-changed box) — clear of the pinned, but nothing else moves it.
     let (anchor_pos, anchor_size) = boxes[anchor];
     let anchor_center = box_center(anchor_pos, anchor_size);
-    // Pin the anchor at its in-bounds position; it is a fixed obstacle for everything else.
-    let anchor_pos = clamp_box(anchor_pos, anchor_size, surface);
+    let anchor_pos = place_clear_of(anchor_pos, anchor_size, &locked, surface);
     result[anchor] = anchor_pos;
+    locked.push((anchor_pos, anchor_size));
+    // (3) The rest — fan out nearest-first from the anchor, each clear of everything already locked.
     let mut order: Vec<usize> = (0..boxes.len()).filter(|&i| i != anchor).collect();
     order.sort_by(|&i, &j| {
         let di = box_center(boxes[i].0, boxes[i].1).dist_sq(anchor_center);
@@ -319,7 +334,6 @@ fn separate_boxes(boxes: &[(Pos, Pos)], anchor: usize, surface: Pos) -> Vec<Pos>
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(i.cmp(&j))
     });
-    let mut locked: Vec<(Pos, Pos)> = vec![(anchor_pos, anchor_size)];
     for i in order {
         let pos = place_clear_of(boxes[i].0, boxes[i].1, &locked, surface);
         result[i] = pos;
@@ -471,9 +485,14 @@ pub struct Tableau {
     selection: Vec<CardId>,
     next_pile: u64,
     next_card: u64,
-    // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without it.
+    // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without them.
     #[serde(skip, default = "unbounded_surface")]
     surface: Pos,
+    /// **Pinned** rectangles `(top-left, size)` — the fixed felt fixtures (the centered zone title, the
+    /// Back card) that freely-placed content must settle clear of. In [`separate`] they take top priority:
+    /// placed first, so nothing overrides them; they never move for a card. Fed by the renderer each frame.
+    #[serde(skip)]
+    pinned: Vec<(Pos, Pos)>,
 }
 
 /// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
@@ -519,6 +538,7 @@ impl Tableau {
             // Effectively unbounded until the renderer reports the real table size, so piles aren't
             // jammed to the origin before the first layout.
             surface: unbounded_surface(),
+            pinned: Vec::new(),
         }
     }
 
@@ -1263,6 +1283,12 @@ impl Tableau {
         self.surface = Pos { x: w, y: h };
     }
 
+    /// Set the felt's **pinned** rectangles — the fixed fixtures (centered title, Back) that content is
+    /// shoved clear of, highest priority. Ordered highest-priority-first; fed by the renderer each frame.
+    pub fn set_pinned(&mut self, pinned: Vec<(Pos, Pos)>) {
+        self.pinned = pinned;
+    }
+
     /// The current table surface size (as last reported by the renderer). Used to lay cards out into a
     /// grid of as many columns as fit.
     pub fn surface(&self) -> Pos {
@@ -1361,10 +1387,11 @@ impl Tableau {
     }
 
     /// Pushes the overlapping **children of `pile`** apart so the felt reads as physical objects — cards
-    /// and nested piles *alike*, since both are [`movable_children`](Self::movable_children). The `anchor`
-    /// node is pinned; the rest settle at the nearest spot clear of every already-settled sibling, all kept
-    /// inside the surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any
-    /// drilled zone are just piles whose children get separated.
+    /// and nested piles *alike*, since both are [`movable_children`](Self::movable_children). Priority order
+    /// (see [`separate_boxes`]): the felt's [pinned](Self::set_pinned) fixtures first, then the dropped
+    /// `anchor`, then the rest fanning outward — each settling clear of everyone above it, all kept inside
+    /// the surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any drilled
+    /// zone are just piles whose children get separated.
     pub fn separate(&mut self, pile: PileId, anchor: Node) {
         let nodes = self.movable_children(pile);
         let Some(anchor_idx) = nodes.iter().position(|&n| n == anchor) else {
@@ -1374,7 +1401,7 @@ impl Tableau {
             .iter()
             .map(|&n| self.node_box(n).unwrap_or_default())
             .collect();
-        let settled = separate_boxes(&boxes, anchor_idx, self.surface);
+        let settled = separate_boxes(&boxes, anchor_idx, self.surface, &self.pinned);
         for (&n, pos) in nodes.iter().zip(settled) {
             self.set_node_pos(n, pos);
         }
@@ -1556,6 +1583,35 @@ mod tests {
         assert_eq!(t.move_pile(root, pile, 0), Err(TableauError::InvalidMove));
         assert_eq!(t.pile(hand).unwrap().parent(), Some(root));
         assert_eq!(t.pile(nested).unwrap().parent(), Some(hand));
+    }
+
+    /// Pinned fixtures outrank even the dropped anchor: a pile dropped onto the (title) pinned rect is
+    /// nudged clear of it, and with no pinned it keeps the spot it was dropped at.
+    #[test]
+    fn separate_pins_take_priority_over_the_dropped_anchor() {
+        let mut t = Tableau::new();
+        t.set_surface(1000.0, 1000.0);
+        let root = t.root_id();
+        let a = t.add_pile(root, "A").unwrap();
+        t.set_pile_size(a, 100.0, 100.0).unwrap();
+        t.set_pile_pos(a, 200.0, 40.0).unwrap();
+        // A pinned fixture (the centered title) right where the pile was dropped.
+        t.set_pinned(vec![(Pos { x: 180.0, y: 20.0 }, Pos { x: 160.0, y: 60.0 })]);
+
+        t.separate(root, Node::Pile(a));
+        let p = t.pile(a).unwrap().pos();
+        let ox = (p.x + 100.0).min(180.0 + 160.0) - p.x.max(180.0);
+        let oy = (p.y + 100.0).min(20.0 + 60.0) - p.y.max(20.0);
+        assert!(
+            ox <= 0.02 || oy <= 0.02,
+            "the dropped pile must yield to the pinned fixture, got {p:?}"
+        );
+
+        // No pinned → the dropped pile keeps its spot (nothing outranks it).
+        t.set_pinned(vec![]);
+        t.set_pile_pos(a, 200.0, 40.0).unwrap();
+        t.separate(root, Node::Pile(a));
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 200.0, y: 40.0 });
     }
 
     /// Two 100×100 piles overlapping; the anchor stays, the other slides clear on the x axis.

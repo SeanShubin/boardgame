@@ -103,9 +103,15 @@ impl Plugin for CardTablePlugin {
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
                 Update,
-                (sync_surface_size, sync_node_sizes, settle_table_piles).chain(),
+                (
+                    sync_surface_size,
+                    sync_node_sizes,
+                    sync_pinned,
+                    settle_table_piles,
+                )
+                    .chain(),
             )
-            .add_systems(Update, settle_free_cards.after(sync_node_sizes))
+            .add_systems(Update, settle_free_cards.after(sync_pinned))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
@@ -151,11 +157,18 @@ struct Movable(TableNode);
 #[derive(Component)]
 struct TableSurface;
 
-/// Marks the **content region** inside the surface: the felt below the [`OVERLAY_BAND`] where all zone
-/// content lives. Its size (surface minus the band) is fed to the model as the usable bounds, and every
-/// layout renders relative to its top, so content can never occupy the overlay band.
+/// Marks the **content region** inside the surface where a zone's content lives. Its size is fed to the
+/// model as the usable bounds. Structured layouts (grid / list / rows) inset it below the overlay band;
+/// a freely-placed zone (Free / the root) does not — there, content shares the felt with the overlays and
+/// the [`Pinned`] fixtures shove it clear instead.
 #[derive(Component)]
 struct TableContent;
+
+/// A **pinned felt fixture** — the centered zone title, the Back card — whose rectangle is fed to the
+/// model so freely-placed content settles clear of it (top priority; see [`sync_pinned`],
+/// [`Tableau::set_pinned`]). Fixed in place: it pushes cards but never moves for one.
+#[derive(Component)]
+struct Pinned;
 
 /// A utility card that navigates up one zone level when clicked.
 #[derive(Component)]
@@ -554,6 +567,45 @@ fn sync_surface_size(content: Query<&ComputedNode, With<TableContent>>, mut tabl
         let size = computed.size * computed.inverse_scale_factor;
         table.0.set_surface(size.x, size.y);
     }
+}
+
+/// Feed the **pinned fixtures'** rectangles (the centered title, the Back card) to the model, in the
+/// content region's logical coordinate space — so [`Tableau::separate`] shoves freely-placed content clear
+/// of them. In a structured (inset) zone the fixtures land above the content region and simply don't
+/// bite; in a Free / root zone they sit on the felt and push the cards. Runs each frame; there are few.
+fn sync_pinned(
+    pinned: Query<(&ComputedNode, &UiGlobalTransform), With<Pinned>>,
+    content: Query<(&ComputedNode, &UiGlobalTransform), With<TableContent>>,
+    mut table: ResMut<Table>,
+) {
+    // The content region's top-left (physical), so a fixture rect converts into the content coordinate
+    // space that model positions live in.
+    let Some(origin) = content
+        .single()
+        .ok()
+        .map(|(cn, gt)| gt.translation - cn.size() * 0.5)
+    else {
+        return;
+    };
+    let rects: Vec<(Pos, Pos)> = pinned
+        .iter()
+        .map(|(cn, gt)| {
+            let sf = cn.inverse_scale_factor; // physical → logical, matching model positions
+            let size = cn.size();
+            let top_left = (gt.translation - size * 0.5 - origin) * sf;
+            (
+                Pos {
+                    x: top_left.x,
+                    y: top_left.y,
+                },
+                Pos {
+                    x: size.x * sf,
+                    y: size.y * sf,
+                },
+            )
+        })
+        .collect();
+    table.0.set_pinned(rects);
 }
 
 /// Ease each **movable element's** wrapper toward its model position, so a separation (or any reposition)
@@ -1357,9 +1409,10 @@ const LEAVE_GAP: f32 = 14.0;
 
 /// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
 const GRID_GAP: f32 = 14.0;
-/// Height of the **overlay band** at the top of every zone — the strip the floating title / Back / rail
-/// occupy. Reserved *once*, structurally: all zone content renders inside a wrapper inset by this, so no
-/// layout (Free, grid, Rows, projection) can put a card under an overlay. See [`build_ui`].
+/// Height of the **overlay band** at the top of a zone — the strip the floating title / Back / rail
+/// occupy. A **structured** zone (grid / list / rows), whose cards can't be shoved, insets its content
+/// region by this so nothing lands under an overlay. A **freely-placed** zone (Free / root) uses no
+/// inset — its cards share the felt and the [`Pinned`] fixtures shove them clear instead. See [`build_ui`].
 const OVERLAY_BAND: f32 = 44.0;
 /// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
 /// card in one enormous row.
@@ -1406,19 +1459,24 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // SURFACE: the whole window is felt — no title bar. At the Table (root) zone, piles are freely
-            // positioned and draggable; inside a pile's zone, its cards (and any sub-piles) flow in a grid.
-            // The zone title and Back live as *floating overlays* drawn on top (see below), fed to the
-            // model as shove obstacles so the piles keep clear of them.
+            // SURFACE: the whole window is felt — no title bar. The zone title and Back are floating
+            // overlays on top (see below). A **freely-placed** zone (the Table root, or a Free deck)
+            // shares the felt with them: its content sits on the whole surface and the Pinned fixtures
+            // shove it clear. A **structured** zone (grid / list / rows) can't be shoved, so its content
+            // region is inset below the overlay band instead — one inset, applied here, not per layout.
+            let freely_placed = at_root
+                || matches!(
+                    tree.pile(zone).map(|p| p.layout().arrangement),
+                    Some(Arrangement::Free)
+                );
+            let content_inset = if freely_placed { 0.0 } else { OVERLAY_BAND };
             root.spawn((
                 TableSurface,
                 Node {
                     width: Val::Percent(100.0),
                     flex_grow: 1.0,
                     overflow: Overflow::scroll_y(),
-                    // Reserve the overlay band once: the content region below is a flex child pushed down
-                    // by this padding, so every layout inside it starts clear of the floating overlays.
-                    padding: UiRect::top(Val::Px(OVERLAY_BAND)),
+                    padding: UiRect::top(Val::Px(content_inset)),
                     ..default()
                 },
             ))
@@ -1614,8 +1672,8 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
 
             // FLOATING OVERLAYS, drawn above the felt and out of flow: the zone title centered at the top
             // (plain text, no bar), Back at the top-left inside a zone, and any loose actions at the
-            // top-right. They occupy the reserved overlay band; the content region below is inset clear of
-            // them, so nothing can collide — no shove needed.
+            // top-right. The title and Back carry `Pinned`, so on a freely-placed felt the cards settle
+            // clear of them; a structured zone insets its content region instead.
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
@@ -1630,6 +1688,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
             ))
             .with_children(|title| {
                 title.spawn((
+                    Pinned,
                     Text::new(pile_display_name(tree, zone)),
                     TextFont {
                         font_size: FONT_HEAD,
@@ -1649,7 +1708,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                     },
                     GlobalZIndex(10),
                 ))
-                .with_children(|slot| spawn_nav_card(slot, BackCard, "Back"));
+                .with_children(|slot| spawn_nav_card(slot, (BackCard, Pinned), "Back"));
             }
             if !rail.is_empty() {
                 root.spawn((
