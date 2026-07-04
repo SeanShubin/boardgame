@@ -150,17 +150,19 @@ fn phase_detail(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
-/// Lay a **Free** deck's content out in a tidy grid so the very first render is clean (the shove is then
-/// only needed when a card is actually dragged). Positions are in the zone's content region — the renderer
-/// already insets that below the overlay band — so this just seeds a small margin. Content cards first,
-/// then any sub-piles, row-major across `cols`. Saved tables restore their own positions, so this only
-/// shapes a fresh table.
+/// Lay a **Free** deck's content out in a tidy grid so the very first render is clean. A freely-placed
+/// zone shares the felt with the floating overlays (title / Back), so the seed **leaves the top row
+/// empty** — content starts one row down, clear of them on first render — while that row stays felt: the
+/// shove only keeps cards off the fixtures, not the whole row, so you can still place cards up there.
+/// Content cards first, then any sub-piles, row-major across `cols`. Saved tables restore their own
+/// positions, so this only shapes a fresh table.
 fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
-    const MARGIN: f32 = 16.0; // a small top-left inset within the content region
+    const MARGIN: f32 = 16.0; // a small left inset
     const CW: f32 = 150.0; // cell width  (a Small card plus margin)
     const CH: f32 = 100.0; // cell height
     let spot = |i: usize| {
-        let (col, row) = (i % cols, i / cols);
+        // `row + 1`: reserve an empty top row that clears the overlays.
+        let (col, row) = (i % cols, i / cols + 1);
         (MARGIN + col as f32 * CW, MARGIN + row as f32 * CH)
     };
     let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
