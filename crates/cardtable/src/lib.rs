@@ -1057,11 +1057,16 @@ fn settle_actions_deck(
     };
     let fired = table.0.pile(pile).and_then(|deck| {
         let (dp, dsz) = (deck.pos(), deck.size());
+        // Fire the popped card the deck overlaps *most* — the menu cards are stacked a hair apart, so the
+        // deck straddles two, and picking the first overlap would fire the wrong one (e.g. Revert when you
+        // meant the Start Over just below it).
         state
             .popped
             .iter()
-            .find(|p| rects_overlap(dp, dsz, p.pos, p.size))
-            .map(|p| p.utility)
+            .map(|p| (p.utility, overlap_area(dp, dsz, p.pos, p.size)))
+            .filter(|&(_, area)| area > 0.01)
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(utility, _)| utility)
     });
     for popped in state.popped.drain(..) {
         commands.entity(popped.entity).despawn();
@@ -1088,11 +1093,11 @@ fn settle_actions_deck(
     }
 }
 
-/// Whether two AABBs (top-left `pos`, `size`) overlap by more than a hair.
-fn rects_overlap(ap: Pos, asz: Pos, bp: Pos, bsz: Pos) -> bool {
-    let ox = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
-    let oy = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
-    ox > 0.01 && oy > 0.01
+/// The overlap **area** of two AABBs (top-left `pos`, `size`); `0.0` when they don't overlap.
+fn overlap_area(ap: Pos, asz: Pos, bp: Pos, bsz: Pos) -> f32 {
+    let ox = ((ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x)).max(0.0);
+    let oy = ((ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y)).max(0.0);
+    ox * oy
 }
 
 /// Ease each popped-out action card from the deck toward its target spot — the same eased settle the
@@ -1675,10 +1680,16 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                         }
                         tile.with_children(|tile| spawn_card(tile, card));
                     }
-                    // Any sub-piles follow the cards in the grid as (clickable) chips.
+                    // Sub-piles: in a Free deck they sit at their own model position (like the cards),
+                    // else they follow the cards in the grid as (clickable) chips.
                     let base = content.len();
                     for (k, &sid) in pile.subpiles().iter().enumerate() {
-                        let (x, y) = grid_cell(base + k, cols);
+                        let (x, y) = if free {
+                            let p = tree.pile(sid).map(|d| d.pos()).unwrap_or_default();
+                            (p.x, p.y)
+                        } else {
+                            grid_cell(base + k, cols)
+                        };
                         surface
                             .spawn(Node {
                                 position_type: PositionType::Absolute,

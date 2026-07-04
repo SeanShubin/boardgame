@@ -141,6 +141,42 @@ const ABILITIES: [(&str, &str); 4] = [
     ("Salvo", "Ranged · area"),
 ];
 
+/// The one-line mechanical summary for a phase name (from [`PHASES`]), or `""` if unknown.
+fn phase_detail(name: &str) -> &'static str {
+    PHASES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|&(_, detail)| detail)
+        .unwrap_or_default()
+}
+
+/// Lay a **Free** deck's content out in a tidy grid *below the top band* — the strip where the floating
+/// Back and title overlays sit — so the very first render is clean (the shove is then only needed when a
+/// card is actually dragged). Positions the deck's content cards, then any sub-piles, row-major across
+/// `cols`. Saved tables restore their own positions, so this only shapes a fresh table.
+fn grid_below_band(tree: &mut Tableau, deck: PileId, cols: usize) {
+    const BAND: f32 = 52.0; // clears the Back / title overlay row
+    const CW: f32 = 150.0; // cell width  (a Small card plus margin)
+    const CH: f32 = 100.0; // cell height
+    let spot = |i: usize| {
+        let (col, row) = (i % cols, i / cols);
+        (20.0 + col as f32 * CW, BAND + row as f32 * CH)
+    };
+    let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
+    let subs: Vec<PileId> = tree
+        .pile(deck)
+        .map(|p| p.subpiles().to_vec())
+        .unwrap_or_default();
+    for (i, c) in cards.iter().enumerate() {
+        let (x, y) = spot(i);
+        let _ = tree.set_card_pos(*c, x, y);
+    }
+    for (k, s) in subs.iter().enumerate() {
+        let (x, y) = spot(cards.len() + k);
+        let _ = tree.set_pile_pos(*s, x, y);
+    }
+}
+
 /// A small, representative table for the card-table game: an **Identity** deck of unrecruited heroes, a
 /// **Kit** deck, an **Abilities** deck, and a **Locations** grid whose centre, **Ashfen
 /// Crossing**, is the *inn* — a projection of the Identity and Kit decks where you drag a hero
@@ -268,39 +304,68 @@ pub fn sample_table() -> Tableau {
     )
     .expect("locations exists");
 
-    // A "Rules" deck: combat reference cards. The first card shows the order damage lands across the
-    // round's phases; the rest are one card per phase (see `PHASES`). A **Free** deck so expanding a card
-    // to read it shoves its neighbours clear (rather than rendering under them); the phase order lives in
-    // `PHASES`, not the layout, so combat cycling still has it. Cards are seeded in reading order.
+    // A "Rules" deck: the round's phases as a two-level **hierarchy** (organizational only — nothing
+    // mechanical changes). The five damage-dealing phases are children of a parent **Engage** sub-deck;
+    // the rest are leaf cards. Every phase title carries an `(x/y)` sibling position, and the Engage card
+    // lists its children. A Free deck (expanding a card shoves neighbours clear), seeded tidy.
+    const TOP: [&str; 6] = [
+        "Marshal",
+        "Reveal",
+        "Ready",
+        "Engage",
+        "Wipe pile",
+        "Refresh",
+    ];
+    const ENGAGE_CHILDREN: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
     let rules = tree.add_pile(root, "Rules").expect("root exists");
-    let order = typed(&mut tree, rules, "Damage Order", "sequence");
-    tree.set_card_detail(
-        order,
-        vec![
-            "Intercept — Vanguard -> Outrider".into(),
-            "Volley — Rearguard -> Outrider".into(),
-            "Raid — Outrider -> Rearguard".into(),
-            "Clash — Rearguard / Vanguard -> Vanguard".into(),
-            "Breach — the trailing blows land".into(),
-        ],
-    )
-    .expect("order card just added");
-    let mut rule_cards = vec![order];
-    for (name, text) in PHASES {
-        let id = typed(&mut tree, rules, name, "phase");
-        tree.set_card_detail(id, vec![text.to_string()])
-            .expect("phase card just added");
-        rule_cards.push(id);
-    }
-    // Lay them out in reading order (a 4-wide grid) so the deck opens tidy; drag rearranges from there.
-    for (i, &id) in rule_cards.iter().enumerate() {
-        let (col, row) = (i % 4, i / 4);
-        tree.set_card_pos(id, 20.0 + col as f32 * 150.0, 20.0 + row as f32 * 90.0)
-            .expect("rules card just added");
+    for (i, &name) in TOP.iter().enumerate() {
+        let pos = format!("({}/{})", i + 1, TOP.len());
+        if name == "Engage" {
+            // The parent deck of the damage-dealing phases; drill in to see its children.
+            let engage = tree.add_pile(rules, "Engage").expect("rules exists");
+            for (j, &child) in ENGAGE_CHILDREN.iter().enumerate() {
+                let title = format!("{child} ({}/{})", j + 1, ENGAGE_CHILDREN.len());
+                let id = typed(&mut tree, engage, &title, "phase");
+                tree.set_card_detail(id, vec![phase_detail(child).to_string()])
+                    .expect("child phase card");
+            }
+            // Engage's label *is* the parent card: its title lists the children (and its own `(x/y)`),
+            // its detail is the damage-order summary.
+            let label = format!("Engage {pos}: {}", ENGAGE_CHILDREN.join(", "));
+            let engage_zone = typed(&mut tree, engage, &label, "phase");
+            tree.set_card_kind(engage_zone, CardKind::Zone)
+                .expect("engage label");
+            tree.set_card_detail(
+                engage_zone,
+                vec![
+                    "Intercept — Vanguard -> Outrider".into(),
+                    "Volley — Rearguard -> Outrider".into(),
+                    "Raid — Outrider -> Rearguard".into(),
+                    "Clash — Rearguard / Vanguard -> Vanguard".into(),
+                    "Breach — the trailing blows land".into(),
+                ],
+            )
+            .expect("engage detail");
+            grid_below_band(&mut tree, engage, 3);
+            tree.set_layout(
+                engage,
+                Layout {
+                    arrangement: Arrangement::Free,
+                    editable: true,
+                },
+            )
+            .expect("engage exists");
+        } else {
+            let title = format!("{name} {pos}");
+            let id = typed(&mut tree, rules, &title, "phase");
+            tree.set_card_detail(id, vec![phase_detail(name).to_string()])
+                .expect("leaf phase card");
+        }
     }
     let rules_zone = typed(&mut tree, rules, "Rules", "Label");
     tree.set_card_kind(rules_zone, CardKind::Zone)
         .expect("rules zone card");
+    grid_below_band(&mut tree, rules, 3);
     tree.set_layout(
         rules,
         Layout {
@@ -309,6 +374,12 @@ pub fn sample_table() -> Tableau {
         },
     )
     .expect("rules exists");
+
+    // Lay each Free deck's cards out tidily below the overlay band, so the first render of a zone is
+    // clean — the Back card sits in its own row up top with the cards beneath it, no shove required yet.
+    grid_below_band(&mut tree, identity, 4);
+    grid_below_band(&mut tree, starting_kit, 4);
+    grid_below_band(&mut tree, abilities, 4);
 
     // Spread the piles across the table so they start un-stacked; drag repositions them.
     tree.set_pile_pos(identity, 40.0, 40.0)
@@ -335,10 +406,11 @@ mod tests {
         assert_eq!(root.subpiles().len(), 5); // Identity, Kit, Abilities, Locations, Rules
         // Identity: 9 heroes + a Zone card. Kit: 4 starters + a Zone card. Abilities: 4 + a Zone card.
         // Locations: a "Location" Zone card + 9 place name cards + the inn's 3 row-header cards
-        // (Hero / Kit / Active) under Ashfen Crossing. Rules: 1 order card + 10 phase cards + a Zone card.
+        // (Hero / Kit / Active) under Ashfen Crossing. Rules: 5 leaf phase cards + a Zone label; the
+        // Engage sub-deck: 5 child phases + a Zone label.
         assert_eq!(
             t.card_count(),
-            (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3) + (1 + 10 + 1)
+            (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3) + ((5 + 1) + (5 + 1))
         );
     }
 
@@ -381,12 +453,12 @@ mod tests {
             .iter()
             .find(|&&id| t.pile(id).unwrap().label == "Rules")
             .unwrap();
-        let order = t.content_cards(rules_id)[0];
-        assert_eq!(back.card(order).unwrap().name(), "Damage Order");
+        let first = t.content_cards(rules_id)[0];
+        assert_eq!(back.card(first).unwrap().name(), "Marshal (1/6)");
     }
 
     #[test]
-    fn rules_deck_leads_with_the_damage_order_then_one_card_per_phase() {
+    fn rules_phases_form_a_hierarchy_with_engage_parenting_the_damage_phases() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
         let rules = t
@@ -398,23 +470,50 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-        assert_eq!(rules.layout().arrangement, Arrangement::Free);
 
-        // First the damage-order overview, then the ten phases in round order.
-        let cards = t.content_cards(rules.id);
-        assert_eq!(cards.len(), 1 + PHASES.len());
-        let first = t.card(cards[0]).unwrap();
-        assert_eq!(first.name(), "Damage Order");
-        assert!(
-            first
-                .detail()
-                .iter()
-                .any(|l| l.contains("Vanguard -> Outrider"))
+        // Five leaf phases as content cards, each with an (x/6) sibling position.
+        let leaves: Vec<&str> = t
+            .content_cards(rules.id)
+            .iter()
+            .map(|&c| t.card(c).unwrap().name())
+            .collect();
+        assert_eq!(
+            leaves,
+            [
+                "Marshal (1/6)",
+                "Reveal (2/6)",
+                "Ready (3/6)",
+                "Wipe pile (5/6)",
+                "Refresh (6/6)"
+            ]
         );
-        for (&cid, (name, _)) in cards[1..].iter().zip(PHASES) {
-            assert_eq!(t.card(cid).unwrap().name(), name);
-            assert_eq!(t.card(cid).unwrap().card_type(), "phase");
-        }
+
+        // Engage is the parent sub-deck of the damage phases; its label lists the children and its (x/6).
+        assert_eq!(rules.subpiles().len(), 1);
+        let engage = t.pile(rules.subpiles()[0]).unwrap();
+        assert_eq!(engage.label, "Engage");
+        assert_eq!(
+            t.card(*engage.cards().last().unwrap()).unwrap().name(),
+            "Engage (4/6): Intercept, Volley, Raid, Clash, Breach"
+        );
+
+        // Five child phases, each with an (x/5) sibling position.
+        let children: Vec<&str> = t
+            .content_cards(engage.id)
+            .iter()
+            .map(|&c| t.card(c).unwrap().name())
+            .collect();
+        assert_eq!(
+            children,
+            [
+                "Intercept (1/5)",
+                "Volley (2/5)",
+                "Raid (3/5)",
+                "Clash (4/5)",
+                "Breach (5/5)"
+            ]
+        );
+
         // Topped by a "Rules" Zone label.
         let top = t.card(*rules.cards().last().unwrap()).unwrap();
         assert_eq!(top.name(), "Rules");
