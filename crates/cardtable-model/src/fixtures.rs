@@ -150,17 +150,18 @@ fn phase_detail(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
-/// Lay a **Free** deck's content out in a tidy grid *below the top band* — the strip where the floating
-/// Back and title overlays sit — so the very first render is clean (the shove is then only needed when a
-/// card is actually dragged). Positions the deck's content cards, then any sub-piles, row-major across
-/// `cols`. Saved tables restore their own positions, so this only shapes a fresh table.
-fn grid_below_band(tree: &mut Tableau, deck: PileId, cols: usize) {
-    const BAND: f32 = 52.0; // clears the Back / title overlay row
+/// Lay a **Free** deck's content out in a tidy grid so the very first render is clean (the shove is then
+/// only needed when a card is actually dragged). Positions are in the zone's content region — the renderer
+/// already insets that below the overlay band — so this just seeds a small margin. Content cards first,
+/// then any sub-piles, row-major across `cols`. Saved tables restore their own positions, so this only
+/// shapes a fresh table.
+fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
+    const MARGIN: f32 = 16.0; // a small top-left inset within the content region
     const CW: f32 = 150.0; // cell width  (a Small card plus margin)
     const CH: f32 = 100.0; // cell height
     let spot = |i: usize| {
         let (col, row) = (i % cols, i / cols);
-        (20.0 + col as f32 * CW, BAND + row as f32 * CH)
+        (MARGIN + col as f32 * CW, MARGIN + row as f32 * CH)
     };
     let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
     let subs: Vec<PileId> = tree
@@ -346,7 +347,7 @@ pub fn sample_table() -> Tableau {
                 ],
             )
             .expect("engage detail");
-            grid_below_band(&mut tree, engage, 3);
+            grid_layout(&mut tree, engage, 3);
             tree.set_layout(
                 engage,
                 Layout {
@@ -365,7 +366,7 @@ pub fn sample_table() -> Tableau {
     let rules_zone = typed(&mut tree, rules, "Rules", "Label");
     tree.set_card_kind(rules_zone, CardKind::Zone)
         .expect("rules zone card");
-    grid_below_band(&mut tree, rules, 3);
+    grid_layout(&mut tree, rules, 3);
     tree.set_layout(
         rules,
         Layout {
@@ -377,9 +378,9 @@ pub fn sample_table() -> Tableau {
 
     // Lay each Free deck's cards out tidily below the overlay band, so the first render of a zone is
     // clean — the Back card sits in its own row up top with the cards beneath it, no shove required yet.
-    grid_below_band(&mut tree, identity, 4);
-    grid_below_band(&mut tree, starting_kit, 4);
-    grid_below_band(&mut tree, abilities, 4);
+    grid_layout(&mut tree, identity, 4);
+    grid_layout(&mut tree, starting_kit, 4);
+    grid_layout(&mut tree, abilities, 4);
 
     // Spread the piles across the table so they start un-stacked; drag repositions them.
     tree.set_pile_pos(identity, 40.0, 40.0)

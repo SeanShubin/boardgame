@@ -301,22 +301,15 @@ fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> P
 /// [`Tableau::separate`] (cards): because each box is placed clear of all already-settled boxes
 /// and never disturbed afterward, no two overlap once the space allows it. Terminates in one placement
 /// per box.
-fn separate_boxes(
-    boxes: &[(Pos, Pos)],
-    anchor: usize,
-    surface: Pos,
-    obstacles: &[(Pos, Pos)],
-) -> Vec<Pos> {
+fn separate_boxes(boxes: &[(Pos, Pos)], anchor: usize, surface: Pos) -> Vec<Pos> {
     let mut result: Vec<Pos> = boxes.iter().map(|&(p, _)| p).collect();
     if boxes.is_empty() {
         return result;
     }
     let (anchor_pos, anchor_size) = boxes[anchor];
     let anchor_center = box_center(anchor_pos, anchor_size);
-    // The `obstacles` are pre-locked, so they outrank every pile — even the anchor is placed clear of
-    // them (at the nearest spot to where it sits) rather than merely clamped. With no obstacles this is
-    // identical to clamping the anchor in-bounds.
-    let anchor_pos = place_clear_of(anchor_pos, anchor_size, obstacles, surface);
+    // Pin the anchor at its in-bounds position; it is a fixed obstacle for everything else.
+    let anchor_pos = clamp_box(anchor_pos, anchor_size, surface);
     result[anchor] = anchor_pos;
     let mut order: Vec<usize> = (0..boxes.len()).filter(|&i| i != anchor).collect();
     order.sort_by(|&i, &j| {
@@ -326,8 +319,7 @@ fn separate_boxes(
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(i.cmp(&j))
     });
-    let mut locked: Vec<(Pos, Pos)> = obstacles.to_vec();
-    locked.push((anchor_pos, anchor_size));
+    let mut locked: Vec<(Pos, Pos)> = vec![(anchor_pos, anchor_size)];
     for i in order {
         let pos = place_clear_of(boxes[i].0, boxes[i].1, &locked, surface);
         result[i] = pos;
@@ -482,11 +474,6 @@ pub struct Tableau {
     // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without it.
     #[serde(skip, default = "unbounded_surface")]
     surface: Pos,
-    /// Fixed rectangles (`(top-left, size)`) that top-level piles must be shoved clear of — the felt's
-    /// **obstacles**, e.g. the floating zone title. Pre-locked before any pile in [`separate`], so they
-    /// take priority: a pile never settles under one. Fed by the renderer; empty means no reservations.
-    #[serde(skip)]
-    obstacles: Vec<(Pos, Pos)>,
 }
 
 /// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
@@ -532,7 +519,6 @@ impl Tableau {
             // Effectively unbounded until the renderer reports the real table size, so piles aren't
             // jammed to the origin before the first layout.
             surface: unbounded_surface(),
-            obstacles: Vec::new(),
         }
     }
 
@@ -1277,17 +1263,6 @@ impl Tableau {
         self.surface = Pos { x: w, y: h };
     }
 
-    /// Set the felt's fixed **obstacles** — rectangles `(top-left, size)` that top-level piles are shoved
-    /// clear of (e.g. the floating zone title). Fed by the renderer each frame; see [`separate`].
-    pub fn set_obstacles(&mut self, obstacles: Vec<(Pos, Pos)>) {
-        self.obstacles = obstacles;
-    }
-
-    /// The felt's fixed obstacles, as last reported by the renderer.
-    pub fn obstacles(&self) -> &[(Pos, Pos)] {
-        &self.obstacles
-    }
-
     /// The current table surface size (as last reported by the renderer). Used to lay cards out into a
     /// grid of as many columns as fit.
     pub fn surface(&self) -> Pos {
@@ -1304,14 +1279,18 @@ impl Tableau {
             .position(|n| *n == Node::Card(card))
     }
 
-    /// The pile's **zone card** — a trailing [`CardKind::Zone`] card that *names* the pile rather than
-    /// being one of its contents — if it has one. It is the last child, when that child is a Zone card.
-    /// The zone card is the pile's label: it titles the zone you drill into, and it is neither counted
-    /// nor shown among the contents.
+    /// The pile's **zone card** — the [`CardKind::Zone`] card that *names* the pile rather than being one
+    /// of its contents — if it has one. Identified by **kind**, wherever it sits among the children (not by
+    /// position), so a sub-pile added after it can't demote the label to content. The zone card is the
+    /// pile's label: it titles the zone you drill into, and is neither counted nor shown among the contents.
+    /// (The last such card wins, so an append-a-label idiom still names the pile.)
     pub fn zone_card(&self, pile: PileId) -> Option<CardId> {
         let p = self.piles.get(&pile)?;
-        let top = p.children.last()?.card()?;
-        (self.cards[&top].kind == CardKind::Zone).then_some(top)
+        p.children
+            .iter()
+            .rev()
+            .filter_map(|n| n.card())
+            .find(|c| self.cards.get(c).is_some_and(|k| k.kind == CardKind::Zone))
     }
 
     /// The pile's **content** cards — every card except a trailing [`zone_card`](Self::zone_card).
@@ -1383,10 +1362,9 @@ impl Tableau {
 
     /// Pushes the overlapping **children of `pile`** apart so the felt reads as physical objects — cards
     /// and nested piles *alike*, since both are [`movable_children`](Self::movable_children). The `anchor`
-    /// node is pinned; the rest settle at the nearest spot clear of every already-settled sibling and of
-    /// the felt's [obstacles](Self::set_obstacles) (the floating title / Back), all kept inside the
-    /// surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any drilled
-    /// zone are just piles whose children get separated.
+    /// node is pinned; the rest settle at the nearest spot clear of every already-settled sibling, all kept
+    /// inside the surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any
+    /// drilled zone are just piles whose children get separated.
     pub fn separate(&mut self, pile: PileId, anchor: Node) {
         let nodes = self.movable_children(pile);
         let Some(anchor_idx) = nodes.iter().position(|&n| n == anchor) else {
@@ -1396,7 +1374,7 @@ impl Tableau {
             .iter()
             .map(|&n| self.node_box(n).unwrap_or_default())
             .collect();
-        let settled = separate_boxes(&boxes, anchor_idx, self.surface, &self.obstacles);
+        let settled = separate_boxes(&boxes, anchor_idx, self.surface);
         for (&n, pos) in nodes.iter().zip(settled) {
             self.set_node_pos(n, pos);
         }
@@ -1602,34 +1580,6 @@ mod tests {
             (bp.y - 0.0).abs() < 0.02,
             "b should not drift on y, got {bp:?}"
         );
-    }
-
-    #[test]
-    fn separate_shoves_piles_clear_of_an_obstacle() {
-        let mut t = Tableau::new();
-        t.set_surface(1000.0, 1000.0);
-        let root = t.root_id();
-        let a = t.add_pile(root, "A").unwrap();
-        t.set_pile_size(a, 100.0, 100.0).unwrap();
-        t.set_pile_pos(a, 200.0, 40.0).unwrap();
-        // A title obstacle sitting right where the pile is.
-        t.set_obstacles(vec![(Pos { x: 180.0, y: 20.0 }, Pos { x: 160.0, y: 60.0 })]);
-
-        // Even as the anchor, the pile is pushed clear of the obstacle (obstacles outrank piles).
-        t.separate(t.root_id(), Node::Pile(a));
-        let p = t.pile(a).unwrap().pos();
-        let ox = (p.x + 100.0).min(180.0 + 160.0) - p.x.max(180.0);
-        let oy = (p.y + 100.0).min(20.0 + 60.0) - p.y.max(20.0);
-        assert!(
-            ox <= 0.02 || oy <= 0.02,
-            "pile should not overlap the obstacle, got {p:?}"
-        );
-
-        // With the obstacle cleared, a pile at that spot is left in place (nothing to dodge).
-        t.set_obstacles(vec![]);
-        t.set_pile_pos(a, 200.0, 40.0).unwrap();
-        t.separate(t.root_id(), Node::Pile(a));
-        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 200.0, y: 40.0 });
     }
 
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).

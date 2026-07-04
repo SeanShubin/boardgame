@@ -103,13 +103,7 @@ impl Plugin for CardTablePlugin {
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
                 Update,
-                (
-                    sync_surface_size,
-                    sync_node_sizes,
-                    sync_obstacles,
-                    settle_table_piles,
-                )
-                    .chain(),
+                (sync_surface_size, sync_node_sizes, settle_table_piles).chain(),
             )
             .add_systems(Update, settle_free_cards.after(sync_node_sizes))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
@@ -153,19 +147,19 @@ struct PileDropZone(PileId);
 #[derive(Component, Clone, Copy)]
 struct Movable(TableNode);
 
-/// Marks the table surface — the positioning context for piles. Its size is fed to the model as the
-/// wall bounds that keep piles inside.
+/// Marks the table surface — the scroll viewport for a zone.
 #[derive(Component)]
 struct TableSurface;
+
+/// Marks the **content region** inside the surface: the felt below the [`OVERLAY_BAND`] where all zone
+/// content lives. Its size (surface minus the band) is fed to the model as the usable bounds, and every
+/// layout renders relative to its top, so content can never occupy the overlay band.
+#[derive(Component)]
+struct TableContent;
 
 /// A utility card that navigates up one zone level when clicked.
 #[derive(Component)]
 struct BackCard;
-
-/// A floating overlay (the zone title, Back) whose on-screen rectangle is fed to the model as a felt
-/// **obstacle**, so top-level piles are shoved clear of it ([`sync_obstacles`], [`Tableau::separate`]).
-#[derive(Component)]
-struct SurfaceObstacle;
 
 /// A popped-out action card spawned beside a pressed [`Arrangement::Actions`] deck — a *free* surface
 /// entity (not a model pile, so popping it never shoves the game piles), drawn above everything, that
@@ -553,49 +547,13 @@ fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut
     }
 }
 
-/// Feed the table surface's laid-out size to the model as the wall bounds that contain the piles.
-fn sync_surface_size(surfaces: Query<&ComputedNode, With<TableSurface>>, mut table: ResMut<Table>) {
-    if let Ok(computed) = surfaces.single() {
+/// Feed the **content region's** laid-out size (the surface below the overlay band) to the model as the
+/// wall bounds that contain the movable elements — so content stays inside the usable felt.
+fn sync_surface_size(content: Query<&ComputedNode, With<TableContent>>, mut table: ResMut<Table>) {
+    if let Ok(computed) = content.single() {
         let size = computed.size * computed.inverse_scale_factor;
         table.0.set_surface(size.x, size.y);
     }
-}
-
-/// Feed the floating overlays' on-screen rectangles to the model as felt **obstacles** — in the surface's
-/// logical coordinate space, matching pile positions — so [`Tableau::separate`] shoves the top-level piles
-/// clear of the zone title and Back. Runs every frame; the overlays are few and their sizes are stable.
-fn sync_obstacles(
-    obstacles: Query<(&ComputedNode, &UiGlobalTransform), With<SurfaceObstacle>>,
-    surface: Query<(&ComputedNode, &UiGlobalTransform), With<TableSurface>>,
-    mut table: ResMut<Table>,
-) {
-    // The surface's top-left (physical), so an overlay rect converts into the same origin as pile positions.
-    let Some(origin) = surface
-        .single()
-        .ok()
-        .map(|(cn, gt)| gt.translation - cn.size() * 0.5)
-    else {
-        return;
-    };
-    let rects: Vec<(Pos, Pos)> = obstacles
-        .iter()
-        .map(|(cn, gt)| {
-            let sf = cn.inverse_scale_factor; // physical → logical, matching model positions
-            let size = cn.size();
-            let top_left = (gt.translation - size * 0.5 - origin) * sf;
-            (
-                Pos {
-                    x: top_left.x,
-                    y: top_left.y,
-                },
-                Pos {
-                    x: size.x * sf,
-                    y: size.y * sf,
-                },
-            )
-        })
-        .collect();
-    table.0.set_obstacles(rects);
 }
 
 /// Ease each **movable element's** wrapper toward its model position, so a separation (or any reposition)
@@ -913,7 +871,7 @@ fn on_node_drag_end(
             .floor()
             .max(0.0) as usize)
             .min(cols - 1);
-        let row = ((px(node.top) - GRID_TOP + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
+        let row = ((px(node.top) + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
             .floor()
             .max(0.0) as usize;
         let Some(from) = table.0.card_index(card) else {
@@ -1145,16 +1103,13 @@ fn animate_popped(time: Res<Time>, mut popped: Query<(&PoppedTarget, &mut Node)>
 }
 
 /// Keep a **Free** deck's cards shoved apart when they first lay out or change size (a card expands or
-/// collapses), or when a floating overlay moves — when a card's footprint changes, or the obstacles do
-/// (the title/Back the zone's cards must dodge), and nothing is being dragged, re-run [`separate`]
-/// anchored on the changed card (else the first). So a grown card holds its place and pushes its
-/// neighbours out, and the cards keep clear of Back and the title. `prev`/`prev_obstacles` remember the
-/// last-seen footprints/obstacles.
+/// collapses): when a card's footprint changes and nothing is being dragged, re-run [`separate`] anchored
+/// on the changed card, so a grown card holds its place and pushes its neighbours out. `prev` remembers
+/// the last-seen footprints.
 fn settle_free_cards(
     mut table: ResMut<Table>,
     dragging: Res<Dragging>,
     mut prev: Local<HashMap<CardId, Pos>>,
-    mut prev_obstacles: Local<Vec<(Pos, Pos)>>,
 ) {
     if dragging.0.is_some() {
         return;
@@ -1180,19 +1135,6 @@ fn settle_free_cards(
             anchor = Some(c);
         }
     }
-    // A moved obstacle (Back appearing on zone entry, the title reflowing) re-shoves the zone's cards.
-    let obstacles = table.0.obstacles();
-    let obstacles_changed = obstacles.len() != prev_obstacles.len()
-        || obstacles.iter().zip(prev_obstacles.iter()).any(|(a, b)| {
-            (a.0.x - b.0.x).abs() > 0.5
-                || (a.0.y - b.0.y).abs() > 0.5
-                || (a.1.x - b.1.x).abs() > 0.5
-                || (a.1.y - b.1.y).abs() > 0.5
-        });
-    if obstacles_changed {
-        *prev_obstacles = obstacles.to_vec();
-        anchor = anchor.or_else(|| cards.first().copied());
-    }
     if let Some(anchor) = anchor {
         table.0.separate(focus, TableNode::Card(anchor));
     }
@@ -1211,7 +1153,6 @@ fn settle_table_piles(
     guard: Res<DragGuard>,
     mut prev: Local<HashMap<PileId, Pos>>,
     mut prev_surface: Local<Pos>,
-    mut prev_obstacles: Local<Vec<(Pos, Pos)>>,
 ) {
     if guard.0 {
         return; // a drag is in progress — don't fight it
@@ -1242,19 +1183,6 @@ fn settle_table_piles(
     let surface = table.0.surface();
     if (surface.x - prev_surface.x).abs() > 0.5 || (surface.y - prev_surface.y).abs() > 0.5 {
         *prev_surface = surface;
-        anchor = anchor.or_else(|| piles.first().copied());
-    }
-    // A moved/resized obstacle (the floating title reflowing on a zone change) re-shoves the piles clear.
-    let obstacles = table.0.obstacles();
-    let obstacles_changed = obstacles.len() != prev_obstacles.len()
-        || obstacles.iter().zip(prev_obstacles.iter()).any(|(a, b)| {
-            (a.0.x - b.0.x).abs() > 0.5
-                || (a.0.y - b.0.y).abs() > 0.5
-                || (a.1.x - b.1.x).abs() > 0.5
-                || (a.1.y - b.1.y).abs() > 0.5
-        });
-    if obstacles_changed {
-        *prev_obstacles = obstacles.to_vec();
         anchor = anchor.or_else(|| piles.first().copied());
     }
     if let Some(anchor) = anchor {
@@ -1427,10 +1355,10 @@ const LEAVE_GAP: f32 = 14.0;
 
 /// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
 const GRID_GAP: f32 = 14.0;
-/// Top inset for an **ordered** zone's grid, reserving the band where the floating overlays (the
-/// centered title, the Back card) sit — ordered cards are at fixed cells and can't dodge obstacles the
-/// way a Free zone's cards do, so the grid simply starts below them.
-const GRID_TOP: f32 = 44.0;
+/// Height of the **overlay band** at the top of every zone — the strip the floating title / Back / rail
+/// occupy. Reserved *once*, structurally: all zone content renders inside a wrapper inset by this, so no
+/// layout (Free, grid, Rows, projection) can put a card under an overlay. See [`build_ui`].
+const OVERLAY_BAND: f32 = 44.0;
 /// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
 /// card in one enormous row.
 const MAX_COLS: usize = 16;
@@ -1456,7 +1384,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     let row = index / cols;
     (
         col as f32 * (SMALL_W + GRID_GAP),
-        GRID_TOP + row as f32 * (SMALL_H + GRID_GAP),
+        row as f32 * (SMALL_H + GRID_GAP),
     )
 }
 
@@ -1486,191 +1414,206 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                     width: Val::Percent(100.0),
                     flex_grow: 1.0,
                     overflow: Overflow::scroll_y(),
+                    // Reserve the overlay band once: the content region below is a flex child pushed down
+                    // by this padding, so every layout inside it starts clear of the floating overlays.
+                    padding: UiRect::top(Val::Px(OVERLAY_BAND)),
                     ..default()
                 },
             ))
-            .with_children(|surface| {
-                let pile = tree.pile(zone).expect("zone pile exists");
-                if at_root {
-                    for id in pile.subpiles() {
-                        let pos = tree.pile(id).expect("pile id from zone").pos();
-                        surface
-                            .spawn((
-                                Movable(TableNode::Pile(id)),
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(pos.x),
-                                    top: Val::Px(pos.y),
-                                    ..default()
-                                },
-                            ))
-                            .with_children(|wrapper| spawn_pile(wrapper, tree, id));
-                    }
-                } else if matches!(pile.layout().arrangement, Arrangement::Rows) {
-                    // A Rows view (the inn's assignment view): a column of horizontal rows, each led by
-                    // its Header card, then its cards. The Hero and Kit rows come from the projection,
-                    // the Active row from the pile's own cards (see `Tableau::row_groups`).
-                    surface
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            width: Val::Percent(100.0),
-                            padding: UiRect::all(Val::Px(12.0)),
-                            row_gap: Val::Px(14.0),
-                            ..default()
-                        })
-                        .with_children(|col| {
-                            let projected = pile.projection().len();
-                            for (i, (header, cards)) in
-                                tree.row_groups(zone).into_iter().enumerate()
-                            {
-                                // Rows span the full width; the Active row (past the projected rows) is
-                                // the one that accepts drops.
-                                let mut row = col.spawn((
+            .with_children(|surf| {
+                surf.spawn((
+                    TableContent,
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                ))
+                .with_children(|surface| {
+                    let pile = tree.pile(zone).expect("zone pile exists");
+                    if at_root {
+                        for id in pile.subpiles() {
+                            let pos = tree.pile(id).expect("pile id from zone").pos();
+                            surface
+                                .spawn((
+                                    Movable(TableNode::Pile(id)),
                                     Node {
-                                        width: Val::Percent(100.0),
-                                        flex_direction: FlexDirection::Row,
-                                        align_items: AlignItems::Center,
-                                        column_gap: Val::Px(8.0),
-                                        overflow: Overflow::scroll_x(),
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(pos.x),
+                                        top: Val::Px(pos.y),
                                         ..default()
                                     },
-                                    RowRegion {
-                                        active: i >= projected,
-                                    },
-                                ));
-                                row.with_children(|row| {
-                                    // The header names the row and isn't draggable.
-                                    spawn_card(row, tree.card(header).expect("row header"));
-                                    // Content cards are draggable — drop one on the Active row to move it.
-                                    for cid in cards {
-                                        let card = tree.card(cid).expect("row card");
-                                        row.spawn((
-                                            Movable(TableNode::Card(cid)),
-                                            Node::default(),
-                                            card_elevation(card),
-                                        ))
-                                        .with_children(|tile| spawn_card(tile, card));
-                                    }
-                                });
-                            }
-                        });
-                } else if !pile.projection().is_empty() {
-                    // A projection view (the inn): each source deck's cards under a header, plus this
-                    // pile's own cards ("Here" — characters standing at the location). Every card is
-                    // draggable so you can drop a hero onto a kit (or a kit onto a hero) to equip — see
-                    // `on_drop`. The cards keep their real home; the projection only shows them.
-                    surface
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            width: Val::Percent(100.0),
-                            padding: UiRect::all(Val::Px(12.0)),
-                            row_gap: Val::Px(14.0),
-                            ..default()
-                        })
-                        .with_children(|col| {
-                            let mut sections: Vec<(String, Vec<CardId>)> = tree
-                                .projection_groups(zone)
-                                .into_iter()
-                                .map(|(src, cards)| (pile_display_name(tree, src), cards))
-                                .collect();
-                            let own = tree.content_cards(zone).to_vec();
-                            if !own.is_empty() {
-                                sections.push(("Here".to_string(), own));
-                            }
-                            for (header, group) in sections {
-                                col.spawn(Node {
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(6.0),
-                                    ..default()
-                                })
-                                .with_children(|section| {
-                                    section.spawn((
-                                        Text::new(header),
-                                        TextFont {
-                                            font_size: FONT_HEAD,
+                                ))
+                                .with_children(|wrapper| spawn_pile(wrapper, tree, id));
+                        }
+                    } else if matches!(pile.layout().arrangement, Arrangement::Rows) {
+                        // A Rows view (the inn's assignment view): a column of horizontal rows, each led by
+                        // its Header card, then its cards. The Hero and Kit rows come from the projection,
+                        // the Active row from the pile's own cards (see `Tableau::row_groups`).
+                        surface
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                width: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(12.0)),
+                                row_gap: Val::Px(14.0),
+                                ..default()
+                            })
+                            .with_children(|col| {
+                                let projected = pile.projection().len();
+                                for (i, (header, cards)) in
+                                    tree.row_groups(zone).into_iter().enumerate()
+                                {
+                                    // Rows span the full width; the Active row (past the projected rows) is
+                                    // the one that accepts drops.
+                                    let mut row = col.spawn((
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(8.0),
+                                            overflow: Overflow::scroll_x(),
                                             ..default()
                                         },
-                                        TextColor(INK),
+                                        RowRegion {
+                                            active: i >= projected,
+                                        },
                                     ));
-                                    section
-                                        .spawn(Node {
-                                            flex_direction: FlexDirection::Row,
-                                            flex_wrap: FlexWrap::Wrap,
-                                            column_gap: Val::Px(10.0),
-                                            row_gap: Val::Px(10.0),
-                                            ..default()
-                                        })
-                                        .with_children(|row| {
-                                            // Projection cards get no `Movable`: they stay put while
-                                            // dragged (no cursor-follow), so the card you release *onto*
-                                            // is reliably the drop target — the equip in `on_drop`. The
-                                            // drag itself is picking-level, so it still fires.
-                                            for cid in group {
-                                                spawn_card(
-                                                    row,
-                                                    tree.card(cid)
-                                                        .expect("card id from projection"),
-                                                );
-                                            }
-                                        });
-                                });
-                            }
-                        });
-                } else {
-                    // The zone lays its contents out — one shared path for every layout. An ordered
-                    // layout (List / Grid) places cards on a row-major grid via `zone_cols`; a Free
-                    // (unordered) deck places each card at its own model position and shoves overlaps.
-                    // A zone card on top is the pile's label, not a content card (see `content_cards`).
-                    let free = matches!(pile.layout().arrangement, Arrangement::Free);
-                    // Free decks are drag-at-will; an ordered layout is draggable only when editable.
-                    let draggable = free || pile.layout().editable;
-                    let cols = zone_cols(tree);
-                    // One uniform pass over the movable children: a card and a nested pile alike get a
-                    // position, a drag marker, and (Free) shove — they differ only in their leaf face (a
-                    // card grows; a pile is a drillable chip). A Free layout reads each node's own model
-                    // position; an ordered one places them on the grid in child order.
-                    for (index, node) in tree.movable_children(zone).into_iter().enumerate() {
-                        let (x, y) = if free {
-                            let p = match node {
-                                TableNode::Card(cid) => tree.card(cid).map(|c| c.pos()),
-                                TableNode::Pile(pid) => tree.pile(pid).map(|d| d.pos()),
-                            }
-                            .unwrap_or_default();
-                            (p.x, p.y)
-                        } else {
-                            grid_cell(index, cols)
-                        };
-                        let mut tile = surface.spawn(Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(x),
-                            top: Val::Px(y),
-                            ..default()
-                        });
-                        match node {
-                            TableNode::Card(cid) => {
-                                let card = tree.card(cid).expect("card id from zone");
-                                // An expanded card lifts above its neighbours so it stays readable.
-                                tile.insert(card_elevation(card));
-                                if draggable {
-                                    tile.insert(Movable(node));
+                                    row.with_children(|row| {
+                                        // The header names the row and isn't draggable.
+                                        spawn_card(row, tree.card(header).expect("row header"));
+                                        // Content cards are draggable — drop one on the Active row to move it.
+                                        for cid in cards {
+                                            let card = tree.card(cid).expect("row card");
+                                            row.spawn((
+                                                Movable(TableNode::Card(cid)),
+                                                Node::default(),
+                                                card_elevation(card),
+                                            ))
+                                            .with_children(|tile| spawn_card(tile, card));
+                                        }
+                                    });
                                 }
-                                tile.with_children(|tile| spawn_card(tile, card));
-                            }
-                            TableNode::Pile(pid) => {
-                                if draggable {
-                                    tile.insert(Movable(node));
+                            });
+                    } else if !pile.projection().is_empty() {
+                        // A projection view (the inn): each source deck's cards under a header, plus this
+                        // pile's own cards ("Here" — characters standing at the location). Every card is
+                        // draggable so you can drop a hero onto a kit (or a kit onto a hero) to equip — see
+                        // `on_drop`. The cards keep their real home; the projection only shows them.
+                        surface
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                width: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(12.0)),
+                                row_gap: Val::Px(14.0),
+                                ..default()
+                            })
+                            .with_children(|col| {
+                                let mut sections: Vec<(String, Vec<CardId>)> = tree
+                                    .projection_groups(zone)
+                                    .into_iter()
+                                    .map(|(src, cards)| (pile_display_name(tree, src), cards))
+                                    .collect();
+                                let own = tree.content_cards(zone).to_vec();
+                                if !own.is_empty() {
+                                    sections.push(("Here".to_string(), own));
                                 }
-                                tile.with_children(|tile| spawn_pile(tile, tree, pid));
+                                for (header, group) in sections {
+                                    col.spawn(Node {
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: Val::Px(6.0),
+                                        ..default()
+                                    })
+                                    .with_children(
+                                        |section| {
+                                            section.spawn((
+                                                Text::new(header),
+                                                TextFont {
+                                                    font_size: FONT_HEAD,
+                                                    ..default()
+                                                },
+                                                TextColor(INK),
+                                            ));
+                                            section
+                                                .spawn(Node {
+                                                    flex_direction: FlexDirection::Row,
+                                                    flex_wrap: FlexWrap::Wrap,
+                                                    column_gap: Val::Px(10.0),
+                                                    row_gap: Val::Px(10.0),
+                                                    ..default()
+                                                })
+                                                .with_children(|row| {
+                                                    // Projection cards get no `Movable`: they stay put while
+                                                    // dragged (no cursor-follow), so the card you release *onto*
+                                                    // is reliably the drop target — the equip in `on_drop`. The
+                                                    // drag itself is picking-level, so it still fires.
+                                                    for cid in group {
+                                                        spawn_card(
+                                                            row,
+                                                            tree.card(cid)
+                                                                .expect("card id from projection"),
+                                                        );
+                                                    }
+                                                });
+                                        },
+                                    );
+                                }
+                            });
+                    } else {
+                        // The zone lays its contents out — one shared path for every layout. An ordered
+                        // layout (List / Grid) places cards on a row-major grid via `zone_cols`; a Free
+                        // (unordered) deck places each card at its own model position and shoves overlaps.
+                        // A zone card on top is the pile's label, not a content card (see `content_cards`).
+                        let free = matches!(pile.layout().arrangement, Arrangement::Free);
+                        // Free decks are drag-at-will; an ordered layout is draggable only when editable.
+                        let draggable = free || pile.layout().editable;
+                        let cols = zone_cols(tree);
+                        // One uniform pass over the movable children: a card and a nested pile alike get a
+                        // position, a drag marker, and (Free) shove — they differ only in their leaf face (a
+                        // card grows; a pile is a drillable chip). A Free layout reads each node's own model
+                        // position; an ordered one places them on the grid in child order.
+                        for (index, node) in tree.movable_children(zone).into_iter().enumerate() {
+                            let (x, y) = if free {
+                                let p = match node {
+                                    TableNode::Card(cid) => tree.card(cid).map(|c| c.pos()),
+                                    TableNode::Pile(pid) => tree.pile(pid).map(|d| d.pos()),
+                                }
+                                .unwrap_or_default();
+                                (p.x, p.y)
+                            } else {
+                                grid_cell(index, cols)
+                            };
+                            let mut tile = surface.spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x),
+                                top: Val::Px(y),
+                                ..default()
+                            });
+                            match node {
+                                TableNode::Card(cid) => {
+                                    let card = tree.card(cid).expect("card id from zone");
+                                    // An expanded card lifts above its neighbours so it stays readable.
+                                    tile.insert(card_elevation(card));
+                                    if draggable {
+                                        tile.insert(Movable(node));
+                                    }
+                                    tile.with_children(|tile| spawn_card(tile, card));
+                                }
+                                TableNode::Pile(pid) => {
+                                    if draggable {
+                                        tile.insert(Movable(node));
+                                    }
+                                    tile.with_children(|tile| spawn_pile(tile, tree, pid));
+                                }
                             }
                         }
                     }
-                }
+                });
             });
 
             // FLOATING OVERLAYS, drawn above the felt and out of flow: the zone title centered at the top
             // (plain text, no bar), Back at the top-left inside a zone, and any loose actions at the
-            // top-right. Each carries `SurfaceObstacle` so `sync_obstacles` reserves its rectangle and the
-            // top-level piles are shoved clear of it — the title has priority, the space stays all felt.
+            // top-right. They occupy the reserved overlay band; the content region below is inset clear of
+            // them, so nothing can collide — no shove needed.
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
@@ -1685,7 +1628,6 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
             ))
             .with_children(|title| {
                 title.spawn((
-                    SurfaceObstacle,
                     Text::new(pile_display_name(tree, zone)),
                     TextFont {
                         font_size: FONT_HEAD,
@@ -1705,7 +1647,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                     },
                     GlobalZIndex(10),
                 ))
-                .with_children(|slot| spawn_nav_card(slot, (BackCard, SurfaceObstacle), "Back"));
+                .with_children(|slot| spawn_nav_card(slot, BackCard, "Back"));
             }
             if !rail.is_empty() {
                 root.spawn((
@@ -1728,20 +1670,16 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
         });
 }
 
-/// The display name of a pile/zone: "Table" for the root; otherwise the name of its top card when that
-/// card's job is to name it (a [`CardKind::Zone`] card), else the pile's own label.
+/// The display name of a pile/zone: "Table" for the root; otherwise its [zone card](Tableau::zone_card)'s
+/// name (the card whose job is to name it), else the pile's own label.
 fn pile_display_name(tree: &Tableau, id: PileId) -> String {
     if id == tree.root_id() {
         return "Table".to_string();
     }
-    let pile = tree.pile(id).expect("pile id");
-    if let Some(&top) = pile.cards().last()
-        && let Some(card) = tree.card(top)
-        && matches!(card.kind(), CardKind::Zone)
-    {
-        return card.name().to_string();
-    }
-    pile.label.clone()
+    tree.zone_card(id)
+        .and_then(|c| tree.card(c))
+        .map(|c| c.name().to_string())
+        .unwrap_or_else(|| tree.pile(id).expect("pile id").label.clone())
 }
 
 /// A utility card (e.g. Back) drawn in the nav row — a small card-styled, clickable control. `marker` is
@@ -1894,26 +1832,20 @@ fn spawn_pile_chip(
 /// so a face-down deck reveals nothing.
 fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
-    // Count the *contents*: a zone card on top is the label, not one of the cards it fronts.
+    // Count the *contents*: the zone card is the label, not one of the things it fronts.
     let count = tree.content_cards(id).len() + pile.subpiles().len();
-    let top = pile.cards().last().and_then(|&cid| tree.card(cid));
     let (name, card_type) = if matches!(pile.layout().arrangement, Arrangement::Rows)
         || !pile.projection().is_empty()
     {
         // An organizational view (the inn): named by its own label and typed as a "Label" — content
         // dropped into it (a recruited hero landing on top) must never hijack the chip's name.
         (pile_display_name(tree, id), "Label".to_string())
+    } else if let Some(zc) = tree.zone_card(id).and_then(|c| tree.card(c)) {
+        // The pile's label is its zone card, identified by kind wherever it sits — a sub-pile added after
+        // it can never demote it to content or steal the chip's name.
+        (zc.name().to_string(), zc.card_type().to_string())
     } else {
-        match top {
-            // A face-up top card names the deck — unless it's a row Header (a Rows pile whose top card is
-            // just its last row label); then use the pile's own name.
-            Some(card)
-                if matches!(card.face, Face::Up { .. }) && card.kind() != CardKind::Header =>
-            {
-                (card.name().to_string(), card.card_type().to_string())
-            }
-            _ => (pile_display_name(tree, id), String::new()),
-        }
+        (pile_display_name(tree, id), String::new())
     };
     spawn_pile_chip(parent, id, &name, &card_type, count);
 }
