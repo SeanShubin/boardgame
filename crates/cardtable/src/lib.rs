@@ -940,11 +940,12 @@ fn on_node_drag_end(
         // Ordered grid: snap into the nearest cell by reordering among the *contents* only, so a drag
         // can never push a card above a zone card and steal its place as the pile's label.
         let cols = zone_cols(&table.0);
-        let col = (((px(node.left) + SMALL_W / 2.0) / (SMALL_W + GRID_GAP))
+        // Inverse of `grid_cell`: undo the GAP inset, then divide by the card+GAP pitch.
+        let col = (((px(node.left) - GAP + CARD_W / 2.0) / (CARD_W + GAP))
             .floor()
             .max(0.0) as usize)
             .min(cols - 1);
-        let row = ((px(node.top) + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
+        let row = ((px(node.top) - GAP + CARD_H / 2.0) / (CARD_H + GAP))
             .floor()
             .max(0.0) as usize;
         let Some(from) = table.0.card_index(card) else {
@@ -1018,19 +1019,23 @@ fn on_actions_press(
     // overlapping at this angular spacing.
     let n = actions.len();
     let step = std::f32::consts::TAU / n as f32;
-    const RING_GAP: f32 = 8.0;
-    // Clear the deck, hugging it (the card's short half, so short cards don't push the ring out far).
-    let by_deck = size.x.max(size.y) / 2.0 + card_size.y / 2.0 + RING_GAP;
-    // Adjacent card centres at least a card-width + gap apart, so they don't overlap.
+    // Bound each card *and* the deck by its circumscribed circle (the half-diagonal). Placing those
+    // circles a [`GAP`] apart guarantees the rectangles never overlap at *any* angle — a provable radius,
+    // not an eyeballed one (the old width-only spacing let cards projecting sideways clip the deck).
+    let card_reach = card_size.x.hypot(card_size.y) / 2.0;
+    let deck_reach = size.x.hypot(size.y) / 2.0;
+    // Clear the deck: the card circle sits just past the deck circle, plus one gap.
+    let by_deck = deck_reach + card_reach + GAP;
+    // Adjacent card circles at least a gap apart: chord 2·r·sin(step/2) ≥ 2·card_reach + GAP.
     let by_spacing = if n > 1 {
-        (card_size.x + RING_GAP) / (2.0 * (step * 0.5).sin())
+        (2.0 * card_reach + GAP) / (2.0 * (step * 0.5).sin())
     } else {
         0.0
     };
     let radius = by_deck.max(by_spacing);
     // Centre the burst on the deck, but pulled inside the surface so every card stays on-screen — which
     // keeps the angles even (clamping each card instead would bunch them against an edge).
-    let reach = radius + card_size.x.max(card_size.y) / 2.0;
+    let reach = radius + card_reach;
     let cx = (pos.x + size.x / 2.0).clamp(reach, (surface.x - reach).max(reach));
     let cy = (pos.y + size.y / 2.0).clamp(reach, (surface.y - reach).max(reach));
     state.pressed_pile = Some(pile);
@@ -1265,7 +1270,7 @@ fn settle_table_piles(
         .pile(root)
         .map(|p| p.subpiles().to_vec())
         .unwrap_or_default();
-    let mut anchor: Option<PileId> = None;
+    let mut changed = false;
     for &p in &piles {
         let Some(size) = table.0.pile(p).map(|d| d.size()) else {
             continue;
@@ -1275,17 +1280,19 @@ fn settle_table_piles(
         }
         let was = prev.insert(p, size).unwrap_or_default();
         if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
-            anchor = Some(p);
+            changed = true;
         }
     }
-    // A window resize moves the surface bounds — re-clamp and de-overlap every pile against the new size.
+    // A window resize moves the surface bounds — reflow against the new width.
     let surface = table.0.surface();
     if (surface.x - prev_surface.x).abs() > 0.5 || (surface.y - prev_surface.y).abs() > 0.5 {
         *prev_surface = surface;
-        anchor = anchor.or_else(|| piles.first().copied());
+        changed = true;
     }
-    if let Some(anchor) = anchor {
-        table.0.separate(root, TableNode::Pile(anchor));
+    // When a pile's size first populates (or a window resize changes the bounds), lay the top-level piles
+    // out as an exact constant-gap row. Between such changes we leave them alone, so a manual drag sticks.
+    if changed {
+        table.0.arrange_row(root, GAP, OVERLAY_BAND);
     }
 }
 
@@ -1453,8 +1460,13 @@ const MAX_STACK: usize = 10;
 const LEAVE_W: f32 = 120.0;
 const LEAVE_H: f32 = 56.0;
 
-/// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
-const GRID_GAP: f32 = 14.0;
+/// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
+/// so spacing is uniform everywhere it's computed (see [`grid_cell`], [`Tableau::arrange_row`]).
+const GAP: f32 = 12.0;
+/// A rendered Small card's outer size: its footprint plus the 2px border on each side. This is the pitch
+/// unit the grids and rows space by, so a card + [`GAP`] is the exact centre-to-centre step.
+const CARD_W: f32 = SMALL_W + 4.0;
+const CARD_H: f32 = SMALL_H + 4.0;
 /// Height of the **overlay band** at the top of a zone — the strip the floating title / Back / rail
 /// occupy. A **structured** zone (grid / list / rows), whose cards can't be shoved, insets its content
 /// region by this so nothing lands under an overlay. A **freely-placed** zone (Free / root) uses no
@@ -1464,9 +1476,11 @@ const OVERLAY_BAND: f32 = 52.0;
 /// card in one enormous row.
 const MAX_COLS: usize = 16;
 
-/// How many columns the card grid uses for a surface `width` (at least one, capped).
+/// How many columns the card grid uses for a surface `width` (at least one, capped). Each column is a
+/// rendered card plus one [`GAP`], and the row is inset [`GAP`] from each edge, so it's the exact count
+/// that fits: `GAP + cols*(CARD_W + GAP) <= width`.
 fn grid_cols(width: f32) -> usize {
-    (((width / (SMALL_W + GRID_GAP)).floor()) as usize).clamp(1, MAX_COLS)
+    ((((width - GAP) / (CARD_W + GAP)).floor()) as usize).clamp(1, MAX_COLS)
 }
 
 /// Columns the **focused zone** lays its cards out in — the single source every layout path (draw,
@@ -1479,13 +1493,15 @@ fn zone_cols(tree: &Tableau) -> usize {
     }
 }
 
-/// The top-left position of grid cell `index` in a grid of `cols` columns (row-major).
+/// The top-left position of grid cell `index` in a grid of `cols` columns (row-major). The grid is inset
+/// one [`GAP`] from the content region's left/top edges, and each cell steps by a rendered card plus one
+/// [`GAP`], so every gap — edge-to-card and card-to-card — is exactly [`GAP`].
 fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     let col = index % cols;
     let row = index / cols;
     (
-        col as f32 * (SMALL_W + GRID_GAP),
-        row as f32 * (SMALL_H + GRID_GAP),
+        GAP + col as f32 * (CARD_W + GAP),
+        GAP + row as f32 * (CARD_H + GAP),
     )
 }
 

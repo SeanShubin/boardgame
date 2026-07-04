@@ -1407,6 +1407,38 @@ impl Tableau {
         }
     }
 
+    /// Lay `pile`'s movable children out in a **left-to-right, wrapping row** with an exact constant `gap`
+    /// between their bounding boxes and from the left / top (`top`) edges. Each child is placed by its own
+    /// box — a pile's [`size`](Pile::size), a card's [`footprint`](Card::footprint) — so the gaps are
+    /// identical even when widths differ (which fixed pitches can't guarantee). The tidy default layout.
+    /// Children not yet sized (box width `< 1`) are skipped so they don't collapse the row before layout.
+    pub fn arrange_row(&mut self, pile: PileId, gap: f32, top: f32) {
+        let nodes = self.movable_children(pile);
+        let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
+        for node in nodes {
+            // Leave press-driven fixtures (an `Actions` deck such as System) at their fixed corner rather
+            // than sweeping them into the tidy row.
+            if let Node::Pile(pid) = node
+                && self.pile(pid).map(|p| p.layout().arrangement) == Some(Arrangement::Actions)
+            {
+                continue;
+            }
+            let (_, size) = self.node_box(node).unwrap_or_default();
+            if size.x < 1.0 {
+                continue; // not laid out yet
+            }
+            // Wrap to the next row when this child would run past the right edge.
+            if x > gap && x + size.x + gap > self.surface.x {
+                x = gap;
+                y += row_h + gap;
+                row_h = 0.0;
+            }
+            self.set_node_pos(node, Pos { x, y });
+            x += size.x + gap;
+            row_h = row_h.max(size.y);
+        }
+    }
+
     fn apply_collapse(&mut self) {
         let focus = self.focus;
         let ids: Vec<PileId> = self.piles.keys().copied().collect();
@@ -1636,6 +1668,52 @@ mod tests {
             (bp.y - 0.0).abs() < 0.02,
             "b should not drift on y, got {bp:?}"
         );
+    }
+
+    /// `arrange_row` lays movable children in a left-to-right row with the exact constant gap from the
+    /// left/top edges and between every adjacent box — even when widths differ.
+    #[test]
+    fn arrange_row_places_children_at_an_exact_constant_gap() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        t.set_surface(1000.0, 800.0);
+        let a = t.add_pile(root, "A").unwrap();
+        let b = t.add_pile(root, "B").unwrap();
+        let c = t.add_pile(root, "C").unwrap();
+        t.set_pile_size(a, 100.0, 60.0).unwrap();
+        t.set_pile_size(b, 140.0, 60.0).unwrap(); // wider than the others
+        t.set_pile_size(c, 100.0, 60.0).unwrap();
+
+        t.arrange_row(root, 12.0, 52.0);
+
+        // First box: one gap in from the left, at the given top.
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 12.0, y: 52.0 });
+        // Next box: previous left + previous width + gap = 12 + 100 + 12 = 124 (exact, despite widths).
+        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 124.0, y: 52.0 });
+        // And past the *wider* B: 124 + 140 + 12 = 276.
+        assert_eq!(t.pile(c).unwrap().pos(), Pos { x: 276.0, y: 52.0 });
+    }
+
+    /// `arrange_row` wraps to a new row (one gap below the tallest box) when a child would run past the edge.
+    #[test]
+    fn arrange_row_wraps_at_the_surface_edge() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        t.set_surface(300.0, 800.0); // only room for two 100-wide boxes per row
+        let ids: Vec<_> = (0..3)
+            .map(|i| {
+                let p = t.add_pile(root, format!("D{i}")).unwrap();
+                t.set_pile_size(p, 100.0, 60.0).unwrap();
+                p
+            })
+            .collect();
+
+        t.arrange_row(root, 12.0, 52.0);
+
+        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 12.0, y: 52.0 });
+        assert_eq!(t.pile(ids[1]).unwrap().pos(), Pos { x: 124.0, y: 52.0 });
+        // Third wraps: back to the left gap, one row down (52 + 60 + 12 = 124).
+        assert_eq!(t.pile(ids[2]).unwrap().pos(), Pos { x: 12.0, y: 124.0 });
     }
 
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).

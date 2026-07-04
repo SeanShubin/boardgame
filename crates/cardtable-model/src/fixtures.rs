@@ -157,15 +157,22 @@ fn phase_detail(name: &str) -> &'static str {
 /// Content cards first, then any sub-piles, row-major across `cols`. Saved tables restore their own
 /// positions, so this only shapes a fresh table.
 fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
-    const LEFT: f32 = 16.0; // a small left inset
-    const TOP: f32 = 52.0; // clears the overlay band (title / Back) with a small gap, no more
-    // One cell = a rendered Small card (SMALL_W/H + 2px border ≈ 124×100) plus a constant gap, so the
-    // horizontal and vertical spacing between cards match.
-    const CW: f32 = 124.0; // cell width
-    const CH: f32 = 100.0; // cell height
+    // Kept in step with the renderer's spacing (cardtable `GAP` / `CARD_W` / `CARD_H` / `OVERLAY_BAND`) so
+    // a freshly-seeded Free deck already sits at the exact constant-gap spacing the renderer would compute
+    // — the cards start non-overlapping, so the overlap-shove never fires and never distorts them.
+    const GAP: f32 = 12.0;
+    const CARD_W: f32 = 124.0; // rendered Small card width  (SMALL_W + 2px border each side)
+    const CARD_H: f32 = 100.0; // rendered Small card height (SMALL_H + 2px border each side)
+    const OVERLAY_BAND: f32 = 52.0;
+    const LEFT: f32 = GAP; // one standard gap in from the left edge
+    const TOP: f32 = OVERLAY_BAND + GAP; // clears the overlay band (title / Back) by one standard gap
+    // One cell = a rendered card plus one gap, so horizontal and vertical spacing between cards match.
     let spot = |i: usize| {
         let (col, row) = (i % cols, i / cols);
-        (LEFT + col as f32 * CW, TOP + row as f32 * CH)
+        (
+            LEFT + col as f32 * (CARD_W + GAP),
+            TOP + row as f32 * (CARD_H + GAP),
+        )
     };
     let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
     let subs: Vec<PileId> = tree
@@ -386,8 +393,9 @@ pub fn sample_table() -> Tableau {
     grid_layout(&mut tree, starting_kit, 4);
     grid_layout(&mut tree, abilities, 4);
 
-    // Spread the piles across the table so they start un-stacked; drag repositions them. Pitch 140 (a
-    // deck chip plus a small gap), matching the card grid spacing.
+    // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
+    // exact constant-gap row computed by `Tableau::arrange_row` once the chips are sized (see the
+    // renderer's `settle_table_piles`); these seeds only need to be non-overlapping until then.
     tree.set_pile_pos(identity, 40.0, 40.0)
         .expect("identity exists");
     tree.set_pile_pos(starting_kit, 180.0, 40.0)
