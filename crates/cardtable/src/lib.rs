@@ -89,6 +89,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
             .init_resource::<FactoryBase>()
+            .init_resource::<BuildInfo>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
@@ -257,10 +258,16 @@ struct InitialTable(Tableau);
 #[derive(Resource, Default)]
 pub struct FactoryBase(pub Tableau);
 
-/// One card popped out from a pressed [`Arrangement::Actions`] deck: the [`Utility`] it fires, the
-/// rectangle it occupies (for the drop hit-test), and its spawned surface entity.
+/// A short **build stamp** the embedder supplies (e.g. `boardgame` inserts its git hash), shown as a
+/// non-interactive card in the System deck so you can tell which commit is deployed. Empty = no stamp.
+#[derive(Resource, Default)]
+pub struct BuildInfo(pub String);
+
+/// One card popped out from a pressed [`Arrangement::Actions`] deck: what it fires (`None` for a
+/// display-only card like the build stamp), the rectangle it occupies (for the drop hit-test), and its
+/// spawned surface entity.
 struct PoppedAction {
-    utility: Utility,
+    utility: Option<Utility>,
     pos: Pos,
     size: Pos,
     entity: Entity,
@@ -285,8 +292,8 @@ fn setup_camera(mut commands: Commands) {
 /// its action cards, then drag the deck onto one to fire it (see [`on_actions_press`]). It holds
 /// **Reset** everywhere and **Exit** on desktop only — a browser can't quit its own tab, so the Exit
 /// card never appears there. Runs once at startup.
-fn inject_system_deck(mut table: ResMut<Table>) {
-    install_system_deck(&mut table.0);
+fn inject_system_deck(mut table: ResMut<Table>, build: Res<BuildInfo>) {
+    install_system_deck(&mut table.0, &build.0);
 }
 
 /// Add one [`Utility`] action card (face-up `title`) to `pile`.
@@ -302,19 +309,21 @@ fn add_util(table: &mut Tableau, pile: PileId, title: &str, utility: Utility) {
     }
 }
 
-/// Install the **System deck** into `table` — idempotent, so a resumed or rebuilt table isn't doubled up.
-/// Holds **Revert** (undo this session) and **Start Over** (pristine table) everywhere, plus **Exit** on
-/// desktop (a browser can't quit its own tab). Called at startup and by Start Over (which rebuilds a
-/// fresh table and reinstalls this deck).
-fn install_system_deck(table: &mut Tableau) {
+/// Install the **System deck** into `table`. Holds **Revert** (undo this session) and **Start Over**
+/// (pristine table) everywhere, **Exit** on desktop (a browser can't quit its own tab), and a
+/// non-interactive **build stamp** (`build`, if any) so you can tell what's deployed. Any existing System
+/// deck (e.g. from a resumed save) is **removed and rebuilt**, so the deck is never doubled up *and* its
+/// stamp/actions always match the running build. Called at startup and by Start Over.
+fn install_system_deck(table: &mut Tableau, build: &str) {
     let root = table.root_id();
-    let already = table.pile(root).is_some_and(|p| {
+    let stale: Vec<PileId> = table.pile(root).map_or(Vec::new(), |p| {
         p.subpiles()
-            .iter()
-            .any(|&s| table.pile(s).is_some_and(|d| d.label == "System"))
+            .into_iter()
+            .filter(|&s| table.pile(s).is_some_and(|d| d.label == "System"))
+            .collect()
     });
-    if already {
-        return;
+    for s in stale {
+        let _ = table.remove_pile(s);
     }
     let Ok(pile) = table.add_pile(root, "System") else {
         return;
@@ -323,6 +332,18 @@ fn install_system_deck(table: &mut Tableau) {
     add_util(table, pile, "Start Over", Utility::StartOver);
     if !cfg!(target_arch = "wasm32") {
         add_util(table, pile, "Exit", Utility::Exit);
+    }
+    // A non-interactive build stamp: a plain (Regular) card that pops with the actions but fires nothing.
+    if !build.is_empty()
+        && let Ok(id) = table.add_card(
+            pile,
+            Face::Up {
+                title: build.to_string(),
+            },
+            None,
+        )
+    {
+        let _ = table.set_card_type(id, "build");
     }
     // "System" is a Zone (naming) card — the deck's label, not one of its actions.
     if let Ok(system) = table.add_card(
@@ -963,14 +984,19 @@ fn on_actions_press(
     if state.pressed_pile.is_some() || deck.layout().arrangement != Arrangement::Actions {
         return; // already popped, or not an Actions deck
     }
-    // The cards to pop: each content card that carries a Utility action.
-    let actions: Vec<(Utility, String)> = table
+    // The cards to pop: each content card. Utility cards fire on drop; a plain (Regular) card — the build
+    // stamp — pops as display-only (fires nothing). The Zone label and any headers don't pop.
+    let actions: Vec<(Option<Utility>, String)> = table
         .0
         .content_cards(pile)
         .iter()
-        .filter_map(|&cid| match table.0.card(cid)?.kind() {
-            CardKind::Utility(utility) => Some((utility, table.0.card(cid)?.name().to_string())),
-            _ => None,
+        .filter_map(|&cid| {
+            let card = table.0.card(cid)?;
+            match card.kind() {
+                CardKind::Utility(utility) => Some((Some(utility), card.name().to_string())),
+                CardKind::Regular => Some((None, card.name().to_string())),
+                _ => None,
+            }
         })
         .collect();
     // The popped cards live in the content region (like the deck), so they share its coordinate space —
@@ -1007,7 +1033,7 @@ fn on_actions_press(
             target,
             card_size,
             &label,
-            action_color(utility),
+            utility.map_or(INFO_COLOR, action_color),
         );
         commands.entity(content_e).add_child(entity);
         state.popped.push(PoppedAction {
@@ -1037,6 +1063,7 @@ fn on_actions_release(
     mut table: ResMut<Table>,
     initial: Res<InitialTable>,
     factory: Res<FactoryBase>,
+    build: Res<BuildInfo>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -1047,6 +1074,7 @@ fn on_actions_release(
             &mut table,
             &initial.0,
             &factory.0,
+            &build.0,
             &mut rebuild,
             &mut commands,
             &mut exit,
@@ -1063,6 +1091,7 @@ fn on_actions_drag_end(
     mut table: ResMut<Table>,
     initial: Res<InitialTable>,
     factory: Res<FactoryBase>,
+    build: Res<BuildInfo>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -1072,6 +1101,7 @@ fn on_actions_drag_end(
         &mut table,
         &initial.0,
         &factory.0,
+        &build.0,
         &mut rebuild,
         &mut commands,
         &mut exit,
@@ -1089,6 +1119,7 @@ fn settle_actions_deck(
     table: &mut Table,
     initial: &Tableau,
     factory: &Tableau,
+    build: &str,
     rebuild: &mut NeedsRebuild,
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
@@ -1107,7 +1138,7 @@ fn settle_actions_deck(
             .map(|p| (p.utility, overlap_area(dp, dsz, p.pos, p.size)))
             .filter(|&(_, area)| area > 0.01)
             .max_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(utility, _)| utility)
+            .and_then(|(utility, _)| utility) // a display-only card (None) fires nothing
     });
     for popped in state.popped.drain(..) {
         commands.entity(popped.entity).despawn();
@@ -1123,7 +1154,7 @@ fn settle_actions_deck(
         Some(Utility::StartOver) => {
             // Pristine table, discarding this session; the autosave then overwrites the save with it.
             table.0 = factory.clone();
-            install_system_deck(&mut table.0);
+            install_system_deck(&mut table.0, build);
             rebuild.0 = true;
         }
         Some(Utility::Back) => {
@@ -1283,6 +1314,8 @@ const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
 const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
 /// The exit deck's popped-out "Leave" card — a warm red so the drop target reads as "this is the way out".
 const EXIT_CONFIRM_BG: Color = Color::srgb(0.55, 0.22, 0.20);
+/// A muted slate for a popped **display-only** card (the build stamp) — reads as inert, not a drop target.
+const INFO_COLOR: Color = Color::srgb(0.22, 0.24, 0.26);
 /// Highlight edge for a card/pile that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.

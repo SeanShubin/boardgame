@@ -11,7 +11,9 @@
 mod persistence;
 
 use bevy::prelude::*;
-use cardtable::{ActionRequests, CardTablePlugin, CardTableSet, FactoryBase, StatusLine, Table};
+use cardtable::{
+    ActionRequests, BuildInfo, CardTablePlugin, CardTableSet, FactoryBase, StatusLine, Table,
+};
 use cardtable_model::sample_table;
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
@@ -38,6 +40,10 @@ fn main() -> AppExit {
         .insert_resource(Table(persistence::load().unwrap_or_else(sample_table)))
         // The pristine table "Start Over" resets to (a fresh sample, discarding save + session).
         .insert_resource(FactoryBase(sample_table()))
+        // The git commit this binary was built from (see build.rs) — shown in the System deck.
+        .insert_resource(BuildInfo(
+            option_env!("BUILD_GIT_HASH").unwrap_or("unknown").into(),
+        ))
         .insert_resource(StatusLine(
             "Click a pile to enter it · click a card to grow it · drag to arrange".into(),
         ))
