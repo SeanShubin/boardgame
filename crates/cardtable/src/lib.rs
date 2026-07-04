@@ -1013,21 +1013,24 @@ fn on_actions_press(
         x: LEAVE_W,
         y: LEAVE_H,
     };
-    // Explode the cards out from the deck at equal angles (a radial burst), not a straight menu.
+    // Explode the cards out from the deck at equal angles (a radial burst), not a straight menu. Keep it
+    // compact: just clear the deck edge, and only spread wider if that's needed to stop neighbours
+    // overlapping at this angular spacing.
     let n = actions.len();
     let step = std::f32::consts::TAU / n as f32;
-    let card_reach = card_size.x.hypot(card_size.y) / 2.0; // card half-diagonal
-    // Radius: clear the deck, and keep adjacent cards from overlapping at this angular spacing.
-    let by_deck = size.x.hypot(size.y) / 2.0 + card_reach + LEAVE_GAP;
+    const RING_GAP: f32 = 8.0;
+    // Clear the deck, hugging it (the card's short half, so short cards don't push the ring out far).
+    let by_deck = size.x.max(size.y) / 2.0 + card_size.y / 2.0 + RING_GAP;
+    // Adjacent card centres at least a card-width + gap apart, so they don't overlap.
     let by_spacing = if n > 1 {
-        (2.0 * card_reach + LEAVE_GAP) / (2.0 * (step * 0.5).sin())
+        (card_size.x + RING_GAP) / (2.0 * (step * 0.5).sin())
     } else {
         0.0
     };
     let radius = by_deck.max(by_spacing);
     // Centre the burst on the deck, but pulled inside the surface so every card stays on-screen — which
     // keeps the angles even (clamping each card instead would bunch them against an edge).
-    let reach = radius + card_reach;
+    let reach = radius + card_size.x.max(card_size.y) / 2.0;
     let cx = (pos.x + size.x / 2.0).clamp(reach, (surface.x - reach).max(reach));
     let cy = (pos.y + size.y / 2.0).clamp(reach, (surface.y - reach).max(reach));
     state.pressed_pile = Some(pile);
@@ -1449,7 +1452,6 @@ const MAX_STACK: usize = 10;
 /// The popped-out "Leave" card's footprint and how far it sits from the Exit deck when popped.
 const LEAVE_W: f32 = 120.0;
 const LEAVE_H: f32 = 56.0;
-const LEAVE_GAP: f32 = 14.0;
 
 /// The gap between grid cells in a drilled zone. A grid cell is a Small card plus this gap.
 const GRID_GAP: f32 = 14.0;
@@ -1457,7 +1459,7 @@ const GRID_GAP: f32 = 14.0;
 /// occupy. A **structured** zone (grid / list / rows), whose cards can't be shoved, insets its content
 /// region by this so nothing lands under an overlay. A **freely-placed** zone (Free / root) uses no
 /// inset — its cards share the felt and the [`Pinned`] fixtures shove them clear instead. See [`build_ui`].
-const OVERLAY_BAND: f32 = 44.0;
+const OVERLAY_BAND: f32 = 52.0;
 /// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
 /// card in one enormous row.
 const MAX_COLS: usize = 16;

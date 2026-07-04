@@ -159,7 +159,9 @@ fn phase_detail(name: &str) -> &'static str {
 fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
     const LEFT: f32 = 16.0; // a small left inset
     const TOP: f32 = 52.0; // clears the overlay band (title / Back) with a small gap, no more
-    const CW: f32 = 150.0; // cell width  (a Small card plus margin)
+    // One cell = a rendered Small card (SMALL_W/H + 2px border ≈ 124×100) plus a constant gap, so the
+    // horizontal and vertical spacing between cards match.
+    const CW: f32 = 124.0; // cell width
     const CH: f32 = 100.0; // cell height
     let spot = |i: usize| {
         let (col, row) = (i % cols, i / cols);
@@ -384,16 +386,17 @@ pub fn sample_table() -> Tableau {
     grid_layout(&mut tree, starting_kit, 4);
     grid_layout(&mut tree, abilities, 4);
 
-    // Spread the piles across the table so they start un-stacked; drag repositions them.
+    // Spread the piles across the table so they start un-stacked; drag repositions them. Pitch 140 (a
+    // deck chip plus a small gap), matching the card grid spacing.
     tree.set_pile_pos(identity, 40.0, 40.0)
         .expect("identity exists");
-    tree.set_pile_pos(starting_kit, 220.0, 40.0)
+    tree.set_pile_pos(starting_kit, 180.0, 40.0)
         .expect("starting kit exists");
-    tree.set_pile_pos(abilities, 400.0, 40.0)
+    tree.set_pile_pos(abilities, 320.0, 40.0)
         .expect("abilities exists");
-    tree.set_pile_pos(locations, 580.0, 40.0)
+    tree.set_pile_pos(locations, 460.0, 40.0)
         .expect("locations exists");
-    tree.set_pile_pos(rules, 760.0, 40.0).expect("rules exists");
+    tree.set_pile_pos(rules, 600.0, 40.0).expect("rules exists");
 
     tree
 }
