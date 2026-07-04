@@ -1,36 +1,51 @@
 //! Persist the card-table [`Tableau`] as **RON** — to the browser's `localStorage` on the web, and to a
 //! file in the OS data directory natively (same serialization, two backends). [`load`] returns `None` on
-//! absence or any parse / schema-version mismatch, so a corrupt or outdated save falls back to a fresh
-//! table rather than crashing. [`encode`] + [`write`] are split so the caller can dedupe (only write
-//! when the RON actually changed), which the autosave loop relies on.
+//! absence, any parse error, or a stale save, so an out-of-date save falls back to a fresh table rather
+//! than crashing. We do **not** migrate old formats: a save is stamped with a fingerprint of the pristine
+//! [`sample_table`](cardtable_model::sample_table) shape, and one that no longer matches is discarded —
+//! so any change to the fixture automatically clobbers stale saves, no version bumping. [`encode`] +
+//! [`write`] are split so the caller can dedupe (only write when the RON changed), for the autosave loop.
 
 use cardtable_model::Tableau;
 
-/// Bump when the persisted shape changes incompatibly; a save whose `version` differs is discarded.
-const SCHEMA_VERSION: u32 = 1;
 /// The `localStorage` key (web) and file stem (native).
 const KEY: &str = "boardgame.tableau";
 
-/// The versioned RON payload — the tableau plus a schema tag so an old save is rejected, not mis-read.
+/// The RON payload — the tableau plus the pristine-shape [`fingerprint`] it was written against.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Save {
-    version: u32,
+    fingerprint: u64,
     tableau: Tableau,
 }
 
-/// Serialize the tableau to a RON string (with the schema version), or `None` if serialization fails.
+/// A fingerprint of the pristine [`sample_table`](cardtable_model::sample_table) shape. It changes
+/// whenever the fixture changes, so a save written against a different pristine is treated as stale.
+/// Computed once and cached; `DefaultHasher`'s keys are fixed, so it is stable across builds.
+fn fingerprint() -> u64 {
+    use std::hash::{Hash, Hasher};
+    static FP: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *FP.get_or_init(|| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        ron::to_string(&cardtable_model::sample_table())
+            .unwrap_or_default()
+            .hash(&mut hasher);
+        hasher.finish()
+    })
+}
+
+/// Serialize the tableau to a RON string (stamped with the pristine fingerprint), or `None` on failure.
 pub fn encode(tableau: &Tableau) -> Option<String> {
     ron::to_string(&Save {
-        version: SCHEMA_VERSION,
+        fingerprint: fingerprint(),
         tableau: tableau.clone(),
     })
     .ok()
 }
 
-/// Parse a RON string back to a tableau, rejecting a mismatched schema version.
+/// Parse a RON string back to a tableau, discarding a save whose fingerprint no longer matches the build.
 fn decode(text: &str) -> Option<Tableau> {
     let save: Save = ron::from_str(text).ok()?;
-    (save.version == SCHEMA_VERSION).then_some(save.tableau)
+    (save.fingerprint == fingerprint()).then_some(save.tableau)
 }
 
 /// Load the saved tableau, or `None` if there is none (or it can't be read / parsed).
