@@ -157,13 +157,13 @@ fn phase_detail(name: &str) -> &'static str {
 /// Content cards first, then any sub-piles, row-major across `cols`. Saved tables restore their own
 /// positions, so this only shapes a fresh table.
 fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
-    const MARGIN: f32 = 16.0; // a small left inset
+    const LEFT: f32 = 16.0; // a small left inset
+    const TOP: f32 = 52.0; // clears the overlay band (title / Back) with a small gap, no more
     const CW: f32 = 150.0; // cell width  (a Small card plus margin)
     const CH: f32 = 100.0; // cell height
     let spot = |i: usize| {
-        // `row + 1`: reserve an empty top row that clears the overlays.
-        let (col, row) = (i % cols, i / cols + 1);
-        (MARGIN + col as f32 * CW, MARGIN + row as f32 * CH)
+        let (col, row) = (i % cols, i / cols);
+        (LEFT + col as f32 * CW, TOP + row as f32 * CH)
     };
     let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
     let subs: Vec<PileId> = tree
@@ -332,9 +332,9 @@ pub fn sample_table() -> Tableau {
                 tree.set_card_detail(id, vec![phase_detail(child).to_string()])
                     .expect("child phase card");
             }
-            // Engage's label *is* the parent card: its title lists the children (and its own `(x/y)`),
-            // its detail is the damage-order summary.
-            let label = format!("Engage {pos}: {}", ENGAGE_CHILDREN.join(", "));
+            // Engage's label is the parent card: name + its `(x/y)`. Its children are one drill-in away
+            // and its damage-order summary is in the detail, so the title stays short.
+            let label = format!("Engage {pos}");
             let engage_zone = typed(&mut tree, engage, &label, "phase");
             tree.set_card_kind(engage_zone, CardKind::Zone)
                 .expect("engage label");
@@ -497,7 +497,7 @@ mod tests {
         assert_eq!(engage.label, "Engage");
         assert_eq!(
             t.card(*engage.cards().last().unwrap()).unwrap().name(),
-            "Engage (4/6): Intercept, Volley, Raid, Clash, Breach"
+            "Engage (4/6)"
         );
 
         // Five child phases, each with an (x/5) sibling position.
