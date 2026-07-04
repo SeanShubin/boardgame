@@ -890,7 +890,7 @@ fn on_node_drag_end(
 fn on_actions_press(
     on: On<Pointer<Press>>,
     movables: Query<&Movable>,
-    surfaces: Query<Entity, With<TableSurface>>,
+    content: Query<Entity, With<TableContent>>,
     table: Res<Table>,
     mut state: ResMut<ActionsDeckState>,
     mut commands: Commands,
@@ -921,7 +921,9 @@ fn on_actions_press(
             _ => None,
         })
         .collect();
-    let Ok(surface_e) = surfaces.single() else {
+    // The popped cards live in the content region (like the deck), so they share its coordinate space —
+    // the deck's model position lines up with what's on screen, and the drop hit-test is exact.
+    let Ok(content_e) = content.single() else {
         return;
     };
     if actions.is_empty() {
@@ -955,7 +957,7 @@ fn on_actions_press(
             &label,
             action_color(utility),
         );
-        commands.entity(surface_e).add_child(entity);
+        commands.entity(content_e).add_child(entity);
         state.popped.push(PoppedAction {
             utility,
             pos: target,
