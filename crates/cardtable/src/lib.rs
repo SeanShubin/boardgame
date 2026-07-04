@@ -85,7 +85,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<StatusLine>()
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
-            .init_resource::<DraggingCard>()
+            .init_resource::<Dragging>()
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
             .init_resource::<FactoryBase>()
@@ -98,21 +98,20 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck, then snapshot the initial table for Reset (order matters).
             .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
-            .add_systems(Update, (animate_piles, animate_cards, animate_popped))
-            // Table shove: feed surface + pile sizes + overlay obstacles, then re-settle on a new/resized
-            // deck, a window resize, or a moved obstacle (the floating title).
+            .add_systems(Update, (animate_nodes, animate_popped))
+            // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
+            // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
                 Update,
                 (
                     sync_surface_size,
-                    sync_pile_sizes,
+                    sync_node_sizes,
                     sync_obstacles,
                     settle_table_piles,
                 )
                     .chain(),
             )
-            // Free-deck shove: sync card footprints, then re-settle when one changes (lay-out / resize).
-            .add_systems(Update, (sync_card_sizes, settle_free_cards).chain())
+            .add_systems(Update, settle_free_cards.after(sync_node_sizes))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
             // Input is picking-driven, so it runs in observers rather than the Input system set:
             // clicks open/close piles and fire actions; a card drag drops into a pile; a pile drag
@@ -121,10 +120,8 @@ impl Plugin for CardTablePlugin {
             .add_observer(on_drag_end_clear_guard)
             .add_observer(on_click)
             .add_observer(on_drop)
-            .add_observer(on_pile_drag)
-            .add_observer(on_pile_drag_end)
-            .add_observer(on_card_drag)
-            .add_observer(on_card_drag_end)
+            .add_observer(on_node_drag)
+            .add_observer(on_node_drag_end)
             .add_observer(on_actions_press)
             .add_observer(on_actions_release)
             .add_observer(on_actions_drag_end);
@@ -149,10 +146,12 @@ struct CardRef(CardId);
 #[derive(Component, Clone, Copy)]
 struct PileDropZone(PileId);
 
-/// Marks a top-level pile's absolutely-positioned wrapper, carrying its [`PileId`]. Dragging it slides
-/// the pile freely across the table (live), committing the final position on release.
+/// Marks a **movable felt element** — the absolutely-positioned wrapper of a card *or* a nested pile,
+/// carrying which [`Node`](TableNode) it is. Dragging it slides that element freely (live) and commits
+/// on release; a card and a pile are dragged, sized, and animated by the *same* handlers, differing only
+/// in their leaf behaviour on drop (a pile just repositions; a card may reorder or move between zones).
 #[derive(Component, Clone, Copy)]
-struct TablePile(PileId);
+struct Movable(TableNode);
 
 /// Marks the table surface — the positioning context for piles. Its size is fed to the model as the
 /// wall bounds that keep piles inside.
@@ -175,11 +174,6 @@ struct SurfaceObstacle;
 struct PoppedTarget {
     target: Pos,
 }
-
-/// Marks a card's grid tile inside a drilled zone, carrying its [`CardId`]. Dragging it slides the
-/// card freely; on release it reorders into the nearest grid cell and the rest reflow.
-#[derive(Component, Clone, Copy)]
-struct TableCard(CardId);
 
 /// Marks one row of a [`Rows`](Arrangement::Rows) view for drop resolution: on release, the card lands
 /// in the row the cursor is over. `active` marks the row that accepts drops (the Active row); a drop over
@@ -235,14 +229,14 @@ struct DragGuard(bool);
 
 /// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a pile, move
 /// a card, a new game snapshot). Pile positions are not structural; they animate, so repositioning
-/// never sets this. See [`redraw`] and [`animate_piles`].
+/// never sets this. See [`redraw`] and [`animate_nodes`].
 #[derive(Resource)]
 struct NeedsRebuild(bool);
 
-/// The card currently being dragged in a zone grid (if any), so its tile isn't snapped to the grid by
-/// the animation while the pointer holds it.
+/// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
+/// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
 #[derive(Resource, Default)]
-struct DraggingCard(Option<CardId>);
+struct Dragging(Option<TableNode>);
 
 /// The initial table, snapshotted once at startup so a **Revert** action can restore it. Game-agnostic:
 /// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
@@ -370,7 +364,7 @@ fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
 
 /// Clear the drag guard whenever *any* drag ends, so only the click that ends a drag is suppressed and
 /// real clicks work again afterward. Covers every draggable — piles, grid cards, and projection cards
-/// (which carry no `TableCard`, so the specific card-drag handler never runs for them).
+/// (which carry no `Movable`, so the specific card-drag handler never runs for them).
 fn on_drag_end_clear_guard(_on: On<Pointer<DragEnd>>, mut guard: ResMut<DragGuard>) {
     guard.0 = false;
 }
@@ -434,8 +428,8 @@ fn on_click(
 }
 
 /// A picking drop: move a dragged **card** into the pile it was dropped *onto*. Dropping a card onto
-/// another card (or the felt) is not a move — that's an in-zone reorder, handled by [`on_card_drag_end`]
-/// against the grid. Piles aren't nested on drop (they reposition via [`on_pile_drag`]), so a dragged
+/// another card (or the felt) is not a move — that's an in-zone reorder, handled by [`on_node_drag_end`]
+/// against the grid. Piles aren't nested on drop (they reposition via [`on_node_drag`]), so a dragged
 /// pile is ignored. Presentation-level; mapping drops to game actions is future work.
 fn on_drop(
     mut on: On<Pointer<DragDrop>>,
@@ -485,48 +479,52 @@ fn on_drop(
     rebuild.0 = true;
 }
 
-/// Slide a top-level pile across the table while it is dragged — freely, even off the edge. Moves the
-/// wrapper's `Node` and the model position together (a position change is not structural, so there is
-/// no rebuild mid-drag); settling on release brings an off-edge pile back. A card drag is consumed
-/// here so it doesn't also slide the pile under it.
-fn on_pile_drag(
-    mut on: On<Pointer<Drag>>,
-    mut piles: Query<(&TablePile, &mut Node)>,
-    mut table: ResMut<Table>,
-) {
-    if let Ok((pile, mut node)) = piles.get_mut(on.event().entity) {
-        let delta = on.event().event.delta;
-        let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
-        // Follow the cursor anywhere — even past the table edge. The settling on release clamps it
-        // back inside and the animation slides it into view. Keep the model in step with the live
-        // node so the animation doesn't fight the drag.
-        node.left = Val::Px(x);
-        node.top = Val::Px(y);
-        let _ = table.0.set_pile_pos(pile.0, x, y);
-        on.propagate(false);
+/// A short label for a node, for the debug log.
+fn node_label(table: &Tableau, node: TableNode) -> String {
+    match node {
+        TableNode::Card(cid) => {
+            format!("card={:?}", table.card(cid).map(|c| c.name()).unwrap_or(""))
+        }
+        TableNode::Pile(pid) => format!(
+            "pile={:?}",
+            table.pile(pid).map(|p| p.label.as_str()).unwrap_or("")
+        ),
     }
 }
 
-/// Commit a dragged pile's final position to the model on release (one rebuild, at rest).
-fn on_pile_drag_end(
-    mut on: On<Pointer<DragEnd>>,
-    piles: Query<(&TablePile, &Node)>,
+/// Slide a dragged **felt element** — a card or a nested pile — freely under the cursor, even off the
+/// edge, live (no rebuild mid-drag; a position change isn't structural). The grab lands on the inner
+/// visual; the event propagates up to the [`Movable`] wrapper, the node we move. The model position is
+/// kept in step so a Free deck can shove and animate at rest; marking it the dragging node stops
+/// [`animate_nodes`] from fighting the drag. Settling on release brings an off-edge element back.
+fn on_node_drag(
+    mut on: On<Pointer<Drag>>,
+    mut movables: Query<(&Movable, &mut Node)>,
+    mut dragging: ResMut<Dragging>,
     mut table: ResMut<Table>,
-    mut guard: ResMut<DragGuard>,
+    log: Res<DebugLog>,
 ) {
-    guard.0 = false; // the drag is over; let real clicks through again
-    if let Ok((pile, node)) = piles.get(on.event().entity) {
-        let _ = table.0.set_pile_pos(pile.0, px(node.left), px(node.top));
-        // Settle: clamp the (possibly off-edge) pile back inside and shove overlapping siblings clear —
-        // the anchor included, so a pile dropped past the border is pulled into view, then the animation
-        // slides it the rest of the way. Separate the pile among its parent's children (a card or pile,
-        // same treatment).
-        let parent = table
-            .0
-            .pile(pile.0)
-            .and_then(|p| p.parent())
-            .unwrap_or(table.0.root_id());
-        table.0.separate(parent, TableNode::Pile(pile.0));
+    if let Ok((movable, mut node)) = movables.get_mut(on.event().entity) {
+        if dragging.0 != Some(movable.0) {
+            log.line(format!(
+                "DRAG_START {} at cursor={:?}",
+                node_label(&table.0, movable.0),
+                on.event().pointer_location.position
+            ));
+        }
+        let delta = on.event().event.delta;
+        let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
+        node.left = Val::Px(x);
+        node.top = Val::Px(y);
+        match movable.0 {
+            TableNode::Card(cid) => {
+                let _ = table.0.set_card_pos(cid, x, y);
+            }
+            TableNode::Pile(pid) => {
+                let _ = table.0.set_pile_pos(pid, x, y);
+            }
+        }
+        dragging.0 = Some(movable.0);
         on.propagate(false);
     }
 }
@@ -539,12 +537,19 @@ fn px(value: Val) -> f32 {
     }
 }
 
-/// Feed each top-level pile's laid-out size back into the model (logical px), so [`Tableau::separate`]
-/// works on real AABBs. Runs every frame; pile sizes are stable, so it's cheap.
-fn sync_pile_sizes(piles: Query<(&TablePile, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (pile, computed) in &piles {
+/// Feed each **movable element's** laid-out size back into the model (logical px), so [`Tableau::separate`]
+/// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
+fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (movable, computed) in &movables {
         let size = computed.size * computed.inverse_scale_factor;
-        let _ = table.0.set_pile_size(pile.0, size.x, size.y);
+        match movable.0 {
+            TableNode::Card(cid) => {
+                let _ = table.0.set_card_footprint(cid, size.x, size.y);
+            }
+            TableNode::Pile(pid) => {
+                let _ = table.0.set_pile_size(pid, size.x, size.y);
+            }
+        }
     }
 }
 
@@ -593,63 +598,60 @@ fn sync_obstacles(
     table.0.set_obstacles(rects);
 }
 
-/// Ease each pile's wrapper toward its model position, so a separation (or any reposition) *slides*
-/// into place instead of snapping. The dragged pile keeps target == position, so it doesn't ease;
-/// piles already at rest are skipped so the node (and its layout) isn't touched every frame.
-fn animate_piles(time: Res<Time>, table: Res<Table>, mut piles: Query<(&TablePile, &mut Node)>) {
+/// Ease each **movable element's** wrapper toward its model position, so a separation (or any reposition)
+/// *slides* into place instead of snapping — a card and a pile alike. The dragged element is left free;
+/// those at rest are skipped so the node (and its layout) isn't touched every frame. A card in an ordered
+/// zone targets its grid cell; everything else targets its own model position. A projection view lays its
+/// cards out with flexbox (not by model position), so it is left alone.
+fn animate_nodes(
+    time: Res<Time>,
+    table: Res<Table>,
+    dragging: Res<Dragging>,
+    mut movables: Query<(&Movable, &mut Node)>,
+) {
+    if table
+        .0
+        .pile(table.0.focus_id())
+        .is_some_and(|p| !p.projection().is_empty())
+    {
+        return;
+    }
+    let free = matches!(
+        table
+            .0
+            .pile(table.0.focus_id())
+            .map(|p| p.layout().arrangement),
+        Some(Arrangement::Free)
+    );
+    let cols = zone_cols(&table.0);
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (pile, mut node) in &mut piles {
-        let Some(d) = table.0.pile(pile.0) else {
-            continue;
+    for (movable, mut node) in &mut movables {
+        if dragging.0 == Some(movable.0) {
+            continue; // free while held
+        }
+        let target = match movable.0 {
+            TableNode::Pile(pid) => match table.0.pile(pid) {
+                Some(d) => d.pos(),
+                None => continue,
+            },
+            TableNode::Card(cid) if free => match table.0.card(cid) {
+                Some(c) => c.pos(),
+                None => continue,
+            },
+            TableNode::Card(cid) => match table.0.card_index(cid) {
+                Some(index) => {
+                    let (x, y) = grid_cell(index, cols);
+                    Pos { x, y }
+                }
+                None => continue,
+            },
         };
-        let target = d.pos();
         let (cx, cy) = (px(node.left), px(node.top));
         if (target.x - cx).abs() < 0.5 && (target.y - cy).abs() < 0.5 {
             continue; // at rest
         }
         node.left = Val::Px(cx + (target.x - cx) * t);
         node.top = Val::Px(cy + (target.y - cy) * t);
-    }
-}
-
-/// Slide a card freely while it is dragged — the tile follows the cursor anywhere, no rebuild. The
-/// grab lands on the inner card visual; the event propagates up to the `TableCard` tile, which is the
-/// node we actually move. Marking it the dragging card stops [`animate_cards`] from fighting the drag.
-fn on_card_drag(
-    mut on: On<Pointer<Drag>>,
-    mut cards: Query<(&TableCard, &mut Node)>,
-    mut dragging: ResMut<DraggingCard>,
-    mut table: ResMut<Table>,
-    log: Res<DebugLog>,
-) {
-    if let Ok((card, mut node)) = cards.get_mut(on.event().entity) {
-        // First frame of a new drag: log what was picked up and from where.
-        if dragging.0 != Some(card.0) {
-            let (name, kind) = table
-                .0
-                .card(card.0)
-                .map(|c| {
-                    let k = if !c.recipe().is_empty() {
-                        "kit"
-                    } else {
-                        "card"
-                    };
-                    (c.name().to_string(), k)
-                })
-                .unwrap_or_default();
-            log.line(format!(
-                "DRAG_START card={name:?}({kind}) at cursor={:?}",
-                on.event().pointer_location.position
-            ));
-        }
-        let delta = on.event().event.delta;
-        let (x, y) = (px(node.left) + delta.x, px(node.top) + delta.y);
-        node.left = Val::Px(x);
-        node.top = Val::Px(y);
-        // Keep the model position in step — a Free deck reads it to shove and to animate at rest.
-        let _ = table.0.set_card_pos(card.0, x, y);
-        dragging.0 = Some(card.0);
-        on.propagate(false);
     }
 }
 
@@ -753,28 +755,44 @@ fn put_pair_back(table: &mut Tableau, inn: PileId, card: CardId) {
     }
 }
 
-/// On release: a **Free** deck commits the dropped position and shoves overlapping cards clear
-/// ([`separate_cards`]); any other layout snaps the card into the nearest grid cell by reordering. In
-/// both cases the others then *slide* into place ([`animate_cards`]) — no rebuild, which would kill the slide.
+/// On release, settle a dragged felt element. A **pile** commits its position and shoves among its
+/// parent's children — done. A **card** does the leaf-specific drop: a Rows view (the inn) may move it
+/// into the Active row; a projection view snaps it back; a **Free** deck commits the position and shoves
+/// overlapping siblings clear; any other layout reorders it into the nearest grid cell. In the non-Rows
+/// card cases the others then *slide* into place ([`animate_nodes`]) — no rebuild, which kills the slide.
 #[allow(clippy::too_many_arguments)]
-fn on_card_drag_end(
+fn on_node_drag_end(
     mut on: On<Pointer<DragEnd>>,
-    cards: Query<(&TableCard, &Node)>,
+    movables: Query<(&Movable, &Node)>,
     transforms: Query<&UiGlobalTransform>,
     rows_q: Query<(&RowRegion, &UiGlobalTransform, &ComputedNode)>,
     mut table: ResMut<Table>,
-    mut dragging: ResMut<DraggingCard>,
+    mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
     log: Res<DebugLog>,
 ) {
-    guard.0 = false; // the drag is over; let real clicks through again (as on_pile_drag_end does)
-    if let Ok((card, node)) = cards.get(on.event().entity) {
+    guard.0 = false; // the drag is over; let real clicks through again
+    if let Ok((movable, node)) = movables.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
+        // A pile just repositions and shoves among its siblings; the rest is card-only leaf behaviour.
+        let card = match movable.0 {
+            TableNode::Pile(pid) => {
+                let _ = table.0.set_pile_pos(pid, px(node.left), px(node.top));
+                let parent = table
+                    .0
+                    .pile(pid)
+                    .and_then(|p| p.parent())
+                    .unwrap_or(table.0.root_id());
+                table.0.separate(parent, TableNode::Pile(pid));
+                return;
+            }
+            TableNode::Card(cid) => cid,
+        };
         let dropped_name = table
             .0
-            .card(card.0)
+            .card(card)
             .map(|c| c.name().to_string())
             .unwrap_or_default();
         log.line(format!(
@@ -796,7 +814,7 @@ fn on_card_drag_end(
             // Active row brings it down (`drop_card_into_active`); dragging an Active card out onto another
             // row puts that pairing back (`put_pair_back`). Anything else stays put (rebuild re-lays it).
             let inn = table.0.focus_id();
-            let from_active = table.0.card(card.0).map(|c| c.home()) == Some(inn);
+            let from_active = table.0.card(card).map(|c| c.home()) == Some(inn);
             // The drop row is chosen by the dragged **card tile's** vertical centre, not the cursor: the
             // cursor sits where you grabbed the card (often its top edge), reading one row too high, while
             // the card's body is what you see landing. Card- and row-transforms share one coordinate space,
@@ -829,11 +847,11 @@ fn on_card_drag_end(
             }
             let action = match over {
                 Some(region) if region.active && !from_active => {
-                    drop_card_into_active(&mut table.0, card.0, inn);
+                    drop_card_into_active(&mut table.0, card, inn);
                     "add_to_active"
                 }
                 Some(region) if !region.active && from_active => {
-                    put_pair_back(&mut table.0, inn, card.0);
+                    put_pair_back(&mut table.0, inn, card);
                     "put_pair_back"
                 }
                 Some(region) => {
@@ -876,7 +894,7 @@ fn on_card_drag_end(
             rebuild.0 = true;
             return;
         }
-        let Some(home) = table.0.card(card.0).map(|c| c.home()) else {
+        let Some(home) = table.0.card(card).map(|c| c.home()) else {
             return;
         };
         if matches!(
@@ -884,8 +902,8 @@ fn on_card_drag_end(
             Some(Arrangement::Free)
         ) {
             // Unordered: keep it where dropped, then shove the rest out of its way.
-            let _ = table.0.set_card_pos(card.0, px(node.left), px(node.top));
-            table.0.separate(home, TableNode::Card(card.0));
+            let _ = table.0.set_card_pos(card, px(node.left), px(node.top));
+            table.0.separate(home, TableNode::Card(card));
             return;
         }
         // Ordered grid: snap into the nearest cell by reordering among the *contents* only, so a drag
@@ -898,7 +916,7 @@ fn on_card_drag_end(
         let row = ((px(node.top) - GRID_TOP + SMALL_H / 2.0) / (SMALL_H + GRID_GAP))
             .floor()
             .max(0.0) as usize;
-        let Some(from) = table.0.card_index(card.0) else {
+        let Some(from) = table.0.card_index(card) else {
             return;
         };
         let len = table.0.content_cards(home).len();
@@ -913,7 +931,7 @@ fn on_card_drag_end(
 /// surface entities drawn above the piles, since popping them doesn't shove the game piles aside.
 fn on_actions_press(
     on: On<Pointer<Press>>,
-    piles: Query<&TablePile>,
+    movables: Query<&Movable>,
     surfaces: Query<Entity, With<TableSurface>>,
     table: Res<Table>,
     mut state: ResMut<ActionsDeckState>,
@@ -922,10 +940,14 @@ fn on_actions_press(
     if on.event().event.button != PointerButton::Primary {
         return;
     }
-    let Ok(pile) = piles.get(on.event().entity) else {
-        return; // press wasn't on a top-level pile
+    let Some(pile) = movables
+        .get(on.event().entity)
+        .ok()
+        .and_then(|m| m.0.pile())
+    else {
+        return; // press wasn't on a movable pile
     };
-    let Some(deck) = table.0.pile(pile.0) else {
+    let Some(deck) = table.0.pile(pile) else {
         return;
     };
     if state.pressed_pile.is_some() || deck.layout().arrangement != Arrangement::Actions {
@@ -934,7 +956,7 @@ fn on_actions_press(
     // The cards to pop: each content card that carries a Utility action.
     let actions: Vec<(Utility, String)> = table
         .0
-        .content_cards(pile.0)
+        .content_cards(pile)
         .iter()
         .filter_map(|&cid| match table.0.card(cid)?.kind() {
             CardKind::Utility(utility) => Some((utility, table.0.card(cid)?.name().to_string())),
@@ -961,7 +983,7 @@ fn on_actions_press(
     } else {
         (pos.y - LEAVE_GAP - menu_h).max(0.0)
     };
-    state.pressed_pile = Some(pile.0);
+    state.pressed_pile = Some(pile);
     for (i, (utility, label)) in actions.into_iter().enumerate() {
         let target = Pos {
             x: pos.x,
@@ -1122,75 +1144,15 @@ fn animate_popped(time: Res<Time>, mut popped: Query<(&PoppedTarget, &mut Node)>
     }
 }
 
-/// Ease each drilled-in card tile toward its target — its **grid cell** (ordered layouts) or its free
-/// **model position** (a [`Arrangement::Free`] deck) — so a reorder or a shove *slides* the cards into
-/// place instead of snapping. The dragged card is left alone (it follows the cursor); tiles already at
-/// rest are skipped so layout isn't touched every frame.
-fn animate_cards(
-    time: Res<Time>,
-    table: Res<Table>,
-    dragging: Res<DraggingCard>,
-    mut cards: Query<(&TableCard, &mut Node)>,
-) {
-    // A projection view lays its cards out with flexbox, not by model position — leave them alone.
-    if table
-        .0
-        .pile(table.0.focus_id())
-        .is_some_and(|p| !p.projection().is_empty())
-    {
-        return;
-    }
-    let free = matches!(
-        table
-            .0
-            .pile(table.0.focus_id())
-            .map(|p| p.layout().arrangement),
-        Some(Arrangement::Free)
-    );
-    let cols = zone_cols(&table.0);
-    let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (card, mut node) in &mut cards {
-        if dragging.0 == Some(card.0) {
-            continue; // free while held
-        }
-        let (tx, ty) = if free {
-            match table.0.card(card.0) {
-                Some(c) => (c.pos().x, c.pos().y),
-                None => continue,
-            }
-        } else {
-            match table.0.card_index(card.0) {
-                Some(index) => grid_cell(index, cols),
-                None => continue,
-            }
-        };
-        let (cx, cy) = (px(node.left), px(node.top));
-        if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
-            continue; // at rest
-        }
-        node.left = Val::Px(cx + (tx - cx) * t);
-        node.top = Val::Px(cy + (ty - cy) * t);
-    }
-}
-
-/// Feed each drilled-in card tile's laid-out footprint back to the model (logical px), so a Free deck's
-/// [`separate_cards`](Tableau::separate_cards) shoves on real AABBs. Runs every frame; cheap.
-fn sync_card_sizes(cards: Query<(&TableCard, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (card, computed) in &cards {
-        let size = computed.size * computed.inverse_scale_factor;
-        let _ = table.0.set_card_footprint(card.0, size.x, size.y);
-    }
-}
-
 /// Keep a **Free** deck's cards shoved apart when they first lay out or change size (a card expands or
 /// collapses), or when a floating overlay moves — when a card's footprint changes, or the obstacles do
-/// (the title/Back the zone's cards must dodge), and nothing is being dragged, re-run [`separate_cards`]
+/// (the title/Back the zone's cards must dodge), and nothing is being dragged, re-run [`separate`]
 /// anchored on the changed card (else the first). So a grown card holds its place and pushes its
 /// neighbours out, and the cards keep clear of Back and the title. `prev`/`prev_obstacles` remember the
 /// last-seen footprints/obstacles.
 fn settle_free_cards(
     mut table: ResMut<Table>,
-    dragging: Res<DraggingCard>,
+    dragging: Res<Dragging>,
     mut prev: Local<HashMap<CardId, Pos>>,
     mut prev_obstacles: Local<Vec<(Pos, Pos)>>,
 ) {
@@ -1301,7 +1263,7 @@ fn settle_table_piles(
 }
 
 /// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
-/// snapshot). Pile positions are not structural — they animate (see [`animate_piles`]) — so
+/// snapshot). Pile positions are not structural — they animate (see [`animate_nodes`]) — so
 /// repositioning never triggers a rebuild.
 fn redraw(
     mut commands: Commands,
@@ -1534,7 +1496,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                         let pos = tree.pile(id).expect("pile id from zone").pos();
                         surface
                             .spawn((
-                                TablePile(id),
+                                Movable(TableNode::Pile(id)),
                                 Node {
                                     position_type: PositionType::Absolute,
                                     left: Val::Px(pos.x),
@@ -1583,7 +1545,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                     for cid in cards {
                                         let card = tree.card(cid).expect("row card");
                                         row.spawn((
-                                            TableCard(cid),
+                                            Movable(TableNode::Card(cid)),
                                             Node::default(),
                                             card_elevation(card),
                                         ))
@@ -1639,7 +1601,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                             ..default()
                                         })
                                         .with_children(|row| {
-                                            // Projection cards are NOT `TableCard`s: they stay put while
+                                            // Projection cards get no `Movable`: they stay put while
                                             // dragged (no cursor-follow), so the card you release *onto*
                                             // is reliably the drop target — the equip in `on_drop`. The
                                             // drag itself is picking-level, so it still fires.
@@ -1690,13 +1652,13 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                 // An expanded card lifts above its neighbours so it stays readable.
                                 tile.insert(card_elevation(card));
                                 if draggable {
-                                    tile.insert(TableCard(cid));
+                                    tile.insert(Movable(node));
                                 }
                                 tile.with_children(|tile| spawn_card(tile, card));
                             }
                             TableNode::Pile(pid) => {
                                 if draggable {
-                                    tile.insert(TablePile(pid));
+                                    tile.insert(Movable(node));
                                 }
                                 tile.with_children(|tile| spawn_pile(tile, tree, pid));
                             }
