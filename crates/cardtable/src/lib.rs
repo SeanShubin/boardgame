@@ -1013,19 +1013,30 @@ fn on_actions_press(
         x: LEAVE_W,
         y: LEAVE_H,
     };
-    // Stack the menu below the deck — or above it if there is no room below — clamped to the surface.
-    let menu_h = actions.len() as f32 * (card_size.y + LEAVE_GAP);
-    let below = pos.y + size.y + LEAVE_GAP;
-    let start_y = if below + menu_h <= surface.y {
-        below
+    // Explode the cards out from the deck at equal angles (a radial burst), not a straight menu.
+    let n = actions.len();
+    let step = std::f32::consts::TAU / n as f32;
+    let card_reach = card_size.x.hypot(card_size.y) / 2.0; // card half-diagonal
+    // Radius: clear the deck, and keep adjacent cards from overlapping at this angular spacing.
+    let by_deck = size.x.hypot(size.y) / 2.0 + card_reach + LEAVE_GAP;
+    let by_spacing = if n > 1 {
+        (2.0 * card_reach + LEAVE_GAP) / (2.0 * (step * 0.5).sin())
     } else {
-        (pos.y - LEAVE_GAP - menu_h).max(0.0)
+        0.0
     };
+    let radius = by_deck.max(by_spacing);
+    // Centre the burst on the deck, but pulled inside the surface so every card stays on-screen — which
+    // keeps the angles even (clamping each card instead would bunch them against an edge).
+    let reach = radius + card_reach;
+    let cx = (pos.x + size.x / 2.0).clamp(reach, (surface.x - reach).max(reach));
+    let cy = (pos.y + size.y / 2.0).clamp(reach, (surface.y - reach).max(reach));
     state.pressed_pile = Some(pile);
     for (i, (utility, label)) in actions.into_iter().enumerate() {
+        // Start straight up (−90°) and go round; place the card's centre on the ring, then its top-left.
+        let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * step;
         let target = Pos {
-            x: pos.x,
-            y: start_y + i as f32 * (card_size.y + LEAVE_GAP),
+            x: cx + radius * angle.cos() - card_size.x / 2.0,
+            y: cy + radius * angle.sin() - card_size.y / 2.0,
         };
         let entity = spawn_popped_card(
             &mut commands,
