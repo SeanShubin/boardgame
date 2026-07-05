@@ -100,7 +100,7 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck, then snapshot the initial table for Reset (order matters).
             .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
-            .add_systems(Update, (animate_nodes, animate_popped))
+            .add_systems(Update, (animate_nodes, animate_popped, fan_layout))
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -253,6 +253,20 @@ struct Dragging(Option<TableNode>);
 /// shows). Set on tap (see [`on_click`]); a stale id simply matches nothing and the natural fan shows.
 #[derive(Resource, Default)]
 struct FannedFront(Option<CardId>);
+
+/// A **fan row's container** — the relative box a [`Fan`](Arrangement::Fan)/`Rows` row's cards are placed
+/// in. It flex-grows to fill the room left after the header, so its laid-out width is the space the fan
+/// has to work with; [`fan_layout`] reads that width each frame and spaces the cards to match.
+#[derive(Component)]
+struct FanContainer;
+
+/// One card in a fan, tagging its `index` along the row and its `card` id, so [`fan_layout`] can place it
+/// (and know which one is the tapped [`FannedFront`], to open the fan around it).
+#[derive(Component)]
+struct FanCard {
+    index: usize,
+    card: CardId,
+}
 
 /// The initial table, snapshotted once at startup so a **Revert** action can restore it. Game-agnostic:
 /// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
@@ -711,6 +725,61 @@ fn animate_nodes(
         }
         node.left = Val::Px(cx + (target.x - cx) * t);
         node.top = Val::Px(cy + (target.y - cy) * t);
+    }
+}
+
+/// Space each **fan row's** cards across its container, recomputed every frame so it tracks the real
+/// available width — a window resize reflows it, matching how the grids reflow via [`animate_nodes`]. The
+/// cards **spread as far as fits** (up to a full card + [`GAP`] step, no overlap) and pack tighter as the
+/// room runs out, down to a [`FAN_SLIVER`] floor (past which the row simply overflows). The tapped
+/// [`FannedFront`] card is drawn full on top (see [`build_ui`]); the fan **opens around it** by pushing the
+/// cards to its right clear of its body — but only by however much they actually overlap, so a
+/// fully-spread fan doesn't move. The dragged card is left alone so it follows the cursor.
+fn fan_layout(
+    containers: Query<(&ComputedNode, &Children), With<FanContainer>>,
+    front: Res<FannedFront>,
+    dragging: Res<Dragging>,
+    mut cards: Query<(&FanCard, &mut Node)>,
+) {
+    for (computed, children) in &containers {
+        let width = computed.size.x * computed.inverse_scale_factor;
+        let count = children.len();
+        if count == 0 {
+            continue;
+        }
+        // The step that packs `count` cards (each CARD_W wide) into `width`: capped at a full no-overlap
+        // stride, floored at the sliver. `count == 1` sits at the left.
+        let pitch = if count > 1 {
+            ((width - CARD_W) / (count - 1) as f32).clamp(FAN_SLIVER, CARD_W + GAP)
+        } else {
+            0.0
+        };
+        // How far the front card's body overhangs the next slot — the amount to open the fan by. Zero once
+        // the cards are spread enough not to overlap.
+        let open = (CARD_W - pitch).max(0.0);
+        let front_idx = front.0.and_then(|f| {
+            children
+                .iter()
+                .filter_map(|c| cards.get(c).ok())
+                .find(|(fc, _)| fc.card == f)
+                .map(|(fc, _)| fc.index)
+        });
+        for &child in children {
+            let Ok((fc, mut node)) = cards.get_mut(child) else {
+                continue;
+            };
+            if dragging.0 == Some(TableNode::Card(fc.card)) {
+                continue; // free while held
+            }
+            let shift = match front_idx {
+                Some(fi) if fc.index > fi => open,
+                _ => 0.0,
+            };
+            let left = pitch * fc.index as f32 + shift;
+            if (px(node.left) - left).abs() > 0.5 {
+                node.left = Val::Px(left); // guarded so we don't thrash layout when unchanged
+            }
+        }
     }
 }
 
@@ -1635,45 +1704,38 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                     row.with_children(|row| {
                                         // The header names the row and isn't part of the fan — it leads it.
                                         spawn_card(row, tree.card(header).expect("row header"));
-                                        // The row's cards are a horizontal **fan**: each overlaps the last so
-                                        // only its left-edge sliver shows (examine one at a time). Later cards
-                                        // paint over earlier ones, so the rightmost shows fully by default. A
-                                        // tapped card is pulled to `front` (drawn fully, above its siblings) —
-                                        // and the fan **opens around it**: cards to its right shift right by a
-                                        // full card so their slivers stay visible and tappable past its edge
-                                        // (else the front card's body would bury the way to the next one).
-                                        // The container is tall enough for a card and lets a lift overflow.
-                                        let count = cards.len();
-                                        let front_idx =
-                                            front.and_then(|f| cards.iter().position(|&c| c == f));
-                                        let open = CARD_W - FAN_SLIVER; // gap opened right of the front card
-                                        let fan_w = FAN_SLIVER * count.saturating_sub(1) as f32
-                                            + CARD_W
-                                            + if front_idx.is_some() { open } else { 0.0 };
-                                        row.spawn(Node {
-                                            position_type: PositionType::Relative,
-                                            width: Val::Px(fan_w),
-                                            height: Val::Px(CARD_H),
-                                            ..default()
-                                        })
+                                        // The row's cards are a horizontal **fan**. The container flex-grows
+                                        // to fill the room left after the header; [`fan_layout`] reads that
+                                        // width each frame and **spreads the cards as far as it fits** (up to a
+                                        // full card + gap, no overlap), overlapping only when the room runs out
+                                        // — down to a left-edge sliver. A tapped card is pulled to `front`
+                                        // (drawn fully, above its siblings) and the fan opens around it. Here we
+                                        // only tag the pieces; positions are computed dynamically in that system.
+                                        row.spawn((
+                                            FanContainer,
+                                            Node {
+                                                position_type: PositionType::Relative,
+                                                flex_grow: 1.0,
+                                                min_width: Val::Px(0.0),
+                                                height: Val::Px(CARD_H),
+                                                ..default()
+                                            },
+                                        ))
                                         .with_children(
                                             |fan| {
                                                 for (j, cid) in cards.into_iter().enumerate() {
                                                     let card = tree.card(cid).expect("row card");
-                                                    // Slide cards right of the front one clear of its body.
-                                                    let shift = match front_idx {
-                                                        Some(fi) if j > fi => open,
-                                                        _ => 0.0,
-                                                    };
                                                     // Content cards are draggable — drop one on the Active row to
-                                                    // move it in. Absolutely placed by fan index.
+                                                    // move it in. Placed absolutely; `fan_layout` sets `left`.
                                                     let mut tile = fan.spawn((
                                                         Movable(TableNode::Card(cid)),
+                                                        FanCard {
+                                                            index: j,
+                                                            card: cid,
+                                                        },
                                                         Node {
                                                             position_type: PositionType::Absolute,
-                                                            left: Val::Px(
-                                                                FAN_SLIVER * j as f32 + shift,
-                                                            ),
+                                                            left: Val::Px(FAN_SLIVER * j as f32),
                                                             top: Val::Px(0.0),
                                                             ..default()
                                                         },
