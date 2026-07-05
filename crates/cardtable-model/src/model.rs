@@ -114,6 +114,9 @@ pub enum Utility {
     Revert,
     /// Start over from a pristine table, discarding this session's changes and the saved game.
     StartOver,
+    /// Audit the cards currently on screen for text that overflows its fixed footprint — an authoring aid
+    /// for finalizing card text. Reports to the debug log; changes nothing.
+    CheckText,
 }
 
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
