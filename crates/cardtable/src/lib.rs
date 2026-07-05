@@ -1637,12 +1637,19 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                         spawn_card(row, tree.card(header).expect("row header"));
                                         // The row's cards are a horizontal **fan**: each overlaps the last so
                                         // only its left-edge sliver shows (examine one at a time). Later cards
-                                        // paint over earlier ones, so the rightmost shows fully by default; a
-                                        // tapped card is pulled to `front` (drawn fully, above its siblings).
+                                        // paint over earlier ones, so the rightmost shows fully by default. A
+                                        // tapped card is pulled to `front` (drawn fully, above its siblings) —
+                                        // and the fan **opens around it**: cards to its right shift right by a
+                                        // full card so their slivers stay visible and tappable past its edge
+                                        // (else the front card's body would bury the way to the next one).
                                         // The container is tall enough for a card and lets a lift overflow.
                                         let count = cards.len();
-                                        let fan_w =
-                                            FAN_SLIVER * count.saturating_sub(1) as f32 + CARD_W;
+                                        let front_idx =
+                                            front.and_then(|f| cards.iter().position(|&c| c == f));
+                                        let open = CARD_W - FAN_SLIVER; // gap opened right of the front card
+                                        let fan_w = FAN_SLIVER * count.saturating_sub(1) as f32
+                                            + CARD_W
+                                            + if front_idx.is_some() { open } else { 0.0 };
                                         row.spawn(Node {
                                             position_type: PositionType::Relative,
                                             width: Val::Px(fan_w),
@@ -1653,13 +1660,20 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                             |fan| {
                                                 for (j, cid) in cards.into_iter().enumerate() {
                                                     let card = tree.card(cid).expect("row card");
+                                                    // Slide cards right of the front one clear of its body.
+                                                    let shift = match front_idx {
+                                                        Some(fi) if j > fi => open,
+                                                        _ => 0.0,
+                                                    };
                                                     // Content cards are draggable — drop one on the Active row to
                                                     // move it in. Absolutely placed by fan index.
                                                     let mut tile = fan.spawn((
                                                         Movable(TableNode::Card(cid)),
                                                         Node {
                                                             position_type: PositionType::Absolute,
-                                                            left: Val::Px(FAN_SLIVER * j as f32),
+                                                            left: Val::Px(
+                                                                FAN_SLIVER * j as f32 + shift,
+                                                            ),
                                                             top: Val::Px(0.0),
                                                             ..default()
                                                         },
