@@ -461,10 +461,9 @@ fn on_click(
             Some(Arrangement::Rows)
         ) && table.0.card(id).map(|c| c.kind()) != Some(CardKind::Header);
         if in_fan {
-            if front.0 != Some(id) {
-                front.0 = Some(id); // bring to the front (no-op if already there)
-                rebuild.0 = true;
-            }
+            // Just record the new front card — no rebuild. `fan_layout` reads this every frame and slides
+            // the cards / lifts the front one in place; despawning the whole UI would only cause a flicker.
+            front.0 = Some(id);
         } else if table.0.card(id).is_some_and(|c| c.is_expandable()) {
             let _ = table.0.cycle_card_size(id);
             rebuild.0 = true;
@@ -739,7 +738,7 @@ fn fan_layout(
     containers: Query<(&ComputedNode, &Children), With<FanContainer>>,
     front: Res<FannedFront>,
     dragging: Res<Dragging>,
-    mut cards: Query<(&FanCard, &mut Node)>,
+    mut cards: Query<(&FanCard, &mut Node, &mut ZIndex)>,
 ) {
     for (computed, children) in &containers {
         let width = computed.size.x * computed.inverse_scale_factor;
@@ -759,8 +758,8 @@ fn fan_layout(
             children
                 .iter()
                 .filter_map(|c| cards.get(c).ok())
-                .find(|(fc, _)| fc.card == f)
-                .map(|(fc, _)| fc.index)
+                .find(|(fc, ..)| fc.card == f)
+                .map(|(fc, ..)| fc.index)
         });
         // To show the front card fully we need a full CARD_W of clear space at its slot. Rather than shove
         // the cards to its right outward (off screen), pull the front card **left** and **compress the
@@ -784,13 +783,22 @@ fn fan_layout(
             None => (0.0, pitch),
         };
         for &child in children {
-            let Ok((fc, mut node)) = cards.get_mut(child) else {
+            let Ok((fc, mut node, mut z)) = cards.get_mut(child) else {
                 continue;
             };
-            if dragging.0 == Some(TableNode::Card(fc.card)) {
-                continue; // free while held
-            }
             let j = fc.index;
+            // Lift the front card above all the slivers; otherwise keep index order (later cards on top).
+            let want_z = if front.0 == Some(fc.card) {
+                FAN_FRONT_Z
+            } else {
+                j as i32
+            };
+            if z.0 != want_z {
+                z.0 = want_z; // guarded so we don't churn change-detection when unchanged
+            }
+            if dragging.0 == Some(TableNode::Card(fc.card)) {
+                continue; // position free while held
+            }
             let left = match active_front {
                 Some(fi) if j < fi => j as f32 * pitch_left, // compressed left slivers
                 Some(fi) if j == fi => front_left,           // the front card, pulled left
@@ -1425,7 +1433,6 @@ fn redraw(
     mut rebuild: ResMut<NeedsRebuild>,
     table: Res<Table>,
     rail: Res<ActionRail>,
-    front: Res<FannedFront>,
     mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
@@ -1440,7 +1447,7 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
-    build_ui(&mut commands, &table.0, &rail.0, front.0);
+    build_ui(&mut commands, &table.0, &rail.0);
 }
 
 // ---- drawing ------------------------------------------------------------
@@ -1627,7 +1634,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     )
 }
 
-fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front: Option<CardId>) {
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
     let zone = tree.focus_id();
     let at_root = zone == tree.root_id();
 
@@ -1745,27 +1752,26 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                             |fan| {
                                                 for (j, cid) in cards.into_iter().enumerate() {
                                                     let card = tree.card(cid).expect("row card");
-                                                    // Content cards are draggable — drop one on the Active row to
-                                                    // move it in. Placed absolutely; `fan_layout` sets `left`.
-                                                    let mut tile = fan.spawn((
+                                                    // Content cards are draggable — drop one on the Active row
+                                                    // to move it in. Placed absolutely; `fan_layout` sets both
+                                                    // `left` and the z-order each frame (baseline
+                                                    // `ZIndex(index)` so later cards sit on top and the left
+                                                    // slivers show, lifting the front card above the rest).
+                                                    fan.spawn((
                                                         Movable(TableNode::Card(cid)),
                                                         FanCard {
                                                             index: j,
                                                             card: cid,
                                                         },
+                                                        ZIndex(j as i32),
                                                         Node {
                                                             position_type: PositionType::Absolute,
                                                             left: Val::Px(FAN_SLIVER * j as f32),
                                                             top: Val::Px(0.0),
                                                             ..default()
                                                         },
-                                                    ));
-                                                    if front == Some(cid) {
-                                                        tile.insert(ZIndex(FAN_FRONT_Z));
-                                                    }
-                                                    tile.with_children(|tile| {
-                                                        spawn_card(tile, card)
-                                                    });
+                                                    ))
+                                                    .with_children(|tile| spawn_card(tile, card));
                                                 }
                                             },
                                         );
