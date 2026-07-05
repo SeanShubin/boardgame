@@ -13,4 +13,4 @@ above works from any cwd.)
 
 Run it **once at the end of a batch**, not after each individual edit. It recursively
 re-aligns every markdown table in the repo
-(`cargo run -p engine --example pad_tables`).
+(`cargo run -p mdtable --example pad_tables`).

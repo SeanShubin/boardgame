@@ -11,7 +11,7 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Write-Host "==> Clippy (logic + card-table product)"
-    cargo clippy -p engine -p deckbound -p cardtable-model -p cardtable -p boardgame -- -D warnings
+    cargo clippy -p engine -p mdtable -p deckbound -p cardtable-model -p cardtable -p boardgame -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Write-Host "==> Tests"

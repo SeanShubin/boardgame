@@ -1,5 +1,8 @@
 //! Markdown table padding — align every table's columns so pipes line up in monospace.
 //!
+//! A small, dependency-free **tooling** crate, deliberately separate from `engine` (the pure
+//! card-game toolkit): padding markdown tables is a docs/formatting concern, not game domain.
+//!
 //! [`pad_tables`] is the single source of truth for the repo's table style: it is called both by
 //! the `pad_tables` example (which walks the tree padding `.md` files in place) and by generated
 //! docs (e.g. `deckbound`'s handbook), so a generator emits tables already in the padded form the

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/contract",
     "crates/engine",
+    "crates/mdtable",
     "crates/cardtable-model",
     "crates/cardtable",
     "crates/tabletop",
@@ -23,6 +24,7 @@ edition = "2024"
 bevy = { version = "0.19.0", default-features = false, features = ["2d", "3d", "ui"] }
 contract = { path = "crates/contract" }
 engine = { path = "crates/engine" }
+mdtable = { path = "crates/mdtable" }
 cardtable-model = { path = "crates/cardtable-model" }
 cardtable = { path = "crates/cardtable" }
 tabletop = { path = "crates/tabletop" }

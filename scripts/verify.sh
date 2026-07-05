@@ -9,7 +9,7 @@ echo "==> Checking formatting"
 cargo fmt --all -- --check
 
 echo "==> Clippy (logic + card-table product)"
-cargo clippy -p engine -p deckbound -p cardtable-model -p cardtable -p boardgame -- -D warnings
+cargo clippy -p engine -p mdtable -p deckbound -p cardtable-model -p cardtable -p boardgame -- -D warnings
 
 echo "==> Tests"
 cargo test --workspace

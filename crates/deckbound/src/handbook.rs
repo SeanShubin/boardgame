@@ -63,7 +63,7 @@ pub fn card_library_md() -> String {
         }
         out.push('\n');
     }
-    engine::markdown::pad_tables(&out)
+    mdtable::pad_tables(&out)
 }
 
 /// The **rules reference**: the encyclopedia entries grouped by category (the in-app Rules menu).
@@ -88,7 +88,7 @@ pub fn rules_reference_md() -> String {
         }
         out.push_str(&format!("- **{}** — {}\n", e.term, e.text));
     }
-    engine::markdown::pad_tables(&out)
+    mdtable::pad_tables(&out)
 }
 
 #[cfg(test)]

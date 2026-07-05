@@ -7,7 +7,6 @@
 //! depends on it. Everything in this crate is pure and deterministic given a seed, which keeps games
 //! unit-testable and reproducible.
 
-pub mod markdown;
 pub mod rng;
 pub mod zone;
 

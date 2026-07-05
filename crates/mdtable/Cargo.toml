@@ -1,0 +1,8 @@
+[package]
+name = "mdtable"
+version.workspace = true
+edition.workspace = true
+
+# A tiny, dependency-free tooling crate: markdown table padding. Kept out of `engine` (the pure
+# card-game toolkit) so that crate stays strictly game-domain — this is a docs/formatting concern.
+[dependencies]

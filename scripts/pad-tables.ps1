@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
-    cargo run -p engine --example pad_tables @args
+    cargo run -p mdtable --example pad_tables @args
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     Pop-Location

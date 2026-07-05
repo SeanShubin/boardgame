@@ -1,15 +1,15 @@
 //! Pads all markdown tables in `.md` files so columns align in monospace editors.
 //!
-//! Run with: `cargo run -p engine --example pad_tables` (or `scripts/pad-tables`).
+//! Run with: `cargo run -p mdtable --example pad_tables` (or `scripts/pad-tables`).
 //!
 //! Recursively scans the current directory for `.md` files, finds markdown tables,
 //! and pads each cell so pipes align. Skips `.git`, `target`, `node_modules`, and
 //! any dot-prefixed directory. Only writes files that actually change.
 //!
-//! The padding logic itself lives in [`engine::markdown::pad_tables`] so generated
-//! docs (e.g. deckbound's handbook) can emit tables already in this exact form.
+//! The padding logic itself lives in [`mdtable::pad_tables`] so generated docs
+//! (e.g. deckbound's handbook) can emit tables already in this exact form.
 
-use engine::markdown::pad_tables;
+use mdtable::pad_tables;
 use std::fs;
 use std::path::Path;
 

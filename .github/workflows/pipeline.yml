@@ -154,12 +154,12 @@ jobs:
         with:
           key: sample-tests
 
-      # engine + deckbound are pure crates (no Bevy) — no system libraries needed.
-      - name: Clippy (engine, deckbound)
-        run: cargo clippy -p engine -p deckbound -- -D warnings
+      # engine + mdtable + deckbound are pure crates (no Bevy) — no system libraries needed.
+      - name: Clippy (engine, mdtable, deckbound)
+        run: cargo clippy -p engine -p mdtable -p deckbound -- -D warnings
 
-      - name: Test (engine, deckbound)
-        run: cargo test -p engine -p deckbound
+      - name: Test (engine, mdtable, deckbound)
+        run: cargo test -p engine -p mdtable -p deckbound
 
   native-build:
     name: Verify · native build (${{ matrix.os }})
