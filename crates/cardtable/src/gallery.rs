@@ -12,7 +12,9 @@
 //! - **Medium** — width fixed but height grows with line count, so only *horizontal* overflow is a fault.
 //! - **Large** — a scrollable panel, so again only *horizontal* overflow is a fault.
 
+use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
+use bevy::ui::ScrollPosition;
 use cardtable_model::{CardId, Tableau, sample_table};
 
 use crate::{
@@ -27,6 +29,14 @@ struct Sample {
     card: CardId,
     size: &'static str,
 }
+
+/// The scrolling column, so the wheel handler can find it (and only it — not the Large cards' own
+/// inner scroll).
+#[derive(Component)]
+struct GalleryScroll;
+
+/// Logical px scrolled per wheel line (when the OS reports scroll in lines rather than pixels).
+const SCROLL_LINE_PX: f32 = 28.0;
 
 /// The cards being shown, kept so the audit can resolve names.
 #[derive(Resource)]
@@ -54,7 +64,7 @@ pub fn run_card_gallery() {
             Startup,
             (setup_camera, install_ui_font, build_gallery).chain(),
         )
-        .add_systems(Update, audit_gallery)
+        .add_systems(Update, (audit_gallery, scroll_gallery))
         .run();
 }
 
@@ -62,15 +72,19 @@ pub fn run_card_gallery() {
 fn build_gallery(mut commands: Commands, cards: Res<GalleryCards>) {
     let tree = &cards.0;
     commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            flex_direction: FlexDirection::Column,
-            overflow: Overflow::scroll_y(),
-            padding: UiRect::all(Val::Px(16.0)),
-            row_gap: Val::Px(16.0),
-            ..default()
-        })
+        .spawn((
+            GalleryScroll,
+            ScrollPosition::DEFAULT, // driven by `scroll_gallery`; Bevy's scroll_y only clips, never scrolls
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                overflow: Overflow::scroll_y(),
+                padding: UiRect::all(Val::Px(16.0)),
+                row_gap: Val::Px(16.0),
+                ..default()
+            },
+        ))
         .with_children(|col| {
             for id in all_cards(tree) {
                 let Some(card) = tree.card(id) else {
@@ -89,6 +103,29 @@ fn build_gallery(mut commands: Commands, cards: Res<GalleryCards>) {
                 });
             }
         });
+}
+
+/// Scroll the gallery column with the mouse wheel. Bevy's `Overflow::scroll_y` only *clips* — it never
+/// moves the content — so we drive the column's [`ScrollPosition`] ourselves. We clamp to the scrollable
+/// range so the wheel can't build up an offset past either end (which would read as an unresponsive "dead
+/// zone" before the content moves again).
+fn scroll_gallery(
+    wheel: Res<AccumulatedMouseScroll>,
+    mut column: Query<(&mut ScrollPosition, &ComputedNode), With<GalleryScroll>>,
+) {
+    if wheel.delta.y == 0.0 {
+        return;
+    }
+    let dy = match wheel.unit {
+        MouseScrollUnit::Line => wheel.delta.y * SCROLL_LINE_PX,
+        MouseScrollUnit::Pixel => wheel.delta.y,
+    };
+    for (mut scroll, node) in &mut column {
+        // ComputedNode sizes are physical; ScrollPosition is logical — convert the max before clamping.
+        let max = (node.content_size.y - node.size.y + node.scrollbar_size.y).max(0.0)
+            * node.inverse_scale_factor;
+        scroll.0.y = (scroll.0.y - dy).clamp(0.0, max);
+    }
 }
 
 /// Spawn one card sample: a [`Sample`] wrapper (the red overflow frame) around one card face.
