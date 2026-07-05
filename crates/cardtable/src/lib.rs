@@ -746,14 +746,7 @@ fn fan_layout(
         if count == 0 {
             continue;
         }
-        // Baseline stride: packs `count` cards (each CARD_W wide) into `width` with the **last** card fully
-        // shown and right-edged at `width` — capped at a full no-overlap step, floored at the sliver.
-        // `count == 1` sits at the left.
-        let pitch = if count > 1 {
-            ((width - CARD_W) / (count - 1) as f32).clamp(FAN_SLIVER, CARD_W + GAP)
-        } else {
-            0.0
-        };
+        // Which card (if any) is fronted — found by id among this container's cards.
         let front_idx = front.0.and_then(|f| {
             children
                 .iter()
@@ -761,37 +754,15 @@ fn fan_layout(
                 .find(|(fc, ..)| fc.card == f)
                 .map(|(fc, ..)| fc.index)
         });
-        // To show the front card fully we need a full CARD_W of clear space at its slot. Rather than shove
-        // the cards to its right outward (off screen), pull the front card **left** and **compress the
-        // slivers to its left** to yield that space — the right side stays anchored at baseline, always on
-        // screen. The last card is already fully shown at baseline, so fronting it (or nothing) needs no
-        // adjustment: `active_front` is only set for a card that isn't the last one.
-        let active_front = match front_idx {
-            Some(fi) if fi + 1 < count => Some(fi),
-            _ => None,
-        };
-        let (front_left, pitch_left) = match active_front {
-            Some(fi) => {
-                // As far left as the `fi` left slivers can compress to, clamped so the card never moves
-                // right of baseline nor past the left edge. If even that can't fully clear it (fronting a
-                // near-left card in a tight fan) its right neighbour is partly covered — the only way to
-                // stay on screen, since baseline already right-edges the last card at the container edge.
-                let fl = ((fi + 1) as f32 * pitch - CARD_W).clamp(0.0, fi as f32 * pitch);
-                let pl = if fi > 0 { fl / fi as f32 } else { 0.0 };
-                (fl, pl)
-            }
-            None => (0.0, pitch),
-        };
         for &child in children {
             let Ok((fc, mut node, mut z)) = cards.get_mut(child) else {
                 continue;
             };
-            let j = fc.index;
             // Lift the front card above all the slivers; otherwise keep index order (later cards on top).
             let want_z = if front.0 == Some(fc.card) {
                 FAN_FRONT_Z
             } else {
-                j as i32
+                fc.index as i32
             };
             if z.0 != want_z {
                 z.0 = want_z; // guarded so we don't churn change-detection when unchanged
@@ -799,11 +770,7 @@ fn fan_layout(
             if dragging.0 == Some(TableNode::Card(fc.card)) {
                 continue; // position free while held
             }
-            let left = match active_front {
-                Some(fi) if j < fi => j as f32 * pitch_left, // compressed left slivers
-                Some(fi) if j == fi => front_left,           // the front card, pulled left
-                _ => j as f32 * pitch,                       // right side + baseline
-            };
+            let left = fan_left(width, count, front_idx, fc.index);
             if (px(node.left) - left).abs() > 0.5 {
                 node.left = Val::Px(left); // guarded so we don't thrash layout when unchanged
             }
@@ -1433,6 +1400,7 @@ fn redraw(
     mut rebuild: ResMut<NeedsRebuild>,
     table: Res<Table>,
     rail: Res<ActionRail>,
+    front: Res<FannedFront>,
     mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
@@ -1447,7 +1415,7 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
-    build_ui(&mut commands, &table.0, &rail.0);
+    build_ui(&mut commands, &table.0, &rail.0, front.0);
 }
 
 // ---- drawing ------------------------------------------------------------
@@ -1634,7 +1602,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     )
 }
 
-fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front: Option<CardId>) {
     let zone = tree.focus_id();
     let at_root = zone == tree.root_id();
 
@@ -1701,11 +1669,17 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                         // A Rows view (the inn's assignment view): a column of horizontal rows, each led by
                         // its Header card, then its cards. The Hero and Kit rows come from the projection,
                         // the Active row from the pile's own cards (see `Tableau::row_groups`).
+                        // The fan's available width is exactly what the flexbox will give each row's
+                        // container: the felt width less the column's padding on both sides, the header
+                        // card, and the header→fan gap. Computing it here (not after layout) lets us seed
+                        // each card's spread position so the very first frame is already right.
+                        let fan_width =
+                            (tree.surface().x - 2.0 * INN_PAD - CARD_W - INN_HEADER_GAP).max(1.0);
                         surface
                             .spawn(Node {
                                 flex_direction: FlexDirection::Column,
                                 width: Val::Percent(100.0),
-                                padding: UiRect::all(Val::Px(12.0)),
+                                padding: UiRect::all(Val::Px(INN_PAD)),
                                 row_gap: Val::Px(14.0),
                                 ..default()
                             })
@@ -1721,7 +1695,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                             width: Val::Percent(100.0),
                                             flex_direction: FlexDirection::Row,
                                             align_items: AlignItems::Center,
-                                            column_gap: Val::Px(8.0),
+                                            column_gap: Val::Px(INN_HEADER_GAP),
                                             ..default()
                                         },
                                         RowRegion {
@@ -1750,23 +1724,35 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                         ))
                                         .with_children(
                                             |fan| {
+                                                let count = cards.len();
+                                                let front_idx = front.and_then(|f| {
+                                                    cards.iter().position(|&c| c == f)
+                                                });
                                                 for (j, cid) in cards.into_iter().enumerate() {
                                                     let card = tree.card(cid).expect("row card");
                                                     // Content cards are draggable — drop one on the Active row
-                                                    // to move it in. Placed absolutely; `fan_layout` sets both
-                                                    // `left` and the z-order each frame (baseline
-                                                    // `ZIndex(index)` so later cards sit on top and the left
-                                                    // slivers show, lifting the front card above the rest).
+                                                    // to move it in. Seeded at its computed spread position (so
+                                                    // frame one is correct); `fan_layout` then owns `left` and
+                                                    // the z-order each frame — baseline `ZIndex(index)` so later
+                                                    // cards sit on top and the left slivers show, lifting the
+                                                    // front card above the rest.
+                                                    let front_z = front == Some(cid);
                                                     fan.spawn((
                                                         Movable(TableNode::Card(cid)),
                                                         FanCard {
                                                             index: j,
                                                             card: cid,
                                                         },
-                                                        ZIndex(j as i32),
+                                                        ZIndex(if front_z {
+                                                            FAN_FRONT_Z
+                                                        } else {
+                                                            j as i32
+                                                        }),
                                                         Node {
                                                             position_type: PositionType::Absolute,
-                                                            left: Val::Px(FAN_SLIVER * j as f32),
+                                                            left: Val::Px(fan_left(
+                                                                fan_width, count, front_idx, j,
+                                                            )),
                                                             top: Val::Px(0.0),
                                                             ..default()
                                                         },
@@ -2149,6 +2135,44 @@ const FAN_SLIVER: f32 = 34.0;
 /// Local draw order for the card pulled to the front of a fan — above every sliver in its row. Local (not
 /// global), so a dragged card (on the global held layer) still floats above it.
 const FAN_FRONT_Z: i32 = 1000;
+/// Inn **Rows** layout metrics, named so the flexbox that lays a row out and the fan's build-time width
+/// estimate stay in lockstep (see [`fan_left`], [`build_ui`]): the padding around the rows column, and the
+/// gap between a row's header and its fan. Getting these exactly right is what makes a freshly-built fan
+/// land on the correct spread on its *first* frame, with no measure-and-correct hop.
+const INN_PAD: f32 = 12.0;
+const INN_HEADER_GAP: f32 = 8.0;
+
+/// The x offset of fan card `index` (of `count`) within a fan `width` px wide, when `front_idx` — if any —
+/// is the card pulled to the front. The single source of truth for fan geometry: [`build_ui`] seeds each
+/// card with it from the *known* surface width (so a fresh fan is right on frame one), and [`fan_layout`]
+/// re-applies it every frame from the *measured* width (so it tracks resizes and the live front card).
+///
+/// The cards **spread to fit** — a full card + [`GAP`] step at most (no overlap), down to a [`FAN_SLIVER`]
+/// floor — with the last card right-edged at `width`. To show the front card fully, it is pulled left and
+/// the slivers to its left compress to yield the room, so the right side never shoves off screen; the last
+/// card needs no adjustment. See the call sites for the fuller rationale.
+fn fan_left(width: f32, count: usize, front_idx: Option<usize>, index: usize) -> f32 {
+    let pitch = if count > 1 {
+        ((width - CARD_W) / (count - 1) as f32).clamp(FAN_SLIVER, CARD_W + GAP)
+    } else {
+        0.0
+    };
+    match front_idx {
+        // Only a card that isn't the last one opens the fan (the last shows fully at baseline).
+        Some(fi) if fi + 1 < count => {
+            let front_left = ((fi + 1) as f32 * pitch - CARD_W).clamp(0.0, fi as f32 * pitch);
+            if index < fi {
+                let pitch_left = if fi > 0 { front_left / fi as f32 } else { 0.0 };
+                index as f32 * pitch_left
+            } else if index == fi {
+                front_left
+            } else {
+                index as f32 * pitch
+            }
+        }
+        _ => index as f32 * pitch,
+    }
+}
 
 /// Draw order for a card tile: an **expanded** (non-Small) card lifts above its siblings, so the card
 /// you just grew to read is never buried under a neighbour it now overlaps. Small cards stay at the base
