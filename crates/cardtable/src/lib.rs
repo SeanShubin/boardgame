@@ -530,10 +530,16 @@ fn on_node_drag(
     mut movables: Query<(&Movable, &mut Node)>,
     mut dragging: ResMut<Dragging>,
     mut table: ResMut<Table>,
+    mut commands: Commands,
     log: Res<DebugLog>,
 ) {
     if let Ok((movable, mut node)) = movables.get_mut(on.event().entity) {
         if dragging.0 != Some(movable.0) {
+            // First frame of this drag: lift the tile onto the held layer so it floats above everything
+            // it slides over — the "pick it up off the table" gesture. Released back down in `on_node_drag_end`.
+            commands
+                .entity(on.event().entity)
+                .insert(GlobalZIndex(HELD_Z));
             log.line(format!(
                 "DRAG_START {} at cursor={:?}",
                 node_label(&table.0, movable.0),
@@ -801,12 +807,16 @@ fn on_node_drag_end(
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
+    mut commands: Commands,
     log: Res<DebugLog>,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
     if let Ok((movable, node)) = movables.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
+        // Set the tile back down onto the felt: drop the held-layer lift so it stacks normally again. (A
+        // card-path drop rebuilds and respawns this tile anyway; the pile path doesn't, so remove it here.)
+        commands.entity(on.event().entity).remove::<GlobalZIndex>();
         // A pile just repositions and shoves among its siblings; the rest is card-only leaf behaviour.
         let card = match movable.0 {
             TableNode::Pile(pid) => {
@@ -1972,6 +1982,13 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     };
     spawn_pile_chip(parent, id, &name, &card_type, count);
 }
+
+/// The **held** layer: an element being dragged floats here — above the felt tiles and the floating
+/// overlays (title / Back at [`GlobalZIndex(10)`]), below the System slide-out ([`GlobalZIndex(100)`]) —
+/// so "picking a card up off the table" reads literally: it stays on top of everything it slides over
+/// until you set it down. Applied on drag-start, removed on release (see [`on_node_drag`] /
+/// [`on_node_drag_end`]).
+const HELD_Z: i32 = 50;
 
 /// Draw order for a card tile: an **expanded** (non-Small) card lifts above its siblings, so the card
 /// you just grew to read is never buried under a neighbour it now overlaps. Small cards stay at the base
