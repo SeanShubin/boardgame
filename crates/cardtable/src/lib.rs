@@ -36,6 +36,9 @@ use cardtable_model::{
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
 
+mod gallery;
+pub use gallery::run_card_gallery;
+
 // ---- public presentation state (the shared inputs) ----------------------
 
 /// The board: the pile tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
@@ -87,7 +90,6 @@ impl Plugin for CardTablePlugin {
             .init_resource::<DragGuard>()
             .init_resource::<Dragging>()
             .init_resource::<FannedFront>()
-            .init_resource::<TextAudit>()
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
             .init_resource::<FactoryBase>()
@@ -102,7 +104,6 @@ impl Plugin for CardTablePlugin {
             // Inject the System deck, then snapshot the initial table for Reset (order matters).
             .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
             .add_systems(Update, (animate_nodes, animate_popped, fan_layout))
-            .add_systems(Update, run_text_audit)
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -256,12 +257,6 @@ struct Dragging(Option<TableNode>);
 #[derive(Resource, Default)]
 struct FannedFront(Option<CardId>);
 
-/// Set when the **Check Text** System action fires; [`run_text_audit`] consumes it next frame, measures the
-/// on-screen cards for text overflowing their fixed footprint, logs the offenders, and clears it. An
-/// authoring aid — off unless asked — so no per-frame cost.
-#[derive(Resource, Default)]
-struct TextAudit(bool);
-
 /// A **fan row's container** — the relative box a [`Fan`](Arrangement::Fan)/`Rows` row's cards are placed
 /// in. It flex-grows to fill the room left after the header, so its laid-out width is the space the fan
 /// has to work with; [`fan_layout`] reads that width each frame and spaces the cards to match.
@@ -360,7 +355,6 @@ fn install_system_deck(table: &mut Tableau, build: &str) {
     };
     add_util(table, pile, "Revert", Utility::Revert);
     add_util(table, pile, "Start Over", Utility::StartOver);
-    add_util(table, pile, "Check Text", Utility::CheckText);
     if !cfg!(target_arch = "wasm32") {
         add_util(table, pile, "Exit", Utility::Exit);
     }
@@ -787,84 +781,6 @@ fn fan_layout(
     }
 }
 
-/// The **text audit** (armed by the System deck's *Check Text* card): when [`TextAudit`] is set, measure
-/// every card currently on screen and report any whose content is laid out *past its own footprint* — text
-/// too long to fit its fixed card. It reads the laid-out geometry (`ComputedNode` + `UiGlobalTransform`),
-/// so it catches overflow even though the card now clips it away visually; layout is unaffected by the
-/// clip. Findings go to the debug log. Only the cards in the *current view* are spawned, so run it per
-/// zone when finalizing text. Off unless asked — no cost the rest of the time.
-fn run_text_audit(
-    mut audit: ResMut<TextAudit>,
-    table: Res<Table>,
-    log: Res<DebugLog>,
-    cards: Query<(Entity, &CardRef, &ComputedNode, &UiGlobalTransform)>,
-    children_q: Query<&Children>,
-    rect_q: Query<(&ComputedNode, &UiGlobalTransform)>,
-) {
-    if !audit.0 {
-        return;
-    }
-    audit.0 = false;
-    let (mut checked, mut flagged) = (0usize, 0usize);
-    log.line("TEXT AUDIT ----------------------------------------");
-    for (entity, card_ref, cn, gt) in &cards {
-        checked += 1;
-        let center = gt.translation;
-        let half = cn.size * 0.5;
-        let over = descendant_overflow(entity, center, half, &children_q, &rect_q);
-        if over.x > 1.0 || over.y > 1.0 {
-            flagged += 1;
-            let scale = cn.inverse_scale_factor; // physical → logical px for the report
-            let (name, ctype) = table
-                .0
-                .card(card_ref.0)
-                .map(|c| (c.name().to_string(), c.card_type().to_string()))
-                .unwrap_or_default();
-            log.line(format!(
-                "  OVERFLOW {name:?} [{ctype}] +{:.0}px wide, +{:.0}px tall",
-                over.x * scale,
-                over.y * scale
-            ));
-        }
-    }
-    log.line(format!(
-        "TEXT AUDIT: {flagged} of {checked} on-screen cards overflow their footprint"
-    ));
-}
-
-/// The worst distance (physical px, per axis) any descendant of `card`'s box extends *beyond* the card's
-/// own rect — 0 on an axis that fits. Walks the card's whole subtree so wrapped text, a badge, or any
-/// nested node all count. Rects are centre + half-size in the shared UI space (see [`run_text_audit`]).
-fn descendant_overflow(
-    card: Entity,
-    center: Vec2,
-    half: Vec2,
-    children_q: &Query<&Children>,
-    rect_q: &Query<(&ComputedNode, &UiGlobalTransform)>,
-) -> Vec2 {
-    let mut worst = Vec2::ZERO;
-    let mut stack: Vec<Entity> = children_q
-        .get(card)
-        .map(|c| c.iter().collect())
-        .unwrap_or_default();
-    while let Some(e) = stack.pop() {
-        if let Ok((cn, gt)) = rect_q.get(e) {
-            let h = cn.size * 0.5;
-            let c = gt.translation;
-            let right = (c.x + h.x - (center.x + half.x)).max(0.0);
-            let left = ((center.x - half.x) - (c.x - h.x)).max(0.0);
-            let bottom = (c.y + h.y - (center.y + half.y)).max(0.0);
-            let top = ((center.y - half.y) - (c.y - h.y)).max(0.0);
-            worst.x = worst.x.max(right.max(left));
-            worst.y = worst.y.max(bottom.max(top));
-        }
-        if let Ok(ch) = children_q.get(e) {
-            stack.extend(ch.iter());
-        }
-    }
-    worst
-}
-
 /// Move a dragged card into the Active row's pile `inn`. A **hero** (no recipe) moves in, leaving the
 /// Identity deck / Hero row; a **kit** (has a recipe) is *copied* in, since kits are reusable, so the
 /// original stays in the Kit deck.
@@ -1253,7 +1169,6 @@ fn action_color(utility: Utility) -> Color {
         Utility::Exit => EXIT_CONFIRM_BG, // warm red — "this is the way out"
         Utility::StartOver => Color::srgb(0.62, 0.44, 0.24), // amber — a bigger, permanent wipe
         Utility::Revert => Color::srgb(0.28, 0.42, 0.60), // blue — a soft undo
-        Utility::CheckText => Color::srgb(0.30, 0.52, 0.40), // green — a harmless inspection
         Utility::Back => Color::srgb(0.30, 0.40, 0.45),
     }
 }
@@ -1268,7 +1183,6 @@ fn on_actions_release(
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
     mut rebuild: ResMut<NeedsRebuild>,
-    mut audit: ResMut<TextAudit>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -1280,7 +1194,6 @@ fn on_actions_release(
             &factory.0,
             &build.0,
             &mut rebuild,
-            &mut audit.0,
             &mut commands,
             &mut exit,
         );
@@ -1298,7 +1211,6 @@ fn on_actions_drag_end(
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
     mut rebuild: ResMut<NeedsRebuild>,
-    mut audit: ResMut<TextAudit>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -1309,7 +1221,6 @@ fn on_actions_drag_end(
         &factory.0,
         &build.0,
         &mut rebuild,
-        &mut audit.0,
         &mut commands,
         &mut exit,
     );
@@ -1328,7 +1239,6 @@ fn settle_actions_deck(
     factory: &Tableau,
     build: &str,
     rebuild: &mut NeedsRebuild,
-    audit: &mut bool,
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
 ) {
@@ -1364,9 +1274,6 @@ fn settle_actions_deck(
             table.0 = factory.clone();
             install_system_deck(&mut table.0, build);
             rebuild.0 = true;
-        }
-        Some(Utility::CheckText) => {
-            *audit = true; // run_text_audit picks this up next frame (needs the laid-out UI)
         }
         Some(Utility::Back) => {
             table.0.zoom_out();
