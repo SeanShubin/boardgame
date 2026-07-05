@@ -2,7 +2,7 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::model::{Arrangement, CardId, CardKind, Face, Layout, PileId, Tableau};
+use crate::model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Tableau};
 
 /// Add a face-up card with a name and a [`type`](crate::model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -154,8 +154,10 @@ fn phase_detail(name: &str) -> &'static str {
 /// zone shares the felt with the floating overlays (title / Back), so the seed **leaves the top row
 /// empty** — content starts one row down, clear of them on first render — while that row stays felt: the
 /// shove only keeps cards off the fixtures, not the whole row, so you can still place cards up there.
-/// Content cards first, then any sub-piles, row-major across `cols`. Saved tables restore their own
-/// positions, so this only shapes a fresh table.
+/// Children are laid out row-major across `cols` in **child order** — leaf cards and sub-piles
+/// interleaved — so a sub-deck keeps its slot (e.g. the Rules deck's Engage `(4/6)` stays fourth instead
+/// of being pushed past the leaf cards). Saved tables restore their own positions, so this only shapes a
+/// fresh table.
 fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
     // Kept in step with the renderer's spacing (cardtable `GAP` / `CARD_W` / `CARD_H` / `OVERLAY_BAND`) so
     // a freshly-seeded Free deck already sits at the exact constant-gap spacing the renderer would compute
@@ -174,18 +176,16 @@ fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
             TOP + row as f32 * (CARD_H + GAP),
         )
     };
-    let cards: Vec<CardId> = tree.content_cards(deck).to_vec();
-    let subs: Vec<PileId> = tree
-        .pile(deck)
-        .map(|p| p.subpiles().to_vec())
-        .unwrap_or_default();
-    for (i, c) in cards.iter().enumerate() {
+    for (i, node) in tree.movable_children(deck).into_iter().enumerate() {
         let (x, y) = spot(i);
-        let _ = tree.set_card_pos(*c, x, y);
-    }
-    for (k, s) in subs.iter().enumerate() {
-        let (x, y) = spot(cards.len() + k);
-        let _ = tree.set_pile_pos(*s, x, y);
+        match node {
+            Node::Card(c) => {
+                let _ = tree.set_card_pos(c, x, y);
+            }
+            Node::Pile(p) => {
+                let _ = tree.set_pile_pos(p, x, y);
+            }
+        }
     }
 }
 
