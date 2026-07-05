@@ -35,8 +35,15 @@ struct Sample {
 #[derive(Component)]
 struct GalleryScroll;
 
+/// The scrollbar thumb — sized/positioned each frame to reflect the scroll, and draggable to drive it.
+#[derive(Component)]
+struct ScrollbarThumb;
+
 /// Logical px scrolled per wheel line (when the OS reports scroll in lines rather than pixels).
 const SCROLL_LINE_PX: f32 = 28.0;
+/// Scrollbar track width and the thumb's minimum height (so it stays grabbable on very long content).
+const SCROLLBAR_W: f32 = 12.0;
+const THUMB_MIN: f32 = 32.0;
 
 /// The cards being shown, kept so the audit can resolve names.
 #[derive(Resource)]
@@ -64,7 +71,7 @@ pub fn run_card_gallery() {
             Startup,
             (setup_camera, install_ui_font, build_gallery).chain(),
         )
-        .add_systems(Update, (audit_gallery, scroll_gallery))
+        .add_systems(Update, (audit_gallery, scroll_gallery, update_scrollbar))
         .run();
 }
 
@@ -103,6 +110,38 @@ fn build_gallery(mut commands: Commands, cards: Res<GalleryCards>) {
                 });
             }
         });
+
+    // A scrollbar overlaid on the right edge: a faint full-height track with a thumb that reflects the
+    // scroll position (see `update_scrollbar`) and can be dragged to scroll (see `on_thumb_drag`).
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Px(SCROLLBAR_W),
+                height: Val::Percent(100.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.06)),
+            GlobalZIndex(10), // above the cards
+        ))
+        .with_children(|track| {
+            track
+                .spawn((
+                    ScrollbarThumb,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(0.0),
+                        width: Val::Px(SCROLLBAR_W),
+                        height: Val::Px(0.0), // set each frame by `update_scrollbar`
+                        border_radius: BorderRadius::all(Val::Px(SCROLLBAR_W * 0.5)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.35)),
+                ))
+                .observe(on_thumb_drag);
+        });
 }
 
 /// Scroll the gallery column with the mouse wheel. Bevy's `Overflow::scroll_y` only *clips* — it never
@@ -126,6 +165,60 @@ fn scroll_gallery(
             * node.inverse_scale_factor;
         scroll.0.y = (scroll.0.y - dy).clamp(0.0, max);
     }
+}
+
+/// The thumb's height (∝ visible fraction) and travel (∝ scroll offset), for a track spanning the given
+/// viewport, all in logical px. Returns `None` when the content fits — nothing to scroll.
+fn thumb_metrics(node: &ComputedNode, offset_logical: f32) -> Option<(f32, f32)> {
+    let (viewport, content) = (node.size.y, node.content_size.y); // physical
+    if content <= viewport + 0.5 {
+        return None;
+    }
+    let track_h = viewport * node.inverse_scale_factor; // logical (the visible height)
+    let thumb_h = ((viewport / content) * track_h).max(THUMB_MIN);
+    let max_off = (content - viewport + node.scrollbar_size.y).max(0.0) * node.inverse_scale_factor;
+    let frac = if max_off > 0.0 {
+        (offset_logical / max_off).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    Some((thumb_h, frac * (track_h - thumb_h)))
+}
+
+/// Size and place the thumb each frame to reflect the current scroll (hidden when nothing scrolls).
+fn update_scrollbar(
+    column: Query<(&ScrollPosition, &ComputedNode), With<GalleryScroll>>,
+    mut thumb: Query<&mut Node, With<ScrollbarThumb>>,
+) {
+    let (Ok((scroll, node)), Ok(mut thumb)) = (column.single(), thumb.single_mut()) else {
+        return;
+    };
+    match thumb_metrics(node, scroll.0.y) {
+        Some((height, top)) => {
+            thumb.height = Val::Px(height);
+            thumb.top = Val::Px(top);
+        }
+        None => thumb.height = Val::Px(0.0),
+    }
+}
+
+/// Drag the thumb to scroll: a thumb move of `d` px maps to `d · max_offset / travel` of scroll, so the
+/// thumb tracks the cursor. Clamped to the scrollable range.
+fn on_thumb_drag(
+    drag: On<Pointer<Drag>>,
+    mut column: Query<(&mut ScrollPosition, &ComputedNode), With<GalleryScroll>>,
+) {
+    let Ok((mut scroll, node)) = column.single_mut() else {
+        return;
+    };
+    let Some((thumb_h, _)) = thumb_metrics(node, scroll.0.y) else {
+        return;
+    };
+    let track_h = node.size.y * node.inverse_scale_factor;
+    let travel = (track_h - thumb_h).max(1.0);
+    let max_off = (node.content_size.y - node.size.y + node.scrollbar_size.y).max(0.0)
+        * node.inverse_scale_factor;
+    scroll.0.y = (scroll.0.y + drag.event().event.delta.y * max_off / travel).clamp(0.0, max_off);
 }
 
 /// Spawn one card sample: a [`Sample`] wrapper (the red overflow frame) around one card face.
