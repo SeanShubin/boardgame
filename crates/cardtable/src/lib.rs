@@ -747,16 +747,14 @@ fn fan_layout(
         if count == 0 {
             continue;
         }
-        // The step that packs `count` cards (each CARD_W wide) into `width`: capped at a full no-overlap
-        // stride, floored at the sliver. `count == 1` sits at the left.
+        // Baseline stride: packs `count` cards (each CARD_W wide) into `width` with the **last** card fully
+        // shown and right-edged at `width` — capped at a full no-overlap step, floored at the sliver.
+        // `count == 1` sits at the left.
         let pitch = if count > 1 {
             ((width - CARD_W) / (count - 1) as f32).clamp(FAN_SLIVER, CARD_W + GAP)
         } else {
             0.0
         };
-        // How far the front card's body overhangs the next slot — the amount to open the fan by. Zero once
-        // the cards are spread enough not to overlap.
-        let open = (CARD_W - pitch).max(0.0);
         let front_idx = front.0.and_then(|f| {
             children
                 .iter()
@@ -764,6 +762,27 @@ fn fan_layout(
                 .find(|(fc, _)| fc.card == f)
                 .map(|(fc, _)| fc.index)
         });
+        // To show the front card fully we need a full CARD_W of clear space at its slot. Rather than shove
+        // the cards to its right outward (off screen), pull the front card **left** and **compress the
+        // slivers to its left** to yield that space — the right side stays anchored at baseline, always on
+        // screen. The last card is already fully shown at baseline, so fronting it (or nothing) needs no
+        // adjustment: `active_front` is only set for a card that isn't the last one.
+        let active_front = match front_idx {
+            Some(fi) if fi + 1 < count => Some(fi),
+            _ => None,
+        };
+        let (front_left, pitch_left) = match active_front {
+            Some(fi) => {
+                // As far left as the `fi` left slivers can compress to, clamped so the card never moves
+                // right of baseline nor past the left edge. If even that can't fully clear it (fronting a
+                // near-left card in a tight fan) its right neighbour is partly covered — the only way to
+                // stay on screen, since baseline already right-edges the last card at the container edge.
+                let fl = ((fi + 1) as f32 * pitch - CARD_W).clamp(0.0, fi as f32 * pitch);
+                let pl = if fi > 0 { fl / fi as f32 } else { 0.0 };
+                (fl, pl)
+            }
+            None => (0.0, pitch),
+        };
         for &child in children {
             let Ok((fc, mut node)) = cards.get_mut(child) else {
                 continue;
@@ -771,11 +790,12 @@ fn fan_layout(
             if dragging.0 == Some(TableNode::Card(fc.card)) {
                 continue; // free while held
             }
-            let shift = match front_idx {
-                Some(fi) if fc.index > fi => open,
-                _ => 0.0,
+            let j = fc.index;
+            let left = match active_front {
+                Some(fi) if j < fi => j as f32 * pitch_left, // compressed left slivers
+                Some(fi) if j == fi => front_left,           // the front card, pulled left
+                _ => j as f32 * pitch,                       // right side + baseline
             };
-            let left = pitch * fc.index as f32 + shift;
             if (px(node.left) - left).abs() > 0.5 {
                 node.left = Val::Px(left); // guarded so we don't thrash layout when unchanged
             }
