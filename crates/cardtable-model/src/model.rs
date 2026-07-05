@@ -361,8 +361,9 @@ pub enum Arrangement {
     /// the System deck uses (Exit / Reset).
     Actions,
     /// **Rows**: a stack of horizontal rows. Each row is led by a [`Header`](CardKind::Header) card that
-    /// names it; the rest of the row's cards follow, overlapping when the row is too narrow (the renderer
-    /// floats the card nearest the cursor fully into view on hover). See [`Tableau::row_groups`].
+    /// names it; the rest of the row's cards follow as a horizontal **fan** — overlapped so only each
+    /// card's left-edge sliver shows, with the tapped card pulled fully to the front to examine it (the
+    /// header is not part of the fan). See [`Tableau::row_groups`]. Used by the inn.
     Rows,
 }
 

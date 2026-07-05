@@ -86,6 +86,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<ActionRequests>()
             .init_resource::<DragGuard>()
             .init_resource::<Dragging>()
+            .init_resource::<FannedFront>()
             .init_resource::<ActionsDeckState>()
             .init_resource::<InitialTable>()
             .init_resource::<FactoryBase>()
@@ -245,6 +246,13 @@ struct NeedsRebuild(bool);
 /// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
 #[derive(Resource, Default)]
 struct Dragging(Option<TableNode>);
+
+/// The card currently pulled to the **front of a fan** (a [`Fan`](Arrangement::Fan) row's tapped card),
+/// if any. A fanned row overlaps its cards so only each left edge shows; the front card is drawn fully, on
+/// top of its neighbours — the "examine one at a time" reveal. `None` = the natural fan (the last card
+/// shows). Set on tap (see [`on_click`]); a stale id simply matches nothing and the natural fan shows.
+#[derive(Resource, Default)]
+struct FannedFront(Option<CardId>);
 
 /// The initial table, snapshotted once at startup so a **Revert** action can restore it. Game-agnostic:
 /// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
@@ -415,6 +423,7 @@ fn on_click(
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut front: ResMut<FannedFront>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
@@ -426,10 +435,23 @@ fn on_click(
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
     } else if let Some(card_ref) = card {
-        // A card click first tries to grow/shrink it (cycle render size); an expandable card consumes
-        // the click that way. Otherwise an actionable card fires its action; a name-only card absorbs it.
         let id = card_ref.0;
-        if table.0.card(id).is_some_and(|c| c.is_expandable()) {
+        // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
+        // you can examine it — its full face rises above its overlapping neighbours. Everywhere else a tap
+        // grows/shrinks the card (cycle render size), or fires its action, or is absorbed by a name-only card.
+        let in_fan = matches!(
+            table
+                .0
+                .pile(table.0.focus_id())
+                .map(|p| p.layout().arrangement),
+            Some(Arrangement::Rows)
+        ) && table.0.card(id).map(|c| c.kind()) != Some(CardKind::Header);
+        if in_fan {
+            if front.0 != Some(id) {
+                front.0 = Some(id); // bring to the front (no-op if already there)
+                rebuild.0 = true;
+            }
+        } else if table.0.card(id).is_some_and(|c| c.is_expandable()) {
             let _ = table.0.cycle_card_size(id);
             rebuild.0 = true;
         } else if let Some(action) = action {
@@ -1314,6 +1336,7 @@ fn redraw(
     mut rebuild: ResMut<NeedsRebuild>,
     table: Res<Table>,
     rail: Res<ActionRail>,
+    front: Res<FannedFront>,
     mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
@@ -1328,7 +1351,7 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
-    build_ui(&mut commands, &table.0, &rail.0);
+    build_ui(&mut commands, &table.0, &rail.0, front.0);
 }
 
 // ---- drawing ------------------------------------------------------------
@@ -1515,7 +1538,7 @@ fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
     )
 }
 
-fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
+fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front: Option<CardId>) {
     let zone = tree.focus_id();
     let at_root = zone == tree.root_id();
 
@@ -1603,7 +1626,6 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                             flex_direction: FlexDirection::Row,
                                             align_items: AlignItems::Center,
                                             column_gap: Val::Px(8.0),
-                                            overflow: Overflow::scroll_x(),
                                             ..default()
                                         },
                                         RowRegion {
@@ -1611,18 +1633,46 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction]) {
                                         },
                                     ));
                                     row.with_children(|row| {
-                                        // The header names the row and isn't draggable.
+                                        // The header names the row and isn't part of the fan — it leads it.
                                         spawn_card(row, tree.card(header).expect("row header"));
-                                        // Content cards are draggable — drop one on the Active row to move it.
-                                        for cid in cards {
-                                            let card = tree.card(cid).expect("row card");
-                                            row.spawn((
-                                                Movable(TableNode::Card(cid)),
-                                                Node::default(),
-                                                card_elevation(card),
-                                            ))
-                                            .with_children(|tile| spawn_card(tile, card));
-                                        }
+                                        // The row's cards are a horizontal **fan**: each overlaps the last so
+                                        // only its left-edge sliver shows (examine one at a time). Later cards
+                                        // paint over earlier ones, so the rightmost shows fully by default; a
+                                        // tapped card is pulled to `front` (drawn fully, above its siblings).
+                                        // The container is tall enough for a card and lets a lift overflow.
+                                        let count = cards.len();
+                                        let fan_w =
+                                            FAN_SLIVER * count.saturating_sub(1) as f32 + CARD_W;
+                                        row.spawn(Node {
+                                            position_type: PositionType::Relative,
+                                            width: Val::Px(fan_w),
+                                            height: Val::Px(CARD_H),
+                                            ..default()
+                                        })
+                                        .with_children(
+                                            |fan| {
+                                                for (j, cid) in cards.into_iter().enumerate() {
+                                                    let card = tree.card(cid).expect("row card");
+                                                    // Content cards are draggable — drop one on the Active row to
+                                                    // move it in. Absolutely placed by fan index.
+                                                    let mut tile = fan.spawn((
+                                                        Movable(TableNode::Card(cid)),
+                                                        Node {
+                                                            position_type: PositionType::Absolute,
+                                                            left: Val::Px(FAN_SLIVER * j as f32),
+                                                            top: Val::Px(0.0),
+                                                            ..default()
+                                                        },
+                                                    ));
+                                                    if front == Some(cid) {
+                                                        tile.insert(ZIndex(FAN_FRONT_Z));
+                                                    }
+                                                    tile.with_children(|tile| {
+                                                        spawn_card(tile, card)
+                                                    });
+                                                }
+                                            },
+                                        );
                                     });
                                 }
                             });
@@ -1989,6 +2039,14 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
 /// until you set it down. Applied on drag-start, removed on release (see [`on_node_drag`] /
 /// [`on_node_drag_end`]).
 const HELD_Z: i32 = 50;
+
+/// How far each card in a **fan** is offset from the previous one — the width of the uncovered left-edge
+/// sliver. Small enough to overlap heavily (examine one at a time), wide enough that the sliver shows the
+/// start of the name to tell cards apart.
+const FAN_SLIVER: f32 = 34.0;
+/// Local draw order for the card pulled to the front of a fan — above every sliver in its row. Local (not
+/// global), so a dragged card (on the global held layer) still floats above it.
+const FAN_FRONT_Z: i32 = 1000;
 
 /// Draw order for a card tile: an **expanded** (non-Small) card lifts above its siblings, so the card
 /// you just grew to read is never buried under a neighbour it now overlaps. Small cards stay at the base
