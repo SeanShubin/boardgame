@@ -44,6 +44,14 @@ The documentation is split by **authority**:
   balance instruments: the gentle on-ramp, the feel-the-lack-then-the-fix loop, layered depth, the
   no-dead-disciplines finale, and the stats-survive / powers-decide split — each promise mapped to the
   invariant that enforces it.
+- **[tcg-comparison-timing-and-variety.md](tcg-comparison-timing-and-variety.md) — the cross-game design
+  study.** A non-authoritative comparison of Deckbound against Grand Archive and Magic: The Gathering.
+  The organizing lens (its §7): the three games spend one finite **complexity / computability budget**
+  differently — MTG buys an open stack and pays in non-computability; Deckbound *reallocates* that budget
+  to battle structure and geography while *saving* on the interaction engine (no stack) to stay computable;
+  Grand Archive sits between. Two proposed north stars (N2, N5) were reviewed and **folded back into
+  existing Charter #2/#11** rather than added — "no stack" is a provisional, computability-motivated
+  constraint, not a permanent identity.
 - **Design in progress (non-canonical, on the spec-first path):** the strategic/character layer
   being worked out ahead of graduating onto the Spec —
   [progression-design.md](progression-design.md) (geography, currency, encounters, the day/clock,
