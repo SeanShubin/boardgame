@@ -31,6 +31,9 @@ tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
 serde = { version = "1", features = ["derive"] }
 ron = "0.8"
+# Wall-clock time that works on wasm too (std::time::SystemTime::now() panics on
+# wasm32-unknown-unknown with "time not implemented").
+web-time = "1"
 
 # Enable fast compiles for development (Bevy recommendation).
 # Disable when profiling or benchmarking.

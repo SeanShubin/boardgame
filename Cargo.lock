@@ -1990,6 +1990,7 @@ dependencies = [
  "bevy",
  "cardtable-model",
  "contract",
+ "web-time",
 ]
 
 [[package]]

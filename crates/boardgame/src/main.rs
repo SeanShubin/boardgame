@@ -40,10 +40,13 @@ fn main() -> AppExit {
         .insert_resource(Table(persistence::load().unwrap_or_else(sample_table)))
         // The pristine table "Start Over" resets to (a fresh sample, discarding save + session).
         .insert_resource(FactoryBase(sample_table()))
-        // The git commit this binary was built from (see build.rs) — shown in the System deck.
-        .insert_resource(BuildInfo(
-            option_env!("BUILD_GIT_HASH").unwrap_or("unknown").into(),
-        ))
+        // The git commit this binary was built from (see build.rs) — shown as the Version card in the
+        // System deck: the hash, its date, and how long ago it was built.
+        .insert_resource(BuildInfo {
+            hash: option_env!("BUILD_GIT_HASH").unwrap_or("unknown").into(),
+            date: option_env!("BUILD_GIT_DATE").unwrap_or("").into(),
+            timestamp: option_env!("BUILD_GIT_TIMESTAMP").and_then(|s| s.parse::<i64>().ok()),
+        })
         .insert_resource(StatusLine(
             "Click a pile to enter it · click a card to grow it · drag to arrange".into(),
         ))

@@ -103,15 +103,11 @@ pub enum CardKind {
     Header,
 }
 
-/// The action a [`CardKind::Utility`] card performs — e.g. a card in an [`Arrangement::Actions`] deck.
+/// The action a [`CardKind::Utility`] card performs when clicked — e.g. a card in the System deck.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Utility {
-    /// Go up one zone level.
-    Back,
     /// Quit the application (desktop only).
     Exit,
-    /// Revert the table to how it was when this session started (undo this session's changes).
-    Revert,
     /// Start over from a pristine table, discarding this session's changes and the saved game.
     StartOver,
 }
@@ -367,12 +363,8 @@ pub enum Arrangement {
     Grid { columns: usize },
     /// **Unordered**: cards are freely positioned and dragged at will — order is irrelevant. Overlaps
     /// shove apart ([`separate`](Tableau::separate)), exactly as the top-level piles do on
-    /// the table, whatever each card's current size.
+    /// the table, whatever each card's current size. The layout the System deck uses.
     Free,
-    /// **Actions menu**: the deck is not drilled into; instead pressing it slides its content cards out
-    /// as a menu, and dragging the deck onto one performs that card's [`Utility`] action. The behavior
-    /// the System deck uses (Exit / Reset).
-    Actions,
     /// **Rows**: a stack of horizontal rows. Each row is led by a [`Header`](CardKind::Header) card that
     /// names it; the rest of the row's cards follow as a horizontal **fan** — overlapped so only each
     /// card's left-edge sliver shows, with the tapped card pulled fully to the front to examine it (the
@@ -1447,13 +1439,6 @@ impl Tableau {
         let nodes = self.movable_children(pile);
         let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
         for node in nodes {
-            // Leave press-driven fixtures (an `Actions` deck such as System) at their fixed corner rather
-            // than sweeping them into the tidy row.
-            if let Node::Pile(pid) = node
-                && self.pile(pid).map(|p| p.layout().arrangement) == Some(Arrangement::Actions)
-            {
-                continue;
-            }
             let (_, size) = self.node_box(node).unwrap_or_default();
             if size.x < 1.0 {
                 continue; // not laid out yet
@@ -1477,7 +1462,7 @@ impl Tableau {
     /// **both** axes: a column is as wide as its widest child, a row as tall as its tallest, so a grown
     /// card pushes its whole column and row. Because it reads live sizes, re-running it (the renderer does,
     /// every frame) is itself the reflow — no separate shove. A child not yet laid out (box `< 1`) uses
-    /// `default` so the first frame is sane. Empty for non-structured arrangements (`Free`/`Rows`/`Actions`
+    /// `default` so the first frame is sane. Empty for non-structured arrangements (`Free`/`Rows`
     /// place their contents their own way).
     pub fn structured_positions(
         &self,

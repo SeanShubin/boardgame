@@ -1,9 +1,9 @@
 //! A Bevy renderer that draws the **card-table metaphor** — everything is a card; a pile is a stack of
 //! cards in one footprint. You navigate with **single-click and drag only**: click a pile to drill into
 //! its zone, click a card to grow it through its sizes, click the Back card to move up, and drag piles
-//! to arrange them on the table. **System** is itself a pile on the felt — drag it like any other; to
-//! quit, press it so its "Exit" card pops out beside it, then drag the deck onto that card. A stray
-//! click never quits. The current zone's name sits centered at the top (default "Table").
+//! to arrange them on the table. **System** is itself a pile on the felt — drag it like any other, or
+//! click it to drill into its zone, where clicking the "Exit" card quits and "Start Over" resets. A
+//! stray click never quits. The current zone's name sits centered at the top (default "Table").
 //!
 //! # Two layers
 //!
@@ -21,8 +21,7 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
-use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer, Press, Release};
-use bevy::picking::pointer::PointerButton;
+use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{BoxShadow, ComputedNode, UiGlobalTransform};
 
@@ -90,8 +89,6 @@ impl Plugin for CardTablePlugin {
             .init_resource::<DragGuard>()
             .init_resource::<Dragging>()
             .init_resource::<FannedFront>()
-            .init_resource::<ActionsDeckState>()
-            .init_resource::<InitialTable>()
             .init_resource::<FactoryBase>()
             .init_resource::<BuildInfo>()
             .insert_resource(NeedsRebuild(true))
@@ -101,9 +98,9 @@ impl Plugin for CardTablePlugin {
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
             .add_systems(Startup, (setup_camera, install_ui_font))
-            // Inject the System deck, then snapshot the initial table for Reset (order matters).
-            .add_systems(Startup, (inject_system_deck, snapshot_initial).chain())
-            .add_systems(Update, (animate_nodes, animate_popped, fan_layout))
+            // Inject the System deck (a drill-in Free deck) at startup.
+            .add_systems(Startup, inject_system_deck)
+            .add_systems(Update, (animate_nodes, fan_layout))
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -126,10 +123,7 @@ impl Plugin for CardTablePlugin {
             .add_observer(on_click)
             .add_observer(on_drop)
             .add_observer(on_node_drag)
-            .add_observer(on_node_drag_end)
-            .add_observer(on_actions_press)
-            .add_observer(on_actions_release)
-            .add_observer(on_actions_drag_end);
+            .add_observer(on_node_drag_end);
     }
 }
 
@@ -178,14 +172,6 @@ struct Pinned;
 /// A utility card that navigates up one zone level when clicked.
 #[derive(Component)]
 struct BackCard;
-
-/// A popped-out action card spawned beside a pressed [`Arrangement::Actions`] deck — a *free* surface
-/// entity (not a model pile, so popping it never shoves the game piles), drawn above everything, that
-/// [`animate_popped`] slides into place and the deck is dropped onto to fire. Carries the spot it eases toward.
-#[derive(Component)]
-struct PoppedTarget {
-    target: Pos,
-}
 
 /// Marks one row of a [`Rows`](Arrangement::Rows) view for drop resolution: on release, the card lands
 /// in the row the cursor is over. `active` marks the row that accepts drops (the Active row); a drop over
@@ -271,40 +257,23 @@ struct FanCard {
     card: CardId,
 }
 
-/// The initial table, snapshotted once at startup so a **Revert** action can restore it. Game-agnostic:
-/// whatever was in [`Table`] after setup (fixture or game view, plus the injected System deck).
-#[derive(Resource, Default)]
-struct InitialTable(Tableau);
-
 /// A **pristine "factory" table** the embedder supplies (e.g. `boardgame` inserts a fresh `sample_table`)
-/// — the target of **Start Over**, which discards this session *and* the loaded save. Distinct from
-/// [`InitialTable`], which is the session-start snapshot (a loaded save, if any). The System deck is
+/// — the target of **Start Over**, which discards this session *and* the loaded save. The System deck is
 /// (re)installed onto it when Start Over fires, so it need not carry one.
 #[derive(Resource, Default)]
 pub struct FactoryBase(pub Tableau);
 
-/// A short **build stamp** the embedder supplies (e.g. `boardgame` inserts its git hash), shown as a
-/// non-interactive card in the System deck so you can tell which commit is deployed. Empty = no stamp.
+/// The **build stamp** the embedder supplies (e.g. `boardgame` inserts its git commit) — shown as the
+/// expandable **Version** card in the System deck so you can tell which commit is deployed and how long
+/// ago it was built. Defaults to empty / unset (no stamp).
 #[derive(Resource, Default)]
-pub struct BuildInfo(pub String);
-
-/// One card popped out from a pressed [`Arrangement::Actions`] deck: what it fires (`None` for a
-/// display-only card like the build stamp), the rectangle it occupies (for the drop hit-test), and its
-/// spawned surface entity.
-struct PoppedAction {
-    utility: Option<Utility>,
-    pos: Pos,
-    size: Pos,
-    entity: Entity,
-}
-
-/// Live state of the pressed **Actions** deck (e.g. System). While pressed, each of its content cards is
-/// popped out as a [`PoppedAction`]; on release the deck fires the action of whichever popped card it
-/// overlaps. All of it clears when the gesture ends or the UI rebuilds.
-#[derive(Resource, Default)]
-struct ActionsDeckState {
-    pressed_pile: Option<PileId>,
-    popped: Vec<PoppedAction>,
+pub struct BuildInfo {
+    /// The commit hash (e.g. `git describe` output). Empty = unknown.
+    pub hash: String,
+    /// The commit date, `YYYY-MM-DD`. Empty = unknown.
+    pub date: String,
+    /// The commit's unix timestamp (seconds), for the relative "n ago" line. `None` = unknown.
+    pub timestamp: Option<i64>,
 }
 
 // ---- systems ------------------------------------------------------------
@@ -313,12 +282,12 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// Inject the **System deck** — an [`Arrangement::Actions`] pile on the surface: press it to slide out
-/// its action cards, then drag the deck onto one to fire it (see [`on_actions_press`]). It holds
-/// **Reset** everywhere and **Exit** on desktop only — a browser can't quit its own tab, so the Exit
-/// card never appears there. Runs once at startup.
+/// Inject the **System deck** — a regular drill-in pile on the table: click it to enter its zone, then
+/// click a card inside to act (Exit quits, Start Over resets). It holds **Start Over** everywhere and
+/// **Exit** on desktop only — a browser can't quit its own tab, so the Exit card never appears there —
+/// plus a **Version** card. Runs once at startup.
 fn inject_system_deck(mut table: ResMut<Table>, build: Res<BuildInfo>) {
-    install_system_deck(&mut table.0, &build.0);
+    install_system_deck(&mut table.0, &build);
 }
 
 /// Add one [`Utility`] action card (face-up `title`) to `pile`.
@@ -334,12 +303,12 @@ fn add_util(table: &mut Tableau, pile: PileId, title: &str, utility: Utility) {
     }
 }
 
-/// Install the **System deck** into `table`. Holds **Revert** (undo this session) and **Start Over**
-/// (pristine table) everywhere, **Exit** on desktop (a browser can't quit its own tab), and a
-/// non-interactive **build stamp** (`build`, if any) so you can tell what's deployed. Any existing System
-/// deck (e.g. from a resumed save) is **removed and rebuilt**, so the deck is never doubled up *and* its
-/// stamp/actions always match the running build. Called at startup and by Start Over.
-fn install_system_deck(table: &mut Tableau, build: &str) {
+/// Install the **System deck** into `table` — a regular [`Free`](Arrangement::Free) deck you drill into.
+/// Holds **Start Over** (pristine table) everywhere, **Exit** on desktop (a browser can't quit its own
+/// tab), and an expandable **Version** card (`build`, if a hash is known) so you can tell what's deployed.
+/// Any existing System deck (e.g. from a resumed save) is **removed and rebuilt**, so the deck is never
+/// doubled up *and* its version/actions always match the running build. Called at startup and by Start Over.
+fn install_system_deck(table: &mut Tableau, build: &BuildInfo) {
     let root = table.root_id();
     let stale: Vec<PileId> = table.pile(root).map_or(Vec::new(), |p| {
         p.subpiles()
@@ -353,22 +322,23 @@ fn install_system_deck(table: &mut Tableau, build: &str) {
     let Ok(pile) = table.add_pile(root, "System") else {
         return;
     };
-    add_util(table, pile, "Revert", Utility::Revert);
     add_util(table, pile, "Start Over", Utility::StartOver);
     if !cfg!(target_arch = "wasm32") {
         add_util(table, pile, "Exit", Utility::Exit);
     }
-    // A non-interactive build stamp: a plain (Regular) card that pops with the actions but fires nothing.
-    if !build.is_empty()
+    // An expandable Version card: Small shows just "Version"; grown to Medium it shows the full hash, the
+    // build date, and how long ago it was built (computed here so it's fixed to this launch).
+    if !build.hash.is_empty()
         && let Ok(id) = table.add_card(
             pile,
             Face::Up {
-                title: build.to_string(),
+                title: "Version".into(),
             },
             None,
         )
     {
-        let _ = table.set_card_type(id, "build");
+        let _ = table.set_card_type(id, "version");
+        let _ = table.set_card_detail(id, version_detail(build));
     }
     // "System" is a Zone (naming) card — the deck's label, not one of its actions.
     if let Ok(system) = table.add_card(
@@ -383,16 +353,59 @@ fn install_system_deck(table: &mut Tableau, build: &str) {
     let _ = table.set_layout(
         pile,
         Layout {
-            arrangement: Arrangement::Actions,
-            editable: false,
+            arrangement: Arrangement::Free,
+            editable: true,
         },
     );
-    let _ = table.set_pile_pos(pile, 40.0, 470.0);
 }
 
-/// Snapshot the fully-initialised table (after [`inject_system_deck`]) so a **Reset** can restore it.
-fn snapshot_initial(table: Res<Table>, mut initial: ResMut<InitialTable>) {
-    initial.0 = table.0.clone();
+/// The **Version** card's detail lines (shown when it's grown to Medium): the full commit hash, the build
+/// date (when known), and a relative "{n} {unit} ago" (when the timestamp is known). The relative line is
+/// computed against the *current* wall-clock time via [`web_time`] (so it works on wasm, where
+/// `std::time::SystemTime::now()` panics), and omitted when the build timestamp is unknown.
+fn version_detail(build: &BuildInfo) -> Vec<String> {
+    let mut lines = vec![build.hash.clone()];
+    if !build.date.is_empty() {
+        lines.push(format!("Updated {}", build.date));
+    }
+    if let (Some(built), Some(now)) = (build.timestamp, now_unix()) {
+        lines.push(relative_time(now - built));
+    }
+    lines
+}
+
+/// The current wall-clock time as unix seconds, via [`web_time`] so it's safe on wasm (where
+/// `std::time::SystemTime::now()` panics). `None` if the clock is before the epoch.
+fn now_unix() -> Option<i64> {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+}
+
+/// `"{quantity} {unit}"` with the unit pluralized to match — `"1 hour"`, `"2 hours"` — so a count never
+/// reads as "1 hours" or "2 hour". Picks `singular` when `quantity == 1`, else `plural`.
+fn pluralize(quantity: i64, singular: &str, plural: &str) -> String {
+    let unit = if quantity == 1 { singular } else { plural };
+    format!("{quantity} {unit}")
+}
+
+/// A coarse human "how long ago" for `seconds_ago` (now − then): `"just now"` under a minute, else the
+/// largest whole unit that fits — minutes, hours, or days — as `"N minutes ago"` (with [`pluralize`] so
+/// the 1-unit cases read `"1 hour ago"`, never "1 hours ago"). A zero or negative age (a future or
+/// just-now stamp) is `"just now"`.
+fn relative_time(seconds_ago: i64) -> String {
+    if seconds_ago < 60 {
+        return "just now".to_string();
+    }
+    let (quantity, unit) = if seconds_ago < 3600 {
+        (seconds_ago / 60, "minute")
+    } else if seconds_ago < 86_400 {
+        (seconds_ago / 3600, "hour")
+    } else {
+        (seconds_ago / 86_400, "day")
+    };
+    format!("{} ago", pluralize(quantity, unit, &format!("{unit}s")))
 }
 
 /// The bundled UI typeface — **Nunito Sans** (a warm, friendly humanist sans that's still crisp for
@@ -423,11 +436,11 @@ fn on_drag_end_clear_guard(_on: On<Pointer<DragEnd>>, mut guard: ResMut<DragGuar
 }
 
 /// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
-/// card goes up a zone; an expandable **card** grows/shrinks; a loose action fires; a **pile** is entered
-/// (its zone) — unless it is an [`Arrangement::Actions`] deck (press-driven, see [`on_actions_press`]) or
-/// has nothing under its label to show. Inner nodes (a card's text) match nothing and propagate to their
-/// parent. Global observer, so it survives the per-change UI rebuild.
-#[allow(clippy::type_complexity)]
+/// card goes up a zone; a **utility** card fires its action (Exit quits, Start Over resets); an expandable
+/// **card** grows/shrinks; a loose action fires; a **pile** is entered (its zone) — unless it has nothing
+/// under its label to show. Inner nodes (a card's text) match nothing and propagate to their parent.
+/// Global observer, so it survives the per-change UI rebuild.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn on_click(
     mut on: On<Pointer<Click>>,
     guard: Res<DragGuard>,
@@ -441,6 +454,9 @@ fn on_click(
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut front: ResMut<FannedFront>,
+    factory: Res<FactoryBase>,
+    build: Res<BuildInfo>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
@@ -455,18 +471,33 @@ fn on_click(
         let id = card_ref.0;
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
         // you can examine it — its full face rises above its overlapping neighbours. Everywhere else a tap
-        // grows/shrinks the card (cycle render size), or fires its action, or is absorbed by a name-only card.
+        // fires the card's utility action, grows/shrinks the card (cycle render size), fires a loose action,
+        // or is absorbed by a name-only card.
+        let kind = table.0.card(id).map(|c| c.kind());
         let in_fan = matches!(
             table
                 .0
                 .pile(table.0.focus_id())
                 .map(|p| p.layout().arrangement),
             Some(Arrangement::Rows)
-        ) && table.0.card(id).map(|c| c.kind()) != Some(CardKind::Header);
+        ) && kind != Some(CardKind::Header);
         if in_fan {
             // Just record the new front card — no rebuild. `fan_layout` reads this every frame and slides
             // the cards / lifts the front one in place; despawning the whole UI would only cause a flicker.
             front.0 = Some(id);
+        } else if let Some(CardKind::Utility(utility)) = kind {
+            // A utility card fires on click: Exit quits; Start Over discards this session for a pristine
+            // table (then reinstalls the System deck so its version/actions match the running build).
+            match utility {
+                Utility::Exit => {
+                    exit.write(AppExit::Success);
+                }
+                Utility::StartOver => {
+                    table.0 = factory.0.clone();
+                    install_system_deck(&mut table.0, &build);
+                    rebuild.0 = true;
+                }
+            }
         } else if table.0.card(id).is_some_and(|c| c.is_expandable()) {
             let _ = table.0.cycle_card_size(id);
             rebuild.0 = true;
@@ -477,13 +508,12 @@ fn on_click(
         requests.0.push(action.0); // a loose action (rail item)
     } else if let Some(pile) = pile {
         let id = pile.0;
-        // An Actions deck is press-driven (its slide-out menu), not click-to-drill; and a deck with
-        // nothing under its label has nothing to show. Either way, a click does not drill in.
-        let arrangement = table.0.pile(id).map(|p| p.layout().arrangement);
+        // A deck with nothing under its label has nothing to show, so a click does not drill in; any other
+        // deck (including System) is entered.
         let nothing_under = table.0.content_cards(id).is_empty()
             && table.0.pile(id).is_some_and(|p| p.subpiles().is_empty())
             && table.0.pile(id).is_some_and(|p| p.projection().is_empty());
-        if !matches!(arrangement, Some(Arrangement::Actions)) && !nothing_under {
+        if !nothing_under {
             let _ = table.0.focus(id); // drill in: this pile becomes the current zone
             rebuild.0 = true;
         }
@@ -692,9 +722,9 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
-    // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (which parks the
-    // System deck at its corner), so its piles keep their model position. Only a *drilled-in* List/Grid
-    // reflows here, mirroring how `build_ui` special-cases `at_root`.
+    // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
+    // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
+    // here, mirroring how `build_ui` special-cases `at_root`.
     let structured = focus != table.0.root_id()
         && matches!(
             table.0.pile(focus).map(|p| p.layout().arrangement),
@@ -1089,252 +1119,12 @@ fn on_node_drag_end(
     }
 }
 
-/// Press an [`Arrangement::Actions`] deck (e.g. System) to slide its action cards out beside it, arming
-/// them. While held, drag the deck onto one to fire it; letting go without reaching one just tucks them
-/// away (see [`settle_actions_deck`]), so a click never fires an action. The popped cards are free
-/// surface entities drawn above the piles, since popping them doesn't shove the game piles aside.
-fn on_actions_press(
-    on: On<Pointer<Press>>,
-    movables: Query<&Movable>,
-    content: Query<Entity, With<TableContent>>,
-    table: Res<Table>,
-    mut state: ResMut<ActionsDeckState>,
-    mut commands: Commands,
-) {
-    if on.event().event.button != PointerButton::Primary {
-        return;
-    }
-    let Some(pile) = movables
-        .get(on.event().entity)
-        .ok()
-        .and_then(|m| m.0.pile())
-    else {
-        return; // press wasn't on a movable pile
-    };
-    let Some(deck) = table.0.pile(pile) else {
-        return;
-    };
-    if state.pressed_pile.is_some() || deck.layout().arrangement != Arrangement::Actions {
-        return; // already popped, or not an Actions deck
-    }
-    // The cards to pop: each content card. Utility cards fire on drop; a plain (Regular) card — the build
-    // stamp — pops as display-only (fires nothing). The Zone label and any headers don't pop.
-    let actions: Vec<(Option<Utility>, String)> = table
-        .0
-        .content_cards(pile)
-        .iter()
-        .filter_map(|&cid| {
-            let card = table.0.card(cid)?;
-            match card.kind() {
-                CardKind::Utility(utility) => Some((Some(utility), card.name().to_string())),
-                CardKind::Regular => Some((None, card.name().to_string())),
-                _ => None,
-            }
-        })
-        .collect();
-    // The popped cards live in the content region (like the deck), so they share its coordinate space —
-    // the deck's model position lines up with what's on screen, and the drop hit-test is exact.
-    let Ok(content_e) = content.single() else {
-        return;
-    };
-    if actions.is_empty() {
-        return;
-    }
-    let (pos, size) = (deck.pos(), deck.size());
-    let surface = table.0.surface();
-    let card_size = Pos {
-        x: LEAVE_W,
-        y: LEAVE_H,
-    };
-    // Explode the cards out from the deck at equal angles (a radial burst), not a straight menu. Keep it
-    // compact: just clear the deck edge, and only spread wider if that's needed to stop neighbours
-    // overlapping at this angular spacing.
-    let n = actions.len();
-    let step = std::f32::consts::TAU / n as f32;
-    // Bound each card *and* the deck by its circumscribed circle (the half-diagonal). Placing those
-    // circles a [`GAP`] apart guarantees the rectangles never overlap at *any* angle — a provable radius,
-    // not an eyeballed one (the old width-only spacing let cards projecting sideways clip the deck).
-    let card_reach = card_size.x.hypot(card_size.y) / 2.0;
-    let deck_reach = size.x.hypot(size.y) / 2.0;
-    // Clear the deck: the card circle sits just past the deck circle, plus one gap.
-    let by_deck = deck_reach + card_reach + GAP;
-    // Adjacent card circles at least a gap apart: chord 2·r·sin(step/2) ≥ 2·card_reach + GAP.
-    let by_spacing = if n > 1 {
-        (2.0 * card_reach + GAP) / (2.0 * (step * 0.5).sin())
-    } else {
-        0.0
-    };
-    let radius = by_deck.max(by_spacing);
-    // Centre the burst on the deck, but pulled inside the surface so every card stays on-screen — which
-    // keeps the angles even (clamping each card instead would bunch them against an edge).
-    let reach = radius + card_reach;
-    let cx = (pos.x + size.x / 2.0).clamp(reach, (surface.x - reach).max(reach));
-    let cy = (pos.y + size.y / 2.0).clamp(reach, (surface.y - reach).max(reach));
-    state.pressed_pile = Some(pile);
-    for (i, (utility, label)) in actions.into_iter().enumerate() {
-        // Start straight up (−90°) and go round; place the card's centre on the ring, then its top-left.
-        let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * step;
-        let target = Pos {
-            x: cx + radius * angle.cos() - card_size.x / 2.0,
-            y: cy + radius * angle.sin() - card_size.y / 2.0,
-        };
-        let entity = spawn_popped_card(
-            &mut commands,
-            pos,
-            target,
-            card_size,
-            &label,
-            utility.map_or(INFO_COLOR, action_color),
-        );
-        commands.entity(content_e).add_child(entity);
-        state.popped.push(PoppedAction {
-            utility,
-            pos: target,
-            size: card_size,
-            entity,
-        });
-    }
-}
-
-/// The fill colour for a popped action card, by what it does.
+/// The fill colour a [`Utility`] card wears (its card background), by what it does — so it reads as a
+/// coloured button even as an ordinary card in the System deck.
 fn action_color(utility: Utility) -> Color {
     match utility {
         Utility::Exit => EXIT_CONFIRM_BG, // warm red — "this is the way out"
         Utility::StartOver => Color::srgb(0.62, 0.44, 0.24), // amber — a bigger, permanent wipe
-        Utility::Revert => Color::srgb(0.28, 0.42, 0.60), // blue — a soft undo
-        Utility::Back => Color::srgb(0.30, 0.40, 0.45),
-    }
-}
-
-/// On a primary release, settle the Actions deck (handles a press let go without reaching a card).
-#[allow(clippy::too_many_arguments)]
-fn on_actions_release(
-    on: On<Pointer<Release>>,
-    mut state: ResMut<ActionsDeckState>,
-    mut table: ResMut<Table>,
-    initial: Res<InitialTable>,
-    factory: Res<FactoryBase>,
-    build: Res<BuildInfo>,
-    mut rebuild: ResMut<NeedsRebuild>,
-    mut commands: Commands,
-    mut exit: MessageWriter<AppExit>,
-) {
-    if on.event().event.button == PointerButton::Primary {
-        settle_actions_deck(
-            &mut state,
-            &mut table,
-            &initial.0,
-            &factory.0,
-            &build.0,
-            &mut rebuild,
-            &mut commands,
-            &mut exit,
-        );
-    }
-}
-
-/// The drag counterpart of [`on_actions_release`]: when any drag ends (including off-window, where
-/// `Release` may not fire), settle the Actions deck.
-#[allow(clippy::too_many_arguments)]
-fn on_actions_drag_end(
-    _on: On<Pointer<DragEnd>>,
-    mut state: ResMut<ActionsDeckState>,
-    mut table: ResMut<Table>,
-    initial: Res<InitialTable>,
-    factory: Res<FactoryBase>,
-    build: Res<BuildInfo>,
-    mut rebuild: ResMut<NeedsRebuild>,
-    mut commands: Commands,
-    mut exit: MessageWriter<AppExit>,
-) {
-    settle_actions_deck(
-        &mut state,
-        &mut table,
-        &initial.0,
-        &factory.0,
-        &build.0,
-        &mut rebuild,
-        &mut commands,
-        &mut exit,
-    );
-}
-
-/// Settle a pressed Actions deck once the press/drag ends: fire the action of whichever popped card the
-/// deck overlaps (Exit quits; Revert restores the session-start table; Start Over rebuilds a pristine
-/// one), then despawn the popped cards and disarm. Called from both the release and drag-end paths —
-/// whichever fires first does the work, the other finds `pressed_pile == None` and no-ops — so the
-/// outcome doesn't depend on their ordering.
-#[allow(clippy::too_many_arguments)]
-fn settle_actions_deck(
-    state: &mut ActionsDeckState,
-    table: &mut Table,
-    initial: &Tableau,
-    factory: &Tableau,
-    build: &str,
-    rebuild: &mut NeedsRebuild,
-    commands: &mut Commands,
-    exit: &mut MessageWriter<AppExit>,
-) {
-    let Some(pile) = state.pressed_pile.take() else {
-        return;
-    };
-    let fired = table.0.pile(pile).and_then(|deck| {
-        let (dp, dsz) = (deck.pos(), deck.size());
-        // Fire the popped card the deck overlaps *most* — the menu cards are stacked a hair apart, so the
-        // deck straddles two, and picking the first overlap would fire the wrong one (e.g. Revert when you
-        // meant the Start Over just below it).
-        state
-            .popped
-            .iter()
-            .map(|p| (p.utility, overlap_area(dp, dsz, p.pos, p.size)))
-            .filter(|&(_, area)| area > 0.01)
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .and_then(|(utility, _)| utility) // a display-only card (None) fires nothing
-    });
-    for popped in state.popped.drain(..) {
-        commands.entity(popped.entity).despawn();
-    }
-    match fired {
-        Some(Utility::Exit) => {
-            exit.write(AppExit::Success);
-        }
-        Some(Utility::Revert) => {
-            table.0 = initial.clone();
-            rebuild.0 = true;
-        }
-        Some(Utility::StartOver) => {
-            // Pristine table, discarding this session; the autosave then overwrites the save with it.
-            table.0 = factory.clone();
-            install_system_deck(&mut table.0, build);
-            rebuild.0 = true;
-        }
-        Some(Utility::Back) => {
-            table.0.zoom_out();
-            rebuild.0 = true;
-        }
-        None => {}
-    }
-}
-
-/// The overlap **area** of two AABBs (top-left `pos`, `size`); `0.0` when they don't overlap.
-fn overlap_area(ap: Pos, asz: Pos, bp: Pos, bsz: Pos) -> f32 {
-    let ox = ((ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x)).max(0.0);
-    let oy = ((ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y)).max(0.0);
-    ox * oy
-}
-
-/// Ease each popped-out action card from the deck toward its target spot — the same eased settle the
-/// table piles use. It only eases outward; on release it's despawned outright (see [`settle_actions_deck`]).
-fn animate_popped(time: Res<Time>, mut popped: Query<(&PoppedTarget, &mut Node)>) {
-    let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (card, mut node) in &mut popped {
-        let (cx, cy) = (px(node.left), px(node.top));
-        let (tx, ty) = (card.target.x, card.target.y);
-        if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
-            continue;
-        }
-        node.left = Val::Px(cx + (tx - cx) * t);
-        node.top = Val::Px(cy + (ty - cy) * t);
     }
 }
 
@@ -1437,17 +1227,12 @@ fn redraw(
     table: Res<Table>,
     rail: Res<ActionRail>,
     front: Res<FannedFront>,
-    mut actions_deck: ResMut<ActionsDeckState>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
         return;
     }
     rebuild.0 = false;
-    // The popped action cards are children of the surface we're about to despawn; forget them (and
-    // cancel any in-flight gesture) so we never try to despawn a now-dead entity.
-    actions_deck.popped.clear();
-    actions_deck.pressed_pile = None;
     for entity in &roots {
         commands.entity(entity).despawn();
     }
@@ -1466,10 +1251,8 @@ const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
 /// A second back shade so alternating layers in a pile's stack read as distinct cards.
 const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
-/// The exit deck's popped-out "Leave" card — a warm red so the drop target reads as "this is the way out".
+/// The Exit card's fill — a warm red so it reads as "this is the way out".
 const EXIT_CONFIRM_BG: Color = Color::srgb(0.55, 0.22, 0.20);
-/// A muted slate for a popped **display-only** card (the build stamp) — reads as inert, not a drop target.
-const INFO_COLOR: Color = Color::srgb(0.22, 0.24, 0.26);
 /// Highlight edge for a card/pile that carries a legal move.
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.
@@ -1588,10 +1371,6 @@ const LARGE_MAX_H: f32 = 360.0;
 /// stack of Small cards without growing without bound.
 const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
-
-/// The popped-out "Leave" card's footprint and how far it sits from the Exit deck when popped.
-const LEAVE_W: f32 = 120.0;
-const LEAVE_H: f32 = 56.0;
 
 /// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
 /// so spacing is uniform everywhere it's computed (see [`Tableau::structured_positions`],
@@ -2007,53 +1786,6 @@ fn spawn_nav_card<B: Bundle>(parent: &mut ChildSpawnerCommands, marker: B, label
         });
 }
 
-/// Spawn a popped-out action card (`label`, `bg`) as a free entity on the surface, starting at the deck
-/// (`from`) so [`animate_popped`] can slide it out to `target`. A high [`GlobalZIndex`] keeps it above
-/// every pile — since the pop-out doesn't shove the game piles aside, it must instead be drawn on top of
-/// them. It's transparent to picking (the drop is detected by overlap geometry, not a hit-test).
-fn spawn_popped_card(
-    commands: &mut Commands,
-    from: Pos,
-    target: Pos,
-    size: Pos,
-    label: &str,
-    bg: Color,
-) -> Entity {
-    commands
-        .spawn((
-            PoppedTarget { target },
-            GlobalZIndex(100),
-            Pickable::IGNORE,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(from.x),
-                top: Val::Px(from.y),
-                width: Val::Px(size.x),
-                height: Val::Px(size.y),
-                border: UiRect::all(Val::Px(2.0)),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                border_radius: BorderRadius::all(Val::Px(10.0)),
-                ..default()
-            },
-            BackgroundColor(bg),
-            BorderColor::all(CARD_EDGE),
-            card_shadow(),
-        ))
-        .with_children(|c| {
-            c.spawn((
-                Text::new(label.to_string()),
-                TextFont {
-                    font_size: FONT_TITLE,
-                    ..default()
-                },
-                TextColor(INK),
-                Pickable::IGNORE,
-            ));
-        })
-        .id()
-}
-
 /// Draws a deck as a stack of **Small cards**: offset layers (two alternating colors, stepped along
 /// the left and bottom edges, capped at [`MAX_STACK`]) hint at the depth, and the front layer is a
 /// Small-card face ([`small_face`]) showing the top card's name, type, and count. The whole stack is
@@ -2148,10 +1880,9 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
 }
 
 /// The **held** layer: an element being dragged floats here — above the felt tiles and the floating
-/// overlays (title / Back at [`GlobalZIndex(10)`]), below the System slide-out ([`GlobalZIndex(100)`]) —
-/// so "picking a card up off the table" reads literally: it stays on top of everything it slides over
-/// until you set it down. Applied on drag-start, removed on release (see [`on_node_drag`] /
-/// [`on_node_drag_end`]).
+/// overlays (title / Back at [`GlobalZIndex(10)`]) — so "picking a card up off the table" reads literally:
+/// it stays on top of everything it slides over until you set it down. Applied on drag-start, removed on
+/// release (see [`on_node_drag`] / [`on_node_drag_end`]).
 const HELD_Z: i32 = 50;
 
 /// How far each card in a **fan** is offset from the previous one — the width of the uncovered left-edge
@@ -2280,7 +2011,15 @@ fn small_face(
 /// a deck's front layer uses — a lone card and a deck render the same way.
 fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
     let (label, bg, ink) = match &card.face {
-        Face::Up { title } => (Some(title.clone()), CARD_FACE, CARD_INK),
+        // A **utility** card wears its action colour as the card background, so it reads as a coloured
+        // button (Exit red, Start Over amber) even as an ordinary card; its ink adapts to stay legible.
+        Face::Up { title } => match card.kind() {
+            CardKind::Utility(u) => {
+                let bg = action_color(u);
+                (Some(title.clone()), bg, badge_ink(bg))
+            }
+            _ => (Some(title.clone()), CARD_FACE, CARD_INK),
+        },
         Face::Down => (None, CARD_BACK, INK),
     };
     let entity = parent.spawn((
@@ -2537,5 +2276,37 @@ mod game {
             })
             .collect();
         (table, rail, view.status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pluralize, relative_time};
+
+    #[test]
+    fn pluralize_uses_the_singular_only_for_one() {
+        assert_eq!(pluralize(1, "hour", "hours"), "1 hour");
+        assert_eq!(pluralize(2, "hour", "hours"), "2 hours");
+        assert_eq!(pluralize(0, "hour", "hours"), "0 hours");
+        assert_eq!(pluralize(1, "day", "days"), "1 day");
+    }
+
+    #[test]
+    fn relative_time_reports_the_largest_whole_unit() {
+        // Under a minute — including a future/just-built stamp — reads "just now".
+        assert_eq!(relative_time(0), "just now");
+        assert_eq!(relative_time(-100), "just now");
+        assert_eq!(relative_time(59), "just now");
+        // Minutes.
+        assert_eq!(relative_time(60), "1 minute ago");
+        assert_eq!(relative_time(120), "2 minutes ago");
+        assert_eq!(relative_time(3599), "59 minutes ago");
+        // Hours (note the 1-unit boundary reads "1 hour", not "1 hours").
+        assert_eq!(relative_time(3600), "1 hour ago");
+        assert_eq!(relative_time(7200), "2 hours ago");
+        assert_eq!(relative_time(86_399), "23 hours ago");
+        // Days.
+        assert_eq!(relative_time(86_400), "1 day ago");
+        assert_eq!(relative_time(172_800), "2 days ago");
     }
 }
