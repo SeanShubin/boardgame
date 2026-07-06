@@ -181,6 +181,18 @@ fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
 pub fn sample_table() -> Tableau {
     let mut tree = Tableau::new();
     let root = tree.root_id();
+    // The table itself is a **Free** layout: its top-level decks are placed by position (auto-tidied into a
+    // row by the renderer's `settle_table_piles`, draggable in between), not a structured grid. Without
+    // this the root would default to `List` and the renderer would try to flow its decks — sweeping the
+    // System deck out of its parked corner.
+    tree.set_layout(
+        root,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("root exists");
 
     // The "Identity" deck: the unrecruited heroes — the canonical home of their identity cards. The inn
     // projects this deck; recruiting a hero (see `Tableau::combine`) removes it from here.

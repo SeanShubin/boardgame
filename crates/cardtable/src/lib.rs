@@ -692,10 +692,14 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
-    let structured = matches!(
-        table.0.pile(focus).map(|p| p.layout().arrangement),
-        Some(Arrangement::List | Arrangement::Grid { .. })
-    );
+    // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (which parks the
+    // System deck at its corner), so its piles keep their model position. Only a *drilled-in* List/Grid
+    // reflows here, mirroring how `build_ui` special-cases `at_root`.
+    let structured = focus != table.0.root_id()
+        && matches!(
+            table.0.pile(focus).map(|p| p.layout().arrangement),
+            Some(Arrangement::List | Arrangement::Grid { .. })
+        );
     // A structured zone (List/Grid) reflows footprint-aware; everything else (Free, the root) reads each
     // node's own model position. Compute the structured layout once, then look each node up.
     let layout: HashMap<TableNode, Pos> = if structured {
