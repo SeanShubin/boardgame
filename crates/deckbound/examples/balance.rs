@@ -12,7 +12,9 @@
 
 use std::path::PathBuf;
 
-use deckbound::balance::{Level, run_level};
+use deckbound::balance::{
+    DuelLocks, Level, RegionLocks, duel_locks, duel_locks_report, region_locks_report, run_level,
+};
 
 fn main() {
     let path = std::env::args()
@@ -24,9 +26,21 @@ fn main() {
         });
 
     let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read level file {}: {e}", path.display()));
-    let level: Level = ron::from_str(&text)
-        .unwrap_or_else(|e| panic!("cannot parse level file {}: {e}", path.display()));
+        .unwrap_or_else(|e| panic!("cannot read balance file {}: {e}", path.display()));
 
-    print!("{}", run_level(&level));
+    // Three file shapes share this runner: a composition-matrix `Level` (`level-N.ron`), a `DuelLocks`
+    // set (`duel-locks.ron`), and a `RegionLocks` set (`region-locks.ron`). Try each in turn.
+    if let Ok(level) = ron::from_str::<Level>(&text) {
+        print!("{}", run_level(&level));
+    } else if let Ok(locks) = ron::from_str::<DuelLocks>(&text) {
+        print!("{}", duel_locks_report(&locks));
+    } else {
+        let regions: RegionLocks = ron::from_str(&text)
+            .unwrap_or_else(|e| panic!("cannot parse balance file {}: {e}", path.display()));
+        const BUDGET: u64 = 2_000_000;
+        print!(
+            "{}",
+            region_locks_report(&regions, &duel_locks().kits, BUDGET)
+        );
+    }
 }

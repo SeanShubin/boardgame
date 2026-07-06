@@ -290,6 +290,20 @@ pub struct Actor {
     /// tempo-gated replacement for `zone: Spend`). A one-shot whose name is listed is no longer playable.
     #[serde(default)]
     pub spent_one_shots: Vec<String>,
+
+    /// §4 **authored preferred intention** — a creature's declared stance, read at Marshal (a well-defined
+    /// creature behavior, like its target rule / instinct). `None` = derive the position from stats
+    /// (`game::default_intentions`). A **character** leaves this `None`: its position is a per-round
+    /// decision, never authored.
+    #[serde(default)]
+    pub preferred: Option<Intention>,
+
+    /// §4.5 **pack tag** — same-side bodies sharing a tag are bound into **one group** (§4.5): the mark a
+    /// **Hoard X** expansion stamps on its X one-Health bodies so they field, spill, and melt to AoE as
+    /// one swarm. `None` = a singleton (its own group). Static for the fight; the formation reads it each
+    /// round (`game::default_formation`).
+    #[serde(default)]
+    pub pack: Option<u32>,
 }
 
 impl Actor {

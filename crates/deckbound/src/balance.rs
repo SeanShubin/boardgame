@@ -916,6 +916,342 @@ pub fn stat_necessity_report(seed: u64) -> String {
     out
 }
 
+// ----------------------------------------------------------------------------------------------------
+// Duel-locks — the party-size-1 "lock duel" instrument (a balance/tutorial set, not new mechanics). Four
+// character KITS × four CREATURES, tuned so each creature is beaten by exactly ONE kit: a clean diagonal.
+// Built from existing stats, reach (melee/ranged), targets (AoE), and stat-derived position only — force,
+// not fiat (no immunity/keyword bans a kit; every off-diagonal loss comes from the numbers). The roster
+// lives in `data/balance/duel-locks.ron` (read at runtime by the `balance` example) so the numbers retune
+// with no rebuild; [`check_duel_locks`] resolves every cell through the REAL resolver (`auto_resolve` →
+// `combat::resolve_round`) at party size 1 and asserts the diagonal. Mirrors [`check_role_necessity`]'s
+// two-sided [`check`] pattern.
+// ----------------------------------------------------------------------------------------------------
+
+/// One combatant in a [`DuelLocks`] set — a kit or a creature. Its five stats plus its reach (`ranged`)
+/// and area (`aoe`) fully determine its combat profile; **position is derived from the stats** by the
+/// engine (§4 `default_intentions`: ranged→Rearguard, else Might≥Toughness→Outrider, else Vanguard),
+/// never authored here. A creature may field a **horde** (`count` > 1); kits are size 1.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DuelUnit {
+    pub name: String,
+    /// The signature-ability flavor name (documentation only — the mechanism is all stats / reach / area).
+    #[serde(default)]
+    pub ability: String,
+    /// `(Might, Vitality, Toughness, Cadence, Finesse)`.
+    pub stats: Stat5,
+    /// Ranged reach (fires from the Rearguard) vs melee (the default).
+    #[serde(default)]
+    pub ranged: bool,
+    /// Area strike (hits every member of the target group at full Might, unevadable, §4.5).
+    #[serde(default)]
+    pub aoe: bool,
+    /// How many bodies a **non-hoard** unit fields (usually 1). A Hoard sizes itself from Vitality
+    /// instead (see `hoard`); kits are always 1.
+    #[serde(default = "one")]
+    pub count: u32,
+    /// §4.5 **Hoard** — this creature is a **swarm authored as one card**: it fields **Vitality**
+    /// one-Health bodies bound in one group (an AoE clears the pack at once; a single-target blow kills
+    /// one and spills through to the next only on a kill; the pack can never slip). The engine expands and
+    /// groups it (`Actor::pack`) — no harness bookkeeping.
+    #[serde(default)]
+    pub hoard: bool,
+    /// An **authored preferred position** — a fixed stance the unit holds: `"Vanguard"`, `"Outrider"`, or
+    /// `"Rearguard"`. A first-class **creature behavior** (like its target rule); the engine honors it via
+    /// `Actor::preferred`. Empty = the stat-derived default. Kits leave this empty — a kit's position is a
+    /// per-round decision, never authored (the set has no "position kit").
+    #[serde(default)]
+    pub pos: Option<String>,
+}
+
+fn one() -> u32 {
+    1
+}
+
+impl DuelUnit {
+    /// The authored position, parsed to an [`Intention`]. `None` = use the engine's stat-derived default.
+    fn position(&self) -> Option<crate::actor::Intention> {
+        use crate::actor::Intention::{Outrider, Rearguard, Vanguard};
+        self.pos.as_deref().map(|s| match s {
+            "Vanguard" => Vanguard,
+            "Outrider" => Outrider,
+            "Rearguard" => Rearguard,
+            other => panic!(
+                "duel-locks: unit {:?} has an unknown position {other:?}",
+                self.name
+            ),
+        })
+    }
+}
+
+/// A **duel-locks** set: `kits` (party-size-1 characters) × `creatures`, tuned so kit *i* beats creature
+/// *i* and loses/draws every other cell (the diagonal). Deserialized from `data/balance/duel-locks.ron`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DuelLocks {
+    /// The resolution seed (the battle is deterministic given it).
+    pub seed: u64,
+    pub kits: Vec<DuelUnit>,
+    pub creatures: Vec<DuelUnit>,
+}
+
+/// Build a duel-locks combatant: a bare `Novice` body (its power-0 weapon makes raw strike = Might) with
+/// its five stats, reach, area, and **authored preferred position** overridden from `u`. No cards — the
+/// lock is stats / reach / area / position only (force, not fiat). Grouping / Hoard expansion is the
+/// engine's job (see [`build_duel_creatures`]); this builds one template body.
+pub fn build_duel_unit(u: &DuelUnit) -> Actor {
+    use crate::actor::Attack;
+    let (m, v, t, c, f) = u.stats;
+    let mut a = build_character("Novice", &[]);
+    a.name = u.name.clone();
+    a.offense.might = m;
+    a.offense.cadence = c;
+    a.offense.finesse = f;
+    a.defense = crate::stats::Defense::new(v, t);
+    a.tempo = c as i32;
+    a.attack = if u.ranged {
+        Attack::Ranged
+    } else {
+        Attack::Melee
+    };
+    a.aoe = u.aoe;
+    a.preferred = u.position(); // a creature's authored stance (a kit leaves it None → stat-derived)
+    a.actions.clear();
+    a
+}
+
+/// Build a creature's body-set. A **Hoard** ([`DuelUnit::hoard`]) fields **Vitality** one-Health bodies
+/// bound in one pack (§4.5 — the engine then groups and resolves them as a swarm: AoE clears the pack,
+/// single-target spills through one at a time). A non-hoard creature fields `count` singleton copies.
+fn build_duel_creatures(u: &DuelUnit) -> Vec<Actor> {
+    let base = build_duel_unit(u);
+    if u.hoard {
+        let bodies = u.stats.1.max(1); // Vitality = body count (spec-literal)
+        let toughness = u.stats.2.max(1);
+        (0..bodies)
+            .map(|_| {
+                let mut b = base.clone();
+                b.defense = crate::stats::Defense::new(1, toughness); // one-Health body
+                b.pack = Some(0); // all bound into one pack
+                b
+            })
+            .collect()
+    } else {
+        vec![base; u.count.max(1) as usize] // distinct singletons (pack stays None)
+    }
+}
+
+/// Resolve one duel-locks cell: `kit` (party size 1) vs the creature's body-set, through the REAL resolver
+/// (`auto_resolve` → `combat::resolve_round`). `Some(true)` = the kit wins; anything else (loss / draw /
+/// non-resolving) is NOT-a-win. Grouping (Hoard packs), authored creature position, and the mutual-wipe
+/// draw are all the **engine's** doing now — the harness only builds the bodies and reads the verdict.
+fn resolve_duel(kit: &DuelUnit, creature: &DuelUnit, seed: u64) -> Option<bool> {
+    auto_resolve(
+        vec![build_duel_unit(kit)],
+        build_duel_creatures(creature),
+        seed,
+    )
+}
+
+/// **Check the duel-locks diagonal**: for every (kit *i*, creature *j*) resolved at party size 1 through
+/// the real resolver, the kit must WIN iff `i == j` (a draw counts as NOT-a-win). Returns the violations
+/// (empty ⇒ a clean diagonal). The two-sided honesty of [`check_role_necessity`]: the key kit must win
+/// its creature *and* every other kit must fail to win it.
+pub fn check_duel_locks(locks: &DuelLocks) -> Vec<Violation> {
+    let mut v = Vec::new();
+    for (i, kit) in locks.kits.iter().enumerate() {
+        for (j, creature) in locks.creatures.iter().enumerate() {
+            let got = resolve_duel(kit, creature, locks.seed);
+            let want_win = i == j;
+            if (got == Some(true)) != want_win {
+                v.push(Violation {
+                    property: format!("{} vs {}", kit.name, creature.name),
+                    detail: format!(
+                        "expected {} ({}), got {}",
+                        if want_win { "WIN" } else { "loss/draw" },
+                        if want_win { "its key" } else { "off-diagonal" },
+                        match got {
+                            Some(true) => "win",
+                            Some(false) => "loss/draw",
+                            None => "non-resolving",
+                        }
+                    ),
+                });
+            }
+        }
+    }
+    v
+}
+
+/// A human-readable **duel-locks matrix**: kits down the side, creatures across the top, each cell the
+/// resolved verdict (`WIN` expected on the diagonal, `WIN!` = an off-diagonal break, `·` = loss/draw).
+/// A trailing block lists any diagonal violation. The header records the seed.
+pub fn duel_locks_report(locks: &DuelLocks) -> String {
+    let short = |name: &str| name.trim_start_matches("The ").to_string();
+    let mut out = format!(
+        "Duel-locks matrix — party size 1, real resolver (seed {})\n\n",
+        locks.seed
+    );
+    out.push_str(&format!("  {:<13}", "kit \\ foe"));
+    for c in &locks.creatures {
+        out.push_str(&format!("{:>9}", short(&c.name)));
+    }
+    out.push('\n');
+    for (i, kit) in locks.kits.iter().enumerate() {
+        out.push_str(&format!("  {:<13}", kit.name));
+        for (j, creature) in locks.creatures.iter().enumerate() {
+            let got = resolve_duel(kit, creature, locks.seed);
+            let cell = match (got == Some(true), i == j) {
+                (true, true) => "WIN",
+                (true, false) => "WIN!", // off-diagonal win — a diagonal break
+                (false, _) => "·",
+            };
+            out.push_str(&format!("{cell:>9}"));
+        }
+        out.push('\n');
+    }
+    let v = check_duel_locks(locks);
+    if v.is_empty() {
+        out.push_str("\n  clean diagonal — every creature is beaten by exactly its one key kit.\n");
+    } else {
+        out.push_str(&format!("\n  {} diagonal violation(s):\n", v.len()));
+        for vi in &v {
+            out.push_str(&format!("    - {} — {}\n", vi.property, vi.detail));
+        }
+    }
+    out
+}
+
+/// Load the canonical duel-locks set (embedded at compile time) — for the in-crate tests. The `balance`
+/// example reads the RON file at runtime instead, so its numbers retune with no rebuild.
+pub fn duel_locks() -> DuelLocks {
+    ron::from_str(include_str!("../data/balance/duel-locks.ron"))
+        .expect("data/balance/duel-locks.ron should parse")
+}
+
+// ----------------------------------------------------------------------------------------------------
+// Region-locks — the 4 challenge regions of the card-table world (§ playable slice). The party is the
+// four duel-locks KITS (one body each); each region is a creature encounter tuned so (a) the **full**
+// four-kit party clears it but **no three-kit subset** can (you need all four characters), and (b) it is
+// **much easier** thanks to its own distinct **signature** kit. Reuses the duel-locks builders
+// (`build_duel_creatures` → Hoard/position/reach/area) and the real resolver (`winnable_within`).
+// ----------------------------------------------------------------------------------------------------
+
+/// One challenge region: a name, the **signature** kit it is tuned to favor, and its creature roster
+/// (each a [`DuelUnit`], so a foe can be a Hoard / positioned / ranged / area).
+#[derive(Clone, Debug, Deserialize)]
+pub struct Region {
+    pub name: String,
+    /// The kit this region is tuned around (the star key) — must match one of the party's kit names.
+    pub signature: String,
+    #[serde(default)]
+    pub blurb: String,
+    pub foes: Vec<DuelUnit>,
+}
+
+/// The four challenge regions + the resolution seed. Deserialized from `data/balance/region-locks.ron`;
+/// the party is the [`duel_locks`] kits.
+#[derive(Clone, Debug, Deserialize)]
+pub struct RegionLocks {
+    pub seed: u64,
+    pub regions: Vec<Region>,
+}
+
+/// Build a region's foe roster (Hoards expanded and pack-grouped by [`build_duel_creatures`]).
+fn region_foes(r: &Region) -> Vec<Actor> {
+    r.foes.iter().flat_map(build_duel_creatures).collect()
+}
+
+/// The party of all `kits` (one body each).
+fn kit_party(kits: &[DuelUnit]) -> Vec<Actor> {
+    kits.iter().map(build_duel_unit).collect()
+}
+
+/// The party with kit `skip` left out (the other three).
+fn kit_party_without(kits: &[DuelUnit], skip: usize) -> Vec<Actor> {
+    kits.iter()
+        .enumerate()
+        .filter(|(i, _)| *i != skip)
+        .map(|(_, k)| build_duel_unit(k))
+        .collect()
+}
+
+/// **Check the region-locks**: for each region, the **full** party must win, and **every** leave-one-out
+/// party (three kits) must lose — so all four characters are needed (§ "impossible without all 4"). Rides
+/// [`winnable_within`] (short-circuits wins; `budget` bounds loss-confirmation). Returns the violations
+/// (empty ⇒ every region needs the whole party). The *signature-kit* "much easier" gradient is graded
+/// separately (see [`region_locks_report`]).
+pub fn check_region_locks(regions: &RegionLocks, kits: &[DuelUnit], budget: u64) -> Vec<Violation> {
+    let mut v = Vec::new();
+    for r in &regions.regions {
+        let foes = || region_foes(r);
+        let (full, full_of) = winnable_within(kit_party(kits), foes(), regions.seed, budget);
+        if !full {
+            v.push(Violation {
+                property: format!("{}: full party", r.name),
+                detail: format!(
+                    "the full 4-kit party cannot clear it{}",
+                    if full_of { " [budget-limited]" } else { "" }
+                ),
+            });
+        }
+        for (i, kit) in kits.iter().enumerate() {
+            let (w, _of) =
+                winnable_within(kit_party_without(kits, i), foes(), regions.seed, budget);
+            if w {
+                v.push(Violation {
+                    property: format!("{}: without {}", r.name, kit.name),
+                    detail: "still clearable by the other three — not every kit is needed".into(),
+                });
+            }
+        }
+    }
+    v
+}
+
+/// A **region-locks report**: for each region, is the full party winnable, and does removing each kit make
+/// it unwinnable (`NEEDED` = a flip = that kit is load-bearing here)? The region's **signature** kit is
+/// starred. Ideal: every row all-`NEEDED`, with the starred kit the one that also makes the clear much
+/// easier (graded par — a later refinement). `budget` bounds loss-confirmation (`?` = budget-limited).
+pub fn region_locks_report(regions: &RegionLocks, kits: &[DuelUnit], budget: u64) -> String {
+    let mut out = format!(
+        "Region-locks — 4-kit party, leave-one-out necessity (real resolver, seed {})\n\n",
+        regions.seed
+    );
+    for r in &regions.regions {
+        let foes = || region_foes(r);
+        let (full, full_of) = winnable_within(kit_party(kits), foes(), regions.seed, budget);
+        out.push_str(&format!(
+            "  {} (signature: {})  full: {}{}\n",
+            r.name,
+            r.signature,
+            if full { "winnable" } else { "UNWINNABLE" },
+            if full_of { " [budget-limited]" } else { "" }
+        ));
+        for (i, kit) in kits.iter().enumerate() {
+            let (w, of) = winnable_within(kit_party_without(kits, i), foes(), regions.seed, budget);
+            let star = if kit.name == r.signature { " *" } else { "  " };
+            out.push_str(&format!(
+                "     {} without {:<12} {}{}\n",
+                star,
+                kit.name,
+                if w {
+                    "still winnable (redundant here)"
+                } else {
+                    "NEEDED (unwinnable without it)"
+                },
+                if of { " ?" } else { "" }
+            ));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Load the canonical region-locks set (embedded). The `balance` example reads the RON at runtime.
+pub fn region_locks() -> RegionLocks {
+    ron::from_str(include_str!("../data/balance/region-locks.ron"))
+        .expect("data/balance/region-locks.ron should parse")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1463,6 +1799,119 @@ mod tests {
             Some(true),
             "an Iron-equipped party holds (wins) the Wall's L5"
         );
+    }
+
+    /// Duel-locks — print the resolved 4×4 matrix (kits × creatures) at party size 1, so a retune can be
+    /// read against the target diagonal. `cargo test -p deckbound probe_duel_locks -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_duel_locks() {
+        println!("{}", duel_locks_report(&duel_locks()));
+    }
+
+    /// Trace one duel-locks cell round-by-round (the combat log) — set KIT/FOE by name.
+    /// `cargo test -p deckbound probe_duel_trace -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_duel_trace() {
+        use crate::game::{Deckbound, battle_state_with};
+        use crate::solver::greedy;
+        use contract::Game;
+        const KIT: &str = "Marksman";
+        const FOE: &str = "The Coil";
+        let locks = duel_locks();
+        let kit = locks.kits.iter().find(|k| k.name == KIT).unwrap();
+        let foe = locks.creatures.iter().find(|c| c.name == FOE).unwrap();
+        let game = Deckbound;
+        // Grouping / position / mutual-wipe are the engine's job now; just build the bodies and drive greedy.
+        let mut state = battle_state_with(
+            vec![build_duel_unit(kit)],
+            build_duel_creatures(foe),
+            false,
+            locks.seed,
+            Ruleset::analysis(),
+        );
+        for _ in 0..10_000 {
+            if game.outcome(&state).is_some() {
+                break;
+            }
+            let a = greedy(&state, &game.legal_actions(&state));
+            game.apply(&mut state, &a).unwrap();
+        }
+        println!("=== {KIT} vs {FOE} ===");
+        for line in &state.log {
+            println!("{line}");
+        }
+    }
+
+    /// The duel-locks data file parses into a square set (a typo'd stat or keyword fails here, not at
+    /// runtime), mirroring [`level_1_file_parses`].
+    #[test]
+    fn duel_locks_file_parses() {
+        let locks = duel_locks();
+        assert_eq!(locks.kits.len(), 4, "four kits");
+        assert_eq!(locks.creatures.len(), 4, "four creatures");
+        // At least one creature is a Hoard (a swarm authored as one card) — the flag round-trips.
+        assert!(
+            locks.creatures.iter().any(|c| c.hoard),
+            "at least one creature swarms (a Hoard)"
+        );
+    }
+
+    /// The **duel-locks diagonal holds**: each creature is beaten by exactly its one key kit, verified
+    /// through the real resolver at party size 1 (a draw counts as NOT-a-win). This is the instrument's
+    /// acceptance criterion — the matrix is the spec.
+    #[test]
+    fn duel_locks_diagonal_holds() {
+        let v = check_duel_locks(&duel_locks());
+        assert!(v.is_empty(), "duel-locks diagonal broken: {v:#?}");
+    }
+
+    /// Region-locks — print the leave-one-out necessity matrix (full party vs each region, and each kit
+    /// removed). `cargo test -p deckbound probe_region_locks -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_region_locks() {
+        const BUDGET: u64 = 2_000_000;
+        println!(
+            "{}",
+            region_locks_report(&region_locks(), &duel_locks().kits, BUDGET)
+        );
+    }
+
+    /// The region-locks data file parses into four regions, each naming a real party kit as its signature.
+    #[test]
+    fn region_locks_file_parses() {
+        let regions = region_locks();
+        let kits = duel_locks().kits;
+        assert_eq!(regions.regions.len(), 4, "four challenge regions");
+        for r in &regions.regions {
+            assert!(
+                kits.iter().any(|k| k.name == r.signature),
+                "region {:?} signature {:?} is not a party kit",
+                r.name,
+                r.signature
+            );
+        }
+        // Each kit is the signature of exactly one region (four distinct signatures).
+        let mut sigs: Vec<&str> = regions
+            .regions
+            .iter()
+            .map(|r| r.signature.as_str())
+            .collect();
+        sigs.sort_unstable();
+        sigs.dedup();
+        assert_eq!(sigs.len(), 4, "each region tuned for a distinct kit");
+    }
+
+    /// **Every region needs all four characters**: the full 4-kit party clears each challenge region and
+    /// no three-kit subset can (the instrument's acceptance criterion — verified through the real
+    /// resolver). ~1s at this budget.
+    #[test]
+    fn region_locks_need_all_four() {
+        const BUDGET: u64 = 2_000_000;
+        let v = check_region_locks(&region_locks(), &duel_locks().kits, BUDGET);
+        assert!(v.is_empty(), "a region did not need all four kits: {v:#?}");
     }
 
     #[test]

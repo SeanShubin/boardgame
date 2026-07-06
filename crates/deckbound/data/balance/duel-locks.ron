@@ -1,0 +1,68 @@
+// Duel-locks — a party-size-1 "lock duel" instrument (a balance/tutorial set, not new mechanics).
+//
+// Four character KITS and four CREATURES, tuned so each creature is beaten by exactly ONE kit: a clean
+// diagonal. Built from existing stats, reach (melee/ranged), targets (AoE), and position only — force,
+// not fiat (no immunity/keyword bans a kit; every off-diagonal loss comes from the numbers). A creature
+// may field a horde (a body `count` > 1) and may hold an authored position (`pos`).
+//
+// Edit the numbers and re-run (read at runtime — no rebuild):
+//   cargo run -p deckbound --example balance -- crates/deckbound/data/balance/duel-locks.ron
+// The MATRIX is the spec; the numbers are seeds. If the real resolver disagrees with a cell, retune stats
+// to restore the diagonal, never the intended winner.
+//
+// stats: (Might, Vitality, Toughness, Cadence, Finesse) — the level-1.ron order. Weapons are power-0, so
+// raw strike = Might. Position is stat-derived (§4 `default_intentions`): ranged -> Rearguard; else
+// Might >= Toughness -> Outrider; else Vanguard. A creature may override this with `pos` (a fixed stance);
+// kits never do (a kit's position is a per-round decision — the set has no "position kit").
+//
+// The diagonal (a DRAW counts as NOT-a-win):
+//                 Anvil  Swarm  Coil  Mirage
+//   Executioner   WIN    loss   loss  loss
+//   Broadsider    loss   WIN    loss  loss
+//   Marksman      loss   loss   WIN   loss
+//   Phantom       loss   draw   loss  WIN
+DuelLocks(
+    seed: 1,
+    // The single-key MECHANISM each kit beats its creature by (preserve it when retuning the seeds):
+    kits: [
+        // Alpha Strike — one big blow. Only Might 6 clears the Anvil's Toughness 5 (sub-bar damage wiped).
+        // Stat-position: Outrider (M6 >= T1).
+        (name: "Executioner", ability: "Alpha Strike", stats: (6, 3, 1, 1, 1), ranged: false, aoe: false),
+        // Whirlwind — AoE clears the whole Swarm pack in the Intercept sub-phase, before any of them strike.
+        // Toughness 3 makes it a Vanguard (M2 < T3) so it pre-empts from the front. Single-target kits kill
+        // one/round and drown in bodies.
+        (name: "Broadsider",  ability: "Whirlwind",     stats: (2, 3, 3, 1, 1), ranged: false, aoe: true),
+        // Stand-Off — ranged, so it chips the Coil from the back with NO melee riposte in return, and its
+        // Tempo (Cadence 2, Finesse 2) lets it evade the Coil's one reaching blow. Rearguard (ranged).
+        (name: "Marksman",    ability: "Stand-Off",     stats: (4, 4, 1, 2, 2), ranged: true,  aoe: false),
+        // Slip-and-Cut — its Tempo score (Cadence 2 x Finesse 3 = 6) out-bids the Mirage's (2): it evades
+        // the M6 blows and lands its own, out-pacing the feint. Might 4 is the cut it lands each round.
+        // Outrider (M4 >= T1).
+        (name: "Phantom",     ability: "Slip-and-Cut",  stats: (4, 3, 1, 2, 3), ranged: false, aoe: false),
+    ],
+    creatures: [
+        // Immovable — Toughness 5 is above every kit's Might except the Executioner's 6; sub-bar damage is
+        // wiped, so only one big single blow cracks it. Vanguard (M1 < T5).
+        (name: "The Anvil",   ability: "Immovable", stats: (1, 2, 5, 1, 1), ranged: false, aoe: false, count: 1),
+        // Overrun — a true Hoard (§4.5): authored as one card, it fields Vitality-many one-Health bodies
+        // in one pack. An AoE deletes the whole pack in the Intercept sub-phase; a single-target kit kills
+        // one and its overkill spills point-by-point to the next (the arrow pierces through the crowd) — but
+        // even so it cannot mop the pack up within the five-round horizon, so it is swarmed (a loss) or, for
+        // an evader that dodges the mass, out-lasted (a draw). Outrider (M1 >= T1).
+        (name: "The Swarm",   ability: "Overrun",   stats: (1, 45, 1, 1, 1), ranged: false, aoe: false, hoard: true),
+        // Riposte — a front-line brawler (pos Vanguard) with Might 6 and TWO attacks a round (Cadence 2):
+        // it drives every melee kit off the line before it can chip through. The Executioner is cut down in
+        // the Intercept; the Broadsider is out-traded in the Clash; the Phantom must burn BOTH its Tempo
+        // cards evading the two blows, so it never lands one — a draw. Only the ranged Marksman answers: it
+        // bursts the Coil down from the Rearguard in the Clash sub-phase, before the Coil's blow lands, and a
+        // shot draws no melee riposte. (Vitality 4 is the band where the Marksman's two shots crack it in one
+        // round and a melee kit cannot.)
+        (name: "The Coil",    ability: "Riposte",   stats: (6, 4, 2, 2, 1), ranged: false, aoe: false, count: 1, pos: Some("Vanguard")),
+        // Feint — its Finesse 2 with a single Tempo card lets it slip low-Finesse kits' blows (they whiff),
+        // and its Might 6 answers. Vitality 5 survives the Marksman's one-round burst, so the Marksman is
+        // then run down by the raid; a melee brawler trades and loses. Only the Phantom's higher Tempo score
+        // (Cadence 2 x Finesse 3) both evades the M6 and lands its own, out-pacing the feint. Outrider
+        // (M6 >= T2).
+        (name: "The Mirage",  ability: "Feint",     stats: (6, 5, 2, 1, 2), ranged: false, aoe: false, count: 1),
+    ],
+)

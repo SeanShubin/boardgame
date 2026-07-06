@@ -1,0 +1,65 @@
+// Region-locks — the 4 challenge regions of the card-table world. The party is the four duel-locks KITS
+// (Executioner / Broadsider / Marksman / Phantom, one body each). Each region is tuned so the FULL party
+// clears it but NO three-kit subset can (you need all four characters), and each is MUCH EASIER thanks to
+// one distinct SIGNATURE kit — the region is mostly that kit's countered threat, with a touch of the
+// other three so the rest of the party still has to pull its weight.
+//
+// Threat → counter kit:  T5 wall → Executioner (only Might 6 cracks it);  Hoard → Broadsider (AoE clears
+// the pack);  riposte wall → Marksman (ranged, no melee strike-back);  feint evader → Phantom (Tempo score
+// out-bids the dodge).  foes reuse the DuelUnit shape (stats/ranged/aoe/hoard/pos/count).
+//
+// Edit + re-run (read at runtime, no rebuild):
+//   cargo run -p deckbound --example balance -- crates/deckbound/data/balance/region-locks.ron
+// FIRST CUT — numbers are seeds; tune against the leave-one-out report until every row needs all four.
+RegionLocks(
+    seed: 1,
+    regions: [
+        (
+            name: "The Sundered Vault",
+            signature: "Executioner",
+            blurb: "Immovable plate — only one crushing blow cracks it.",
+            foes: [
+                (name: "Bulwark", stats: (1, 4, 5, 1, 1), pos: Some("Vanguard")),
+                (name: "Bulwark", stats: (1, 4, 5, 1, 1), pos: Some("Vanguard")),
+                (name: "Swarmling", stats: (1, 10, 1, 1, 1), hoard: true),
+                (name: "Warden", stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "Wisp", stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Overrun Warren",
+            signature: "Broadsider",
+            blurb: "A tide of bodies — bring a wide blade.",
+            foes: [
+                (name: "Swarmling", stats: (1, 28, 1, 1, 1), hoard: true),
+                (name: "Bulwark", stats: (1, 4, 5, 1, 1), pos: Some("Vanguard")),
+                (name: "Warden", stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "Wisp", stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Riposte Bastion",
+            signature: "Marksman",
+            blurb: "Guards that answer every blow — strike from range.",
+            foes: [
+                (name: "Warden", stats: (6, 5, 2, 1, 1), pos: Some("Vanguard")),
+                (name: "Warden", stats: (6, 5, 2, 1, 1), pos: Some("Vanguard")),
+                (name: "Bulwark", stats: (1, 4, 5, 1, 1), pos: Some("Vanguard")),
+                (name: "Swarmling", stats: (1, 16, 1, 1, 1), hoard: true),
+                (name: "Wisp", stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Feint Hollow",
+            signature: "Phantom",
+            blurb: "Shapes that slip every clumsy swing — out-dance them.",
+            foes: [
+                (name: "Wisp", stats: (6, 5, 2, 1, 2)),
+                (name: "Wisp", stats: (6, 5, 2, 1, 2)),
+                (name: "Bulwark", stats: (1, 4, 5, 1, 1), pos: Some("Vanguard")),
+                (name: "Swarmling", stats: (1, 10, 1, 1, 1), hoard: true),
+                (name: "Warden", stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+            ],
+        ),
+    ],
+)

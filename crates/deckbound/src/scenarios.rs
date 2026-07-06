@@ -101,6 +101,27 @@ struct ActorCard {
     /// attrition-able: you must *reach and kill it*, so it tests reach/priority-elimination roles.
     #[serde(default)]
     heal: u32,
+    /// §4 **authored preferred position** — `"Vanguard"` / `"Outrider"` / `"Rearguard"`. A well-defined
+    /// creature behavior read at Marshal; empty = derive it from stats (`game::default_intentions`).
+    #[serde(default)]
+    position: String,
+    /// §4.5 **Hoard** — this creature is authored as **one card that is a swarm**: at form-up it expands
+    /// to **Vitality** one-Health bodies bound in one group (sums to block, can't slip, melts to AoE).
+    #[serde(default)]
+    hoard: bool,
+}
+
+/// Parse an authored `position` string into an [`Intention`]; empty → `None` (stat-derived). Panics on a
+/// typo so a bad card fails loud at build time.
+fn parse_position(s: &str) -> Option<crate::actor::Intention> {
+    use crate::actor::Intention::{Outrider, Rearguard, Vanguard};
+    match s {
+        "" => None,
+        "Vanguard" => Some(Vanguard),
+        "Outrider" => Some(Outrider),
+        "Rearguard" => Some(Rearguard),
+        other => panic!("actor card has an unknown position {other:?}"),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,6 +407,10 @@ fn build_actor_with(
         might_bonus: 0,
         fallen: false,
         spent_one_shots: Vec::new(),
+        // §4 authored preferred position (a creature behavior); a character leaves it empty → stat-derived.
+        preferred: parse_position(&c.position),
+        // §4.5 pack tag — assigned by the roster builder when a Hoard expands (a singleton otherwise).
+        pack: None,
     };
     actor.refresh_round();
     actor
@@ -399,17 +424,42 @@ pub fn build_encounter_foes(enc: &EncounterCard, level: u32) -> Vec<Actor> {
     let scaling = enc.scaling_at(level);
     let strategy = (!enc.strategy.is_empty()).then_some(enc.strategy.as_str());
     let mut foes = Vec::new();
+    // A running pack counter so each authored card is its own group tag; a **Hoard** card stamps that one
+    // tag on all its one-Health bodies (§4.5), so they bind into one swarm while distinct cards stay
+    // separate singletons.
+    let mut next_pack = 0u32;
     for (name, count) in enc.roster(level) {
+        let is_hoard = cat
+            .actors
+            .iter()
+            .find(|a| a.name == name)
+            .is_some_and(|a| a.hoard);
         for _ in 0..count {
-            foes.push(build_actor_with(
-                cat,
-                &name,
-                std::slice::from_ref(&scaling),
-                strategy,
-            ));
+            let base = build_actor_with(cat, &name, std::slice::from_ref(&scaling), strategy);
+            let tag = next_pack;
+            next_pack += 1;
+            foes.extend(expand_hoard(base, is_hoard, tag));
         }
     }
     foes
+}
+
+/// A **Hoard** body-set (§4.5): a `hoard` creature expands to **Vitality** one-Health bodies, each a copy
+/// of `base` with its health pool reset to a single card and all stamped with the shared pack `tag` (one
+/// group). A non-hoard creature is returned unchanged as a lone singleton (no pack).
+fn expand_hoard(base: Actor, is_hoard: bool, tag: u32) -> Vec<Actor> {
+    if !is_hoard {
+        return vec![base];
+    }
+    let bodies = base.defense.health.max().max(1);
+    (0..bodies)
+        .map(|_| {
+            let mut body = base.clone();
+            body.defense = crate::stats::Defense::new(1, base.defense.health.toughness());
+            body.pack = Some(tag);
+            body
+        })
+        .collect()
 }
 
 fn reward(cat: &Catalog, id: RewardId) -> Option<&Reward> {

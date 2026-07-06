@@ -156,34 +156,62 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
         state.log = vec![scenario.blurb.clone(), "-- the duel begins --".into()];
     } else {
         state.phase = Phase::Marshal;
-        default_intentions(state);
+        default_formation(state);
         state.log = vec![scenario.blurb.clone(), "-- Round 1: Marshal --".into()];
     }
     state.scenario = Some(scenario);
 }
 
-/// §4 — seed each unit's default **intention** from its stats (the policy of
-/// `sub_phase::intention_for`): a ranged unit deals from the Rearguard; an **aggressive** melee unit
-/// (Might ≥ Toughness — a glassy striker) breaks the line as an Outrider; a **durable** melee unit
-/// (Toughness > Might — a wall) holds as a Vanguard. Marshal lets the human (or the AI) override this
-/// per unit each round. (Might-vs-Toughness, not Finesse — the re-tuned tank carries C2F2 to run down
-/// the Outrider, so Finesse no longer separates the wall from the skirmisher; §4 amendment, `5e396fc`.)
+/// §4 — seed each unit's default **intention**. A unit with an **authored preferred** position (a
+/// creature behavior, `Actor::preferred`) holds it; otherwise the position is derived from its stats (the
+/// policy of `sub_phase::intention_for`): a ranged unit deals from the Rearguard; an **aggressive** melee
+/// unit (Might ≥ Toughness — a glassy striker) breaks the line as an Outrider; a **durable** melee unit
+/// (Toughness > Might — a wall) holds as a Vanguard. Marshal lets the human (or the AI) override this per
+/// unit each round. (Might-vs-Toughness, not Finesse — the re-tuned tank carries C2F2 to run down the
+/// Outrider, so Finesse no longer separates the wall from the skirmisher; §4 amendment, `5e396fc`.)
 fn default_intentions(state: &mut State) {
     for side in 0u8..2 {
         let n = state.s_len(side);
         for i in 0..n {
             let a = &state.s_pool(side)[i];
-            let ranged = a.can_contest(Range::Ranged) && !a.can_contest(Range::Melee);
-            let intent = if ranged {
-                Intention::Rearguard
-            } else if a.eff_might() >= a.eff_toughness() {
-                Intention::Outrider
-            } else {
-                Intention::Vanguard
-            };
+            let intent = a.preferred.unwrap_or_else(|| {
+                let ranged = a.can_contest(Range::Ranged) && !a.can_contest(Range::Melee);
+                if ranged {
+                    Intention::Rearguard
+                } else if a.eff_might() >= a.eff_toughness() {
+                    Intention::Outrider
+                } else {
+                    Intention::Vanguard
+                }
+            });
             state.s_intent_mut(side)[i] = intent;
         }
     }
+}
+
+/// §4 / §4.5 — the round's **default formation**: the stat-/behavior-derived intentions
+/// ([`default_intentions`]) **plus** the group layout derived from each body's **pack tag**
+/// (`Actor::pack`) so a **Hoard**'s one-Health bodies re-bind into one swarm every round (the round reset
+/// rebuilds the plan to singletons; this re-imposes the formation). Same-side bodies sharing a tag
+/// collapse to their first member's index; an untagged body is its own singleton. Player-side grouping is
+/// deferred (§4.5 integration status), so heroes stay singletons; only creatures form packs today.
+fn default_formation(state: &mut State) {
+    default_intentions(state);
+    state.plan.hero_group = pack_groups(&state.heroes);
+    state.plan.foe_group = pack_groups(&state.creatures);
+}
+
+/// The per-unit group ids for one side, from the bodies' [`Actor::pack`] tags: an untagged body is its own
+/// singleton (its index); tagged bodies collapse to the **first** index carrying that tag (so `group_of`,
+/// which keys off equal ids, binds them). Mirrors `sub_phase::group_ids`.
+fn pack_groups(pool: &[Actor]) -> Vec<usize> {
+    pool.iter()
+        .enumerate()
+        .map(|(i, a)| match a.pack {
+            None => i,
+            Some(tag) => pool.iter().position(|b| b.pack == Some(tag)).unwrap_or(i),
+        })
+        .collect()
 }
 
 /// Build a battle [`State`] directly from explicit rosters — for **headless auto-resolution** (the
@@ -228,17 +256,28 @@ pub fn battle_state_with(
         state.log = vec!["-- the duel begins --".into()];
     } else {
         state.phase = Phase::Marshal;
-        default_intentions(&mut state);
+        default_formation(&mut state);
         state.log = vec!["-- Round 1: Marshal --".into()];
     }
     state
 }
 
 pub(crate) fn check_outcome(state: &mut State) {
-    if state.living_creatures() == 0 {
+    // A win requires **survivors**: you do not win by dying. A **simultaneous wipe** — both sides
+    // emptied in the same resolution step (§1.9: deaths finalize together at a sub-phase boundary) — is a
+    // **draw**, not a hero victory. So test the mutual case first; only a side that stands while the other
+    // is gone wins.
+    let foes_down = state.living_creatures() == 0;
+    let party_down = state.living_heroes() == 0;
+    if foes_down && party_down {
+        state.outcome = Some(Outcome::Tie(vec![PlayerId(0), PlayerId(1)]));
+        state
+            .log
+            .push("Both sides annihilate each other — a draw.".into());
+    } else if foes_down {
         state.outcome = Some(Outcome::Win(PlayerId(0)));
         state.log.push("Every foe is down — victory!".into());
-    } else if state.living_heroes() == 0 {
+    } else if party_down {
         state.outcome = Some(Outcome::Win(PlayerId(1)));
         state.log.push("The party has fallen.".into());
     }
@@ -288,7 +327,7 @@ impl Deckbound {
         }
         state.round += 1;
         state.plan = Round::sized(state.heroes.len(), state.creatures.len());
-        default_intentions(state);
+        default_formation(state);
         state.phase = Phase::Marshal;
         state
             .log
