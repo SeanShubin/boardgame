@@ -1762,7 +1762,14 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                                             ..default()
                                                         },
                                                     ))
-                                                    .with_children(|tile| spawn_card(tile, card));
+                                                    // Always Small in the fan: the inn is a *projection*
+                                                    // for identifying/selecting a card (a card's `size` is
+                                                    // shared state — growing it here would grow it
+                                                    // everywhere), and the fan's spacing assumes uniform
+                                                    // widths. Full detail lives in the card's home deck.
+                                                    .with_children(|tile| {
+                                                        spawn_card_small(tile, card, 1)
+                                                    });
                                                 }
                                             },
                                         );
