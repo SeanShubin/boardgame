@@ -1,6 +1,6 @@
 //! Deckbound — the cooperative card-combat game, as an [`contract::Game`].
 //!
-//! Combat is a sequence of **rounds** on the §4 **engagement-schedule** model: one damage channel —
+//! Combat is a sequence of **rounds** on the §4 **sub-phase-schedule** model: one damage channel —
 //! untyped **Might** into the **health** pool, resolved pile→bar→pool (`stats`, §2.2); stats read off
 //! the **Form** deck (`form`, stats-as-deck §2.3); data-driven action/effect cards (`cards`); the
 //! round (Marshal → Reveal → Ready → Engage → Refresh) on a single per-round
@@ -19,7 +19,6 @@ pub mod currency;
 pub mod decktree;
 pub mod duel;
 pub mod encounter;
-pub mod engagement;
 pub mod form;
 pub mod game;
 pub mod groups;
@@ -33,6 +32,7 @@ pub mod scenarios;
 pub mod solver;
 pub mod state;
 pub mod stats;
+pub mod sub_phase;
 pub mod transcript;
 pub mod world;
 pub mod zones;

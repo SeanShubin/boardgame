@@ -60,7 +60,7 @@ front-liner). A card never *silently* contradicts the core; an unstated conflict
 | **Defense model** (pile → bar → pool, one channel)       | 🟡 seeded    | `notes/stats.md`, `notes/form-and-defeat.md`; **§2.3 stats-as-deck** specced (code/data migration pending `/spec-sync`)                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Card representation** (suits · base-2 · tree · clocks) | ✅ locked    | **§2.4–§2.7** locked 2026-06-21 (Quantity/Power · base-2 denominations · deck-tree positional notation · reset clocks); code/data migration pending `/spec-sync`                                                                                                                                                                                                                                                                                                                                                                                   |
 | **Cadence/Tempo** (one breadth pool)                     | 🟡 seeded    | §3 — Tempo pays offense *and* defense incl. evade; **Fear channel collapsed** (2026), **Focus/Mind merged** (2026-06-20); `notes/speed-and-tempo.md`                                                                                                                                                                                                                                                                                                                                                                                               |
-| **The battle — hold / break / deal**                     | 🟡 seeded    | §4 **respecced to the phase model 2026** — three declared intentions (Vanguard / Outrider / Rearguard), one Tempo contest, a five-round battle resolved over a fixed phase schedule (supersedes the attrition model); **code pending**. §4.6 the phase schedule, §4.5 groups (spillover · sum-vs-min · Hoard), §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current — **attack derives from the strike card** (the `attack` field folds into the weapon's `reach`/`targets`; no strike card = Neither) |
+| **The battle — hold / break / deal**                     | 🟡 seeded    | §4 **respecced to the phase model 2026** — three declared intentions (Vanguard / Outrider / Rearguard), one Tempo contest, a five-round battle resolved over a fixed sub-phase schedule (supersedes the attrition model); **code pending**. §4.6 the sub-phase schedule, §4.5 groups (spillover · sum-vs-min · Hoard), §4.4 tempo-gated casting updated to match; §4.3 actors-are-decks current — **attack derives from the strike card** (the `attack` field folds into the weapon's `reach`/`targets`; no strike card = Neither) |
 | **Zones / exhaustion**                                   | 🟡 seeded    | **§5 worked** (zones · Form/Action · verbs · tags); resources 🟡 (stats-as-deck now §2.3/§4.3) — `zones-exhaustion-design.md`                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **Aspects / the chord**                                  | ✖ retired   | decommissioned → `retired-ideas.md` (the bar to revive is recorded there)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **Agents** (Character vs Creature)                       | ⬜ stub      | `notes/entities.md`, `notes/decision-making.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -261,7 +261,7 @@ mix-up played with cards. Design background:
 > §3.3 (Exposed) is removed.
 
 > **The Clash is an optional module.** The canonical floor (§4.2) resolves a same-range
-> phase as a **simultaneous trade**; the Clash below *replaces* that trade with a four-card
+> sub-phase as a **simultaneous trade**; the Clash below *replaces* that trade with a four-card
 > mix-up + Force when a scenario enables it. Everything in §3–§4 (roles, phases, positions,
 > Tempo) runs identically either way.
 >
@@ -371,7 +371,7 @@ keeps the tactical exchange small and computable (Charter §2: *computable
 tactics*). Public + all-or-nothing makes it a clean yomi read ("respect the
 meter") rather than a hidden-quantity guessing game. Read intent-first, a
 side's Edge is *the trouble the other side ran into by overextending into the
-clash* — which is why it accrues only inside a mutual phase (§1.8): with no
+clash* — which is why it accrues only inside a mutual sub-phase (§1.8): with no
 one reading you there is no overextension to punish, so no Edge is banked by
 either side. Edge is the price of a contested exchange, never a free resource.
 
@@ -580,10 +580,10 @@ anyone reading you — so there is one resolution path, not two.
 and banking — without a read you can only Unleash. No read, no contest: a blind swing is
 freely parried.*
 
-### 1.9 Resolution order — phase first, attacks before buffs
+### 1.9 Resolution order — sub-phase first, attacks before buffs
 
 **RULE.** When several actions resolve in one exchange, they resolve in **descending
-phase** (= descending tempo at stake), in three tiers:
+sub-phase** (= descending tempo at stake), in three tiers:
 1. **Duels** (reads, §1.8) — RPS, Edge, and their damage settle first.
 2. **Uncontested attacks** — incoming strikes no one contested: the undefended blow
    and §1.7's Focus-overflow free-hits.
@@ -607,7 +607,7 @@ any divergence is an order-dependent mechanic, i.e. a bug. Effects that would de
 a **sibling duel's outcome** are disallowed within a tier — push them to the next tier
 or exchange.
 
-**WHY.** Ordering by phase settles the contested, tempo-spending core (the
+**WHY.** Ordering by sub-phase settles the contested, tempo-spending core (the
 duels) before its consequences, and dissolves the buff-timing paradox with no new
 system: you cannot retroactively dodge an in-flight attack by buffing, because the
 attack is more engaged and resolves first. Resolving the lone intra-tier collision by
@@ -830,16 +830,16 @@ the total you act on, the addends you audit.
 
 > **Locked 2026-06-21.** A mitigation layer is defined by *when* it discards, not only how much.
 >
-> **Amended 2026-07-06.** Toughness's clock is **per phase**, not per round — aligned to the
-> phase model (§2.2, §4.6): each combat phase banks its own pile and wipes it at that phase's
-> boundary, so the sub-Toughness remainder is discarded up to five times a round, not once.
+> **Amended 2026-07-06.** Toughness's clock is **per sub-phase**, not per round — aligned to the
+> phase model (§2.2, §4.6): every sub-phase banks its own pile and wipes it at that
+> sub-phase's boundary, so the sub-Toughness remainder is discarded up to five times a round, not once.
 
 **RULE.** A defensive layer carries a **reset clock** — when the damage it absorbs is discarded — and the
 clock is part of the stat. The Health channel stacks three, from shortest clock to longest:
 - **Armor** — **per strike**: the cut applies to each blow independently, before it enters the pile;
   sub-cut damage is discarded at once. *(Deferred to the gear system, §2.2.)*
-- **Toughness** — **per phase**: damage banks into that phase's pile and flips a Health card
-  each time the pile clears Toughness; the sub-Toughness remainder wipes at the phase boundary
+- **Toughness** — **per sub-phase**: damage banks into that sub-phase's pile and flips a Health card
+  each time the pile clears Toughness; the sub-Toughness remainder wipes at the sub-phase boundary
   (§2.2, §4.6).
 - **Health (Quantity)** — **per encounter**: a flipped Health card stays flipped until combat ends
   (restored on a win, §2.1).
@@ -848,7 +848,7 @@ The clock is **orthogonal to magnitude** — the same Power can sit on any clock
 a design dimension in its own right.
 
 **WHY.** The clocks are **non-redundant because they counter different damage *shapes***: per-strike Armor
-erases **many small** hits (each shaved in full); high per-phase Toughness lumps **few big** hits into
+erases **many small** hits (each shaved in full); high per-sub-phase Toughness lumps **few big** hits into
 rare, meaningful flips; per-encounter Health is raw, shape-agnostic capacity. Keeping all three is
 **several strategies toward one end (survival)** — armor and a tough hide are *different on purpose*, and
 "it matters *when* they discard" is precisely why they do not collapse into one stat (the §2.2 WHY's
@@ -960,9 +960,9 @@ Finesse to the **contest** keeps a strike's force on Might (not on how hard you 
 ### 3.4 The round — orchestration (PvE & PvP)
 
 > **SUPERSEDED by §4 (phase model).** The round is no longer a player-phase/foe-phase loop
-> over formation; it is the **declare intentions → phase schedule → reset** round-loop model in §4.
+> over formation; it is the **declare intentions → sub-phase schedule → reset** round-loop model in §4.
 > **Tempo is now the single currency** (Focus/Mind merged out, 2026-06-20); order-independence is preserved
-> *per phase*. The
+> *per sub-phase*. The
 > PvE/PvP text below (and its Focus-defend modes) is kept for design history; where it conflicts with
 > §4, §4 wins.
 
@@ -973,7 +973,7 @@ whether **both** sides are player-controlled.
 **PvE round** — player heroes (multi-action) vs instinct creatures (one-action, §7):
 1. **Formation** *(public, §4)* — front/back visible; heroes may shift freely.
 2. **Player phase** — each hero spends **Tempo** to **engage** reachable foes (cost = the
-   foe's Cadence). Each phase is a **mutual** Clash (results stick: the hero can kill, the
+   foe's Cadence). Each sub-phase is a **mutual** Clash (results stick: the hero can kill, the
    foe can hit back, the trade is live). An engaged foe **spends its one action defending**,
    so it does **not** also attack this round (engaging neutralizes its attack).
 3. **Foe phase** — every **un-engaged** living creature attacks a reachable hero (by its
@@ -986,7 +986,7 @@ whether **both** sides are player-controlled.
 **PvP round** — both sides player-controlled (multi-action, so no "engage neutralizes"):
 1. **Formation** *(public, §4)* — visible; free shift.
 2. **Targeting** — *simultaneous hidden commit → reveal.* Each actor allocates Tempo to
-   reach-legal phases. Reveal the phase graph; mutual phases (A→B **and** B→A)
+   reach-legal sub-phases. Reveal the sub-phase graph; mutual sub-phases (A→B **and** B→A)
    **merge** into one mutual Clash.
 3. **Defense** — *simultaneous hidden commit → reveal.* Each actor under a one-sided attack
    picks its mode (Focus-defend / counterattack / eat) per attacker, from remaining
@@ -1013,16 +1013,16 @@ phase.
 
 ---
 
-## 4. The battle — hold the front, break the line, deal from the back 🟡 *(**phase model**, 2026 — supersedes the attrition model; **code pending**. Three declared intentions, one Tempo contest, a five-round battle on a per-round Tempo budget, resolved over a fixed phase schedule.)*
+## 4. The battle — hold the front, break the line, deal from the back 🟡 *(**phase model**, 2026 — supersedes the attrition model; **code pending**. Three declared intentions, one Tempo contest, a five-round battle on a per-round Tempo budget, resolved over a fixed sub-phase schedule.)*
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
 > **charge-and-gauntlet** → the **static-ranks** model (three ranks, two tiers, a Finesse crossing contest,
 > catch / slip / parting hits, Fast / Slow windows) → the **attrition** model (two positions, the Outrider
 > *emergent* from grouping's sum-vs-min, the back opened only when the whole front fell). The *spine
 > survives across all of them* — a front that shields a back, **declared** positions, force-not-fiat, the
-> playstyle triangle, the glass-cannon back. The current **phase model** below makes one
+> playstyle triangle, the glass-cannon back. The current **phase** model below makes one
 > deliberate reversal and one simplification: it **re-introduces the Outrider as a declared third
-> intention** (validated 2026 — see `log-driven/brainstorming/phases.md` and the `phase.rs` sim), and
+> intention** (validated 2026 — see `log-driven/brainstorming/phases.md` and the `sub-phase.rs` sim), and
 > it replaces the attrition model's *emergent* breaker — a freed Vanguard charging through a per-unit lock,
 > plus the sum-vs-min slip machinery built to make the Outrider *pop out* — with a breaker you simply
 > **declare**. **Motivation (force vs fiat, the designer's call):** naming the Outrider is **honest fiat** —
@@ -1032,14 +1032,14 @@ phase.
 > *one-word label*; the consequences (the RPS triangle, each role necessary, force-not-fiat) stay emergent
 > from the schedule + Tempo economy, proven on numbers ≤ 3. The crossing contest, catch/slip, and Fast/Slow
 > windows stay retired; the **per-phase pile, the pre-empt, cast/resolve, and disrupt** (§4.6) carry forward
-> unchanged — the phase schedule *is* their named ordering.
+> unchanged — the sub-phase schedule *is* their named ordering.
 
 **The budget (one per-round pool, shared across the whole schedule).** **Tempo** is the action economy
 (§3): a `count × value` pool of **Cadence**-many cards, each worth **Finesse**, that **refills at the end
 of every round.** **Acting on the enemy spends Tempo** — *every* attack, and *every* defense (block, slip,
 or evade), is a Tempo bid; **standing in a position and *absorbing* a blow are free.** The **whole round's
-phase schedule shares the one budget — it does *not* refresh mid-round**, so Tempo spent early (a
-dodge in the Intercept, a raid in the Raid) is gone by the late phases — the **opportunity cost is the
+sub-phase schedule shares the one budget — it does *not* refresh mid-round**, so Tempo spent early (a
+dodge in the Intercept, a raid in the Raid) is gone by the late sub-phases — the **opportunity cost is the
 balance engine** (a Rearguard that spends its shot on a raider has none left for the enemy front, and dies
 to it later). **Health does *not* reset** — it is the **cross-round** meter that decides the **five-round**
 battle. **Finesse is read only in a Tempo contest** (a bid); a strike's *damage* is set by **Might**.
@@ -1066,7 +1066,7 @@ from the **Rearguard**, reaching over its own line. Positions **self-sort by att
 declared Outrider, or a melee body parked in the Rearguard, is dead weight (no rule bans it; it is just
 ineffective).
 
-**The structure — declare, then walk the phase schedule.** The battle runs **five rounds, or until a
+**The structure — declare, then walk the sub-phase schedule.** The battle runs **five rounds, or until a
 side is dead.** Each round:
 
 1. **Marshal** *(hidden, simultaneous — every round).* Each side secretly **groups** its Actors
@@ -1077,19 +1077,19 @@ side is dead.** Each round:
 3. **Ready.** Standing effects — buffs / braces (Support mends, Wall braces) — are cast now:
    ally-targeted, auto-land, last the round (§4.4 `cast: standing`).
 4. **Engage.** The round's strikes resolve over a **fixed sequence of role-vs-role
-   phases** (below). Each phase is a §1.9 boundary: declare → resolve → apply (the per-phase pile,
+   sub-phases** (below). Each sub-phase is a §1.9 boundary: declare → resolve → apply (the per-phase pile,
    §4.6; deaths finalize, §1.3).
 5. **Refresh** *(the Lull).* All spent Tempo resets; **Health carries over**; round++ (cap **5** — an unresolved
    battle is a draw, §0.4).
 
-**The phase schedule — the one ordering system.** Every attacker→target role-pair is resolved in a
+**The sub-phase schedule — the one ordering system.** Every attacker→target role-pair is resolved in a
 fixed order; *every legal pair appears exactly once* (Rearguard→Rearguard is legal **only in the Breach,
 and only once the enemy Vanguard has fallen** — until then a back-line cannot reach a screened back-line,
 §4.6). The **order is the whole interception /
-pre-empt / Reckoning machinery** — there are no other timing rules; a unit struck in an earlier phase
+pre-empt / Reckoning machinery** — there are no other timing rules; a unit struck in an earlier sub-phase
 takes no action in a later one (§4.6 PRINCIPLE):
 
-| Step (in order) | Phases                                                                                                                       | What the fiction is                                                                    |
+| Step (in order) | Sub-phases                                                                                                                       | What the fiction is                                                                    |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | **Intercept**   | Vanguard → Outrider                                                                                                               | the front screens the crossing flankers                                                |
 | **Volley**      | Rearguard → Outrider                                                                                                              | the back fires on the crossers (it shoots *before* they arrive — the pre-empt)         |
@@ -1164,7 +1164,7 @@ Vanguard is gone, its back is open to fire and to any melee that crosses — the
 Outrider buys *early, direct* access at the price of total exposure; waiting for the front to fall is *late*
 but free. Until one of those happens, the living front shields everything behind it.
 
-**Targeting matrix** *(who may strike whom — the phase schedule fixes the order; here is the reach).*
+**Targeting matrix** *(who may strike whom — the sub-phase schedule fixes the order; here is the reach).*
 
 | Chooser                | May strike                                                                                                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1201,7 +1201,7 @@ stats (Cadence / Vitality) and the spent / unspent pool.
 
 **WHY.** One physical picture — a **front**, a **flank**, and a **back** — and a finite Tempo budget spent
 across a **fixed order**. The three declared intentions **are** the playstyle triangle, mediated by the
-schedule + economy (validated on numbers ≤ 3 — `phase.rs`):
+schedule + economy (validated on numbers ≤ 3 — `sub-phase.rs`):
 
 - **Outrider = Aggressor** — break the line to reach the cannons. **Beats the Rearguard** (the Raid kills
   the glass cannon before it can win); **loses to the Vanguard** (the Intercept screens and drains it, so it
@@ -1235,14 +1235,14 @@ guarantees blows eventually land, so Health and Might never become decorative.
   Intercept and Volley), or **the front falling** (the Breach's `V→R`, once that side's Vanguard is gone).
   The Outrider is the *efficient* path, never the only one; a back's safety is always *paid for*, never
   decreed.
-- **One fixed phase schedule** is the sole timing system: every legal attacker→target role-pair
-  resolves once, in the fixed order (Intercept → Volley → Raid → Clash → Breach), and a unit struck in an earlier phase takes no action in a later one
+- **One fixed sub-phase schedule** is the sole timing system: every legal attacker→target role-pair
+  resolves once, in the fixed order (Intercept → Volley → Raid → Clash → Breach), and a unit struck in an earlier sub-phase takes no action in a later one
   (§4.6 PRINCIPLE). The order is **consulted at ambiguity**, not performed each round.
 - **One unified Tempo contest:** a single simultaneous bid; the defender must **beat, not match** (ties
   land); **no iterated auction**, so combat stays a maximizer (§0.4). Defending is Tempo-negative → blows
   always connect in the end → Health / Might stay load-bearing.
 - **One per-round Tempo pool, shared across the whole schedule:** it refills each round but does **not**
-  refresh between phases — the opportunity cost across the order is the balance engine. **Health
+  refresh between sub-phases — the opportunity cost across the order is the balance engine. **Health
   persists**; the battle is capped at **five rounds**.
 - **Groups:** pool-to-block / catch, weakest-link-to-slip; **individual targeting, collective reposition**;
   single-target damage **spills** in declared order (bodyguarding, overflow on death), **AoE hits all** at
@@ -1254,11 +1254,11 @@ guarantees blows eventually land, so Health and Might never become decorative.
 **MANUAL.** *Group your Actors and declare each group's intention — **Vanguard** (hold the front),
 **Outrider** (break the line, raid the back), or **Rearguard** (deal from the back) — and play standing
 buffs / braces, all in one hidden commit. Reveal; no one moves. Strikes then resolve over the fixed
-**phase schedule**: the front screens crossing Outriders, the back fires on them, surviving Outriders
+**sub-phase schedule**: the front screens crossing Outriders, the back fires on them, surviving Outriders
 raid the back, the lines clash, and the deep blows land last. Every attack is one Tempo bid the defender
 must **strictly beat** to block, slip, or evade (a tie lands; a group **pools** Tempo to block but needs
 **every** member to beat it to slip). All of it is paid from **one Tempo pool that does not refresh
-mid-round** — spend it early and you reach the late phases empty. Standing and soaking are free.
+mid-round** — spend it early and you reach the late sub-phases empty. Standing and soaking are free.
 At round end Tempo refreshes, Health carries over; the battle runs **five rounds** or until a side is dead.*
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
@@ -1267,14 +1267,14 @@ At round end Tempo refreshes, Health carries over; the battle runs **five rounds
 - **TERM.** `Vanguard` (Roles) — The declared front: hold the line. The position that can be hit and the shield — while a side's Vanguard lives, its Rearguard is reachable only by an Outrider's raid. Melee Actors fight from here; it screens enemy Outriders, then fights the front, then cleans up.
 - **TERM.** `Outrider` (Roles) — The declared flank: break the line. Forgoes the shield and the safe back to raid the enemy Rearguard directly — but is exposed to the enemy front (Intercept) and back (Volley) *before* it strikes. A lone, high-Tempo melee body; a group cannot raid (slips weakest-link).
 - **TERM.** `Rearguard` (Roles) — The declared back: deal from safety. Untargetable while its own Vanguard lives and no Outrider has reached it; from the back it fires on the enemy front (ranged), buffs allies, and degrades foes. The only answer to an enemy Vanguard's Toughness.
-- **TERM.** `Phase schedule` (Combat) — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider, and Rearguard→Rearguard once the enemy Vanguard has fallen). Each phase cycles until no one will spend Tempo, then resolves. The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
+- **TERM.** `Sub-phase schedule` (Combat) — The fixed order strikes resolve in each round: Intercept (Vanguard→Outrider), Volley (Rearguard→Outrider), Raid (Outrider→Rearguard), Clash (Rearguard→Vanguard, Vanguard→Vanguard), Breach (Vanguard→Rearguard, Outrider→Vanguard, Outrider→Outrider, and Rearguard→Rearguard once the enemy Vanguard has fallen). Each sub-phase cycles until no one will spend Tempo, then resolves. The order is the whole interception / pre-empt / Reckoning system; consult it only when timing is ambiguous.
 - **TERM.** `Tempo contest` (Combat) — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards × Finesse); the defender must strictly **beat** it (a tie lands the hit) to block a melee blow, slip past a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land. No iterated raise-war.
 - **TERM.** `Reach` (Combat) — Where you can attack from: melee strikes from the Vanguard or raids as an Outrider, ranged deals from the Rearguard. Positions self-sort by attack type; a misplaced unit is idle, not barred.
 - **TERM.** `Group` (Combat) — Same-side Actors bound at form-up into one unit: one position, distinct Health; members target individually but reposition collectively. Single-target damage spills in declared order (overflowing on a death); AoE hits every member. A melee attack spends one Tempo per member (the whole group crosses); a ranged attack spends only the shooters'. Blocking/catching pools member Tempo; slipping needs every member to beat the attacker. No size cap, no mixed positions.
 - **TERM.** `Hoard X` (Combat) — A creature whose X health cards each act as a separate entity — mechanically a built-in group of X one-health bodies (a swarm): sums to block, cannot slip, melts to AoE, and loses an attack per body killed.
 - **TERM.** `Spillover` (Combat) — Accumulated single-target damage on a group applied point-by-point in declared order, overflowing to the next member only when the current **dies**. AoE instead hits every member at full value; the two-pool resolution (AoE counted in-pile while spillover cascades, flip at the boundary) is §4.6.
 
-**Open dials (pin with implementation).** The structure (the per-round declared intentions, the phase
+**Open dials (pin with implementation).** The structure (the per-round declared intentions, the sub-phase
 schedule, the one Tempo contest, the three declared intentions, reach, targeting, the five-round cap) is
 settled; these are not:
 
@@ -1377,7 +1377,7 @@ hybrids, and pure-support "neither" kits — each re-derivable from "do you have
 
 **Glossary.** *(Encyclopedia terms — generated from these `TERM` lines into the in-app reference.)*
 
-- **TERM.** `Trade` (Combat) — A same-range melee phase: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
+- **TERM.** `Trade` (Combat) — A same-range melee sub-phase: both sides deal their base through toughness. In the optional Clash module, the trade becomes the four-card mix-up.
 - **TERM.** `Evade` (Combat) — A ranged defense: spend Tempo to dodge a ranged attack (the tempo contest, §3.1) — your evade (cards × Finesse) must strictly beat the attacker's volley, a tie lands the hit. Any target may evade, whatever its own range.
 - **TERM.** `Auto-hit` (Combat) — A ranged or off-range blow the target neither **evades** (Tempo) nor strikes back: it lands uncontested through toughness.
 - **TERM.** `Attack type` (Combat) — Each Actor is Melee, Ranged, Both, or Neither, **read from its strike card** (the weapon's `reach`; no strike card = Neither, §4.3). Melee strikes from the Vanguard; ranged fire from the Rearguard. Lacking the matching attack means you can't strike back — but you may still evade ranged fire with Tempo.
@@ -1451,7 +1451,7 @@ targets**, not by its reach:
   **trade**.
 - **Support** = an **ally-or-self** effect (Brace · Cover · Haste · Empower · Mend · Thorns · Ward, and
   the like). It is **not an attack**: `cast: Standing`, **rank-free**, **auto-lands** (uncontested),
-  castable from **any** position, and lasts the phase.
+  castable from **any** position, and lasts the sub-phase.
 
 So the "a Vanguard cannot rain offensive spells" gate is **not a separate mechanism** — it **falls out of
 §4.2** (ranged fires only from the back): an offensive *ranged* ability needs the Rearguard because *all*
@@ -1524,7 +1524,7 @@ group:
   **every member spends one Tempo for the crossing — even a member with no attack** (it relocated with the
   group); the melee-capable members land the strikes. A **ranged** attack needs no crossing, so **only the
   shooters spend** — the group's melee members **bank their Tempo to bodyguard**. So a group that presses
-  in melee commits its whole budget and has nothing left to defend that phase; a group that fires
+  in melee commits its whole budget and has nothing left to defend that sub-phase; a group that fires
   keeps its front free to soak.
 
 **Groups in the Tempo contest (§4) — pool to block / catch, weakest-link to slip.**
@@ -1583,57 +1583,57 @@ only to price the choice to group.)*
   beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
-### 4.6 The phase schedule — resolution order, the pile, the pre-empt & disrupt 🟡 *(2026 — supersedes the six-phase / per-unit-lock model; the round resolves over the declared-intention schedule of §4; the per-phase pile, `cast`/`resolve`, pre-empt, and disrupt carry forward; code pending)*
+### 4.6 The sub-phase schedule — resolution order, the pile, the pre-empt & disrupt 🟡 *(2026 — supersedes the six-phase / per-unit-lock model; the round resolves over the declared-intention schedule of §4; the per-sub-phase pile, `cast`/`resolve`, pre-empt, and disrupt carry forward; code pending)*
 
 > **Supersedes** the six named phases (Standoff / Fray / Volley / Breach / Reckoning / Lull) and the
 > **per-unit lock / freed-Vanguard charge.** The *spine* holds — a front shields a back, you reach the back
-> by **winning**, force-not-fiat — and the per-phase pile, the pre-empt, `cast`/`resolve`, and disrupt
-> all carry over unchanged. What changes: the round resolves over the **declared-intention phase
+> by **winning**, force-not-fiat — and the per-sub-phase pile, the pre-empt, `cast`/`resolve`, and disrupt
+> all carry over unchanged. What changes: the round resolves over the **declared-intention sub-phase
 > schedule** of §4 (Intercept / Volley / Raid / Clash / Breach), and the breaker is a **declared Outrider**
-> with its own phase (the Raid), not a Vanguard that freed itself through a per-unit lock.
+> with its own sub-phase (the Raid), not a Vanguard that freed itself through a per-unit lock.
 
-**PRINCIPLE — why there are phases at all (re-derive timing questions from this).** *Within* a single
-phase, damage is applied **order-independently** (§1.9): every strike and defense is **committed up
-front** and the whole phase resolves together — *including the blows of a body that dies in that same
-phase* (§1.3: a mortally-wounded unit still lands every blow it committed). The **only** reason to
-split the round into separate phases is to impose a **timing order between them:** a unit **dead at an
-phase boundary takes no further action**, so a death can **preclude** what happens in a *later*
-phase but can never reach back into an *earlier* one. Every schedule rule is a corollary — the
+**PRINCIPLE — why there are sub-phases at all (re-derive timing questions from this).** *Within* a single
+sub-phase, damage is applied **order-independently** (§1.9): every strike and defense is **committed up
+front** and the whole sub-phase resolves together — *including the blows of a body that dies in that same
+sub-phase* (§1.3: a mortally-wounded unit still lands every blow it committed). The **only** reason to
+split the round into separate sub-phases is to impose a **timing order between them:** a unit **dead at an
+sub-phase boundary takes no further action**, so a death can **preclude** what happens in a *later*
+sub-phase but can never reach back into an *earlier* one. Every schedule rule is a corollary — the
 **Intercept and Volley pre-empt the Raid** (an Outrider screened or shot down before the Raid never
-strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the last phase), and a
+strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the last sub-phase), and a
 **committed defense is spent whether or not it succeeds** (it was locked before resolution). When a new
-timing question arises, decide it from this one rule: **put two effects in the same phase if they
-should *trade* (both land); in ordered phases if one death should *silence* the other.** *(This is why
+timing question arises, decide it from this one rule: **put two effects in the same sub-phase if they
+should *trade* (both land); in ordered sub-phases if one death should *silence* the other.** *(This is why
 humans can collapse the schedule in their heads and consult the order only when an outcome is genuinely
 ambiguous — §4.)*
 
-**RULE — the round resolves over the schedule; each phase is a boundary.** A round runs: **Marshal**
-(hidden) → **Reveal** → **Ready** (Standing effects auto-land) → **Engage**, the **phase
+**RULE — the round resolves over the schedule; each sub-phase is a boundary.** A round runs: **Marshal**
+(hidden) → **Reveal** → **Ready** (Standing effects auto-land) → **Engage**, the **sub-phase
 schedule** (Intercept → Volley → Raid → Clash → Breach, §4) → **Refresh** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
-§5.5 — Health persists, round++). Each phase is a §1.9 boundary (declare → resolve → apply; accumulate,
+§5.5 — Health persists, round++). Each sub-phase is a §1.9 boundary (declare → resolve → apply; accumulate,
 then lock; deaths finalize, §1.3). All Tempo across the whole round is paid from **one shared per-round
-pool** (no refresh between phases, §4).
+pool** (no refresh between sub-phases, §4).
 
-**RULE — the accumulator is per-phase.** Each phase owns a **per-target pile**; a landed hit adds
-**Might** to the pile of its **`resolve`** phase, and when the pile clears **Toughness** one Health
-card flips (overflow wasted). **Every pile wipes at its own phase boundary** — sub-threshold damage
-does **not** carry between phases (this **refines §2.2** from "the round's pile" to *the phase's
+**RULE — the accumulator is per-sub-phase.** Each sub-phase owns a **per-target pile**; a landed hit adds
+**Might** to the pile of its **`resolve`** sub-phase, and when the pile clears **Toughness** one Health
+card flips (overflow wasted). **Every pile wipes at its own sub-phase boundary** — sub-threshold damage
+does **not** carry between sub-phases (this **refines §2.2** from "the round's pile" to *the sub-phase's
 pile*). **Health persists** (§2.1); only the sub-threshold pile is ephemeral. Effects that share a
-`resolve` phase **stack in that pile** (additive, order-independent — §0.1: a combo is diverse effects
-in one pile, never a multiplying chain). *Consequence:* **Toughness is a per-phase wall**, so burst
-within one phase beats chip spread across them — revisit Toughness values in `booklet.ron` (numbers
+`resolve` sub-phase **stack in that pile** (additive, order-independent — §0.1: a combo is diverse effects
+in one pile, never a multiplying chain). *Consequence:* **Toughness is a per-sub-phase wall**, so burst
+within one sub-phase beats chip spread across them — revisit Toughness values in `booklet.ron` (numbers
 are human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses an
-phase boundary, so the only number a human carries through the round is Health.)*
+sub-phase boundary, so the only number a human carries through the round is Health.)*
 
-**RULE — the group accumulator: AoE pool + spillover pool (order-independent).** When an phase's
-targets are a **group**, its per-phase pile splits into two group-level pools so the result never
+**RULE — the group accumulator: AoE pool + spillover pool (order-independent).** When an sub-phase's
+targets are a **group**, its per-sub-phase pile splits into two group-level pools so the result never
 depends on the order strikes were declared (§1.9):
 - **AoE pool** — each AoE strike adds its **full Might to every member's pile**.
 - **Spillover pool** — each single-target strike adds its Might here; it **cascades front-to-back in
   declared order**, every member absorbing into its pile until it **dies** (its pile reaches `remaining
   cards × Toughness`), then the remainder overflows to the next.
 The AoE is **counted in each member's pile while the spillover cascades** (so spillover only needs to
-*finish* a body the AoE already softened), and **all cards flip at the phase boundary** (`flips =
+*finish* a body the AoE already softened), and **all cards flip at the sub-phase boundary** (`flips =
 ⌊pile ÷ Toughness⌋`, capped at the member's cards; overflow wasted). *Worked example — AoE 3, spillover 2
 over four 2-Health / 2-Toughness bodies a–d: **a** takes 3 + 1 = 4 (both cards flip → dies; 1 spillover
 overflows), **b** takes 3 + 1 = 4 (dies; spillover spent), **c** and **d** take 3 each (one card apiece,
@@ -1641,11 +1641,11 @@ overflows), **b** takes 3 + 1 = 4 (dies; spillover spent), **c** and **d** take 
 bypasses the bodyguard) — the **anti-cluster counter**: a bodyguard soaks aimed fire but cannot cover the
 area.
 
-**RULE — phases cycle to exhaustion (force-not-fiat).** An phase is not a single exchange but a
-**loop**: units keep committing strikes and defenses — accumulating in the per-phase pile — **until no
+**RULE — sub-phases cycle to exhaustion (force-not-fiat).** An sub-phase is not a single exchange but a
+**loop**: units keep committing strikes and defenses — accumulating in the per-sub-phase pile — **until no
 one wants to spend Tempo** (no positive-effect action remains, or the pools run dry), and only then does the
 boundary fire (flip, finalize deaths, wipe the pile). **Tempo is therefore the true resource:** a unit with
-more Tempo strikes more times in the same phase, and enough Tempo overwhelms **any** Toughness. *(Test:
+more Tempo strikes more times in the same sub-phase, and enough Tempo overwhelms **any** Toughness. *(Test:
 imagine an infinite-Tempo unit — if it could not turn that into unlimited strikes, Toughness would be a hard
 wall and force-not-fiat would break. A Rearguard that still cannot reach the enemy back is **not** a
 violation — staying back was its choice; to wipe everyone it declares Outrider or Vanguard.)*
@@ -1653,7 +1653,7 @@ violation — staying back was its choice; to wipe everyone it declares Outrider
 **RULE — the positive-effect rule (no futile spend), judged at the target.** A unit commits a Tempo action
 only when it **changes the outcome** — and that is judged at the **target's pile, not the lone strike**: a
 strike that cannot flip a card **by itself** is still worth committing if the **combined** committed Might
-on that target this phase crosses a Toughness it would not without it (focus-fire — weak chip ganging
+on that target this sub-phase crosses a Toughness it would not without it (focus-fire — weak chip ganging
 up to crack a wall). Likewise a defense is committed only at the **full** cost that actually beats the bid
 (never a partial spend that still eats the hit), and a strike-back only when it can crack the attacker. A
 **dead unit takes no action.** *(This is the rule the scripted PvE policy and the solver both follow; it is
@@ -1708,17 +1708,17 @@ intact line to the Outrider who pays for it. *(This also lets two front-less all
 **RULE — `cast` & `resolve` (carried forward).** An ability's timing is **two fields**:
 
 - **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Ready step — own-side buffs / braces,
-  auto-land) or **`strike`** (any phase in which the unit may act per reach + back-access; default).
-- **`resolve`** — which phase's pile the effect lands in. A card **authors one of two**: **`on-cast`**
-  (the phase it was used — the old *instant*; a Rearguard may fire on a raider in the Volley *and* on
+  auto-land) or **`strike`** (any sub-phase in which the unit may act per reach + back-access; default).
+- **`resolve`** — which sub-phase's pile the effect lands in. A card **authors one of two**: **`on-cast`**
+  (the sub-phase it was used — the old *instant*; a Rearguard may fire on a raider in the Volley *and* on
   the enemy front in the Clash; the default) or **`reckoning`** (the old *deferred* — paid up front, lands
-  in the **last** phase of the round; that deferral is the **only** reason a breacher can disrupt it).
+  in the **last** sub-phase of the round; that deferral is the **only** reason a breacher can disrupt it).
   The Outrider's **raid** and the Vanguard's **breach** are not authored resolves — they are the timing of
-  their **scheduled phase** (Raid / Breach), exposed to the earlier pre-empt by construction.
+  their **scheduled sub-phase** (Raid / Breach), exposed to the earlier pre-empt by construction.
 
 **Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* comes from
 **reach** (§4.2) + back-access (above). The **disruption window** is the gates between `cast` and `resolve`:
-`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); `reckoning` ⇒ the phases in between are exactly where a
+`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); `reckoning` ⇒ the sub-phases in between are exactly where a
 death can silence it.
 
 **RULE — the rear pre-empts the raider.** A raiding Outrider is **not** special: in the **Intercept** the
@@ -1736,13 +1736,13 @@ primary force → cleanup (§4). An Outrider with no reachable Rearguard falls b
 **RULE — disrupt.** Default disrupt = **kill the caster before its `reckoning` resolves** (no caster, no
 spell). Dedicated **non-lethal disruption** (stagger / silence / unseat) may **cancel or delay** a deferred
 spell without a kill. Both cash out the same way: a deferred spell resolves only if its caster reaches the
-last phase able to cast.
+last sub-phase able to cast.
 
 **WHY.** The schedule *is* the timing system — one fixed order replaces a pile of per-effect timing rules,
 and every consequence (interception, pre-empt, Reckoning) is just a position in it. The **Intercept/Volley
 before the Raid** is the theme made mechanical: a flanker crossing open ground is screened by the front and
 shot at by the back *before* it arrives, so breaking the line is push-your-luck — you suffer their answer to
-reach them. Deferring a slow spell to the last phase is the caster's own bet — *dear and late*: a big
+reach them. Deferring a slow spell to the last sub-phase is the caster's own bet — *dear and late*: a big
 effect that lands **only if it survives** the round it provoked. And **one shared pool** makes every strike,
 defense, raid, counter-shot, and spell a single **allocation** — the opportunity cost across the schedule is
 the balance engine (§4).
@@ -1750,8 +1750,8 @@ the balance engine (§4).
 **GUARANTEES.**
 
 - **The schedule is the sole timing system:** every legal attacker→target role-pair resolves once, in the
-  fixed order (Intercept → Volley → Raid → Clash → Breach); a unit dead at an phase boundary takes no later action. No other timing rule.
-- **Phases cycle to exhaustion:** within an phase, strikes and defenses repeat until no one has a
+  fixed order (Intercept → Volley → Raid → Clash → Breach); a unit dead at an sub-phase boundary takes no later action. No other timing rule.
+- **Sub-phases cycle to exhaustion:** within an sub-phase, strikes and defenses repeat until no one has a
   positive-effect Tempo spend left; only then does the boundary flip / finalize. Tempo is the true
   resource — enough of it overwhelms any Toughness (force-not-fiat).
 - **The positive-effect rule is judged at the target:** a strike counts if the *combined* committed Might
@@ -1771,15 +1771,15 @@ the balance engine (§4).
   Going around the order is always legal, at its Tempo cost.
 - **Pre-empt:** the Intercept and Volley resolve **before** the Raid, so the front's screen and the rear's
   fire can stop a breaker before it strikes.
-- **Per-phase pile:** Might accumulates within an phase and **wipes at its boundary**; Toughness
-  is a per-phase wall; only Health crosses boundaries.
+- **Per-sub-phase pile:** Might accumulates within an sub-phase and **wipes at its boundary**; Toughness
+  is a per-sub-phase wall; only Health crosses boundaries.
 - **`cast`/`resolve`:** `on-cast` is undisruptable; `reckoning` lands last and is disruptable by killing or
-  unseating the caster first; the raid/breach take their scheduled phase's timing.
+  unseating the caster first; the raid/breach take their scheduled sub-phase's timing.
 - **One pool:** every action across the whole schedule is paid from the single per-round Tempo budget.
 - **Force-not-fiat preserved:** you reach the back by winning (the raid) or killing the front (the breach),
   never by decree; every position still dies to enough Tempo.
 
-*(Worked round to be regenerated for the phase schedule:
+*(Worked round to be regenerated for the sub-phase schedule:
 `log-driven/combat-logs/designer/card-combat-round-breach.md`.)*
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
@@ -2077,7 +2077,7 @@ function of clears + assignment, with the strategic fork in **routing** (§8.1�
 ### 8.4 Encounters — the parametric deck-recipe
 
 **RULE.** Combat at a location is **opt-in at a chosen level**. Every location has a **Suit** (§8.5),
-its threat's identity. On first phase a single **encounter card** is drawn from that **Suit's
+its threat's identity. On first sub-phase a single **encounter card** is drawn from that **Suit's
 threat deck** (one deck **per Suit** — five) and then **fixed**: it is the location's **persistent,
 learnable threat** (retrying faces the
 *same* fight). The encounter card is a **parametric deck-recipe** evaluated at the attempted level —
@@ -2131,7 +2131,7 @@ so the count is re-derivable, not arbitrary (#10):
   heal / brace / haste), **Controller** *degrades* theirs (`−`: slow / confuse / weaken). Two is the
   whole of that duality.
 
-So **5 = a complete phase cycle (3) + a complete effect pair (2).** **Four** would break one —
+So **5 = a complete sub-phase cycle (3) + a complete effect pair (2).** **Four** would break one —
 drop a vertex and the triangle is no longer a counter-cycle, or drop an effect and the `+/−` pair is
 lopsided. **Six** would need a new orthogonal axis (there isn't an obvious one beyond *where you fight*
 and *how you bend state*) or an over-granular *split* of an existing role (refinement, not a new role —

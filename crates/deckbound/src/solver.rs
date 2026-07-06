@@ -56,7 +56,7 @@ pub fn greedy(state: &State, actions: &[Action]) -> Action {
     match state.phase {
         // §4 Marshal: each unit defaults to its stat-based intention (which is what the greedy
         // wants — melee fronts/flanks, ranged deals), so the greedy casts any beneficial `Standing` buff,
-        // then advances. **Deploy resolves the whole engagement schedule** (targeting is the resolver's
+        // then advances. **Deploy resolves the whole sub-phase schedule** (targeting is the resolver's
         // job now, not an interactive choice).
         Phase::Marshal => best_play(state, actions).unwrap_or(Deploy),
         // Engage is transient — the round resolves inside Deploy, so this is never a resting choice.
@@ -376,7 +376,7 @@ fn combat_actions(game: &Deckbound, state: &State) -> Vec<Action> {
 
 /// An enemy unit's interchangeability signature: type (name), full mutable state,
 /// and position/lock/pin/acted flags. (See [`target_class`].)
-/// Phase E symmetry pruning. In the engagement-schedule model targeting is **not** an interactive choice
+/// Phase E symmetry pruning. In the sub-phase-schedule model targeting is **not** an interactive choice
 /// (the resolver picks targets, §4.6), so the only branching actions are intention declarations, Standing
 /// casts, Pass, and Deploy — there is no `Target`/`Charge` fan-out to collapse. Pass through unchanged.
 /// *(Follow-on: dedup symmetric units' identical intention sets to prune full-roster branching.)*

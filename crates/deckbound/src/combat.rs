@@ -1,18 +1,18 @@
-//! Combat resolution for the §4.6 **engagement-schedule** model. Damage is untyped Might into the
-//! per-engagement pile (pile→bar→pool, §2.2), gated by the target's effective Toughness ([`apply_strike`]),
+//! Combat resolution for the §4.6 **sub-phase-schedule** model. Damage is untyped Might into the
+//! per-sub-phase pile (pile→bar→pool, §2.2), gated by the target's effective Toughness ([`apply_strike`]),
 //! with the one **Tempo contest** ([`try_evade`] / [`avoid_cost`]): a defender strictly out-bids the
 //! attacker (`cards × Finesse`) to avoid a blow that would flip a card.
 //!
-//! The round resolves the fixed [`SCHEDULE`] of engagements — Intercept (`V→O`), Volley (`R→O`),
+//! The round resolves the fixed [`SCHEDULE`] of sub-phases — Intercept (`V→O`), Volley (`R→O`),
 //! Raid (`O→R`), Clash (`R→V`, `V→V`), Breach (`V→R`, `O→V`, `O→O`) — each a list of
-//! `(attacker-role, target-role)` pairs. Each engagement **cycles to exhaustion**:
-//! [`resolve_engagement_cycle`] declares every eligible attacker on **both sides** against the same
+//! `(attacker-role, target-role)` pairs. Each sub-phase **cycles to exhaustion**:
+//! [`resolve_sub_phase_cycle`] declares every eligible attacker on **both sides** against the same
 //! pre-apply board (targets chosen by [`crate::policy`] — role priorities, the back-access / shield gate,
 //! focus-fire), spends Tempo, then applies the two pools together (AoE to all members, aimed spillover
 //! front-to-back) plus Thorns and melee strike-backs. [`step`] performs one
-//! atomic transition of this walk (one engagement-cycle [`Stage::Cycle`] — all pairs both sides resolved
-//! together, §1.9 — or an engagement [`Stage::Boundary`] that
-//! finalizes deaths via [`tally`] and wipes the per-engagement pile via [`clear_phase_piles`]), holding
+//! atomic transition of this walk (one sub-phase-cycle [`Stage::Cycle`] — all pairs both sides resolved
+//! together, §1.9 — or an sub-phase [`Stage::Boundary`] that
+//! finalizes deaths via [`tally`] and wipes the per-sub-phase pile via [`clear_phase_piles`]), holding
 //! its cursor in [`State::resolution`] so the resolution serializes through RON and can be observed one
 //! step at a time. [`resolve_round`] just drives `step` to completion.
 //!
@@ -20,11 +20,11 @@
 //! Guard / Cover / Thorns / the Controller debuffs, §10) are wired here for the cast/resolve and
 //! status layers. The interactive four-card Clash ([`crate::duel`]) is the optional 1v1 module.
 //!
-//! **PRINCIPLE (§1.9 / §1.3).** Within one engagement everything resolves order-independently,
-//! *including the blow of a body that dies in that same engagement*. The schedule order is the only
-//! timing: a unit dead at an engagement boundary takes no further action, so a death **precludes** a
-//! later engagement but never reaches back into an earlier one (the disrupt — a kill before the last
-//! engagement fizzles a deferred Reckoning spell — is a corollary).
+//! **PRINCIPLE (§1.9 / §1.3).** Within one sub-phase everything resolves order-independently,
+//! *including the blow of a body that dies in that same sub-phase*. The schedule order is the only
+//! timing: a unit dead at an sub-phase boundary takes no further action, so a death **precludes** a
+//! later sub-phase but never reaches back into an earlier one (the disrupt — a kill before the last
+//! sub-phase fizzles a deferred Reckoning spell — is a corollary).
 
 use crate::actor::{Actor, Intention, Range, TargetRule};
 use crate::cards::Effect;
@@ -144,18 +144,18 @@ fn cover_redirect(pool: &[Actor], aimed: usize) -> usize {
     aimed
 }
 
-/// §10 **Burn** DoT tick (Artillery): in the last engagement (the Breach), **one** Burn stack on each
-/// living member of `pool` deals its `power` Might into that bearer's per-engagement pile, then **one
+/// §10 **Burn** DoT tick (Artillery): in the last sub-phase (the Breach), **one** Burn stack on each
+/// living member of `pool` deals its `power` Might into that bearer's per-sub-phase pile, then **one
 /// stack is removed** (a `stacks`-deep Burn therefore burns for `stacks` Reckonings). Caster-independent
-/// once placed. Call just before [`tally`] at the last engagement's (Breach) boundary. A bearer with
-/// several distinct Burns ticks each (one stack of each) this engagement.
+/// once placed. Call just before [`tally`] at the last sub-phase's (Breach) boundary. A bearer with
+/// several distinct Burns ticks each (one stack of each) this sub-phase.
 pub fn tick_burn(pool: &mut [Actor], log: &mut Vec<String>) {
     for a in pool.iter_mut() {
         if a.is_down() {
             continue;
         }
         // Tick the first Burn stack, then remove it (−1 stack). Repeat so multiple *distinct* Burn
-        // effects each tick once — but the same effect's extra stacks persist to later engagements' ticks.
+        // effects each tick once — but the same effect's extra stacks persist to later sub-phases' ticks.
         // We model this simply: tick & drop exactly one stack per call (the common single-Burn case).
         if let Some(p) = a
             .tokens
@@ -283,7 +283,7 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 }
 
 // ===========================================================================================
-// The §4.6 engagement-schedule resolver lives below (`resolve_pair` / `step` / `resolve_round`),
+// The §4.6 sub-phase-schedule resolver lives below (`resolve_pair` / `step` / `resolve_round`),
 // alongside the shared strike helpers above (`base_strike`, `snapshot`, `charged_snapshot`,
 // `apply_strike`, `reflect_thorns`, `cover_redirect`, `try_evade`, `tick_burn`, `play_card`,
 // `resolve_reckoning`). The superseded six-phase resolvers (the Fray clash, the breach-list lock,
@@ -291,7 +291,7 @@ pub fn try_evade(defender: &mut Actor, volley: u32, log: &mut Vec<String>) -> bo
 // ===========================================================================================
 
 // ====================================================================================================
-// §4.6 The engagement-schedule resolver — ports the validated `engagement.rs` algorithm onto `Actor`s.
+// §4.6 The sub-phase-schedule resolver — ports the validated `sub_phase.rs` algorithm onto `Actor`s.
 // Mechanics: schedule order, cycling-to-exhaustion, the two-pool AoE/spillover accumulator, group
 // spillover / melee-crossing payment / weakest-link slip, conditional R→R, back-access gate, and
 // melee-reflexive strike-back. The *decisions* (target priority, focus-fire, evade, when to stop) come
@@ -360,17 +360,17 @@ struct Decl {
     aoe: bool,
 }
 
-/// **Declare** one cycle's strikes for `atk_side` at schedule engagement `step_idx` — a single pass over
-/// every living attacker of `atk_side`, collecting each unit's governing strike for **this engagement
-/// across all its pairs** (the priority list, timed against the engagement index by
-/// [`policy::governing_target`], picks the target — so a unit that should hold for a later engagement, or
-/// strike a different pair of *this* engagement, is captured correctly). A melee group pays the collective
+/// **Declare** one cycle's strikes for `atk_side` at schedule sub-phase `step_idx` — a single pass over
+/// every living attacker of `atk_side`, collecting each unit's governing strike for **this sub-phase
+/// across all its pairs** (the priority list, timed against the sub-phase index by
+/// [`policy::governing_target`], picks the target — so a unit that should hold for a later sub-phase, or
+/// strike a different pair of *this* sub-phase, is captured correctly). A melee group pays the collective
 /// crossing (every living member −1 Tempo) once per cycle; a working Tempo view prevents a unit/group
 /// over-committing within the pass. Spends the Tempo (the actual crossing/strike payment) on `atk_side`
 /// and returns the committed [`Decl`]s. Read-only on the defender side.
 fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
     let def_side = 1 - atk_side;
-    // Which attacker roles even act this engagement (so we skip a unit whose role has no pair here).
+    // Which attacker roles even act this sub-phase (so we skip a unit whose role has no pair here).
     let atk_roles: Vec<Intention> = SCHEDULE[step_idx].iter().map(|&(a, _)| a).collect();
     // --- Read-only declare: collect decls + the Tempo each crossing/strike will spend. ---
     let decls: Vec<Decl> = {
@@ -393,7 +393,7 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
             let Some((_role, ti)) =
                 policy::governing_target(step_idx, &atk[ai], atk_role, atk, atk_int, def, def_int)
             else {
-                continue; // holds for a later engagement, or no crackable target this engagement
+                continue; // holds for a later sub-phase, or no crackable target this sub-phase
             };
             let melee = atk[ai].attack.has(Range::Melee);
             let rep = group_rep(atk_grp, ai);
@@ -459,7 +459,7 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
 /// evades pay their bid; AoE banks full Might into **every** target-group member FIRST (counted in-pile,
 /// unevadable, no spillover); then aimed spillover cascades front-to-back per group (a lone Evade soaker
 /// may dodge; a group walls). Thorns reflect onto each attacker that landed an aimed blow; melee soakers
-/// strike back. Mirrors `engagement.rs`'s per-cycle apply. The `might` in each [`Decl`] was captured at
+/// strike back. Mirrors `sub_phase.rs`'s per-cycle apply. The `might` in each [`Decl`] was captured at
 /// declare, so a unit killed earlier this cycle still lands its committed blow (§1.3).
 fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<String>) {
     let def_side = 1 - atk_side;
@@ -573,21 +573,21 @@ fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<Str
     }
 }
 
-/// Resolve **one engagement-cycle** at schedule engagement `step_idx` (§4.6 / §1.9): a single declare
-/// pass collects **every** unit's strike for this engagement across **all its pairs and both sides**
+/// Resolve **one sub-phase-cycle** at schedule sub-phase `step_idx` (§4.6 / §1.9): a single declare
+/// pass collects **every** unit's strike for this sub-phase across **all its pairs and both sides**
 /// (order-independent — both sides declare against the same pre-apply board), then both sides' strikes
 /// apply together (AoE-first → spillover cascade → Thorns → strike-backs). Returns `true` if any side
-/// committed a strike (the engagement should cycle again — the per-engagement pile persists), `false`
-/// when the engagement is exhausted (the caller then crosses the boundary). **Decision-agnostic**: all
+/// committed a strike (the sub-phase should cycle again — the per-sub-phase pile persists), `false`
+/// when the sub-phase is exhausted (the caller then crosses the boundary). **Decision-agnostic**: all
 /// target / focus-fire / evade / strike-back choices come from [`crate::policy`].
-fn resolve_engagement_cycle(state: &mut State, step_idx: usize) -> bool {
+fn resolve_sub_phase_cycle(state: &mut State, step_idx: usize) -> bool {
     // Both sides declare against the **same** pre-apply state (declaring spends only the declaring
     // side's own Tempo and reads board health, which no declare mutates — so the order of the two
     // declares does not matter, §1.9).
     let decls_0 = declare_side(state, 0, step_idx);
     let decls_1 = declare_side(state, 1, step_idx);
     if decls_0.is_empty() && decls_1.is_empty() {
-        return false; // exhausted — no positive-effect strike left this engagement
+        return false; // exhausted — no positive-effect strike left this sub-phase
     }
     let mut log = std::mem::take(&mut state.log);
     // Apply both sides. Each side's strikes mutate only the *other* pool's Health (strike-backs reach
@@ -599,7 +599,7 @@ fn resolve_engagement_cycle(state: &mut State, step_idx: usize) -> bool {
     true
 }
 
-/// §4.6 — the fixed **engagement schedule**: five engagements, each a list of `(attacker, target)` role
+/// §4.6 — the fixed **sub-phase schedule**: five sub-phases, each a list of `(attacker, target)` role
 /// pairs resolved in order. This is the single source of truth shared by [`resolve_round`] and the
 /// steppable [`step`] machine — they must walk it identically.
 pub const SCHEDULE: &[&[(Intention, Intention)]] = {
@@ -621,21 +621,21 @@ pub const SCHEDULE: &[&[(Intention, Intention)]] = {
     ]
 };
 
-/// Where the steppable resolver's cursor sits within the current engagement. One [`step`] performs
+/// Where the steppable resolver's cursor sits within the current sub-phase. One [`step`] performs
 /// exactly one of these transitions, leaving `State` in a serializable resting micro-state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Stage {
-    /// Run **one engagement-cycle** of the current engagement (§4.6): a single declare pass across all
-    /// its pairs and both sides, applied together (see [`resolve_engagement_cycle`]). If anything
-    /// committed, the engagement cycles again (stays in `Cycle`); otherwise it advances to [`Boundary`].
+    /// Run **one sub-phase-cycle** of the current sub-phase (§4.6): a single declare pass across all
+    /// its pairs and both sides, applied together (see [`resolve_sub_phase_cycle`]). If anything
+    /// committed, the sub-phase cycles again (stays in `Cycle`); otherwise it advances to [`Boundary`].
     Cycle,
-    /// The engagement is exhausted — finalize deaths ([`tally`]) and wipe the per-engagement pile
-    /// ([`clear_phase_piles`]) on both pools (the §4.6 boundary), then advance to the next engagement.
+    /// The sub-phase is exhausted — finalize deaths ([`tally`]) and wipe the per-sub-phase pile
+    /// ([`clear_phase_piles`]) on both pools (the §4.6 boundary), then advance to the next sub-phase.
     Boundary,
 }
 
-/// The in-flight resolution cursor for the §4.6 engagement schedule, held in [`State::resolution`] while
-/// a round resolves. It indexes into [`SCHEDULE`] (`step` = engagement) and tracks the [`Stage`]
+/// The in-flight resolution cursor for the §4.6 sub-phase schedule, held in [`State::resolution`] while
+/// a round resolves. It indexes into [`SCHEDULE`] (`step` = sub-phase) and tracks the [`Stage`]
 /// (cycling vs the boundary). Each [`step`] advances it one atomic transition; when it runs off the end
 /// of the schedule the resolution is complete and [`step`] returns `false`.
 ///
@@ -644,9 +644,9 @@ pub enum Stage {
 /// in-between states, and so the whole resolution serializes through RON.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Resolution {
-    /// Index into [`SCHEDULE`] — which engagement (Intercept … Breach) is current.
+    /// Index into [`SCHEDULE`] — which sub-phase (Intercept … Breach) is current.
     pub step: usize,
-    /// The cursor within the engagement: cycling, or its boundary.
+    /// The cursor within the sub-phase: cycling, or its boundary.
     pub stage: Stage,
 }
 
@@ -660,16 +660,16 @@ impl Resolution {
     }
 }
 
-/// Perform **one atomic transition** of the §4.6 engagement-schedule resolution on `state`, advancing
+/// Perform **one atomic transition** of the §4.6 sub-phase-schedule resolution on `state`, advancing
 /// (and, when needed, initializing) [`State::resolution`]. Returns `true` if more steps remain and
 /// `false` when the resolution is complete (the cursor is then cleared and the round should advance).
 ///
 /// One step does exactly one of:
-/// - run **one engagement-cycle** ([`resolve_engagement_cycle`]) — a declare-all-pairs-both-sides pass
-///   plus its joint apply; if it committed, the engagement cycles again, else it advances to the
+/// - run **one sub-phase-cycle** ([`resolve_sub_phase_cycle`]) — a declare-all-pairs-both-sides pass
+///   plus its joint apply; if it committed, the sub-phase cycles again, else it advances to the
 ///   boundary, or
-/// - cross the engagement **boundary**: finalize deaths ([`tally`]) on both pools and wipe the
-///   per-engagement pile ([`clear_phase_piles`]) on both, then move to the next engagement.
+/// - cross the sub-phase **boundary**: finalize deaths ([`tally`]) on both pools and wipe the
+///   per-sub-phase pile ([`clear_phase_piles`]) on both, then move to the next sub-phase.
 ///
 /// The sequence of steps reproduces [`resolve_round`]'s exact end state — `resolve_round` is just
 /// `while step(state) {}`.
@@ -682,14 +682,14 @@ pub fn step(state: &mut State) -> bool {
     }
     match cur.stage {
         Stage::Cycle => {
-            // One engagement-cycle. While it makes progress, stay in `Cycle` (the pile persists across
-            // cycles); when a cycle commits nothing, the engagement is exhausted → its boundary.
-            if !resolve_engagement_cycle(state, cur.step) {
+            // One sub-phase-cycle. While it makes progress, stay in `Cycle` (the pile persists across
+            // cycles); when a cycle commits nothing, the sub-phase is exhausted → its boundary.
+            if !resolve_sub_phase_cycle(state, cur.step) {
                 cur.stage = Stage::Boundary;
             }
         }
         Stage::Boundary => {
-            // Engagement boundary: finalize deaths, then wipe the per-engagement pile (§4.6).
+            // Sub-phase boundary: finalize deaths, then wipe the per-sub-phase pile (§4.6).
             let mut log = std::mem::take(&mut state.log);
             tally(&mut state.heroes, &mut log);
             tally(&mut state.creatures, &mut log);
@@ -710,10 +710,10 @@ pub fn step(state: &mut State) -> bool {
     }
 }
 
-/// §4.6 — resolve one round over the **engagement schedule**, in place on `state`. Tempo is assumed
+/// §4.6 — resolve one round over the **sub-phase schedule**, in place on `state`. Tempo is assumed
 /// refreshed for the round. Each unit acts by its declared intention (`state.s_intent`); the resolution
-/// policy (prey-with-fallback, every-Tempo-spend-must-matter) is ported from `engagement.rs`. Each
-/// engagement is a §1.9 boundary: after it, deaths finalize and the per-engagement pile wipes.
+/// policy (prey-with-fallback, every-Tempo-spend-must-matter) is ported from `sub_phase.rs`. Each
+/// sub-phase is a §1.9 boundary: after it, deaths finalize and the per-sub-phase pile wipes.
 ///
 /// Drives the steppable [`step`] machine to completion — the phase-boundary end state is identical to
 /// resolving the schedule in one synchronous pass.
@@ -731,8 +731,8 @@ pub fn resolve_reckoning(
     deferred: &[Deferred],
     log: &mut Vec<String>,
 ) {
-    // §10 Artillery DoT — Burn ticks into the per-engagement pile first (caster-independent), then the
-    // deferred spells release. Both land in this (last) engagement; deaths finalize at its (Breach) boundary.
+    // §10 Artillery DoT — Burn ticks into the per-sub-phase pile first (caster-independent), then the
+    // deferred spells release. Both land in this (last) sub-phase; deaths finalize at its (Breach) boundary.
     tick_burn(heroes, log);
     tick_burn(foes, log);
     for d in deferred {
@@ -1201,7 +1201,7 @@ mod tests {
                 let mut a = shooter("Sniper", 3, 4, 1);
                 a.aoe = aoe;
                 // One Tempo per round (like the sim's M3/C1 Mage): a single aimed strike cannot
-                // accumulate a flip on the T4 front before the engagement boundary wipes the pile.
+                // accumulate a flip on the T4 front before the sub-phase boundary wipes the pile.
                 a.offense.cadence = 1;
                 a.tempo = 1;
                 a

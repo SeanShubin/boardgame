@@ -330,7 +330,7 @@ player would otherwise *buy*.
    (permanent) or an **Action card** (zone-governed Spend/Recover). The detailed **Resource layer**
    (health / Tempo / Focus pools) is the remaining open piece there. *(§3.3.)*
 3. **Encounter specifics (§4.1)** — *resolved.* Reveal = currency type → threat deck (not the
-   card). The encounter is **drawn & fixed on first engagement** — **only a fight locks it**;
+   card). The encounter is **drawn & fixed on first sub-phase** — **only a fight locks it**;
    a once-rolled composition stays fixed on retry (the tutorial property). A **non-core
    scouting ability** may preview it without fighting (its own mechanics deferred). Scaling is
    **thematic & flexible** (any stat, signalling its counter, bounded by table arithmetic).

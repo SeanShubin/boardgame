@@ -18,7 +18,7 @@ Each character takes one of two **stances** — a free declaration, no card:
 - **Attack** — commit to a target: the opposing front line, or a **run** to their
   back line. You deal your attack, but you are **exposed everywhere else** — any
   *other* attacker auto-succeeds against you. You get the [RPS](decision-making.md)
-  stance only against a target who is attacking you back (a mutual engagement).
+  stance only against a target who is attacking you back (a mutual sub-phase).
 - **Hold** — forgo attacking. Instead you make yourself **available to answer any
   attacker** (your safety) — but availability is not free coverage: you **negate** a blow
   only while your **focus pool** still covers it, each prediction costing the
@@ -67,7 +67,7 @@ Offense and defense obey **different limits**, which is what makes the asymmetry
   independent. So **focusing a foe who's occupied elsewhere is a one-way gank:** you predict
   (and counter) their blows *and* land yours free, because their prediction is spent on someone
   else. The asymmetry is always **paid for by Mind** — the occupied side could buy the
-  Mind to predict you back (see [engagement bandwidth](#speed-is-the-currency-of-engagement)).
+  Mind to predict you back (see [sub-phase bandwidth](#speed-is-the-currency-of-sub-phase)).
 
 Two consequences worth naming:
 
@@ -153,15 +153,15 @@ that earn it (a shield **Bash**), never something every blow does.
 A **Runner** is stopped by the wall's **drag** (Speed), not by an interrupt: cover its
 Speed and it's halted at the front — then a Guard's **Power** simply damages it.
 
-## Speed is the currency of engagement
+## Speed is the currency of sub-phase
 
 The split has a name — **"Speed swings, Mind reads, toughness endures"** (see
 [speed & tempo](speed-and-tempo.md)): Speed is how many foes you **land** on, Mind is how
-many you **predict**. Engagement has **two** mirrored "handle many" limits, one **pool**
+many you **predict**. Sub-phase has **two** mirrored "handle many" limits, one **pool**
 per stat:
 
 - **Speed = how many blows you can land.** Striking several foes (or several times)
-  spends [tempo](speed-and-tempo.md): each engagement costs the target's Speed, paid
+  spends [tempo](speed-and-tempo.md): each sub-phase costs the target's Speed, paid
   after; **overextend** (go negative) and the extra blow still lands but leaves you
   **exposed**. Speed also catches Runners (the wall's [drag](#running-the-gauntlet)) and
   decides who lands first.
@@ -185,7 +185,7 @@ to make the blows bite) and one character becomes a **one-man army** — the
 
 A run isn't *sequenced* past guards one at a time — that would need a within-line order
 we deliberately don't have (a [front line is a **set**](zones.md#zones-at-every-scope),
-not a row). Instead, **the gauntlet is just [bandwidth](#speed-is-the-currency-of-engagement)
+not a row). Instead, **the gauntlet is just [bandwidth](#speed-is-the-currency-of-sub-phase)
 pointed outward:** the front line spends its **combined tempo** to **engage the Runners
 crossing it**, and whatever it can't afford **passes through.**
 
@@ -234,7 +234,7 @@ deck](decision-making.md#environment-creatures--hazards-non-player):
 ## Why cardless
 
 Lines, targets, and runs are **declarations**, not cards — the positioning layer,
-kept separate from the tactical card exchange within each engagement, and free to
+kept separate from the tactical card exchange within each sub-phase, and free to
 take a stance.
 
 ## Open questions

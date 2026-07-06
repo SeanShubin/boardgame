@@ -1,6 +1,6 @@
 # Combat — phase-by-phase appendix
 
-> **Auto-generated from `crates/deckbound/src/rules.rs`** (the canonical mechanical text) — do not edit by hand; regenerate with `cargo run -p deckbound --example handbook`. This is the *mechanical* reference: each phase does exactly one thing, over two accumulators (the per-engagement damage **pile** and **Tempo**). The thematic overview lives in the rulebook.
+> **Auto-generated from `crates/deckbound/src/rules.rs`** (the canonical mechanical text) — do not edit by hand; regenerate with `cargo run -p deckbound --example handbook`. This is the *mechanical* reference: each phase does exactly one thing, over two accumulators (the per-sub-phase damage **pile** and **Tempo**). The thematic overview lives in the rulebook.
 
 ## Phases (in round order)
 
@@ -10,21 +10,25 @@
 
 3. **Ready** — Standing abilities (a Wall's brace, a Support's ally buff) are cast now. They are ally-targeted, auto-land, and last the round.
 
-4. **Intercept** — The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid. An Outrider cut down here never reaches the back.
+4. **Engage** — The two lines meet and trade blows: the fixed **sub-phase schedule** resolves in order — Intercept → Volley → Raid → Clash → Breach — each sub-phase a §1.9 boundary. Untyped Might banks into the per-sub-phase pile; clearing a target's Toughness flips a Health card.
 
-5. **Volley** — The back fires on the flankers: each Rearguard shoots an enemy Outrider — before it arrives (the pre-empt). A shot spent here is a shot not fired at the enemy front later.
+5. **Refresh (the Lull)** — Round end: all spent Tempo resets, Health carries over, and the round advances. A battle not decided within five rounds is a draw.
 
-6. **Raid** — Surviving Outriders strike the enemy Rearguard they crossed for. The breaker that got through the Intercept and Volley lands on the exposed back.
+## Sub-phases of the Engage phase (in schedule order)
 
-7. **Clash** — The lines meet: each Rearguard fires on an enemy Vanguard (the only answer to its Toughness), and each engaging Vanguard strikes an enemy Vanguard. Untyped Might banks into the per-phase pile; clearing the target's Toughness flips a Health card.
+1. **Intercept** — The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid. An Outrider cut down here never reaches the back.
 
-8. **Breach** — The deep, trailing blows land last: a Vanguard crosses to an enemy Rearguard whose own front has fallen, and Outriders with no reachable back fall on the enemy front or each other.
+2. **Volley** — The back fires on the flankers: each Rearguard shoots an enemy Outrider — before it arrives (the pre-empt). A shot spent here is a shot not fired at the enemy front later.
 
-9. **Wipe pile** — At each engagement boundary the per-phase damage pile is cleared: sub-threshold damage that did not turn a Health card does not carry into the next engagement. Only Health persists.
+3. **Raid** — Surviving Outriders strike the enemy Rearguard they crossed for. The breaker that got through the Intercept and Volley lands on the exposed back.
 
-10. **Refresh (the Lull)** — Round end: all spent Tempo resets, Health carries over, and the round advances. A battle not decided within five rounds is a draw.
+4. **Clash** — The lines meet: each Rearguard fires on an enemy Vanguard (the only answer to its Toughness), and each engaging Vanguard strikes an enemy Vanguard. Untyped Might banks into the per-sub-phase pile; clearing the target's Toughness flips a Health card.
+
+5. **Breach** — The deep, trailing blows land last: a Vanguard crosses to an enemy Rearguard whose own front has fallen, and Outriders with no reachable back fall on the enemy front or each other.
 
 ## Cross-cutting behaviors
+
+- **Wipe pile** — At each sub-phase boundary the per-sub-phase damage pile is cleared: sub-threshold damage that did not turn a Health card does not carry into the next sub-phase. Only Health persists.
 
 - **Tempo contest** — The one attack-vs-defense mechanic: a single simultaneous Tempo bid (cards x Finesse); the defender must strictly exceed it (a tie lands the hit) to block a melee blow, slip a blocker, or evade ranged fire. Defending is Tempo-negative, so blows eventually land.
 

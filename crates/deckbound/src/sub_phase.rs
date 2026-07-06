@@ -1,4 +1,4 @@
-//! A **balance front-end** over the canon engagement-schedule combat model (Spec §4 / §4.5 / §4.6). It is
+//! A **balance front-end** over the canon sub-phase-schedule combat model (Spec §4 / §4.5 / §4.6). It is
 //! a thin authoring + reporting layer: a "class" is an attack (range × shape) plus a five-stat allocation,
 //! the role *emerges* from range+stats ([`intention_for`]), and the hold/break/deal triangle, the
 //! single-vs-AoE trade, and the counterability of extreme formations are probed without the full game loop.
@@ -11,7 +11,7 @@
 //! thing this layer still owns is the **default policy** stand-in (which intention a body declares, via
 //! [`intention_for`]) — the load-bearing assumption for approximating uncomputable hidden-simultaneous PvP.
 //!
-//! The damage core (Might into a per-engagement pile, Toughness gates the flip) and the evade/endure rule
+//! The damage core (Might into a per-sub-phase pile, Toughness gates the flip) and the evade/endure rule
 //! (a Vanguard endures, others evade — [`crate::policy::role_evades`]) live in the engine. The per-unit
 //! [`HitMode`] / `hits` field on [`Unit`] is therefore **informational** (the role default); the resolver
 //! does not read it.
@@ -28,7 +28,7 @@ use serde::Deserialize;
 
 /// How a unit answers incoming blows (the **hit policy**, part of a [`Strategy`]) — the one card-writable
 /// reaction knob. `Evade`: spend Tempo to dodge a blow that would flip a card, when affordable (and so
-/// arrive at later engagements poorer). `Endure`: never spend Tempo on defense — eat every blow and keep
+/// arrive at later sub-phases poorer). `Endure`: never spend Tempo on defense — eat every blow and keep
 /// the whole pool for offense (the reckless "ignore hits to reach the back" line).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HitMode {
@@ -396,7 +396,7 @@ pub fn rps_report(triad: &Triad) -> String {
 /// dominates and none is dead.
 pub fn matrix_report(triad: &Triad, max_n: u32) -> String {
     let tags = ["F", "A", "M"];
-    let mut out = String::from("Engagement-model matrix (equal size, default vs default):\n\n");
+    let mut out = String::from("Sub-phase-model matrix (equal size, default vs default):\n\n");
     for n in 1..=max_n {
         let comps = crate::balance::compositions_k(n, 3);
         out.push_str(&format!("== size {n} ==\n"));
@@ -584,7 +584,7 @@ pub fn extreme_sides() -> Vec<(&'static str, Vec<Unit>)> {
 
 /// **Counterability report.** Run the balanced party against each extreme and report the result. A
 /// balanced party *counters* an extreme when the extreme does **not** beat it (the balanced party WINs or
-/// the engagement is a draw). A LOSS row is an uncountered extreme — a balance gap to fix.
+/// the sub-phase is a draw). A LOSS row is an uncountered extreme — a balance gap to fix.
 pub fn counter_report() -> String {
     let (party, pstrat) = balanced_party();
     let mut out = String::from("Counterability — balanced party vs extreme scenarios:\n");
@@ -640,7 +640,7 @@ mod tests {
     }
 
     /// AoE bypasses the bodyguard. A **tough front** (T4) shields two squishy Mages; a lone attacker (one
-    /// Tempo/round, M3) cannot crack the front with **aimed** fire (per-engagement pile wipes before it
+    /// Tempo/round, M3) cannot crack the front with **aimed** fire (per-sub-phase pile wipes before it
     /// accumulates a flip), so the back Mages live — but **AoE** lands on every member at once and kills
     /// them through the shield. `cargo test -p deckbound probe_aoe_vs_group -- --ignored --nocapture`.
     #[test]
@@ -673,10 +673,10 @@ mod tests {
     }
 
     /// Trace specific matchups to calibrate understanding of the resolver.
-    /// `cargo test -p deckbound probe_trace_engagement -- --ignored --nocapture`.
+    /// `cargo test -p deckbound probe_trace_sub_phase -- --ignored --nocapture`.
     #[test]
     #[ignore]
-    fn probe_trace_engagement() {
+    fn probe_trace_sub_phase() {
         const TRIAD: Triad = [
             ("Fighter", (1, 2, 3, 2, 2)), // hold: T3 bounces the breaker; C2F2 runs it down; endures the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid
@@ -697,10 +697,10 @@ mod tests {
     }
 
     /// The level-1 stat triad, ported as-is to the new model — expected to *not* hold the triangle yet
-    /// (the numbers were tuned for the old phase order). `cargo test -p deckbound probe_engagement -- --ignored --nocapture`.
+    /// (the numbers were tuned for the old phase order). `cargo test -p deckbound probe_sub_phase -- --ignored --nocapture`.
     #[test]
     #[ignore]
-    fn probe_engagement() {
+    fn probe_sub_phase() {
         const TRIAD: Triad = [
             ("Fighter", (1, 2, 3, 2, 2)), // hold: T3 bounces the breaker; C2F2 runs it down; endures the dealer
             ("Assassin", (2, 1, 1, 2, 2)), // break: M2 cracks the dealer's T1; C2 to dodge + raid

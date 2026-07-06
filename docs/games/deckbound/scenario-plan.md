@@ -23,10 +23,10 @@
 
 ## Combat mode
 
-- **Deterministic base (canonical floor):** no Clash. A **same-range** engagement is a
+- **Deterministic base (canonical floor):** no Clash. A **same-range** sub-phase is a
   **simultaneous trade** (both deal base through armor/toughness, §2); a **range mismatch** is an
   **auto-hit** (§4.2). All of lanes / roles / phases / Tempo / Focus runs on top.
-- **Clash module (optional):** when enabled, a same-range engagement instead runs the four-card
+- **Clash module (optional):** when enabled, a same-range sub-phase instead runs the four-card
   Clash (§1.0, Strike/Anticipate/Gather/Evade + Force). Per-scenario switch. The base tutorials
   run base mode; the Clash-module tutorials turn it on.
 
@@ -121,5 +121,5 @@ Each is one lesson, algorithmic.
 - Round = §4 declaration cycles (count → assignment → hold/slip → outrider targets → rearguard
   targets) interleaved with the three resolution phases; order-independent per phase.
 - Count-adaptivity (§4.1): present a choice only when it has ≥2 legal options, so 1 v 1 is the
-  plain engagement.
+  plain sub-phase.
 - Keep `engine` Bevy-free; the renderer stays generic over `engine::Game`.

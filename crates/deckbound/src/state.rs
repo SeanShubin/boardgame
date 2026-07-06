@@ -1,11 +1,11 @@
-//! The state of a combat in progress (§4 **engagement-schedule** model).
+//! The state of a combat in progress (§4 **sub-phase-schedule** model).
 //!
 //! A round: **Marshal** (declare each unit's intention — Vanguard / Outrider / Rearguard; **Reveal** locks
-//! positions; **Ready** lands `cast: Standing` buffs/braces) → **Engage** (the fixed engagement schedule
+//! positions; **Ready** lands `cast: Standing` buffs/braces) → **Engage** (the fixed sub-phase schedule
 //! resolves: Intercept `V→O`, Volley `R→O`, Raid `O→R`, Clash `R→V`+`V→V`, Breach `V→R`+`O→V`+`O→O`, §4.6) →
 //! **Refresh** (the Lull: Tempo resets, Health persists, round++). All Tempo across the whole schedule is paid
 //! from **one shared per-round pool**. The optional four-card **Clash** module ([`Phase::Clash`]) replaces
-//! a same-range trade when on. Resolution is order-independent **within** an engagement (§1.9); the
+//! a same-range trade when on. Resolution is order-independent **within** an sub-phase (§1.9); the
 //! schedule order is the only timing.
 
 use contract::Outcome;
@@ -36,16 +36,16 @@ pub enum Menu {
 }
 
 /// Where the round is (§4). The interactive phase is **Marshal** (pick each unit's intention +
-/// grouping, cast `Standing` buffs); **Engage** resolves the fixed engagement schedule (§4.6) and the
+/// grouping, cast `Standing` buffs); **Engage** resolves the fixed sub-phase schedule (§4.6) and the
 /// **Refresh** (the Lull) is the transition to the next round's Marshal. [`Phase::Clash`] is the
 /// optional 1v1 module. (Reveal and Ready are conceptual sub-steps of Marshal, not separate variants.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
     Menu(Menu),
     /// §4 Marshal — pick each unit's **intention** (Vanguard / Outrider / Rearguard), group them, and
-    /// cast `Standing` buffs/braces (auto-land at the Ready sub-step). Advancing begins the engagement schedule.
+    /// cast `Standing` buffs/braces (auto-land at the Ready sub-step). Advancing begins the sub-phase schedule.
     Marshal,
-    /// §4.6 — the engagement schedule resolves (Intercept → Volley → Raid → Clash → Breach), each step a
+    /// §4.6 — the sub-phase schedule resolves (Intercept → Volley → Raid → Clash → Breach), each step a
     /// §1.9 boundary, over the one shared Tempo pool. Resolved by the resolver (`combat`).
     Engage,
     /// An interactive four-card Clash (the optional module) for a 1v1 same-range duel.
@@ -63,7 +63,7 @@ pub struct Clash {
     pub stall: u32,
 }
 
-/// A held (`resolve: Reckoning`) spell wound up earlier in the round, resolving in the **last** engagement
+/// A held (`resolve: Reckoning`) spell wound up earlier in the round, resolving in the **last** sub-phase
 /// (§4.6). It **fizzles** if its caster is killed before then (disrupt, §4.6).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Deferred {
@@ -79,7 +79,7 @@ pub struct Deferred {
     pub name: String,
 }
 
-/// The per-round working plan for the §4 engagement-schedule model. Intentions and grouping are declared
+/// The per-round working plan for the §4 sub-phase-schedule model. Intentions and grouping are declared
 /// at **Marshal**; the schedule then resolves over them (§4.6).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Round {
@@ -94,7 +94,7 @@ pub struct Round {
     /// Actors who have already acted in the current interactive phase (Marshal).
     pub hero_acted: Vec<bool>,
     pub foe_acted: Vec<bool>,
-    /// §4.6 — deferred (`resolve: Reckoning`) spells wound up this round (resolve in the last engagement).
+    /// §4.6 — deferred (`resolve: Reckoning`) spells wound up this round (resolve in the last sub-phase).
     pub deferred: Vec<Deferred>,
     /// PvP: which side is currently committing this phase (0 = heroes, 1 = creatures). Always 0 in PvE.
     pub committing: u8,
@@ -126,7 +126,7 @@ pub struct State {
     pub heroes: Vec<Actor>,
     pub creatures: Vec<Actor>,
     pub phase: Phase,
-    /// §4.6 — the in-flight engagement-schedule resolution cursor. `Some` while a round is resolving
+    /// §4.6 — the in-flight sub-phase-schedule resolution cursor. `Some` while a round is resolving
     /// (between [`combat::step`](crate::combat::step) calls); `None` at rest (Marshal, Refresh).
     /// Today resolution runs to completion synchronously inside `apply(Deploy)`, so live play never
     /// rests with this set — it exists so the resolution is observable one atomic step at a time and so

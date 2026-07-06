@@ -50,7 +50,7 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 | Element                          | How                                                      | When                               | Lives                                          |
 | -------------------------------- | -------------------------------------------------------- | ---------------------------------- | ---------------------------------------------- |
-| **Tempo** (per-round Speed pool) | a **derivable number**                                   | spent at resolve; resets round-end | **head** = Speed − engagements visible in play |
+| **Tempo** (per-round Speed pool) | a **derivable number**                                   | spent at resolve; resets round-end | **head** = Speed − sub-phases visible in play |
 | **First-strike order**           | *derived* — compare leftover tempo                       | resolve                            | head (= two tempo numbers)                     |
 | **Pre-emption**                  | *derived* — a lethal first-strike, or a **stagger** card | resolve                            | head (who's felled before they swing)          |
 | **Gauntlet drag pool**           | a **derivable number** = sum of Guards' Speeds           | resolve                            | head (= sum of visible Guard Speeds)           |

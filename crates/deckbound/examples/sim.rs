@@ -21,7 +21,7 @@
 //! - `apply` applies exactly one `Action` parsed from the `--action` RON string.
 //! - `run` applies a `Vec<Action>` (RON, read from `--actions`) in order.
 //! - `step` advances the in-flight §4.6 resolution machine **one atomic step** (`combat::step`): it
-//!   resolves the next engagement pair / crosses the next engagement boundary. If the loaded state is
+//!   resolves the next sub-phase pair / crosses the next sub-phase boundary. If the loaded state is
 //!   not mid-resolution (e.g. at Marshal), it is a no-op that reports so on stderr.
 //! - `layout` prints the **derived 2D combat layout** (`State::layout` → `CombatLayout`, side × rank ×
 //!   slot) as RON — a read-only view; the state itself is not modified.

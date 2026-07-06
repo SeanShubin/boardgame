@@ -7,7 +7,7 @@ who fights, how they specialize, and why no mechanic is safe to ignore.
 
 - **Solo plays tall.** With no ally to cover a gap, a lone hero must **max every
   axis** — Body, Mind, toughness, Speed — and self-recover. Powerscaling is
-  [uncapped](coordination-and-interruption.md#speed-is-the-currency-of-engagement), so the
+  [uncapped](coordination-and-interruption.md#speed-is-the-currency-of-sub-phase), so the
   fantasy is the *Solo-Leveling* one-person army with an answer to everything.
 - **Co-op plays wide.** A group wins through **specialization and synergy** — each
   member leans hard into a few axes and relies on the others for the rest. A
@@ -23,7 +23,7 @@ diverse.
 | ---------------------- | --------------------------- | ------------------------------------------------------------------------------------------- |
 | **Sovereign** *(solo)* | everything                  | self-sufficient one-army; broad max investment, self-recovers, engages crowds               |
 | **Bulwark**            | Body toughness + Speed      | the wall — **Holds**: **absorbs** (toughness) and **drags** Runners (Speed); little offense |
-| **Vanguard**           | Power + Speed               | front-line killer; mutual-engagement duels and runs                                         |
+| **Vanguard**           | Power + Speed               | front-line killer; mutual-sub-phase duels and runs                                         |
 | **Skirmisher**         | Speed + Precision           | Runner / assassin; slips to the enemy back line, exploits weak spots                        |
 | **Channeler**          | elemental / ranged delivery | AoE and status from the back line; glass cannon, needs a wall                               |
 | **Tactician**          | Mind                        | the stance, **recovery**, enabling allies' Precision, sealing enemy Minds                   |

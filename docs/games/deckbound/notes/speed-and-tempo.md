@@ -66,7 +66,7 @@ table is fair game — see [representation](physical-representation.md).
 Acting on someone — **engaging or striking** them — costs **their Speed** from your
 tempo; faster foes take more to deal with. You may go **negative** (overextend) to land
 one more blow, at the price of being [exposed](#overextending). That's the whole cost
-rule: **one currency, spent on engagements.**
+rule: **one currency, spent on sub-phases.**
 
 The **gauntlet** is that same rule pointed *outward*: a front line spends its **combined
 tempo as drag** on the [Runners](coordination-and-interruption.md#running-the-gauntlet)
@@ -125,7 +125,7 @@ Surplus tempo buys **extra strikes** — on the same target or others. Each cost
 target's Speed; "match again" and you get another blow, then another, until the pool
 runs dry. Enough Speed (with the Power and capabilities to match) makes a character a
 **whirlwind striking several foes in a round** — the uncapped
-[one-man army](coordination-and-interruption.md#speed-is-the-currency-of-engagement) of
+[one-man army](coordination-and-interruption.md#speed-is-the-currency-of-sub-phase) of
 the asymmetry pillar.
 
 ## Symmetric drain — tempo and focus

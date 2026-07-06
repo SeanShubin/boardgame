@@ -29,7 +29,7 @@ teammate's) to keep swinging. Access to the stances is granted by your **Mind
 capability** in [Form](form-and-defeat.md); seal the Mind and Block / Evade / Scheme
 go with it, leaving only the bare Body **Strike**.
 
-The **stance** you play is separate from your **engagement**: engagement (Attack or Hold) is
+The **stance** you play is separate from your **sub-phase**: sub-phase (Attack or Hold) is
 *whom you engage* on the [battlefield](coordination-and-interruption.md); the stance is
 *how you play the clash* once engaged. You can Attack a target and still Block its
 counter.

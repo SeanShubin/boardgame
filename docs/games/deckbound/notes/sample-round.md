@@ -122,7 +122,7 @@ only together.**
 - **Typed damage vs armor**: only heat passes the Ironclad's plate; blade/blunt bounce.
 - **Targets / breadth**: Firestorm hits **5 targets** — four Husks burn, two overflow (swarm = one card + a count).
 - **Fear vs resolve**: the Howler's armor-proof Fear, answered by Rally.
-- **Engagement bandwidth**: Vera holds two jobs at once (bleed the Runner, predict the boss).
+- **Sub-phase bandwidth**: Vera holds two jobs at once (bleed the Runner, predict the boss).
 - **Coordination**: the cascade above — the whole point.
 
 ## Representable as cards in zones

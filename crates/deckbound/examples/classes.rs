@@ -1,7 +1,7 @@
 //! **Roster report** for a generic (suit-free) class set — by default the starter roster in
 //! `data/balance/generic-classes.ron`. A "class" is a **strike card** (range × shape, §4.3
 //! capabilities-as-cards) plus a five-stat allocation; the **role emerges** from range+stats. Everything
-//! runs on the **real engine** (via the `engagement` front-end), so the numbers are the shipped game's.
+//! runs on the **real engine** (via the `sub-phase` front-end), so the numbers are the shipped game's.
 //!
 //! It prints: the capability-matrix coverage (which melee/ranged × single/aoe cells are filled), each
 //! class's emergent role, and a **head-to-head** — every class fielded as a grouped party of 3 vs every
@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use deckbound::engagement::{
+use deckbound::sub_phase::{
     ClassDef, Intention, Outcome, Unit, battle, load_classes, unit_from_class,
 };
 

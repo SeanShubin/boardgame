@@ -73,9 +73,9 @@ Combat is a **two-layer API** so one resolution serves play, debugging, and tool
   leaves `State` in a fully serializable resting micro-state (`resolve_round` is literally
   `while step(state) {}`). A debugger, the `sim` CLI, or a UI can snapshot **between** transitions.
 
-A `step` is one **engagement-cycle** (every eligible strike on both sides declared against the same
-pre-apply board, then applied — order-independent within the engagement, §1.9) or an engagement
-**boundary** (finalize deaths, wipe the per-engagement pile). Each engagement **cycles to exhaustion** —
+A `step` is one **sub-phase-cycle** (every eligible strike on both sides declared against the same
+pre-apply board, then applied — order-independent within the sub-phase, §1.9) or an sub-phase
+**boundary** (finalize deaths, wipe the per-sub-phase pile). Each sub-phase **cycles to exhaustion** —
 units keep committing positive-effect strikes until no one will spend Tempo — the force-not-fiat lever
 (enough Tempo overwhelms any Toughness). The cursor lives in `State.resolution` and serializes, so
 resolution is resumable and inspectable. (Round phases: **Marshal → Reveal → Ready → Engage → Refresh**;

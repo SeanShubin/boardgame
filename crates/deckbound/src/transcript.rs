@@ -155,7 +155,7 @@ pub fn transcribe(scn: &TranscriptScenario, seed: u64) -> String {
             break;
         }
 
-        // The declaration has just closed (Deploy resolves the engagement): record the intentions.
+        // The declaration has just closed (Deploy resolves the sub-phase): record the intentions.
         if declaring && matches!(action, crate::game::Action::Deploy) {
             collect_chargers(&mut chargers, &state);
             push_line(&mut out, &ranks_summary(&state));

@@ -144,7 +144,7 @@ budget**:
 
 - **Solo concentrates.** One character must raise **every** dimension toward god-level
   — including **Speed**, so a lone hero can engage a whole swarm at once
-  ([engagement bandwidth](coordination-and-interruption.md#speed-is-the-currency-of-engagement))
+  ([sub-phase bandwidth](coordination-and-interruption.md#speed-is-the-currency-of-sub-phase))
   rather than be mobbed. The solo experience is **raw dominance** across the board.
 - **Co-op distributes.** Six specialists each hold a slice and must **combine** —
   many bodies' coverage instead of one god's Speed, focus-fire to aggregate damage.

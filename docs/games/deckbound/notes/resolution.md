@@ -63,7 +63,7 @@ So pre-emption needs **no Power threshold**: **Power is pure magnitude**, and *d
 the target (a lethal first-strike) is what stops their blow — as is a **stagger** keyword.
 Within that rule:
 
-- **Pairwise clashes.** Each engagement resolves the stance cycle
+- **Pairwise clashes.** Each sub-phase resolves the stance cycle
   (`Strike → Scheme → Defense → Strike`) **per pair**. A multi-target attack commits **one**
   stance against each engaged target pairwise; a target **not predicting the attacker** (it can't
   afford the stance) **auto-takes** it. Stances are **bandwidth-limited by

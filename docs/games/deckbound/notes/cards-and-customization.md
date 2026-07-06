@@ -171,7 +171,7 @@ A few rules keep multi-target attacks coherent — especially against the
   default.
 - **Breadth ≠ bandwidth.** A multi-target attack is **one ability, paid once** (its
   magnitude to each target). Making *separate* attacks instead is **bandwidth**, paid in
-  [tempo](speed-and-tempo.md) per engagement. Two different ways to hit many — don't
+  [tempo](speed-and-tempo.md) per sub-phase. Two different ways to hit many — don't
   conflate them.
 - **It resolves *pairwise* against the stance.** A multi-target attack commits **one** stance
   (a Strike) to all its targets; each target *engaging* the attacker
@@ -181,7 +181,7 @@ A few rules keep multi-target attacks coherent — especially against the
   owner; a target not engaging the attacker **auto-takes** it.
 - **Breadth forgoes prediction.** You can't out-predict several foes with one stance — going
   wide means committing **blind** to a single stance against all of them. Tailoring a prediction
-  to a specific foe is what **single-target** engagements are for. *Width trades the prediction
+  to a specific foe is what **single-target** sub-phases are for. *Width trades the prediction
   advantage.*
 
 *(Open number: when one multi-target Strike beats several defenders' stances, **cap** the

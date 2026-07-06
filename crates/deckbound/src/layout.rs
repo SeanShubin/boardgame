@@ -1,4 +1,4 @@
-//! A **derived 2D combat layout** (§4 engagement-schedule model): a pure, read-only view of the
+//! A **derived 2D combat layout** (§4 sub-phase-schedule model): a pure, read-only view of the
 //! board as *side × rank × slot*, computed from existing [`State`] — never authoritative state that
 //! could desync.
 //!

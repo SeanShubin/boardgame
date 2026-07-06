@@ -133,7 +133,7 @@ const PHASES: [(&str, &str); 10] = [
 ];
 
 /// The abilities currently in play — the derived strike cards (one per range × area cell; see
-/// `deckbound::engagement`) that the Kit starters carry — each with a one-line description.
+/// `deckbound::sub_phase`) that the Kit starters carry — each with a one-line description.
 const ABILITIES: [(&str, &str); 4] = [
     ("Jab", "Melee · single target"),
     ("Shot", "Ranged · single target"),

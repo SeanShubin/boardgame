@@ -1,6 +1,6 @@
 //! The combat **phases and rules as a self-documenting, toggleable registry** (§4 / §4.6).
 //!
-//! Combat is a sequence of single-purpose **phases** over two accumulators (the per-engagement damage
+//! Combat is a sequence of single-purpose **phases** over two accumulators (the per-sub-phase damage
 //! **pile** and **Tempo**) plus a few cross-cutting **behaviors**. Every entry here:
 //! - does **exactly one thing**,
 //! - carries a human **description** — the *source of truth* for the auto-generated phase-by-phase rules
@@ -11,19 +11,22 @@
 //! This module is **pure data** (ids + text + ordering); the engine reads it to drive resolution, the
 //! handbook reads it to emit the appendix, and a simulation records the enabled set as provenance.
 
-/// Whether a rule is a **phase** (a step in the round, run in order) or a cross-cutting **behavior**
+/// Whether a rule is a round-level **phase** (a step in the round, run in order), a **sub-phase** (a
+/// combat sub-step of the Engage phase, resolved on the §4.6 schedule), or a cross-cutting **behavior**
 /// (a sub-rule consulted within phases, e.g. area-of-effect).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RuleKind {
-    /// A single-purpose step in the round, run in the order listed in [`ALL_RULES`].
+    /// A single-purpose round-level step, run in the order listed in [`ALL_RULES`].
     Phase,
+    /// A combat sub-step **within the Engage phase**, resolved on the §4.6 sub-phase schedule.
+    SubPhase,
     /// A cross-cutting behavior consulted inside phases (not a step of its own).
     Behavior,
 }
 
-/// One toggleable combat phase or behavior. The variant order in [`ALL_RULES`] is the **round order**
-/// (for the phases) — the appendix and the engine both read it in sequence. The five engagement steps
-/// (Intercept … Breach) are the §4.6 **engagement schedule**.
+/// One toggleable combat phase, sub-phase, or behavior. The variant order in [`ALL_RULES`] is the
+/// **round order** (for the phases) — the appendix and the engine both read it in sequence. The five
+/// sub-phase steps (Intercept … Breach) are the §4.6 **sub-phase schedule** of the Engage phase.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum Rule {
     // ---- set up the round ----
@@ -33,7 +36,9 @@ pub enum Rule {
     Reveal,
     /// Ready: cast Standing abilities (braces / ally buffs).
     Ready,
-    // ---- the engagement schedule (§4.6) ----
+    /// Engage: resolve the fixed §4.6 sub-phase schedule (Intercept → Volley → Raid → Clash → Breach).
+    Engage,
+    // ---- the sub-phase schedule of Engage (§4.6) ----
     /// Intercept: each Vanguard strikes an enemy Outrider (the front screens the crossers).
     Intercept,
     /// Volley: each Rearguard fires on an enemy Outrider (the back shoots crossers — the pre-empt).
@@ -45,7 +50,7 @@ pub enum Rule {
     /// Breach: the deep / trailing blows land last (Vanguard→Rearguard, Outrider→Vanguard/Outrider).
     Breach,
     // ---- boundaries / accumulators ----
-    /// Clear the per-engagement damage pile at each engagement boundary.
+    /// Clear the per-sub-phase damage pile at each sub-phase boundary.
     WipePile,
     /// The Lull: Tempo resets, Health persists, the round advances (5-round cap).
     Refresh,
@@ -71,7 +76,7 @@ impl Rule {
     /// The appendix name, description, and kind for this rule. The descriptions are the **canonical
     /// mechanical text** — the rules appendix is generated from them.
     pub fn info(self) -> RuleInfo {
-        use RuleKind::{Behavior, Phase};
+        use RuleKind::{Behavior, Phase, SubPhase};
         let (name, description, kind) = match self {
             Rule::Marshal => (
                 "Marshal",
@@ -93,44 +98,51 @@ impl Rule {
                  ally-targeted, auto-land, and last the round.",
                 Phase,
             ),
+            Rule::Engage => (
+                "Engage",
+                "The two lines meet and trade blows: the fixed **sub-phase schedule** resolves in order — \
+                 Intercept → Volley → Raid → Clash → Breach — each sub-phase a §1.9 boundary. Untyped \
+                 Might banks into the per-sub-phase pile; clearing a target's Toughness flips a Health card.",
+                Phase,
+            ),
             Rule::Intercept => (
                 "Intercept",
                 "The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, \
                  before it can raid. An Outrider cut down here never reaches the back.",
-                Phase,
+                SubPhase,
             ),
             Rule::Volley => (
                 "Volley",
                 "The back fires on the flankers: each Rearguard shoots an enemy Outrider — before it \
                  arrives (the pre-empt). A shot spent here is a shot not fired at the enemy front later.",
-                Phase,
+                SubPhase,
             ),
             Rule::Raid => (
                 "Raid",
                 "Surviving Outriders strike the enemy Rearguard they crossed for. The breaker that got \
                  through the Intercept and Volley lands on the exposed back.",
-                Phase,
+                SubPhase,
             ),
             Rule::Clash => (
                 "Clash",
                 "The lines meet: each Rearguard fires on an enemy Vanguard (the only answer to its \
                  Toughness), and each engaging Vanguard strikes an enemy Vanguard. Untyped Might banks \
-                 into the per-phase pile; clearing the target's Toughness flips a Health card.",
-                Phase,
+                 into the per-sub-phase pile; clearing the target's Toughness flips a Health card.",
+                SubPhase,
             ),
             Rule::Breach => (
                 "Breach",
                 "The deep, trailing blows land last: a Vanguard crosses to an enemy Rearguard whose own \
                  front has fallen, and Outriders with no reachable back fall on the enemy front or each \
                  other.",
-                Phase,
+                SubPhase,
             ),
             Rule::WipePile => (
                 "Wipe pile",
-                "At each engagement boundary the per-phase damage pile is cleared: sub-threshold damage \
-                 that did not turn a Health card does not carry into the next engagement. Only Health \
+                "At each sub-phase boundary the per-sub-phase damage pile is cleared: sub-threshold damage \
+                 that did not turn a Health card does not carry into the next sub-phase. Only Health \
                  persists.",
-                Phase,
+                Behavior,
             ),
             Rule::Refresh => (
                 "Refresh (the Lull)",
@@ -198,11 +210,13 @@ impl Rule {
 }
 
 /// Every combat rule, in **round order** for the phases (the appendix and the engine read it in
-/// sequence — the five engagement steps are the §4.6 schedule), with the cross-cutting behaviors last.
+/// sequence — the five sub-phase steps are the §4.6 schedule of the Engage phase), with the
+/// cross-cutting behaviors last.
 pub const ALL_RULES: &[Rule] = &[
     Rule::Marshal,
     Rule::Reveal,
     Rule::Ready,
+    Rule::Engage,
     Rule::Intercept,
     Rule::Volley,
     Rule::Raid,
@@ -218,7 +232,8 @@ pub const ALL_RULES: &[Rule] = &[
 
 /// Render the **phase-by-phase combat appendix** (the mechanical reference) from the registry. This is
 /// the canonical mechanical text — generated, never hand-edited — and is distinct from the thematic
-/// rulebook overview. Phases are listed in round order, then the cross-cutting behaviors.
+/// rulebook overview. Round phases are listed in round order, then the sub-phases of the Engage phase
+/// (in §4.6 schedule order), then the cross-cutting behaviors.
 pub fn appendix() -> String {
     let mut s = String::new();
     s.push_str("# Combat — phase-by-phase appendix\n\n");
@@ -226,7 +241,7 @@ pub fn appendix() -> String {
         "> **Auto-generated from `crates/deckbound/src/rules.rs`** (the canonical mechanical text) — do \
          not edit by hand; regenerate with `cargo run -p deckbound --example handbook`. This is the \
          *mechanical* reference: each phase does exactly one thing, over two accumulators (the \
-         per-engagement damage **pile** and **Tempo**). The thematic overview lives in the rulebook.\n\n",
+         per-sub-phase damage **pile** and **Tempo**). The thematic overview lives in the rulebook.\n\n",
     );
     s.push_str("## Phases (in round order)\n\n");
     let mut n = 1;
@@ -238,6 +253,18 @@ pub fn appendix() -> String {
                 info.name, info.description
             ));
             n += 1;
+        }
+    }
+    s.push_str("## Sub-phases of the Engage phase (in schedule order)\n\n");
+    let mut m = 1;
+    for &r in ALL_RULES {
+        let info = r.info();
+        if info.kind == RuleKind::SubPhase {
+            s.push_str(&format!(
+                "{m}. **{}** — {}\n\n",
+                info.name, info.description
+            ));
+            m += 1;
         }
     }
     s.push_str("## Cross-cutting behaviors\n\n");

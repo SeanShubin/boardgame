@@ -35,7 +35,7 @@ with one exception each — the full damage-type matrix is deferred.)*
      also **cancels** the dive. Survive the free strikes uninterrupted → reach the back
      line, bloodied. A fast Holder gauntlets several, paying Speed per the bandwidth
      rule.
-   - **Prediction** — in a mutual engagement (or Hold-vs-attacker) both pick **Strike /
+   - **Prediction** — in a mutual sub-phase (or Hold-vs-attacker) both pick **Strike /
      Block / Evade / Scheme**; the cycle (Strike > Scheme, Defense > Strike, Scheme >
      Defense) decides it, the winner banks a bonus (Block → +Pow, Evade → +Spd,
      Scheme → +all), a mispredict forfeits the bank. Otherwise the attack **auto-succeeds**.

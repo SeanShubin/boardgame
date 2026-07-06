@@ -174,7 +174,7 @@ no phase reveals first. The Clash itself stays hidden-simultaneous.
 
 This system makes the split *cleaner*, with new crisp meanings:
 
-- **Tempo** = engagements you **initiate** — target-picks spent across
+- **Tempo** = sub-phases you **initiate** — target-picks spent across
   Vanguard/Outrider/Rearguard (offense breadth, ordered along the gradient).
 - **Focus** = incoming targetings you can **answer** as a real (defensive, survive-only)
   duel; overflow resolves as **free hits** (the "refuse → take a hit" valve generalized).
@@ -186,9 +186,9 @@ public one without incoherence — so **keep them split.** Merge only if you als
 initiate-vs-answer asymmetry (make every answered duel able to *kill*, not just survive);
 today defensive duels are survive-only, so the asymmetry — and the split — stays.
 
-### Q2 resolution — "extra actions" = engagements from the Tempo pool
+### Q2 resolution — "extra actions" = sub-phases from the Tempo pool
 
-Model an extra action as an extra engagement, allocated across the three phases. A grunt has
+Model an extra action as an extra sub-phase, allocated across the three phases. A grunt has
 one; a god has many, and the gradient is the **value curve**:
 
 - Vanguard action — cheap, blind, but *forces* a Speed-pairing on the enemy.
@@ -219,15 +219,15 @@ is the part still being designed (see chat: candidate is *pairing occupies enemy
 ## 3. Deterministic base mode + the Clash as an optional module
 
 - **Status:** Strong lean (likely architecture). Raised 2026-06-17.
-- **Scope:** how a same-range engagement resolves, and the Clash's (§1.0) relationship to the
+- **Scope:** how a same-range sub-phase resolves, and the Clash's (§1.0) relationship to the
   rest of the game.
 
 ### The idea
 
-Make the **canonical floor deterministic** — *no Clash*. A **same-range** engagement resolves as
+Make the **canonical floor deterministic** — *no Clash*. A **same-range** sub-phase resolves as
 a **trade** (both deal their base through armor/toughness, §2); a **range mismatch** is the
 **auto-hit** already in §4.2. The **Clash (§1.0) becomes an optional tactical module** layered
-onto same-range engagements for groups who want the per-beat mix-up and Force.
+onto same-range sub-phases for groups who want the per-beat mix-up and Force.
 
 ### Why
 
@@ -472,7 +472,7 @@ thematic rule for who dies how:
 
 | Rank                       | Dies to                                                                                                            | Safe from                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| **Front** (is the line)    | direct engagement (enemy Front clash); a slipped enemy Flank striking from behind                                  | being flanked while it holds — it faces forward                       |
+| **Front** (is the line)    | direct sub-phase (enemy Front clash); a slipped enemy Flank striking from behind                                  | being flanked while it holds — it faces forward                       |
 | **Flank** (left the line)  | the wall's **catch / parting hit** at the line · the enemy **Back's** ranged fire · an enemy **Flank** in the open | the committed enemy **Front** — a holding line cannot wheel and chase |
 | **Back** (behind the line) | a Flank that **slips past** its wall · its own **Front wiped**, then enemy Fronts pour through                     | everything, *while its line holds*                                    |
 

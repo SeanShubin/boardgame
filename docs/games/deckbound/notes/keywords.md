@@ -15,7 +15,7 @@ reused one is free data. This is a first cut sized to the
 | **Evade**  | defensive stance; beats Strike; on win bank **Speed** + reposition; returns to hand                  | *Slip a strike, reposition — and bank Speed.*            |
 | **Scheme** | setup stance; beats Defense, loses to Strike; on win bank **Power+Speed+Precision**; returns to hand | *Set up for a big payoff — but a Strike interrupts it.*  |
 
-## Engagement & positioning
+## Sub-phase & positioning
 
 | Keyword               | Engine                                                                                          | Manual line                                                          |
 | --------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |

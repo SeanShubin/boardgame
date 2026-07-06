@@ -16,7 +16,7 @@ use crate::duel::Move;
 use crate::form::Form;
 use crate::stats::{Defense, Offense};
 
-/// The range of an engagement (§4.2). Position-determined: Vanguard and Outrider strikes are
+/// The range of an sub-phase (§4.2). Position-determined: Vanguard and Outrider strikes are
 /// melee; Rearguard fire is ranged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Range {
@@ -25,7 +25,7 @@ pub enum Range {
 }
 
 /// A unit's declared **intention** for the round (§4) — the position it takes, and the role it plays in
-/// the engagement schedule (§4.6). Re-declared each round; declaring is free and may *fail* (force-not-fiat).
+/// the sub-phase schedule (§4.6). Re-declared each round; declaring is free and may *fail* (force-not-fiat).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Intention {
     /// Hold the line (front): the shield; screens enemy Outriders, fights the front, cleans up last.
@@ -81,8 +81,8 @@ pub enum Token {
     Sunder { toughness: u32 },
     /// **Defang** (Controller): −`might` Might (floor 1) to this body's strike magnitude while present.
     Defang { might: u32 },
-    /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's per-engagement
-    /// pile (it ticks in the last engagement, the Breach) and remove one stack. Caster-independent once placed.
+    /// **Burn** (Artillery DoT): each Reckoning, deal `power` Might into the bearer's per-sub-phase
+    /// pile (it ticks in the last sub-phase, the Breach) and remove one stack. Caster-independent once placed.
     Burn { power: u32 },
     /// **Thorns** (Support): when this ally is struck, the attacker takes `power` Might into the
     /// attacker's own current-phase pile (Support's reflected "offense").

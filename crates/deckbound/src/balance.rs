@@ -932,7 +932,7 @@ mod tests {
         assert_eq!(level.roles.len(), 3);
         let rs = level.ruleset();
         assert!(!rs.allows(Rule::Grouping) && !rs.allows(Rule::AreaOfEffect));
-        assert!(rs.allows(Rule::Clash)); // a core engagement stays on
+        assert!(rs.allows(Rule::Clash)); // a core sub-phase stays on
     }
 
     /// Diagnostic (run on demand): print the current balance violations.

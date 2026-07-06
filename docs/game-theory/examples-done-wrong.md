@@ -328,7 +328,7 @@ Soulstorm fails at both the inter-faction and intra-faction levels simultaneousl
 
 - **Macro (inter-faction):** 36 matchups insufficiently calibrated → tier differentiation. Dark Eldar and Sisters of Battle (added specifically for Soulstorm by Iron Lore, not Relic's original team) are widely considered unviable. Factions carried from earlier expansions perform better because they received more accumulated refinement.
 - **Mid (strategic):** Fewer builds per faction → less strategic variety per matchup → games feel more scripted
-- **Micro (unit):** Smaller unit pools → shorter counter chains → less tactical depth per engagement
+- **Micro (unit):** Smaller unit pools → shorter counter chains → less tactical depth per sub-phase
 
 **Measuring the degradation:** A rough proxy for intra-matchup depth is the number of distinct viable strategies observed at high-level play per faction pair. For StarCraft ZvT, competitive databases document dozens of recognized build orders. For Soulstorm matchups, the comparable number is far lower — reflecting shallow mid-level counter cycles even where inter-faction balance is approximate.
 

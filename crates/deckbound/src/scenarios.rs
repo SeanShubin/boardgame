@@ -1259,15 +1259,15 @@ mod tests {
 
         let has = |term: &str| g.iter().any(|e| e.term == term);
         // Rule terms parsed from the Spec, across several sections. (Updated for the §4
-        // engagement-schedule model: the old "Blind bid" / "Phase 1 / Phase 2" TERMs were retired
+        // sub-phase-schedule model: the old "Blind bid" / "Phase 1 / Phase 2" TERMs were retired
         // with the player-phase/foe-phase round; the live Spec defines the declare-intentions /
-        // engagement-schedule / Tempo-contest terms.)
+        // sub-phase-schedule / Tempo-contest terms.)
         for term in [
             "Marshal",
             "Vanguard",
             "Outrider",
             "Rearguard",
-            "Engagement schedule",
+            "Sub-phase schedule",
             "Tempo contest",
             "Cadence",
             "Finesse",

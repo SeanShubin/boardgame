@@ -1,4 +1,4 @@
-//! Deckbound as a [`contract::Game`] — the §4 engagement-schedule battle.
+//! Deckbound as a [`contract::Game`] — the §4 sub-phase-schedule battle.
 //!
 //! A scenario is either **base mode** (deterministic: same-range = trade, mismatch = auto-hit,
 //! §4.2) run through the round (Marshal → Reveal → Ready → Engage → Refresh, §4 / §4.6), or a
@@ -49,7 +49,7 @@ pub enum Action {
     SetVanguard(usize),
     SetOutrider(usize),
     SetRearguard(usize),
-    /// Advance: finish declaring → resolve the round's engagement schedule (§4.6).
+    /// Advance: finish declaring → resolve the round's sub-phase schedule (§4.6).
     Deploy,
     PlayCard(usize, usize),
     Pass(usize),
@@ -163,7 +163,7 @@ fn load_scenario(state: &mut State, scenario: Scenario) {
 }
 
 /// §4 — seed each unit's default **intention** from its stats (the policy of
-/// `engagement::intention_for`): a ranged unit deals from the Rearguard; an **aggressive** melee unit
+/// `sub_phase::intention_for`): a ranged unit deals from the Rearguard; an **aggressive** melee unit
 /// (Might ≥ Toughness — a glassy striker) breaks the line as an Outrider; a **durable** melee unit
 /// (Toughness > Might — a wall) holds as a Vanguard. Marshal lets the human (or the AI) override this
 /// per unit each round. (Might-vs-Toughness, not Finesse — the re-tuned tank carries C2F2 to run down
@@ -245,7 +245,7 @@ pub(crate) fn check_outcome(state: &mut State) {
 }
 
 impl Deckbound {
-    // ---- §4 engagement-schedule round -----------------------------------------
+    // ---- §4 sub-phase-schedule round -----------------------------------------
 
     /// Units of `side` that may still **declare an intention** this round (alive, not staggered, not yet
     /// acted). The only interactive combat choice is the declaration; the schedule then resolves (§4.6).
@@ -258,7 +258,7 @@ impl Deckbound {
             .collect()
     }
 
-    /// All declarations are in → resolve the round over the **engagement schedule** (§4.6), finalize the
+    /// All declarations are in → resolve the round over the **sub-phase schedule** (§4.6), finalize the
     /// outcome, then advance to the next round's Marshal (via Refresh, the Lull). The foe keeps its
     /// stat-defaulted intentions in PvE.
     fn resolve_and_advance(&self, state: &mut State) {
@@ -300,7 +300,7 @@ impl Deckbound {
     /// **target-classification position rule**: an **offensive** (foe-targeting) card is positioned by
     /// reach (§4.2) — a **ranged** one needs the **Rearguard**, a **melee** one the **Vanguard**;
     /// **support** (ally/self) cards are rank-free. A `cast: Standing` card is only legal at the Ready
-    /// sub-step of Marshal; a `cast: Strike` card resolves in the engagement schedule (§4.6).
+    /// sub-step of Marshal; a `cast: Strike` card resolves in the sub-phase schedule (§4.6).
     fn card_playable_now(
         &self,
         state: &State,
@@ -326,10 +326,10 @@ impl Deckbound {
         if state.s_pool(side)[i].tempo <= 0 {
             return false;
         }
-        // §4 cast window: in the engagement-schedule engine the interactive phase is Marshal,
-        // where **Standing** (ally/self) casts go up. Offensive abilities are resolved by the engagement
+        // §4 cast window: in the sub-phase-schedule engine the interactive phase is Marshal,
+        // where **Standing** (ally/self) casts go up. Offensive abilities are resolved by the sub-phase
         // schedule, not cast interactively — wiring ability-strikes into `resolve_round` is a follow-on
-        // (see needs-merge/engine-migration-to-engagement-model.md), so only Standing casts are playable.
+        // (see needs-merge/engine-migration-to-sub-phase-model.md), so only Standing casts are playable.
         if !matches!((state.phase, card.cast), (Phase::Marshal, Cast::Standing)) {
             return false;
         }
@@ -340,7 +340,7 @@ impl Deckbound {
     }
 
     /// Play `card` from actor `i` of `side`. A `resolve: Reckoning` card is **wound up** (deferred to
-    /// resolve in the last engagement, the Breach — disruptable); everything else resolves immediately (`resolve: OnCast`).
+    /// resolve in the last sub-phase, the Breach — disruptable); everything else resolves immediately (`resolve: OnCast`).
     fn do_play_card(&self, state: &mut State, side: u8, i: usize, card: crate::cards::Card) {
         let off = state.s_pool(side)[i].offense;
         let name = state.s_pool(side)[i].name.clone();
@@ -365,7 +365,7 @@ impl Deckbound {
                 name: name.clone(),
             });
             state.log.push(format!(
-                "{name} winds up a held effect (resolves in the last engagement, its `Reckoning` resolve)."
+                "{name} winds up a held effect (resolves in the last sub-phase, its `Reckoning` resolve)."
             ));
             return;
         }
@@ -535,7 +535,7 @@ impl Deckbound {
                 "Round {} — Marshal: set intentions (Vanguard / Outrider / Rearguard), then advance. (Esc: menu)",
                 state.round
             ),
-            (None, Phase::Engage) => "Engage — resolving the engagement schedule…".to_string(),
+            (None, Phase::Engage) => "Engage — resolving the sub-phase schedule…".to_string(),
             (None, Phase::Clash) => match state.clash {
                 Some(c) => format!(
                     "Clash: {} vs the {} — Strike/Anticipate/Gather/Evade. (Esc: menu)",
@@ -626,7 +626,7 @@ impl Game for Deckbound {
                 a
             }
             // §4 Marshal: the next pending unit picks its **intention** (Vanguard / Outrider /
-            // Rearguard) and may cast a `Standing` buff; advancing resolves the round's engagement
+            // Rearguard) and may cast a `Standing` buff; advancing resolves the round's sub-phase
             // schedule (§4.6). Declaration is sequential (one unit at a time) so the solver branches on
             // intention; Pass accepts the unit's current (defaulted) intention.
             Phase::Marshal => {
@@ -725,7 +725,7 @@ impl Game for Deckbound {
             Action::SetVanguard(h) => format!("{} holds the front (Vanguard)", hname(*h)),
             Action::SetOutrider(h) => format!("{} breaks the line (Outrider)", hname(*h)),
             Action::SetRearguard(h) => format!("{} deals from the back (Rearguard)", hname(*h)),
-            Action::Deploy => "Advance — Engage (resolve the engagement schedule)".into(),
+            Action::Deploy => "Advance — Engage (resolve the sub-phase schedule)".into(),
             Action::PlayCard(h, idx) => {
                 let c = state.s_pool(side).get(*h).and_then(|x| x.actions.get(*idx));
                 match c {
@@ -1326,7 +1326,7 @@ mod tests {
                         Action::Play(Move::Anticipate)
                     }
                 }
-                // Marshal intentions are stat-defaulted; Deploy resolves the engagement schedule.
+                // Marshal intentions are stat-defaulted; Deploy resolves the sub-phase schedule.
                 Phase::Marshal | Phase::Engage => Action::Deploy,
                 _ => break,
             };
@@ -1534,7 +1534,7 @@ mod tests {
     }
 
     /// §4 Marshal: a unit defaults to a stat-based intention; the human may re-declare it and
-    /// advance, which resolves the round's engagement schedule.
+    /// advance, which resolves the round's sub-phase schedule.
     #[test]
     fn declare_intentions_then_resolve() {
         let game = Deckbound;
@@ -1558,7 +1558,7 @@ mod tests {
 
     /// §4 cast window: a `cast: Standing` support card (Wall's Brace) is offered at Marshal
     /// (rank-free); an **offensive** ability (Artillery's Bolt) is not — offensive casting is resolved by
-    /// the engagement schedule, not cast interactively (a deferred follow-on, §4.6).
+    /// the sub-phase schedule, not cast interactively (a deferred follow-on, §4.6).
     #[test]
     fn standing_support_casts_at_declare_offensive_deferred() {
         use crate::currency::Currency;
@@ -1704,12 +1704,12 @@ mod tests {
             "now side B declares"
         );
         game.apply(&mut s, &Action::Deploy).unwrap();
-        // Both sides declared → the engagement resolves; play it out to an outcome.
+        // Both sides declared → the sub-phase resolves; play it out to an outcome.
         let _ = autoplay(&game, &mut s);
         assert!(s.outcome.is_some());
     }
 
-    /// A base-mode cooperation scenario runs the engagement-schedule round to an outcome.
+    /// A base-mode cooperation scenario runs the sub-phase-schedule round to an outcome.
     #[test]
     fn base_scenario_runs_to_outcome() {
         let game = Deckbound;
