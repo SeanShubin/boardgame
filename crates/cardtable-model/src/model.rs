@@ -947,8 +947,9 @@ impl Tableau {
     }
 
     /// **Combine** an `identity` card with a `recipe` card (e.g. a hero with a starting kit) into a new
-    /// top-level **character deck**, returning its id. The character deck is a [`Free`](Arrangement::Free)
-    /// deck holding the recipe's cards, a reserved battle-rank identity copy, and the identity itself as
+    /// top-level **character deck**, returning its id. The character deck is a [`List`](Arrangement::List)
+    /// deck (an ordered line that reflows footprint-aware, see [`structured_positions`](Self::structured_positions))
+    /// holding the recipe's cards, a reserved battle-rank identity copy, and the identity itself as
     /// its top [`Zone`](CardKind::Zone) label; one more identity copy is placed at `location` (the
     /// character now stands there). The identity leaves its old home — so a recruited hero exits the inn.
     /// The recipe card is untouched (a kit is reusable).
@@ -1469,6 +1470,84 @@ impl Tableau {
         }
     }
 
+    /// Footprint-aware layout positions for a **structured** deck's movable children, in child order — the
+    /// size-aware replacement for a fixed grid, and the reason `List`/`Grid` decks reflow when a card
+    /// grows. `List` flows left-to-right, wrapping at the surface width, each child one `gap` after the
+    /// previous by its *actual* box; a row is as tall as its tallest child. `Grid { columns }` aligns
+    /// **both** axes: a column is as wide as its widest child, a row as tall as its tallest, so a grown
+    /// card pushes its whole column and row. Because it reads live sizes, re-running it (the renderer does,
+    /// every frame) is itself the reflow — no separate shove. A child not yet laid out (box `< 1`) uses
+    /// `default` so the first frame is sane. Empty for non-structured arrangements (`Free`/`Rows`/`Actions`
+    /// place their contents their own way).
+    pub fn structured_positions(
+        &self,
+        pile: PileId,
+        gap: f32,
+        top: f32,
+        default: Pos,
+    ) -> Vec<(Node, Pos)> {
+        let nodes = self.movable_children(pile);
+        if nodes.is_empty() {
+            return Vec::new();
+        }
+        let size = |n: Node| -> Pos {
+            let (_, s) = self.node_box(n).unwrap_or_default();
+            if s.x < 1.0 || s.y < 1.0 { default } else { s }
+        };
+        match self.pile(pile).map(|p| p.layout().arrangement) {
+            Some(Arrangement::List) => {
+                let mut out = Vec::with_capacity(nodes.len());
+                let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
+                for n in nodes {
+                    let s = size(n);
+                    if x > gap && x + s.x + gap > self.surface.x {
+                        x = gap;
+                        y += row_h + gap;
+                        row_h = 0.0;
+                    }
+                    out.push((n, Pos { x, y }));
+                    x += s.x + gap;
+                    row_h = row_h.max(s.y);
+                }
+                out
+            }
+            Some(Arrangement::Grid { columns }) => {
+                let cols = columns.max(1);
+                let rows = nodes.len().div_ceil(cols);
+                // Column widths and row heights are the max box in that column / row (so both axes align).
+                let mut col_w = vec![0.0_f32; cols];
+                let mut row_h = vec![0.0_f32; rows];
+                for (i, &n) in nodes.iter().enumerate() {
+                    let s = size(n);
+                    col_w[i % cols] = col_w[i % cols].max(s.x);
+                    row_h[i / cols] = row_h[i / cols].max(s.y);
+                }
+                let mut col_x = vec![gap; cols];
+                for c in 1..cols {
+                    col_x[c] = col_x[c - 1] + col_w[c - 1] + gap;
+                }
+                let mut row_y = vec![top; rows];
+                for r in 1..rows {
+                    row_y[r] = row_y[r - 1] + row_h[r - 1] + gap;
+                }
+                nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &n)| {
+                        (
+                            n,
+                            Pos {
+                                x: col_x[i % cols],
+                                y: row_y[i / cols],
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn apply_collapse(&mut self) {
         let focus = self.focus;
         let ids: Vec<PileId> = self.piles.keys().copied().collect();
@@ -1744,6 +1823,85 @@ mod tests {
         assert_eq!(t.pile(ids[1]).unwrap().pos(), Pos { x: 124.0, y: 52.0 });
         // Third wraps: back to the left gap, one row down (52 + 60 + 12 = 124).
         assert_eq!(t.pile(ids[2]).unwrap().pos(), Pos { x: 12.0, y: 124.0 });
+    }
+
+    /// `structured_positions` lays a List out **footprint-aware**: a wider (e.g. grown) card shifts the
+    /// cards after it, so expanding a card reflows the deck instead of overlapping.
+    #[test]
+    fn structured_positions_list_flows_by_footprint() {
+        let mut t = Tableau::new();
+        let deck = t.add_pile(t.root_id(), "D").unwrap();
+        t.set_surface(1000.0, 800.0);
+        let mk = |t: &mut Tableau, name: &str, w: f32| {
+            let c = t
+                .add_card(deck, Face::Up { title: name.into() }, None)
+                .unwrap();
+            t.set_card_footprint(c, w, 60.0).unwrap();
+            c
+        };
+        let (a, b, c) = (
+            mk(&mut t, "a", 100.0),
+            mk(&mut t, "b", 200.0),
+            mk(&mut t, "c", 100.0),
+        );
+        t.set_layout(
+            deck,
+            Layout {
+                arrangement: Arrangement::List,
+                editable: true,
+            },
+        )
+        .unwrap();
+
+        let pos: std::collections::HashMap<_, _> = t
+            .structured_positions(deck, 10.0, 10.0, Pos { x: 100.0, y: 100.0 })
+            .into_iter()
+            .collect();
+        assert_eq!(pos[&Node::Card(a)], Pos { x: 10.0, y: 10.0 }); // first, at the gap
+        assert_eq!(pos[&Node::Card(b)], Pos { x: 120.0, y: 10.0 }); // after a: 10 + 100 + 10
+        assert_eq!(pos[&Node::Card(c)], Pos { x: 330.0, y: 10.0 }); // after the WIDE b: 120 + 200 + 10
+    }
+
+    /// `structured_positions` aligns a Grid on **both** axes: a wider card widens its whole column.
+    #[test]
+    fn structured_positions_grid_aligns_columns() {
+        let mut t = Tableau::new();
+        let deck = t.add_pile(t.root_id(), "G").unwrap();
+        t.set_surface(1000.0, 800.0);
+        let ids: Vec<_> = (0..4)
+            .map(|i| {
+                let c = t
+                    .add_card(
+                        deck,
+                        Face::Up {
+                            title: format!("{i}"),
+                        },
+                        None,
+                    )
+                    .unwrap();
+                t.set_card_footprint(c, 100.0, 60.0).unwrap();
+                c
+            })
+            .collect();
+        t.set_card_footprint(ids[2], 180.0, 60.0).unwrap(); // bottom-left card widens column 0
+        t.set_layout(
+            deck,
+            Layout {
+                arrangement: Arrangement::Grid { columns: 2 },
+                editable: false,
+            },
+        )
+        .unwrap();
+
+        let pos: std::collections::HashMap<_, _> = t
+            .structured_positions(deck, 10.0, 10.0, Pos { x: 100.0, y: 100.0 })
+            .into_iter()
+            .collect();
+        // 2 cols [0 1 / 2 3]: col0 width = max(100,180) = 180, so col1 starts at 10 + 180 + 10 = 200.
+        assert_eq!(pos[&Node::Card(ids[0])], Pos { x: 10.0, y: 10.0 });
+        assert_eq!(pos[&Node::Card(ids[1])], Pos { x: 200.0, y: 10.0 }); // pushed right by the wide col 0
+        assert_eq!(pos[&Node::Card(ids[2])], Pos { x: 10.0, y: 80.0 }); // row 1: 10 + 60 + 10
+        assert_eq!(pos[&Node::Card(ids[3])], Pos { x: 200.0, y: 80.0 });
     }
 
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).

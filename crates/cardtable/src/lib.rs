@@ -691,35 +691,51 @@ fn animate_nodes(
     {
         return;
     }
-    let free = matches!(
+    let focus = table.0.focus_id();
+    let structured = matches!(
+        table.0.pile(focus).map(|p| p.layout().arrangement),
+        Some(Arrangement::List | Arrangement::Grid { .. })
+    );
+    // A structured zone (List/Grid) reflows footprint-aware; everything else (Free, the root) reads each
+    // node's own model position. Compute the structured layout once, then look each node up.
+    let layout: HashMap<TableNode, Pos> = if structured {
         table
             .0
-            .pile(table.0.focus_id())
-            .map(|p| p.layout().arrangement),
-        Some(Arrangement::Free)
-    );
-    let cols = zone_cols(&table.0);
+            .structured_positions(
+                focus,
+                GAP,
+                GAP,
+                Pos {
+                    x: CARD_W,
+                    y: CARD_H,
+                },
+            )
+            .into_iter()
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
     for (movable, mut node) in &mut movables {
         if dragging.0 == Some(movable.0) {
             continue; // free while held
         }
-        let target = match movable.0 {
-            TableNode::Pile(pid) => match table.0.pile(pid) {
-                Some(d) => d.pos(),
+        let target = if structured {
+            match layout.get(&movable.0) {
+                Some(&p) => p,
                 None => continue,
-            },
-            TableNode::Card(cid) if free => match table.0.card(cid) {
-                Some(c) => c.pos(),
-                None => continue,
-            },
-            TableNode::Card(cid) => match table.0.card_index(cid) {
-                Some(index) => {
-                    let (x, y) = grid_cell(index, cols);
-                    Pos { x, y }
-                }
-                None => continue,
-            },
+            }
+        } else {
+            match movable.0 {
+                TableNode::Pile(pid) => match table.0.pile(pid) {
+                    Some(d) => d.pos(),
+                    None => continue,
+                },
+                TableNode::Card(cid) => match table.0.card(cid) {
+                    Some(c) => c.pos(),
+                    None => continue,
+                },
+            }
         };
         let (cx, cy) = (px(node.left), px(node.top));
         if (target.x - cx).abs() < 0.5 && (target.y - cy).abs() < 0.5 {
@@ -1035,23 +1051,37 @@ fn on_node_drag_end(
             table.0.separate(home, TableNode::Card(card));
             return;
         }
-        // Ordered grid: snap into the nearest cell by reordering among the *contents* only, so a drag
-        // can never push a card above a zone card and steal its place as the pile's label.
-        let cols = zone_cols(&table.0);
-        // Inverse of `grid_cell`: undo the GAP inset, then divide by the card+GAP pitch.
-        let col = (((px(node.left) - GAP + CARD_W / 2.0) / (CARD_W + GAP))
-            .floor()
-            .max(0.0) as usize)
-            .min(cols - 1);
-        let row = ((px(node.top) - GAP + CARD_H / 2.0) / (CARD_H + GAP))
-            .floor()
-            .max(0.0) as usize;
-        let Some(from) = table.0.card_index(card) else {
-            return;
+        // Structured (List/Grid): snap into the nearest slot by reordering among the *contents* only, so a
+        // drag can never push a card above a zone card and steal its place as the pile's label. "Nearest" is
+        // measured against the footprint-aware layout (`structured_positions`), not a fixed grid.
+        let drop = Pos {
+            x: px(node.left),
+            y: px(node.top),
         };
-        let len = table.0.content_cards(home).len();
-        let to = (row * cols + col).min(len.saturating_sub(1));
-        let _ = table.0.reorder(home, from, to);
+        let nearest = table
+            .0
+            .structured_positions(
+                home,
+                GAP,
+                GAP,
+                Pos {
+                    x: CARD_W,
+                    y: CARD_H,
+                },
+            )
+            .into_iter()
+            .filter_map(|(n, p)| n.card().map(|c| (c, p)))
+            .min_by(|a, b| {
+                let d = |p: Pos| (p.x - drop.x).powi(2) + (p.y - drop.y).powi(2);
+                d(a.1).total_cmp(&d(b.1))
+            })
+            .map(|(c, _)| c);
+        if let (Some(from), Some(to)) = (
+            table.0.card_index(card),
+            nearest.and_then(|c| table.0.card_index(c)),
+        ) {
+            let _ = table.0.reorder(home, from, to);
+        }
     }
 }
 
@@ -1560,10 +1590,11 @@ const LEAVE_W: f32 = 120.0;
 const LEAVE_H: f32 = 56.0;
 
 /// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
-/// so spacing is uniform everywhere it's computed (see [`grid_cell`], [`Tableau::arrange_row`]).
+/// so spacing is uniform everywhere it's computed (see [`Tableau::structured_positions`],
+/// [`Tableau::arrange_row`]).
 const GAP: f32 = 12.0;
-/// A rendered Small card's outer size: its footprint plus the 2px border on each side. This is the pitch
-/// unit the grids and rows space by, so a card + [`GAP`] is the exact centre-to-centre step.
+/// A rendered Small card's outer size: its footprint plus the 2px border on each side. The stand-in box a
+/// not-yet-measured card gets, so the first frame of a structured layout is sane (see [`build_ui`]).
 const CARD_W: f32 = SMALL_W + 4.0;
 const CARD_H: f32 = SMALL_H + 4.0;
 /// Height of the **overlay band** at the top of a zone — the strip the floating title / Back / rail
@@ -1571,38 +1602,6 @@ const CARD_H: f32 = SMALL_H + 4.0;
 /// region by this so nothing lands under an overlay. A **freely-placed** zone (Free / root) uses no
 /// inset — its cards share the felt and the [`Pinned`] fixtures shove them clear instead. See [`build_ui`].
 const OVERLAY_BAND: f32 = 52.0;
-/// Cap on grid columns, so the first frame (before the real surface size is known) doesn't lay every
-/// card in one enormous row.
-const MAX_COLS: usize = 16;
-
-/// How many columns the card grid uses for a surface `width` (at least one, capped). Each column is a
-/// rendered card plus one [`GAP`], and the row is inset [`GAP`] from each edge, so it's the exact count
-/// that fits: `GAP + cols*(CARD_W + GAP) <= width`.
-fn grid_cols(width: f32) -> usize {
-    ((((width - GAP) / (CARD_W + GAP)).floor()) as usize).clamp(1, MAX_COLS)
-}
-
-/// Columns the **focused zone** lays its cards out in — the single source every layout path (draw,
-/// drag-drop, animate) reads, so they always agree: a fixed count for a 2-D [`Arrangement::Grid`], or
-/// a width-responsive count for a 1-D [`Arrangement::List`].
-fn zone_cols(tree: &Tableau) -> usize {
-    match tree.pile(tree.focus_id()).map(|p| p.layout().arrangement) {
-        Some(Arrangement::Grid { columns }) => columns.max(1),
-        _ => grid_cols(tree.surface().x),
-    }
-}
-
-/// The top-left position of grid cell `index` in a grid of `cols` columns (row-major). The grid is inset
-/// one [`GAP`] from the content region's left/top edges, and each cell steps by a rendered card plus one
-/// [`GAP`], so every gap — edge-to-card and card-to-card — is exactly [`GAP`].
-fn grid_cell(index: usize, cols: usize) -> (f32, f32) {
-    let col = index % cols;
-    let row = index / cols;
-    (
-        GAP + col as f32 * (CARD_W + GAP),
-        GAP + row as f32 * (CARD_H + GAP),
-    )
-}
 
 fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front: Option<CardId>) {
     let zone = tree.focus_id();
@@ -1831,18 +1830,31 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                 }
                             });
                     } else {
-                        // The zone lays its contents out — one shared path for every layout. An ordered
-                        // layout (List / Grid) places cards on a row-major grid via `zone_cols`; a Free
-                        // (unordered) deck places each card at its own model position and shoves overlaps.
-                        // A zone card on top is the pile's label, not a content card (see `content_cards`).
+                        // The zone lays its contents out — one shared path for every layout. A **structured**
+                        // layout (List / Grid) gets footprint-aware positions (`structured_positions`), so a
+                        // grown card reflows its neighbours instead of overlapping; a Free (unordered) deck
+                        // reads each node's own model position and shoves overlaps. The zone card on top is
+                        // the pile's label, not content (see `content_cards`).
                         let free = matches!(pile.layout().arrangement, Arrangement::Free);
-                        // Free decks are drag-at-will; an ordered layout is draggable only when editable.
+                        // Free decks are drag-at-will; a structured layout is draggable only when editable.
                         let draggable = free || pile.layout().editable;
-                        let cols = zone_cols(tree);
+                        // Same order as `movable_children`, so we zip by index below.
+                        let placed: Vec<(TableNode, Pos)> = if free {
+                            Vec::new()
+                        } else {
+                            tree.structured_positions(
+                                zone,
+                                GAP,
+                                GAP,
+                                Pos {
+                                    x: CARD_W,
+                                    y: CARD_H,
+                                },
+                            )
+                        };
                         // One uniform pass over the movable children: a card and a nested pile alike get a
                         // position, a drag marker, and (Free) shove — they differ only in their leaf face (a
-                        // card grows; a pile is a drillable chip). A Free layout reads each node's own model
-                        // position; an ordered one places them on the grid in child order.
+                        // card grows; a pile is a drillable chip).
                         for (index, node) in tree.movable_children(zone).into_iter().enumerate() {
                             let (x, y) = if free {
                                 let p = match node {
@@ -1852,7 +1864,8 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                 .unwrap_or_default();
                                 (p.x, p.y)
                             } else {
-                                grid_cell(index, cols)
+                                let p = placed.get(index).map(|&(_, p)| p).unwrap_or_default();
+                                (p.x, p.y)
                             };
                             let mut tile = surface.spawn(Node {
                                 position_type: PositionType::Absolute,
