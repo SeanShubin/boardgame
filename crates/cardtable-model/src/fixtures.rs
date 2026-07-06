@@ -124,7 +124,7 @@ const PHASES: [(&str, &str); 10] = [
     ),
     (
         "Wipe pile",
-        "The boundary rule of every engagement above, not a step of its own: as each engagement ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next engagement. Only Health persists; there is no separate end-of-round wipe.",
+        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
     ),
     (
         "Refresh",
@@ -355,7 +355,7 @@ pub fn sample_table() -> Tableau {
                     "Raid — Outrider -> Rearguard".into(),
                     "Clash — Rearguard / Vanguard -> Vanguard".into(),
                     "Breach — the trailing blows land".into(),
-                    "Each engagement banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.".into(),
+                    "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.".into(),
                 ],
             )
             .expect("engage detail");
