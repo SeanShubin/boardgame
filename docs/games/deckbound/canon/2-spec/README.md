@@ -829,20 +829,26 @@ the total you act on, the addends you audit.
 ### 2.7 Reset clocks — *when mitigation discards*
 
 > **Locked 2026-06-21.** A mitigation layer is defined by *when* it discards, not only how much.
+>
+> **Amended 2026-07-06.** Toughness's clock is **per engagement**, not per round — aligned to the
+> engagement-schedule model (§2.2, §4.6): every engagement banks its own pile and wipes it at that
+> engagement's boundary, so the sub-Toughness remainder is discarded up to five times a round, not once.
 
 **RULE.** A defensive layer carries a **reset clock** — when the damage it absorbs is discarded — and the
-clock is part of the stat. The Health channel stacks three:
-- **Armor** — **per hit**: the cut applies to each blow independently; sub-cut damage is discarded at once.
-- **Toughness** — **per round**: damage banks into the round's pile and flips a Health card each Toughness;
-  the sub-Toughness remainder clears at round end (§2.2).
+clock is part of the stat. The Health channel stacks three, from shortest clock to longest:
+- **Armor** — **per strike**: the cut applies to each blow independently, before it enters the pile;
+  sub-cut damage is discarded at once. *(Deferred to the gear system, §2.2.)*
+- **Toughness** — **per engagement**: damage banks into that engagement's pile and flips a Health card
+  each time the pile clears Toughness; the sub-Toughness remainder wipes at the engagement boundary
+  (§2.2, §4.6).
 - **Health (Quantity)** — **per encounter**: a flipped Health card stays flipped until combat ends
   (restored on a win, §2.1).
 
 The clock is **orthogonal to magnitude** — the same Power can sit on any clock — and choosing the clock is
 a design dimension in its own right.
 
-**WHY.** The clocks are **non-redundant because they counter different damage *shapes***: per-hit Armor
-erases **many small** hits (each shaved in full); high per-round Toughness lumps **few big** hits into
+**WHY.** The clocks are **non-redundant because they counter different damage *shapes***: per-strike Armor
+erases **many small** hits (each shaved in full); high per-engagement Toughness lumps **few big** hits into
 rare, meaningful flips; per-encounter Health is raw, shape-agnostic capacity. Keeping all three is
 **several strategies toward one end (survival)** — armor and a tough hide are *different on purpose*, and
 "it matters *when* they discard" is precisely why they do not collapse into one stat (the §2.2 WHY's
