@@ -1192,7 +1192,7 @@ fn settle_table_piles(
         .pile(root)
         .map(|p| p.subpiles().to_vec())
         .unwrap_or_default();
-    let mut changed = false;
+    let mut sized = false;
     for &p in &piles {
         let Some(size) = table.0.pile(p).map(|d| d.size()) else {
             continue;
@@ -1202,22 +1202,25 @@ fn settle_table_piles(
         }
         let was = prev.insert(p, size).unwrap_or_default();
         if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
-            changed = true;
+            sized = true;
         }
     }
-    // Reflow on a **width** change only — `arrange_row` wraps by width, so the surface height doesn't
-    // affect the row. Crucially, the surface *height* also flips as you enter/leave a zone's overlay-band
-    // inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on height would
-    // mistake every navigation back to the Table for a resize and re-tidy the decks each time.
+    // Track a **width** change only — the surface *height* also flips as you enter/leave a zone's
+    // overlay-band inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on
+    // height would mistake every navigation back to the Table for a resize.
     let surface = table.0.surface();
-    if (surface.x - prev_surface.x).abs() > 0.5 {
+    let resized = (surface.x - prev_surface.x).abs() > 0.5;
+    if resized {
         *prev_surface = surface;
-        changed = true;
     }
-    // When a pile's size first populates (or a window resize changes the bounds), lay the top-level piles
-    // out as an exact constant-gap row. Between such changes we leave them alone, so a manual drag sticks.
-    if changed {
+    // When a deck first sizes (or its chip changes size), lay the decks out as one clean constant-gap row.
+    // A window *resize*, by contrast, does NOT re-tidy — it just **bumps decks off the new edges**:
+    // `separate` clamps any that now fall outside back inside and de-overlaps, preserving the manual
+    // arrangement (decks that still fit don't move). Between these events a manual drag sticks.
+    if sized {
         table.0.arrange_row(root, GAP, OVERLAY_BAND);
+    } else if resized && let Some(anchor) = piles.first().copied() {
+        table.0.separate(root, TableNode::Pile(anchor));
     }
 }
 
