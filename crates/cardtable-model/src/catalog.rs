@@ -34,23 +34,29 @@ pub const STATS: [(&str, &str); 5] = [
     ),
 ];
 
-/// The abilities currently in play — the derived strike cards (one per range × area cell; see
-/// `deckbound::sub_phase`) the starters carry — each `(name, description)`.
+/// The kits' signature abilities — one per starter (the strike each carries, named for flavor), each
+/// `(name, description)`. Two kits strike melee-single (the Executioner's burst vs the Phantom's Tempo)
+/// but carry distinct abilities; the description records the underlying reach × area (see
+/// `deckbound::duel` / the duel-locks set).
 pub const ABILITIES: [(&str, &str); 4] = [
-    ("Jab", "Melee · single target"),
-    ("Shot", "Ranged · single target"),
-    ("Sweep", "Melee · area"),
-    ("Salvo", "Ranged · area"),
+    ("Alpha Strike", "Melee · single target — one big blow."),
+    ("Whirlwind", "Melee · area — hits the whole pack."),
+    (
+        "Stand-Off",
+        "Ranged · single target — strikes from the back, no riposte.",
+    ),
+    ("Slip-and-Cut", "Melee · single target — evades, then cuts."),
 ];
 
-/// The generic starter roster (the suitless classes from `data/balance/generic-classes.ron`), each
+/// The starter roster — the four **duel-locks kits** (`deckbound/data/balance/duel-locks.ron`), each
 /// `(name, stats, ability)` where `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` — the same
-/// order as [`STATS`] — and `ability` names an entry in [`ABILITIES`].
+/// order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole answer to one
+/// creature lock: Executioner→the Anvil, Broadsider→the Swarm, Marksman→the Coil, Phantom→the Mirage.
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
-    ("Skirmisher", [2, 2, 1, 2, 1], "Jab"),
-    ("Sentinel", [1, 2, 2, 1, 2], "Shot"),
-    ("Tempest", [1, 1, 1, 1, 2], "Salvo"),
-    ("Cleaver", [1, 1, 2, 1, 1], "Sweep"),
+    ("Executioner", [6, 3, 1, 1, 1], "Alpha Strike"),
+    ("Broadsider", [2, 3, 3, 1, 1], "Whirlwind"),
+    ("Marksman", [4, 4, 1, 2, 2], "Stand-Off"),
+    ("Phantom", [4, 3, 1, 2, 3], "Slip-and-Cut"),
 ];
 
 /// The description for a stat by name (from [`STATS`]), or `""` if unknown.

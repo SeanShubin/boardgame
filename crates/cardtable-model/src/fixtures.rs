@@ -565,19 +565,19 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
-        assert_eq!(names, ["Skirmisher", "Sentinel", "Tempest", "Cleaver"]);
+        assert_eq!(names, ["Executioner", "Broadsider", "Marksman", "Phantom"]);
         for &c in &starters {
             assert_eq!(t.card(c).unwrap().card_type(), "Kit");
         }
 
-        // Skirmisher grows to its stat line + ability.
-        let skirmisher = t.card(starters[0]).unwrap();
-        assert!(skirmisher.detail().iter().any(|l| l.contains("Might 2")));
+        // The Executioner grows to its stat line + ability.
+        let executioner = t.card(starters[0]).unwrap();
+        assert!(executioner.detail().iter().any(|l| l.contains("Might 6")));
         assert!(
-            skirmisher
+            executioner
                 .detail()
                 .iter()
-                .any(|l| l.contains("Abilities: Jab"))
+                .any(|l| l.contains("Abilities: Alpha Strike"))
         );
 
         let top = t.card(*kit.cards().last().unwrap()).unwrap();
@@ -675,7 +675,7 @@ mod tests {
             .add_card(
                 inn,
                 Face::Up {
-                    title: "Cleaver".into(),
+                    title: "Phantom".into(),
                 },
                 None,
             )
@@ -683,8 +683,8 @@ mod tests {
         t.set_card_recipe(
             kit,
             Recipe {
-                stats: [1, 1, 2, 1, 1],
-                ability: "Sweep".into(),
+                stats: [4, 3, 1, 2, 3],
+                ability: "Slip-and-Cut".into(),
             },
         )
         .unwrap();
@@ -705,12 +705,12 @@ mod tests {
         assert_eq!(
             names,
             [
-                "Might 1",
-                "Vitality 1",
-                "Toughness 2",
-                "Cadence 1",
-                "Finesse 1",
-                "Sweep"
+                "Might 4",
+                "Vitality 3",
+                "Toughness 1",
+                "Cadence 2",
+                "Finesse 3",
+                "Slip-and-Cut"
             ]
         );
         assert_eq!(
