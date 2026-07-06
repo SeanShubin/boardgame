@@ -1205,9 +1205,12 @@ fn settle_table_piles(
             changed = true;
         }
     }
-    // A window resize moves the surface bounds — reflow against the new width.
+    // Reflow on a **width** change only — `arrange_row` wraps by width, so the surface height doesn't
+    // affect the row. Crucially, the surface *height* also flips as you enter/leave a zone's overlay-band
+    // inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on height would
+    // mistake every navigation back to the Table for a resize and re-tidy the decks each time.
     let surface = table.0.surface();
-    if (surface.x - prev_surface.x).abs() > 0.5 || (surface.y - prev_surface.y).abs() > 0.5 {
+    if (surface.x - prev_surface.x).abs() > 0.5 {
         *prev_surface = surface;
         changed = true;
     }
