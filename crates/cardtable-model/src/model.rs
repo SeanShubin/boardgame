@@ -116,6 +116,19 @@ pub enum Utility {
     StartOver,
 }
 
+/// A **recipe**: the structured content a starting kit yields when it equips a character. It carries the
+/// stat *values* (`[Might, Vitality, Toughness, Cadence, Finesse]`, the [`catalog::STATS`](crate::catalog::STATS)
+/// order) and the name of the ability the character gains. Building a character deck instantiates it —
+/// one card per stat named `"{Stat} {value}"` plus one ability card — each looking its description up in
+/// the [`catalog`](crate::catalog), so the kit stores only the numbers and everything else is authored once.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Recipe {
+    /// The five stat values, in `[Might, Vitality, Toughness, Cadence, Finesse]` order.
+    pub stats: [u8; 5],
+    /// The ability the character gains — a name in [`catalog::ABILITIES`](crate::catalog::ABILITIES).
+    pub ability: String,
+}
+
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
 /// larger render [`Size`]s (`detail`, `panel`) and a [`CardKind`] that gives a click its meaning.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -139,9 +152,9 @@ pub struct Card {
     /// [`Arrangement::Free`] deck, where cards are placed and shoved like the top-level piles.
     pos: Pos,
     footprint: Pos,
-    /// An ordered list of card names this card **yields when combined** — a recipe. A starting kit
-    /// carries the cards a character gains when equipped with it; an ordinary card's recipe is empty.
-    recipe: Vec<String>,
+    /// This card's **recipe** — the structured content it yields when combined. A starting kit carries a
+    /// [`Recipe`] (the character's stat values + ability); an ordinary card (e.g. a hero identity) has none.
+    recipe: Option<Recipe>,
 }
 
 impl Card {
@@ -198,9 +211,9 @@ impl Card {
         self.footprint
     }
 
-    /// The card names this card yields when combined (a kit's recipe). Empty for an ordinary card.
-    pub fn recipe(&self) -> &[String] {
-        &self.recipe
+    /// The [`Recipe`] this card yields when combined (a kit's recipe), or `None` for an ordinary card.
+    pub fn recipe(&self) -> Option<&Recipe> {
+        self.recipe.as_ref()
     }
 
     /// Whether the card has more than a name to show, so a click can grow it.
@@ -605,7 +618,7 @@ impl Tableau {
                 home: pile,
                 pos: Pos::default(),
                 footprint: Pos::default(),
-                recipe: Vec::new(),
+                recipe: None,
             },
         );
         self.piles
@@ -900,6 +913,39 @@ impl Tableau {
             .collect()
     }
 
+    /// Spawn a [`Recipe`]'s cards on top of `pile`, in order: one **stat** card per stat named
+    /// `"{Stat} {value}"` (e.g. `"Might 2"`), typed `"stat"`, its detail the stat's
+    /// [`catalog`](crate::catalog) description; then one **ability** card named after the ability, typed
+    /// `"ability"`, its detail the ability's catalog description. Each stat stays a single physical card
+    /// (value *and* description together) — never split into a name card and a value card.
+    fn spawn_recipe_cards(&mut self, pile: PileId, recipe: &Recipe) -> Result<(), TableauError> {
+        for (&(stat, description), &value) in crate::catalog::STATS.iter().zip(recipe.stats.iter())
+        {
+            let id = self.add_card(
+                pile,
+                Face::Up {
+                    title: format!("{stat} {value}"),
+                },
+                None,
+            )?;
+            self.set_card_type(id, "stat")?;
+            self.set_card_detail(id, vec![description.to_string()])?;
+        }
+        let ability = self.add_card(
+            pile,
+            Face::Up {
+                title: recipe.ability.clone(),
+            },
+            None,
+        )?;
+        self.set_card_type(ability, "ability")?;
+        self.set_card_detail(
+            ability,
+            vec![crate::catalog::ability_description(&recipe.ability).to_string()],
+        )?;
+        Ok(())
+    }
+
     /// **Combine** an `identity` card with a `recipe` card (e.g. a hero with a starting kit) into a new
     /// top-level **character deck**, returning its id. The character deck is a [`Free`](Arrangement::Free)
     /// deck holding the recipe's cards, a reserved battle-rank identity copy, and the identity itself as
@@ -919,7 +965,7 @@ impl Tableau {
             .name()
             .to_string();
         let card_type = self.cards[&identity].card_type.clone();
-        let recipe_cards = self
+        let recipe_content = self
             .cards
             .get(&recipe)
             .ok_or(TableauError::UnknownCard(recipe))?
@@ -930,15 +976,9 @@ impl Tableau {
         }
 
         let character = self.add_pile(self.root, name.clone())?;
-        // The kit's cards, in order (bottom → top).
-        for card_name in &recipe_cards {
-            self.add_card(
-                character,
-                Face::Up {
-                    title: card_name.clone(),
-                },
-                None,
-            )?;
+        // The kit's cards, in order (bottom → top): one stat card per stat, then the ability.
+        if let Some(recipe) = &recipe_content {
+            self.spawn_recipe_cards(character, recipe)?;
         }
         // A reserved battle-rank identity copy...
         let rank = self.add_card(
@@ -1027,7 +1067,7 @@ impl Tableau {
             let hero = pair
                 .iter()
                 .copied()
-                .find(|&c| self.cards.get(&c).is_some_and(|k| k.recipe.is_empty()));
+                .find(|&c| self.cards.get(&c).is_some_and(|k| k.recipe.is_none()));
             if let Some(hero) = hero {
                 active_heroes.push(hero);
             }
@@ -1097,18 +1137,11 @@ impl Tableau {
         let card_type = self.cards[&hero].card_type.clone();
         let recipe = kit
             .and_then(|k| self.cards.get(&k))
-            .map(|k| k.recipe.clone())
-            .unwrap_or_default();
+            .and_then(|k| k.recipe.clone());
 
         let deck = self.add_pile(self.root, name.clone())?;
-        for card_name in &recipe {
-            self.add_card(
-                deck,
-                Face::Up {
-                    title: card_name.clone(),
-                },
-                None,
-            )?;
+        if let Some(recipe) = &recipe {
+            self.spawn_recipe_cards(deck, recipe)?;
         }
         let label = self.add_card(
             deck,
@@ -1222,16 +1255,12 @@ impl Tableau {
         Ok(())
     }
 
-    /// Sets a card's [`recipe`](Card::recipe) — the ordered card names it yields when combined.
-    pub fn set_card_recipe(
-        &mut self,
-        card: CardId,
-        recipe: Vec<String>,
-    ) -> Result<(), TableauError> {
+    /// Sets a card's [`recipe`](Card::recipe) — the [`Recipe`] it yields when combined (a kit).
+    pub fn set_card_recipe(&mut self, card: CardId, recipe: Recipe) -> Result<(), TableauError> {
         self.cards
             .get_mut(&card)
             .ok_or(TableauError::UnknownCard(card))?
-            .recipe = recipe;
+            .recipe = Some(recipe);
         Ok(())
     }
 
@@ -2082,8 +2111,14 @@ mod tests {
                 None,
             )
             .unwrap();
-        t.set_card_recipe(kit, vec!["Might".into(), "2".into(), "Jab".into()])
-            .unwrap();
+        t.set_card_recipe(
+            kit,
+            Recipe {
+                stats: [2, 3, 1, 2, 1],
+                ability: "Jab".into(),
+            },
+        )
+        .unwrap();
         // The inn projects both decks.
         let inn = t.add_pile(root, "Inn").unwrap();
         t.set_projection(inn, vec![identity, kits]).unwrap();
@@ -2103,7 +2138,19 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
-        assert_eq!(content, ["Might", "2", "Jab", "Vael"]); // kit's cards, then the rank copy
+        // The recipe instantiates one card per stat ("{Stat} {value}") then the ability, then the rank copy.
+        assert_eq!(
+            content,
+            [
+                "Might 2",
+                "Vitality 3",
+                "Toughness 1",
+                "Cadence 2",
+                "Finesse 1",
+                "Jab",
+                "Vael"
+            ]
+        );
         assert!(
             t.content_cards(inn)
                 .iter()
@@ -2168,6 +2215,39 @@ mod tests {
             let homes = t.piles.values().filter(|d| d.cards().contains(&id)).count();
             assert_eq!(homes, 1, "card must live in exactly one pile");
             assert!(t.pile(card.home()).unwrap().cards().contains(&id));
+        }
+    }
+
+    /// Conservation guard: in the sample table every card is a **real member** of some pile — owned as a
+    /// child, not merely shown. A projection (the inn) *displays* other decks' cards but never lists them
+    /// among its own children, so a projected card is still counted at its true home. Thus no card can
+    /// exist only as a projection with no real home.
+    #[test]
+    fn sample_table_has_no_projection_only_cards() {
+        let t = crate::fixtures::sample_table();
+        // Walk every pile and tally who owns each card (a pile owns exactly the Card nodes in its children).
+        let mut owners: HashMap<CardId, usize> = HashMap::new();
+        for pile in t.piles.values() {
+            for cid in pile.cards() {
+                *owners.entry(cid).or_default() += 1;
+                // The owned card's recorded home points back to this very pile.
+                assert_eq!(
+                    t.cards[&cid].home, pile.id,
+                    "card {cid:?} home must match its owning pile"
+                );
+            }
+        }
+        // Every card is owned exactly once...
+        for (&id, &count) in &owners {
+            assert_eq!(count, 1, "card {id:?} is owned by more than one pile");
+        }
+        // ...and every card in the tableau is owned somewhere — none is projection-only.
+        assert_eq!(owners.len(), t.card_count());
+        for id in t.cards.keys() {
+            assert!(
+                owners.contains_key(id),
+                "card {id:?} exists only as a projection, with no real (non-projection) home"
+            );
         }
     }
 }

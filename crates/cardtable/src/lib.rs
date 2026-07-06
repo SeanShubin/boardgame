@@ -519,8 +519,8 @@ fn on_drop(
             .is_some_and(|p| !p.projection().is_empty());
         if is_projection {
             let (a, b) = (dragged.0, target.0);
-            let a_kit = table.0.card(a).is_some_and(|c| !c.recipe().is_empty());
-            let b_kit = table.0.card(b).is_some_and(|c| !c.recipe().is_empty());
+            let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
+            let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
             let pair = match (a_kit, b_kit) {
                 (true, false) => Some((b, a)), // a is the kit, b the identity
                 (false, true) => Some((a, b)), // b is the kit, a the identity
@@ -785,7 +785,7 @@ fn fan_layout(
 /// Identity deck / Hero row; a **kit** (has a recipe) is *copied* in, since kits are reusable, so the
 /// original stays in the Kit deck.
 fn drop_card_into_active(table: &mut Tableau, card: CardId, inn: PileId) {
-    let is_kit = table.card(card).is_some_and(|c| !c.recipe().is_empty());
+    let is_kit = table.card(card).is_some_and(|c| c.recipe().is_some());
     // The Active row's cards (row Headers aside) group into hero-kit pairs by position. An even count
     // means every pair is complete, so a new card of either kind starts a fresh pair; an odd count means
     // the last card is a lone half-pair, so only the *opposite* kind may be dropped to complete it.
@@ -803,7 +803,7 @@ fn drop_card_into_active(table: &mut Tableau, card: CardId, inn: PileId) {
         let last_is_kit = active
             .last()
             .and_then(|&c| table.card(c))
-            .map(|c| !c.recipe().is_empty())
+            .map(|c| c.recipe().is_some())
             .unwrap_or(false);
         if last_is_kit == is_kit {
             return; // a lone half-pair can only be completed by the opposite kind
@@ -818,13 +818,12 @@ fn drop_card_into_active(table: &mut Tableau, card: CardId, inn: PileId) {
             .card(card)
             .map(|c| c.card_type().to_string())
             .unwrap_or_default();
-        let recipe = table
-            .card(card)
-            .map(|c| c.recipe().to_vec())
-            .unwrap_or_default();
+        let recipe = table.card(card).and_then(|c| c.recipe().cloned());
         if let Ok(copy) = table.add_card(inn, Face::Up { title: name }, None) {
             let _ = table.set_card_type(copy, card_type);
-            let _ = table.set_card_recipe(copy, recipe);
+            if let Some(recipe) = recipe {
+                let _ = table.set_card_recipe(copy, recipe);
+            }
         }
     } else {
         let at = table.pile(inn).map_or(0, |p| p.cards().len());
@@ -857,7 +856,7 @@ fn put_pair_back(table: &mut Tableau, inn: PileId, card: CardId) {
         leaving.push(partner);
     }
     for c in leaving {
-        let is_kit = table.card(c).is_some_and(|k| !k.recipe().is_empty());
+        let is_kit = table.card(c).is_some_and(|k| k.recipe().is_some());
         if is_kit {
             let _ = table.remove_card(c); // a kit copy — discard it
         } else if let Some(identity) = identity {

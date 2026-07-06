@@ -2,7 +2,8 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Tableau};
+use crate::catalog;
+use crate::model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Recipe, Tableau};
 
 /// Add a face-up card with a name and a [`type`](crate::model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -35,23 +36,15 @@ fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability
         ],
     )
     .expect("starter card just added");
-    // The kit's **recipe** — the ordered cards a character receives when equipped with it: each stat as
-    // a name card then a value card, then the ability.
+    // The kit's **recipe** — the structured content a character receives when equipped with it: the five
+    // stat values and the ability. Instantiating it (see `Tableau::combine`) mints one card per stat and
+    // one for the ability, each looking its description up in the catalog.
     tree.set_card_recipe(
         id,
-        vec![
-            "Might".into(),
-            might.to_string(),
-            "Vitality".into(),
-            vitality.to_string(),
-            "Toughness".into(),
-            toughness.to_string(),
-            "Cadence".into(),
-            cadence.to_string(),
-            "Finesse".into(),
-            finesse.to_string(),
-            ability.into(),
-        ],
+        Recipe {
+            stats,
+            ability: ability.into(),
+        },
     )
     .expect("starter card just added");
     id
@@ -130,15 +123,6 @@ const PHASES: [(&str, &str); 10] = [
         "Refresh",
         "Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
     ),
-];
-
-/// The abilities currently in play — the derived strike cards (one per range × area cell; see
-/// `deckbound::sub_phase`) that the Kit starters carry — each with a one-line description.
-const ABILITIES: [(&str, &str); 4] = [
-    ("Jab", "Melee · single target"),
-    ("Shot", "Ranged · single target"),
-    ("Sweep", "Melee · area"),
-    ("Salvo", "Ranged · area"),
 ];
 
 /// The one-line mechanical summary for a phase name (from [`PHASES`]), or `""` if unknown.
@@ -220,16 +204,9 @@ pub fn sample_table() -> Tableau {
     // `data/balance/generic-classes.ron`). Each is a Small card that grows to its five-stat line and
     // ability, and carries a **recipe** — the cards a character gains when equipped with it.
     let starting_kit = tree.add_pile(root, "Kit").expect("root exists");
-    starter(
-        &mut tree,
-        starting_kit,
-        "Skirmisher",
-        [2, 2, 1, 2, 1],
-        "Jab",
-    );
-    starter(&mut tree, starting_kit, "Sentinel", [1, 2, 2, 1, 2], "Shot");
-    starter(&mut tree, starting_kit, "Tempest", [1, 1, 1, 1, 2], "Salvo");
-    starter(&mut tree, starting_kit, "Cleaver", [1, 1, 2, 1, 1], "Sweep");
+    for &(name, stats, ability) in &catalog::ROSTER {
+        starter(&mut tree, starting_kit, name, stats, ability);
+    }
     let kit_zone = typed(&mut tree, starting_kit, "Kit", "Label");
     tree.set_card_kind(kit_zone, CardKind::Zone)
         .expect("kit zone card");
@@ -245,7 +222,7 @@ pub fn sample_table() -> Tableau {
     // An "Abilities" deck: one card per ability currently in use (the strike cards the starters carry).
     // Each is a Small card that grows to its one-line description.
     let abilities = tree.add_pile(root, "Abilities").expect("root exists");
-    for (name, description) in ABILITIES {
+    for (name, description) in catalog::ABILITIES {
         let id = typed(&mut tree, abilities, name, "ability");
         tree.set_card_detail(id, vec![description.to_string()])
             .expect("ability card just added");
@@ -261,6 +238,27 @@ pub fn sample_table() -> Tableau {
         },
     )
     .expect("abilities exists");
+
+    // A "Stats" deck: the physical **home** of the five stat cards (conservation — every card has a real
+    // home). Each is a Small card showing the stat *concept* (name + description, no value); a recruited
+    // character deck holds the *instance* ("Might 2"). Sourced from the catalog, like the Abilities deck.
+    let stats = tree.add_pile(root, "Stats").expect("root exists");
+    for (name, description) in catalog::STATS {
+        let id = typed(&mut tree, stats, name, "stat");
+        tree.set_card_detail(id, vec![description.to_string()])
+            .expect("stat card just added");
+    }
+    let stats_zone = typed(&mut tree, stats, "Stats", "Label");
+    tree.set_card_kind(stats_zone, CardKind::Zone)
+        .expect("stats zone card");
+    tree.set_layout(
+        stats,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("stats exists");
 
     // The "Locations" deck: a fixed 3×3 grid (2-D, non-editable) of place-piles from the Name Bank,
     // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the *inn*: a
@@ -393,6 +391,7 @@ pub fn sample_table() -> Tableau {
     grid_layout(&mut tree, identity, 4);
     grid_layout(&mut tree, starting_kit, 4);
     grid_layout(&mut tree, abilities, 4);
+    grid_layout(&mut tree, stats, 4);
 
     // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
     // exact constant-gap row computed by `Tableau::arrange_row` once the chips are sized (see the
@@ -403,9 +402,10 @@ pub fn sample_table() -> Tableau {
         .expect("starting kit exists");
     tree.set_pile_pos(abilities, 320.0, 40.0)
         .expect("abilities exists");
-    tree.set_pile_pos(locations, 460.0, 40.0)
+    tree.set_pile_pos(stats, 460.0, 40.0).expect("stats exists");
+    tree.set_pile_pos(locations, 600.0, 40.0)
         .expect("locations exists");
-    tree.set_pile_pos(rules, 600.0, 40.0).expect("rules exists");
+    tree.set_pile_pos(rules, 740.0, 40.0).expect("rules exists");
 
     tree
 }
@@ -418,14 +418,14 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        assert_eq!(root.subpiles().len(), 5); // Identity, Kit, Abilities, Locations, Rules
+        assert_eq!(root.subpiles().len(), 6); // Identity, Kit, Abilities, Stats, Locations, Rules
         // Identity: 9 heroes + a Zone card. Kit: 4 starters + a Zone card. Abilities: 4 + a Zone card.
-        // Locations: a "Location" Zone card + 9 place name cards + the inn's 3 row-header cards
-        // (Hero / Kit / Active) under Ashfen Crossing. Rules: 5 leaf phase cards + a Zone label; the
-        // Engage sub-deck: 5 child phases + a Zone label.
+        // Stats: 5 stat cards + a Zone card. Locations: a "Location" Zone card + 9 place name cards + the
+        // inn's 3 row-header cards (Hero / Kit / Active) under Ashfen Crossing. Rules: 5 leaf phase cards +
+        // a Zone label; the Engage sub-deck: 5 child phases + a Zone label.
         assert_eq!(
             t.card_count(),
-            (9 + 1) + (4 + 1) + (4 + 1) + (1 + 9 + 3) + ((5 + 1) + (5 + 1))
+            (9 + 1) + (4 + 1) + (4 + 1) + (5 + 1) + (1 + 9 + 3) + ((5 + 1) + (5 + 1))
         );
     }
 
@@ -441,8 +441,8 @@ mod tests {
         let abilities = t.pile(id).unwrap();
 
         let cards = t.content_cards(abilities.id);
-        assert_eq!(cards.len(), ABILITIES.len());
-        for (&cid, (name, _)) in cards.iter().zip(ABILITIES) {
+        assert_eq!(cards.len(), catalog::ABILITIES.len());
+        for (&cid, (name, _)) in cards.iter().zip(catalog::ABILITIES) {
             let card = t.card(cid).unwrap();
             assert_eq!(card.name(), name);
             assert_eq!(card.card_type(), "ability");
@@ -668,8 +668,14 @@ mod tests {
                 None,
             )
             .unwrap();
-        t.set_card_recipe(kit, vec!["Might".into(), "1".into()])
-            .unwrap();
+        t.set_card_recipe(
+            kit,
+            Recipe {
+                stats: [1, 1, 2, 1, 1],
+                ability: "Sweep".into(),
+            },
+        )
+        .unwrap();
 
         // Reflecting yields exactly one deck for that hero: the kit's cards under the hero's Zone label.
         t.sync_character_decks(inn).unwrap();
@@ -683,7 +689,18 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
-        assert_eq!(names, ["Might", "1"]); // the kit's recipe, copied
+        // The kit's recipe, instantiated: one card per stat ("{Stat} {value}") then the ability.
+        assert_eq!(
+            names,
+            [
+                "Might 1",
+                "Vitality 1",
+                "Toughness 2",
+                "Cadence 1",
+                "Finesse 1",
+                "Sweep"
+            ]
+        );
         assert_eq!(
             t.card(*deck.cards().last().unwrap()).unwrap().name(),
             hero_name // topped by the hero's Zone label

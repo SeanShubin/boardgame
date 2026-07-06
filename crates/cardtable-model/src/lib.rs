@@ -12,12 +12,13 @@
 //! See `docs/games/deckbound/presentation/card-table-ui.md` for the design this realizes.
 
 pub mod binding;
+pub mod catalog;
 pub mod fixtures;
 pub mod model;
 
 pub use binding::from_table_view;
 pub use fixtures::sample_table;
 pub use model::{
-    Arrangement, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Size, Tableau,
-    TableauError, Utility,
+    Arrangement, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe, Size,
+    Tableau, TableauError, Utility,
 };
