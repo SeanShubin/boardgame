@@ -1411,6 +1411,8 @@ fn type_accent(card_type: &str) -> Color {
         "item" => Color::srgb(0.74, 0.58, 0.26),     // gold
         "log" => Color::srgb(0.44, 0.44, 0.52),      // slate
         "zone" => Color::srgb(0.50, 0.40, 0.62),     // violet — a structural / naming card
+        "encounter" => Color::srgb(0.74, 0.44, 0.22), // burnt orange — a fight to be had
+        "foe" => Color::srgb(0.54, 0.24, 0.28), // oxblood — a creature to fight (darker than hero crimson)
         other => hashed_accent(other),
     }
 }
