@@ -1595,17 +1595,34 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                 }
                             });
                     } else if Some(zone) == top_deck(tree, "Locations") {
-                        // The location **map**: each place is a cell — a drop-target place card over the
-                        // character tokens standing there. Drag a token onto another place card to move that
-                        // character (see `on_node_drag_end` -> `Tableau::move_character`); the token keeps its
-                        // home (the place pile), so relocating it *is* the move. Clicking a place card drills
-                        // into it (reaching the Inn at Ashfen — the place cards carry `PileDropZone`).
+                        // The location **map**: a fixed-column grid of place cells. Each cell is a place card
+                        // with the character tokens standing there **cascaded below it** — every token slid one
+                        // title strip down so the card above still shows its title (title-at-top), later tokens
+                        // on top. The cell carries an explicit height, so a place with more tokens is a taller
+                        // cell and the wrap-grid pushes the rows below it down — the map stays aligned on both
+                        // axes as characters gather. Drag a token onto another place card to move that character
+                        // (`on_node_drag_end` -> `Tableau::move_character`); its home stays the place pile, so
+                        // relocating it *is* the move. A place card's exposed title strip drills in (it carries
+                        // `PileDropZone`). Columns come from the Locations `Grid` arrangement (a real map, not a
+                        // width-responsive reflow), so the grid is sized to fit exactly that many.
+                        let cols = match tree.pile(zone).map(|p| p.layout().arrangement) {
+                            Some(Arrangement::Grid { columns }) => columns.max(1),
+                            _ => 3,
+                        };
+                        let grid_w =
+                            cols as f32 * SMALL_W + (cols.saturating_sub(1)) as f32 * MAP_CELL_GAP;
                         surface
                             .spawn(Node {
                                 flex_direction: FlexDirection::Row,
                                 flex_wrap: FlexWrap::Wrap,
-                                width: Val::Percent(100.0),
-                                padding: UiRect::all(Val::Px(MAP_PAD)),
+                                align_items: AlignItems::FlexStart, // top-align cells so rows read as rows
+                                width: Val::Px(grid_w),
+                                margin: UiRect {
+                                    top: Val::Px(MAP_PAD),
+                                    left: Val::Auto,
+                                    right: Val::Auto,
+                                    bottom: Val::Px(MAP_PAD),
+                                },
                                 column_gap: Val::Px(MAP_CELL_GAP),
                                 row_gap: Val::Px(MAP_CELL_GAP),
                                 ..default()
@@ -1620,22 +1637,36 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                                 .is_some_and(|k| k.card_type() == "location-token")
                                         })
                                         .collect();
+                                    // Tall enough for the place card plus one title strip per stationed token.
+                                    let cell_h = SMALL_H + tokens.len() as f32 * TITLE_OFFSET;
                                     grid.spawn(Node {
-                                        flex_direction: FlexDirection::Column,
-                                        align_items: AlignItems::Center,
-                                        row_gap: Val::Px(6.0),
+                                        position_type: PositionType::Relative,
                                         width: Val::Px(SMALL_W),
+                                        height: Val::Px(cell_h),
                                         ..default()
                                     })
                                     .with_children(|cell| {
-                                        spawn_place_card(cell, tree, place);
-                                        // The character tokens here — each a draggable Small card, built like
-                                        // a fan card (Movable wrapper + face child) so the drag observers fire.
-                                        for tok in tokens {
+                                        // The place card is the base of the cascade, at the cell's top.
+                                        cell.spawn(Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(0.0),
+                                            top: Val::Px(0.0),
+                                            ..default()
+                                        })
+                                        .with_children(|slot| spawn_place_card(slot, tree, place));
+                                        // Each token cascades one strip lower and sits above the last, so the
+                                        // card above shows only its title. Movable so the drag observers fire.
+                                        for (i, tok) in tokens.into_iter().enumerate() {
                                             let card = tree.card(tok).expect("token card");
                                             cell.spawn((
                                                 Movable(TableNode::Card(tok)),
-                                                Node::default(),
+                                                ZIndex(i as i32 + 1),
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Px(0.0),
+                                                    top: Val::Px((i as f32 + 1.0) * TITLE_OFFSET),
+                                                    ..default()
+                                                },
                                             ))
                                             .with_children(|t| spawn_card_small(t, card, 1));
                                         }
@@ -1921,10 +1952,13 @@ fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: Pi
                 padding: UiRect::all(Val::Px(8.0)),
                 border: UiRect::all(Val::Px(2.0)),
                 flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
+                // Title at the top: on the map a token cascades over the place card's body, so its name
+                // must sit in the top strip that stays exposed (and stays the click target to drill in).
+                justify_content: JustifyContent::FlexStart,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(2.0),
                 border_radius: BorderRadius::all(Val::Px(12.0)),
+                overflow: Overflow::clip(),
                 ..default()
             },
             BackgroundColor(CARD_BACK),
@@ -1961,6 +1995,10 @@ const INN_HEADER_GAP: f32 = 8.0;
 /// read as *stationed here*, not crowding the next place.
 const MAP_PAD: f32 = 16.0;
 const MAP_CELL_GAP: f32 = 24.0;
+/// The cascade step for a map cell: each character token stationed at a place is slid this far below the
+/// card above it, so that card's top **title strip** stays visible (title-at-top). One title line plus its
+/// top padding — tuned so a stack of tokens reads as a column of names.
+const TITLE_OFFSET: f32 = 26.0;
 
 /// The x offset of fan card `index` (of `count`) within a fan `width` px wide, when `front_idx` — if any —
 /// is the card pulled to the front. The single source of truth for fan geometry: [`build_ui`] seeds each
