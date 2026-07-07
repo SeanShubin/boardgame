@@ -50,6 +50,34 @@ fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability
     id
 }
 
+/// Author a **foe** card for creature `c` (typed `foe`): a Small card (name + type) that grows to show
+/// its derived intention and posture, its five-stat line, and its ability. Both the intention and the
+/// posture are *derived* from the stats + ability (`catalog::creature_intention` / `creature_posture`),
+/// never stored — the card reads back what the numbers already say. Mirrors [`starter`] for kits.
+fn creature_card(tree: &mut Tableau, pile: PileId, c: &catalog::Creature) -> CardId {
+    let id = typed(tree, pile, c.name, "foe");
+    let [might, vitality, toughness, cadence, finesse] = c.stats;
+    tree.set_card_detail(
+        id,
+        vec![
+            format!(
+                "{} · {}",
+                catalog::creature_intention(c),
+                catalog::creature_posture(c)
+            ),
+            format!("Might {might} · Vitality {vitality} · Toughness {toughness}"),
+            format!("Cadence {cadence} · Finesse {finesse}"),
+            format!(
+                "{}: {}",
+                c.ability,
+                catalog::creature_ability_description(c.ability)
+            ),
+        ],
+    )
+    .expect("foe card just added");
+    id
+}
+
 /// The authored location names from the Deckbound Name Bank
 /// (`docs/games/deckbound/name-bank.md` § Locations). Ordered so "Ashfen Crossing" falls in the
 /// centre cell (index 4, row-major) of the 3×3 grid.
@@ -342,14 +370,20 @@ pub fn sample_table() -> Tableau {
                 },
             )
             .expect("inn exists");
-        } else if let Some((title, kit, detail)) = catalog::encounter_for(place) {
-            // Every non-inn location stations one **encounter** (PC): a creature to fight. The four cells
-            // adjacent to the inn are single duel-locks creatures soloable by their answering kit; the
-            // four corners are full-party fights. The favoured kit and the how-to-beat-it live in the
-            // detail lines (`catalog::encounter_for`), so drilling into the place reads like a quest card.
-            let enc = typed(&mut tree, place_pile, title, "encounter");
-            tree.set_card_detail(enc, vec![format!("Favours: {kit}"), detail.to_string()])
-                .expect("encounter detail");
+        } else if let Some(enc) = catalog::encounter_for(place) {
+            // Every non-inn location stations an **encounter**: a header card and its foes, dealt in as
+            // physical instances (PC.2 setup deal). A solo (an inn-adjacent cell) stations its one
+            // keystone creature; a corner fields all four creatures with the keystone doubled. No
+            // "favours" line — which kit answers it is inferred from the foes' postures on the table.
+            let header = typed(&mut tree, place_pile, enc.title, "encounter");
+            tree.set_card_detail(header, vec![enc.flavor.to_string()])
+                .expect("encounter flavor");
+            for (c, qty) in catalog::encounter_foes(enc) {
+                let foe = creature_card(&mut tree, place_pile, c);
+                if qty > 1 {
+                    tree.set_card_quantity(foe, qty).expect("foe stack");
+                }
+            }
         }
     }
     let loc_zone = typed(&mut tree, locations, "Location", "Label");
@@ -493,6 +527,18 @@ pub fn sample_table() -> Tableau {
         .expect("roster zone card");
     free(&mut tree, roster);
 
+    // The **Bestiary**: the foes' home deck — one concept card per creature type (the canonical "what a
+    // Coil is", like the Stats deck holds stat concepts). The physical foe *instances* live at the
+    // encounters (dealt into the locations above); on defeat they will return here (combat, later).
+    let bestiary = tree.add_pile(root, "Bestiary").expect("root exists");
+    for c in &catalog::CREATURES {
+        creature_card(&mut tree, bestiary, c);
+    }
+    let bestiary_zone = typed(&mut tree, bestiary, "Bestiary", "Label");
+    tree.set_card_kind(bestiary_zone, CardKind::Zone)
+        .expect("bestiary zone card");
+    free(&mut tree, bestiary);
+
     // Lay each Free deck's cards out tidily below the overlay band, so the first render of a zone is
     // clean — the Back card sits in its own row up top with the cards beneath it, no shove required yet.
     grid_layout(&mut tree, identity, 4);
@@ -502,6 +548,7 @@ pub fn sample_table() -> Tableau {
     grid_layout(&mut tree, numbers, 4);
     grid_layout(&mut tree, events, 4);
     grid_layout(&mut tree, roster, 4);
+    grid_layout(&mut tree, bestiary, 4);
 
     // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
     // exact constant-gap row computed by `Tableau::arrange_row` once the chips are sized (see the
@@ -525,6 +572,8 @@ pub fn sample_table() -> Tableau {
         .expect("events exists");
     tree.set_pile_pos(roster, 1300.0, 40.0)
         .expect("roster exists");
+    tree.set_pile_pos(bestiary, 1440.0, 40.0)
+        .expect("bestiary exists");
 
     tree
 }
@@ -537,14 +586,17 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        // Identity, Kit, the banks (Abilities, Stats, Numbers), Locations, Rules, + the day clock (Day,
-        // Progress, Events, Roster).
-        assert_eq!(root.subpiles().len(), 11);
+        // Identity, Kit, the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock (Day,
+        // Progress, Events, Roster), + the Bestiary.
+        assert_eq!(root.subpiles().len(), 12);
         // Identity: 9 heroes + a Zone card. Kit: 4 starter specs + a Zone card. The banks: Abilities
         // (4 abilities × 5 copies), Stats (5 names × 5 copies), Numbers (9 digits × 12 copies), each + a
-        // Zone label. Locations: a "Location" Zone card + 9 place names + the inn's 3 row headers. Rules:
-        // 5 leaf phases + a Zone label; the Engage sub-deck: 5 children + a Zone label. Day clock: Day
-        // (0 + a Zone label), Progress (1 event + a label), Events (11 + a label), Roster (18 + a label).
+        // Zone label. Locations: a "Location" Zone card + 9 place names + the inn's 2 row headers + each
+        // non-inn place's encounter (a header + its foes: a solo = 1 keystone foe; a corner = all four
+        // creatures with the keystone doubled = 5 physical). Rules: 5 leaf phases + a Zone label; the
+        // Engage sub-deck: 5 children + a Zone label. Day clock: Day (0 + a Zone label), Progress (1
+        // event + a label), Events (11 + a label), Roster (18 + a label). Bestiary: 4 creature concepts
+        // + a Zone label.
         assert_eq!(
             t.card_count(),
             (9 + 1)
@@ -552,12 +604,13 @@ mod tests {
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 2 + 8) // Locations: a Zone card + 9 place names + the inn's 2 headers (Hero, Kit) + 8 encounters (one per non-inn place)
+                + (1 + 9 + 2 + 4 * (1 + 1) + 4 * (1 + 5)) // Locations: Zone + 9 places + 2 inn headers + 4 solos (header+1) + 4 corners (header+5)
                 + ((5 + 1) + (5 + 1))
                 + 1 // Day: 0 cards + a Zone label
                 + (1 + 1)
                 + (11 + 1)
                 + (18 + 1)
+                + (4 + 1) // Bestiary: 4 creature concepts + a Zone label
         );
     }
 
@@ -640,9 +693,13 @@ mod tests {
             2,
             "the inn's own Hero/Kit row headers"
         );
-        // A single-card place: its one encounter + the place's own "Location" title = 2.
-        let a_place = t.pile(locations).unwrap().subpiles()[0];
-        assert_eq!(t.physical_card_count(a_place), 2);
+        // A place counts its "Location" title + encounter header + foes. Index 0 (The Hollow Rampart) is
+        // a corner: 1 title + 1 header + all four foes with the keystone doubled (5 physical) = 7.
+        let a_corner = t.pile(locations).unwrap().subpiles()[0];
+        assert_eq!(t.physical_card_count(a_corner), 1 + 1 + 5);
+        // Index 1 (Cinderwatch Keep) is a solo: 1 title + 1 header + 1 keystone foe = 3.
+        let a_solo = t.pile(locations).unwrap().subpiles()[1];
+        assert_eq!(t.physical_card_count(a_solo), 1 + 1 + 1);
     }
 
     /// A software-only deck — one holding [`Utility`] action cards, like the renderer's System deck —
@@ -675,6 +732,52 @@ mod tests {
             1,
             "empty physical deck = its label"
         );
+    }
+
+    /// The creature read-outs are *derived*, and the derivation reproduces the duel-locks positions
+    /// (`duel-locks.ron` §4 `default_intentions`) exactly — so editing a stat re-derives the stance.
+    #[test]
+    fn creature_intention_reproduces_the_duel_locks_positions() {
+        let intent = |name: &str| catalog::creature_intention(catalog::creature(name).unwrap());
+        assert_eq!(intent("The Anvil"), "Vanguard"); // M1 < T5
+        assert_eq!(intent("The Swarm"), "Outrider"); // M1 >= T1
+        assert_eq!(intent("The Coil"), "Vanguard"); // authored pos override
+        assert_eq!(intent("The Mirage"), "Outrider"); // M6 >= T2
+        // Each creature's posture points at exactly one answering kit — the clean diagonal.
+        let counter = |name: &str| catalog::creature_counter(catalog::creature(name).unwrap());
+        assert_eq!(counter("The Anvil"), "Executioner");
+        assert_eq!(counter("The Swarm"), "Broadsider");
+        assert_eq!(counter("The Coil"), "Marksman");
+        assert_eq!(counter("The Mirage"), "Phantom");
+    }
+
+    /// Each non-inn place stations its encounter as physical foe cards: a solo = its one keystone; a
+    /// corner = all four creatures with the keystone doubled. The foes are real members of the place.
+    #[test]
+    fn encounters_deal_physical_foes_into_the_places() {
+        let t = sample_table();
+        let locations = deck(&t, "Locations");
+        let place = |name: &str| {
+            *t.pile(locations)
+                .unwrap()
+                .subpiles()
+                .iter()
+                .find(|&&p| t.pile(p).unwrap().label == name)
+                .unwrap()
+        };
+        let foe_qty = |p: PileId| -> u32 {
+            t.content_cards(p)
+                .iter()
+                .filter(|&&c| t.card(c).unwrap().card_type() == "foe")
+                .map(|&c| t.card(c).unwrap().quantity())
+                .sum()
+        };
+        // A solo: one keystone foe (The Sundered Vault → the Anvil).
+        assert_eq!(foe_qty(place("The Sundered Vault")), 1);
+        // A corner: all four creatures, keystone doubled → 5 physical foes (Emberfall Hollow → Anvil×2).
+        assert_eq!(foe_qty(place("Emberfall Hollow")), 5);
+        // The Bestiary holds one concept card per creature type.
+        assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 + 1);
     }
 
     /// Find a top-level deck by label (test helper).

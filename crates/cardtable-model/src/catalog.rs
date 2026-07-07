@@ -77,77 +77,243 @@ pub fn ability_description(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
-/// A location **encounter** — the creature stationed at a place on the map and what beats it, as
-/// `(location, title, kit, detail)` where `kit` names the [`ROSTER`] entry that answers it. Two tiers:
-///
-/// - [`SOLO_ENCOUNTERS`] ring the inn (the four map cells orthogonally adjacent to Ashfen Crossing).
-///   Each is a single duel-locks creature (`deckbound/data/balance/duel-locks.ron`) soloable by the one
-///   kit that answers its lock — Anvil→Executioner, Swarm→Broadsider, Coil→Marksman, Mirage→Phantom.
-/// - [`PARTY_ENCOUNTERS`] hold the four corners. Each is a full-party fight that no lone hero survives,
-///   but that still leans on one kit's strength to close out.
-///
-/// Every non-inn location appears in exactly one array, so [`encounter_for`] covers all eight.
-pub const SOLO_ENCOUNTERS: [(&str, &str, &str, &str); 4] = [
+/// A **creature** — a foe stationed at an encounter, mirrored from the duel-locks balance instrument
+/// (`deckbound/data/balance/duel-locks.ron`, the source of truth for the numbers). `cardtable-model` is
+/// pure and cannot depend on `deckbound`, so the four locks are re-declared here — kept in step with the
+/// RON the same way [`ROSTER`] mirrors that file's kits. `stats` is `[Might, Vitality, Toughness,
+/// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `hoard` marks a card
+/// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
+/// Coil holds the front regardless of its stats). A creature's **intention** and **posture** are not
+/// stored — they derive from these fields (see [`creature_intention`] / [`creature_posture`]), so
+/// editing a stat re-derives the read-out.
+#[derive(Clone, Copy, Debug)]
+pub struct Creature {
+    pub name: &'static str,
+    pub ability: &'static str,
+    pub stats: [u8; 5],
+    pub ranged: bool,
+    pub aoe: bool,
+    pub hoard: bool,
+    pub pos: Option<&'static str>,
+}
+
+/// The four duel-locks creatures, mirrored from `duel-locks.ron`. Each is beaten by exactly one kit — a
+/// clean diagonal (Anvil→Executioner, Swarm→Broadsider, Coil→Marksman, Mirage→Phantom) — and that answer
+/// is a consequence of the numbers, not a keyword (see [`creature_counter`]).
+pub const CREATURES: [Creature; 4] = [
+    Creature {
+        name: "The Anvil",
+        ability: "Immovable",
+        stats: [1, 2, 5, 1, 1],
+        ranged: false,
+        aoe: false,
+        hoard: false,
+        pos: None,
+    },
+    Creature {
+        name: "The Swarm",
+        ability: "Overrun",
+        stats: [1, 45, 1, 1, 1],
+        ranged: false,
+        aoe: false,
+        hoard: true,
+        pos: None,
+    },
+    Creature {
+        name: "The Coil",
+        ability: "Riposte",
+        stats: [6, 4, 2, 2, 1],
+        ranged: false,
+        aoe: false,
+        hoard: false,
+        pos: Some("Vanguard"),
+    },
+    Creature {
+        name: "The Mirage",
+        ability: "Feint",
+        stats: [6, 5, 2, 1, 2],
+        ranged: false,
+        aoe: false,
+        hoard: false,
+        pos: None,
+    },
+];
+
+/// The creatures' abilities, each `(name, description)` — the mechanic that makes the creature a lock,
+/// in player-facing terms. Parallel to [`ABILITIES`] for kits.
+pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     (
-        "Cinderwatch Keep",
-        "The Coiled Sentry",
-        "Marksman",
-        "A watch-drake that lashes back at any blow it can see. Pick it off from range — the Marksman's Stand-Off draws no riposte. Soloable.",
+        "Immovable",
+        "Toughness above all but the heaviest blow — sub-bar hits are wiped, so only one overwhelming strike cracks it.",
     ),
     (
-        "The Sundered Vault",
-        "The Vault Anvil",
-        "Executioner",
-        "An armored warden that shrugs off small hits. One overwhelming blow cracks it — the Executioner's Alpha Strike. Soloable.",
+        "Overrun",
+        "A hoard of one-Health bodies. Single strikes kill one at a time and drown; an area attack clears the pack at once.",
     ),
     (
-        "Thornmarch Gate",
-        "The Thorn Swarm",
-        "Broadsider",
-        "A boiling mass of bramble-imps; single strikes barely thin it. Clear the whole pack at once — the Broadsider's Whirlwind. Soloable.",
+        "Riposte",
+        "Strikes back at every melee blow it can reach, twice a round — answer it from range, where it can't reach.",
     ),
     (
-        "The Salt Barrows",
-        "The Barrow Mirage",
-        "Phantom",
-        "A grave-wraith that is never quite where it seems. Slip the feint, then cut — the Phantom's Slip-and-Cut. Soloable.",
+        "Feint",
+        "Never quite where it seems; low-Finesse blows whiff. Only a faster hand out-paces the feint and lands.",
     ),
 ];
 
-/// The four corner encounters — full-party fights that lean on one kit. See [`SOLO_ENCOUNTERS`].
-pub const PARTY_ENCOUNTERS: [(&str, &str, &str, &str); 4] = [
-    (
-        "The Hollow Rampart",
-        "Breach of the Rampart",
-        "Broadsider",
-        "Wave on wave pours through the breach — bring the whole party. The Broadsider's Whirlwind is what holds the line.",
-    ),
-    (
-        "Greywater Ford",
-        "Ambush at the Ford",
-        "Marksman",
-        "Archers wait on the far bank. The full party must cross, but the Marksman's Stand-Off silences the bank first.",
-    ),
-    (
-        "Emberfall Hollow",
-        "The Emberfall Beast",
-        "Executioner",
-        "A great burning brute no lone hero survives. The party endures it while the Executioner lands the killing Alpha Strike.",
-    ),
-    (
-        "Ninefold Deep",
-        "Horror of the Ninefold Deep",
-        "Phantom",
-        "A shifting labyrinth-horror in the deep. The party maps its turns; the Phantom's Slip-and-Cut finds its heart.",
-    ),
-];
+/// The creature by `name` (from [`CREATURES`]), or `None`.
+pub fn creature(name: &str) -> Option<&'static Creature> {
+    CREATURES.iter().find(|c| c.name == name)
+}
 
-/// The encounter stationed at `location` as `(title, kit, detail)`, or `None` for a location with no
-/// encounter (the inn, Ashfen Crossing). Searches both [`SOLO_ENCOUNTERS`] and [`PARTY_ENCOUNTERS`].
-pub fn encounter_for(location: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    SOLO_ENCOUNTERS
+/// A creature's battle **intention** — Vanguard / Outrider / Rearguard — derived exactly as the
+/// duel-locks `default_intentions` rule (`duel-locks.ron` §4): an authored [`pos`](Creature::pos) wins;
+/// otherwise a ranged creature holds the Rearguard, a creature whose Might meets its Toughness flanks as
+/// an Outrider, and the rest brace as a Vanguard. Pure derivation — no stored stance.
+pub fn creature_intention(c: &Creature) -> &'static str {
+    if let Some(pos) = c.pos {
+        pos
+    } else if c.ranged {
+        "Rearguard"
+    } else if c.stats[0] >= c.stats[2] {
+        "Outrider"
+    } else {
+        "Vanguard"
+    }
+}
+
+/// A creature's **posture** — the one-word tell of *why* it is hard — read off its ability (itself the
+/// creature's signature mechanic): `armored`, `hoard`, `ripostes`, or `evasive`.
+pub fn creature_posture(c: &Creature) -> &'static str {
+    match c.ability {
+        "Immovable" => "armored",
+        "Overrun" => "hoard",
+        "Riposte" => "ripostes",
+        "Feint" => "evasive",
+        _ => "",
+    }
+}
+
+/// The [`ROSTER`] kit that cleanly answers a creature's lock — the diagonal, kept for internal labelling
+/// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
+pub fn creature_counter(c: &Creature) -> &'static str {
+    match c.ability {
+        "Immovable" => "Executioner", // armored → one big blow (Alpha Strike)
+        "Overrun" => "Broadsider",    // hoard → area (Whirlwind)
+        "Riposte" => "Marksman",      // ripostes → ranged, no riposte (Stand-Off)
+        "Feint" => "Phantom",         // evasive → out-tempo (Slip-and-Cut)
+        _ => "",
+    }
+}
+
+/// The description for a creature ability by name (from [`CREATURE_ABILITIES`]), or `""` if unknown.
+pub fn creature_ability_description(name: &str) -> &'static str {
+    CREATURE_ABILITIES
         .iter()
-        .chain(PARTY_ENCOUNTERS.iter())
-        .find(|(loc, _, _, _)| *loc == location)
-        .map(|&(_, title, kit, detail)| (title, kit, detail))
+        .find(|(n, _)| *n == name)
+        .map(|&(_, d)| d)
+        .unwrap_or_default()
+}
+
+/// A location **encounter** — the foes stationed at a place on the map. Two tiers, both keyed to the
+/// duel-locks creatures ([`CREATURES`]):
+///
+/// - A **solo** encounter (`party: false`) rings the inn: a single creature — its [`keystone`] — soloable
+///   by the one kit that answers its lock. The four adjacent map cells.
+/// - A **party** encounter (`party: true`) holds a corner: it fields **all four** creatures, with the
+///   [`keystone`] as the bulk (a `×2` stack), so no lone hero clears every lock-type — you need the whole
+///   party — yet the fight leans on the kit that answers the keystone.
+///
+/// No "favours" line is printed: which kit to bring is inferred from the foes' postures on the table.
+#[derive(Clone, Copy, Debug)]
+pub struct Encounter {
+    pub location: &'static str,
+    pub title: &'static str,
+    pub flavor: &'static str,
+    /// The creature name (in [`CREATURES`]) this encounter is built around — the only foe of a solo, the
+    /// doubled bulk of a party.
+    pub keystone: &'static str,
+    pub party: bool,
+}
+
+/// Every non-inn location's encounter. Solos ring the inn (adjacent cells); party fights hold the
+/// corners. Ashfen Crossing (the inn) has none, so this covers the other eight.
+pub const ENCOUNTERS: [Encounter; 8] = [
+    // --- solos: one creature, soloable by its answering kit --------------------------------------
+    Encounter {
+        location: "Cinderwatch Keep",
+        title: "The Coiled Sentry",
+        flavor: "A watch-drake coiled in the ruined keep, lashing at anything within reach.",
+        keystone: "The Coil",
+        party: false,
+    },
+    Encounter {
+        location: "The Sundered Vault",
+        title: "The Vault Anvil",
+        flavor: "An armored warden set to guard the sundered vault, unmoved by lesser blows.",
+        keystone: "The Anvil",
+        party: false,
+    },
+    Encounter {
+        location: "Thornmarch Gate",
+        title: "The Thorn Swarm",
+        flavor: "A boiling mass of bramble-imps swarming the gate.",
+        keystone: "The Swarm",
+        party: false,
+    },
+    Encounter {
+        location: "The Salt Barrows",
+        title: "The Barrow Mirage",
+        flavor: "A grave-wraith drifting the salt barrows, never quite where it seems.",
+        keystone: "The Mirage",
+        party: false,
+    },
+    // --- corners: all four creatures, the keystone doubled ---------------------------------------
+    Encounter {
+        location: "The Hollow Rampart",
+        title: "Breach of the Rampart",
+        flavor: "The rampart is breached and everything pours through at once.",
+        keystone: "The Swarm",
+        party: true,
+    },
+    Encounter {
+        location: "Greywater Ford",
+        title: "Ambush at the Ford",
+        flavor: "An ambush dug in at the crossing, ready to lash back at anything that wades in.",
+        keystone: "The Coil",
+        party: true,
+    },
+    Encounter {
+        location: "Emberfall Hollow",
+        title: "The Emberfall Beast",
+        flavor: "A burning hollow guarded by something that will not fall to a single hand.",
+        keystone: "The Anvil",
+        party: true,
+    },
+    Encounter {
+        location: "Ninefold Deep",
+        title: "Horror of the Ninefold Deep",
+        flavor: "The deep shifts and feints; nothing down here holds still.",
+        keystone: "The Mirage",
+        party: true,
+    },
+];
+
+/// The encounter stationed at `location`, or `None` for a location with no encounter (the inn, Ashfen
+/// Crossing).
+pub fn encounter_for(location: &str) -> Option<&'static Encounter> {
+    ENCOUNTERS.iter().find(|e| e.location == location)
+}
+
+/// The foes an encounter fields, as `(creature, quantity)` — a solo is its single keystone; a party is
+/// all four [`CREATURES`] with the keystone doubled. The order is [`CREATURES`] order (keystone first for
+/// a solo).
+pub fn encounter_foes(e: &Encounter) -> Vec<(&'static Creature, u32)> {
+    if e.party {
+        CREATURES
+            .iter()
+            .map(|c| (c, if c.name == e.keystone { 2 } else { 1 }))
+            .collect()
+    } else {
+        creature(e.keystone).map(|c| (c, 1)).into_iter().collect()
+    }
 }
