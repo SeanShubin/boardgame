@@ -185,6 +185,22 @@ and cannot drift apart, and so the intent-vs-mechanics classification above is
 always possible. The Spec owns the **vocabulary** (what every keyword means) and
 the **procedures** (how a round/duel/hit resolves). It does **not** own numbers.
 
+The Spec is **two documents at one authority**, answering different questions:
+
+- **`canon/2-spec/README.md`** — the **combat rules**: how a round / duel / hit resolves
+  (*how state changes*).
+- **`canon/2-spec/physical-cards.md`** — the **physical-cards embodiment**: the game as a
+  single **conserved deck** (cards-are-state, conservation, pack-up into one ordered deck,
+  the mechanical-vs-transitory split, and the provisioning bounds — *how state is physically
+  held*).
+
+Scope note (the resolved meta-question, recorded here so it can't drift): the embodiment
+spec governs the **card-table product** (`crates/cardtable-model`), and **deckbound is
+content that must obey it**. So a change to how the deck is **packed, conserved, or
+provisioned** is a Spec change made in `physical-cards.md` — not in the combat rules, and
+not smuggled into the code. Embodiment is spec-level (invariants + a procedure), not a mere
+implementation detail.
+
 ### `booklet.ron` — *the print master (components & numbers)*
 
 **`crates/deckbound/data/booklet.ron`**. The official list of **every card,

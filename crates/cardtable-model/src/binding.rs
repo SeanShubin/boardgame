@@ -29,7 +29,14 @@ pub fn from_table_view(view: &TableView) -> Tableau {
                     },
                     type_line.clone(),
                 ),
-                CardFace::Down => (Face::Down, None),
+                // A contract view carries no front for a face-down card, so it comes across anonymous
+                // (empty remembered front). The model keeps the field (PC.2) for cards it flips itself.
+                CardFace::Down => (
+                    Face::Down {
+                        title: String::new(),
+                    },
+                    None,
+                ),
             };
             let id = tree
                 .add_card(pile, face, card.action)
@@ -89,7 +96,7 @@ mod tests {
         assert_eq!(knight.actionable, Some(0));
 
         let back = tree.card(hand.cards()[1]).unwrap();
-        assert_eq!(back.face, Face::Down);
+        assert!(back.is_face_down());
         assert!(!back.is_actionable());
 
         assert_eq!(tree.card_count(), 3);

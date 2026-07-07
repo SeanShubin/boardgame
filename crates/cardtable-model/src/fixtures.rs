@@ -398,12 +398,71 @@ pub fn sample_table() -> Tableau {
     )
     .expect("rules exists");
 
+    // The physical **day clock** (spec `canon/2-spec/physical-cards.md` PC.5): three decks.
+    // - **Day** — one face-up identity copy per active character (face-up = hasn't moved today; a move
+    //   flips it down, `Tableau::mark_moved`). Empty until characters are recruited/stationed.
+    // - **Progress** — the counted day track: its card count *is* the current day (no number cap). Seeded
+    //   on **Day 1** with one event already laid down.
+    // - **Events** — a bounded reserve of generic event cards; `advance_day` draws one onto Progress each
+    //   time every character has moved. Its size is the provisioned max game length (raise as needed).
+    // Conservation (PC.2): the whole day supply is dealt here at setup; in play the clock only flips and
+    // moves cards, never mints.
+    const DAYS_PROVISIONED: usize = 12;
+    let free = |tree: &mut Tableau, pile: PileId| {
+        tree.set_layout(
+            pile,
+            Layout {
+                arrangement: Arrangement::Free,
+                editable: true,
+            },
+        )
+        .expect("pile exists");
+    };
+
+    let day = tree.add_pile(root, "Day").expect("root exists");
+    let day_zone = typed(&mut tree, day, "Day", "Label");
+    tree.set_card_kind(day_zone, CardKind::Zone)
+        .expect("day zone card");
+    free(&mut tree, day);
+
+    let progress = tree.add_pile(root, "Progress").expect("root exists");
+    typed(&mut tree, progress, "Event", "event"); // Day 1 — one event already on the track
+    let progress_zone = typed(&mut tree, progress, "Progress", "Label");
+    tree.set_card_kind(progress_zone, CardKind::Zone)
+        .expect("progress zone card");
+    free(&mut tree, progress);
+
+    let events = tree.add_pile(root, "Events").expect("root exists");
+    for _ in 0..(DAYS_PROVISIONED - 1) {
+        typed(&mut tree, events, "Event", "event"); // fold to ×N in the deck view
+    }
+    let events_zone = typed(&mut tree, events, "Events", "Label");
+    tree.set_card_kind(events_zone, CardKind::Zone)
+        .expect("events zone card");
+    free(&mut tree, events);
+
+    // The **Roster** reserve: one day-clock copy per possible hero, drawn into the Day deck when that
+    // hero is recruited and returned when it leaves (`Tableau::sync_day_clock`). Provisioned for the full
+    // roster (PC.2 — a bounded, sufficient supply); the copies are typed `day-token` so they are matched
+    // to characters by name, not confused with the Identity deck's `hero` cards.
+    let roster = tree.add_pile(root, "Roster").expect("root exists");
+    for hero in HEROES {
+        typed(&mut tree, roster, hero, "day-token"); // spent by a move, tracked in the Day deck
+        typed(&mut tree, roster, hero, "location-token"); // the character's position on the map
+    }
+    let roster_zone = typed(&mut tree, roster, "Roster", "Label");
+    tree.set_card_kind(roster_zone, CardKind::Zone)
+        .expect("roster zone card");
+    free(&mut tree, roster);
+
     // Lay each Free deck's cards out tidily below the overlay band, so the first render of a zone is
     // clean — the Back card sits in its own row up top with the cards beneath it, no shove required yet.
     grid_layout(&mut tree, identity, 4);
     grid_layout(&mut tree, starting_kit, 4);
     grid_layout(&mut tree, abilities, 4);
     grid_layout(&mut tree, stats, 4);
+    grid_layout(&mut tree, events, 4);
+    grid_layout(&mut tree, roster, 4);
 
     // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
     // exact constant-gap row computed by `Tableau::arrange_row` once the chips are sized (see the
@@ -418,6 +477,13 @@ pub fn sample_table() -> Tableau {
     tree.set_pile_pos(locations, 600.0, 40.0)
         .expect("locations exists");
     tree.set_pile_pos(rules, 740.0, 40.0).expect("rules exists");
+    tree.set_pile_pos(day, 880.0, 40.0).expect("day exists");
+    tree.set_pile_pos(progress, 1020.0, 40.0)
+        .expect("progress exists");
+    tree.set_pile_pos(events, 1160.0, 40.0)
+        .expect("events exists");
+    tree.set_pile_pos(roster, 1300.0, 40.0)
+        .expect("roster exists");
 
     tree
 }
@@ -430,14 +496,238 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        assert_eq!(root.subpiles().len(), 6); // Identity, Kit, Abilities, Stats, Locations, Rules
+        // Identity, Kit, Abilities, Stats, Locations, Rules, + the day clock (Day, Progress, Events, Roster).
+        assert_eq!(root.subpiles().len(), 10);
         // Identity: 9 heroes + a Zone card. Kit: 4 starters + a Zone card. Abilities: 4 + a Zone card.
         // Stats: 5 stat cards + a Zone card. Locations: a "Location" Zone card + 9 place name cards + the
         // inn's 3 row-header cards (Hero / Kit / Active) under Ashfen Crossing. Rules: 5 leaf phase cards +
-        // a Zone label; the Engage sub-deck: 5 child phases + a Zone label.
+        // a Zone label; the Engage sub-deck: 5 child phases + a Zone label. Day clock: Day (0 copies + a
+        // Zone label), Progress (1 event on Day 1 + a Zone label), Events (11 reserve events + a Zone label).
         assert_eq!(
             t.card_count(),
-            (9 + 1) + (4 + 1) + (4 + 1) + (5 + 1) + (1 + 9 + 3) + ((5 + 1) + (5 + 1))
+            (9 + 1)
+                + (4 + 1)
+                + (4 + 1)
+                + (5 + 1)
+                + (1 + 9 + 3)
+                + ((5 + 1) + (5 + 1))
+                + (0 + 1)
+                + (1 + 1)
+                + (11 + 1)
+                + (18 + 1) // Roster: a day-token + a location-token per hero + a Zone label
+        );
+    }
+
+    /// The physical day clock is provisioned on the table (PC.5): a Progress track reading Day 1, an
+    /// Events reserve to draw from, and an (initially empty) Day deck. Driving the clock — enlist a
+    /// character, spend its move, advance — grows the day and conserves the total card count (PC.2).
+    #[test]
+    fn day_clock_is_provisioned_and_advances_on_the_table() {
+        let mut t = sample_table();
+        let find = |t: &Tableau, label: &str| {
+            *t.pile(t.root_id())
+                .unwrap()
+                .subpiles()
+                .iter()
+                .find(|&&id| t.pile(id).unwrap().label == label)
+                .unwrap()
+        };
+        let (day, progress, events) = (find(&t, "Day"), find(&t, "Progress"), find(&t, "Events"));
+
+        // Day 1, an Events reserve behind it, and no one tracked yet.
+        assert_eq!(t.current_day(progress), 1);
+        assert_eq!(t.content_cards(events).len(), 11);
+        assert!(t.content_cards(day).is_empty());
+        assert!(!t.day_is_over(day), "an empty clock is never 'over'");
+
+        // Enlist one character's day-copy (a setup deal), then spend its move.
+        let total = t.card_count();
+        let copy = t
+            .add_card(
+                day,
+                Face::Up {
+                    title: "Vael".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_type(copy, "hero").unwrap();
+        t.mark_moved(day, "Vael").unwrap();
+        assert!(t.day_is_over(day), "the only tracked character has moved");
+
+        // Advance: the copy stands back up, one event moves Events -> Progress, the day ticks to 2.
+        t.advance_day(day, progress, events).unwrap();
+        assert_eq!(t.current_day(progress), 2);
+        assert_eq!(t.content_cards(events).len(), 10, "one event drawn");
+        assert!(!t.day_is_over(day));
+        assert!(!t.card(copy).unwrap().is_face_down(), "copy stood back up");
+        assert_eq!(
+            t.card_count(),
+            total + 1,
+            "conservation: play (move + advance) minted nothing beyond the one enlisted copy"
+        );
+    }
+
+    /// Recruiting a character enlists its day-clock copy: `sync_day_clock` draws the hero's copy from the
+    /// Roster reserve into the Day deck (conservation-clean — a move, PC.2), and un-recruiting returns it.
+    #[test]
+    fn recruiting_enlists_a_day_copy_and_un_recruiting_returns_it() {
+        let mut t = sample_table();
+        let find = |t: &Tableau, label: &str| {
+            *t.pile(t.root_id())
+                .unwrap()
+                .subpiles()
+                .iter()
+                .find(|&&id| t.pile(id).unwrap().label == label)
+                .unwrap()
+        };
+        let (day, roster, identity, locations) = (
+            find(&t, "Day"),
+            find(&t, "Roster"),
+            find(&t, "Identity"),
+            find(&t, "Locations"),
+        );
+        let inn = {
+            let ashfen = t.pile(t.pile(locations).unwrap().subpiles()[4]).unwrap();
+            ashfen.subpiles()[0]
+        };
+        let total = t.card_count();
+
+        // No one recruited: all tokens rest in the Roster (a day + a location token per hero), Day empty.
+        t.sync_day_clock(day, roster).unwrap();
+        assert_eq!(t.content_cards(roster).len(), 18);
+        assert!(t.content_cards(day).is_empty());
+
+        // Recruit the first hero: move it into the inn's Active row, paired with a kit copy (a recipe).
+        let hero = t.content_cards(identity)[0];
+        let hero_name = t.card(hero).unwrap().name().to_string();
+        let at = t.pile(inn).unwrap().cards().len();
+        t.move_card(hero, inn, at).unwrap();
+        let kit = t
+            .add_card(
+                inn,
+                Face::Up {
+                    title: "Executioner".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_recipe(
+            kit,
+            Recipe {
+                stats: [6, 3, 1, 1, 1],
+                ability: "Alpha Strike".into(),
+            },
+        )
+        .unwrap();
+        t.sync_character_decks(inn).unwrap();
+        t.sync_day_clock(day, roster).unwrap();
+
+        // The recruited hero's day-token now stands in the Day deck; the Roster is down one.
+        assert_eq!(t.content_cards(roster).len(), 17);
+        let day_copies: Vec<String> = t
+            .content_cards(day)
+            .iter()
+            .map(|&c| t.card(c).unwrap().front_title().to_string())
+            .collect();
+        assert_eq!(day_copies, [hero_name]);
+        assert!(!t.day_is_over(day), "one character, hasn't moved yet");
+
+        // Un-recruit: pull the pair back out; the day-copy retires to the Roster.
+        t.remove_card(kit).unwrap(); // a kit copy is discarded (recruit-path mint, not day-clock)
+        t.move_card(hero, identity, 0).unwrap();
+        t.sync_character_decks(inn).unwrap();
+        t.sync_day_clock(day, roster).unwrap();
+        assert!(t.content_cards(day).is_empty(), "day-copy retired");
+        assert_eq!(t.content_cards(roster).len(), 18, "returned to the reserve");
+        assert_eq!(
+            t.card_count(),
+            total,
+            "the day clock conserves cards — the copy only moved reserve <-> Day"
+        );
+    }
+
+    /// The movement loop (PC.5): recruiting stations a character's **location token** at the home town
+    /// (`sync_party`); moving that token to another location spends the character's day (`move_character`
+    /// flips its day-token) and — as the last to move — ends the day; advancing ticks Day 1 → 2. All
+    /// conservation-clean.
+    #[test]
+    fn moving_a_stationed_character_spends_its_day_and_can_advance() {
+        let mut t = sample_table();
+        let find = |t: &Tableau, label: &str| {
+            *t.pile(t.root_id())
+                .unwrap()
+                .subpiles()
+                .iter()
+                .find(|&&id| t.pile(id).unwrap().label == label)
+                .unwrap()
+        };
+        let (day, progress, events, roster, identity, locations) = (
+            find(&t, "Day"),
+            find(&t, "Progress"),
+            find(&t, "Events"),
+            find(&t, "Roster"),
+            find(&t, "Identity"),
+            find(&t, "Locations"),
+        );
+        let places = t.pile(locations).unwrap().subpiles();
+        let (ashfen, thornmarch) = (places[4], places[5]); // centre = the inn town; a neighbour
+        let inn = t.pile(ashfen).unwrap().subpiles()[0];
+
+        // Recruit one hero (pair it with a kit in the inn) and reconcile the party.
+        let hero = t.content_cards(identity)[0];
+        let name = t.card(hero).unwrap().name().to_string();
+        let at = t.pile(inn).unwrap().cards().len();
+        t.move_card(hero, inn, at).unwrap();
+        let kit = t
+            .add_card(
+                inn,
+                Face::Up {
+                    title: "Executioner".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_recipe(
+            kit,
+            Recipe {
+                stats: [6, 3, 1, 1, 1],
+                ability: "Alpha Strike".into(),
+            },
+        )
+        .unwrap();
+        t.sync_character_decks(inn).unwrap();
+        t.sync_party(day, ashfen, roster).unwrap();
+
+        // Stationed at the inn town, tracked in the Day deck, on Day 1.
+        let named = |t: &Tableau, pile, n: &str, ttype: &str| {
+            t.content_cards(pile).into_iter().find(|&c| {
+                t.card(c).unwrap().front_title() == n && t.card(c).unwrap().card_type() == ttype
+            })
+        };
+        assert!(named(&t, ashfen, &name, "location-token").is_some());
+        assert!(named(&t, day, &name, "day-token").is_some());
+        assert_eq!(t.current_day(progress), 1);
+
+        // Move the character to a neighbouring location — the only one active, so its move ends the day.
+        let token = named(&t, ashfen, &name, "location-token").unwrap();
+        let total = t.card_count();
+        let day_over = t.move_character(token, thornmarch, day).unwrap();
+        assert!(day_over, "the only character moved — the day is over");
+        assert!(
+            named(&t, thornmarch, &name, "location-token").is_some(),
+            "stationed at the new location"
+        );
+        assert!(named(&t, ashfen, &name, "location-token").is_none());
+
+        // Advance: Day 1 -> 2, day-tokens stand back up, and cards are conserved through move + advance.
+        t.advance_day(day, progress, events).unwrap();
+        assert_eq!(t.current_day(progress), 2);
+        assert!(!t.day_is_over(day));
+        assert_eq!(
+            t.card_count(),
+            total,
+            "moving + advancing conserves cards (PC.2)"
         );
     }
 

@@ -588,6 +588,26 @@ fn node_label(table: &Tableau, node: TableNode) -> String {
     }
 }
 
+/// The top-level deck with `label`, if present (a lookup by name for the fixed system zones).
+fn top_deck(table: &Tableau, label: &str) -> Option<PileId> {
+    table
+        .pile(table.root_id())?
+        .subpiles()
+        .into_iter()
+        .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some(label))
+}
+
+/// The **home town** location where newly-recruited characters are stationed — the inn town (Ashfen
+/// Crossing), a place-pile under the Locations grid.
+fn home_location(table: &Tableau) -> Option<PileId> {
+    let locations = top_deck(table, "Locations")?;
+    table
+        .pile(locations)?
+        .subpiles()
+        .into_iter()
+        .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some("Ashfen Crossing"))
+}
+
 /// Slide a dragged **felt element** — a card or a nested pile — freely under the cursor, even off the
 /// edge, live (no rebuild mid-drag; a position change isn't structural). The grab lands on the inner
 /// visual; the event propagates up to the [`Movable`] wrapper, the node we move. The model position is
@@ -1057,6 +1077,20 @@ fn on_node_drag_end(
             // Reflect the (possibly changed) active pairs onto the Table: a character deck per complete
             // pair, and none for a pair just put back.
             let _ = table.0.sync_character_decks(inn);
+            // Reconcile the party to the new roster (spec physical-cards.md PC.5): enlist a fresh
+            // character's day-token + station its location token at the inn town, retire a departed one.
+            if let (Some(day), Some(roster)) =
+                (top_deck(&table.0, "Day"), top_deck(&table.0, "Roster"))
+            {
+                match home_location(&table.0) {
+                    Some(home) => {
+                        let _ = table.0.sync_party(day, home, roster);
+                    }
+                    None => {
+                        let _ = table.0.sync_day_clock(day, roster);
+                    }
+                }
+            }
             log.line(format!(
                 "  from_active={from_active} action={action} active_now={active_now:?}"
             ));
@@ -2026,7 +2060,7 @@ fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: us
             }
             _ => (Some(title.clone()), CARD_FACE, CARD_INK),
         },
-        Face::Down => (None, CARD_BACK, INK),
+        Face::Down { .. } => (None, CARD_BACK, INK),
     };
     let entity = parent.spawn((
         CardRef(card.id),

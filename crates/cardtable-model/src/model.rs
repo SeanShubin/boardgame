@@ -69,8 +69,12 @@ impl Pos {
 pub enum Face {
     /// Face up, showing at least a title.
     Up { title: String },
-    /// Face down (only the back is visible).
-    Down,
+    /// Face down — only the back is visible, but the card **remembers its front**
+    /// (spec `physical-cards.md` PC.2: a flip is reversible, and a packed face-down
+    /// card restores to the right card). [`Card::name`] still reports `""` while down
+    /// (face-down cards stay anonymous in views); [`Card::front_title`] reads the
+    /// remembered front regardless of facing.
+    Down { title: String },
 }
 
 /// How large a card is currently drawn — the three planned card sizes. Default [`Size::Small`], the
@@ -164,12 +168,27 @@ impl Card {
         self.actionable.is_some()
     }
 
-    /// The card's name — its face title, or empty when face down.
+    /// The card's name — its face title, or empty when face down (a face-down card is anonymous in
+    /// views; use [`front_title`](Card::front_title) to read its remembered front).
     pub fn name(&self) -> &str {
         match &self.face {
             Face::Up { title } => title,
-            Face::Down => "",
+            Face::Down { .. } => "",
         }
+    }
+
+    /// The card's **front title regardless of facing** — the remembered face even while down
+    /// (spec `physical-cards.md` PC.2). Use this to identify a face-down card (e.g. which hero a
+    /// flipped day-clock copy is) or to restore it on flip-up; use [`name`](Card::name) for display.
+    pub fn front_title(&self) -> &str {
+        match &self.face {
+            Face::Up { title } | Face::Down { title } => title,
+        }
+    }
+
+    /// Is this card face down?
+    pub fn is_face_down(&self) -> bool {
+        matches!(self.face, Face::Down { .. })
     }
 
     /// Body lines shown at [`Size::Medium`].
@@ -220,9 +239,7 @@ impl Card {
 
 /// Whether two cards group as one entry in the Name view: same face (up/down), name, and type.
 fn same_type(a: &Card, b: &Card) -> bool {
-    matches!(a.face, Face::Down) == matches!(b.face, Face::Down)
-        && a.name() == b.name()
-        && a.card_type == b.card_type
+    a.is_face_down() == b.is_face_down() && a.name() == b.name() && a.card_type == b.card_type
 }
 
 // ---- shared box geometry (piles and cards separate against these) ----------------------------
@@ -1157,6 +1174,126 @@ impl Tableau {
         Ok(deck)
     }
 
+    /// The active party — the names of the heroes reflected by the character decks on the table.
+    fn active_party(&self) -> Vec<String> {
+        self.piles[&self.root]
+            .subpiles()
+            .into_iter()
+            .filter_map(|s| self.piles[&s].reflects)
+            .filter_map(|h| self.cards.get(&h).map(|c| c.front_title().to_string()))
+            .collect()
+    }
+
+    /// Is card `c` a `ttype` token for character `name` (matched by type and **front title**, PC.1)?
+    fn is_party_token(&self, c: CardId, ttype: &str, name: &str) -> bool {
+        self.cards
+            .get(&c)
+            .is_some_and(|k| k.card_type() == ttype && k.front_title() == name)
+    }
+
+    /// If a `ttype` token for `name` is sitting in `reserve`, move it to `dest` (standing it up). A no-op
+    /// if the token is already out of the reserve (in play) or the reserve holds no such token — so the
+    /// player's own placement is never overridden.
+    fn draw_reserved_token(
+        &mut self,
+        reserve: PileId,
+        dest: PileId,
+        name: &str,
+        ttype: &str,
+    ) -> Result<(), TableauError> {
+        if let Some(c) = self
+            .content_cards(reserve)
+            .into_iter()
+            .find(|&c| self.is_party_token(c, ttype, name))
+        {
+            self.move_card(c, dest, 0)?; // below any Zone label (kept on top)
+            self.flip_up(c)?;
+        }
+        Ok(())
+    }
+
+    /// Reconcile the **Day deck** to the active party (spec `physical-cards.md` PC.5): every character with
+    /// a reflection deck on the table has its **day-token** standing in `day_deck`; a token whose character
+    /// has left returns to `reserve`. Matched by name (PC.1). Idempotent, conservation-clean (moves only).
+    /// Call after [`sync_character_decks`](Tableau::sync_character_decks). See [`sync_party`](Tableau::sync_party)
+    /// to also station location tokens.
+    pub fn sync_day_clock(
+        &mut self,
+        day_deck: PileId,
+        reserve: PileId,
+    ) -> Result<(), TableauError> {
+        let active = self.active_party();
+        for name in &active {
+            self.draw_reserved_token(reserve, day_deck, name, "day-token")?;
+        }
+        let retire: Vec<CardId> = self
+            .content_cards(day_deck)
+            .into_iter()
+            .filter(|&c| {
+                !active
+                    .iter()
+                    .any(|n| self.is_party_token(c, "day-token", n))
+            })
+            .collect();
+        for c in retire {
+            self.flip_up(c)?;
+            self.move_card(c, reserve, 0)?;
+        }
+        Ok(())
+    }
+
+    /// Reconcile the whole **party** to the table: the day clock ([`sync_day_clock`](Tableau::sync_day_clock))
+    /// **plus stationing** — a newly-active character's **location token** is drawn from `reserve` to
+    /// `home_location`, and a location token whose character has left returns to `reserve` (from wherever
+    /// it stands). A token the player has already moved is left where it is. Idempotent, conservation-clean.
+    pub fn sync_party(
+        &mut self,
+        day_deck: PileId,
+        home_location: PileId,
+        reserve: PileId,
+    ) -> Result<(), TableauError> {
+        self.sync_day_clock(day_deck, reserve)?;
+        let active = self.active_party();
+        for name in &active {
+            self.draw_reserved_token(reserve, home_location, name, "location-token")?;
+        }
+        // Retire location tokens (wherever they stand) whose character is no longer active.
+        let retire: Vec<CardId> = self
+            .cards
+            .iter()
+            .filter(|(_, c)| {
+                c.card_type() == "location-token"
+                    && c.home() != reserve
+                    && !active.iter().any(|n| n == c.front_title())
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for c in retire {
+            self.flip_up(c)?;
+            self.move_card(c, reserve, 0)?;
+        }
+        Ok(())
+    }
+
+    /// Move a character's **location token** to `to_location` and spend its day-clock move: flip its
+    /// day-token in `day_deck` face-down ([`mark_moved`](Tableau::mark_moved)). Returns `true` when that
+    /// was the **last** character still to move — the day is over, and the caller then
+    /// [`advance_day`](Tableau::advance_day)s. Conservation-clean (a move + a flip).
+    pub fn move_character(
+        &mut self,
+        location_token: CardId,
+        to_location: PileId,
+        day_deck: PileId,
+    ) -> Result<bool, TableauError> {
+        let name = self
+            .card(location_token)
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_default();
+        self.move_card(location_token, to_location, 0)?;
+        self.mark_moved(day_deck, &name)?;
+        Ok(self.day_is_over(day_deck))
+    }
+
     /// Sets `pile`'s collapsed flag directly (a manual fan/collapse, independent of focus).
     pub fn set_collapsed(&mut self, pile: PileId, collapsed: bool) -> Result<(), TableauError> {
         self.piles
@@ -1255,6 +1392,103 @@ impl Tableau {
             .ok_or(TableauError::UnknownCard(card))?
             .recipe = Some(recipe);
         Ok(())
+    }
+
+    /// Sets a card's [`Face`] outright — the one post-creation mutation of facing (spec
+    /// `physical-cards.md` PC.2). Prefer [`flip_down`](Tableau::flip_down) / [`flip_up`](Tableau::flip_up),
+    /// which preserve the front title so the flip is reversible; this is the raw setter.
+    pub fn set_face(&mut self, card: CardId, face: Face) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .face = face;
+        Ok(())
+    }
+
+    /// Flip a card **face down**, remembering its front so [`flip_up`](Tableau::flip_up) restores it
+    /// (PC.2 — damage landing on a Health card, a day-clock copy spent by a move). A no-op if already
+    /// down.
+    pub fn flip_down(&mut self, card: CardId) -> Result<(), TableauError> {
+        let c = self
+            .cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?;
+        if let Face::Up { title } = &c.face {
+            c.face = Face::Down {
+                title: title.clone(),
+            };
+        }
+        Ok(())
+    }
+
+    /// Flip a card **face up**, restoring the front it remembered while down (PC.2 — Recover on a Health
+    /// card, the day clock re-standing every copy at day's end). A no-op if already up.
+    pub fn flip_up(&mut self, card: CardId) -> Result<(), TableauError> {
+        let c = self
+            .cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?;
+        if let Face::Down { title } = &c.face {
+            c.face = Face::Up {
+                title: title.clone(),
+            };
+        }
+        Ok(())
+    }
+
+    // --- The day clock (spec `physical-cards.md` PC.5) ------------------------------------------------
+    // A **Day deck** holds one face-up identity copy per active character (face-up = hasn't moved today).
+    // When a character moves, its copy flips face-down; once every copy is down the day is over and
+    // [`advance_day`](Tableau::advance_day) stands them back up and grows the day **track** by one card
+    // (the day is the track's count — no number cap). All conservation-safe: only flips and one move.
+
+    /// Spend a character's day-clock copy — flip the **face-up** content card in `day_deck` whose front
+    /// title is `character` face-down ("has moved today"). A no-op if none matches (a copy already down,
+    /// or the character isn't tracked here).
+    pub fn mark_moved(&mut self, day_deck: PileId, character: &str) -> Result<(), TableauError> {
+        let target = self.content_cards(day_deck).into_iter().find(|&c| {
+            self.card(c)
+                .is_some_and(|card| !card.is_face_down() && card.front_title() == character)
+        });
+        if let Some(c) = target {
+            self.flip_down(c)?;
+        }
+        Ok(())
+    }
+
+    /// Is the day over — has **every** day-clock copy in `day_deck` been spent (face-down)? An empty deck
+    /// (no copies) is never "over".
+    pub fn day_is_over(&self, day_deck: PileId) -> bool {
+        let copies = self.content_cards(day_deck);
+        !copies.is_empty()
+            && copies
+                .iter()
+                .all(|&c| self.card(c).is_some_and(|card| card.is_face_down()))
+    }
+
+    /// Advance to the next day: stand every day-clock copy in `day_deck` back up, and draw one card from
+    /// `reserve` onto the day `track` (the current day is the track's card count, PC.5). A no-op on the
+    /// draw if the reserve is empty (the game has run past its provisioned length — a bound to raise).
+    pub fn advance_day(
+        &mut self,
+        day_deck: PileId,
+        track: PileId,
+        reserve: PileId,
+    ) -> Result<(), TableauError> {
+        for c in self.content_cards(day_deck) {
+            self.flip_up(c)?;
+        }
+        if let Some(&next) = self.content_cards(reserve).last() {
+            let at = self.pile(track).map_or(0, |p| p.cards().len());
+            self.move_card(next, track, at)?;
+        }
+        Ok(())
+    }
+
+    /// The current day — the number of cards on the day `track` (PC.5: count the events, don't cap a
+    /// number).
+    pub fn current_day(&self, track: PileId) -> usize {
+        self.content_cards(track).len()
     }
 
     /// Advances a card to the next render size it has content for, wrapping back to [`Size::Small`]:
@@ -1576,7 +1810,15 @@ mod tests {
                 Some(2),
             )
             .unwrap();
-        let c1 = t.add_card(hand, Face::Down, None).unwrap();
+        let c1 = t
+            .add_card(
+                hand,
+                Face::Down {
+                    title: "hidden".into(),
+                },
+                None,
+            )
+            .unwrap();
         (t, hand, pile, c0, c1)
     }
 
@@ -1649,11 +1891,142 @@ mod tests {
         assert_eq!(t.card(c0).unwrap().home(), pile);
     }
 
+    /// PC.2 — flipping is the reversible facing mutation: a face-down card stays anonymous in views
+    /// (`name() == ""`) yet **remembers its front** (`front_title`), so `flip_up` restores it and the
+    /// remembered front survives a RON round-trip. Flips are idempotent no-ops when already at the target.
+    #[test]
+    fn flip_is_reversible_and_remembers_its_front() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let p = t.add_pile(root, "P").unwrap();
+        let c = t
+            .add_card(
+                p,
+                Face::Up {
+                    title: "Vael".into(),
+                },
+                None,
+            )
+            .unwrap();
+        assert!(!t.card(c).unwrap().is_face_down());
+        assert_eq!(t.card(c).unwrap().name(), "Vael");
+
+        t.flip_down(c).unwrap();
+        assert!(t.card(c).unwrap().is_face_down());
+        assert_eq!(
+            t.card(c).unwrap().name(),
+            "",
+            "face-down is anonymous in views"
+        );
+        assert_eq!(
+            t.card(c).unwrap().front_title(),
+            "Vael",
+            "but it remembers its front"
+        );
+        t.flip_down(c).unwrap(); // idempotent
+        assert_eq!(t.card(c).unwrap().front_title(), "Vael");
+
+        t.flip_up(c).unwrap();
+        assert_eq!(
+            t.card(c).unwrap().name(),
+            "Vael",
+            "flip_up restores the front"
+        );
+        t.flip_up(c).unwrap(); // idempotent
+        assert_eq!(t.card(c).unwrap().name(), "Vael");
+
+        // A face-down card round-trips through RON with its remembered front intact (packable, PC.3).
+        t.flip_down(c).unwrap();
+        let text = ron::to_string(&t).expect("serialize");
+        let back: Tableau = ron::from_str(&text).expect("deserialize");
+        assert!(back.card(c).unwrap().is_face_down());
+        assert_eq!(back.card(c).unwrap().front_title(), "Vael");
+    }
+
+    /// PC.5 — the day clock: each character's copy flips down as it moves; when all are down the day is
+    /// over; advancing stands them back up and grows the counted day track by one. And PC.2 — the total
+    /// card count is **conserved** across every move and the advance (only flips + one draw, no mint).
+    #[test]
+    fn day_clock_advances_when_every_character_has_moved() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        // The Day deck: one face-up identity copy per active character (front = hero name).
+        let day = t.add_pile(root, "Day").unwrap();
+        for h in ["Vael", "Bram", "Isolde"] {
+            let c = t.add_card(day, Face::Up { title: h.into() }, None).unwrap();
+            t.set_card_type(c, "hero").unwrap();
+        }
+        // The day track (its card count = the day, starting at 1) and a reserve of event/day cards.
+        let track = t.add_pile(root, "Days").unwrap();
+        t.add_card(
+            track,
+            Face::Up {
+                title: "Day".into(),
+            },
+            None,
+        )
+        .unwrap();
+        let reserve = t.add_pile(root, "Events").unwrap();
+        for _ in 0..5 {
+            t.add_card(
+                reserve,
+                Face::Up {
+                    title: "Day".into(),
+                },
+                None,
+            )
+            .unwrap();
+        }
+        let total = t.card_count(); // the closed deck after setup
+
+        assert_eq!(t.current_day(track), 1);
+        assert!(!t.day_is_over(day));
+
+        t.mark_moved(day, "Vael").unwrap();
+        t.mark_moved(day, "Bram").unwrap();
+        assert!(!t.day_is_over(day), "one character still to move");
+        t.mark_moved(day, "Isolde").unwrap();
+        assert!(t.day_is_over(day), "everyone has moved — the day is over");
+
+        t.advance_day(day, track, reserve).unwrap();
+        assert_eq!(t.current_day(track), 2, "the day is the track's count");
+        assert_eq!(t.content_cards(reserve).len(), 4, "one event was drawn");
+        assert!(!t.day_is_over(day), "a new day — everyone can move again");
+        assert!(
+            t.content_cards(day)
+                .iter()
+                .all(|&c| !t.card(c).unwrap().is_face_down()),
+            "every copy stood back up"
+        );
+
+        assert_eq!(
+            t.card_count(),
+            total,
+            "conservation: no card minted or destroyed in play"
+        );
+    }
+
     #[test]
     fn move_card_inserts_at_index() {
         let (mut t, hand, pile, c0, c1) = fixture();
-        let c2 = t.add_card(pile, Face::Down, None).unwrap();
-        let c3 = t.add_card(pile, Face::Down, None).unwrap();
+        let c2 = t
+            .add_card(
+                pile,
+                Face::Down {
+                    title: "hidden".into(),
+                },
+                None,
+            )
+            .unwrap();
+        let c3 = t
+            .add_card(
+                pile,
+                Face::Down {
+                    title: "hidden".into(),
+                },
+                None,
+            )
+            .unwrap();
         // move c0 from hand into pile between c2 and c3
         t.move_card(c0, pile, 1).unwrap();
         assert_eq!(t.pile(pile).unwrap().cards(), &[c2, c0, c3]);
