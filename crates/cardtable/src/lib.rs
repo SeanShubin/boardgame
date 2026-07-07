@@ -1318,6 +1318,15 @@ const FONT_BODY: FontSize = FontSize::Px(13.0);
 /// The small type-badge caption.
 const FONT_BADGE: FontSize = FontSize::Px(10.0);
 
+/// A title never wraps: it **shrinks to fit its card on one line** — the grand-archive title-bar look,
+/// where even a long name sits in its bar. [`title_font`] picks the size; below [`TITLE_MIN`] a rare
+/// over-long name clips (paired with `LineBreak::NoWrap`) rather than dropping to a second line.
+const TITLE_MIN: f32 = 8.0;
+/// Rough average glyph advance as a fraction of the font size for the default proportional font — used to
+/// estimate the size whose line just fills the available width. A touch generous (erring wide), so the
+/// fit leans toward *not* wrapping.
+const GLYPH_ADVANCE: f32 = 0.58;
+
 /// How fast a pile eases toward its target position, as a fraction closed per second (higher = snappier).
 const SLIDE_SPEED: f32 = 12.0;
 
@@ -1330,6 +1339,13 @@ const MEDIUM_W: f32 = 200.0;
 const MEDIUM_MIN_H: f32 = 132.0;
 const LARGE_W: f32 = 320.0;
 const LARGE_MAX_H: f32 = 360.0;
+
+/// The inner text width of a Small / Medium card — its width less the padding + border on both sides.
+/// This is the room a title has to fit on one line (see [`title_font`]): Small has 8px padding + 2px
+/// border a side; Medium has 10px + 2px.
+const SMALL_INNER: f32 = SMALL_W - 2.0 * (8.0 + 2.0);
+const MEDIUM_INNER: f32 = MEDIUM_W - 2.0 * (10.0 + 2.0);
+const LARGE_INNER: f32 = LARGE_W - 2.0 * 12.0;
 
 /// The per-card stack step (offset along two edges) and the visual depth cap, so a deck reads as a
 /// stack of Small cards without growing without bound.
@@ -2023,6 +2039,19 @@ fn finish_card(
     entity.with_children(build);
 }
 
+/// The font size for a card `title` so it fills at most `inner` px on **one line**: the `base` size for a
+/// short name, shrinking for a long one so it never wraps (floored at [`TITLE_MIN`] for legibility). Pair
+/// the returned size with `TextLayout::no_wrap()` so a title past the floor clips rather than
+/// wraps. See the grand-archive reference: a long title sits in its bar at a reduced size.
+fn title_font(title: &str, base: FontSize, inner: f32) -> FontSize {
+    let base_px = match base {
+        FontSize::Px(p) => p,
+        _ => 15.0,
+    };
+    let chars = title.chars().count().max(1) as f32;
+    FontSize::Px((inner / (chars * GLYPH_ADVANCE)).clamp(TITLE_MIN, base_px))
+}
+
 /// The **shared Small-card face** — the one content-rendering logic that lone cards *and* deck/pile
 /// fronts delegate to: the name on top, the type badge beneath, and an optional sub-line (a deck's
 /// card count, or a card's `×N` quantity). `ink` colours the name to suit the fill it sits on.
@@ -2036,9 +2065,10 @@ fn small_face(
     c.spawn((
         Text::new(name.to_string()),
         TextFont {
-            font_size: FONT_TITLE,
+            font_size: title_font(name, FONT_TITLE, SMALL_INNER),
             ..default()
         },
+        TextLayout::no_wrap(),
         TextColor(ink),
     ));
     spawn_type_badge(c, card_type);
@@ -2078,7 +2108,9 @@ fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: us
             padding: UiRect::all(Val::Px(8.0)),
             border: UiRect::all(Val::Px(2.0)),
             flex_direction: FlexDirection::Column,
-            justify_content: JustifyContent::Center,
+            // Title-at-top (was centred): the name sits in a strip at the top edge so cards overlapped
+            // vertically still show their names (the Grand Archive title-bar look) — the survey-all cascade.
+            justify_content: JustifyContent::FlexStart,
             align_items: AlignItems::Center,
             row_gap: Val::Px(2.0),
             border_radius: BorderRadius::all(Val::Px(12.0)),
@@ -2125,9 +2157,10 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
         c.spawn((
             Text::new(card.name().to_string()),
             TextFont {
-                font_size: FONT_HEAD,
+                font_size: title_font(card.name(), FONT_HEAD, MEDIUM_INNER),
                 ..default()
             },
+            TextLayout::no_wrap(),
             TextColor(CARD_INK),
         ));
         spawn_type_badge(c, card.card_type());
@@ -2165,9 +2198,10 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
         c.spawn((
             Text::new(card.name().to_string()),
             TextFont {
-                font_size: FONT_HEAD,
+                font_size: title_font(card.name(), FONT_HEAD, LARGE_INNER),
                 ..default()
             },
+            TextLayout::no_wrap(),
             TextColor(INK),
         ));
         for line in card.panel() {
@@ -2329,7 +2363,25 @@ mod game {
 
 #[cfg(test)]
 mod tests {
-    use super::{pluralize, relative_time};
+    use super::{TITLE_MIN, pluralize, relative_time, title_font};
+    use bevy::text::FontSize;
+
+    /// A title keeps the base size until it would overrun its one line, then shrinks to fit — bottoming
+    /// out at the floor (past which `no_wrap` clips rather than wrapping).
+    #[test]
+    fn title_font_shrinks_a_long_name_to_fit_one_line() {
+        let px = |title: &str| match title_font(title, FontSize::Px(15.0), 100.0) {
+            FontSize::Px(p) => p,
+            other => panic!("expected Px, got {other:?}"),
+        };
+        // A short name that fits keeps the base size.
+        assert_eq!(px("Ok"), 15.0);
+        // A long name shrinks below the base so it stays on one line.
+        let long = px(&"x".repeat(20));
+        assert!(long < 15.0 && long > TITLE_MIN, "got {long}");
+        // A very long name bottoms out at the floor.
+        assert_eq!(px(&"x".repeat(40)), TITLE_MIN);
+    }
 
     #[test]
     fn pluralize_uses_the_singular_only_for_one() {
