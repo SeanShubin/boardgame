@@ -349,6 +349,17 @@ fn install_system_deck(table: &mut Tableau, build: &BuildInfo) {
             editable: true,
         },
     );
+    // Seed a tidy grid below the overlay band: a Free deck reads each card's own position, and freshly
+    // added cards are all at (0,0) — i.e. stacked in the top-left, behind the Back button. Lay them out in
+    // rows (three across) starting one gap under the band, matching the fixtures' `grid_layout` spacing.
+    for (i, node) in table.movable_children(pile).into_iter().enumerate() {
+        if let TableNode::Card(c) = node {
+            let (col, row) = (i % 3, i / 3);
+            let x = GAP + col as f32 * (CARD_W + GAP);
+            let y = OVERLAY_BAND + GAP + row as f32 * (CARD_H + GAP);
+            let _ = table.set_card_pos(c, x, y);
+        }
+    }
 }
 
 /// The **Version** card's detail lines (shown when it's grown to Medium): the full commit hash, the build
