@@ -2028,8 +2028,8 @@ fn spawn_nav_card<B: Bundle>(parent: &mut ChildSpawnerCommands, marker: B, label
 
 /// Draws a deck as a stack of **Small cards**: offset layers (two alternating colors, stepped along
 /// the left and bottom edges, capped at [`MAX_STACK`]) hint at the depth, and the front layer is a
-/// Small-card face ([`small_face`]) showing the top card's name, type, and count. The whole stack is
-/// one drop target — a deck is a Small card wearing a stack.
+/// Small-card face ([`small_face`]) showing the top card's `(N)`-prefixed name and its type. The whole
+/// stack is one drop target — a deck is a Small card wearing a stack.
 fn spawn_pile_chip(
     parent: &mut ChildSpawnerCommands,
     id: PileId,
@@ -2078,15 +2078,20 @@ fn spawn_pile_chip(
                     BorderColor::all(CARD_EDGE),
                 );
                 if layer == 0 {
-                    // The front layer is a Small card face — the same [`small_face`] a lone card draws,
-                    // with the pile's card count as its sub-line (omitted when empty, so a place with
-                    // nothing under it reads as a plain named card).
-                    let sub = (count > 0).then(|| format!("{count} cards"));
+                    // The front layer is a Small card face — the same [`small_face`] a lone card draws.
+                    // The card count rides as a compact `(N)` **prefix** on the name ("(9) Location")
+                    // rather than its own sub-line, so the face needs one fewer line and can stay small.
+                    // Empty piles carry no prefix, so a place with nothing under it reads as a plain name.
+                    let name = if count > 0 {
+                        format!("({count}) {label}")
+                    } else {
+                        label.to_string()
+                    };
                     stack
                         .spawn(bundle)
                         .insert(card_shadow())
                         .with_children(|face| {
-                            small_face(face, label, card_type, INK, sub);
+                            small_face(face, &name, card_type, INK, None);
                         });
                 } else {
                     stack.spawn(bundle);
@@ -2095,14 +2100,16 @@ fn spawn_pile_chip(
         });
 }
 
-/// Draws a pile as a compact, counted chip: the **name and type of its top card** over the card count.
-/// You see its *contents* by clicking it to enter its zone — piles no longer fan open in place. A pile
+/// Draws a pile as a compact, counted chip: its top card's **name prefixed with the physical count**
+/// (`(9) Location`) over that card's type. You see its *contents* by clicking it to enter its zone —
+/// piles no longer fan open in place. A pile
 /// whose top card is face-down (or that is empty) falls back to the pile's own display name, no type,
 /// so a face-down deck reveals nothing.
 fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
-    // Count the *contents*: the zone card is the label, not one of the things it fronts.
-    let count = tree.content_cards(id).len() + pile.subpiles().len();
+    // The recursive **physical** count (quantities counted, chrome and projections excluded) — the same
+    // tally the drilled-in zone title shows, so the chip and the zone agree on "how many are in here".
+    let count = tree.physical_card_count(id);
     let (name, card_type) = if matches!(pile.layout().arrangement, Arrangement::Rows)
         || !pile.projection().is_empty()
     {
