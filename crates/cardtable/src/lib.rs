@@ -2134,11 +2134,10 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
 /// [`PileDropZone`]); clicking it drills into the place (the Inn lives inside Ashfen). It wears the card
 /// back so it reads as a fixed board square, distinct from the light-faced character tokens on it.
 fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: PileId) {
-    let name = tree
-        .zone_card(place)
-        .and_then(|c| tree.card(c))
-        .map(|c| c.name().to_string())
-        .unwrap_or_else(|| pile_display_name(tree, place));
+    // Carry the same `(N)` physical tally the deck chips show — here it counts the place's own location
+    // card plus whatever is stacked under it (encounters, character tokens, or the inn), and updates as
+    // characters move in and out. It rides in the top strip, which stays exposed above cascaded tokens.
+    let name = zone_title_with_count(tree, place);
     parent
         .spawn((
             PileDropZone(place),
