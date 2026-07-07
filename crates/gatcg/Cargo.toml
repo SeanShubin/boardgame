@@ -1,0 +1,16 @@
+[package]
+name = "gatcg"
+version.workspace = true
+edition.workspace = true
+
+# Grand Archive TCG reference-data tooling. Currently: mirror the public card
+# API's images to a local directory (see `examples/download_library.rs`).
+#
+# This is a networked utility crate — it is deliberately NOT a dependency of any
+# game crate, and nothing here touches the deterministic game engine. Keeping the
+# HTTP client (ureq) isolated here preserves the "no wall-clock / no network in
+# the rules" guarantee of engine/deckbound/cardtable-model.
+
+[dependencies]
+serde_json = { workspace = true }
+ureq = { workspace = true }

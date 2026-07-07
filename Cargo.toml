@@ -11,6 +11,7 @@ members = [
     "crates/boardgame",
     "crates/deckbound-sample",
     "crates/combat-lab",
+    "crates/gatcg",
 ]
 
 [workspace.package]
@@ -30,7 +31,11 @@ cardtable = { path = "crates/cardtable" }
 tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 ron = "0.8"
+# Blocking HTTP client for the `gatcg` reference-data downloader example. Kept
+# out of the game crates; only the tooling crate depends on it.
+ureq = "2"
 # Wall-clock time that works on wasm too (std::time::SystemTime::now() panics on
 # wasm32-unknown-unknown with "time not implemented").
 web-time = "1"
