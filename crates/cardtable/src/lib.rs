@@ -979,11 +979,11 @@ fn on_node_drag_end(
                 })
                 .map(|(z, _, _)| z.0);
             let from = table.0.card(card).map(|c| c.home());
-            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day")) {
-                if Some(dest) != from {
-                    // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
-                    let _ = table.0.move_character(card, dest, day);
-                }
+            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day"))
+                && Some(dest) != from
+            {
+                // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
+                let _ = table.0.move_character(card, dest, day);
             }
             rebuild.0 = true;
             return;
