@@ -23,7 +23,7 @@
 
 use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
-use bevy::ui::{BoxShadow, ComputedNode, UiGlobalTransform};
+use bevy::ui::{BoxShadow, ComputedNode, Outline, UiGlobalTransform};
 
 use std::collections::HashMap;
 
@@ -100,7 +100,7 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck (a drill-in Free deck) at startup.
             .add_systems(Startup, inject_system_deck)
-            .add_systems(Update, (animate_nodes, fan_layout))
+            .add_systems(Update, (animate_nodes, fan_layout, update_movable_cue))
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -874,6 +874,33 @@ fn animate_nodes(
     }
 }
 
+/// Ring every pickable card with the [`MOVABLE_CUE`] accent edge, so you can scan a zone for what you can
+/// pick up. The card currently held drops its ring (it floats on the held layer). The [`Outline`] is kept
+/// present and only its *colour* toggled — per Bevy's guidance, cheaper than inserting/removing it — which
+/// also lets [`highlight_targets`] paint the drop-target glow onto the very same outline.
+fn update_movable_cue(
+    mut commands: Commands,
+    dragging: Res<Dragging>,
+    mut movable: Query<(Entity, &Movable, Option<&mut Outline>)>,
+) {
+    for (e, m, outline) in &mut movable {
+        let color = if dragging.0 == Some(m.0) {
+            Color::NONE // the held card floats; its ring would just clutter the drag
+        } else {
+            MOVABLE_CUE
+        };
+        match outline {
+            Some(mut o) if o.color != color => o.color = color,
+            Some(_) => {}
+            None => {
+                commands
+                    .entity(e)
+                    .insert(Outline::new(Val::Px(2.0), Val::Px(1.0), color));
+            }
+        }
+    }
+}
+
 /// Space each **fan row's** cards across its container, recomputed every frame so it tracks the real
 /// available width — a window resize reflows it, matching how the grids reflow via [`animate_nodes`]. The
 /// cards **spread as far as fits** (up to a full card + [`GAP`] step, no overlap) and pack tighter as the
@@ -1234,6 +1261,9 @@ const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
 /// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
+/// The **movable cue** — a soft ring worn by every card you can pick up, so they're scannable at a glance
+/// (amber, distinct from the teal actionable edge). Toggled to [`Color::NONE`] on the card currently held.
+const MOVABLE_CUE: Color = Color::srgba(0.92, 0.74, 0.34, 0.60);
 
 /// The accent colour for a card **type** — a small designed palette for the common types, with a
 /// stable hashed hue for any other type so a new type still reads as its own colour.
