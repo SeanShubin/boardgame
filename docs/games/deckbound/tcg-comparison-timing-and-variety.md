@@ -89,9 +89,9 @@ GA is the interesting case: it **keeps MTG's engine and adds governors.**
   resolution.* **No stack, no priority, no instant speed** — the central deliberate departure
   (constraint **C4**: "each side commits a face-down card, then both reveal at once. No agent
   may react to another's choice after seeing it within the same exchange").
-- **What replaces the stack:** the **engagement schedule** — a *fixed* sequence
+- **What replaces the stack:** the **sub-phase schedule** — a *fixed* sequence
   (Intercept → Volley → Raid → Clash → Breach), declared to be *the entire* timing system
-  (Spec §4.6: "there are no other timing rules"). Within one engagement everything committed
+  (Spec §4.6: "there are no other timing rules"). Within one sub-phase everything committed
   lands order-independently; ordering exists only so an earlier death can *preclude* a later
   action.
 - **Reactivity → anticipation:** "**Defense is anticipatory, not reactive: a buff played into
@@ -122,7 +122,7 @@ Every axis tells the same story: **MTG open → GA throttled → Deckbound bound
 
 | Axis | Magic | Grand Archive | Deckbound |
 |---|---|---|---|
-| Interaction mechanism | Open LIFO stack + continuous priority | LIFO stack, priority **windowed** at phase starts | **No stack**; fixed engagement schedule |
+| Interaction mechanism | Open LIFO stack + continuous priority | LIFO stack, priority **windowed** at phase starts | **No stack**; fixed sub-phase schedule |
 | When you act vs. info reveal | **After** reveal (reactive), always | **After** reveal, but only in Fast windows | **Before** reveal (**anticipatory**) |
 | Reactivity is… | Universal / default | **Opt-in per card** (Fast); creatures Slow | **Forbidden** by C4 |
 | Escalation | Unbounded counter-wars | Bounded (stack empties, pass in succession) | **One bid, higher wins** — no raise-war |
@@ -218,7 +218,7 @@ Deckbound removed the engine entirely. So the delta hands Deckbound a menu of go
 could adopt **without ever adding a stack** — plus one warning.
 
 **Adopt in spirit (low risk, high fit):**
-- **(a) Treat the engagement schedule as Deckbound's "Slow default," and be proud of it.** GA's
+- **(a) Treat the sub-phase schedule as Deckbound's "Slow default," and be proud of it.** GA's
   "Allies/Attacks are Slow" and Deckbound's "attacks resolve before buffs / anticipatory
   defense" are the *same instinct*: commit-and-resolve is the default; reacting is the
   exception. The one-line bridge for TCG players: *"everything in Deckbound is Slow; nothing is
