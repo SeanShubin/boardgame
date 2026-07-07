@@ -173,14 +173,6 @@ struct Pinned;
 #[derive(Component)]
 struct BackCard;
 
-/// Marks one row of a [`Rows`](Arrangement::Rows) view for drop resolution: on release, the card lands
-/// in the row the cursor is over. `active` marks the row that accepts drops (the Active row); a drop over
-/// a non-active row either does nothing or, for a card dragged *out* of Active, puts its pairing back.
-#[derive(Component, Clone, Copy)]
-struct RowRegion {
-    active: bool,
-}
-
 /// A **debug event log** written to `cardtable-debug.log` next to the launch dir (truncated each launch,
 /// with a launch stamp), recording drags, drops (cursor position + each row's hover state) and the
 /// resulting Active-row state — so drop behaviour can be traced exactly. No file on the web.
@@ -533,6 +525,7 @@ fn on_drop(
     piles: Query<&PileDropZone>,
     mut table: ResMut<Table>,
     mut rebuild: ResMut<NeedsRebuild>,
+    log: Res<DebugLog>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
@@ -547,19 +540,31 @@ fn on_drop(
             .0
             .pile(inn)
             .is_some_and(|p| !p.projection().is_empty());
+        let (a, b) = (dragged.0, target.0);
+        let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
+        let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
+        log.line(format!(
+            "DROP card->card: focus={inn:?} is_projection={is_projection} a_kit={a_kit} b_kit={b_kit} banks(Stats/Numbers/Abilities)={}/{}/{}",
+            top_deck(&table.0, "Stats").is_some(),
+            top_deck(&table.0, "Numbers").is_some(),
+            top_deck(&table.0, "Abilities").is_some(),
+        ));
         if is_projection {
-            let (a, b) = (dragged.0, target.0);
-            let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
-            let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
             let pair = match (a_kit, b_kit) {
                 (true, false) => Some((b, a)), // a is the kit, b the identity
                 (false, true) => Some((a, b)), // b is the kit, a the identity
                 _ => None,                     // two kits or two heroes — nothing to equip
             };
-            if let Some((identity, kit)) = pair {
-                on.propagate(false);
-                try_equip(&mut table.0, identity, kit); // assemble from the banks (no mint, PC.2)
-                rebuild.0 = true;
+            match pair {
+                Some((identity, kit)) => {
+                    on.propagate(false);
+                    let ok = try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
+                    log.line(format!(
+                        "  equip identity={identity:?} kit={kit:?} -> {ok} (false = a bank was missing/empty)"
+                    ));
+                    rebuild.0 = true;
+                }
+                None => log.line("  no hero+kit pair (dropped two heroes or two kits)"),
             }
         }
         return;
@@ -933,6 +938,7 @@ fn fan_layout(
 fn on_node_drag_end(
     mut on: On<Pointer<DragEnd>>,
     movables: Query<(&Movable, &Node)>,
+    geom: Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
@@ -970,16 +976,55 @@ fn on_node_drag_end(
             "DROP_END card={dropped_name:?} at cursor={:?}",
             on.event().pointer_location.position
         ));
-        // (The Rows/Active-row recruit flow was retired: recruiting is now "drag a hero onto a kit" — an
-        // equip assembled from the banks via `on_drop` → `try_equip` — so the inn is a pure Hero | Kit
-        // projection and a drag in it just snaps back below.)
-        // In a projection view (the inn) a card drag is only ever an equip attempt
-        // (handled by [`on_drop`]), never a reorder of the projected source deck. Rebuild to snap back.
+        // In a projection view (the inn) a card drag is only ever an **equip attempt**: drag a hero onto a
+        // kit (or a kit onto a hero) to assemble a character deck from the banks. `on_drop`'s DragDrop can't
+        // carry it — the dragged fan tile follows the cursor and occludes the picking hit-test, so the drop
+        // never lands on the target card. So detect the target here by geometry: which *other* projected card
+        // did the release cursor land on? The cursor position is logical window pixels; a card's screen rect
+        // is its `UiGlobalTransform` centre ± half its `ComputedNode` size, converted to logical by the node's
+        // inverse scale factor (same convention as `sync_pinned`).
         if table
             .0
             .pile(table.0.focus_id())
             .is_some_and(|p| !p.projection().is_empty())
         {
+            let cursor = on.event().pointer_location.position;
+            let target = geom
+                .iter()
+                .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
+                .filter(|&(c, _, _)| c != card)
+                .find(|&(_, cn, gt)| {
+                    let sf = cn.inverse_scale_factor; // physical → logical, matching the cursor
+                    let center = gt.translation * sf;
+                    let half = cn.size() * sf * 0.5;
+                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
+                })
+                .map(|(c, _, _)| c);
+            if let Some(target) = target {
+                // Pair the card carrying a recipe (the kit) with the other (the hero identity); either drag
+                // direction works. Two kits or two heroes equip nothing.
+                let dragged_kit = table.0.card(card).is_some_and(|c| c.recipe().is_some());
+                let target_kit = table.0.card(target).is_some_and(|c| c.recipe().is_some());
+                let pair = match (dragged_kit, target_kit) {
+                    (true, false) => Some((target, card)), // dragged is the kit, target the identity
+                    (false, true) => Some((card, target)), // target is the kit, dragged the identity
+                    _ => None,
+                };
+                log.line(format!(
+                    "  drag-equip target={target:?} dragged_kit={dragged_kit} target_kit={target_kit} pair={}",
+                    pair.is_some()
+                ));
+                if let Some((identity, kit)) = pair {
+                    let ok = try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
+                    log.line(format!(
+                        "  equip identity={identity:?} kit={kit:?} -> {ok} (false = a bank was missing/empty)"
+                    ));
+                }
+            } else {
+                log.line("  drag-equip: cursor landed on no projected card (snap back)");
+            }
+            // Whether or not an equip happened, a projection drag never reorders the source deck. Rebuild to
+            // snap the dragged card back to its projected slot (and show the new character deck if equipped).
             rebuild.0 = true;
             return;
         }
@@ -1384,24 +1429,15 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                 ..default()
                             })
                             .with_children(|col| {
-                                let projected = pile.projection().len();
-                                for (i, (header, cards)) in
-                                    tree.row_groups(zone).into_iter().enumerate()
-                                {
-                                    // Rows span the full width; the Active row (past the projected rows) is
-                                    // the one that accepts drops.
-                                    let mut row = col.spawn((
-                                        Node {
-                                            width: Val::Percent(100.0),
-                                            flex_direction: FlexDirection::Row,
-                                            align_items: AlignItems::Center,
-                                            column_gap: Val::Px(INN_HEADER_GAP),
-                                            ..default()
-                                        },
-                                        RowRegion {
-                                            active: i >= projected,
-                                        },
-                                    ));
+                                for (header, cards) in tree.row_groups(zone) {
+                                    // Rows span the full width; each is a header card leading a fan.
+                                    let mut row = col.spawn(Node {
+                                        width: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Row,
+                                        align_items: AlignItems::Center,
+                                        column_gap: Val::Px(INN_HEADER_GAP),
+                                        ..default()
+                                    });
                                     row.with_children(|row| {
                                         // The header names the row and isn't part of the fan — it leads it.
                                         spawn_card(row, tree.card(header).expect("row header"));
@@ -1463,7 +1499,11 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                                     // everywhere), and the fan's spacing assumes uniform
                                                     // widths. Full detail lives in the card's home deck.
                                                     .with_children(|tile| {
-                                                        spawn_card_small(tile, card, 1)
+                                                        spawn_card_small(
+                                                            tile,
+                                                            card,
+                                                            card.quantity() as usize,
+                                                        )
                                                     });
                                                 }
                                             },
@@ -1863,7 +1903,8 @@ fn card_elevation(card: &Card) -> ZIndex {
 /// can grow/shrink it.
 fn spawn_card(parent: &mut ChildSpawnerCommands, card: &Card) {
     match card.size() {
-        Size::Small => spawn_card_small(parent, card, 1),
+        // Show the stack's `×N` (PC.2) when it stands for several identical physical cards.
+        Size::Small => spawn_card_small(parent, card, card.quantity() as usize),
         Size::Medium => spawn_card_medium(parent, card),
         Size::Large => spawn_card_large(parent, card),
     }
