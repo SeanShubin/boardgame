@@ -9,3 +9,4 @@ dist/
 cardtable-debug.log
 # Throwaway font-evaluation assets for the `fontshow` example — re-fetchable, not shipped.
 crates/cardtable/examples/fonts/*.ttf
+/local/
