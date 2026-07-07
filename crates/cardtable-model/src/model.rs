@@ -129,6 +129,11 @@ pub struct Recipe {
     pub ability: String,
 }
 
+/// The default [`Card::quantity`] for a card that doesn't record one (a single physical card).
+fn default_quantity() -> u32 {
+    1
+}
+
 /// A single card and its place in the tableau. Beyond its `face`, a card carries the content for the
 /// larger render [`Size`]s (`detail`, `panel`) and a [`CardKind`] that gives a click its meaning.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -155,12 +160,24 @@ pub struct Card {
     /// This card's **recipe** — the structured content it yields when combined. A starting kit carries a
     /// [`Recipe`] (the character's stat values + ability); an ordinary card (e.g. a hero identity) has none.
     recipe: Option<Recipe>,
+    /// **Quantity** — how many identical physical cards this one stack stands for (spec
+    /// `canon/2-spec/physical-cards.md` PC.2/PC.5): a run of duplicates in the same pile is one card that
+    /// carries its count (`6 ×12`). Default 1. **Conservation is on the sum** of quantities, so
+    /// [`card_count`](Tableau::card_count) totals them; splitting/merging a stack preserves that sum.
+    #[serde(default = "default_quantity")]
+    quantity: u32,
 }
 
 impl Card {
     /// The pile this card currently lives in.
     pub fn home(&self) -> PileId {
         self.home
+    }
+
+    /// How many identical physical cards this stack represents (`×N`, spec `physical-cards.md` PC.2) —
+    /// at least 1.
+    pub fn quantity(&self) -> u32 {
+        self.quantity.max(1)
     }
 
     /// Whether clicking this card performs a legal move.
@@ -428,9 +445,10 @@ pub struct Pile {
     /// the [content cards](Tableau::content_cards) of these source piles (grouped, still owned by the
     /// sources). A projection gathers relevant cards from several decks into one view without moving them.
     projection: Vec<PileId>,
-    /// If set, this pile is a **character reflection** derived from an active inn pairing — the
-    /// [`CardId`] of the hero it mirrors. [`sync_character_decks`](Tableau::sync_character_decks) creates
-    /// and removes these to track the pairs; nothing else should carry this.
+    /// If set, this pile is a **character deck** for the hero whose [`CardId`] this is (the deck's own
+    /// identity/label card). [`equip_character`](Tableau::equip_character) sets it and
+    /// [`unequip_character`](Tableau::unequip_character) removes the deck; the party reconcile
+    /// ([`sync_party`](Tableau::sync_party)) reads it to know who is active. Nothing else carries this.
     reflects: Option<CardId>,
 }
 
@@ -475,8 +493,8 @@ impl Pile {
         &self.projection
     }
 
-    /// The hero this pile is a **character reflection** of, or `None` for an ordinary pile. See
-    /// [`Tableau::sync_character_decks`].
+    /// The hero this pile is a **character deck** for, or `None` for an ordinary pile. See
+    /// [`Tableau::equip_character`].
     pub fn reflects(&self) -> Option<CardId> {
         self.reflects
     }
@@ -484,7 +502,7 @@ impl Pile {
 
 /// Why a pile/card operation could not be performed. Operations that return this leave the tree
 /// unchanged.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TableauError {
     /// No card with this id exists.
     UnknownCard(CardId),
@@ -495,6 +513,9 @@ pub enum TableauError {
     /// A pile move that would break the tree — moving the root, or moving a pile into itself or one
     /// of its own descendants (a cycle).
     InvalidMove,
+    /// A bank ran out of the card an assembly asked for — a provisioning shortfall (raise the supply,
+    /// spec `physical-cards.md` PC.5). Carries the requested card's name.
+    BankEmpty(String),
 }
 
 /// A tree of piles and cards, plus the current attention state (which pile is focused, which cards
@@ -628,6 +649,7 @@ impl Tableau {
                 pos: Pos::default(),
                 footprint: Pos::default(),
                 recipe: None,
+                quantity: 1,
             },
         );
         self.piles
@@ -660,8 +682,16 @@ impl Tableau {
         self.cards.get(&id)
     }
 
-    /// Total number of cards across every pile (conserved by [`move_card`](Self::move_card)).
+    /// Total number of **physical** cards — the **sum of stack quantities** (spec `physical-cards.md`
+    /// PC.2: conservation is on this sum, so a `6 ×12` bank counts as 12). Splitting or merging a stack
+    /// preserves it. See [`stack_count`](Self::stack_count) for the number of distinct stacks.
     pub fn card_count(&self) -> usize {
+        self.cards.values().map(|c| c.quantity() as usize).sum()
+    }
+
+    /// The number of distinct card **stacks** (a `6 ×12` bank is one stack) — as opposed to
+    /// [`card_count`](Self::card_count), the physical total.
+    pub fn stack_count(&self) -> usize {
         self.cards.len()
     }
 
@@ -922,107 +952,137 @@ impl Tableau {
             .collect()
     }
 
-    /// Spawn a [`Recipe`]'s cards on top of `pile`, in order: one **stat** card per stat named
-    /// `"{Stat} {value}"` (e.g. `"Might 2"`), typed `"stat"`, its detail the stat's
-    /// [`catalog`](crate::catalog) description; then one **ability** card named after the ability, typed
-    /// `"ability"`, its detail the ability's catalog description. Each stat stays a single physical card
-    /// (value *and* description together) — never split into a name card and a value card.
-    fn spawn_recipe_cards(&mut self, pile: PileId, recipe: &Recipe) -> Result<(), TableauError> {
-        for (&(stat, description), &value) in crate::catalog::STATS.iter().zip(recipe.stats.iter())
-        {
-            let id = self.add_card(
-                pile,
-                Face::Up {
-                    title: format!("{stat} {value}"),
-                },
-                None,
-            )?;
-            self.set_card_type(id, "stat")?;
-            self.set_card_detail(id, vec![description.to_string()])?;
+    /// Draw **one** card named `name` out of `bank` onto the top of `dest`, returning the single card's
+    /// id — a **split** of the bank stack (spec `physical-cards.md` PC.2): if the bank stack has quantity
+    /// `>1` it is decremented and a fresh `×1` card is placed in `dest`; if it is the last one, the whole
+    /// stack moves. Either way the **sum** of quantities is conserved. Errors
+    /// [`BankEmpty`](TableauError::BankEmpty) if the bank holds no such card.
+    fn draw_named_from(
+        &mut self,
+        bank: PileId,
+        dest: PileId,
+        name: &str,
+    ) -> Result<CardId, TableauError> {
+        let stack = self
+            .content_cards(bank)
+            .into_iter()
+            .find(|&c| self.card(c).is_some_and(|k| k.name() == name))
+            .ok_or_else(|| TableauError::BankEmpty(name.to_string()))?;
+        let at = self.piles[&dest].children.len();
+        if self.cards[&stack].quantity() <= 1 {
+            self.move_card(stack, dest, at)?;
+            return Ok(stack);
         }
-        let ability = self.add_card(
-            pile,
-            Face::Up {
-                title: recipe.ability.clone(),
-            },
-            None,
-        )?;
-        self.set_card_type(ability, "ability")?;
-        self.set_card_detail(
-            ability,
-            vec![crate::catalog::ability_description(&recipe.ability).to_string()],
-        )?;
+        // Split one off the stack: decrement the bank, mint a `×1` twin in `dest` (sum unchanged).
+        self.cards.get_mut(&stack).expect("stack").quantity -= 1;
+        let face = self.cards[&stack].face.clone();
+        let ctype = self.cards[&stack].card_type.clone();
+        let detail = self.cards[&stack].detail.clone();
+        let one = self.add_card(dest, face, None)?;
+        self.set_card_type(one, ctype)?;
+        if !detail.is_empty() {
+            self.set_card_detail(one, detail)?;
+        }
+        Ok(one)
+    }
+
+    /// Return `card` to `bank` — a **merge** (spec `physical-cards.md` PC.2): if the bank already holds a
+    /// stack of the same name, `card`'s quantity is folded into it and `card` is removed; otherwise `card`
+    /// simply moves to the bank. The **sum** of quantities is conserved.
+    fn return_one(&mut self, card: CardId, bank: PileId) -> Result<(), TableauError> {
+        let name = self
+            .card(card)
+            .map(|c| c.name().to_string())
+            .unwrap_or_default();
+        let q = self.card(card).map(|c| c.quantity()).unwrap_or(1);
+        let existing = self
+            .content_cards(bank)
+            .into_iter()
+            .find(|&c| c != card && self.card(c).is_some_and(|k| k.name() == name));
+        if let Some(stack) = existing {
+            self.cards.get_mut(&stack).expect("stack").quantity += q;
+            self.remove_card(card)?;
+        } else {
+            let at = self.piles[&bank].children.len();
+            self.move_card(card, bank, at)?;
+        }
         Ok(())
     }
 
-    /// **Combine** an `identity` card with a `recipe` card (e.g. a hero with a starting kit) into a new
-    /// top-level **character deck**, returning its id. The character deck is a [`List`](Arrangement::List)
-    /// deck (an ordered line that reflows footprint-aware, see [`structured_positions`](Self::structured_positions))
-    /// holding the recipe's cards, a reserved battle-rank identity copy, and the identity itself as
-    /// its top [`Zone`](CardKind::Zone) label; one more identity copy is placed at `location` (the
-    /// character now stands there). The identity leaves its old home — so a recruited hero exits the inn.
-    /// The recipe card is untouched (a kit is reusable).
-    pub fn combine(
+    /// **Equip** `hero` with a kit `recipe` into a new character deck — conservation-clean (spec
+    /// `physical-cards.md` PC.2): every card is **moved** from a bank, nothing minted. Bottom→top the deck
+    /// spells each stat as a **stat-name card then a number card** (e.g. `Might` then `6`, drawn from
+    /// `stats_bank` / `numbers_bank`), then the **ability** card (from `abilities_bank`), then the hero's
+    /// **own identity card** moved on top as the deck's [`Zone`](CardKind::Zone) label (it leaves the
+    /// Identity deck). The kit card is a reusable spec — it is **not** touched. Returns the character deck.
+    pub fn equip_character(
         &mut self,
-        identity: CardId,
-        recipe: CardId,
-        location: PileId,
+        hero: CardId,
+        recipe: &Recipe,
+        stats_bank: PileId,
+        numbers_bank: PileId,
+        abilities_bank: PileId,
     ) -> Result<PileId, TableauError> {
         let name = self
-            .cards
-            .get(&identity)
-            .ok_or(TableauError::UnknownCard(identity))?
+            .card(hero)
+            .ok_or(TableauError::UnknownCard(hero))?
             .name()
             .to_string();
-        let card_type = self.cards[&identity].card_type.clone();
-        let recipe_content = self
-            .cards
-            .get(&recipe)
-            .ok_or(TableauError::UnknownCard(recipe))?
-            .recipe
-            .clone();
-        if !self.piles.contains_key(&location) {
-            return Err(TableauError::UnknownPile(location));
+        let deck = self.add_pile(self.root, name.clone())?;
+        for (&(stat, _desc), &value) in crate::catalog::STATS.iter().zip(recipe.stats.iter()) {
+            self.draw_named_from(stats_bank, deck, stat)?;
+            self.draw_named_from(numbers_bank, deck, &value.to_string())?;
         }
-
-        let character = self.add_pile(self.root, name.clone())?;
-        // The kit's cards, in order (bottom → top): one stat card per stat, then the ability.
-        if let Some(recipe) = &recipe_content {
-            self.spawn_recipe_cards(character, recipe)?;
-        }
-        // A reserved battle-rank identity copy...
-        let rank = self.add_card(
-            character,
-            Face::Up {
-                title: name.clone(),
-            },
-            None,
-        )?;
-        self.set_card_type(rank, card_type.clone())?;
-        // ...then the identity itself, moved on top as the deck's Zone label (its Attributes copy).
-        let at = self.piles[&character].children.len();
-        self.move_card(identity, character, at)?;
-        self.set_card_kind(identity, CardKind::Zone)?;
-        // One identity copy stands at the location (the character is now on the overworld there).
-        let here = self.add_card(
-            location,
-            Face::Up {
-                title: name.clone(),
-            },
-            None,
-        )?;
-        self.set_card_type(here, card_type)?;
-
-        // A character's cards are an ordered line (stat name, value, …), so the deck is a List.
+        self.draw_named_from(abilities_bank, deck, &recipe.ability)?;
+        // The hero's own identity card becomes the deck's Zone label (it leaves Identity).
+        let at = self.piles[&deck].children.len();
+        self.move_card(hero, deck, at)?;
+        self.set_card_kind(hero, CardKind::Zone)?;
         self.set_layout(
-            character,
+            deck,
             Layout {
                 arrangement: Arrangement::List,
                 editable: true,
             },
         )?;
-        self.set_pile_pos(character, 40.0, 320.0)?;
-        Ok(character)
+        self.set_pile_pos(deck, 40.0, 320.0)?;
+        // Mark it a character deck for `hero`, so the day-clock / stationing reconcile ([`sync_party`])
+        // recognises the active party.
+        self.piles.get_mut(&deck).expect("just created").reflects = Some(hero);
+        Ok(deck)
+    }
+
+    /// **Un-equip** a character `deck` — the inverse of [`equip_character`], conservation-clean: return
+    /// each borrowed card to its bank by type (`stat` → `stats_bank`, `number` → `numbers_bank`, `ability`
+    /// → `abilities_bank`), move the hero's identity card back to `identity_home` (a plain card again), and
+    /// remove the now-empty character-deck **pile** (structure, not a card). Any other card is swept to
+    /// `identity_home` rather than lost.
+    pub fn unequip_character(
+        &mut self,
+        deck: PileId,
+        identity_home: PileId,
+        stats_bank: PileId,
+        numbers_bank: PileId,
+        abilities_bank: PileId,
+    ) -> Result<(), TableauError> {
+        // The hero label first (the deck's Zone card) → back to Identity as a plain Regular card.
+        if let Some(hero) = self.zone_card(deck) {
+            self.set_card_kind(hero, CardKind::Regular)?;
+            self.move_card(hero, identity_home, 0)?;
+        }
+        // Then every remaining card back to its bank, **merging** into that bank's stack (PC.2).
+        for c in self.content_cards(deck) {
+            match self.card(c).map(|k| k.card_type()) {
+                Some("stat") => self.return_one(c, stats_bank)?,
+                Some("number") => self.return_one(c, numbers_bank)?,
+                Some("ability") => self.return_one(c, abilities_bank)?,
+                _ => {
+                    self.move_card(c, identity_home, 0)?;
+                }
+            }
+        }
+        self.remove_pile(deck)?;
+        Ok(())
     }
 
     /// Removes `pile` and everything under it — its cards, and recursively its sub-piles — and unlinks it
@@ -1052,126 +1112,6 @@ impl Tableau {
         }
         self.piles.remove(&pile);
         Ok(())
-    }
-
-    /// Reconcile the Table's **character reflection decks** with `inn`'s active hero/kit pairs: every
-    /// *complete* pair gets one top-level deck mirroring its hero (the hero's name as the deck's
-    /// [`Zone`](CardKind::Zone) label over copies of the kit's cards), and any reflection whose pair has
-    /// been put back is removed. Keyed by the hero [`CardId`], so it is idempotent — safe to call on
-    /// every change. The pair itself stays in the inn (the reflection never consumes it).
-    pub fn sync_character_decks(&mut self, inn: PileId) -> Result<(), TableauError> {
-        // The inn's active content (row headers aside) groups into hero/kit pairs by position.
-        let content: Vec<CardId> = self
-            .content_cards(inn)
-            .iter()
-            .copied()
-            .filter(|&c| {
-                self.cards
-                    .get(&c)
-                    .is_some_and(|k| k.kind != CardKind::Header)
-            })
-            .collect();
-        // For each *complete* pair, the hero is the member without a recipe (the kit carries one).
-        let mut active_heroes: Vec<CardId> = Vec::new();
-        for pair in content.chunks_exact(2) {
-            let hero = pair
-                .iter()
-                .copied()
-                .find(|&c| self.cards.get(&c).is_some_and(|k| k.recipe.is_none()));
-            if let Some(hero) = hero {
-                active_heroes.push(hero);
-            }
-        }
-        // Drop reflections whose pair is gone.
-        let stale: Vec<PileId> = self.piles[&self.root]
-            .subpiles()
-            .into_iter()
-            .filter(|&s| {
-                self.piles[&s]
-                    .reflects
-                    .is_some_and(|h| !active_heroes.contains(&h))
-            })
-            .collect();
-        for pile in stale {
-            self.remove_pile(pile)?;
-        }
-        // Add a reflection for each newly-paired hero.
-        let reflected: Vec<CardId> = self.piles[&self.root]
-            .subpiles()
-            .into_iter()
-            .filter_map(|s| self.piles[&s].reflects)
-            .collect();
-        for &hero in &active_heroes {
-            if reflected.contains(&hero) {
-                continue;
-            }
-            let kit = self.paired_kit(inn, hero);
-            // Offset each fresh deck past the reflections already on the table (including this pass's).
-            let idx = self.piles[&self.root]
-                .subpiles()
-                .into_iter()
-                .filter(|&s| self.piles[&s].reflects.is_some())
-                .count();
-            self.build_character_reflection(hero, kit, idx)?;
-        }
-        Ok(())
-    }
-
-    /// The kit card paired with `hero` in `inn`'s active row (its position-partner), if any.
-    fn paired_kit(&self, inn: PileId, hero: CardId) -> Option<CardId> {
-        let content: Vec<CardId> = self
-            .content_cards(inn)
-            .iter()
-            .copied()
-            .filter(|&c| {
-                self.cards
-                    .get(&c)
-                    .is_some_and(|k| k.kind != CardKind::Header)
-            })
-            .collect();
-        let i = content.iter().position(|&c| c == hero)?;
-        content.get(i ^ 1).copied()
-    }
-
-    /// Build one character reflection deck on the root, mirroring `hero` equipped with `kit`: the kit's
-    /// cards (copies), then the hero's name as the deck's [`Zone`](CardKind::Zone) label. Marked with
-    /// `reflects = Some(hero)` and laid out as a [`List`](Arrangement::List). `index` spreads the decks
-    /// so a fresh one does not land exactly on the last.
-    fn build_character_reflection(
-        &mut self,
-        hero: CardId,
-        kit: Option<CardId>,
-        index: usize,
-    ) -> Result<PileId, TableauError> {
-        let name = self.cards[&hero].name().to_string();
-        let card_type = self.cards[&hero].card_type.clone();
-        let recipe = kit
-            .and_then(|k| self.cards.get(&k))
-            .and_then(|k| k.recipe.clone());
-
-        let deck = self.add_pile(self.root, name.clone())?;
-        if let Some(recipe) = &recipe {
-            self.spawn_recipe_cards(deck, recipe)?;
-        }
-        let label = self.add_card(
-            deck,
-            Face::Up {
-                title: name.clone(),
-            },
-            None,
-        )?;
-        self.set_card_type(label, card_type)?;
-        self.set_card_kind(label, CardKind::Zone)?;
-        self.set_layout(
-            deck,
-            Layout {
-                arrangement: Arrangement::List,
-                editable: true,
-            },
-        )?;
-        self.piles.get_mut(&deck).expect("just created").reflects = Some(hero);
-        self.set_pile_pos(deck, 40.0 + index as f32 * 40.0, 360.0)?;
-        Ok(deck)
     }
 
     /// The active party — the names of the heroes reflected by the character decks on the table.
@@ -1215,7 +1155,7 @@ impl Tableau {
     /// Reconcile the **Day deck** to the active party (spec `physical-cards.md` PC.5): every character with
     /// a reflection deck on the table has its **day-token** standing in `day_deck`; a token whose character
     /// has left returns to `reserve`. Matched by name (PC.1). Idempotent, conservation-clean (moves only).
-    /// Call after [`sync_character_decks`](Tableau::sync_character_decks). See [`sync_party`](Tableau::sync_party)
+    /// Call after a recruit change. See [`sync_party`](Tableau::sync_party)
     /// to also station location tokens.
     pub fn sync_day_clock(
         &mut self,
@@ -1394,6 +1334,17 @@ impl Tableau {
         Ok(())
     }
 
+    /// Sets a card's [`quantity`](Card::quantity) — how many identical physical cards this one stack
+    /// stands for (spec `physical-cards.md` PC.2: a `6 ×12` bank). Used at **setup** to deal a stack;
+    /// in play, quantities change only by the split/merge inside a move. Floored at 1.
+    pub fn set_card_quantity(&mut self, card: CardId, quantity: u32) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .quantity = quantity.max(1);
+        Ok(())
+    }
+
     /// Sets a card's [`Face`] outright — the one post-creation mutation of facing (spec
     /// `physical-cards.md` PC.2). Prefer [`flip_down`](Tableau::flip_down) / [`flip_up`](Tableau::flip_up),
     /// which preserve the front title so the flip is reversible; this is the raw setter.
@@ -1466,9 +1417,10 @@ impl Tableau {
                 .all(|&c| self.card(c).is_some_and(|card| card.is_face_down()))
     }
 
-    /// Advance to the next day: stand every day-clock copy in `day_deck` back up, and draw one card from
-    /// `reserve` onto the day `track` (the current day is the track's card count, PC.5). A no-op on the
-    /// draw if the reserve is empty (the game has run past its provisioned length — a bound to raise).
+    /// Advance to the next day: stand every day-clock copy in `day_deck` back up, and draw **one** event
+    /// card from `reserve` onto the day `track` — merging into the track's event stack, so the day is the
+    /// stack's **quantity** (PC.5: count the events, no number cap). A no-op on the draw if the reserve is
+    /// spent (the game has run past its provisioned length — a bound to raise).
     pub fn advance_day(
         &mut self,
         day_deck: PileId,
@@ -1478,17 +1430,34 @@ impl Tableau {
         for c in self.content_cards(day_deck) {
             self.flip_up(c)?;
         }
-        if let Some(&next) = self.content_cards(reserve).last() {
-            let at = self.pile(track).map_or(0, |p| p.cards().len());
-            self.move_card(next, track, at)?;
+        // Draw one event off the reserve stack and merge it onto the track (both split & merge, PC.2).
+        if let Some(&stack) = self.content_cards(reserve).last() {
+            let name = self
+                .card(stack)
+                .map(|c| c.name().to_string())
+                .unwrap_or_default();
+            let drawn = self.draw_named_from(reserve, track, &name)?;
+            // Fold it into the track's existing event stack (if any).
+            let merged_into = self
+                .content_cards(track)
+                .into_iter()
+                .find(|&c| c != drawn && self.card(c).is_some_and(|k| k.name() == name));
+            if let Some(existing) = merged_into {
+                let q = self.card(drawn).map(|c| c.quantity()).unwrap_or(1);
+                self.cards.get_mut(&existing).expect("stack").quantity += q;
+                self.remove_card(drawn)?;
+            }
         }
         Ok(())
     }
 
-    /// The current day — the number of cards on the day `track` (PC.5: count the events, don't cap a
-    /// number).
+    /// The current day — the **sum of quantities** on the day `track` (PC.5: count the events; the track is
+    /// one `Event ×day` stack).
     pub fn current_day(&self, track: PileId) -> usize {
-        self.content_cards(track).len()
+        self.content_cards(track)
+            .iter()
+            .map(|&c| self.card(c).map_or(0, |k| k.quantity() as usize))
+            .sum()
     }
 
     /// Advances a card to the next render size it has content for, wrapping back to [`Size::Small`]:
@@ -1521,14 +1490,16 @@ impl Tableau {
         let mut runs: Vec<(CardId, usize)> = Vec::new();
         for cid in p.cards() {
             let card = &self.cards[&cid];
+            // Each stack contributes its own quantity (PC.2 `×N`), so a `6 ×12` alone reads "6 ×12".
+            let q = card.quantity() as usize;
             if card.size == Size::Small
                 && let Some(&(prev, _)) = runs.last()
                 && self.cards[&prev].size == Size::Small
                 && same_type(&self.cards[&prev], card)
             {
-                runs.last_mut().expect("just checked non-empty").1 += 1;
+                runs.last_mut().expect("just checked non-empty").1 += q;
             } else {
-                runs.push((cid, 1));
+                runs.push((cid, q));
             }
         }
         runs
@@ -2003,6 +1974,122 @@ mod tests {
             t.card_count(),
             total,
             "conservation: no card minted or destroyed in play"
+        );
+    }
+
+    /// PC.2 — equipping a character **assembles** it from the banks (a stat-name card then a number card
+    /// per stat, then the ability, labelled by the hero's own identity card), **moving** cards, never
+    /// minting; un-equipping returns every card to its bank and the hero to Identity. The card count is
+    /// conserved throughout, and the kit spec is never consumed.
+    #[test]
+    fn equip_assembles_from_banks_and_unequip_returns_them_conserving_cards() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let identity = t.add_pile(root, "Identity").unwrap();
+        let hero = t
+            .add_card(
+                identity,
+                Face::Up {
+                    title: "Vael".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_type(hero, "hero").unwrap();
+        // Banks with many copies (PC.5): two of each stat name, four of each digit, one ability.
+        let stats = t.add_pile(root, "Stats").unwrap();
+        for (name, _) in crate::catalog::STATS {
+            for _ in 0..2 {
+                let c = t
+                    .add_card(stats, Face::Up { title: name.into() }, None)
+                    .unwrap();
+                t.set_card_type(c, "stat").unwrap();
+            }
+        }
+        let numbers = t.add_pile(root, "Numbers").unwrap();
+        for d in 1..=9 {
+            for _ in 0..4 {
+                let c = t
+                    .add_card(
+                        numbers,
+                        Face::Up {
+                            title: d.to_string(),
+                        },
+                        None,
+                    )
+                    .unwrap();
+                t.set_card_type(c, "number").unwrap();
+            }
+        }
+        let abilities = t.add_pile(root, "Abilities").unwrap();
+        let ab = t
+            .add_card(
+                abilities,
+                Face::Up {
+                    title: "Alpha Strike".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_type(ab, "ability").unwrap();
+
+        let total = t.card_count();
+        let recipe = Recipe {
+            stats: [6, 3, 1, 1, 1],
+            ability: "Alpha Strike".into(),
+        };
+        let deck = t
+            .equip_character(hero, &recipe, stats, numbers, abilities)
+            .unwrap();
+
+        // The deck spells each stat as name+number, then the ability; the hero is its Zone label.
+        let content: Vec<String> = t
+            .content_cards(deck)
+            .iter()
+            .map(|&c| t.card(c).unwrap().name().to_string())
+            .collect();
+        assert_eq!(
+            content,
+            [
+                "Might",
+                "6",
+                "Vitality",
+                "3",
+                "Toughness",
+                "1",
+                "Cadence",
+                "1",
+                "Finesse",
+                "1",
+                "Alpha Strike"
+            ]
+        );
+        assert_eq!(t.card(t.zone_card(deck).unwrap()).unwrap().name(), "Vael");
+        assert!(
+            t.content_cards(identity).is_empty(),
+            "the hero left Identity"
+        );
+        assert_eq!(t.card_count(), total, "assembly minted nothing (PC.2)");
+
+        // Un-equip: everything returns to its bank, the hero to Identity, the deck pile gone.
+        t.unequip_character(deck, identity, stats, numbers, abilities)
+            .unwrap();
+        assert!(t.pile(deck).is_none(), "character deck removed");
+        assert_eq!(t.content_cards(identity).len(), 1, "hero back in Identity");
+        // The returned cards merged back into the banks — the physical totals are restored (5 names ×2 =
+        // 10, one ability), even though they now sit as fewer, larger stacks.
+        let bank_sum = |t: &Tableau, p: PileId| -> u32 {
+            t.content_cards(p)
+                .iter()
+                .map(|&c| t.card(c).unwrap().quantity())
+                .sum()
+        };
+        assert_eq!(bank_sum(&t, stats), 10, "stat-name bank restored (sum)");
+        assert_eq!(bank_sum(&t, abilities), 1, "ability returned (sum)");
+        assert_eq!(
+            t.card_count(),
+            total,
+            "conservation across equip + un-equip"
         );
     }
 
@@ -2603,7 +2690,7 @@ mod tests {
     }
 
     #[test]
-    fn projection_shows_sources_and_combine_recruits() {
+    fn projection_shows_sources_and_equip_recruits() {
         let mut t = Tableau::new();
         let root = t.root_id();
         let identity = t.add_pile(root, "Identity").unwrap();
@@ -2635,44 +2722,81 @@ mod tests {
             },
         )
         .unwrap();
-        // The inn projects both decks.
+        // The inn projects both decks (a pure view — no copies).
         let inn = t.add_pile(root, "Inn").unwrap();
         t.set_projection(inn, vec![identity, kits]).unwrap();
-        let groups = t.projection_groups(inn);
-        assert_eq!(groups, vec![(identity, vec![hero]), (kits, vec![kit])]);
+        assert_eq!(
+            t.projection_groups(inn),
+            vec![(identity, vec![hero]), (kits, vec![kit])]
+        );
 
-        // Recruit: combine the hero with the kit (location = the inn, for the test).
-        let character = t.combine(hero, kit, inn).unwrap();
-        assert!(t.content_cards(identity).is_empty()); // hero left the inn
-        let top = t
-            .card(*t.pile(character).unwrap().cards().last().unwrap())
+        // Banks to assemble from, then recruit via `equip` (drag hero onto kit).
+        let stats = t.add_pile(root, "Stats").unwrap();
+        for (name, _) in crate::catalog::STATS {
+            let c = t
+                .add_card(stats, Face::Up { title: name.into() }, None)
+                .unwrap();
+            t.set_card_type(c, "stat").unwrap();
+            t.set_card_quantity(c, 3).unwrap();
+        }
+        let numbers = t.add_pile(root, "Numbers").unwrap();
+        for d in 1..=9 {
+            let c = t
+                .add_card(
+                    numbers,
+                    Face::Up {
+                        title: d.to_string(),
+                    },
+                    None,
+                )
+                .unwrap();
+            t.set_card_type(c, "number").unwrap();
+            t.set_card_quantity(c, 5).unwrap();
+        }
+        let abilities = t.add_pile(root, "Abilities").unwrap();
+        let ab = t
+            .add_card(
+                abilities,
+                Face::Up {
+                    title: "Jab".into(),
+                },
+                None,
+            )
             .unwrap();
-        assert_eq!(top.name(), "Vael");
-        assert_eq!(top.kind(), CardKind::Zone);
-        let content: Vec<&str> = t
+        t.set_card_type(ab, "ability").unwrap();
+
+        let recipe = t.card(kit).unwrap().recipe().unwrap().clone();
+        let character = t
+            .equip_character(hero, &recipe, stats, numbers, abilities)
+            .unwrap();
+        assert!(t.content_cards(identity).is_empty()); // hero left Identity → the deck's label
+        assert_eq!(
+            t.card(t.zone_card(character).unwrap()).unwrap().name(),
+            "Vael"
+        );
+        let content: Vec<String> = t
             .content_cards(character)
             .iter()
-            .map(|&c| t.card(c).unwrap().name())
+            .map(|&c| t.card(c).unwrap().name().to_string())
             .collect();
-        // The recipe instantiates one card per stat ("{Stat} {value}") then the ability, then the rank copy.
+        // Each stat spelled name+number, then the ability — assembled from the banks (PC.2, no mint).
         assert_eq!(
             content,
             [
-                "Might 2",
-                "Vitality 3",
-                "Toughness 1",
-                "Cadence 2",
-                "Finesse 1",
-                "Jab",
-                "Vael"
+                "Might",
+                "2",
+                "Vitality",
+                "3",
+                "Toughness",
+                "1",
+                "Cadence",
+                "2",
+                "Finesse",
+                "1",
+                "Jab"
             ]
         );
-        assert!(
-            t.content_cards(inn)
-                .iter()
-                .any(|&c| t.card(c).unwrap().name() == "Vael")
-        ); // a copy stands at the location
-        assert_eq!(t.card(kit).unwrap().name(), "Skirmisher"); // kit untouched (reusable)
+        assert_eq!(t.card(kit).unwrap().name(), "Skirmisher"); // kit spec untouched (reusable)
     }
 
     #[test]
@@ -2757,8 +2881,8 @@ mod tests {
         for (&id, &count) in &owners {
             assert_eq!(count, 1, "card {id:?} is owned by more than one pile");
         }
-        // ...and every card in the tableau is owned somewhere — none is projection-only.
-        assert_eq!(owners.len(), t.card_count());
+        // ...and every card **stack** in the tableau is owned somewhere — none is projection-only.
+        assert_eq!(owners.len(), t.stack_count());
         for id in t.cards.keys() {
             assert!(
                 owners.contains_key(id),

@@ -36,12 +36,17 @@ cards-only, never human memory* stance.
 
 ## PC.2 — Conservation
 
-**RULE.** The **total number of physical cards is fixed** for a given game. During
-play a card is only ever **moved** (`move_card`) between zones or **flipped**
-(`set_face`) — **never created and never destroyed**. Minting (`add_card`) and
-discarding (`remove_card`) happen **only at setup**, when the closed deck is dealt
-out. Every quantity a game needs is therefore a **pre-provisioned, bounded supply
-of cards** (PC.5), never an unbounded counter.
+**RULE.** The **total number of physical cards is fixed** for a given game —
+**conservation is on the *sum*** (`card_count`), not on the number of distinct
+stacks. A run of identical cards in one pile is a single **stack** carrying a
+**quantity** (`6 ×12`, PC.5); the *physical* count is the sum of those quantities.
+During play a card is only ever **moved** between zones, **flipped** (`set_face`),
+or **split / merged** — drawing one off a `×N` stack (`×N → ×(N-1)` plus a `×1`)
+and returning it (merging back into the stack). Each of those preserves the sum, so
+**no card is created or destroyed on net**. Wholesale minting / discarding happens
+**only at setup**, when the closed deck is dealt out. Every quantity a game needs is
+therefore a **pre-provisioned, bounded supply of cards** (PC.5), never an unbounded
+counter.
 
 **WHY.** You cannot manufacture a card mid-game, and you cannot rewrite what one
 says. So a changing *number* is not a mutated card — it is a **different card
@@ -56,9 +61,14 @@ printable).
   value cards (`Might 1 … Might 9`); the day is not a rewritten card but a
   **counted track** (PC.5). `set_face` flips up/down and never rewrites a face's
   title — a face-down card **remembers its front** so the flip is reversible.
-- **Duplicates fold.** Identical cards in a reserve are shown with an `×N`
-  multiplier, so a bank of many copies costs one slot on screen (and one entry in
-  the packed deck, with its count).
+- **Duplicates fold — in the model, not just on screen.** A run of identical cards
+  in the **same pile** is one stack with a quantity (`card.quantity`); a bank of many
+  copies is one card carrying its count. "Same pile" and *contiguous* is the rule, so
+  a character deck reading `Might 6 … Vitality 6` keeps its two `6`s separate (a stat
+  name sits between them) — positioned stat-pairs are never merged.
+- **Split & merge conserve.** Assembling a character *draws one* off each bank stack
+  (a split); un-equipping *returns one* (a merge). The physical sum is invariant
+  across both — the executable check is `card_count` before == after.
 
 ---
 

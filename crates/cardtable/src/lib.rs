@@ -558,7 +558,7 @@ fn on_drop(
             };
             if let Some((identity, kit)) = pair {
                 on.propagate(false);
-                let _ = table.0.combine(identity, kit, inn);
+                try_equip(&mut table.0, identity, kit); // assemble from the banks (no mint, PC.2)
                 rebuild.0 = true;
             }
         }
@@ -570,6 +570,12 @@ fn on_drop(
         return; // dropped onto the felt — in-zone reordering is handled by the grid
     };
     on.propagate(false);
+    // Dropping a character's **identity card** back onto the Identity deck **un-equips** them — every
+    // borrowed card merges back into its bank and the hero returns to Identity.
+    if top_deck(&table.0, "Identity") == Some(dest) && try_unequip(&mut table.0, dragged.0) {
+        rebuild.0 = true;
+        return;
+    }
     let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
     let _ = table.0.move_card(dragged.0, dest, at);
     rebuild.0 = true;
@@ -606,6 +612,70 @@ fn home_location(table: &Tableau) -> Option<PileId> {
         .subpiles()
         .into_iter()
         .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some("Ashfen Crossing"))
+}
+
+/// Re-station the party after a recruit change (spec `physical-cards.md` PC.5): reconcile the day clock
+/// and location tokens against the active character decks.
+fn reconcile_party(table: &mut Tableau) {
+    if let (Some(day), Some(roster), Some(home)) = (
+        top_deck(table, "Day"),
+        top_deck(table, "Roster"),
+        home_location(table),
+    ) {
+        let _ = table.sync_party(day, home, roster);
+    }
+}
+
+/// **Equip** `identity` (a hero) with `kit` (a recipe card) — the conservation-clean recruit: assemble a
+/// character deck by *moving* the hero + the kit's stat-name / number / ability cards out of the banks
+/// (never minting), then station it. Returns whether it happened.
+fn try_equip(table: &mut Tableau, identity: CardId, kit: CardId) -> bool {
+    let Some(recipe) = table.card(kit).and_then(|c| c.recipe().cloned()) else {
+        return false;
+    };
+    let (Some(stats), Some(numbers), Some(abilities)) = (
+        top_deck(table, "Stats"),
+        top_deck(table, "Numbers"),
+        top_deck(table, "Abilities"),
+    ) else {
+        return false;
+    };
+    if table
+        .equip_character(identity, &recipe, stats, numbers, abilities)
+        .is_ok()
+    {
+        reconcile_party(table);
+        return true;
+    }
+    false
+}
+
+/// **Un-equip** a character whose identity card is `identity` (the label of its character deck) — return
+/// every borrowed card to its bank and the hero to Identity. Returns whether it happened (i.e. `identity`
+/// really is a character deck's label).
+fn try_unequip(table: &mut Tableau, identity: CardId) -> bool {
+    let Some(deck) = table.card(identity).map(|c| c.home()) else {
+        return false;
+    };
+    if table.pile(deck).and_then(|p| p.reflects()) != Some(identity) {
+        return false; // not a character deck's label — a plain card
+    }
+    let (Some(id_home), Some(stats), Some(numbers), Some(abilities)) = (
+        top_deck(table, "Identity"),
+        top_deck(table, "Stats"),
+        top_deck(table, "Numbers"),
+        top_deck(table, "Abilities"),
+    ) else {
+        return false;
+    };
+    if table
+        .unequip_character(deck, id_home, stats, numbers, abilities)
+        .is_ok()
+    {
+        reconcile_party(table);
+        return true;
+    }
+    false
 }
 
 /// Slide a dragged **felt element** — a card or a nested pile — freely under the cursor, even off the
@@ -851,104 +921,8 @@ fn fan_layout(
     }
 }
 
-/// Move a dragged card into the Active row's pile `inn`. A **hero** (no recipe) moves in, leaving the
-/// Identity deck / Hero row; a **kit** (has a recipe) is *copied* in, since kits are reusable, so the
-/// original stays in the Kit deck.
-fn drop_card_into_active(table: &mut Tableau, card: CardId, inn: PileId) {
-    let is_kit = table.card(card).is_some_and(|c| c.recipe().is_some());
-    // The Active row's cards (row Headers aside) group into hero-kit pairs by position. An even count
-    // means every pair is complete, so a new card of either kind starts a fresh pair; an odd count means
-    // the last card is a lone half-pair, so only the *opposite* kind may be dropped to complete it.
-    let active: Vec<CardId> = table
-        .pile(inn)
-        .map(|p| {
-            p.cards()
-                .iter()
-                .copied()
-                .filter(|&c| table.card(c).is_some_and(|k| k.kind() != CardKind::Header))
-                .collect()
-        })
-        .unwrap_or_default();
-    if active.len() % 2 == 1 {
-        let last_is_kit = active
-            .last()
-            .and_then(|&c| table.card(c))
-            .map(|c| c.recipe().is_some())
-            .unwrap_or(false);
-        if last_is_kit == is_kit {
-            return; // a lone half-pair can only be completed by the opposite kind
-        }
-    }
-    if is_kit {
-        let name = table
-            .card(card)
-            .map(|c| c.name().to_string())
-            .unwrap_or_default();
-        let card_type = table
-            .card(card)
-            .map(|c| c.card_type().to_string())
-            .unwrap_or_default();
-        let recipe = table.card(card).and_then(|c| c.recipe().cloned());
-        if let Ok(copy) = table.add_card(inn, Face::Up { title: name }, None) {
-            let _ = table.set_card_type(copy, card_type);
-            if let Some(recipe) = recipe {
-                let _ = table.set_card_recipe(copy, recipe);
-            }
-        }
-    } else {
-        let at = table.pile(inn).map_or(0, |p| p.cards().len());
-        let _ = table.move_card(card, inn, at);
-    }
-}
-
-/// Put a pairing back: the dragged Active card **and its position-pair partner** both leave the Active
-/// row — a **hero** returns to the Identity deck (the inn's first projection source), a **kit** copy is
-/// discarded. So dragging either half of a pair out of Active un-recruits the whole character.
-fn put_pair_back(table: &mut Tableau, inn: PileId, card: CardId) {
-    let active: Vec<CardId> = table
-        .pile(inn)
-        .map(|p| {
-            p.cards()
-                .iter()
-                .copied()
-                .filter(|&c| table.card(c).is_some_and(|k| k.kind() != CardKind::Header))
-                .collect()
-        })
-        .unwrap_or_default();
-    let Some(i) = active.iter().position(|&c| c == card) else {
-        return;
-    };
-    let identity = table
-        .pile(inn)
-        .and_then(|p| p.projection().first().copied());
-    let mut leaving = vec![card];
-    if let Some(&partner) = active.get(i ^ 1) {
-        leaving.push(partner);
-    }
-    for c in leaving {
-        let is_kit = table.card(c).is_some_and(|k| k.recipe().is_some());
-        if is_kit {
-            let _ = table.remove_card(c); // a kit copy — discard it
-        } else if let Some(identity) = identity {
-            // A hero — move it back into the Identity deck, beneath its trailing Zone label.
-            let cards = table
-                .pile(identity)
-                .map(|p| p.cards().to_vec())
-                .unwrap_or_default();
-            let under_zone = cards
-                .last()
-                .and_then(|&z| table.card(z))
-                .map(|z| z.kind() == CardKind::Zone)
-                .unwrap_or(false);
-            let at = if under_zone {
-                cards.len().saturating_sub(1)
-            } else {
-                cards.len()
-            };
-            let _ = table.move_card(c, identity, at);
-        }
-    }
-}
+// (Retired with the Active-row recruit flow: `drop_card_into_active` / `put_pair_back` copied a kit and
+// discarded it — a mint + destroy. Recruiting is now the conservation-clean `try_equip` / `try_unequip`.)
 
 /// On release, settle a dragged felt element. A **pile** commits its position and shoves among its
 /// parent's children — done. A **card** does the leaf-specific drop: a Rows view (the inn) may move it
@@ -959,8 +933,6 @@ fn put_pair_back(table: &mut Tableau, inn: PileId, card: CardId) {
 fn on_node_drag_end(
     mut on: On<Pointer<DragEnd>>,
     movables: Query<(&Movable, &Node)>,
-    transforms: Query<&UiGlobalTransform>,
-    rows_q: Query<(&RowRegion, &UiGlobalTransform, &ComputedNode)>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
@@ -998,106 +970,10 @@ fn on_node_drag_end(
             "DROP_END card={dropped_name:?} at cursor={:?}",
             on.event().pointer_location.position
         ));
-        // A **Rows** view (the inn): dropping a card over the Active row moves it in. Detect the drop by
-        // geometry — the dragged tile's centre inside a `DropRow`'s rectangle — since the tile follows
-        // the cursor and would otherwise occlude a picking hit-test. Both rects share the same transform
-        // space, so the comparison is robust to origin conventions.
-        if matches!(
-            table
-                .0
-                .pile(table.0.focus_id())
-                .map(|p| p.layout().arrangement),
-            Some(Arrangement::Rows)
-        ) {
-            // The row the cursor is over on release is the drop target. Dropping a Hero/Kit card onto the
-            // Active row brings it down (`drop_card_into_active`); dragging an Active card out onto another
-            // row puts that pairing back (`put_pair_back`). Anything else stays put (rebuild re-lays it).
-            let inn = table.0.focus_id();
-            let from_active = table.0.card(card).map(|c| c.home()) == Some(inn);
-            // The drop row is chosen by the dragged **card tile's** vertical centre, not the cursor: the
-            // cursor sits where you grabbed the card (often its top edge), reading one row too high, while
-            // the card's body is what you see landing. Card- and row-transforms share one coordinate space,
-            // so this also dodges the cursor/UI mismatch. `dist` is 0 when the card centre is inside a row's
-            // vertical span, else how far outside; the nearest row wins, so a release in a gap still lands.
-            let card_y = transforms
-                .get(on.event().entity)
-                .ok()
-                .map(|t| t.translation.y);
-            let mut over = None;
-            let mut best = f32::INFINITY;
-            for (i, (region, gt, computed)) in rows_q.iter().enumerate() {
-                let center = gt.translation.y;
-                let half = computed.size().y * 0.5;
-                let (top, bottom) = (center - half, center + half);
-                let vdist = match card_y {
-                    Some(y) if y < top => top - y,
-                    Some(y) if y > bottom => y - bottom,
-                    Some(_) => 0.0,
-                    None => f32::INFINITY,
-                };
-                log.line(format!(
-                    "  row[{i}] active={} span=[{top:.0},{bottom:.0}] card_y={card_y:?} vdist={vdist:.1}",
-                    region.active
-                ));
-                if vdist < best {
-                    best = vdist;
-                    over = Some(*region);
-                }
-            }
-            let action = match over {
-                Some(region) if region.active && !from_active => {
-                    drop_card_into_active(&mut table.0, card, inn);
-                    "add_to_active"
-                }
-                Some(region) if !region.active && from_active => {
-                    put_pair_back(&mut table.0, inn, card);
-                    "put_pair_back"
-                }
-                Some(region) => {
-                    if region.active {
-                        "no-op (already in active)"
-                    } else {
-                        "no-op (dropped on a source row)"
-                    }
-                }
-                None => "no-op (cursor over no row)",
-            };
-            let active_now: Vec<String> = table
-                .0
-                .pile(inn)
-                .map(|p| {
-                    p.cards()
-                        .iter()
-                        .filter_map(|&c| table.0.card(c))
-                        .filter(|c| c.kind() != CardKind::Header)
-                        .map(|c| c.name().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            // Reflect the (possibly changed) active pairs onto the Table: a character deck per complete
-            // pair, and none for a pair just put back.
-            let _ = table.0.sync_character_decks(inn);
-            // Reconcile the party to the new roster (spec physical-cards.md PC.5): enlist a fresh
-            // character's day-token + station its location token at the inn town, retire a departed one.
-            if let (Some(day), Some(roster)) =
-                (top_deck(&table.0, "Day"), top_deck(&table.0, "Roster"))
-            {
-                match home_location(&table.0) {
-                    Some(home) => {
-                        let _ = table.0.sync_party(day, home, roster);
-                    }
-                    None => {
-                        let _ = table.0.sync_day_clock(day, roster);
-                    }
-                }
-            }
-            log.line(format!(
-                "  from_active={from_active} action={action} active_now={active_now:?}"
-            ));
-            rebuild.0 = true;
-            return;
-        }
-        // In a projection view (the inn's old equip view) a card drag is only ever an equip attempt
+        // (The Rows/Active-row recruit flow was retired: recruiting is now "drag a hero onto a kit" — an
+        // equip assembled from the banks via `on_drop` → `try_equip` — so the inn is a pure Hero | Kit
+        // projection and a drag in it just snaps back below.)
+        // In a projection view (the inn) a card drag is only ever an equip attempt
         // (handled by [`on_drop`]), never a reorder of the projected source deck. Rebuild to snap back.
         if table
             .0
