@@ -525,46 +525,34 @@ fn on_drop(
     piles: Query<&PileDropZone>,
     mut table: ResMut<Table>,
     mut rebuild: ResMut<NeedsRebuild>,
-    log: Res<DebugLog>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
         return; // only cards drop *into* piles
     };
-    // A card dropped *onto another card* inside a projection view (the inn) is an **equip**: pair the
-    // one carrying a recipe (the kit) with the other (the hero identity) into a character deck. Either
-    // drag direction works. The location for the recruit is the projection pile itself.
+    // A card dropped *onto another card* inside a projection view whose cards don't cursor-follow is an
+    // **equip**: pair the one carrying a recipe (the kit) with the other (the hero identity). The live inn
+    // is a Rows fan whose cards *do* follow the cursor and occlude this hit-test, so recruit there runs
+    // through `on_node_drag_end`'s geometry instead — this is the latent path for a non-cursor-follow
+    // projection. Either drag direction works.
     if let Ok(target) = cards.get(event.entity) {
-        let inn = table.0.focus_id();
         let is_projection = table
             .0
-            .pile(inn)
+            .pile(table.0.focus_id())
             .is_some_and(|p| !p.projection().is_empty());
-        let (a, b) = (dragged.0, target.0);
-        let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
-        let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
-        log.line(format!(
-            "DROP card->card: focus={inn:?} is_projection={is_projection} a_kit={a_kit} b_kit={b_kit} banks(Stats/Numbers/Abilities)={}/{}/{}",
-            top_deck(&table.0, "Stats").is_some(),
-            top_deck(&table.0, "Numbers").is_some(),
-            top_deck(&table.0, "Abilities").is_some(),
-        ));
         if is_projection {
+            let (a, b) = (dragged.0, target.0);
+            let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
+            let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
             let pair = match (a_kit, b_kit) {
                 (true, false) => Some((b, a)), // a is the kit, b the identity
                 (false, true) => Some((a, b)), // b is the kit, a the identity
                 _ => None,                     // two kits or two heroes — nothing to equip
             };
-            match pair {
-                Some((identity, kit)) => {
-                    on.propagate(false);
-                    let ok = try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
-                    log.line(format!(
-                        "  equip identity={identity:?} kit={kit:?} -> {ok} (false = a bank was missing/empty)"
-                    ));
-                    rebuild.0 = true;
-                }
-                None => log.line("  no hero+kit pair (dropped two heroes or two kits)"),
+            if let Some((identity, kit)) = pair {
+                on.propagate(false);
+                try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
+                rebuild.0 = true;
             }
         }
         return;
@@ -939,12 +927,12 @@ fn on_node_drag_end(
     mut on: On<Pointer<DragEnd>>,
     movables: Query<(&Movable, &Node)>,
     geom: Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
+    drop_zones: Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
     mut commands: Commands,
-    log: Res<DebugLog>,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
     if let Ok((movable, node)) = movables.get(on.event().entity) {
@@ -967,15 +955,39 @@ fn on_node_drag_end(
             }
             TableNode::Card(cid) => cid,
         };
-        let dropped_name = table
-            .0
-            .card(card)
-            .map(|c| c.name().to_string())
-            .unwrap_or_default();
-        log.line(format!(
-            "DROP_END card={dropped_name:?} at cursor={:?}",
-            on.event().pointer_location.position
-        ));
+        // On the location **map** (the Locations grid drilled into), dragging a character's location-token
+        // onto another place card **moves** that character there (`Tableau::move_character` also spends its
+        // day-clock move by flipping the day-token). The day is *not* auto-advanced — ending the day is an
+        // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
+        // cursor-follows and occludes picking, so — as with recruit — the destination is found by geometry:
+        // which place card's drop zone did the release cursor land on.
+        let on_map = top_deck(&table.0, "Locations") == Some(table.0.focus_id());
+        if on_map
+            && table
+                .0
+                .card(card)
+                .is_some_and(|c| c.card_type() == "location-token")
+        {
+            let cursor = on.event().pointer_location.position;
+            let dest = drop_zones
+                .iter()
+                .find(|&(_, cn, gt)| {
+                    let sf = cn.inverse_scale_factor; // physical → logical, matching the cursor
+                    let center = gt.translation * sf;
+                    let half = cn.size() * sf * 0.5;
+                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
+                })
+                .map(|(z, _, _)| z.0);
+            let from = table.0.card(card).map(|c| c.home());
+            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day")) {
+                if Some(dest) != from {
+                    // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
+                    let _ = table.0.move_character(card, dest, day);
+                }
+            }
+            rebuild.0 = true;
+            return;
+        }
         // In a projection view (the inn) a card drag is only ever an **equip attempt**: drag a hero onto a
         // kit (or a kit onto a hero) to assemble a character deck from the banks. `on_drop`'s DragDrop can't
         // carry it — the dragged fan tile follows the cursor and occludes the picking hit-test, so the drop
@@ -1010,18 +1022,9 @@ fn on_node_drag_end(
                     (false, true) => Some((card, target)), // target is the kit, dragged the identity
                     _ => None,
                 };
-                log.line(format!(
-                    "  drag-equip target={target:?} dragged_kit={dragged_kit} target_kit={target_kit} pair={}",
-                    pair.is_some()
-                ));
                 if let Some((identity, kit)) = pair {
-                    let ok = try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
-                    log.line(format!(
-                        "  equip identity={identity:?} kit={kit:?} -> {ok} (false = a bank was missing/empty)"
-                    ));
+                    try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
                 }
-            } else {
-                log.line("  drag-equip: cursor landed on no projected card (snap back)");
             }
             // Whether or not an equip happened, a projection drag never reorders the source deck. Rebuild to
             // snap the dragged card back to its projected slot (and show the new character deck if equipped).
@@ -1575,6 +1578,54 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                     );
                                 }
                             });
+                    } else if Some(zone) == top_deck(tree, "Locations") {
+                        // The location **map**: each place is a cell — a drop-target place card over the
+                        // character tokens standing there. Drag a token onto another place card to move that
+                        // character (see `on_node_drag_end` -> `Tableau::move_character`); the token keeps its
+                        // home (the place pile), so relocating it *is* the move. Clicking a place card drills
+                        // into it (reaching the Inn at Ashfen — the place cards carry `PileDropZone`).
+                        surface
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                flex_wrap: FlexWrap::Wrap,
+                                width: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(MAP_PAD)),
+                                column_gap: Val::Px(MAP_CELL_GAP),
+                                row_gap: Val::Px(MAP_CELL_GAP),
+                                ..default()
+                            })
+                            .with_children(|grid| {
+                                for place in tree.pile(zone).expect("map zone").subpiles() {
+                                    let tokens: Vec<CardId> = tree
+                                        .content_cards(place)
+                                        .into_iter()
+                                        .filter(|&c| {
+                                            tree.card(c)
+                                                .is_some_and(|k| k.card_type() == "location-token")
+                                        })
+                                        .collect();
+                                    grid.spawn(Node {
+                                        flex_direction: FlexDirection::Column,
+                                        align_items: AlignItems::Center,
+                                        row_gap: Val::Px(6.0),
+                                        width: Val::Px(SMALL_W),
+                                        ..default()
+                                    })
+                                    .with_children(|cell| {
+                                        spawn_place_card(cell, tree, place);
+                                        // The character tokens here — each a draggable Small card, built like
+                                        // a fan card (Movable wrapper + face child) so the drag observers fire.
+                                        for tok in tokens {
+                                            let card = tree.card(tok).expect("token card");
+                                            cell.spawn((
+                                                Movable(TableNode::Card(tok)),
+                                                Node::default(),
+                                            ))
+                                            .with_children(|t| spawn_card_small(t, card, 1));
+                                        }
+                                    });
+                                }
+                            });
                     } else {
                         // The zone lays its contents out — one shared path for every layout. A **structured**
                         // layout (List / Grid) gets footprint-aware positions (`structured_positions`), so a
@@ -1835,6 +1886,40 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
     spawn_pile_chip(parent, id, &name, &card_type, count);
 }
 
+/// A **place card** on the location map: a Small, named drop target for one location. Dropping a
+/// character's token here moves them to this place (resolved by [`on_node_drag_end`] against its
+/// [`PileDropZone`]); clicking it drills into the place (the Inn lives inside Ashfen). It wears the card
+/// back so it reads as a fixed board square, distinct from the light-faced character tokens on it.
+fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: PileId) {
+    let name = tree
+        .zone_card(place)
+        .and_then(|c| tree.card(c))
+        .map(|c| c.name().to_string())
+        .unwrap_or_else(|| pile_display_name(tree, place));
+    parent
+        .spawn((
+            PileDropZone(place),
+            Node {
+                width: Val::Px(SMALL_W),
+                height: Val::Px(SMALL_H),
+                padding: UiRect::all(Val::Px(8.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(2.0),
+                border_radius: BorderRadius::all(Val::Px(12.0)),
+                ..default()
+            },
+            BackgroundColor(CARD_BACK),
+            BorderColor::all(CARD_EDGE),
+            card_shadow(),
+        ))
+        .with_children(|face| {
+            small_face(face, &name, "Location", INK, None);
+        });
+}
+
 /// The **held** layer: an element being dragged floats here — above the felt tiles and the floating
 /// overlays (title / Back at [`GlobalZIndex(10)`]) — so "picking a card up off the table" reads literally:
 /// it stays on top of everything it slides over until you set it down. Applied on drag-start, removed on
@@ -1854,6 +1939,12 @@ const FAN_FRONT_Z: i32 = 1000;
 /// land on the correct spread on its *first* frame, with no measure-and-correct hop.
 const INN_PAD: f32 = 12.0;
 const INN_HEADER_GAP: f32 = 8.0;
+
+/// Location **map** metrics: the padding around the cell grid, and the gap between cells (a cell is a
+/// place card over its character tokens). One cell is [`SMALL_W`] wide; the gap gives the tokens room to
+/// read as *stationed here*, not crowding the next place.
+const MAP_PAD: f32 = 16.0;
+const MAP_CELL_GAP: f32 = 24.0;
 
 /// The x offset of fan card `index` (of `count`) within a fan `width` px wide, when `front_idx` — if any —
 /// is the card pulled to the front. The single source of truth for fan geometry: [`build_ui`] seeds each
