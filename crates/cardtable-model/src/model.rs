@@ -1563,34 +1563,23 @@ impl Tableau {
     }
 
     /// The number of **physical** cards `pile` holds, counted recursively through its nested sub-piles —
-    /// the total shown next to a zone's title. Only cards that are really *there* are counted:
-    /// - stack quantity counts (a `Day Passes ×11` stack is 11), matching [`card_count`](Self::card_count);
-    /// - the pile's own [`zone_card`](Self::zone_card) and any [`CardKind::Header`] / [`CardKind::Utility`]
-    ///   chrome are skipped — labels, row headers, and System buttons are not game cards;
-    /// - a **projection** sub-pile is skipped whole: its cards physically live in the source deck it
-    ///   borrows from (the inn borrows the Identity and Kit decks), so counting them here would
-    ///   double-count what is really elsewhere.
+    /// the tally shown in a zone's `(N)` title prefix. Every card that is physically *here* counts once,
+    /// by its [`quantity`](Card::quantity): the pile's own title (zone) card, row headers, System cards,
+    /// and ordinary cards alike (a `Day Passes ×11` stack is 11). **Projected** cards are not counted
+    /// here — they keep their home in the deck the pile borrows from (the inn borrows Identity and Kit),
+    /// and are counted there — so no card is counted twice. The upshot is an exact conservation check:
+    /// summing this over every top-level deck on the table yields [`card_count`](Self::card_count), the
+    /// game's true physical total.
     pub fn physical_card_count(&self, pile: PileId) -> usize {
-        let Some(p) = self.piles.get(&pile) else {
-            return 0;
-        };
-        // A projection shows cards that live elsewhere — nothing here is physically its own.
-        if !p.projection.is_empty() {
-            return 0;
-        }
-        let zone = self.zone_card(pile);
-        p.children
-            .iter()
-            .map(|node| match node {
-                Node::Card(c) if Some(*c) != zone => self
-                    .cards
-                    .get(c)
-                    .filter(|k| !matches!(k.kind(), CardKind::Header | CardKind::Utility(_)))
-                    .map_or(0, |k| k.quantity() as usize),
-                Node::Card(_) => 0, // the zone label
-                Node::Pile(sub) => self.physical_card_count(*sub),
-            })
-            .sum()
+        self.piles.get(&pile).map_or(0, |p| {
+            p.children
+                .iter()
+                .map(|node| match node {
+                    Node::Card(c) => self.cards.get(c).map_or(0, |k| k.quantity() as usize),
+                    Node::Pile(sub) => self.physical_card_count(*sub),
+                })
+                .sum()
+        })
     }
 
     /// Places `pile` at `(x, y)`, clamped inside the surface (the borders shove it back in), returning

@@ -617,31 +617,32 @@ mod tests {
         );
     }
 
-    /// The zone-title tally (`physical_card_count`) counts only cards that are really there: quantities
-    /// count, the zone label and row headers don't, and a projection (the inn) contributes nothing —
-    /// its cards live in the decks it borrows from.
+    /// The zone-title tally (`physical_card_count`) counts every card physically there — including each
+    /// deck's own title card — exactly once, so the whole table sums to the game's true total.
     #[test]
-    fn physical_card_count_is_recursive_and_ignores_chrome_and_projections() {
+    fn physical_card_count_sums_to_the_game_total() {
         let t = sample_table();
-        // A flat deck: 9 heroes, the "Identity" zone label excluded.
-        assert_eq!(t.physical_card_count(deck(&t, "Identity")), 9);
-        // Stacks count by quantity: Events is one `Day Passes ×11` stack.
-        assert_eq!(t.physical_card_count(deck(&t, "Events")), 11);
-        assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12);
-        // The Locations grid, counted recursively: one encounter in each of the 8 non-inn places, and
-        // the inn (a projection of Identity + Kit) counts as 0 — no double-counting the borrowed decks.
+        // The headline invariant: the recursive tally of the whole table is exactly `card_count`, so you
+        // can add up the deck chips on the table screen and get the real number of physical cards.
+        assert_eq!(t.physical_card_count(t.root_id()), t.card_count());
+        // Inclusive of each deck's own title card: Identity is 9 heroes + the "Identity" label.
+        assert_eq!(t.physical_card_count(deck(&t, "Identity")), 9 + 1);
+        // Stacks count by quantity: Events is a `Day Passes ×11` stack + the "Events" label.
+        assert_eq!(t.physical_card_count(deck(&t, "Events")), 11 + 1);
+        assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12 + 1);
+        // A projection contributes only its *own* cards (the inn's 2 row headers), never the borrowed
+        // Identity/Kit decks — those are counted at home, so nothing is double-counted.
         let locations = deck(&t, "Locations");
-        assert_eq!(t.physical_card_count(locations), 8);
         let ashfen = t.pile(locations).unwrap().subpiles()[4];
         let inn = t.pile(ashfen).unwrap().subpiles()[0];
         assert_eq!(
             t.physical_card_count(inn),
-            0,
-            "a projection is not physically its own"
+            2,
+            "the inn's own Hero/Kit row headers"
         );
-        // A single-card place reads 1 (its encounter; the "Location" label doesn't count).
+        // A single-card place: its one encounter + the place's own "Location" title = 2.
         let a_place = t.pile(locations).unwrap().subpiles()[0];
-        assert_eq!(t.physical_card_count(a_place), 1);
+        assert_eq!(t.physical_card_count(a_place), 2);
     }
 
     /// Find a top-level deck by label (test helper).

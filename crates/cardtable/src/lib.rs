@@ -1987,15 +1987,16 @@ fn pile_display_name(tree: &Tableau, id: PileId) -> String {
         .unwrap_or_else(|| tree.pile(id).expect("pile id").label.clone())
 }
 
-/// The floating zone title with a space-efficient physical-card tally, e.g. `"Location (8)"` — the
-/// recursive count of cards *really* in this zone ([`Tableau::physical_card_count`]: quantities counted,
-/// projections and chrome excluded). The root ("Table") shows no tally — it isn't a stack.
+/// The floating zone title with a space-efficient physical-card tally as a `(N)` **prefix**, e.g.
+/// `"(10) Location"` — the same recursive [`Tableau::physical_card_count`] the deck chips show (every
+/// card counted once, its own title card included), so the chip and the drilled-in title agree. The
+/// root ("Table") shows no tally — it isn't a stack.
 fn zone_title_with_count(tree: &Tableau, zone: PileId) -> String {
     let name = pile_display_name(tree, zone);
     if zone == tree.root_id() {
         return name;
     }
-    format!("{name} ({})", tree.physical_card_count(zone))
+    format!("({}) {name}", tree.physical_card_count(zone))
 }
 
 /// A utility card (e.g. Back) drawn in the nav row — a small card-styled, clickable control. `marker` is
