@@ -100,7 +100,7 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck (a drill-in Free deck) at startup.
             .add_systems(Startup, inject_system_deck)
-            .add_systems(Update, (animate_nodes, fan_layout, update_movable_cue))
+            .add_systems(Update, (animate_nodes, fan_layout, update_card_cues))
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -874,30 +874,135 @@ fn animate_nodes(
     }
 }
 
-/// Ring every pickable card with the [`MOVABLE_CUE`] accent edge, so you can scan a zone for what you can
-/// pick up. The card currently held drops its ring (it floats on the held layer). The [`Outline`] is kept
-/// present and only its *colour* toggled — per Bevy's guidance, cheaper than inserting/removing it — which
-/// also lets [`highlight_targets`] paint the drop-target glow onto the very same outline.
-fn update_movable_cue(
+/// Whether the held card `dragged` may legally be dropped on the card `target` — the **inn equip** rule:
+/// inside a projection (the inn) a kit and a hero pair, i.e. exactly one of the two carries a recipe.
+fn can_drop_on_card(table: &Tableau, dragged: CardId, target: CardId) -> bool {
+    if dragged == target
+        || table
+            .pile(table.focus_id())
+            .is_none_or(|p| p.projection().is_empty())
+    {
+        return false;
+    }
+    let d_kit = table.card(dragged).is_some_and(|c| c.recipe().is_some());
+    let t_kit = table.card(target).is_some_and(|c| c.recipe().is_some());
+    d_kit != t_kit
+}
+
+/// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
+/// character's location token moves to any *other* place.
+fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
+    top_deck(table, "Locations") == Some(table.focus_id())
+        && table
+            .card(dragged)
+            .is_some_and(|c| c.card_type() == "location-token")
+        && table.card(dragged).map(|c| c.home()) != Some(target)
+}
+
+/// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
+/// the movable cue. A location token moves places; in the inn a hero/kit is worth picking up only when the
+/// opposite kind (`has_kit` / `has_hero`) is on show to pair with. Everything else (repositioning a Free
+/// card, reordering a fan, dragging a deck) is presentation only — no cue.
+fn is_game_movable(
+    table: &Tableau,
+    id: CardId,
+    in_projection: bool,
+    has_kit: bool,
+    has_hero: bool,
+) -> bool {
+    if table
+        .card(id)
+        .is_some_and(|c| c.card_type() == "location-token")
+    {
+        return true;
+    }
+    if in_projection {
+        let is_kit = table.card(id).is_some_and(|c| c.recipe().is_some());
+        return if is_kit { has_hero } else { has_kit };
+    }
+    false
+}
+
+/// Ensure entity `e` wears an [`Outline`] of `color`, toggling the colour in place if it already has one
+/// (per Bevy's guidance — cheaper than inserting/removing, and no layout churn).
+fn set_outline(commands: &mut Commands, e: Entity, outline: Option<Mut<Outline>>, color: Color) {
+    match outline {
+        Some(mut o) => {
+            if o.color != color {
+                o.color = color;
+            }
+        }
+        None => {
+            commands
+                .entity(e)
+                .insert(Outline::new(Val::Px(2.0), Val::Px(1.0), color));
+        }
+    }
+}
+
+/// Paint the card cues each frame. An amber [`MOVABLE_CUE`] ring marks cards whose drag would trigger a
+/// **game action** (equip / move a character — not a visual re-arrange), so you can scan for what's worth
+/// picking up; and while a drag is held, a green [`TARGET_CUE`] glow marks every place the held card can
+/// legally land ([`can_drop_on_card`] / [`can_drop_on_pile`]) — so what glows is exactly what will accept
+/// the drop. The held card itself drops its ring; both cues share one toggled [`Outline`].
+fn update_card_cues(
     mut commands: Commands,
+    table: Res<Table>,
     dragging: Res<Dragging>,
     mut movable: Query<(Entity, &Movable, Option<&mut Outline>)>,
+    mut zones: Query<(Entity, &PileDropZone, Option<&mut Outline>), Without<Movable>>,
 ) {
+    let in_projection = table
+        .0
+        .pile(table.0.focus_id())
+        .is_some_and(|p| !p.projection().is_empty());
+    let dragged = dragging.0.and_then(|n| n.card());
+    // In the inn a card is worth picking up only if the opposite kind is present to pair with.
+    let (mut has_kit, mut has_hero) = (false, false);
+    if in_projection {
+        for (_, m, _) in &movable {
+            if let Some(c) = m.0.card() {
+                if table.0.card(c).is_some_and(|k| k.recipe().is_some()) {
+                    has_kit = true;
+                } else {
+                    has_hero = true;
+                }
+            }
+        }
+    }
     for (e, m, outline) in &mut movable {
         let color = if dragging.0 == Some(m.0) {
             Color::NONE // the held card floats; its ring would just clutter the drag
         } else {
-            MOVABLE_CUE
-        };
-        match outline {
-            Some(mut o) if o.color != color => o.color = color,
-            Some(_) => {}
-            None => {
-                commands
-                    .entity(e)
-                    .insert(Outline::new(Val::Px(2.0), Val::Px(1.0), color));
+            match m.0 {
+                TableNode::Card(id)
+                    if dragged.is_some_and(|d| can_drop_on_card(&table.0, d, id)) =>
+                {
+                    TARGET_CUE
+                }
+                TableNode::Card(id)
+                    if is_game_movable(&table.0, id, in_projection, has_kit, has_hero) =>
+                {
+                    MOVABLE_CUE
+                }
+                TableNode::Pile(pid)
+                    if dragged.is_some_and(|d| can_drop_on_pile(&table.0, d, pid)) =>
+                {
+                    TARGET_CUE
+                }
+                _ => Color::NONE, // presentation-only drags (Free cards, deck chips) get no cue
             }
-        }
+        };
+        set_outline(&mut commands, e, outline, color);
+    }
+    // Non-movable drop targets (the map's place cards) glow when the held card can land on them.
+    for (e, z, outline) in &mut zones {
+        let color = if dragged.is_some_and(|d| can_drop_on_pile(&table.0, d, z.0)) {
+            TARGET_CUE
+        } else {
+            Color::NONE
+        };
+        set_outline(&mut commands, e, outline, color);
     }
 }
 
@@ -1264,6 +1369,9 @@ const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 /// The **movable cue** — a soft ring worn by every card you can pick up, so they're scannable at a glance
 /// (amber, distinct from the teal actionable edge). Toggled to [`Color::NONE`] on the card currently held.
 const MOVABLE_CUE: Color = Color::srgba(0.92, 0.74, 0.34, 0.60);
+/// The **valid-drop-target glow** — worn, while a drag is held, by every place the held card can legally
+/// land (see [`can_drop_on_card`] / [`can_drop_on_pile`]). Bright green so "drop here" reads instantly.
+const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
 
 /// The accent colour for a card **type** — a small designed palette for the common types, with a
 /// stable hashed hue for any other type so a new type still reads as its own colour.
