@@ -554,7 +554,7 @@ mod tests {
                 + (9 * 12 + 1)
                 + (1 + 9 + 2 + 8) // Locations: a Zone card + 9 place names + the inn's 2 headers (Hero, Kit) + 8 encounters (one per non-inn place)
                 + ((5 + 1) + (5 + 1))
-                + (0 + 1)
+                + 1 // Day: 0 cards + a Zone label
                 + (1 + 1)
                 + (11 + 1)
                 + (18 + 1)
@@ -615,6 +615,33 @@ mod tests {
             total + 1,
             "conservation: play (move + advance) minted nothing beyond the one enlisted copy"
         );
+    }
+
+    /// The zone-title tally (`physical_card_count`) counts only cards that are really there: quantities
+    /// count, the zone label and row headers don't, and a projection (the inn) contributes nothing —
+    /// its cards live in the decks it borrows from.
+    #[test]
+    fn physical_card_count_is_recursive_and_ignores_chrome_and_projections() {
+        let t = sample_table();
+        // A flat deck: 9 heroes, the "Identity" zone label excluded.
+        assert_eq!(t.physical_card_count(deck(&t, "Identity")), 9);
+        // Stacks count by quantity: Events is one `Day Passes ×11` stack.
+        assert_eq!(t.physical_card_count(deck(&t, "Events")), 11);
+        assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12);
+        // The Locations grid, counted recursively: one encounter in each of the 8 non-inn places, and
+        // the inn (a projection of Identity + Kit) counts as 0 — no double-counting the borrowed decks.
+        let locations = deck(&t, "Locations");
+        assert_eq!(t.physical_card_count(locations), 8);
+        let ashfen = t.pile(locations).unwrap().subpiles()[4];
+        let inn = t.pile(ashfen).unwrap().subpiles()[0];
+        assert_eq!(
+            t.physical_card_count(inn),
+            0,
+            "a projection is not physically its own"
+        );
+        // A single-card place reads 1 (its encounter; the "Location" label doesn't count).
+        let a_place = t.pile(locations).unwrap().subpiles()[0];
+        assert_eq!(t.physical_card_count(a_place), 1);
     }
 
     /// Find a top-level deck by label (test helper).

@@ -1562,6 +1562,37 @@ impl Tableau {
         }
     }
 
+    /// The number of **physical** cards `pile` holds, counted recursively through its nested sub-piles —
+    /// the total shown next to a zone's title. Only cards that are really *there* are counted:
+    /// - stack quantity counts (a `Day Passes ×11` stack is 11), matching [`card_count`](Self::card_count);
+    /// - the pile's own [`zone_card`](Self::zone_card) and any [`CardKind::Header`] / [`CardKind::Utility`]
+    ///   chrome are skipped — labels, row headers, and System buttons are not game cards;
+    /// - a **projection** sub-pile is skipped whole: its cards physically live in the source deck it
+    ///   borrows from (the inn borrows the Identity and Kit decks), so counting them here would
+    ///   double-count what is really elsewhere.
+    pub fn physical_card_count(&self, pile: PileId) -> usize {
+        let Some(p) = self.piles.get(&pile) else {
+            return 0;
+        };
+        // A projection shows cards that live elsewhere — nothing here is physically its own.
+        if !p.projection.is_empty() {
+            return 0;
+        }
+        let zone = self.zone_card(pile);
+        p.children
+            .iter()
+            .map(|node| match node {
+                Node::Card(c) if Some(*c) != zone => self
+                    .cards
+                    .get(c)
+                    .filter(|k| !matches!(k.kind(), CardKind::Header | CardKind::Utility(_)))
+                    .map_or(0, |k| k.quantity() as usize),
+                Node::Card(_) => 0, // the zone label
+                Node::Pile(sub) => self.physical_card_count(*sub),
+            })
+            .sum()
+    }
+
     /// Places `pile` at `(x, y)`, clamped inside the surface (the borders shove it back in), returning
     /// the position actually used. Drag-to-place calls this each move.
     pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {

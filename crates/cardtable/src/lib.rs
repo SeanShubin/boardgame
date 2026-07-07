@@ -1933,7 +1933,7 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
             .with_children(|title| {
                 title.spawn((
                     Pinned,
-                    Text::new(pile_display_name(tree, zone)),
+                    Text::new(zone_title_with_count(tree, zone)),
                     TextFont {
                         font_size: FONT_HEAD,
                         ..default()
@@ -1985,6 +1985,17 @@ fn pile_display_name(tree: &Tableau, id: PileId) -> String {
         .and_then(|c| tree.card(c))
         .map(|c| c.name().to_string())
         .unwrap_or_else(|| tree.pile(id).expect("pile id").label.clone())
+}
+
+/// The floating zone title with a space-efficient physical-card tally, e.g. `"Location (8)"` — the
+/// recursive count of cards *really* in this zone ([`Tableau::physical_card_count`]: quantities counted,
+/// projections and chrome excluded). The root ("Table") shows no tally — it isn't a stack.
+fn zone_title_with_count(tree: &Tableau, zone: PileId) -> String {
+    let name = pile_display_name(tree, zone);
+    if zone == tree.root_id() {
+        return name;
+    }
+    format!("{name} ({})", tree.physical_card_count(zone))
 }
 
 /// A utility card (e.g. Back) drawn in the nav row — a small card-styled, clickable control. `marker` is
