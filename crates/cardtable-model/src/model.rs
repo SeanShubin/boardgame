@@ -1562,24 +1562,38 @@ impl Tableau {
         }
     }
 
-    /// The number of **physical** cards `pile` holds, counted recursively through its nested sub-piles —
-    /// the tally shown in a zone's `(N)` title prefix. Every card that is physically *here* counts once,
-    /// by its [`quantity`](Card::quantity): the pile's own title (zone) card, row headers, System cards,
-    /// and ordinary cards alike (a `Day Passes ×11` stack is 11). **Projected** cards are not counted
-    /// here — they keep their home in the deck the pile borrows from (the inn borrows Identity and Kit),
-    /// and are counted there — so no card is counted twice. The upshot is an exact conservation check:
-    /// summing this over every top-level deck on the table yields [`card_count`](Self::card_count), the
-    /// game's true physical total.
+    /// The number of **physical** cards `pile` holds — the count you'd get holding the deck at a
+    /// tabletop — counted recursively through its nested sub-piles and shown in a zone's `(N)` title
+    /// prefix. Every card physically *here* counts once, by its [`quantity`](Card::quantity): the pile's
+    /// own title (zone) card, row headers, and ordinary cards alike (a `Day Passes ×11` stack is 11).
+    /// Two things don't count, because they aren't physical cards:
+    /// - **Projected** cards keep their home in the deck the pile borrows from (the inn borrows Identity
+    ///   and Kit) and are counted there, so no card is counted twice.
+    /// - A **software-only deck** — one holding [`Utility`] action cards (the System deck's Start Over /
+    ///   Exit are app controls, not cards you'd hold) — is skipped whole, its label included.
+    ///
+    /// So summing this over every top-level deck on the table yields the game's real physical card total.
     pub fn physical_card_count(&self, pile: PileId) -> usize {
-        self.piles.get(&pile).map_or(0, |p| {
-            p.children
-                .iter()
-                .map(|node| match node {
-                    Node::Card(c) => self.cards.get(c).map_or(0, |k| k.quantity() as usize),
-                    Node::Pile(sub) => self.physical_card_count(*sub),
-                })
-                .sum()
-        })
+        let Some(p) = self.piles.get(&pile) else {
+            return 0;
+        };
+        // A deck that holds Utility action cards is software-only (the System deck) — nothing in it is a
+        // physical card, so it contributes zero, label and all.
+        let is_software_only = p.children.iter().any(|n| {
+            n.card()
+                .and_then(|c| self.cards.get(&c))
+                .is_some_and(|k| matches!(k.kind(), CardKind::Utility(_)))
+        });
+        if is_software_only {
+            return 0;
+        }
+        p.children
+            .iter()
+            .map(|node| match node {
+                Node::Card(c) => self.cards.get(c).map_or(0, |k| k.quantity() as usize),
+                Node::Pile(sub) => self.physical_card_count(*sub),
+            })
+            .sum()
     }
 
     /// Places `pile` at `(x, y)`, clamped inside the surface (the borders shove it back in), returning

@@ -645,6 +645,38 @@ mod tests {
         assert_eq!(t.physical_card_count(a_place), 2);
     }
 
+    /// A software-only deck — one holding [`Utility`] action cards, like the renderer's System deck —
+    /// counts as zero physical cards, its label included: those are app controls, not tabletop cards.
+    #[test]
+    fn physical_card_count_skips_software_only_decks() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let system = t.add_pile(root, "System").unwrap();
+        let start = t
+            .add_card(
+                system,
+                Face::Up {
+                    title: "Start Over".into(),
+                },
+                None,
+            )
+            .unwrap();
+        t.set_card_kind(start, CardKind::Utility(crate::model::Utility::StartOver))
+            .unwrap();
+        let label = typed(&mut t, system, "System", "Label");
+        t.set_card_kind(label, CardKind::Zone).unwrap();
+        assert_eq!(t.physical_card_count(system), 0);
+        // And a physical deck sitting beside it still counts its own label + content.
+        let day = t.add_pile(root, "Day").unwrap();
+        let zone = typed(&mut t, day, "Day", "Label");
+        t.set_card_kind(zone, CardKind::Zone).unwrap();
+        assert_eq!(
+            t.physical_card_count(day),
+            1,
+            "empty physical deck = its label"
+        );
+    }
+
     /// Find a top-level deck by label (test helper).
     fn deck(t: &Tableau, label: &str) -> PileId {
         *t.pile(t.root_id())
