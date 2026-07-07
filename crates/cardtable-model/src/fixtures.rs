@@ -342,6 +342,14 @@ pub fn sample_table() -> Tableau {
                 },
             )
             .expect("inn exists");
+        } else if let Some((title, kit, detail)) = catalog::encounter_for(place) {
+            // Every non-inn location stations one **encounter** (PC): a creature to fight. The four cells
+            // adjacent to the inn are single duel-locks creatures soloable by their answering kit; the
+            // four corners are full-party fights. The favoured kit and the how-to-beat-it live in the
+            // detail lines (`catalog::encounter_for`), so drilling into the place reads like a quest card.
+            let enc = typed(&mut tree, place_pile, title, "encounter");
+            tree.set_card_detail(enc, vec![format!("Favours: {kit}"), detail.to_string()])
+                .expect("encounter detail");
         }
     }
     let loc_zone = typed(&mut tree, locations, "Location", "Label");
@@ -456,14 +464,14 @@ pub fn sample_table() -> Tableau {
     free(&mut tree, day);
 
     let progress = tree.add_pile(root, "Progress").expect("root exists");
-    typed(&mut tree, progress, "Event", "event"); // Day 1 — one event already on the track
+    typed(&mut tree, progress, "Day Passes", "event"); // Day 1 — one event already on the track
     let progress_zone = typed(&mut tree, progress, "Progress", "Label");
     tree.set_card_kind(progress_zone, CardKind::Zone)
         .expect("progress zone card");
     free(&mut tree, progress);
 
     let events = tree.add_pile(root, "Events").expect("root exists");
-    let events_stack = typed(&mut tree, events, "Event", "event"); // one `Event ×N` stack (PC.2)
+    let events_stack = typed(&mut tree, events, "Day Passes", "event"); // one `Day Passes ×N` stack (PC.2)
     tree.set_card_quantity(events_stack, (DAYS_PROVISIONED - 1) as u32)
         .expect("events stack");
     let events_zone = typed(&mut tree, events, "Events", "Label");
@@ -544,7 +552,7 @@ mod tests {
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 2) // Locations: a Zone card + 9 place names + the inn's 2 headers (Hero, Kit)
+                + (1 + 9 + 2 + 8) // Locations: a Zone card + 9 place names + the inn's 2 headers (Hero, Kit) + 8 encounters (one per non-inn place)
                 + ((5 + 1) + (5 + 1))
                 + (0 + 1)
                 + (1 + 1)

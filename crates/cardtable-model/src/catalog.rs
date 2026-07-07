@@ -76,3 +76,78 @@ pub fn ability_description(name: &str) -> &'static str {
         .map(|&(_, d)| d)
         .unwrap_or_default()
 }
+
+/// A location **encounter** — the creature stationed at a place on the map and what beats it, as
+/// `(location, title, kit, detail)` where `kit` names the [`ROSTER`] entry that answers it. Two tiers:
+///
+/// - [`SOLO_ENCOUNTERS`] ring the inn (the four map cells orthogonally adjacent to Ashfen Crossing).
+///   Each is a single duel-locks creature (`deckbound/data/balance/duel-locks.ron`) soloable by the one
+///   kit that answers its lock — Anvil→Executioner, Swarm→Broadsider, Coil→Marksman, Mirage→Phantom.
+/// - [`PARTY_ENCOUNTERS`] hold the four corners. Each is a full-party fight that no lone hero survives,
+///   but that still leans on one kit's strength to close out.
+///
+/// Every non-inn location appears in exactly one array, so [`encounter_for`] covers all eight.
+pub const SOLO_ENCOUNTERS: [(&str, &str, &str, &str); 4] = [
+    (
+        "Cinderwatch Keep",
+        "The Coiled Sentry",
+        "Marksman",
+        "A watch-drake that lashes back at any blow it can see. Pick it off from range — the Marksman's Stand-Off draws no riposte. Soloable.",
+    ),
+    (
+        "The Sundered Vault",
+        "The Vault Anvil",
+        "Executioner",
+        "An armored warden that shrugs off small hits. One overwhelming blow cracks it — the Executioner's Alpha Strike. Soloable.",
+    ),
+    (
+        "Thornmarch Gate",
+        "The Thorn Swarm",
+        "Broadsider",
+        "A boiling mass of bramble-imps; single strikes barely thin it. Clear the whole pack at once — the Broadsider's Whirlwind. Soloable.",
+    ),
+    (
+        "The Salt Barrows",
+        "The Barrow Mirage",
+        "Phantom",
+        "A grave-wraith that is never quite where it seems. Slip the feint, then cut — the Phantom's Slip-and-Cut. Soloable.",
+    ),
+];
+
+/// The four corner encounters — full-party fights that lean on one kit. See [`SOLO_ENCOUNTERS`].
+pub const PARTY_ENCOUNTERS: [(&str, &str, &str, &str); 4] = [
+    (
+        "The Hollow Rampart",
+        "Breach of the Rampart",
+        "Broadsider",
+        "Wave on wave pours through the breach — bring the whole party. The Broadsider's Whirlwind is what holds the line.",
+    ),
+    (
+        "Greywater Ford",
+        "Ambush at the Ford",
+        "Marksman",
+        "Archers wait on the far bank. The full party must cross, but the Marksman's Stand-Off silences the bank first.",
+    ),
+    (
+        "Emberfall Hollow",
+        "The Emberfall Beast",
+        "Executioner",
+        "A great burning brute no lone hero survives. The party endures it while the Executioner lands the killing Alpha Strike.",
+    ),
+    (
+        "Ninefold Deep",
+        "Horror of the Ninefold Deep",
+        "Phantom",
+        "A shifting labyrinth-horror in the deep. The party maps its turns; the Phantom's Slip-and-Cut finds its heart.",
+    ),
+];
+
+/// The encounter stationed at `location` as `(title, kit, detail)`, or `None` for a location with no
+/// encounter (the inn, Ashfen Crossing). Searches both [`SOLO_ENCOUNTERS`] and [`PARTY_ENCOUNTERS`].
+pub fn encounter_for(location: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    SOLO_ENCOUNTERS
+        .iter()
+        .chain(PARTY_ENCOUNTERS.iter())
+        .find(|(loc, _, _, _)| *loc == location)
+        .map(|&(_, title, kit, detail)| (title, kit, detail))
+}
