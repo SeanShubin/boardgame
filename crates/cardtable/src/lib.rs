@@ -923,19 +923,41 @@ fn is_game_movable(
     false
 }
 
-/// Ensure entity `e` wears an [`Outline`] of `color`, toggling the colour in place if it already has one
-/// (per Bevy's guidance — cheaper than inserting/removing, and no layout churn).
-fn set_outline(commands: &mut Commands, e: Entity, outline: Option<Mut<Outline>>, color: Color) {
+/// Ensure entity `e` wears a cue [`Outline`] of `color`, toggling in place if it already has one (per
+/// Bevy's guidance — cheaper than inserting/removing, no layout churn). The **target** glow is a touch
+/// thicker; the **movable** ring is deliberately thin. On first insert it also gets a matching
+/// [`BorderRadius`] so the ring rounds the card rather than boxing it (a bare `Movable` wrapper has none).
+fn set_outline(
+    commands: &mut Commands,
+    e: Entity,
+    outline: Option<Mut<Outline>>,
+    node: &mut Node,
+    color: Color,
+) {
+    let width = if color == TARGET_CUE {
+        Val::Px(2.0)
+    } else {
+        Val::Px(1.0)
+    };
+    // Round the ring: a Bevy outline follows its node's border radius, and a bare `Movable` wrapper has
+    // none. (Guarded so this is a one-time write, not a per-frame layout touch.)
+    let radius = BorderRadius::all(CUE_RADIUS);
+    if node.border_radius != radius {
+        node.border_radius = radius;
+    }
     match outline {
         Some(mut o) => {
             if o.color != color {
                 o.color = color;
             }
+            if o.width != width {
+                o.width = width;
+            }
         }
         None => {
             commands
                 .entity(e)
-                .insert(Outline::new(Val::Px(2.0), Val::Px(1.0), color));
+                .insert(Outline::new(width, Val::Px(1.0), color));
         }
     }
 }
@@ -949,8 +971,8 @@ fn update_card_cues(
     mut commands: Commands,
     table: Res<Table>,
     dragging: Res<Dragging>,
-    mut movable: Query<(Entity, &Movable, Option<&mut Outline>)>,
-    mut zones: Query<(Entity, &PileDropZone, Option<&mut Outline>), Without<Movable>>,
+    mut movable: Query<(Entity, &Movable, Option<&mut Outline>, &mut Node)>,
+    mut zones: Query<(Entity, &PileDropZone, Option<&mut Outline>, &mut Node), Without<Movable>>,
 ) {
     let in_projection = table
         .0
@@ -960,7 +982,7 @@ fn update_card_cues(
     // In the inn a card is worth picking up only if the opposite kind is present to pair with.
     let (mut has_kit, mut has_hero) = (false, false);
     if in_projection {
-        for (_, m, _) in &movable {
+        for (_, m, _, _) in &movable {
             if let Some(c) = m.0.card() {
                 if table.0.card(c).is_some_and(|k| k.recipe().is_some()) {
                     has_kit = true;
@@ -970,7 +992,7 @@ fn update_card_cues(
             }
         }
     }
-    for (e, m, outline) in &mut movable {
+    for (e, m, outline, mut node) in &mut movable {
         let color = if dragging.0 == Some(m.0) {
             Color::NONE // the held card floats; its ring would just clutter the drag
         } else {
@@ -993,16 +1015,16 @@ fn update_card_cues(
                 _ => Color::NONE, // presentation-only drags (Free cards, deck chips) get no cue
             }
         };
-        set_outline(&mut commands, e, outline, color);
+        set_outline(&mut commands, e, outline, &mut node, color);
     }
     // Non-movable drop targets (the map's place cards) glow when the held card can land on them.
-    for (e, z, outline) in &mut zones {
+    for (e, z, outline, mut node) in &mut zones {
         let color = if dragged.is_some_and(|d| can_drop_on_pile(&table.0, d, z.0)) {
             TARGET_CUE
         } else {
             Color::NONE
         };
-        set_outline(&mut commands, e, outline, color);
+        set_outline(&mut commands, e, outline, &mut node, color);
     }
 }
 
@@ -1366,12 +1388,16 @@ const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
 /// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
-/// The **movable cue** — a soft ring worn by every card you can pick up, so they're scannable at a glance
-/// (amber, distinct from the teal actionable edge). Toggled to [`Color::NONE`] on the card currently held.
-const MOVABLE_CUE: Color = Color::srgba(0.92, 0.74, 0.34, 0.60);
-/// The **valid-drop-target glow** — worn, while a drag is held, by every place the held card can legally
-/// land (see [`can_drop_on_card`] / [`can_drop_on_pile`]). Bright green so "drop here" reads instantly.
+/// The **movable cue** — a *thin, pale* ring worn by every card whose drag triggers a game action, so
+/// they're scannable without shouting. Deliberately subtle (cool off-white, low alpha, 1px — see
+/// [`set_outline`]); toggled to [`Color::NONE`] on the card currently held.
+const MOVABLE_CUE: Color = Color::srgba(0.86, 0.90, 0.97, 0.50);
+/// The **valid-drop-target glow** — a *thicker* ring worn, while a drag is held, by every place the held
+/// card can legally land ([`can_drop_on_card`] / [`can_drop_on_pile`]). Bright green so "drop here" reads.
 const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
+/// Corner radius for a cue ring, matching a card's own [`BorderRadius`] so the outline rounds instead of
+/// boxing the card — a Bevy outline follows its node's radius, and a bare `Movable` wrapper has none.
+const CUE_RADIUS: Val = Val::Px(12.0);
 
 /// The accent colour for a card **type** — a small designed palette for the common types, with a
 /// stable hashed hue for any other type so a new type still reads as its own colour.
