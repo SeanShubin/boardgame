@@ -1,0 +1,66 @@
+// Verification-only: the cardtable's FOUR corner encounters expressed in the region-locks format, using
+// the RAW duel-locks creatures (Anvil / Swarm / Coil / Mirage — exact stats from duel-locks.ron) with the
+// keystone creature DOUBLED, exactly as catalog::encounter_foes deals them. Run:
+//   cargo run -p deckbound --example balance -- <this file>
+// This asks the honest question: does the cardtable's uniform "all four, keystone x2" rule (raw 1v1-tuned
+// creatures) produce a clean "full party wins, every kit needed" result, or do the corners need per-corner
+// tuning the way region-locks.ron already does?
+//
+// VERDICT (seed 1): it does NOT. Only Ninefold Deep is clean; Greywater Ford and Emberfall Hollow are
+// UNWINNABLE by the full party, and The Hollow Rampart leaves the Executioner redundant. The raw Swarm
+// (Vitality 45, doubled) dominates every corner. The shared creatures can't be retuned without breaking the
+// solo diagonal (duel-locks.ron), so the tuned corner answer lives in region-locks.ron (party-scaled foe
+// variants). See needs-merge/bestiary-verification.md for the full write-up + recommendation.
+RegionLocks(
+    seed: 1,
+    regions: [
+        (
+            name: "The Hollow Rampart",
+            signature: "Broadsider",
+            blurb: "keystone Swarm x2 + Anvil + Coil + Mirage",
+            foes: [
+                (name: "The Swarm",  ability: "Overrun",  stats: (1, 45, 1, 1, 1), hoard: true),
+                (name: "The Swarm",  ability: "Overrun",  stats: (1, 45, 1, 1, 1), hoard: true),
+                (name: "The Anvil",  ability: "Immovable", stats: (1, 2, 5, 1, 1)),
+                (name: "The Coil",   ability: "Riposte",  stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "The Mirage", ability: "Feint",    stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Greywater Ford",
+            signature: "Marksman",
+            blurb: "keystone Coil x2 + Anvil + Swarm + Mirage",
+            foes: [
+                (name: "The Coil",   ability: "Riposte",  stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "The Coil",   ability: "Riposte",  stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "The Anvil",  ability: "Immovable", stats: (1, 2, 5, 1, 1)),
+                (name: "The Swarm",  ability: "Overrun",  stats: (1, 45, 1, 1, 1), hoard: true),
+                (name: "The Mirage", ability: "Feint",    stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Emberfall Hollow",
+            signature: "Executioner",
+            blurb: "keystone Anvil x2 + Swarm + Coil + Mirage",
+            foes: [
+                (name: "The Anvil",  ability: "Immovable", stats: (1, 2, 5, 1, 1)),
+                (name: "The Anvil",  ability: "Immovable", stats: (1, 2, 5, 1, 1)),
+                (name: "The Swarm",  ability: "Overrun",  stats: (1, 45, 1, 1, 1), hoard: true),
+                (name: "The Coil",   ability: "Riposte",  stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+                (name: "The Mirage", ability: "Feint",    stats: (6, 5, 2, 1, 2)),
+            ],
+        ),
+        (
+            name: "Ninefold Deep",
+            signature: "Phantom",
+            blurb: "keystone Mirage x2 + Anvil + Swarm + Coil",
+            foes: [
+                (name: "The Mirage", ability: "Feint",    stats: (6, 5, 2, 1, 2)),
+                (name: "The Mirage", ability: "Feint",    stats: (6, 5, 2, 1, 2)),
+                (name: "The Anvil",  ability: "Immovable", stats: (1, 2, 5, 1, 1)),
+                (name: "The Swarm",  ability: "Overrun",  stats: (1, 45, 1, 1, 1), hoard: true),
+                (name: "The Coil",   ability: "Riposte",  stats: (6, 4, 2, 2, 1), pos: Some("Vanguard")),
+            ],
+        ),
+    ],
+)
