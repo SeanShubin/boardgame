@@ -55,7 +55,7 @@ pub use scenarios::{
     CatalogEntry, RewardId, Scenario, build_character, build_encounter_foes, campaign,
     card_catalog, god, rewards_for, tutorials, versus,
 };
-pub use solver::{Solution, auto_resolve, solve, winnable};
+pub use solver::{Solution, auto_resolve, resolve_logged, solve, winnable};
 pub use state::{Clash, Menu, Phase, Round, State};
 pub use stats::{Defense, Health, Offense, PendingDamage};
 pub use transcript::{TranscriptScenario, transcribe, transcript_scenarios};

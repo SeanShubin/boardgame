@@ -48,6 +48,32 @@ pub fn auto_resolve_with(
     None
 }
 
+/// As [`auto_resolve`], but also returns the battle **log** — the turn-by-turn narration the resolver
+/// accumulates in the state (round headers, strikes, evades, falls). It runs the same greedy playout
+/// under the analysis [`Ruleset`], so the outcome matches [`auto_resolve`]; the extra return is the log
+/// so a caller can *show* the fight (e.g. a combat-log card on the card table). `Some(true)` = heroes
+/// win, `Some(false)` = lose or draw, `None` = degenerate stalemate.
+pub fn resolve_logged(
+    heroes: Vec<Actor>,
+    foes: Vec<Actor>,
+    seed: u64,
+) -> (Option<bool>, Vec<String>) {
+    let game = Deckbound;
+    let mut state = battle_state_with(heroes, foes, false, seed, Ruleset::analysis());
+    for _ in 0..MAX_STEPS {
+        if let Some(outcome) = game.outcome(&state) {
+            let won = matches!(outcome, Outcome::Win(PlayerId(0)));
+            return (Some(won), std::mem::take(&mut state.log));
+        }
+        let actions = game.legal_actions(&state);
+        let action = greedy(&state, &actions);
+        if game.apply(&mut state, &action).is_err() {
+            return (None, std::mem::take(&mut state.log));
+        }
+    }
+    (None, std::mem::take(&mut state.log))
+}
+
 /// A moderately-greedy hero policy: commit melee to the Vanguard, hold and fight, strike the front,
 /// or play a power if there's nothing to hit. Picks one action; called repeatedly. Public so the
 /// campaign can suggest a combat move to the player.
