@@ -1503,6 +1503,9 @@ const CARD_INK: Color = Color::srgb(0.10, 0.10, 0.13);
 const CARD_BACK: Color = Color::srgb(0.20, 0.24, 0.42);
 /// A second back shade so alternating layers in a pile's stack read as distinct cards.
 const CARD_BACK_ALT: Color = Color::srgb(0.28, 0.32, 0.52);
+/// The accent (border + foot bar) marking a **face-down** card — a warm amber against the dark back, the
+/// unmistakable "this is face down" cue that still leaves the name readable.
+const FACE_DOWN_EDGE: Color = Color::srgb(0.72, 0.56, 0.30);
 /// The Exit card's fill — a warm red so it reads as "this is the way out".
 const EXIT_CONFIRM_BG: Color = Color::srgb(0.55, 0.22, 0.20);
 /// Highlight edge for a card/pile that carries a legal move.
@@ -2471,17 +2474,20 @@ fn small_face(
 /// down), plus a `×N` line when `quantity > 1`. Its face is drawn by [`small_face`], the same content
 /// a deck's front layer uses — a lone card and a deck render the same way.
 fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: usize) {
+    let face_down = card.is_face_down();
     let (label, bg, ink) = match &card.face {
         // A **utility** card wears its action colour as the card background, so it reads as a coloured
         // button (Exit red, Start Over amber) even as an ordinary card; its ink adapts to stay legible.
         Face::Up { title } => match card.kind() {
             CardKind::Utility(u) => {
                 let bg = action_color(u);
-                (Some(title.clone()), bg, badge_ink(bg))
+                (title.clone(), bg, badge_ink(bg))
             }
-            _ => (Some(title.clone()), CARD_FACE, CARD_INK),
+            _ => (title.clone(), CARD_FACE, CARD_INK),
         },
-        Face::Down { .. } => (None, CARD_BACK, INK),
+        // A **face-down** card still shows its name (so a spent marker is identifiable), but on the dark
+        // card **back** in muted ink — the light-face / dark-back contrast is what says "face down".
+        Face::Down { title } => (title.clone(), CARD_BACK, MUTED),
     };
     let entity = parent.spawn((
         CardRef(card.id),
@@ -2503,14 +2509,34 @@ fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: us
             ..default()
         },
         BackgroundColor(bg),
-        BorderColor::all(card_edge(card)),
+        // A face-down card wears a distinct dashed-look accent border (a warm slate) so, beyond the dark
+        // fill, there's an unmistakable "this is face down" cue that doesn't hide the name.
+        BorderColor::all(if face_down {
+            FACE_DOWN_EDGE
+        } else {
+            card_edge(card)
+        }),
         card_shadow(),
     ));
     finish_card(entity, card, |c| {
-        // Face down shows only the blank back; face up delegates to the shared Small face.
-        if let Some(label) = label {
-            let sub = (quantity > 1).then(|| format!("×{quantity}"));
-            small_face(c, &label, card.card_type(), ink, sub);
+        let sub = (!face_down && quantity > 1).then(|| format!("×{quantity}"));
+        small_face(c, &label, card.card_type(), ink, sub);
+        // A clear, font-safe face-down stamp: a slim accent bar pinned across the card's foot. It reads as
+        // a "flipped" marker at a glance without obscuring the name above it.
+        if face_down {
+            c.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(6.0),
+                    right: Val::Px(6.0),
+                    bottom: Val::Px(6.0),
+                    height: Val::Px(4.0),
+                    border_radius: BorderRadius::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(FACE_DOWN_EDGE),
+                Pickable::IGNORE,
+            ));
         }
     });
 }
