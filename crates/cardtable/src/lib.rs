@@ -93,6 +93,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<FactoryBase>()
             .init_resource::<BuildInfo>()
             .init_resource::<CombatRequest>()
+            .init_resource::<ManualCombatRequest>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
@@ -184,11 +185,18 @@ struct Pinned;
 #[derive(Component)]
 struct BackCard;
 
-/// A utility card that starts **combat** — shown (like [`BackCard`]) in a location's overlay band only
+/// A utility card that starts **auto combat** — the fight plays out headlessly and the result folds onto
+/// the table. Shown (like [`BackCard`]) in a location's overlay band, beside [`ManualCombatCard`], only
 /// when that place holds both a stationed hero and an encounter (see [`location_ready_for_combat`]).
-/// Resolution is wired separately; the card is the trigger.
+/// Resolution is wired separately (the binary's combat system); the card is the trigger.
 #[derive(Component)]
 struct CombatCard;
+
+/// A utility card that starts **manual combat** — where the player makes every decision. Shown beside
+/// [`CombatCard`] on a combat-ready location. Records the place in [`ManualCombatRequest`]; the interactive
+/// arena that consumes it is built separately (until then the binary resolves it through the manual bridge).
+#[derive(Component)]
+struct ManualCombatCard;
 
 /// A control card that **advances the day** — shown in the Progress zone's overlay. Clicking it draws a
 /// new `Day Passed` card onto Progress (the day count ticks up) and stands every move marker back up.
@@ -255,11 +263,17 @@ struct DragGuard(bool);
 #[derive(Resource)]
 pub struct NeedsRebuild(pub bool);
 
-/// A pending **combat request** — the place a fight was asked for (the [`CombatCard`] click records the
-/// current zone here). The renderer only records the *request*; an outer layer resolves it (so the UI
+/// A pending **auto-combat request** — the place a fight was asked for (the [`CombatCard`] click records
+/// the current zone here). The renderer only records the *request*; an outer layer resolves it (so the UI
 /// shell stays game-agnostic). It is drained by the combat system, which then clears it back to `None`.
 #[derive(Resource, Default)]
 pub struct CombatRequest(pub Option<PileId>);
+
+/// A pending **manual-combat request** — the place the player asked to fight *manually* (the
+/// [`ManualCombatCard`] click records the current zone here). Mirrors [`CombatRequest`]; drained by the
+/// binary's manual-combat system (and, once built, opens the interactive arena) then cleared to `None`.
+#[derive(Resource, Default)]
+pub struct ManualCombatRequest(pub Option<PileId>);
 
 /// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
 /// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
@@ -491,12 +505,14 @@ fn on_click(
         Option<&PileDropZone>,
         Has<BackCard>,
         Has<CombatCard>,
+        Has<ManualCombatCard>,
         Has<AdvanceDayCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut combat: ResMut<CombatRequest>,
+    mut manual_combat: ResMut<ManualCombatRequest>,
     mut front: ResMut<FannedFront>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
@@ -505,7 +521,7 @@ fn on_click(
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, pile, is_back, is_combat, is_advance_day)) =
+    let Ok((action, card, pile, is_back, is_combat, is_manual_combat, is_advance_day)) =
         targets.get(on.event().entity)
     else {
         return;
@@ -514,10 +530,14 @@ fn on_click(
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
     } else if is_combat {
-        // The combat trigger: record *which* place the fight is for. An outer layer (the binary's combat
-        // system) resolves it against the game rules and clears the request — the UI shell stays
+        // The auto-combat trigger: record *which* place the fight is for. An outer layer (the binary's
+        // combat system) resolves it against the game rules and clears the request — the UI shell stays
         // game-agnostic.
         combat.0 = Some(table.0.focus_id());
+    } else if is_manual_combat {
+        // The manual-combat trigger: record the place for the binary's manual-combat system (which, until
+        // the interactive arena exists, resolves it through the manual bridge). Same record-only pattern.
+        manual_combat.0 = Some(table.0.focus_id());
     } else if is_advance_day {
         // Advance the day: lay a new `Day Passed` card on Progress and stand every move marker back up.
         if let (Some(progress), Some(events)) =
@@ -2137,19 +2157,25 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                 ))
                 .with_children(|slot| spawn_nav_card(slot, (BackCard, Pinned), "Back"));
             }
-            // A **Combat** control, mirroring Back but on the right, on a location that holds both a hero
-            // and an encounter — the trigger to fight what is stationed here.
+            // The **combat** controls, mirroring Back but on the right, on a location that holds both a hero
+            // and an encounter: the player picks **Auto** (play it out) or **Manual** (decide every step).
+            // A row so the two cards sit side by side without colliding on the shared right edge.
             if location_ready_for_combat(tree, zone) {
                 root.spawn((
                     Node {
                         position_type: PositionType::Absolute,
                         top: Val::Px(6.0),
                         right: Val::Px(8.0),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
                         ..default()
                     },
                     GlobalZIndex(10),
                 ))
-                .with_children(|slot| spawn_nav_card(slot, (CombatCard, Pinned), "Combat"));
+                .with_children(|slot| {
+                    spawn_nav_card(slot, (CombatCard, Pinned), "Auto Combat");
+                    spawn_nav_card(slot, (ManualCombatCard, Pinned), "Manual Combat");
+                });
             }
             // An **Advance Day** control in the Progress zone — lays a new `Day Passed` card (the day ticks
             // up) and stands every move marker back up.
@@ -2581,7 +2607,14 @@ fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: us
         card_shadow(),
     ));
     finish_card(entity, card, |c| {
-        let sub = (!face_down && quantity > 1).then(|| format!("×{quantity}"));
+        let sub = if face_down {
+            // A face-down `hero` card is a spent move-marker on Progress: it means the hero has *moved*
+            // this day. Spell that out so face-down reads as a state, not just a blank back.
+            (card.card_type() == "hero").then(|| "moved".to_string())
+        } else {
+            // Face-up: a stack of N identical physical cards shows its `×N` (PC.2).
+            (quantity > 1).then(|| format!("×{quantity}"))
+        };
         small_face(c, &label, card.card_type(), ink, sub);
         // A clear, font-safe face-down stamp: a slim accent bar pinned across the card's foot. It reads as
         // a "flipped" marker at a glance without obscuring the name above it.

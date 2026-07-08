@@ -13,9 +13,9 @@ mod persistence;
 use bevy::prelude::*;
 use cardtable::{
     ActionRequests, BuildInfo, CardTablePlugin, CardTableSet, CombatRequest, FactoryBase,
-    NeedsRebuild, StatusLine, Table,
+    ManualCombatRequest, NeedsRebuild, StatusLine, Table,
 };
-use cardtable_combat::resolve_encounter;
+use cardtable_combat::{begin_manual_combat, finish_manual_combat, resolve_encounter};
 use cardtable_model::{Tableau, sample_table};
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
@@ -55,8 +55,9 @@ fn main() -> AppExit {
         // No game yet: drain the core's click outbox each frame so requests don't accumulate. A
         // future feature (or a game adapter) will consume these instead of discarding them.
         .add_systems(Update, drain_requests.in_set(CardTableSet::Apply))
-        // The first bit of game wired into the product: resolve a requested fight.
+        // The first bit of game wired into the product: resolve a requested fight (auto or manual).
         .add_systems(Update, resolve_combat.in_set(CardTableSet::Apply))
+        .add_systems(Update, resolve_manual_combat.in_set(CardTableSet::Apply))
         .add_systems(Update, autosave);
 
     app.run()
@@ -83,6 +84,48 @@ fn resolve_combat(
     let outcome = resolve_encounter(&mut table.0, place, seed);
     info!("combat resolved: {outcome:?}");
     rebuild.0 = true;
+}
+
+/// Resolve a **manual** fight the player asked for. The interactive arena isn't built yet, so for now this
+/// runs the fight through the manual bridge headlessly (greedily) and folds it back — the same visible
+/// result as auto, but exercising the real manual path (foes instantiated as cards, the resumable
+/// resolver). Step 2 replaces the greedy run with the player-driven arena. The foes are dealt into a scratch
+/// pile and returned to the Bestiary by the teardown, so the pile is discarded empty; the rebuild happens
+/// after, so it never renders.
+fn resolve_manual_combat(
+    mut table: ResMut<Table>,
+    mut request: ResMut<ManualCombatRequest>,
+    mut rebuild: ResMut<NeedsRebuild>,
+) {
+    let Some(place) = request.0.take() else {
+        return;
+    };
+    let seed = day_seed(&table.0);
+    let root = table.0.root_id();
+    let Some(bestiary) = find_top(&table.0, "Bestiary") else {
+        return;
+    };
+    let Ok(arena) = table.0.add_pile(root, "Arena") else {
+        return;
+    };
+    if let Some(mut combat) = begin_manual_combat(&mut table.0, place, arena, bestiary, seed) {
+        combat.run_to_end_auto(|_| {});
+        let outcome = finish_manual_combat(&mut table.0, place, bestiary, combat);
+        info!("manual combat resolved (auto for now): {outcome:?}");
+    }
+    let _ = table.0.remove_pile(arena);
+    rebuild.0 = true;
+}
+
+/// A top-level deck by label (the game-state helpers reach a few fixed zones by name).
+fn find_top(table: &Tableau, label: &str) -> Option<cardtable_model::PileId> {
+    let root = table.root_id();
+    table
+        .pile(root)
+        .map(|r| r.subpiles())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|&p| table.pile(p).is_some_and(|pile| pile.label == label))
 }
 
 /// A deterministic combat seed derived from game state: the current day count (so a fight is reproducible
