@@ -155,10 +155,17 @@ fn day_seed(table: &Tableau) -> u64 {
 /// (sizes, obstacles), so change-detection alone would rewrite constantly. Cheap: the table is small.
 fn autosave(
     table: Res<Table>,
+    arena: Res<ArenaCombat>,
     time: Res<Time>,
     mut cooldown: Local<f32>,
     mut last: Local<Option<String>>,
 ) {
+    // Don't persist mid-fight: the table then holds the transient arena scratch pile + instantiated foes,
+    // but the fight itself (the `ArenaCombat` resource) isn't saved — so a reload would strand an orphan
+    // pile. The fight folds back cleanly on its end, and the next tick saves that.
+    if arena.0.is_some() {
+        return;
+    }
     *cooldown += time.delta_secs();
     if *cooldown < AUTOSAVE_SECS {
         return;
