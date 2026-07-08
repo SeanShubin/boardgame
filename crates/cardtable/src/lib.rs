@@ -91,6 +91,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<FannedFront>()
             .init_resource::<FactoryBase>()
             .init_resource::<BuildInfo>()
+            .init_resource::<CombatRequest>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
@@ -225,9 +226,16 @@ struct DragGuard(bool);
 
 /// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a pile, move
 /// a card, a new game snapshot). Pile positions are not structural; they animate, so repositioning
-/// never sets this. See [`redraw`] and [`animate_nodes`].
+/// never sets this. See [`redraw`] and [`animate_nodes`]. Public so an outer layer (e.g. the binary's
+/// combat system) can request a redraw after mutating the [`Table`].
 #[derive(Resource)]
-struct NeedsRebuild(bool);
+pub struct NeedsRebuild(pub bool);
+
+/// A pending **combat request** — the place a fight was asked for (the [`CombatCard`] click records the
+/// current zone here). The renderer only records the *request*; an outer layer resolves it (so the UI
+/// shell stays game-agnostic). It is drained by the combat system, which then clears it back to `None`.
+#[derive(Resource, Default)]
+pub struct CombatRequest(pub Option<PileId>);
 
 /// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
 /// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
@@ -463,6 +471,7 @@ fn on_click(
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut combat: ResMut<CombatRequest>,
     mut front: ResMut<FannedFront>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
@@ -478,9 +487,10 @@ fn on_click(
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
     } else if is_combat {
-        // The combat trigger. Resolution is wired next; for now record the request so the click gives
-        // feedback and the (future) combat system has an entry point.
-        info!("combat requested in zone {:?}", table.0.focus_id());
+        // The combat trigger: record *which* place the fight is for. An outer layer (the binary's combat
+        // system) resolves it against the game rules and clears the request — the UI shell stays
+        // game-agnostic.
+        combat.0 = Some(table.0.focus_id());
     } else if let Some(card_ref) = card {
         let id = card_ref.0;
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so

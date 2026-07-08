@@ -11,6 +11,9 @@ path = "src/main.rs"
 bevy = { workspace = true }
 cardtable = { workspace = true }
 cardtable-model = { workspace = true }
+# The combat bridge: resolves an encounter (deckbound's resolver) and folds the result back onto the
+# table. This binary is where the game wires into the product; the renderer stays game-agnostic.
+cardtable-combat = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
 

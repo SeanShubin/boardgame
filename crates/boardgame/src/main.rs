@@ -12,9 +12,11 @@ mod persistence;
 
 use bevy::prelude::*;
 use cardtable::{
-    ActionRequests, BuildInfo, CardTablePlugin, CardTableSet, FactoryBase, StatusLine, Table,
+    ActionRequests, BuildInfo, CardTablePlugin, CardTableSet, CombatRequest, FactoryBase,
+    NeedsRebuild, StatusLine, Table,
 };
-use cardtable_model::sample_table;
+use cardtable_combat::resolve_encounter;
+use cardtable_model::{Tableau, sample_table};
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
 const AUTOSAVE_SECS: f32 = 2.0;
@@ -53,6 +55,8 @@ fn main() -> AppExit {
         // No game yet: drain the core's click outbox each frame so requests don't accumulate. A
         // future feature (or a game adapter) will consume these instead of discarding them.
         .add_systems(Update, drain_requests.in_set(CardTableSet::Apply))
+        // The first bit of game wired into the product: resolve a requested fight.
+        .add_systems(Update, resolve_combat.in_set(CardTableSet::Apply))
         .add_systems(Update, autosave);
 
     app.run()
@@ -61,6 +65,37 @@ fn main() -> AppExit {
 /// Placeholder consumer of the core's action outbox until a real feature handles clicks.
 fn drain_requests(mut requests: ResMut<ActionRequests>) {
     requests.0.clear();
+}
+
+/// Resolve a fight the player asked for: the [`CombatCard`](cardtable) click records the place in
+/// [`CombatRequest`]; here we resolve it against the game rules and fold the result onto the table, then
+/// request a redraw. Deterministic — the seed is the current day, so a fight varies day to day but
+/// replays identically. This is where the product reaches the combat rules.
+fn resolve_combat(
+    mut table: ResMut<Table>,
+    mut request: ResMut<CombatRequest>,
+    mut rebuild: ResMut<NeedsRebuild>,
+) {
+    let Some(place) = request.0.take() else {
+        return;
+    };
+    let seed = day_seed(&table.0);
+    let outcome = resolve_encounter(&mut table.0, place, seed);
+    info!("combat resolved: {outcome:?}");
+    rebuild.0 = true;
+}
+
+/// A deterministic combat seed derived from game state: the current day count (so a fight is reproducible
+/// yet differs day to day). Falls back to `1` before the day clock exists.
+fn day_seed(table: &Tableau) -> u64 {
+    let root = table.root_id();
+    let progress = table
+        .pile(root)
+        .map(|r| r.subpiles())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|&p| table.pile(p).is_some_and(|pile| pile.label == "Progress"));
+    progress.map(|p| table.current_day(p) as u64).unwrap_or(1)
 }
 
 /// Periodically persist the table — at most every [`AUTOSAVE_SECS`], and only when the serialized RON
