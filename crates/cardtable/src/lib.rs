@@ -1190,6 +1190,28 @@ fn fan_layout(
 // (Retired with the Active-row recruit flow: `drop_card_into_active` / `put_pair_back` copied a kit and
 // discarded it — a mint + destroy. Recruiting is now the conservation-clean `try_equip` / `try_unequip`.)
 
+/// A UI node's on-screen bounding box in **logical** px as `(centre, half-extents)`: its
+/// [`UiGlobalTransform`] translation and half its [`ComputedNode`] size, both scaled from physical.
+fn node_box(cn: &ComputedNode, gt: &UiGlobalTransform) -> (Vec2, Vec2) {
+    let sf = cn.inverse_scale_factor;
+    (gt.translation * sf, cn.size() * sf * 0.5)
+}
+
+/// Whether two `(centre, half)` boxes overlap (axis-aligned).
+fn boxes_overlap(a: (Vec2, Vec2), b: (Vec2, Vec2)) -> bool {
+    (a.0.x - b.0.x).abs() <= a.1.x + b.1.x && (a.0.y - b.0.y).abs() <= a.1.y + b.1.y
+}
+
+/// The single item of an iterator, or `None` if it yields zero or more than one — the "exactly one" rule
+/// for a snappy drop: any overlap with exactly one target lands there; none, or an ambiguous two-plus,
+/// snaps back.
+fn exactly_one<T>(mut it: impl Iterator<Item = T>) -> Option<T> {
+    match (it.next(), it.next()) {
+        (Some(x), None) => Some(x),
+        _ => None,
+    }
+}
+
 /// On release, settle a dragged felt element. A **pile** commits its position and shoves among its
 /// parent's children — done. A **card** does the leaf-specific drop: a Rows view (the inn) may move it
 /// into the Active row; a projection view snaps it back; a **Free** deck commits the position and shoves
@@ -1232,8 +1254,10 @@ fn on_node_drag_end(
         // onto another place card **moves** that character there (`Tableau::move_character` also spends its
         // day-clock move by flipping the day-token). The day is *not* auto-advanced — ending the day is an
         // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
-        // cursor-follows and occludes picking, so — as with recruit — the destination is found by geometry:
-        // which place card's drop zone did the release cursor land on.
+        // cursor-follows and occludes picking, so the destination is found by geometry — by **box overlap**,
+        // not the cursor point: if the dragged card's box overlaps **exactly one** place's drop zone, that's
+        // the drop (snappier — any overlap counts). Overlapping two (still half over the origin) or none is
+        // ambiguous, so it snaps back.
         let on_map = top_deck(&table.0, "Locations") == Some(table.0.focus_id());
         if on_map
             && table
@@ -1241,16 +1265,18 @@ fn on_node_drag_end(
                 .card(card)
                 .is_some_and(|c| c.card_type() == "location-token")
         {
-            let cursor = on.event().pointer_location.position;
-            let dest = drop_zones
-                .iter()
-                .find(|&(_, cn, gt)| {
-                    let sf = cn.inverse_scale_factor; // physical → logical, matching the cursor
-                    let center = gt.translation * sf;
-                    let half = cn.size() * sf * 0.5;
-                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
-                })
-                .map(|(z, _, _)| z.0);
+            let drag_box = geom
+                .get(on.event().entity)
+                .ok()
+                .map(|(_, cn, gt)| node_box(cn, gt));
+            let dest = drag_box.and_then(|db| {
+                exactly_one(
+                    drop_zones
+                        .iter()
+                        .filter(|&(_, cn, gt)| boxes_overlap(db, node_box(cn, gt))),
+                )
+                .map(|(z, _, _)| z.0)
+            });
             let from = table.0.card(card).map(|c| c.home());
             if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day"))
                 && Some(dest) != from
