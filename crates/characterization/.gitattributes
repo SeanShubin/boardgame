@@ -1,0 +1,3 @@
+# Golden masters are generated with LF by the test harness. Pin them to LF so a checkout on any
+# platform matches what was blessed (the harness also normalizes EOL on compare, belt-and-suspenders).
+golden/*.ron text eol=lf

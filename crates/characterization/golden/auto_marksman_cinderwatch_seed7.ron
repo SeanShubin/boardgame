@@ -1,0 +1,4047 @@
+outcome: Win
+---
+{
+    "cards": {
+        [
+            0,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Vael Thornbrand",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                19,
+            ],
+            "id": [
+                0,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            1,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Sera of the Ninth Watch",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                1,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            2,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Bram Cutter",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                2,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            3,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Isolde Greymantle",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                3,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            4,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Kord the Sentinel",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                4,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 176.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            5,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Nyx Ashwell",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                5,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 176.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            6,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Dallen Rook",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                6,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 176.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            7,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Mira Tempestborne",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                7,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 176.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            8,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Osric Vane",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                8,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 288.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            9,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Heroes",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                1,
+            ],
+            "id": [
+                9,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            10,
+        ]: {
+            "actionable": None,
+            "card_type": "Kit",
+            "detail": [
+                "Might 6 · Vitality 3 · Toughness 1",
+                "Cadence 1 · Finesse 1",
+                "Abilities: Alpha Strike",
+            ],
+            "face": {
+                "title": "Executioner",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                2,
+            ],
+            "id": [
+                10,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": Some({
+                "ability": "Alpha Strike",
+                "stats": [
+                    6,
+                    3,
+                    1,
+                    1,
+                    1,
+                ],
+            }),
+            "size": (),
+        },
+        [
+            11,
+        ]: {
+            "actionable": None,
+            "card_type": "Kit",
+            "detail": [
+                "Might 2 · Vitality 3 · Toughness 3",
+                "Cadence 1 · Finesse 1",
+                "Abilities: Whirlwind",
+            ],
+            "face": {
+                "title": "Broadsider",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                2,
+            ],
+            "id": [
+                11,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": Some({
+                "ability": "Whirlwind",
+                "stats": [
+                    2,
+                    3,
+                    3,
+                    1,
+                    1,
+                ],
+            }),
+            "size": (),
+        },
+        [
+            12,
+        ]: {
+            "actionable": None,
+            "card_type": "Kit",
+            "detail": [
+                "Might 4 · Vitality 4 · Toughness 1",
+                "Cadence 2 · Finesse 2",
+                "Abilities: Stand-Off",
+            ],
+            "face": {
+                "title": "Marksman",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                2,
+            ],
+            "id": [
+                12,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": Some({
+                "ability": "Stand-Off",
+                "stats": [
+                    4,
+                    4,
+                    1,
+                    2,
+                    2,
+                ],
+            }),
+            "size": (),
+        },
+        [
+            13,
+        ]: {
+            "actionable": None,
+            "card_type": "Kit",
+            "detail": [
+                "Might 4 · Vitality 3 · Toughness 1",
+                "Cadence 2 · Finesse 3",
+                "Abilities: Slip-and-Cut",
+            ],
+            "face": {
+                "title": "Phantom",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                2,
+            ],
+            "id": [
+                13,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": Some({
+                "ability": "Slip-and-Cut",
+                "stats": [
+                    4,
+                    3,
+                    1,
+                    2,
+                    3,
+                ],
+            }),
+            "size": (),
+        },
+        [
+            14,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Kit",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                2,
+            ],
+            "id": [
+                14,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            15,
+        ]: {
+            "actionable": None,
+            "card_type": "ability",
+            "detail": [
+                "Melee · single target — one big blow.",
+            ],
+            "face": {
+                "title": "Alpha Strike",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                3,
+            ],
+            "id": [
+                15,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 5,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            16,
+        ]: {
+            "actionable": None,
+            "card_type": "ability",
+            "detail": [
+                "Melee · area — hits the whole pack.",
+            ],
+            "face": {
+                "title": "Whirlwind",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                3,
+            ],
+            "id": [
+                16,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 5,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            17,
+        ]: {
+            "actionable": None,
+            "card_type": "ability",
+            "detail": [
+                "Ranged · single target — strikes from the back, no riposte.",
+            ],
+            "face": {
+                "title": "Stand-Off",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                3,
+            ],
+            "id": [
+                17,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            18,
+        ]: {
+            "actionable": None,
+            "card_type": "ability",
+            "detail": [
+                "Melee · single target — evades, then cuts.",
+            ],
+            "face": {
+                "title": "Slip-and-Cut",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                3,
+            ],
+            "id": [
+                18,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 5,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            19,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Abilities",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                3,
+            ],
+            "id": [
+                19,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            20,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "The force behind a strike; sets how much damage each blow deals.",
+            ],
+            "face": {
+                "title": "Might",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                20,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            21,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your life. With Toughness it sets your Health — how much you endure before you fall.",
+            ],
+            "face": {
+                "title": "Vitality",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                21,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            22,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "The bar your damage-pile must clear: within a sub-phase, damage piles up and each time it reaches your Toughness one Health card flips — leftover is wiped, not carried.",
+            ],
+            "face": {
+                "title": "Toughness",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                22,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            23,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your pace — how many actions you get each round.",
+            ],
+            "face": {
+                "title": "Cadence",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                23,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            24,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your skill — the grade of each action; how cheaply you win a contest.",
+            ],
+            "face": {
+                "title": "Finesse",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                24,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 176.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            25,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Stats",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                4,
+            ],
+            "id": [
+                25,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            26,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "1",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                26,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 11,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            27,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "2",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                27,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 10,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            28,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "3",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                28,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            29,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "4",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                29,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 10,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            30,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "5",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                30,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 176.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            31,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "6",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                31,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 176.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            32,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "7",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                32,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 176.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            33,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "8",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                33,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 176.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            34,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "9",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                34,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 288.0,
+            },
+            "quantity": 12,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            35,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Numbers",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                5,
+            ],
+            "id": [
+                35,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            36,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "The Hollow Rampart",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                7,
+            ],
+            "id": [
+                36,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            37,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "The rampart is breached and everything pours through at once.",
+                "Foes: The Anvil, The Swarm ×2, The Coil, The Mirage",
+            ],
+            "face": {
+                "title": "Breach of the Rampart",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                7,
+            ],
+            "id": [
+                37,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            38,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Cinderwatch Keep",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                8,
+            ],
+            "id": [
+                38,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            40,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Greywater Ford",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                9,
+            ],
+            "id": [
+                40,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            41,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "An ambush dug in at the crossing, ready to lash back at anything that wades in.",
+                "Foes: The Anvil, The Swarm, The Coil ×2, The Mirage",
+            ],
+            "face": {
+                "title": "Ambush at the Ford",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                9,
+            ],
+            "id": [
+                41,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            42,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "The Sundered Vault",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                10,
+            ],
+            "id": [
+                42,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            43,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "An armored warden set to guard the sundered vault, unmoved by lesser blows.",
+                "Foes: The Anvil",
+            ],
+            "face": {
+                "title": "The Vault Anvil",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                10,
+            ],
+            "id": [
+                43,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            44,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Ashfen Crossing",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                11,
+            ],
+            "id": [
+                44,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            45,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Hero",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                12,
+            ],
+            "id": [
+                45,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            46,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Kit",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                12,
+            ],
+            "id": [
+                46,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            47,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Thornmarch Gate",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                13,
+            ],
+            "id": [
+                47,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            48,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "A boiling mass of bramble-imps swarming the gate.",
+                "Foes: The Swarm",
+            ],
+            "face": {
+                "title": "The Thorn Swarm",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                13,
+            ],
+            "id": [
+                48,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            49,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Emberfall Hollow",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                14,
+            ],
+            "id": [
+                49,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            50,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "A burning hollow guarded by something that will not fall to a single hand.",
+                "Foes: The Anvil ×2, The Swarm, The Coil, The Mirage",
+            ],
+            "face": {
+                "title": "The Emberfall Beast",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                14,
+            ],
+            "id": [
+                50,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            51,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "The Salt Barrows",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                15,
+            ],
+            "id": [
+                51,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            52,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "A grave-wraith drifting the salt barrows, never quite where it seems.",
+                "Foes: The Mirage",
+            ],
+            "face": {
+                "title": "The Barrow Mirage",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                15,
+            ],
+            "id": [
+                52,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            53,
+        ]: {
+            "actionable": None,
+            "card_type": "Location",
+            "detail": [],
+            "face": {
+                "title": "Ninefold Deep",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                16,
+            ],
+            "id": [
+                53,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            54,
+        ]: {
+            "actionable": None,
+            "card_type": "encounter",
+            "detail": [
+                "The deep shifts and feints; nothing down here holds still.",
+                "Foes: The Anvil, The Swarm, The Coil, The Mirage ×2",
+            ],
+            "face": {
+                "title": "Horror of the Ninefold Deep",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                16,
+            ],
+            "id": [
+                54,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            55,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Location",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                6,
+            ],
+            "id": [
+                55,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            56,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round.",
+            ],
+            "face": {
+                "title": "Marshal (1/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                56,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            57,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.",
+            ],
+            "face": {
+                "title": "Reveal (2/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                57,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            58,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Standing abilities cast now (a Wall\'s brace, a Support\'s buff): ally-targeted, auto-land, last the round.",
+            ],
+            "face": {
+                "title": "Ready (3/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                58,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            59,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid.",
+            ],
+            "face": {
+                "title": "Intercept (1/5)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                59,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            60,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "The back fires on the flankers: each Rearguard shoots an enemy Outrider — the pre-empt, before it arrives.",
+            ],
+            "face": {
+                "title": "Volley (2/5)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                60,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            61,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Surviving Outriders strike the enemy Rearguard they crossed for — the breaker lands on the exposed back.",
+            ],
+            "face": {
+                "title": "Raid (3/5)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                61,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            62,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "The lines meet: each Rearguard fires an enemy Vanguard, and each engaging Vanguard strikes an enemy Vanguard.",
+            ],
+            "face": {
+                "title": "Clash (4/5)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                62,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 176.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            63,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "The deep blows land last: a Vanguard crosses to an exposed enemy Rearguard; stranded Outriders fall on the front.",
+            ],
+            "face": {
+                "title": "Breach (5/5)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                63,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 176.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            64,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Intercept — Vanguard -> Outrider",
+                "Volley — Rearguard -> Outrider",
+                "Raid — Outrider -> Rearguard",
+                "Clash — Rearguard / Vanguard -> Vanguard",
+                "Breach — the trailing blows land",
+                "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.",
+            ],
+            "face": {
+                "title": "Engage (4/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                18,
+            ],
+            "id": [
+                64,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            65,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn\'t flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
+            ],
+            "face": {
+                "title": "Wipe pile (5/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                65,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 176.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            66,
+        ]: {
+            "actionable": None,
+            "card_type": "phase",
+            "detail": [
+                "Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
+            ],
+            "face": {
+                "title": "Refresh (6/6)",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                66,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 176.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            67,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Rules",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                17,
+            ],
+            "id": [
+                67,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            68,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Progress",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                19,
+            ],
+            "id": [
+                68,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            69,
+        ]: {
+            "actionable": None,
+            "card_type": "event",
+            "detail": [],
+            "face": {
+                "title": "Day Passed",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                20,
+            ],
+            "id": [
+                69,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 11,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            70,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Events",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                20,
+            ],
+            "id": [
+                70,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            71,
+        ]: {
+            "actionable": None,
+            "card_type": "foe",
+            "detail": [
+                "Vanguard · armored",
+                "Might 1 · Vitality 2 · Toughness 5",
+                "Cadence 1 · Finesse 1",
+                "Immovable: Toughness above all but the heaviest blow — sub-bar hits are wiped, so only one overwhelming strike cracks it.",
+            ],
+            "face": {
+                "title": "The Anvil",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                21,
+            ],
+            "id": [
+                71,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 12.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            72,
+        ]: {
+            "actionable": None,
+            "card_type": "foe",
+            "detail": [
+                "Outrider · hoard",
+                "Might 1 · Vitality 45 · Toughness 1",
+                "Cadence 1 · Finesse 1",
+                "Overrun: A hoard of one-Health bodies. Single strikes kill one at a time and drown; an area attack clears the pack at once.",
+            ],
+            "face": {
+                "title": "The Swarm",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                21,
+            ],
+            "id": [
+                72,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 148.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            73,
+        ]: {
+            "actionable": None,
+            "card_type": "foe",
+            "detail": [
+                "Vanguard · ripostes",
+                "Might 6 · Vitality 4 · Toughness 2",
+                "Cadence 2 · Finesse 1",
+                "Riposte: Strikes back at every melee blow it can reach, twice a round — answer it from range, where it can\'t reach.",
+            ],
+            "face": {
+                "title": "The Coil",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                21,
+            ],
+            "id": [
+                73,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 284.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            74,
+        ]: {
+            "actionable": None,
+            "card_type": "foe",
+            "detail": [
+                "Outrider · evasive",
+                "Might 6 · Vitality 5 · Toughness 2",
+                "Cadence 1 · Finesse 2",
+                "Feint: Never quite where it seems; low-Finesse blows whiff. Only a faster hand out-paces the feint and lands.",
+            ],
+            "face": {
+                "title": "The Mirage",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                21,
+            ],
+            "id": [
+                74,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 420.0,
+                "y": 64.0,
+            },
+            "quantity": 4,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            75,
+        ]: {
+            "actionable": None,
+            "card_type": "Label",
+            "detail": [],
+            "face": {
+                "title": "Bestiary",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                21,
+            ],
+            "id": [
+                75,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            76,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "The force behind a strike; sets how much damage each blow deals.",
+            ],
+            "face": {
+                "title": "Might",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                76,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            77,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "4",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                77,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            78,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your life. With Toughness it sets your Health — how much you endure before you fall.",
+            ],
+            "face": {
+                "title": "Vitality",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                78,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            79,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "4",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                79,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            80,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "The bar your damage-pile must clear: within a sub-phase, damage piles up and each time it reaches your Toughness one Health card flips — leftover is wiped, not carried.",
+            ],
+            "face": {
+                "title": "Toughness",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                80,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            81,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "1",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                81,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            82,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your pace — how many actions you get each round.",
+            ],
+            "face": {
+                "title": "Cadence",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                82,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            83,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "2",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                83,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            84,
+        ]: {
+            "actionable": None,
+            "card_type": "stat",
+            "detail": [
+                "Your skill — the grade of each action; how cheaply you win a contest.",
+            ],
+            "face": {
+                "title": "Finesse",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                84,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            85,
+        ]: {
+            "actionable": None,
+            "card_type": "number",
+            "detail": [],
+            "face": {
+                "title": "2",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                85,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            86,
+        ]: {
+            "actionable": None,
+            "card_type": "ability",
+            "detail": [
+                "Ranged · single target — strikes from the back, no riposte.",
+            ],
+            "face": {
+                "title": "Stand-Off",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                86,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            87,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Vael Thornbrand",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                87,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            88,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Vael Thornbrand",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                22,
+            ],
+            "id": [
+                88,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            89,
+        ]: {
+            "actionable": None,
+            "card_type": "hero",
+            "detail": [],
+            "face": {
+                "title": "Vael Thornbrand",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                8,
+            ],
+            "id": [
+                89,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            90,
+        ]: {
+            "actionable": None,
+            "card_type": "log",
+            "detail": [
+                "The party cleared the encounter.",
+            ],
+            "face": {
+                "title": "Victory",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                8,
+            ],
+            "id": [
+                90,
+            ],
+            "kind": (),
+            "panel": [
+                "-- Round 1: Marshal --",
+                "-- Engage --",
+                "==== Round 1 ====",
+                "  Heroes -- Vanguard: -   Outrider: -   Rearguard: Vael Thornbrand",
+                "  Foes -- Vanguard: The Coil   Outrider: -   Rearguard: -",
+                "-- Intercept: Vanguard -> Outrider --",
+                "  (no eligible strikes — skipped)",
+                "-- Volley: Rearguard -> Outrider --",
+                "  (no eligible strikes — skipped)",
+                "-- Raid: Outrider -> Rearguard --",
+                "  (no eligible strikes — skipped)",
+                "-- Clash: Rearguard -> Vanguard, Vanguard -> Vanguard --",
+                "  strike hits The Coil: 4 might — turns 2 health cards face down. [health 2/4]",
+                "  strike hits The Coil: 4 might — turns 2 health cards face down. [health 0/4]",
+                "The Coil — all its health cards are face down; defeated.",
+                "-- Breach: Vanguard -> Rearguard, Outrider -> Vanguard, Outrider -> Outrider, Rearguard -> Rearguard --",
+                "  (no eligible strikes — skipped)",
+                "Every foe is down — victory!",
+            ],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+        [
+            91,
+        ]: {
+            "actionable": None,
+            "card_type": "event",
+            "detail": [],
+            "face": {
+                "title": "Day Passed",
+            },
+            "footprint": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "home": [
+                19,
+            ],
+            "id": [
+                91,
+            ],
+            "kind": (),
+            "panel": [],
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "quantity": 1,
+            "recipe": None,
+            "size": (),
+        },
+    },
+    "focus": [
+        0,
+    ],
+    "next_card": 92,
+    "next_pile": 23,
+    "piles": {
+        [
+            0,
+        ]: {
+            "children": [
+                [
+                    [
+                        1,
+                    ],
+                ],
+                [
+                    [
+                        2,
+                    ],
+                ],
+                [
+                    [
+                        3,
+                    ],
+                ],
+                [
+                    [
+                        4,
+                    ],
+                ],
+                [
+                    [
+                        5,
+                    ],
+                ],
+                [
+                    [
+                        6,
+                    ],
+                ],
+                [
+                    [
+                        17,
+                    ],
+                ],
+                [
+                    [
+                        19,
+                    ],
+                ],
+                [
+                    [
+                        20,
+                    ],
+                ],
+                [
+                    [
+                        21,
+                    ],
+                ],
+                [
+                    [
+                        22,
+                    ],
+                ],
+            ],
+            "collapsed": false,
+            "id": [
+                0,
+            ],
+            "label": "table",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": None,
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            1,
+        ]: {
+            "children": [
+                [
+                    [
+                        1,
+                    ],
+                ],
+                [
+                    [
+                        2,
+                    ],
+                ],
+                [
+                    [
+                        3,
+                    ],
+                ],
+                [
+                    [
+                        4,
+                    ],
+                ],
+                [
+                    [
+                        5,
+                    ],
+                ],
+                [
+                    [
+                        6,
+                    ],
+                ],
+                [
+                    [
+                        7,
+                    ],
+                ],
+                [
+                    [
+                        8,
+                    ],
+                ],
+                [
+                    [
+                        9,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                1,
+            ],
+            "label": "Heroes",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 40.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            2,
+        ]: {
+            "children": [
+                [
+                    [
+                        10,
+                    ],
+                ],
+                [
+                    [
+                        11,
+                    ],
+                ],
+                [
+                    [
+                        12,
+                    ],
+                ],
+                [
+                    [
+                        13,
+                    ],
+                ],
+                [
+                    [
+                        14,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                2,
+            ],
+            "label": "Kit",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 180.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            3,
+        ]: {
+            "children": [
+                [
+                    [
+                        15,
+                    ],
+                ],
+                [
+                    [
+                        16,
+                    ],
+                ],
+                [
+                    [
+                        17,
+                    ],
+                ],
+                [
+                    [
+                        18,
+                    ],
+                ],
+                [
+                    [
+                        19,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                3,
+            ],
+            "label": "Abilities",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 320.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            4,
+        ]: {
+            "children": [
+                [
+                    [
+                        20,
+                    ],
+                ],
+                [
+                    [
+                        21,
+                    ],
+                ],
+                [
+                    [
+                        22,
+                    ],
+                ],
+                [
+                    [
+                        23,
+                    ],
+                ],
+                [
+                    [
+                        24,
+                    ],
+                ],
+                [
+                    [
+                        25,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                4,
+            ],
+            "label": "Stats",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 460.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            5,
+        ]: {
+            "children": [
+                [
+                    [
+                        26,
+                    ],
+                ],
+                [
+                    [
+                        27,
+                    ],
+                ],
+                [
+                    [
+                        28,
+                    ],
+                ],
+                [
+                    [
+                        29,
+                    ],
+                ],
+                [
+                    [
+                        30,
+                    ],
+                ],
+                [
+                    [
+                        31,
+                    ],
+                ],
+                [
+                    [
+                        32,
+                    ],
+                ],
+                [
+                    [
+                        33,
+                    ],
+                ],
+                [
+                    [
+                        34,
+                    ],
+                ],
+                [
+                    [
+                        35,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                5,
+            ],
+            "label": "Numbers",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 460.0,
+                "y": 200.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            6,
+        ]: {
+            "children": [
+                [
+                    [
+                        7,
+                    ],
+                ],
+                [
+                    [
+                        8,
+                    ],
+                ],
+                [
+                    [
+                        9,
+                    ],
+                ],
+                [
+                    [
+                        10,
+                    ],
+                ],
+                [
+                    [
+                        11,
+                    ],
+                ],
+                [
+                    [
+                        13,
+                    ],
+                ],
+                [
+                    [
+                        14,
+                    ],
+                ],
+                [
+                    [
+                        15,
+                    ],
+                ],
+                [
+                    [
+                        16,
+                    ],
+                ],
+                [
+                    [
+                        55,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                6,
+            ],
+            "label": "Locations",
+            "layout": {
+                "arrangement": {
+                    "columns": 3,
+                },
+                "editable": false,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 600.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            7,
+        ]: {
+            "children": [
+                [
+                    [
+                        36,
+                    ],
+                ],
+                [
+                    [
+                        37,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                7,
+            ],
+            "label": "The Hollow Rampart",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            8,
+        ]: {
+            "children": [
+                [
+                    [
+                        89,
+                    ],
+                ],
+                [
+                    [
+                        38,
+                    ],
+                ],
+                [
+                    [
+                        90,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                8,
+            ],
+            "label": "Cinderwatch Keep",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            9,
+        ]: {
+            "children": [
+                [
+                    [
+                        40,
+                    ],
+                ],
+                [
+                    [
+                        41,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                9,
+            ],
+            "label": "Greywater Ford",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            10,
+        ]: {
+            "children": [
+                [
+                    [
+                        42,
+                    ],
+                ],
+                [
+                    [
+                        43,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                10,
+            ],
+            "label": "The Sundered Vault",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            11,
+        ]: {
+            "children": [
+                [
+                    [
+                        44,
+                    ],
+                ],
+                [
+                    [
+                        12,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                11,
+            ],
+            "label": "Ashfen Crossing",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            12,
+        ]: {
+            "children": [
+                [
+                    [
+                        45,
+                    ],
+                ],
+                [
+                    [
+                        46,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                12,
+            ],
+            "label": "Inn",
+            "layout": {
+                "arrangement": (),
+                "editable": false,
+            },
+            "parent": Some([
+                11,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [
+                [
+                    1,
+                ],
+                [
+                    2,
+                ],
+            ],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            13,
+        ]: {
+            "children": [
+                [
+                    [
+                        47,
+                    ],
+                ],
+                [
+                    [
+                        48,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                13,
+            ],
+            "label": "Thornmarch Gate",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            14,
+        ]: {
+            "children": [
+                [
+                    [
+                        49,
+                    ],
+                ],
+                [
+                    [
+                        50,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                14,
+            ],
+            "label": "Emberfall Hollow",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            15,
+        ]: {
+            "children": [
+                [
+                    [
+                        51,
+                    ],
+                ],
+                [
+                    [
+                        52,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                15,
+            ],
+            "label": "The Salt Barrows",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            16,
+        ]: {
+            "children": [
+                [
+                    [
+                        53,
+                    ],
+                ],
+                [
+                    [
+                        54,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                16,
+            ],
+            "label": "Ninefold Deep",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                6,
+            ]),
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            17,
+        ]: {
+            "children": [
+                [
+                    [
+                        56,
+                    ],
+                ],
+                [
+                    [
+                        57,
+                    ],
+                ],
+                [
+                    [
+                        58,
+                    ],
+                ],
+                [
+                    [
+                        18,
+                    ],
+                ],
+                [
+                    [
+                        65,
+                    ],
+                ],
+                [
+                    [
+                        66,
+                    ],
+                ],
+                [
+                    [
+                        67,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                17,
+            ],
+            "label": "Rules",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 740.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            18,
+        ]: {
+            "children": [
+                [
+                    [
+                        59,
+                    ],
+                ],
+                [
+                    [
+                        60,
+                    ],
+                ],
+                [
+                    [
+                        61,
+                    ],
+                ],
+                [
+                    [
+                        62,
+                    ],
+                ],
+                [
+                    [
+                        63,
+                    ],
+                ],
+                [
+                    [
+                        64,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                18,
+            ],
+            "label": "Engage",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                17,
+            ]),
+            "pos": {
+                "x": 12.0,
+                "y": 176.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            19,
+        ]: {
+            "children": [
+                [
+                    [
+                        68,
+                    ],
+                ],
+                [
+                    [
+                        0,
+                    ],
+                ],
+                [
+                    [
+                        91,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                19,
+            ],
+            "label": "Progress",
+            "layout": {
+                "arrangement": {
+                    "columns": 5,
+                },
+                "editable": false,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 1020.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            20,
+        ]: {
+            "children": [
+                [
+                    [
+                        69,
+                    ],
+                ],
+                [
+                    [
+                        70,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                20,
+            ],
+            "label": "Events",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 1160.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            21,
+        ]: {
+            "children": [
+                [
+                    [
+                        71,
+                    ],
+                ],
+                [
+                    [
+                        72,
+                    ],
+                ],
+                [
+                    [
+                        73,
+                    ],
+                ],
+                [
+                    [
+                        74,
+                    ],
+                ],
+                [
+                    [
+                        75,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                21,
+            ],
+            "label": "Bestiary",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 1440.0,
+                "y": 40.0,
+            },
+            "projection": [],
+            "reflects": None,
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+        [
+            22,
+        ]: {
+            "children": [
+                [
+                    [
+                        76,
+                    ],
+                ],
+                [
+                    [
+                        77,
+                    ],
+                ],
+                [
+                    [
+                        78,
+                    ],
+                ],
+                [
+                    [
+                        79,
+                    ],
+                ],
+                [
+                    [
+                        80,
+                    ],
+                ],
+                [
+                    [
+                        81,
+                    ],
+                ],
+                [
+                    [
+                        82,
+                    ],
+                ],
+                [
+                    [
+                        83,
+                    ],
+                ],
+                [
+                    [
+                        84,
+                    ],
+                ],
+                [
+                    [
+                        85,
+                    ],
+                ],
+                [
+                    [
+                        86,
+                    ],
+                ],
+                [
+                    [
+                        87,
+                    ],
+                ],
+                [
+                    [
+                        88,
+                    ],
+                ],
+            ],
+            "collapsed": true,
+            "id": [
+                22,
+            ],
+            "label": "Vael Thornbrand",
+            "layout": {
+                "arrangement": (),
+                "editable": true,
+            },
+            "parent": Some([
+                0,
+            ]),
+            "pos": {
+                "x": 40.0,
+                "y": 320.0,
+            },
+            "projection": [],
+            "reflects": Some([
+                88,
+            ]),
+            "size": {
+                "x": 0.0,
+                "y": 0.0,
+            },
+        },
+    },
+    "root": [
+        0,
+    ],
+    "selection": [],
+}
