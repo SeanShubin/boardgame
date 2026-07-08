@@ -21,9 +21,10 @@
 //! future 3D table could be built against the same [`Table`] — see
 //! `docs/games/deckbound/presentation/card-table-ui.md` §7.
 
+use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Pointer};
 use bevy::prelude::*;
-use bevy::ui::{BoxShadow, ComputedNode, Outline, UiGlobalTransform};
+use bevy::ui::{BoxShadow, ComputedNode, Outline, ScrollPosition, UiGlobalTransform};
 
 use std::collections::HashMap;
 
@@ -101,7 +102,15 @@ impl Plugin for CardTablePlugin {
             .add_systems(Startup, (setup_camera, install_ui_font))
             // Inject the System deck (a drill-in Free deck) at startup.
             .add_systems(Startup, inject_system_deck)
-            .add_systems(Update, (animate_nodes, fan_layout, update_card_cues))
+            .add_systems(
+                Update,
+                (
+                    animate_nodes,
+                    fan_layout,
+                    update_card_cues,
+                    scroll_hovered_panel,
+                ),
+            )
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -124,7 +133,8 @@ impl Plugin for CardTablePlugin {
             .add_observer(on_click)
             .add_observer(on_drop)
             .add_observer(on_node_drag)
-            .add_observer(on_node_drag_end);
+            .add_observer(on_node_drag_end)
+            .add_observer(on_panel_drag);
     }
 }
 
@@ -179,6 +189,15 @@ struct BackCard;
 /// Resolution is wired separately; the card is the trigger.
 #[derive(Component)]
 struct CombatCard;
+
+/// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
+/// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
+/// [`CardKind::Virtual`] readouts (a combat log), which can run long; ordinary panel cards clip.
+#[derive(Component)]
+struct ScrollPanel;
+
+/// Logical px scrolled per wheel line (when the OS reports scroll in lines, not pixels).
+const SCROLL_LINE_PX: f32 = 28.0;
 
 /// A **debug event log** written to `cardtable-debug.log` next to the launch dir (truncated each launch,
 /// with a launch stamp), recording drags, drops (cursor position + each row's hover state) and the
@@ -1070,6 +1089,53 @@ fn update_card_cues(
     }
 }
 
+/// The scrollable range of a panel node in **logical** px: how far its content exceeds the viewport.
+/// `ComputedNode` sizes are physical, so scale to logical before clamping a [`ScrollPosition`].
+fn scroll_max(node: &ComputedNode) -> f32 {
+    (node.content_size.y - node.size.y + node.scrollbar_size.y).max(0.0) * node.inverse_scale_factor
+}
+
+/// Scroll the [`ScrollPanel`] (an expanded combat log) under the cursor with the mouse wheel. Bevy's
+/// `Overflow::scroll_y` only *clips*, so we drive the panel's [`ScrollPosition`] ourselves, clamped to the
+/// content — the PC half of the parity (a drag scrolls it on touch, see [`on_panel_drag`]).
+fn scroll_hovered_panel(
+    wheel: Res<AccumulatedMouseScroll>,
+    windows: Query<&Window>,
+    mut panels: Query<(&mut ScrollPosition, &ComputedNode, &UiGlobalTransform), With<ScrollPanel>>,
+) {
+    if wheel.delta.y == 0.0 {
+        return;
+    }
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let dy = match wheel.unit {
+        MouseScrollUnit::Line => wheel.delta.y * SCROLL_LINE_PX,
+        MouseScrollUnit::Pixel => wheel.delta.y,
+    };
+    for (mut scroll, node, gt) in &mut panels {
+        let sf = node.inverse_scale_factor;
+        let center = gt.translation * sf;
+        let half = node.size() * sf * 0.5;
+        if (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y {
+            scroll.0.y = (scroll.0.y - dy).clamp(0.0, scroll_max(node));
+        }
+    }
+}
+
+/// Drag a [`ScrollPanel`] to scroll it — the touch/iPad half of the parity (the log isn't Movable, so a
+/// drag reaches here instead of moving it). Pulling up reveals lower lines. Clamped to the content.
+fn on_panel_drag(
+    mut on: On<Pointer<Drag>>,
+    mut panels: Query<(&mut ScrollPosition, &ComputedNode), With<ScrollPanel>>,
+) {
+    if let Ok((mut scroll, node)) = panels.get_mut(on.event().entity) {
+        scroll.0.y = (scroll.0.y - on.event().event.delta.y).clamp(0.0, scroll_max(node));
+        on.propagate(false);
+    }
+}
+
 /// Space each **fan row's** cards across its container, recomputed every frame so it tracks the real
 /// available width — a window resize reflows it, matching how the grids reflow via [`animate_nodes`]. The
 /// cards **spread as far as fits** (up to a full card + [`GAP`] step, no overlap) and pack tighter as the
@@ -1947,7 +2013,9 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                     let card = tree.card(cid).expect("card id from zone");
                                     // An expanded card lifts above its neighbours so it stays readable.
                                     tile.insert(card_elevation(card));
-                                    if draggable {
+                                    // A virtual readout (a combat log) is not rearranged — a drag on it
+                                    // scrolls its panel instead of moving it, so it isn't Movable.
+                                    if draggable && card.kind() != CardKind::Virtual {
                                         tile.insert(Movable(node));
                                     }
                                     tile.with_children(|tile| spawn_card(tile, card));
@@ -2478,7 +2546,7 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
 
 /// Largest form — a utility panel (e.g. a combat log): a name header above its panel lines, scrollable.
 fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
-    let entity = parent.spawn((
+    let mut entity = parent.spawn((
         CardRef(card.id),
         Node {
             width: Val::Px(LARGE_W),
@@ -2493,6 +2561,12 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
         BackgroundColor(PANEL),
         card_shadow(),
     ));
+    // A virtual readout (a combat log) can outrun the card, so its panel scrolls — the wheel and a drag
+    // drive its `ScrollPosition` (Bevy's `scroll_y` only clips). Ordinary panel cards stay draggable and
+    // simply clip, so only virtual cards opt in.
+    if card.kind() == CardKind::Virtual {
+        entity.insert((ScrollPanel, ScrollPosition::default()));
+    }
     finish_card(entity, card, |c| {
         c.spawn((
             Text::new(card.name().to_string()),
