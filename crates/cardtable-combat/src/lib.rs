@@ -11,7 +11,7 @@
 //! The combatants carry only a 5-stat line and a strike shape (reach / area / hoard / stance); the ability
 //! *name* is flavour, ignored by the resolver — mechanics are all numbers, matching the duel-locks proof.
 
-use cardtable_model::{CardId, PileId, Tableau, catalog};
+use cardtable_model::{CardId, CardKind, Face, PileId, Tableau, catalog};
 use deckbound::Actor;
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
 
@@ -22,11 +22,14 @@ pub enum CombatOutcome {
     Loss,
 }
 
-/// Resolve the encounter at `place`: gather every hero stationed there and the encounter's foes, decide the
-/// fight with `deckbound`'s seeded, deterministic [`winnable`](deckbound::winnable) resolver, and apply the
-/// consequences to `table`. **Win** clears the foes (and the encounter header) back to the Bestiary;
-/// **loss** retreats the heroes to the inn (Ashfen Crossing); either way a day passes. A place with no
-/// heroes or no foes is a no-op that reports [`CombatOutcome::Loss`].
+/// Resolve the encounter at `place`: gather every hero stationed there and the encounter's foes, **play out**
+/// the fight with `deckbound`'s seeded, deterministic resolver ([`resolve_logged`](deckbound::resolve_logged),
+/// which also returns the turn-by-turn log), and apply the consequences to `table`.
+///
+/// Combat is a resolved event that leaves a single **virtual combat-log card** at the location (replacing any
+/// prior one — one log per location). On a **win** the foes and the encounter header return to the Bestiary
+/// (their origin); on a **loss** they stay, so the fight can be retried. Either way the heroes remain where
+/// they are and a day passes. A place with no heroes or no foes is a no-op reporting [`CombatOutcome::Loss`].
 pub fn resolve_encounter(table: &mut Tableau, place: PileId, seed: u64) -> CombatOutcome {
     let heroes = hero_units(table, place);
     let foes = foe_units(table, place);
@@ -35,12 +38,13 @@ pub fn resolve_encounter(table: &mut Tableau, place: PileId, seed: u64) -> Comba
     }
     let hero_actors: Vec<Actor> = heroes.iter().map(build_duel_unit).collect();
     let foe_actors: Vec<Actor> = foes.iter().map(build_duel_unit).collect();
-    let outcome = if deckbound::winnable(hero_actors, foe_actors, seed) {
+    let (won, log) = deckbound::resolve_logged(hero_actors, foe_actors, seed);
+    let outcome = if won == Some(true) {
         CombatOutcome::Win
     } else {
         CombatOutcome::Loss
     };
-    apply_consequences(table, place, outcome);
+    apply_consequences(table, place, outcome, log);
     outcome
 }
 
@@ -112,26 +116,29 @@ fn foe_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
     units
 }
 
-/// Fold the result onto the table: **win** sends every `foe` and the `encounter` header back to the
-/// Bestiary (conservation-clean; the encounter is cleared); **loss** retreats every hero token to the inn.
-/// Either way [`advance_day`](Tableau::advance_day) once — the fight costs a day.
-fn apply_consequences(table: &mut Tableau, place: PileId, outcome: CombatOutcome) {
-    match outcome {
-        CombatOutcome::Win => {
-            if let Some(bestiary) = find_pile(table, "Bestiary") {
-                for c in cards_of_types(table, place, &["foe", "encounter"]) {
-                    let _ = table.move_card(c, bestiary, 0);
-                }
-            }
-        }
-        CombatOutcome::Loss => {
-            if let Some(inn) = ashfen(table) {
-                for c in cards_of_types(table, place, &["location-token"]) {
-                    let _ = table.move_card(c, inn, 0);
-                }
-            }
+/// Fold the result onto the table. A location holds at most **one** combat-log card, so any prior one is
+/// removed first. On a **win** every `foe` and the `encounter` header returns to the Bestiary (their
+/// origin — the encounter is cleared); on a **loss** they stay, so it can be retried. Then the new virtual
+/// log card is left at the place and [`advance_day`](Tableau::advance_day) runs once — the fight costs a day.
+/// The heroes are not moved either way.
+fn apply_consequences(
+    table: &mut Tableau,
+    place: PileId,
+    outcome: CombatOutcome,
+    log: Vec<String>,
+) {
+    // One log per location: clear the previous combat's card before recording this one.
+    for c in cards_of_types(table, place, &["log"]) {
+        let _ = table.remove_card(c);
+    }
+    if outcome == CombatOutcome::Win
+        && let Some(bestiary) = find_pile(table, "Bestiary")
+    {
+        for c in cards_of_types(table, place, &["foe", "encounter"]) {
+            let _ = table.move_card(c, bestiary, 0);
         }
     }
+    add_log_card(table, place, outcome, log);
     if let (Some(day), Some(progress), Some(events)) = (
         find_pile(table, "Day"),
         find_pile(table, "Progress"),
@@ -139,6 +146,29 @@ fn apply_consequences(table: &mut Tableau, place: PileId, outcome: CombatOutcome
     ) {
         let _ = table.advance_day(day, progress, events);
     }
+}
+
+/// Leave a **virtual** combat-log card at `place`: a non-physical [`CardKind::Virtual`] card typed `log`,
+/// titled by the outcome, with a one-line summary (Medium) over the full turn-by-turn narration (its Large
+/// panel). It renders and expands like any card but is excluded from the physical tally.
+fn add_log_card(table: &mut Tableau, place: PileId, outcome: CombatOutcome, log: Vec<String>) {
+    let (title, summary) = match outcome {
+        CombatOutcome::Win => ("Victory", "The party cleared the encounter."),
+        CombatOutcome::Loss => ("Defeat", "The party was beaten back."),
+    };
+    let Ok(id) = table.add_card(
+        place,
+        Face::Up {
+            title: title.into(),
+        },
+        None,
+    ) else {
+        return;
+    };
+    let _ = table.set_card_type(id, "log");
+    let _ = table.set_card_kind(id, CardKind::Virtual);
+    let _ = table.set_card_detail(id, vec![summary.to_string()]);
+    let _ = table.set_card_panel(id, log);
 }
 
 /// The content cards of `place` whose `card_type` is one of `types`.
@@ -173,16 +203,6 @@ fn find_pile(table: &Tableau, label: &str) -> Option<PileId> {
         .find(|&p| table.pile(p).is_some_and(|pile| pile.label == label))
 }
 
-/// The inn — Ashfen Crossing, the centre place inside the Locations grid.
-fn ashfen(table: &Tableau) -> Option<PileId> {
-    let locations = find_pile(table, "Locations")?;
-    subpiles(table, locations).into_iter().find(|&p| {
-        table
-            .pile(p)
-            .is_some_and(|pile| pile.label == "Ashfen Crossing")
-    })
-}
-
 /// The sub-pile ids of `pile` (empty if unknown).
 fn subpiles(table: &Tableau, pile: PileId) -> Vec<PileId> {
     table.pile(pile).map(|p| p.subpiles()).unwrap_or_default()
@@ -211,6 +231,14 @@ mod tests {
         find_pile(t, label).expect("a top-level deck")
     }
 
+    /// The inn — Ashfen Crossing, the centre place inside the Locations grid.
+    fn ashfen(t: &Tableau) -> PileId {
+        subpiles(t, deck(t, "Locations"))
+            .into_iter()
+            .find(|&p| t.pile(p).unwrap().label == "Ashfen Crossing")
+            .expect("the inn")
+    }
+
     /// Recruit Identity hero #0 with `recipe`, station the party, then move that hero's location-token to
     /// the place labelled `dest`. Returns the destination place id.
     fn station_at(t: &mut Tableau, recipe: Recipe, dest: &str) -> PileId {
@@ -224,7 +252,7 @@ mod tests {
         let name = t.card(hero).unwrap().name().to_string();
         t.equip_character(hero, &recipe, stats, numbers, abilities)
             .unwrap();
-        let ashfen = ashfen(t).unwrap();
+        let ashfen = ashfen(t);
         t.sync_party(deck(t, "Day"), ashfen, deck(t, "Roster"))
             .unwrap();
         // The hero's location-token now rests at the inn; march it to `dest`.
@@ -251,10 +279,17 @@ mod tests {
         cards_of_types(t, place, &["foe"]).len()
     }
 
-    /// The right kit wins: a Marksman clears Cinderwatch Keep's Coil — the foes leave the place and a day
-    /// passes.
+    /// The one combat-log card at `place` (its title), if any.
+    fn log_title(t: &Tableau, place: PileId) -> Option<String> {
+        cards_of_types(t, place, &["log"])
+            .first()
+            .map(|&c| t.card(c).unwrap().name().to_string())
+    }
+
+    /// The right kit wins: a Marksman clears Cinderwatch Keep's Coil — the foes return to the Bestiary, a
+    /// non-physical "Victory" log card is left behind (with a real narration panel), and a day passes.
     #[test]
-    fn answering_kit_wins_and_clears_the_foes() {
+    fn answering_kit_wins_clears_foes_and_leaves_a_log() {
         let mut t = sample_table();
         let day_before = t.current_day(deck(&t, "Progress"));
         let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
@@ -262,11 +297,11 @@ mod tests {
 
         let outcome = resolve_encounter(&mut t, place, 1);
         assert_eq!(outcome, CombatOutcome::Win);
-        assert_eq!(
-            foe_count(&t, place),
-            0,
-            "defeated foes cleared from the place"
-        );
+        assert_eq!(foe_count(&t, place), 0, "defeated foes returned to origin");
+        assert_eq!(log_title(&t, place).as_deref(), Some("Victory"));
+        // The place now holds only its "Location" label + the hero token; the log card is virtual, so it
+        // does not raise the physical tally (the encounter header + foe are gone).
+        assert_eq!(t.physical_card_count(place), 2);
         assert_eq!(
             t.current_day(deck(&t, "Progress")),
             day_before + 1,
@@ -274,20 +309,38 @@ mod tests {
         );
     }
 
-    /// The wrong kit loses: an Executioner cannot crack Cinderwatch Keep's Coil — it retreats to the inn,
-    /// the foes remain, and a day passes.
+    /// The wrong kit loses: an Executioner cannot crack the Coil. The foes REMAIN (retriable), the hero
+    /// stays at the location (no retreat), a "Defeat" log card is left, and a day passes.
     #[test]
-    fn wrong_kit_loses_and_retreats_to_the_inn() {
+    fn wrong_kit_loses_foes_remain_hero_stays() {
         let mut t = sample_table();
         let place = station_at(&mut t, executioner(), "Cinderwatch Keep");
-        let inn = ashfen(&t).unwrap();
 
         let outcome = resolve_encounter(&mut t, place, 1);
         assert_eq!(outcome, CombatOutcome::Loss);
         assert!(foe_count(&t, place) > 0, "the foes still hold the place");
-        let retreated = cards_of_types(&t, inn, &["location-token"])
+        assert_eq!(log_title(&t, place).as_deref(), Some("Defeat"));
+        let stayed = cards_of_types(&t, place, &["location-token"])
             .iter()
             .any(|&c| t.card(c).unwrap().front_title() == "Vael Thornbrand");
-        assert!(retreated, "the beaten hero is back at the inn");
+        assert!(stayed, "the hero stays put on a loss");
+        let at_inn = cards_of_types(&t, ashfen(&t), &["location-token"])
+            .iter()
+            .any(|&c| t.card(c).unwrap().front_title() == "Vael Thornbrand");
+        assert!(!at_inn, "the hero did not retreat to the inn");
+    }
+
+    /// One combat-log card per location: a second fight replaces the first's log rather than stacking.
+    #[test]
+    fn a_new_fight_replaces_the_previous_log() {
+        let mut t = sample_table();
+        let place = station_at(&mut t, executioner(), "Cinderwatch Keep");
+        resolve_encounter(&mut t, place, 1); // loss — foes remain, "Defeat" logged
+        resolve_encounter(&mut t, place, 1); // fight again
+        assert_eq!(
+            cards_of_types(&t, place, &["log"]).len(),
+            1,
+            "only the latest combat's log remains"
+        );
     }
 }
