@@ -72,6 +72,8 @@ FOES
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   ==== Round 1 ====
+    Heroes -- Vanguard: Anvil   Outrider: Wisp, Vow   Rearguard: Sear, Hex
+    Foes -- Vanguard: Brute   Outrider: Raider, Husk   Rearguard: Slinger, Seer
   Wisp avoids Brute's strike (-1t).
   Wisp avoids Brute's strike (-1t).
     (no eligible strikes — skipped)
@@ -104,6 +106,8 @@ ENDROUND heroes: Anvil 15/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   ==== Round 2 ====
+    Heroes -- Vanguard: Anvil   Outrider: Wisp, Vow   Rearguard: -
+    Foes -- Vanguard: Brute   Outrider: Raider, Husk   Rearguard: Slinger, Seer
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 121/122]
@@ -134,6 +138,8 @@ ENDROUND heroes: Anvil 10/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   ==== Round 3 ====
+    Heroes -- Vanguard: Anvil   Outrider: Wisp, Vow   Rearguard: -
+    Foes -- Vanguard: Brute   Outrider: Raider, Husk   Rearguard: Slinger, Seer
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 120/122]
@@ -164,6 +170,8 @@ ENDROUND heroes: Anvil 5/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |
 RANKS    heroes — vanguard: —   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   ==== Round 4 ====
+    Heroes -- Vanguard: Anvil   Outrider: Wisp, Vow   Rearguard: -
+    Foes -- Vanguard: Brute   Outrider: Raider, Husk   Rearguard: Slinger, Seer
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 119/122]
@@ -193,6 +201,8 @@ ENDROUND heroes: Anvil 0/18 down  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/
 RANKS    heroes — vanguard: —   outrider: —   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
   ==== Round 5 ====
+    Heroes -- Vanguard: -   Outrider: Wisp, Vow   Rearguard: -
+    Foes -- Vanguard: Brute   Outrider: Raider, Husk   Rearguard: Slinger, Seer
   Wisp avoids Brute's strike (-1t).
   Wisp avoids Brute's strike (-1t).
   Wisp avoids Slinger's strike (-1t).

@@ -757,9 +757,46 @@ pub fn step(state: &mut State) -> bool {
 /// Drives the steppable [`step`] machine to completion — the phase-boundary end state is identical to
 /// resolving the schedule in one synchronous pass.
 pub fn resolve_round(state: &mut State) {
-    state.log.push(format!("==== Round {} ====", state.round));
+    log_round_intro(state);
     state.resolution = Some(Resolution::start());
     while step(state) {}
+}
+
+/// One side's **starting ranks** for the round as a log line: who fronts (Vanguard), flanks (Outrider),
+/// and holds the back (Rearguard) — the positions the whole sub-phase schedule targets by. ASCII only, so
+/// it renders in the bundled UI font.
+fn ranks_line(pool: &[Actor], intent: &[Intention], label: &str) -> String {
+    let pick = |role: Intention| {
+        let names: Vec<&str> = pool
+            .iter()
+            .zip(intent.iter())
+            .filter(|&(a, r)| *r == role && !a.fallen)
+            .map(|(a, _)| a.name.as_str())
+            .collect();
+        if names.is_empty() {
+            "-".to_string()
+        } else {
+            names.join(", ")
+        }
+    };
+    format!(
+        "  {label} -- Vanguard: {}   Outrider: {}   Rearguard: {}",
+        pick(Intention::Vanguard),
+        pick(Intention::Outrider),
+        pick(Intention::Rearguard),
+    )
+}
+
+/// The round intro pushed to `state.log`: the round header and each side's starting ranks. In one place
+/// so [`resolve_round`] and the step-machine test emit it identically.
+pub fn log_round_intro(state: &mut State) {
+    state.log.push(format!("==== Round {} ====", state.round));
+    state
+        .log
+        .push(ranks_line(&state.heroes, &state.plan.hero_intent, "Heroes"));
+    state
+        .log
+        .push(ranks_line(&state.creatures, &state.plan.foe_intent, "Foes"));
 }
 
 /// §4.6 #5 — resolve the **Reckoning**: each deferred (`resolve: Reckoning`) spell lands **iff its
@@ -1169,10 +1206,9 @@ mod tests {
         );
 
         // Stepped: explicit micro-steps, each leaving a serializable resting micro-state. Mirror the one
-        // thing `resolve_round` does around the step loop — the round header — so the logs still match.
-        stepped
-            .log
-            .push(format!("==== Round {} ====", stepped.round));
+        // thing `resolve_round` does around the step loop — the round intro (header + ranks) — so the logs
+        // still match.
+        log_round_intro(&mut stepped);
         stepped.resolution = Some(Resolution::start());
         let mut guard = 0;
         while step(&mut stepped) {
