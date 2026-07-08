@@ -1118,6 +1118,53 @@ impl Tableau {
         Ok(())
     }
 
+    /// **Instantiate** an encounter's foes as real cards in `arena`, split off the `bestiary` `×N` stacks —
+    /// conservation-clean (spec `physical-cards.md` PC.2): each instance is *drawn* from its Bestiary stack
+    /// (decrement + `×1` twin, via [`draw_named_from`](Self::draw_named_from)), nothing minted. Foes are
+    /// **virtual at rest** — a location holds only an `encounter` header — so the roster comes from the
+    /// catalog: `place_label` names the encounter and [`encounter_foes`](crate::catalog::encounter_foes)
+    /// gives its `(creature, quantity)` list, so a `×2` keystone fields two cards. Returns the dealt foe
+    /// card ids (in roster order). A place with no encounter (the inn) yields an empty vec. This is the
+    /// combat-time counterpart to the at-rest Bestiary supply that manual combat draws its units from.
+    pub fn instantiate_encounter_foes(
+        &mut self,
+        bestiary: PileId,
+        arena: PileId,
+        place_label: &str,
+    ) -> Result<Vec<CardId>, TableauError> {
+        let Some(encounter) = crate::catalog::encounter_for(place_label) else {
+            return Ok(Vec::new());
+        };
+        let mut dealt = Vec::new();
+        for (creature, qty) in crate::catalog::encounter_foes(encounter) {
+            for _ in 0..qty {
+                dealt.push(self.draw_named_from(bestiary, arena, creature.name)?);
+            }
+        }
+        Ok(dealt)
+    }
+
+    /// **Return** instantiated foe `cards` to the `bestiary` — the inverse of
+    /// [`instantiate_encounter_foes`](Self::instantiate_encounter_foes), conservation-clean: normalize each
+    /// card (face-up, [`Regular`](CardKind::Regular)) then [`return_one`](Self::return_one) it, merging back
+    /// into its `×N` Bestiary stack. Mirrors the teardown [`unequip_character`](Self::unequip_character)
+    /// does for a hero's copies. A card that no longer exists (already discarded) is skipped.
+    pub fn return_foes_to_bestiary(
+        &mut self,
+        cards: &[CardId],
+        bestiary: PileId,
+    ) -> Result<(), TableauError> {
+        for &c in cards {
+            if self.card(c).is_none() {
+                continue;
+            }
+            self.flip_up(c)?;
+            self.set_card_kind(c, CardKind::Regular)?;
+            self.return_one(c, bestiary)?;
+        }
+        Ok(())
+    }
+
     /// Recover a recruited character's [`Recipe`] from its `deck` — the inverse *read* of
     /// [`equip_character`]. The recipe is not stored on the deck, so this parses it back from the cards:
     /// pair each `"stat"` card with the `"number"` card that follows it (its value), placed by the stat's

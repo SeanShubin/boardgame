@@ -805,6 +805,70 @@ mod tests {
         assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 * 4 + 1);
     }
 
+    /// Combat instantiates the virtual foes as **real cards** split off the Bestiary stacks, and returns
+    /// them afterward — conservation-clean both ways (PC.2). A corner fields all four with the keystone
+    /// doubled (5 cards); a solo its one keystone; the inn nothing.
+    #[test]
+    fn manual_combat_instantiates_foes_from_the_bestiary_and_returns_them() {
+        let mut t = sample_table();
+        let bestiary = deck(&t, "Bestiary");
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+        let total = t.card_count();
+        let bestiary_before = t.physical_card_count(bestiary);
+
+        // A corner encounter fields all four creatures with the keystone (The Anvil) doubled → 5 real cards.
+        let foes = t
+            .instantiate_encounter_foes(bestiary, arena, "Emberfall Hollow")
+            .unwrap();
+        assert_eq!(foes.len(), 5, "corner = 4 creatures, keystone doubled");
+        assert_eq!(
+            t.content_cards(arena).len(),
+            5,
+            "real foe cards now in the arena"
+        );
+        assert_eq!(
+            t.physical_card_count(bestiary),
+            bestiary_before - 5,
+            "the Bestiary supply dropped by exactly the five drawn"
+        );
+        assert_eq!(
+            t.card_count(),
+            total,
+            "instantiation split, minted nothing (PC.2)"
+        );
+        let anvils = t
+            .content_cards(arena)
+            .iter()
+            .filter(|&&c| t.card(c).unwrap().name() == "The Anvil")
+            .count();
+        assert_eq!(anvils, 2, "the doubled keystone fielded two");
+
+        // Return them: the Bestiary is made whole (merged back to `×4`), count conserved.
+        t.return_foes_to_bestiary(&foes, bestiary).unwrap();
+        assert!(t.content_cards(arena).is_empty(), "all foes returned");
+        assert_eq!(
+            t.physical_card_count(bestiary),
+            bestiary_before,
+            "Bestiary made whole"
+        );
+        assert_eq!(t.card_count(), total, "return merged, conserved (PC.2)");
+
+        // A solo fields just its keystone; the inn (no encounter) yields nothing.
+        assert_eq!(
+            t.instantiate_encounter_foes(bestiary, arena, "The Sundered Vault")
+                .unwrap()
+                .len(),
+            1,
+            "solo = one keystone"
+        );
+        assert!(
+            t.instantiate_encounter_foes(bestiary, arena, "Ashfen Crossing")
+                .unwrap()
+                .is_empty(),
+            "the inn has no encounter"
+        );
+    }
+
     /// Find a top-level deck by label (test helper).
     fn deck(t: &Tableau, label: &str) -> PileId {
         *t.pile(t.root_id())
