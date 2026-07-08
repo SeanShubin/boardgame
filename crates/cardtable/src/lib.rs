@@ -1255,8 +1255,10 @@ fn on_node_drag_end(
         // day-clock move by flipping the day-token). The day is *not* auto-advanced — ending the day is an
         // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
         // cursor-follows and occludes picking, so the destination is found by geometry — by **box overlap**,
-        // not the cursor point: if the dragged card's box overlaps **exactly one** place's drop zone, that's
-        // the drop (snappier — any overlap counts). Overlapping two (still half over the origin) or none is
+        // not the cursor point: if the dragged card's box overlaps exactly one **valid** drop target, that's
+        // the drop (snappier — any overlap counts). "Valid" uses the same [`can_drop_on_pile`] predicate the
+        // glow does, so the **source** place (which the token still overlaps at release) and any illegal
+        // place are never counted — only real destinations. Overlapping two valid places, or none, is
         // ambiguous, so it snaps back.
         let on_map = top_deck(&table.0, "Locations") == Some(table.0.focus_id());
         if on_map
@@ -1270,17 +1272,12 @@ fn on_node_drag_end(
                 .ok()
                 .map(|(_, cn, gt)| node_box(cn, gt));
             let dest = drag_box.and_then(|db| {
-                exactly_one(
-                    drop_zones
-                        .iter()
-                        .filter(|&(_, cn, gt)| boxes_overlap(db, node_box(cn, gt))),
-                )
+                exactly_one(drop_zones.iter().filter(|&(z, cn, gt)| {
+                    can_drop_on_pile(&table.0, card, z.0) && boxes_overlap(db, node_box(cn, gt))
+                }))
                 .map(|(z, _, _)| z.0)
             });
-            let from = table.0.card(card).map(|c| c.home());
-            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day"))
-                && Some(dest) != from
-            {
+            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day")) {
                 // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
                 let _ = table.0.move_character(card, dest, day);
             }
