@@ -35,7 +35,9 @@ use cardtable_model::{
 // The one place the renderer reaches past `cardtable-model`: the interactive combat **arena** reads the
 // bridge's plain-data view/answer API (never a `deckbound` type). Combat is the product's main thrust, so
 // the renderer grows to host it — the auto path still stays behind the game-agnostic request resources.
-use cardtable_combat::{ArenaAnswer, DecisionView, ManualCombat, UnitView, finish_manual_combat};
+use cardtable_combat::{
+    ArenaAnswer, DecisionView, ManualCombat, PhaseView, UnitView, finish_manual_combat,
+};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -1658,6 +1660,9 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
+            // The **phase pile**: a card showing the current round + sub-phase (and who may strike whom this
+            // phase), drawn as the top of a small stack — the tabletop phase deck the engine rotates through.
+            spawn_phase_pile(root, &state.combat.phase());
             // Prompt banner: the current hero decision + its choice cards.
             root.spawn(Node {
                 flex_direction: FlexDirection::Row,
@@ -1671,14 +1676,31 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
                     arena_prompt(bar, &format!("{attacker}: tap a foe to strike, or Hold"));
                     spawn_nav_card(bar, ArenaHoldCard, "Hold");
                 }
-                Some(DecisionView::Evade { attacker, cost }) => {
-                    arena_prompt(bar, &format!("{attacker}: a blow lands —"));
+                Some(DecisionView::Evade {
+                    soaker,
+                    attacker,
+                    cost,
+                    tempo,
+                }) => {
+                    arena_prompt(
+                        bar,
+                        &format!("{attacker} strikes {soaker} — evade? ({soaker} tempo {tempo})"),
+                    );
                     spawn_nav_card(bar, ArenaEvadeCard(true), &format!("Evade (-{cost}t)"));
                     spawn_nav_card(bar, ArenaEvadeCard(false), "Endure");
                 }
-                Some(DecisionView::StrikeBack { attacker }) => {
-                    arena_prompt(bar, &format!("{attacker}: struck in melee —"));
-                    spawn_nav_card(bar, ArenaStrikeBackCard(true), "Strike Back");
+                Some(DecisionView::StrikeBack {
+                    soaker,
+                    attacker,
+                    tempo,
+                }) => {
+                    arena_prompt(
+                        bar,
+                        &format!(
+                            "{attacker} struck {soaker} — strike back? ({soaker} tempo {tempo})"
+                        ),
+                    );
+                    spawn_nav_card(bar, ArenaStrikeBackCard(true), "Strike Back (-1t)");
                     spawn_nav_card(bar, ArenaStrikeBackCard(false), "Hold");
                 }
                 None => arena_prompt(bar, "Resolving…"),
@@ -1704,6 +1726,133 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
                     }
                 });
             }
+            // The running combat log (recent lines) — the play-by-play: sub-phase headers, each strike and
+            // who it hit, evades, and falls. Lets the fight be read back and followed.
+            arena_log(root, state.combat.log());
+        });
+}
+
+/// Number of recent log lines shown in the arena's log panel.
+const ARENA_LOG_LINES: usize = 12;
+
+/// A panel of the most recent combat-log lines at the foot of the arena — the play-by-play (who struck
+/// whom, evades, falls, sub-phase headers), so the fight can be followed and read back.
+fn arena_log(parent: &mut ChildSpawnerCommands, log: &[String]) {
+    let start = log.len().saturating_sub(ARENA_LOG_LINES);
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(560.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
+                margin: UiRect::top(Val::Px(6.0)),
+                row_gap: Val::Px(1.0),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+        ))
+        .with_children(|panel| {
+            for line in &log[start..] {
+                panel.spawn((
+                    Text::new(line.clone()),
+                    TextFont {
+                        font_size: FONT_BODY,
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                    TextLayout::no_wrap(),
+                ));
+            }
+        });
+}
+
+/// The **phase pile**: the current phase (round · name · the rank→rank pairs it resolves) drawn as the face
+/// of a small offset stack — the tabletop phase deck, top card up. Accented like an encounter (a fight
+/// marker). The stack layers behind hint the rest of the phase deck the engine rotates through.
+fn spawn_phase_pile(parent: &mut ChildSpawnerCommands, phase: &PhaseView) {
+    const PHASE_W: f32 = 208.0;
+    const PHASE_H: f32 = 92.0;
+    const STEP: f32 = 4.0;
+    let accent = type_accent("encounter");
+    let layers = phase.total.saturating_sub(1).min(3);
+    let extra = layers as f32 * STEP;
+    parent
+        .spawn(Node {
+            width: Val::Px(PHASE_W + extra),
+            height: Val::Px(PHASE_H + extra),
+            position_type: PositionType::Relative,
+            ..default()
+        })
+        .with_children(|slot| {
+            // The rest of the phase deck, stepped down-right behind the face.
+            for i in 0..layers {
+                let off = (layers - i) as f32 * STEP;
+                slot.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(off),
+                        top: Val::Px(off),
+                        width: Val::Px(PHASE_W),
+                        height: Val::Px(PHASE_H),
+                        border: UiRect::all(Val::Px(2.0)),
+                        border_radius: BorderRadius::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    BackgroundColor(CARD_BACK),
+                    BorderColor::all(CARD_EDGE),
+                ));
+            }
+            // The face: the current phase.
+            slot.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Px(PHASE_W),
+                    height: Val::Px(PHASE_H),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    border: UiRect::all(Val::Px(2.0)),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    row_gap: Val::Px(2.0),
+                    border_radius: BorderRadius::all(Val::Px(10.0)),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(CARD_FACE),
+                BorderColor::all(accent),
+                card_shadow(),
+            ))
+            .with_children(|c| {
+                c.spawn((
+                    Text::new(format!("Round {}", phase.round)),
+                    TextFont {
+                        font_size: FONT_BODY,
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+                c.spawn((
+                    Text::new(phase.name.clone()),
+                    TextFont {
+                        font_size: FONT_TITLE,
+                        ..default()
+                    },
+                    TextColor(CARD_INK),
+                    TextLayout::no_wrap(),
+                ));
+                c.spawn((
+                    Text::new(phase.pairs.clone()),
+                    TextFont {
+                        font_size: FONT_BODY,
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+            });
         });
 }
 
@@ -1716,7 +1865,14 @@ fn spawn_arena_unit(parent: &mut ChildSpawnerCommands, u: &UnitView, target: Opt
     } else {
         (CARD_FACE, CARD_INK)
     };
-    let bar = format!("{} · {}/{}", u.rank, u.health_remaining, u.health_max);
+    // rank · Health remaining/max · Tempo (face-up Tempo cards) — everything a strike/evade decision needs.
+    let bar = format!(
+        "{} · HP {}/{} · T{}",
+        u.rank,
+        u.health_remaining,
+        u.health_max,
+        u.tempo.max(0)
+    );
     let mut tile = parent.spawn((
         Node {
             width: Val::Px(SMALL_W),

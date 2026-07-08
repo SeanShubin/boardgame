@@ -330,6 +330,8 @@ pub struct UnitView {
     pub rank: char,
     pub health_remaining: u32,
     pub health_max: u32,
+    /// Current Tempo (face-up Tempo cards) — the budget a strike / evade / strike-back spends.
+    pub tempo: i32,
     pub fallen: bool,
     /// 0 = hero, 1 = foe.
     pub side: u8,
@@ -344,6 +346,20 @@ pub struct ArenaView {
     pub foes: Vec<UnitView>,
 }
 
+/// The current phase as the top card of the **phase pile** (Intercept / Volley / Raid / Clash / Breach, or
+/// `Marshal` between rounds). `index`/`total` say how far through the pile the top card is (for the stack
+/// look); `pairs` is the rank→rank pairs this phase resolves — who may strike whom.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PhaseView {
+    pub round: u32,
+    pub index: usize,
+    pub total: usize,
+    pub name: String,
+    pub pairs: String,
+    /// `true` while resolving the schedule; `false` between rounds (Marshal).
+    pub resolving: bool,
+}
+
 /// One legal target offered for a hero's strike (a foe at `ti`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TargetChoice {
@@ -351,18 +367,28 @@ pub struct TargetChoice {
     pub name: String,
 }
 
-/// The current **hero** decision the arena must present, as plain data.
+/// The current **hero** decision the arena must present, as plain data. `attacker` in `Evade`/`StrikeBack`
+/// is the **foe** that struck; `soaker` is the party unit deciding, and `tempo` is what it has to spend.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecisionView {
-    /// Which foe should `attacker` strike this sub-phase (or hold)?
+    /// Which foe should the party unit `attacker` strike this sub-phase (or hold)?
     Target {
         attacker: String,
         candidates: Vec<TargetChoice>,
     },
-    /// Does `attacker` (a lone soaker) evade the incoming blow, for `cost` Tempo?
-    Evade { attacker: String, cost: i32 },
-    /// Does `attacker` strike back at the melee foe that just hit it?
-    StrikeBack { attacker: String },
+    /// Does `soaker` evade `attacker`'s incoming blow, for `cost` Tempo (it has `tempo`)?
+    Evade {
+        soaker: String,
+        attacker: String,
+        cost: i32,
+        tempo: i32,
+    },
+    /// Does `soaker` strike back (1 Tempo, it has `tempo`) at the melee foe `attacker` that just hit it?
+    StrikeBack {
+        soaker: String,
+        attacker: String,
+        tempo: i32,
+    },
 }
 
 /// The player's answer to the current hero decision (see [`ManualCombat::answer_current`]).
@@ -452,11 +478,60 @@ impl ManualCombat {
                 rank: intents.get(idx).map(rank_char).unwrap_or('?'),
                 health_remaining: a.defense.health.remaining(),
                 health_max: a.defense.health.max(),
+                tempo: a.tempo,
                 fallen: a.fallen,
                 side,
                 idx,
             })
             .collect()
+    }
+
+    /// The current phase as the top of the tabletop **phase pile** — its round, name, and the rank→rank
+    /// pairs it resolves (who may strike whom), plus how many phases sit under it (the deck the top card
+    /// rotates through). Between rounds it reads as `Marshal`. Answers "what phase am I in".
+    pub fn phase(&self) -> PhaseView {
+        let round = self.state.round;
+        let total = deckbound::combat::SUB_PHASE_NAMES.len();
+        match self.state.resolution {
+            Some(r) => {
+                let name = deckbound::combat::SUB_PHASE_NAMES
+                    .get(r.step)
+                    .copied()
+                    .unwrap_or("—")
+                    .to_string();
+                let pairs = deckbound::combat::SCHEDULE
+                    .get(r.step)
+                    .map(|ps| {
+                        ps.iter()
+                            .map(|(a, t)| format!("{}->{}", rank_char(a), rank_char(t)))
+                            .collect::<Vec<_>>()
+                            .join(" · ")
+                    })
+                    .unwrap_or_default();
+                PhaseView {
+                    round,
+                    index: r.step,
+                    total,
+                    name,
+                    pairs,
+                    resolving: true,
+                }
+            }
+            None => PhaseView {
+                round,
+                index: 0,
+                total,
+                name: "Marshal".to_string(),
+                pairs: "declare & deploy".to_string(),
+                resolving: false,
+            },
+        }
+    }
+
+    /// The running battle log (round intros, sub-phase headers, each strike/evade/fall) — so the play can be
+    /// read back and followed. Grows as the fight advances.
+    pub fn log(&self) -> &[String] {
+        &self.state.log
     }
 
     /// The **first unanswered hero decision** the arena must present, or `None` if the party isn't currently
@@ -481,14 +556,40 @@ impl ManualCombat {
                         })
                         .collect(),
                 },
-                PendingDecision::Evade { attacker, cost, .. } => DecisionView::Evade {
+                PendingDecision::Evade {
+                    soaker,
+                    attacker,
+                    cost,
+                    ..
+                } => DecisionView::Evade {
+                    soaker: self.hero_name(*soaker),
                     attacker: attacker.clone(),
                     cost: *cost,
+                    tempo: self.hero_tempo(*soaker),
                 },
-                PendingDecision::StrikeBack { attacker, .. } => DecisionView::StrikeBack {
+                PendingDecision::StrikeBack {
+                    soaker, attacker, ..
+                } => DecisionView::StrikeBack {
+                    soaker: self.hero_name(*soaker),
                     attacker: attacker.clone(),
+                    tempo: self.hero_tempo(*soaker),
                 },
             })
+    }
+
+    /// The name of the party unit at `idx` (the deciding soaker for an Evade / Strike-back), or `"?"`.
+    fn hero_name(&self, idx: usize) -> String {
+        self.state
+            .heroes
+            .get(idx)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "?".to_string())
+    }
+
+    /// The current Tempo (face-up Tempo cards) of the party unit at `idx` — what a strike-back / evade is
+    /// paid from.
+    fn hero_tempo(&self, idx: usize) -> i32 {
+        self.state.heroes.get(idx).map(|a| a.tempo).unwrap_or(0)
     }
 
     /// Record the player's `answer` to the current hero decision (the one [`current_decision`] reports). A
