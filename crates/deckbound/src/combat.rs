@@ -903,14 +903,42 @@ fn strikeback_request(state: &State, def_side: u8, soaker: usize, atk_i: usize) 
     }
 }
 
+/// The deciding side of a pending decision (0 = heroes, 1 = creatures).
+fn pending_side(pd: &PendingDecision) -> u8 {
+    match *pd {
+        PendingDecision::Target { side, .. }
+        | PendingDecision::Evade { side, .. }
+        | PendingDecision::StrikeBack { side, .. } => side,
+    }
+}
+
+/// Whether any decision in [`State::pending`] still awaits an answer.
+pub fn awaiting_decision(state: &State) -> bool {
+    state.pending.iter().any(is_unanswered)
+}
+
 /// Fill every unanswered entry in [`State::pending`] with the greedy ([`crate::policy`]) answer — the
 /// auto-answerer that makes [`step`] reproduce [`resolve_round`]. Reads the same policy functions with the
 /// same inputs the synchronous resolver used, so the greedy path is bit-identical by construction. Public
 /// so a manual-combat driver can offer an "auto" fallback (and so parity tests can drive greedily).
 pub fn answer_pending_greedily(state: &mut State) {
+    answer_pending_greedily_filtered(state, None);
+}
+
+/// As [`answer_pending_greedily`], but only for decisions on `side` — so a manual arena can auto-answer the
+/// **foe** side (side 1) while leaving the player's (side 0) decisions to a human.
+pub fn answer_pending_greedily_side(state: &mut State, side: u8) {
+    answer_pending_greedily_filtered(state, Some(side));
+}
+
+/// The shared greedy answerer: fill unanswered pending decisions (all of them, or only those on `only`).
+fn answer_pending_greedily_filtered(state: &mut State, only: Option<u8>) {
     let step_idx = state.resolution.map(|r| r.step).unwrap_or(0);
     let mut pending = std::mem::take(&mut state.pending);
     for pd in &mut pending {
+        if only.is_some_and(|o| o != pending_side(pd)) {
+            continue;
+        }
         match pd {
             PendingDecision::Target {
                 side,
@@ -1905,6 +1933,41 @@ mod tests {
                     answer_pending_greedily(s);
                 }
             });
+
+            let manual_won = Some(matches!(
+                state.outcome,
+                Some(contract::Outcome::Win(contract::PlayerId(0)))
+            ));
+            assert_eq!(manual_won, auto_won, "seed {seed}: outcome matches auto");
+            assert_eq!(state.log, auto_log, "seed {seed}: log matches auto");
+        }
+    }
+
+    /// The **frame-steppable** driver (`advance_manual_battle`), pumped tick-by-tick and answered greedily,
+    /// reproduces the auto playout too — so the UI's per-frame driver equals the headless one-shot equals
+    /// auto, across a seed corpus (multiple rounds).
+    #[test]
+    fn advance_manual_battle_greedy_reproduces_auto() {
+        use crate::game::ManualStatus;
+        use crate::ruleset::Ruleset;
+        for seed in 0..30u64 {
+            let heroes = vec![fighter("Hero", 3, 4, 1), fighter("Squire", 2, 3, 1)];
+            let foes = vec![fighter("Brute", 3, 4, 1), fighter("Imp", 2, 3, 1)];
+            let (auto_won, auto_log) =
+                crate::solver::resolve_logged(heroes.clone(), foes.clone(), seed);
+
+            let mut state =
+                crate::game::battle_state_with(heroes, foes, false, seed, Ruleset::analysis());
+            let mut guard = 0;
+            loop {
+                match crate::game::Deckbound.advance_manual_battle(&mut state) {
+                    ManualStatus::Deciding => answer_pending_greedily(&mut state),
+                    ManualStatus::Advanced => {}
+                    ManualStatus::Finished => break,
+                }
+                guard += 1;
+                assert!(guard < 100_000, "seed {seed}: driver failed to terminate");
+            }
 
             let manual_won = Some(matches!(
                 state.outcome,

@@ -12,11 +12,15 @@
 //! *name* is flavour, ignored by the resolver — mechanics are all numbers, matching the duel-locks proof.
 
 use cardtable_model::{CardId, CardKind, Face, PileId, Tableau, catalog};
+use deckbound::actor::Intention;
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
-use deckbound::combat::{StepOutcome, answer_pending_greedily};
+use deckbound::combat::{
+    PendingDecision, StepOutcome, TargetAnswer, answer_pending_greedily,
+    answer_pending_greedily_side,
+};
 use deckbound::game::{battle_state_with, hero_won};
 use deckbound::ruleset::Ruleset;
-use deckbound::{Actor, Deckbound, State};
+use deckbound::{Actor, Deckbound, ManualStatus, State};
 
 /// The result of a resolved encounter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -310,6 +314,205 @@ fn diff_states(
         }
     }
     out
+}
+
+// ===== Arena driver + render view (the interactive front-end for a manual fight) ========================
+//
+// A live UI can't use the synchronous `run_to_end` (it answers decisions across frames), so `ManualCombat`
+// also exposes a **frame-steppable** driver (`advance`) plus a plain-data render API (`view` /
+// `current_decision` / `answer_current`) that the renderer reads without touching any `deckbound` type.
+
+/// One combatant as the arena shows it, read from the battle state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitView {
+    pub name: String,
+    /// Rank letter — `V`/`O`/`R` (Vanguard/Outrider/Rearguard), which governs reach.
+    pub rank: char,
+    pub health_remaining: u32,
+    pub health_max: u32,
+    pub fallen: bool,
+    /// 0 = hero, 1 = foe.
+    pub side: u8,
+    /// Index within its side's pool (the key the arena's answers use).
+    pub idx: usize,
+}
+
+/// Both sides' combatants for the rank-lane layout.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ArenaView {
+    pub heroes: Vec<UnitView>,
+    pub foes: Vec<UnitView>,
+}
+
+/// One legal target offered for a hero's strike (a foe at `ti`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetChoice {
+    pub ti: usize,
+    pub name: String,
+}
+
+/// The current **hero** decision the arena must present, as plain data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DecisionView {
+    /// Which foe should `attacker` strike this sub-phase (or hold)?
+    Target {
+        attacker: String,
+        candidates: Vec<TargetChoice>,
+    },
+    /// Does `attacker` (a lone soaker) evade the incoming blow, for `cost` Tempo?
+    Evade { attacker: String, cost: i32 },
+    /// Does `attacker` strike back at the melee foe that just hit it?
+    StrikeBack { attacker: String },
+}
+
+/// The player's answer to the current hero decision (see [`ManualCombat::answer_current`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArenaAnswer {
+    /// Strike the foe at this `ti` (a [`DecisionView::Target`] choice).
+    Strike(usize),
+    /// Hold — commit nothing (a [`DecisionView::Target`] choice).
+    Hold,
+    /// Evade / endure (a [`DecisionView::Evade`] answer).
+    Evade(bool),
+    /// Strike back / hold (a [`DecisionView::StrikeBack`] answer).
+    StrikeBack(bool),
+}
+
+/// The rank letter for an intention.
+fn rank_char(r: &Intention) -> char {
+    match r {
+        Intention::Vanguard => 'V',
+        Intention::Outrider => 'O',
+        Intention::Rearguard => 'R',
+    }
+}
+
+/// Whether `pd` is an **unanswered hero** (side 0) decision — the ones the player must answer.
+fn hero_undecided(pd: &PendingDecision) -> bool {
+    matches!(
+        pd,
+        PendingDecision::Target {
+            side: 0,
+            answer: None,
+            ..
+        } | PendingDecision::Evade {
+            side: 0,
+            answer: None,
+            ..
+        } | PendingDecision::StrikeBack {
+            side: 0,
+            answer: None,
+            ..
+        }
+    )
+}
+
+impl ManualCombat {
+    /// Advance the fight one **frame-steppable** unit (see
+    /// [`Deckbound::advance_manual_battle`](deckbound::Deckbound::advance_manual_battle)), returning the
+    /// status and the [`CardMutation`]s that transition produced (for the arena to reflect). When it
+    /// returns [`ManualStatus::Deciding`], answer [`current_decision`](Self::current_decision) (hero) and/or
+    /// [`answer_foe_side`](Self::answer_foe_side) (foe AI), then call again.
+    pub fn advance(&mut self) -> (ManualStatus, Vec<CardMutation>) {
+        let prev = self.state.clone();
+        let status = Deckbound.advance_manual_battle(&mut self.state);
+        let muts = self.diff(&prev);
+        (status, muts)
+    }
+
+    /// Auto-answer the **foe** side's pending decisions greedily (the AI opponent), leaving the player's
+    /// hero decisions for [`answer_current`](Self::answer_current).
+    pub fn answer_foe_side(&mut self) {
+        answer_pending_greedily_side(&mut self.state, 1);
+    }
+
+    /// Whether the battle is over (a side won or it was a draw).
+    pub fn is_finished(&self) -> bool {
+        self.state.outcome.is_some()
+    }
+
+    /// Both sides' combatants, in pool order, for the rank-lane layout.
+    pub fn view(&self) -> ArenaView {
+        ArenaView {
+            heroes: self.side_view(0),
+            foes: self.side_view(1),
+        }
+    }
+
+    fn side_view(&self, side: u8) -> Vec<UnitView> {
+        let (pool, intents) = if side == 0 {
+            (&self.state.heroes, &self.state.plan.hero_intent)
+        } else {
+            (&self.state.creatures, &self.state.plan.foe_intent)
+        };
+        pool.iter()
+            .enumerate()
+            .map(|(idx, a)| UnitView {
+                name: a.name.clone(),
+                rank: intents.get(idx).map(rank_char).unwrap_or('?'),
+                health_remaining: a.defense.health.remaining(),
+                health_max: a.defense.health.max(),
+                fallen: a.fallen,
+                side,
+                idx,
+            })
+            .collect()
+    }
+
+    /// The **first unanswered hero decision** the arena must present, or `None` if the party isn't currently
+    /// on the clock (a foe decision or an auto step is next).
+    pub fn current_decision(&self) -> Option<DecisionView> {
+        self.state
+            .pending
+            .iter()
+            .find(|pd| hero_undecided(pd))
+            .map(|pd| match pd {
+                PendingDecision::Target {
+                    attacker,
+                    candidates,
+                    ..
+                } => DecisionView::Target {
+                    attacker: attacker.clone(),
+                    candidates: candidates
+                        .iter()
+                        .map(|c| TargetChoice {
+                            ti: c.ti,
+                            name: c.name.clone(),
+                        })
+                        .collect(),
+                },
+                PendingDecision::Evade { attacker, cost, .. } => DecisionView::Evade {
+                    attacker: attacker.clone(),
+                    cost: *cost,
+                },
+                PendingDecision::StrikeBack { attacker, .. } => DecisionView::StrikeBack {
+                    attacker: attacker.clone(),
+                },
+            })
+    }
+
+    /// Record the player's `answer` to the current hero decision (the one [`current_decision`] reports). A
+    /// mismatched answer kind is ignored.
+    ///
+    /// [`current_decision`]: Self::current_decision
+    pub fn answer_current(&mut self, answer: ArenaAnswer) {
+        let Some(pd) = self.state.pending.iter_mut().find(|pd| hero_undecided(pd)) else {
+            return;
+        };
+        match (pd, answer) {
+            (PendingDecision::Target { answer, .. }, ArenaAnswer::Strike(ti)) => {
+                *answer = Some(TargetAnswer::Strike(ti));
+            }
+            (PendingDecision::Target { answer, .. }, ArenaAnswer::Hold) => {
+                *answer = Some(TargetAnswer::Hold);
+            }
+            (PendingDecision::Evade { answer, .. }, ArenaAnswer::Evade(b)) => *answer = Some(b),
+            (PendingDecision::StrikeBack { answer, .. }, ArenaAnswer::StrikeBack(b)) => {
+                *answer = Some(b);
+            }
+            _ => {} // the answer kind doesn't match the current decision — ignore
+        }
+    }
 }
 
 /// Fold a **finished** manual combat back onto the table — the manual counterpart of the auto path's
@@ -703,5 +906,87 @@ mod tests {
             total_before,
             "card_count conserved across the whole round-trip"
         );
+    }
+
+    /// The frame-steppable arena driver (`advance`), answered greedily on both sides, reproduces the auto
+    /// outcome — the interactive front-end resolves the same fight as the one-shot when the player defers.
+    #[test]
+    fn arena_driver_greedy_reproduces_auto() {
+        let mut auto = sample_table();
+        let ap = station_at(&mut auto, marksman(), "Cinderwatch Keep");
+        let auto_outcome = resolve_encounter(&mut auto, ap, 7);
+
+        let mut t = sample_table();
+        let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
+        let bestiary = deck(&t, "Bestiary");
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+        let mut combat = begin_manual_combat(&mut t, place, arena, bestiary, 7).unwrap();
+
+        let mut guard = 0;
+        while !combat.is_finished() {
+            deckbound::combat::answer_pending_greedily(&mut combat.state); // both sides greedy
+            combat.advance();
+            guard += 1;
+            assert!(guard < 100_000, "arena driver failed to terminate");
+        }
+        let outcome = finish_manual_combat(&mut t, place, bestiary, combat);
+        assert_eq!(
+            outcome, auto_outcome,
+            "arena driver reproduces the auto outcome"
+        );
+    }
+
+    /// Playing a full fight through the render API — `view` / `current_decision` / `answer_current` for the
+    /// party, `answer_foe_side` for the AI — drives it to a decisive end, with the foes present in the view
+    /// and Health falling as blows land. Proves the whole arena front-end without any Bevy.
+    #[test]
+    fn arena_view_and_answers_drive_a_full_fight() {
+        let mut t = sample_table();
+        let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
+        let bestiary = deck(&t, "Bestiary");
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+        let mut combat = begin_manual_combat(&mut t, place, arena, bestiary, 7).unwrap();
+
+        // The opening view: both sides present, full Health, ranks assigned.
+        let v0 = combat.view();
+        assert!(!v0.heroes.is_empty() && !v0.foes.is_empty());
+        assert!(
+            v0.foes
+                .iter()
+                .all(|u| u.health_remaining == u.health_max && !u.fallen)
+        );
+        assert!(v0.heroes.iter().all(|u| "VOR".contains(u.rank)));
+
+        let mut hero_decisions = 0;
+        let mut guard = 0;
+        while !combat.is_finished() {
+            if let Some(dec) = combat.current_decision() {
+                hero_decisions += 1;
+                match dec {
+                    DecisionView::Target { candidates, .. } => match candidates.first() {
+                        Some(c) => combat.answer_current(ArenaAnswer::Strike(c.ti)),
+                        None => combat.answer_current(ArenaAnswer::Hold),
+                    },
+                    DecisionView::Evade { .. } => combat.answer_current(ArenaAnswer::Evade(true)),
+                    DecisionView::StrikeBack { .. } => {
+                        combat.answer_current(ArenaAnswer::StrikeBack(true))
+                    }
+                }
+            } else {
+                combat.answer_foe_side();
+                combat.advance();
+            }
+            guard += 1;
+            assert!(guard < 100_000, "arena playthrough failed to terminate");
+        }
+        assert!(hero_decisions > 0, "the party actually made decisions");
+        let vend = combat.view();
+        assert!(
+            vend.foes
+                .iter()
+                .any(|u| u.fallen || u.health_remaining < u.health_max),
+            "the foes took damage over the fight"
+        );
+        let _ = finish_manual_combat(&mut t, place, bestiary, combat);
     }
 }

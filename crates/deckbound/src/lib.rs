@@ -47,7 +47,7 @@ pub use encounter::{EncounterCard, RosterEntry};
 pub use form::{Form, StatCard};
 pub use reference::{ReferenceScenario, check_combat_bands, check_invariants, reference_scenario};
 // `zones::Move` (Recover/Disrupt) stays module-qualified to avoid colliding with `duel::Move`.
-pub use game::{Action, Deckbound};
+pub use game::{Action, Deckbound, ManualStatus};
 // `CombatLayout` (the derived 2D combat board) is named to avoid colliding with `world::Layout`
 // (the world-map grid/hex layout), which is already re-exported as `Layout` below.
 pub use layout::{CombatLayout, Rank, SideLayout, Slot};

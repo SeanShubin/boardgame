@@ -291,6 +291,18 @@ pub(crate) fn check_outcome(state: &mut State) {
     }
 }
 
+/// The result of one [`Deckbound::advance_manual_battle`] tick: the battle is waiting on a decision, took
+/// one observable transition, or is over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManualStatus {
+    /// A decision in [`State::pending`] awaits an answer before the battle can advance.
+    Deciding,
+    /// One transition happened (a cycle resolved, a boundary crossed, or a round opened/rolled over).
+    Advanced,
+    /// The battle is finished ([`State::outcome`] is set).
+    Finished,
+}
+
 impl Deckbound {
     // ---- §4 sub-phase-schedule round -----------------------------------------
 
@@ -349,6 +361,48 @@ impl Deckbound {
                 break;
             }
             self.next_round(state);
+        }
+    }
+
+    /// One **frame-steppable** unit of a full manual battle — the resumable decomposition of
+    /// [`resolve_battle_manual`](Self::resolve_battle_manual)'s loop, for a live UI that answers decisions
+    /// across frames (which cannot use the synchronous one-shot). Call it repeatedly:
+    /// - if a decision is unanswered → [`ManualStatus::Deciding`] (the caller answers [`State::pending`] —
+    ///   a player, or [`answer_pending_greedily_side`](combat::answer_pending_greedily_side) for the AI foe —
+    ///   then calls again);
+    /// - else if no round is in flight → open the next round's Engage → [`ManualStatus::Advanced`];
+    /// - else advance one [`step_manual`](combat::step_manual); on its `Done`, finalize the round and either
+    ///   report [`ManualStatus::Finished`] or roll to the next round ([`ManualStatus::Advanced`]).
+    ///
+    /// Answered greedily throughout, the sequence reproduces
+    /// [`resolve_battle_manual`](Self::resolve_battle_manual) exactly (same round loop, same pieces).
+    pub fn advance_manual_battle(&self, state: &mut State) -> ManualStatus {
+        if state.outcome.is_some() {
+            return ManualStatus::Finished;
+        }
+        if combat::awaiting_decision(state) {
+            return ManualStatus::Deciding;
+        }
+        // Between rounds (or at the very start): open this round's Engage.
+        if state.resolution.is_none() {
+            state.log.push("-- Engage --".into());
+            combat::log_round_intro(state);
+            state.resolution = Some(combat::Resolution::start());
+            return ManualStatus::Advanced;
+        }
+        // Mid-round: one transition. Any answered pending is consumed by this step.
+        match combat::step_manual(state) {
+            combat::StepOutcome::Resting => ManualStatus::Deciding,
+            combat::StepOutcome::Advanced => ManualStatus::Advanced,
+            combat::StepOutcome::Done => {
+                check_outcome(state);
+                if state.outcome.is_some() {
+                    ManualStatus::Finished
+                } else {
+                    self.next_round(state); // leaves `resolution` None → next call opens the next Engage
+                    ManualStatus::Advanced
+                }
+            }
         }
     }
 
