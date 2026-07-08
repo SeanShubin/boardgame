@@ -476,12 +476,13 @@ pub fn sample_table() -> Tableau {
 
     // The physical **day clock** (spec `canon/2-spec/physical-cards.md` PC.5), consolidated onto **two**
     // decks (the reserve is now the Heroes deck, PC.2):
-    // - **Progress** — the day clock proper: a `Day Passes ×N` **count** stack (its quantity *is* the
-    //   current day, no number cap) plus, once heroes are recruited, one face-up `hero` **move marker** per
-    //   active character (face-up = hasn't moved today; a move flips it down, `Tableau::mark_moved`). Count
-    //   (type `event`) and markers (type `hero`) are told apart by type.
-    // - **Events** — a bounded reserve of `Day Passes` cards; `advance_day` draws one onto Progress each
-    //   time every marker has flipped down. Its size is the provisioned max game length (raise as needed).
+    // - **Progress** — the day clock proper. It starts **empty** (Day 0); each `advance_day` lays one
+    //   `Day Passes` count card here, so its `event`-card count *is* the current day (no number cap). Once
+    //   heroes are recruited it also holds one face-up `hero` **move marker** per active character (face-up
+    //   = hasn't moved today; a move flips it down, `Tableau::mark_moved`). Count (type `event`) and markers
+    //   (type `hero`) are told apart by type.
+    // - **Events** — the bounded reserve of `Day Passes` cards `advance_day` draws from each time every
+    //   marker has flipped down. Its size is the provisioned max game length (raise as needed).
     const DAYS_PROVISIONED: usize = 12;
     let free = |tree: &mut Tableau, pile: PileId| {
         tree.set_layout(
@@ -495,7 +496,6 @@ pub fn sample_table() -> Tableau {
     };
 
     let progress = tree.add_pile(root, "Progress").expect("root exists");
-    typed(&mut tree, progress, "Day Passes", "event"); // Day 1 — one count card already on the track
     let progress_zone = typed(&mut tree, progress, "Progress", "Label");
     tree.set_card_kind(progress_zone, CardKind::Zone)
         .expect("progress zone card");
@@ -503,7 +503,7 @@ pub fn sample_table() -> Tableau {
 
     let events = tree.add_pile(root, "Events").expect("root exists");
     let events_stack = typed(&mut tree, events, "Day Passes", "event"); // one `Day Passes ×N` stack (PC.2)
-    tree.set_card_quantity(events_stack, (DAYS_PROVISIONED - 1) as u32)
+    tree.set_card_quantity(events_stack, DAYS_PROVISIONED as u32)
         .expect("events stack");
     let events_zone = typed(&mut tree, events, "Events", "Label");
     tree.set_card_kind(events_zone, CardKind::Zone)
@@ -585,8 +585,8 @@ mod tests {
                 + (9 * 12 + 1)
                 + (1 + 9 + 2 + 4 * (1 + 1) + 4 * (1 + 5)) // Locations: Zone + 9 places + 2 inn headers + 4 solos (header+1) + 4 corners (header+5)
                 + ((5 + 1) + (5 + 1))
-                + (1 + 1) // Progress: 1 Day Passes count + a Zone label
-                + (11 + 1)
+                + 1 // Progress: just a Zone label (starts empty — Day 0)
+                + (12 + 1) // Events: the full Day Passes reserve + a Zone label
                 + (4 + 1) // Bestiary: 4 creature concepts + a Zone label
         );
     }
@@ -599,15 +599,15 @@ mod tests {
         let mut t = sample_table();
         let (progress, events) = (deck(&t, "Progress"), deck(&t, "Events"));
 
-        // Day 1 (one `Day Passes` count on Progress), an Events reserve of 11 behind it, no markers yet.
+        // Day 0 (Progress starts empty of count cards), the full Events reserve of 12, no markers yet.
         let events_qty = |t: &Tableau| -> u32 {
             t.content_cards(events)
                 .iter()
                 .map(|&c| t.card(c).unwrap().quantity())
                 .sum()
         };
-        assert_eq!(t.current_day(progress), 1);
-        assert_eq!(events_qty(&t), 11);
+        assert_eq!(t.current_day(progress), 0);
+        assert_eq!(events_qty(&t), 12);
         assert!(!t.day_is_over(progress), "no markers — never 'over'");
 
         // A hero move marker on Progress (a setup deal), then spend its move.
@@ -625,10 +625,10 @@ mod tests {
         t.mark_moved(progress, "Vael").unwrap();
         assert!(t.day_is_over(progress), "the only marker has flipped down");
 
-        // Advance: the marker stands back up, one `Day Passes` moves Events -> Progress, day ticks to 2.
+        // Advance: the marker stands back up, one `Day Passes` moves Events -> Progress, day ticks to 1.
         t.advance_day(progress, events).unwrap();
-        assert_eq!(t.current_day(progress), 2);
-        assert_eq!(events_qty(&t), 10, "one drawn from the reserve stack");
+        assert_eq!(t.current_day(progress), 1);
+        assert_eq!(events_qty(&t), 11, "one drawn from the reserve stack");
         assert!(!t.day_is_over(progress));
         assert!(
             !t.card(marker).unwrap().is_face_down(),
@@ -652,8 +652,8 @@ mod tests {
         // Inclusive of each deck's own title card, and stacks count by quantity: Heroes is 9 heroes ×4
         // copies + the "Heroes" label.
         assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 9 * 4 + 1);
-        // Events is a `Day Passes ×11` stack + the "Events" label.
-        assert_eq!(t.physical_card_count(deck(&t, "Events")), 11 + 1);
+        // Events is a `Day Passes ×12` stack + the "Events" label.
+        assert_eq!(t.physical_card_count(deck(&t, "Events")), 12 + 1);
         assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12 + 1);
         // A projection contributes only its *own* cards (the inn's 2 row headers), never the borrowed
         // Heroes/Kit decks — those are counted at home, so nothing is double-counted.
@@ -932,7 +932,7 @@ mod tests {
             named(&t, progress, &name).is_some(),
             "move marker on Progress"
         );
-        assert_eq!(t.current_day(progress), 1);
+        assert_eq!(t.current_day(progress), 0);
 
         // Move the character to a neighbouring location — the only one active, so its move ends the day.
         let position = named(&t, ashfen, &name).unwrap();
@@ -945,9 +945,9 @@ mod tests {
         );
         assert!(named(&t, ashfen, &name).is_none());
 
-        // Advance: Day 1 -> 2, move markers stand back up, and cards are conserved through move + advance.
+        // Advance: Day 0 -> 1, move markers stand back up, and cards are conserved through move + advance.
         t.advance_day(progress, events).unwrap();
-        assert_eq!(t.current_day(progress), 2);
+        assert_eq!(t.current_day(progress), 1);
         assert!(!t.day_is_over(progress));
         assert_eq!(
             t.card_count(),
