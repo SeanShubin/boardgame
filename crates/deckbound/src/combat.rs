@@ -351,13 +351,139 @@ fn cascade(
 }
 
 /// One declared, committed strike awaiting apply (the read of the attacker captured at declare).
-struct Decl {
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Decl {
     ai: usize,
     ti: usize,
     might: u32,
     fa: u32,
     melee: bool,
     aoe: bool,
+}
+
+/// A decision the resumable resolver rests on, awaiting an answer from the driver — a **player** in manual
+/// combat, or the greedy auto-answerer that makes [`step`] reproduce [`resolve_round`]. The `answer` is
+/// written **in place** (so the whole pending decision round-trips through RON) and the resolver re-entered.
+/// `side` is the **deciding** side (0 = heroes, 1 = creatures): the attacker's side for [`Target`], the
+/// defender's (soaker's) side for [`Evade`] / [`StrikeBack`]. Unit fields are indices into that side's pool.
+///
+/// [`Target`]: PendingDecision::Target
+/// [`Evade`]: PendingDecision::Evade
+/// [`StrikeBack`]: PendingDecision::StrikeBack
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum PendingDecision {
+    /// One eligible attacker's **target-or-hold** this sub-phase — replaces [`policy::governing_target`].
+    /// `candidates` are the reachable enemies this sub-phase (schedule- and reach-gated, **not** filtered
+    /// by the crack rule, so a player may aim at a target the greedy would pass on).
+    Target {
+        side: u8,
+        ai: usize,
+        attacker: String,
+        atk_role: Intention,
+        candidates: Vec<TargetOption>,
+        answer: Option<TargetAnswer>,
+    },
+    /// A lone soaker's chance to **dodge** an aimed blow that would flip a card — replaces
+    /// [`policy::should_avoid`]. Offered only when the blow threatens (`might >= toughness`) and the bid is
+    /// affordable; `cost` is the Tempo it spends, shown so the driver can weigh it.
+    Evade {
+        side: u8,
+        soaker: usize,
+        attacker_ai: usize,
+        attacker: String,
+        might: u32,
+        atk_finesse: u32,
+        cost: i32,
+        answer: Option<bool>,
+    },
+    /// A melee soaker's **reflexive strike-back**, decided on the *post-cascade* pool — replaces
+    /// [`policy::should_strike_back`]. `can_crack` (would the blow flip a card) is advisory: the driver may
+    /// strike back anyway or decline.
+    StrikeBack {
+        side: u8,
+        soaker: usize,
+        attacker_ai: usize,
+        attacker: String,
+        can_crack: bool,
+        answer: Option<bool>,
+    },
+}
+
+/// One legal target offered in a [`PendingDecision::Target`] — an enemy of `role` at index `ti` (in the
+/// defender pool), with its display `name` and remaining `health` so the driver can choose.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TargetOption {
+    pub ti: usize,
+    pub role: Intention,
+    pub name: String,
+    pub health: u32,
+}
+
+/// The answer to a [`PendingDecision::Target`]: strike the enemy at `ti`, or hold Tempo (commit nothing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TargetAnswer {
+    Strike(usize),
+    Hold,
+}
+
+/// The outcome of one [`step_manual`] transition: it rested with [`State::pending`] populated, advanced one
+/// atomic transition (a cycle or a boundary), or finished the whole resolution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepOutcome {
+    Resting,
+    Advanced,
+    Done,
+}
+
+/// Scratch for a sub-phase-cycle that rests mid-way (held in [`State::cycle_work`]). Carries the committed
+/// declarations for each side (captured at declare, applied later) and the per-side reflexive strike-backs
+/// with a cursor, so the cycle resumes exactly where a decision paused it.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct CycleWork {
+    decls_0: Vec<Decl>,
+    decls_1: Vec<Decl>,
+    sbacks: Vec<(usize, usize)>,
+    sback_idx: usize,
+    phase: CyclePhase,
+}
+
+impl CycleWork {
+    fn start() -> Self {
+        CycleWork {
+            decls_0: Vec::new(),
+            decls_1: Vec::new(),
+            sbacks: Vec::new(),
+            sback_idx: 0,
+            phase: CyclePhase::DeclareSide0,
+        }
+    }
+    fn decls(&self, side: u8) -> &[Decl] {
+        if side == 0 {
+            &self.decls_0
+        } else {
+            &self.decls_1
+        }
+    }
+}
+
+/// The intra-cycle cursor: which segment of the two-declare / two-apply sub-phase-cycle is next. Each
+/// segment is either a read-only enumeration that may rest, or the deterministic mutation that follows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum CyclePhase {
+    DeclareSide0,
+    DeclareSide1,
+    ApplySide0Strikes,
+    ApplySide0Strikebacks,
+    ApplySide1Strikes,
+    ApplySide1Strikebacks,
+}
+
+/// How far a [`drive_cycle`] got: it rested on a decision, committed strikes (cycle again), or found the
+/// sub-phase exhausted (cross the boundary).
+enum CycleProgress {
+    Resting,
+    Committed,
+    Exhausted,
 }
 
 /// **Declare** one cycle's strikes for `atk_side` at schedule sub-phase `step_idx` — a single pass over
@@ -368,8 +494,18 @@ struct Decl {
 /// crossing (every living member −1 Tempo) once per cycle; a working Tempo view prevents a unit/group
 /// over-committing within the pass. Spends the Tempo (the actual crossing/strike payment) on `atk_side`
 /// and returns the committed [`Decl`]s. Read-only on the defender side.
-fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
-    let def_side = 1 - atk_side;
+///
+/// The **target** for each unit comes not from a policy call but from `answers` — the resolved
+/// [`PendingDecision::Target`]s for this side, enumerated read-only by [`enumerate_targets`] and answered
+/// by the driver (a player, or the greedy auto-answerer). A unit with no answer, or an answer of
+/// [`TargetAnswer::Hold`], holds its Tempo — exactly what [`policy::governing_target`] returning `None`
+/// did. This is the one mutating half of the declare; the read-only enumeration precedes it and may rest.
+fn declare_side(
+    state: &mut State,
+    atk_side: u8,
+    step_idx: usize,
+    answers: &[PendingDecision],
+) -> Vec<Decl> {
     // Which attacker roles even act this sub-phase (so we skip a unit whose role has no pair here).
     let atk_roles: Vec<Intention> = SCHEDULE[step_idx].iter().map(|&(a, _)| a).collect();
     // --- Read-only declare: collect decls + the Tempo each crossing/strike will spend. ---
@@ -377,8 +513,6 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
         let atk = state.s_pool(atk_side);
         let atk_int = state.s_intent(atk_side);
         let atk_grp = state.s_group(atk_side);
-        let def = state.s_pool(def_side);
-        let def_int = state.s_intent(def_side);
         let n = atk.len();
         let mut crossed = vec![false; n];
         let mut tempo: Vec<i32> = atk.iter().map(|a| a.tempo).collect();
@@ -390,10 +524,11 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
             if atk[ai].is_down() || !atk_roles.contains(&atk_role) {
                 continue;
             }
-            let Some((_role, ti)) =
-                policy::governing_target(step_idx, &atk[ai], atk_role, atk, atk_int, def, def_int)
-            else {
-                continue; // holds for a later sub-phase, or no crackable target this sub-phase
+            let ti = match target_answer(answers, ai) {
+                Some(TargetAnswer::Strike(ti)) => ti,
+                // Hold, or no request enumerated for this unit (no legal target this sub-phase) — it holds
+                // its Tempo, exactly as `policy::governing_target` returning `None` did.
+                _ => continue,
             };
             let melee = atk[ai].attack.has(Range::Melee);
             let rep = group_rep(atk_grp, ai);
@@ -461,7 +596,18 @@ fn declare_side(state: &mut State, atk_side: u8, step_idx: usize) -> Vec<Decl> {
 /// may dodge; a group walls). Thorns reflect onto each attacker that landed an aimed blow; melee soakers
 /// strike back. Mirrors `sub_phase.rs`'s per-cycle apply. The `might` in each [`Decl`] was captured at
 /// declare, so a unit killed earlier this cycle still lands its committed blow (§1.3).
-fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<String>) {
+///
+/// The **evade** decision for each lone soaker comes from `evade_answers` — the resolved
+/// [`PendingDecision::Evade`]s enumerated by [`enumerate_evades`] — not a policy call. Returns the
+/// `(soaker, attacker)` pairs eligible for a reflexive **strike-back**, applied separately and per-blow
+/// ([`apply_one_strikeback`]) because that is decided on the *mutated* post-cascade pool.
+fn apply_strikes(
+    state: &mut State,
+    atk_side: u8,
+    decls: &[Decl],
+    evade_answers: &[PendingDecision],
+    log: &mut Vec<String>,
+) -> Vec<(usize, usize)> {
     let def_side = 1 - atk_side;
     let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
     let def_int: Vec<Intention> = state.s_intent(def_side).to_vec();
@@ -488,7 +634,7 @@ fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<Str
             let soaker_evades = def_int.get(soaker).copied().is_none_or(policy::role_evades);
             if members.len() == 1
                 && soaker_evades
-                && policy::should_avoid(&def[soaker], d.might, d.fa)
+                && evade_answered_yes(evade_answers, soaker, d.ai)
             {
                 let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
                 evades.push((soaker, d.ai, cost));
@@ -555,48 +701,471 @@ fn apply_side(state: &mut State, atk_side: u8, decls: &[Decl], log: &mut Vec<Str
         reflect_thorns(&mut atk_pool[*atk_i], &def_pool[*soaker], log);
     }
 
-    // Reflexive strike-backs: only a melee blow draws one, only from a melee-capable soaker, for one
-    // Tempo, when it can crack the attacker (focus-fire on the attacker, §4.6). A soaker that committed
-    // before dying still answers (§1.3) — gated on Tempo, not on surviving.
-    for (soaker, atk_i) in sbacks {
-        let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
-            (&mut state.heroes, &mut state.creatures)
-        } else {
-            (&mut state.creatures, &mut state.heroes)
+    // Reflexive strike-backs are decided on the *post-cascade* pool (a soaker can die in the cascade),
+    // so they are not applied here — the caller drives them per-blow via `apply_one_strikeback`.
+    sbacks
+}
+
+/// Apply one reflexive **strike-back** (§10): the `soaker` (on the side opposite `atk_side`) hits the
+/// attacker `atk_i` for its snapshot power, spending one Tempo. The caller has confirmed the legality
+/// gate ([`strikeback_gate`]) and the driver answered *yes*. Mirrors `apply_side`'s old strike-back loop.
+fn apply_one_strikeback(
+    state: &mut State,
+    atk_side: u8,
+    soaker: usize,
+    atk_i: usize,
+    log: &mut Vec<String>,
+) {
+    let (atk_pool, def_pool): (&mut [Actor], &mut [Actor]) = if atk_side == 0 {
+        (&mut state.heroes, &mut state.creatures)
+    } else {
+        (&mut state.creatures, &mut state.heroes)
+    };
+    def_pool[soaker].tempo -= 1;
+    let snap = snapshot(&def_pool[soaker]);
+    let sn = def_pool[soaker].name.clone();
+    apply_strike(&mut atk_pool[atk_i], snap, &sn, log);
+}
+
+// ===== The resumable decision seam (§4.6) ================================================================
+//
+// A sub-phase-cycle is driven as a small state machine ([`CyclePhase`]) so it can **rest at every decision
+// point** and be answered by an external driver (a player, or the greedy auto-answerer). Each decision sits
+// in a *read-only enumeration* pass: on an unanswered decision the machine records the request(s) in
+// `State::pending`, having mutated nothing, and rests; on resume it re-runs that read-only pass (answers now
+// present) and runs the deterministic mutation exactly once. Greedy answers make [`step`] reproduce
+// [`resolve_round`] byte-for-byte, so auto combat and every existing test are unchanged.
+
+/// Whether a pending decision still awaits its answer.
+fn is_unanswered(pd: &PendingDecision) -> bool {
+    match pd {
+        PendingDecision::Target { answer, .. } => answer.is_none(),
+        PendingDecision::Evade { answer, .. } => answer.is_none(),
+        PendingDecision::StrikeBack { answer, .. } => answer.is_none(),
+    }
+}
+
+/// The target answer for attacker `ai` (its `Strike`/`Hold`), or `None` if no request was enumerated for it.
+fn target_answer(answers: &[PendingDecision], ai: usize) -> Option<TargetAnswer> {
+    answers.iter().find_map(|pd| match pd {
+        PendingDecision::Target { ai: a, answer, .. } if *a == ai => *answer,
+        _ => None,
+    })
+}
+
+/// Whether the soaker chose to evade attacker `attacker_ai`'s aimed blow.
+fn evade_answered_yes(answers: &[PendingDecision], soaker: usize, attacker_ai: usize) -> bool {
+    answers.iter().any(|pd| {
+        matches!(
+            pd,
+            PendingDecision::Evade { soaker: s, attacker_ai: a, answer: Some(true), .. }
+                if *s == soaker && *a == attacker_ai
+        )
+    })
+}
+
+/// Whether the single pending strike-back was answered *yes*.
+fn strikeback_answered_yes(answers: &[PendingDecision]) -> bool {
+    answers.iter().any(|pd| {
+        matches!(
+            pd,
+            PendingDecision::StrikeBack {
+                answer: Some(true),
+                ..
+            }
+        )
+    })
+}
+
+/// Read-only: the target requests for `atk_side` this sub-phase — one per eligible attacker (its role acts
+/// this sub-phase, alive) that has at least one reachable target. No mutation, no log; safe to re-run.
+fn enumerate_targets(state: &State, atk_side: u8, step_idx: usize) -> Vec<PendingDecision> {
+    let def_side = 1 - atk_side;
+    let atk = state.s_pool(atk_side);
+    let atk_int = state.s_intent(atk_side);
+    let def = state.s_pool(def_side);
+    let def_int = state.s_intent(def_side);
+    let atk_roles: Vec<Intention> = SCHEDULE[step_idx].iter().map(|&(a, _)| a).collect();
+    let mut out = Vec::new();
+    for (ai, unit) in atk.iter().enumerate() {
+        let Some(&atk_role) = atk_int.get(ai) else {
+            continue;
         };
-        if policy::should_strike_back(&def_pool[soaker], &atk_pool[atk_i]) {
-            def_pool[soaker].tempo -= 1;
-            let snap = snapshot(&def_pool[soaker]);
-            let sn = def_pool[soaker].name.clone();
-            apply_strike(&mut atk_pool[atk_i], snap, &sn, log);
+        if unit.is_down() || !atk_roles.contains(&atk_role) {
+            continue;
+        }
+        let candidates = target_candidates(atk_role, step_idx, def, def_int);
+        if candidates.is_empty() {
+            continue; // no legal target this sub-phase → holds (as `governing_target` returning `None`)
+        }
+        out.push(PendingDecision::Target {
+            side: atk_side,
+            ai,
+            attacker: unit.name.clone(),
+            atk_role,
+            candidates,
+            answer: None,
+        });
+    }
+    out
+}
+
+/// The legal targets for an attacker of `atk_role` this sub-phase: for each target role paired with
+/// `atk_role` in `SCHEDULE[step_idx]` and reachable (back-access gate), the living enemies of that role.
+/// Reach-gated but **not** crack-filtered — a player may aim at a target the greedy would pass on.
+fn target_candidates(
+    atk_role: Intention,
+    step_idx: usize,
+    def: &[Actor],
+    def_int: &[Intention],
+) -> Vec<TargetOption> {
+    let is_outrider = atk_role == Intention::Outrider;
+    let mut out = Vec::new();
+    for &(a, t) in SCHEDULE[step_idx] {
+        if a != atk_role || !policy::can_reach(is_outrider, t, def, def_int) {
+            continue;
+        }
+        for (j, u) in def.iter().enumerate() {
+            if !u.is_down() && def_int.get(j) == Some(&t) {
+                out.push(TargetOption {
+                    ti: j,
+                    role: t,
+                    name: u.name.clone(),
+                    health: u.defense.health.remaining(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Read-only: the evade requests for applying `atk_side`'s `decls` — one per aimed blow on a lone soaker
+/// that would flip a card (`might >= toughness`), evades by role, and can afford the bid. No mutation.
+fn enumerate_evades(state: &State, atk_side: u8, decls: &[Decl]) -> Vec<PendingDecision> {
+    let def_side = 1 - atk_side;
+    let def_grp: Vec<usize> = state.s_group(def_side).to_vec();
+    let def_int = state.s_intent(def_side);
+    let def = state.s_pool(def_side);
+    let atk = state.s_pool(atk_side);
+    let mut out = Vec::new();
+    for d in decls {
+        if d.aoe {
+            continue;
+        }
+        let members = group_of(&def_grp, d.ti);
+        let soaker = front_living(def, &members).unwrap_or(d.ti);
+        let soaker_evades = def_int.get(soaker).copied().is_none_or(policy::role_evades);
+        if members.len() != 1 || !soaker_evades {
+            continue;
+        }
+        let bar = def[soaker].eff_toughness();
+        let cost = policy::avoid_cost(d.fa, def[soaker].eff_finesse());
+        if d.might >= bar && def[soaker].tempo >= cost {
+            out.push(PendingDecision::Evade {
+                side: def_side,
+                soaker,
+                attacker_ai: d.ai,
+                attacker: atk[d.ai].name.clone(),
+                might: d.might,
+                atk_finesse: d.fa,
+                cost,
+                answer: None,
+            });
+        }
+    }
+    out
+}
+
+/// The legality gate for a strike-back on the *current* (post-cascade) pool — [`should_strike_back`] minus
+/// its crack clause (which becomes the advisory `can_crack` on the request).
+///
+/// [`should_strike_back`]: crate::policy::should_strike_back
+fn strikeback_gate(state: &State, def_side: u8, soaker: usize, atk_i: usize) -> bool {
+    let atk_side = 1 - def_side;
+    let s = &state.s_pool(def_side)[soaker];
+    let a = &state.s_pool(atk_side)[atk_i];
+    s.attack.has(Range::Melee) && !s.is_down() && !a.is_down() && s.tempo >= 1
+}
+
+/// Build the strike-back request for `(soaker, atk_i)`, reading `can_crack` off the current pool.
+fn strikeback_request(state: &State, def_side: u8, soaker: usize, atk_i: usize) -> PendingDecision {
+    let atk_side = 1 - def_side;
+    let s = &state.s_pool(def_side)[soaker];
+    let a = &state.s_pool(atk_side)[atk_i];
+    let can_crack = base_strike(s) + a.defense.health_pile() >= a.eff_toughness();
+    PendingDecision::StrikeBack {
+        side: def_side,
+        soaker,
+        attacker_ai: atk_i,
+        attacker: a.name.clone(),
+        can_crack,
+        answer: None,
+    }
+}
+
+/// Fill every unanswered entry in [`State::pending`] with the greedy ([`crate::policy`]) answer — the
+/// auto-answerer that makes [`step`] reproduce [`resolve_round`]. Reads the same policy functions with the
+/// same inputs the synchronous resolver used, so the greedy path is bit-identical by construction.
+fn answer_pending_greedily(state: &mut State) {
+    let step_idx = state.resolution.map(|r| r.step).unwrap_or(0);
+    let mut pending = std::mem::take(&mut state.pending);
+    for pd in &mut pending {
+        match pd {
+            PendingDecision::Target {
+                side,
+                ai,
+                atk_role,
+                answer,
+                ..
+            } if answer.is_none() => {
+                let (s, a, role) = (*side, *ai, *atk_role);
+                let d = 1 - s;
+                let g = policy::governing_target(
+                    step_idx,
+                    &state.s_pool(s)[a],
+                    role,
+                    state.s_pool(s),
+                    state.s_intent(s),
+                    state.s_pool(d),
+                    state.s_intent(d),
+                );
+                *answer = Some(match g {
+                    Some((_role, ti)) => TargetAnswer::Strike(ti),
+                    None => TargetAnswer::Hold,
+                });
+            }
+            PendingDecision::Evade {
+                side,
+                soaker,
+                might,
+                atk_finesse,
+                answer,
+                ..
+            } if answer.is_none() => {
+                *answer = Some(policy::should_avoid(
+                    &state.s_pool(*side)[*soaker],
+                    *might,
+                    *atk_finesse,
+                ));
+            }
+            PendingDecision::StrikeBack {
+                side,
+                soaker,
+                attacker_ai,
+                answer,
+                ..
+            } if answer.is_none() => {
+                let atk_side = 1 - *side;
+                *answer = Some(policy::should_strike_back(
+                    &state.s_pool(*side)[*soaker],
+                    &state.s_pool(atk_side)[*attacker_ai],
+                ));
+            }
+            _ => {}
+        }
+    }
+    state.pending = pending;
+}
+
+/// One declare segment: enumerate this side's target requests (if not already), rest if any is unanswered,
+/// else commit the declarations and advance the cycle cursor. Returns `Some(Resting)` to rest, else `None`.
+fn drive_declare(state: &mut State, side: u8, step_idx: usize) -> Option<CycleProgress> {
+    if state.pending.is_empty() {
+        state.pending = enumerate_targets(state, side, step_idx);
+    }
+    if state.pending.iter().any(is_unanswered) {
+        return Some(CycleProgress::Resting);
+    }
+    let answers = std::mem::take(&mut state.pending);
+    let decls = declare_side(state, side, step_idx, &answers);
+    let cw = state.cycle_work.as_mut().expect("cycle_work");
+    if side == 0 {
+        cw.decls_0 = decls;
+        cw.phase = CyclePhase::DeclareSide1;
+    } else {
+        cw.decls_1 = decls; // caller sets the next phase after the exhaustion check
+    }
+    None
+}
+
+/// One apply-strikes segment: enumerate this side's evade requests, rest if any is unanswered, else run the
+/// deterministic apply (evades → AoE → cascade → thorns), stash the strike-backs, and advance the cursor to
+/// this side's strike-back segment. Returns `true` if it rested.
+fn drive_apply_strikes(state: &mut State, atk_side: u8) -> bool {
+    let decls = state
+        .cycle_work
+        .as_ref()
+        .expect("cycle_work")
+        .decls(atk_side)
+        .to_vec();
+    if state.pending.is_empty() {
+        state.pending = enumerate_evades(state, atk_side, &decls);
+    }
+    if state.pending.iter().any(is_unanswered) {
+        return true;
+    }
+    let answers = std::mem::take(&mut state.pending);
+    let mut log = std::mem::take(&mut state.log);
+    let sbacks = apply_strikes(state, atk_side, &decls, &answers, &mut log);
+    state.log = log;
+    let cw = state.cycle_work.as_mut().expect("cycle_work");
+    cw.sbacks = sbacks;
+    cw.sback_idx = 0;
+    cw.phase = if atk_side == 0 {
+        CyclePhase::ApplySide0Strikebacks
+    } else {
+        CyclePhase::ApplySide1Strikebacks
+    };
+    false
+}
+
+/// Drive `atk_side`'s reflexive strike-backs **one at a time** — each is re-evaluated on the live
+/// post-cascade pool (a prior strike-back can change a later one's gate/crack), so each is its own rest
+/// point. Returns `true` if it rested; `false` when all of this side's strike-backs are resolved.
+fn drive_strikebacks(state: &mut State, atk_side: u8) -> bool {
+    let def_side = 1 - atk_side;
+    loop {
+        let (sbacks, idx) = {
+            let cw = state.cycle_work.as_ref().expect("cycle_work");
+            (cw.sbacks.clone(), cw.sback_idx)
+        };
+        if idx >= sbacks.len() {
+            return false;
+        }
+        let (soaker, atk_i) = sbacks[idx];
+        if !strikeback_gate(state, def_side, soaker, atk_i) {
+            state.cycle_work.as_mut().expect("cycle_work").sback_idx += 1;
+            continue;
+        }
+        if state.pending.is_empty() {
+            state.pending = vec![strikeback_request(state, def_side, soaker, atk_i)];
+        }
+        if state.pending.iter().any(is_unanswered) {
+            return true;
+        }
+        let yes = strikeback_answered_yes(&state.pending);
+        state.pending.clear();
+        if yes {
+            let mut log = std::mem::take(&mut state.log);
+            apply_one_strikeback(state, atk_side, soaker, atk_i, &mut log);
+            state.log = log;
+        }
+        state.cycle_work.as_mut().expect("cycle_work").sback_idx += 1;
+    }
+}
+
+/// Drive the current sub-phase-cycle as far as it can without a decision: declare both sides, then apply
+/// both sides' strikes and strike-backs. Rests (`Resting`) at the first unanswered decision, or reports the
+/// cycle **Committed** (a strike landed — cycle again) / **Exhausted** (no strike — cross the boundary).
+/// Mirrors the old `resolve_sub_phase_cycle`, now resumable through [`State::cycle_work`].
+fn drive_cycle(state: &mut State, step_idx: usize) -> CycleProgress {
+    loop {
+        let phase = state
+            .cycle_work
+            .as_ref()
+            .expect("cycle_work set at cycle entry")
+            .phase;
+        match phase {
+            CyclePhase::DeclareSide0 => {
+                if let Some(p) = drive_declare(state, 0, step_idx) {
+                    return p;
+                }
+            }
+            CyclePhase::DeclareSide1 => {
+                if let Some(p) = drive_declare(state, 1, step_idx) {
+                    return p;
+                }
+                let cw = state.cycle_work.as_mut().expect("cycle_work");
+                if cw.decls_0.is_empty() && cw.decls_1.is_empty() {
+                    return CycleProgress::Exhausted;
+                }
+                cw.phase = CyclePhase::ApplySide0Strikes;
+            }
+            CyclePhase::ApplySide0Strikes => {
+                if drive_apply_strikes(state, 0) {
+                    return CycleProgress::Resting;
+                }
+            }
+            CyclePhase::ApplySide0Strikebacks => {
+                if drive_strikebacks(state, 0) {
+                    return CycleProgress::Resting;
+                }
+                state.cycle_work.as_mut().expect("cycle_work").phase =
+                    CyclePhase::ApplySide1Strikes;
+            }
+            CyclePhase::ApplySide1Strikes => {
+                if drive_apply_strikes(state, 1) {
+                    return CycleProgress::Resting;
+                }
+            }
+            CyclePhase::ApplySide1Strikebacks => {
+                if drive_strikebacks(state, 1) {
+                    return CycleProgress::Resting;
+                }
+                return CycleProgress::Committed;
+            }
         }
     }
 }
 
-/// Resolve **one sub-phase-cycle** at schedule sub-phase `step_idx` (§4.6 / §1.9): a single declare
-/// pass collects **every** unit's strike for this sub-phase across **all its pairs and both sides**
-/// (order-independent — both sides declare against the same pre-apply board), then both sides' strikes
-/// apply together (AoE-first → spillover cascade → Thorns → strike-backs). Returns `true` if any side
-/// committed a strike (the sub-phase should cycle again — the per-sub-phase pile persists), `false`
-/// when the sub-phase is exhausted (the caller then crosses the boundary). **Decision-agnostic**: all
-/// target / focus-fire / evade / strike-back choices come from [`crate::policy`].
-fn resolve_sub_phase_cycle(state: &mut State, step_idx: usize) -> bool {
-    // Both sides declare against the **same** pre-apply state (declaring spends only the declaring
-    // side's own Tempo and reads board health, which no declare mutates — so the order of the two
-    // declares does not matter, §1.9).
-    let decls_0 = declare_side(state, 0, step_idx);
-    let decls_1 = declare_side(state, 1, step_idx);
-    if decls_0.is_empty() && decls_1.is_empty() {
-        return false; // exhausted — no positive-effect strike left this sub-phase
+/// The resumable counterpart to [`step`]: perform one atomic transition (a cycle or a boundary) **or** rest
+/// with [`State::pending`] populated for the driver to answer. Auto combat uses [`step`] (which drives this
+/// with greedy answers); manual combat pumps `step_manual` directly, answering `pending` between calls.
+pub fn step_manual(state: &mut State) -> StepOutcome {
+    let mut cur = state.resolution.unwrap_or_else(Resolution::start);
+    if cur.step >= SCHEDULE.len() {
+        state.resolution = None;
+        return StepOutcome::Done;
     }
-    let mut log = std::mem::take(&mut state.log);
-    // Apply both sides. Each side's strikes mutate only the *other* pool's Health (strike-backs reach
-    // back across, but `apply_strike` is `is_down`-safe and `might` was captured at declare), so the
-    // two applies are independent and order-independent.
-    apply_side(state, 0, &decls_0, &mut log);
-    apply_side(state, 1, &decls_1, &mut log);
-    state.log = log;
-    true
+    match cur.stage {
+        Stage::Cycle => {
+            // Initialize this cycle's scratch (and print its header) exactly once — on first entry, not on
+            // a resume after a rest (when `cycle_work` is already `Some`).
+            if state.cycle_work.is_none() {
+                if cur.cycle == 0 {
+                    state.log.push(sub_phase_header(cur.step));
+                }
+                state.cycle_work = Some(CycleWork::start());
+            }
+            match drive_cycle(state, cur.step) {
+                CycleProgress::Resting => {
+                    state.resolution = Some(cur); // preserve the sub-phase cursor across the rest
+                    return StepOutcome::Resting;
+                }
+                CycleProgress::Committed => {
+                    cur.cycle += 1;
+                    state.cycle_work = None;
+                }
+                CycleProgress::Exhausted => {
+                    if cur.cycle == 0 {
+                        state
+                            .log
+                            .push("  (no eligible strikes — skipped)".to_string());
+                    }
+                    cur.stage = Stage::Boundary;
+                    state.cycle_work = None;
+                }
+            }
+        }
+        Stage::Boundary => {
+            let mut log = std::mem::take(&mut state.log);
+            tally(&mut state.heroes, &mut log);
+            tally(&mut state.creatures, &mut log);
+            state.log = log;
+            clear_phase_piles(&mut state.heroes);
+            clear_phase_piles(&mut state.creatures);
+            cur.step += 1;
+            cur.stage = Stage::Cycle;
+            cur.cycle = 0;
+        }
+    }
+    if cur.step >= SCHEDULE.len() {
+        state.resolution = None;
+        StepOutcome::Done
+    } else {
+        state.resolution = Some(cur);
+        StepOutcome::Advanced
+    }
 }
 
 /// §4.6 — the fixed **sub-phase schedule**: five sub-phases, each a list of `(attacker, target)` role
@@ -699,53 +1268,15 @@ impl Resolution {
 /// The sequence of steps reproduces [`resolve_round`]'s exact end state — `resolve_round` is just
 /// `while step(state) {}`.
 pub fn step(state: &mut State) -> bool {
-    let mut cur = state.resolution.unwrap_or_else(Resolution::start);
-    if cur.step >= SCHEDULE.len() {
-        // Already complete (defensive): clear and report done.
-        state.resolution = None;
-        return false;
-    }
-    match cur.stage {
-        Stage::Cycle => {
-            // On entering a sub-phase (its first cycle), print the header — which sub-phase and the
-            // rank→rank pairs it resolves, so the strikes below have context.
-            if cur.cycle == 0 {
-                state.log.push(sub_phase_header(cur.step));
-            }
-            // One sub-phase-cycle. While it makes progress, stay in `Cycle` (the pile persists across
-            // cycles); when a cycle commits nothing, the sub-phase is exhausted → its boundary. A first
-            // cycle that commits nothing means the sub-phase found no eligible strike — report the skip.
-            if resolve_sub_phase_cycle(state, cur.step) {
-                cur.cycle += 1;
-            } else {
-                if cur.cycle == 0 {
-                    state
-                        .log
-                        .push("  (no eligible strikes — skipped)".to_string());
-                }
-                cur.stage = Stage::Boundary;
-            }
+    // Drive the resumable machine, auto-answering every decision greedily. Because the greedy answers
+    // reproduce the policy calls the synchronous resolver used, this is byte-for-byte the old `step` — one
+    // atomic transition (a cycle or a boundary) per `true`, resolution complete on `false`.
+    loop {
+        match step_manual(state) {
+            StepOutcome::Resting => answer_pending_greedily(state),
+            StepOutcome::Advanced => return true,
+            StepOutcome::Done => return false,
         }
-        Stage::Boundary => {
-            // Sub-phase boundary: finalize deaths, then wipe the per-sub-phase pile (§4.6).
-            let mut log = std::mem::take(&mut state.log);
-            tally(&mut state.heroes, &mut log);
-            tally(&mut state.creatures, &mut log);
-            state.log = log;
-            clear_phase_piles(&mut state.heroes);
-            clear_phase_piles(&mut state.creatures);
-            cur.step += 1;
-            cur.stage = Stage::Cycle;
-            cur.cycle = 0;
-        }
-    }
-    if cur.step >= SCHEDULE.len() {
-        // Walked off the end — resolution complete.
-        state.resolution = None;
-        false
-    } else {
-        state.resolution = Some(cur);
-        true
     }
 }
 
@@ -1237,6 +1768,121 @@ mod tests {
             assert_eq!(a.tempo, b.tempo);
             assert_eq!(a.fallen, b.fallen);
         }
+    }
+
+    /// Drive a round through the **resumable** [`step_manual`] to completion, answering each rest with
+    /// `answer`, and RON-round-trip the whole state at *every* micro-state — so a passing run also proves
+    /// an in-flight fight can be saved and resumed at any decision point.
+    fn drive_manual(state: &mut State, mut answer: impl FnMut(&mut State)) {
+        log_round_intro(state);
+        state.resolution = Some(Resolution::start());
+        let mut guard = 0;
+        loop {
+            let text = ron::ser::to_string(&*state).expect("mid-resolution state serializes");
+            *state = ron::from_str(&text).expect("and deserializes");
+            match step_manual(state) {
+                StepOutcome::Resting => answer(state),
+                StepOutcome::Advanced => {}
+                StepOutcome::Done => break,
+            }
+            guard += 1;
+            assert!(guard < 5000, "manual stepper failed to terminate");
+        }
+    }
+
+    /// Behavior preservation for the manual path: driving a round with [`step_manual`] + the greedy
+    /// auto-answerer reproduces the **exact** end state and log of the synchronous [`resolve_round`], while
+    /// resting (and serializing) at every decision point. This is the parity gate for the whole seam.
+    #[test]
+    fn manual_stepping_greedy_reproduces_resolve_round() {
+        for seed in 0..40u64 {
+            let heroes = vec![fighter("Hero", 3, 4, 1), fighter("Squire", 2, 3, 1)];
+            let foes = vec![fighter("Brute", 3, 4, 1), fighter("Imp", 2, 3, 1)];
+            let mut batched = crate::game::battle_state(heroes.clone(), foes.clone(), false, seed);
+            let mut manual = crate::game::battle_state(heroes, foes, false, seed);
+
+            resolve_round(&mut batched);
+            drive_manual(&mut manual, answer_pending_greedily);
+
+            assert!(manual.resolution.is_none(), "seed {seed}: cursor cleared");
+            assert!(
+                manual.pending.is_empty() && manual.cycle_work.is_none(),
+                "seed {seed}: no dangling decision state"
+            );
+            assert_eq!(manual.log, batched.log, "seed {seed}: logs identical");
+            for (a, b) in manual
+                .heroes
+                .iter()
+                .chain(manual.creatures.iter())
+                .zip(batched.heroes.iter().chain(batched.creatures.iter()))
+            {
+                assert_eq!(
+                    a.defense.health.remaining(),
+                    b.defense.health.remaining(),
+                    "seed {seed}"
+                );
+                assert_eq!(
+                    a.defense.health_pile(),
+                    b.defense.health_pile(),
+                    "seed {seed}"
+                );
+                assert_eq!(a.tempo, b.tempo, "seed {seed}");
+                assert_eq!(a.fallen, b.fallen, "seed {seed}");
+            }
+        }
+    }
+
+    /// Player control: the resumable resolver **surfaces** each decision, and the answer changes the fight.
+    /// When the driver holds every unit's target (and declines every reactive option), no strike is ever
+    /// declared — so no card flips and no one falls, unlike the greedy run which trades blows.
+    #[test]
+    fn manual_holding_every_target_deals_no_damage() {
+        let heroes = vec![fighter("Hero", 3, 4, 1), fighter("Squire", 2, 3, 1)];
+        let foes = vec![fighter("Brute", 3, 4, 1), fighter("Imp", 2, 3, 1)];
+        let mut state = crate::game::battle_state(heroes, foes, false, 11);
+        let before: Vec<u32> = state
+            .heroes
+            .iter()
+            .chain(state.creatures.iter())
+            .map(|a| a.defense.health.remaining())
+            .collect();
+
+        let mut saw_target = false;
+        drive_manual(&mut state, |s| {
+            for pd in &mut s.pending {
+                match pd {
+                    PendingDecision::Target { answer, .. } => {
+                        *answer = Some(TargetAnswer::Hold);
+                        saw_target = true;
+                    }
+                    PendingDecision::Evade { answer, .. } => *answer = Some(false),
+                    PendingDecision::StrikeBack { answer, .. } => *answer = Some(false),
+                }
+            }
+        });
+
+        assert!(
+            saw_target,
+            "the fight surfaced target decisions to the driver"
+        );
+        let after: Vec<u32> = state
+            .heroes
+            .iter()
+            .chain(state.creatures.iter())
+            .map(|a| a.defense.health.remaining())
+            .collect();
+        assert_eq!(
+            before, after,
+            "holding every target lands no blow — no damage"
+        );
+        assert!(
+            state
+                .heroes
+                .iter()
+                .chain(state.creatures.iter())
+                .all(|a| !a.fallen),
+            "no one falls when nothing strikes"
+        );
     }
 
     /// With **no AoE source** in a scenario (no Actor sets `aoe`), the AoE pool stays 0 across a whole

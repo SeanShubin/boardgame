@@ -133,6 +133,17 @@ pub struct State {
     /// the whole machine round-trips through RON.
     #[serde(default)]
     pub resolution: Option<crate::combat::Resolution>,
+    /// Decisions the resolver is **resting on**, awaiting an answer. Empty except while a manual fight is
+    /// parked on a player choice (target / evade / strike-back). Each entry carries its own `answer`, so
+    /// the whole in-flight decision round-trips through RON. The greedy auto-answerer fills these in place,
+    /// which is why the synchronous [`resolve_round`](crate::combat::resolve_round) never rests here.
+    #[serde(default)]
+    pub pending: Vec<crate::combat::PendingDecision>,
+    /// Scratch for the in-flight sub-phase-cycle when it rests mid-way (the committed decls per side, the
+    /// carried strike-backs, and the intra-cycle cursor). `Some` only between a decision rest and the
+    /// cycle's completion; `None` at every cycle boundary.
+    #[serde(default)]
+    pub cycle_work: Option<crate::combat::CycleWork>,
     pub plan: Round,
     pub clash: Option<Clash>,
     #[serde(skip)]
