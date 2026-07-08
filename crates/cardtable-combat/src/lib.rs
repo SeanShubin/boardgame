@@ -59,16 +59,16 @@ fn stat5(s: [u8; 5]) -> Stat5 {
     )
 }
 
-/// The heroes stationed at `place` as combat units — each `location-token` mapped to its character deck
-/// (by hero name), whose [`Recipe`](cardtable_model::Recipe) gives the stats + ability. The ability sets
-/// the strike shape via [`catalog::ability_shape`]; a kit leaves its stance stat-derived (`pos: None`).
+/// The heroes stationed at `place` as combat units — each `hero` position copy mapped to its character
+/// deck (by hero name), whose [`Recipe`](cardtable_model::Recipe) gives the stats + ability. The ability
+/// sets the strike shape via [`catalog::ability_shape`]; a kit leaves its stance stat-derived (`pos: None`).
 fn hero_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
     table
         .content_cards(place)
         .into_iter()
         .filter_map(|c| {
             let card = table.card(c)?;
-            if card.card_type() != "location-token" {
+            if card.card_type() != "hero" {
                 return None;
             }
             let name = card.front_title().to_string();
@@ -139,12 +139,10 @@ fn apply_consequences(
         }
     }
     add_log_card(table, place, outcome, log);
-    if let (Some(day), Some(progress), Some(events)) = (
-        find_pile(table, "Day"),
-        find_pile(table, "Progress"),
-        find_pile(table, "Events"),
-    ) {
-        let _ = table.advance_day(day, progress, events);
+    if let (Some(progress), Some(events)) =
+        (find_pile(table, "Progress"), find_pile(table, "Events"))
+    {
+        let _ = table.advance_day(progress, events);
     }
 }
 
@@ -239,31 +237,36 @@ mod tests {
             .expect("the inn")
     }
 
-    /// Recruit Identity hero #0 with `recipe`, station the party, then move that hero's location-token to
-    /// the place labelled `dest`. Returns the destination place id.
+    /// Recruit Heroes deck hero #0 with `recipe` (dealing its four copies, including a position copy at
+    /// the inn and a Progress move marker), then march that position copy to the place `dest`. Returns the
+    /// destination place id.
     fn station_at(t: &mut Tableau, recipe: Recipe, dest: &str) -> PileId {
-        let (identity, stats, numbers, abilities) = (
-            deck(t, "Identity"),
+        let (heroes, stats, numbers, abilities, progress) = (
+            deck(t, "Heroes"),
             deck(t, "Stats"),
             deck(t, "Numbers"),
             deck(t, "Abilities"),
+            deck(t, "Progress"),
         );
-        let hero = t.content_cards(identity)[0];
-        let name = t.card(hero).unwrap().name().to_string();
-        t.equip_character(hero, &recipe, stats, numbers, abilities)
-            .unwrap();
         let ashfen = ashfen(t);
-        t.sync_party(deck(t, "Day"), ashfen, deck(t, "Roster"))
-            .unwrap();
-        // The hero's location-token now rests at the inn; march it to `dest`.
-        let token = t
+        let name = t
+            .card(t.content_cards(heroes)[0])
+            .unwrap()
+            .name()
+            .to_string();
+        t.equip_character(
+            &name, &recipe, heroes, stats, numbers, abilities, ashfen, progress,
+        )
+        .unwrap();
+        // The hero's position copy now rests at the inn; march it to `dest`.
+        let position = t
             .content_cards(ashfen)
             .into_iter()
             .find(|&c| {
                 let k = t.card(c).unwrap();
-                k.card_type() == "location-token" && k.front_title() == name
+                k.card_type() == "hero" && k.front_title() == name
             })
-            .expect("the stationed hero's token");
+            .expect("the stationed hero's position copy");
         let place = t
             .pile(deck(t, "Locations"))
             .unwrap()
@@ -271,7 +274,7 @@ mod tests {
             .into_iter()
             .find(|&p| t.pile(p).unwrap().label == dest)
             .unwrap();
-        t.move_character(token, place, deck(t, "Day")).unwrap();
+        t.move_character(position, place, progress).unwrap();
         place
     }
 
@@ -320,11 +323,11 @@ mod tests {
         assert_eq!(outcome, CombatOutcome::Loss);
         assert!(foe_count(&t, place) > 0, "the foes still hold the place");
         assert_eq!(log_title(&t, place).as_deref(), Some("Defeat"));
-        let stayed = cards_of_types(&t, place, &["location-token"])
+        let stayed = cards_of_types(&t, place, &["hero"])
             .iter()
             .any(|&c| t.card(c).unwrap().front_title() == "Vael Thornbrand");
         assert!(stayed, "the hero stays put on a loss");
-        let at_inn = cards_of_types(&t, ashfen(&t), &["location-token"])
+        let at_inn = cards_of_types(&t, ashfen(&t), &["hero"])
             .iter()
             .any(|&c| t.card(c).unwrap().front_title() == "Vael Thornbrand");
         assert!(!at_inn, "the hero did not retreat to the inn");

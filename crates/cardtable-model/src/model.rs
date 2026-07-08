@@ -1027,29 +1027,32 @@ impl Tableau {
     /// `stats_bank` / `numbers_bank`), then the **ability** card (from `abilities_bank`), then the hero's
     /// **own identity card** moved on top as the deck's [`Zone`](CardKind::Zone) label (it leaves the
     /// Identity deck). The kit card is a reusable spec — it is **not** touched. Returns the character deck.
+    #[allow(clippy::too_many_arguments)]
     pub fn equip_character(
         &mut self,
-        hero: CardId,
+        hero_name: &str,
         recipe: &Recipe,
+        heroes: PileId,
         stats_bank: PileId,
         numbers_bank: PileId,
         abilities_bank: PileId,
+        home_location: PileId,
+        progress: PileId,
     ) -> Result<PileId, TableauError> {
-        let name = self
-            .card(hero)
-            .ok_or(TableauError::UnknownCard(hero))?
-            .name()
-            .to_string();
-        let deck = self.add_pile(self.root, name.clone())?;
+        let deck = self.add_pile(self.root, hero_name.to_string())?;
+        // Assemble the stats + ability from the banks (conservation-clean, no mint).
         for (&(stat, _desc), &value) in crate::catalog::STATS.iter().zip(recipe.stats.iter()) {
             self.draw_named_from(stats_bank, deck, stat)?;
             self.draw_named_from(numbers_bank, deck, &value.to_string())?;
         }
         self.draw_named_from(abilities_bank, deck, &recipe.ability)?;
-        // The hero's own identity card becomes the deck's Zone label (it leaves Identity).
-        let at = self.piles[&deck].children.len();
-        self.move_card(hero, deck, at)?;
-        self.set_card_kind(hero, CardKind::Zone)?;
+        // Deal the hero's four copies off the Heroes `×4` stack (`draw_named_from` splits one off each
+        // time). Two go to the character deck: a **rank marker** (a Regular hero card that sits with the
+        // character, to declare rank in combat — wired later), then the deck's **Zone label** on top (the
+        // stats tracker + the pile's `reflects`). The Heroes stack empties after all four.
+        self.draw_named_from(heroes, deck, hero_name)?; // rank marker
+        let label = self.draw_named_from(heroes, deck, hero_name)?;
+        self.set_card_kind(label, CardKind::Zone)?;
         self.set_layout(
             deck,
             Layout {
@@ -1058,42 +1061,60 @@ impl Tableau {
             },
         )?;
         self.set_pile_pos(deck, 40.0, 320.0)?;
-        // Mark it a character deck for `hero`, so the day-clock / stationing reconcile ([`sync_party`])
-        // recognises the active party.
-        self.piles.get_mut(&deck).expect("just created").reflects = Some(hero);
+        self.piles.get_mut(&deck).expect("just created").reflects = Some(label);
+        // Station on the board: copy 3 stands at the home location (map position), copy 4 is a face-up
+        // move marker on Progress (face-up = hasn't moved today). `draw_named_from` mints face-up copies.
+        self.draw_named_from(heroes, home_location, hero_name)?;
+        self.draw_named_from(heroes, progress, hero_name)?;
         Ok(deck)
     }
 
     /// **Un-equip** a character `deck` — the inverse of [`equip_character`], conservation-clean: return
-    /// each borrowed card to its bank by type (`stat` → `stats_bank`, `number` → `numbers_bank`, `ability`
-    /// → `abilities_bank`), move the hero's identity card back to `identity_home` (a plain card again), and
-    /// remove the now-empty character-deck **pile** (structure, not a card). Any other card is swept to
-    /// `identity_home` rather than lost.
+    /// each borrowed stat/number/ability card to its bank (`return_one`, merged, PC.2), and gather the
+    /// hero's **four copies** — the deck's Zone label, its rank marker, its map position, and its Progress
+    /// move marker — back onto the Heroes stack (re-forming the `×4`). Removes the now-empty character-deck
+    /// **pile**. The stationed copies are found across the table by name (PC.1).
     pub fn unequip_character(
         &mut self,
         deck: PileId,
-        identity_home: PileId,
+        heroes: PileId,
         stats_bank: PileId,
         numbers_bank: PileId,
         abilities_bank: PileId,
     ) -> Result<(), TableauError> {
-        // The hero label first (the deck's Zone card) → back to Identity as a plain Regular card.
+        let name = self
+            .zone_card(deck)
+            .and_then(|c| self.card(c))
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_default();
+        // The deck's Zone label (a hero copy) → back to the Heroes stack as a plain Regular card.
         if let Some(hero) = self.zone_card(deck) {
             self.set_card_kind(hero, CardKind::Regular)?;
-            self.move_card(hero, identity_home, 0)?;
+            self.return_one(hero, heroes)?;
         }
-        // Then every remaining card back to its bank, **merging** into that bank's stack (PC.2).
+        // The deck's content: stat/number/ability → banks; the rank-marker hero copy → the Heroes stack.
         for c in self.content_cards(deck) {
             match self.card(c).map(|k| k.card_type()) {
                 Some("stat") => self.return_one(c, stats_bank)?,
                 Some("number") => self.return_one(c, numbers_bank)?,
                 Some("ability") => self.return_one(c, abilities_bank)?,
-                _ => {
-                    self.move_card(c, identity_home, 0)?;
-                }
+                _ => self.return_one(c, heroes)?, // the rank marker (a hero copy)
             }
         }
         self.remove_pile(deck)?;
+        // The stationed copies (map position + Progress move marker), wherever they stand, → Heroes.
+        let strays: Vec<CardId> = self
+            .cards
+            .iter()
+            .filter(|(_, c)| {
+                c.card_type() == "hero" && c.front_title() == name && c.home() != heroes
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for c in strays {
+            self.flip_up(c)?;
+            self.return_one(c, heroes)?;
+        }
         Ok(())
     }
 
@@ -1162,124 +1183,23 @@ impl Tableau {
         Ok(())
     }
 
-    /// The active party — the names of the heroes reflected by the character decks on the table.
-    fn active_party(&self) -> Vec<String> {
-        self.piles[&self.root]
-            .subpiles()
-            .into_iter()
-            .filter_map(|s| self.piles[&s].reflects)
-            .filter_map(|h| self.cards.get(&h).map(|c| c.front_title().to_string()))
-            .collect()
-    }
-
-    /// Is card `c` a `ttype` token for character `name` (matched by type and **front title**, PC.1)?
-    fn is_party_token(&self, c: CardId, ttype: &str, name: &str) -> bool {
-        self.cards
-            .get(&c)
-            .is_some_and(|k| k.card_type() == ttype && k.front_title() == name)
-    }
-
-    /// If a `ttype` token for `name` is sitting in `reserve`, move it to `dest` (standing it up). A no-op
-    /// if the token is already out of the reserve (in play) or the reserve holds no such token — so the
-    /// player's own placement is never overridden.
-    fn draw_reserved_token(
-        &mut self,
-        reserve: PileId,
-        dest: PileId,
-        name: &str,
-        ttype: &str,
-    ) -> Result<(), TableauError> {
-        if let Some(c) = self
-            .content_cards(reserve)
-            .into_iter()
-            .find(|&c| self.is_party_token(c, ttype, name))
-        {
-            self.move_card(c, dest, 0)?; // below any Zone label (kept on top)
-            self.flip_up(c)?;
-        }
-        Ok(())
-    }
-
-    /// Reconcile the **Day deck** to the active party (spec `physical-cards.md` PC.5): every character with
-    /// a reflection deck on the table has its **day-token** standing in `day_deck`; a token whose character
-    /// has left returns to `reserve`. Matched by name (PC.1). Idempotent, conservation-clean (moves only).
-    /// Call after a recruit change. See [`sync_party`](Tableau::sync_party)
-    /// to also station location tokens.
-    pub fn sync_day_clock(
-        &mut self,
-        day_deck: PileId,
-        reserve: PileId,
-    ) -> Result<(), TableauError> {
-        let active = self.active_party();
-        for name in &active {
-            self.draw_reserved_token(reserve, day_deck, name, "day-token")?;
-        }
-        let retire: Vec<CardId> = self
-            .content_cards(day_deck)
-            .into_iter()
-            .filter(|&c| {
-                !active
-                    .iter()
-                    .any(|n| self.is_party_token(c, "day-token", n))
-            })
-            .collect();
-        for c in retire {
-            self.flip_up(c)?;
-            self.move_card(c, reserve, 0)?;
-        }
-        Ok(())
-    }
-
-    /// Reconcile the whole **party** to the table: the day clock ([`sync_day_clock`](Tableau::sync_day_clock))
-    /// **plus stationing** — a newly-active character's **location token** is drawn from `reserve` to
-    /// `home_location`, and a location token whose character has left returns to `reserve` (from wherever
-    /// it stands). A token the player has already moved is left where it is. Idempotent, conservation-clean.
-    pub fn sync_party(
-        &mut self,
-        day_deck: PileId,
-        home_location: PileId,
-        reserve: PileId,
-    ) -> Result<(), TableauError> {
-        self.sync_day_clock(day_deck, reserve)?;
-        let active = self.active_party();
-        for name in &active {
-            self.draw_reserved_token(reserve, home_location, name, "location-token")?;
-        }
-        // Retire location tokens (wherever they stand) whose character is no longer active.
-        let retire: Vec<CardId> = self
-            .cards
-            .iter()
-            .filter(|(_, c)| {
-                c.card_type() == "location-token"
-                    && c.home() != reserve
-                    && !active.iter().any(|n| n == c.front_title())
-            })
-            .map(|(&id, _)| id)
-            .collect();
-        for c in retire {
-            self.flip_up(c)?;
-            self.move_card(c, reserve, 0)?;
-        }
-        Ok(())
-    }
-
-    /// Move a character's **location token** to `to_location` and spend its day-clock move: flip its
-    /// day-token in `day_deck` face-down ([`mark_moved`](Tableau::mark_moved)). Returns `true` when that
-    /// was the **last** character still to move — the day is over, and the caller then
+    /// Move a character's **map position** copy to `to_location` and spend its move: flip its Progress
+    /// move marker face-down ([`mark_moved`](Tableau::mark_moved)). Returns `true` when that was the
+    /// **last** character still to move — the day is over, and the caller then
     /// [`advance_day`](Tableau::advance_day)s. Conservation-clean (a move + a flip).
     pub fn move_character(
         &mut self,
-        location_token: CardId,
+        position: CardId,
         to_location: PileId,
-        day_deck: PileId,
+        progress: PileId,
     ) -> Result<bool, TableauError> {
         let name = self
-            .card(location_token)
+            .card(position)
             .map(|c| c.front_title().to_string())
             .unwrap_or_default();
-        self.move_card(location_token, to_location, 0)?;
-        self.mark_moved(day_deck, &name)?;
-        Ok(self.day_is_over(day_deck))
+        self.move_card(position, to_location, 0)?;
+        self.mark_moved(progress, &name)?;
+        Ok(self.day_is_over(progress))
     }
 
     /// Sets `pile`'s collapsed flag directly (a manual fan/collapse, independent of focus).
@@ -1436,18 +1356,25 @@ impl Tableau {
     }
 
     // --- The day clock (spec `physical-cards.md` PC.5) ------------------------------------------------
-    // A **Day deck** holds one face-up identity copy per active character (face-up = hasn't moved today).
-    // When a character moves, its copy flips face-down; once every copy is down the day is over and
-    // [`advance_day`](Tableau::advance_day) stands them back up and grows the day **track** by one card
-    // (the day is the track's count — no number cap). All conservation-safe: only flips and one move.
+    // **Progress** is the day clock: a `Day Passes ×N` **count** stack (type `event`; its quantity is the
+    // current day) plus one face-up `hero` **move marker** per active character (face-up = hasn't moved
+    // today). A move flips a marker down; once every marker is down the day is over and
+    // [`advance_day`](Tableau::advance_day) stands them back up and grows the count by one. Count and
+    // markers are told apart by card type. All conservation-safe: only flips and one move.
 
-    /// Spend a character's day-clock copy — flip the **face-up** content card in `day_deck` whose front
-    /// title is `character` face-down ("has moved today"). A no-op if none matches (a copy already down,
-    /// or the character isn't tracked here).
-    pub fn mark_moved(&mut self, day_deck: PileId, character: &str) -> Result<(), TableauError> {
-        let target = self.content_cards(day_deck).into_iter().find(|&c| {
-            self.card(c)
-                .is_some_and(|card| !card.is_face_down() && card.front_title() == character)
+    /// Whether card `c` on the Progress deck is a **hero move marker** (as opposed to the `event` count).
+    fn is_move_marker(&self, c: CardId) -> bool {
+        self.card(c).is_some_and(|k| k.card_type() == "hero")
+    }
+
+    /// Spend a character's move — flip the **face-up** hero marker on `progress` whose front title is
+    /// `character` face-down ("has moved today"). A no-op if none matches (already down, or not tracked).
+    pub fn mark_moved(&mut self, progress: PileId, character: &str) -> Result<(), TableauError> {
+        let target = self.content_cards(progress).into_iter().find(|&c| {
+            self.is_move_marker(c)
+                && self
+                    .card(c)
+                    .is_some_and(|card| !card.is_face_down() && card.front_title() == character)
         });
         if let Some(c) = target {
             self.flip_down(c)?;
@@ -1455,39 +1382,39 @@ impl Tableau {
         Ok(())
     }
 
-    /// Is the day over — has **every** day-clock copy in `day_deck` been spent (face-down)? An empty deck
-    /// (no copies) is never "over".
-    pub fn day_is_over(&self, day_deck: PileId) -> bool {
-        let copies = self.content_cards(day_deck);
-        !copies.is_empty()
-            && copies
+    /// Is the day over — has **every** hero move marker on `progress` been spent (face-down)? No markers
+    /// (no active party) is never "over".
+    pub fn day_is_over(&self, progress: PileId) -> bool {
+        let markers: Vec<CardId> = self
+            .content_cards(progress)
+            .into_iter()
+            .filter(|&c| self.is_move_marker(c))
+            .collect();
+        !markers.is_empty()
+            && markers
                 .iter()
                 .all(|&c| self.card(c).is_some_and(|card| card.is_face_down()))
     }
 
-    /// Advance to the next day: stand every day-clock copy in `day_deck` back up, and draw **one** event
-    /// card from `reserve` onto the day `track` — merging into the track's event stack, so the day is the
-    /// stack's **quantity** (PC.5: count the events, no number cap). A no-op on the draw if the reserve is
-    /// spent (the game has run past its provisioned length — a bound to raise).
-    pub fn advance_day(
-        &mut self,
-        day_deck: PileId,
-        track: PileId,
-        reserve: PileId,
-    ) -> Result<(), TableauError> {
-        for c in self.content_cards(day_deck) {
-            self.flip_up(c)?;
+    /// Advance to the next day: stand every hero move marker on `progress` back up (leaving the count
+    /// alone), and draw **one** `Day Passes` card from `reserve` onto `progress` — merging into the count
+    /// stack, so the day is that stack's **quantity** (PC.5, no number cap). A no-op on the draw if the
+    /// reserve is spent (the game ran past its provisioned length — a bound to raise).
+    pub fn advance_day(&mut self, progress: PileId, reserve: PileId) -> Result<(), TableauError> {
+        for c in self.content_cards(progress) {
+            if self.is_move_marker(c) {
+                self.flip_up(c)?;
+            }
         }
-        // Draw one event off the reserve stack and merge it onto the track (both split & merge, PC.2).
+        // Draw one Day Passes off the reserve and merge it into the Progress count stack (split & merge, PC.2).
         if let Some(&stack) = self.content_cards(reserve).last() {
             let name = self
                 .card(stack)
                 .map(|c| c.name().to_string())
                 .unwrap_or_default();
-            let drawn = self.draw_named_from(reserve, track, &name)?;
-            // Fold it into the track's existing event stack (if any).
+            let drawn = self.draw_named_from(reserve, progress, &name)?;
             let merged_into = self
-                .content_cards(track)
+                .content_cards(progress)
                 .into_iter()
                 .find(|&c| c != drawn && self.card(c).is_some_and(|k| k.name() == name));
             if let Some(existing) = merged_into {
@@ -1499,11 +1426,12 @@ impl Tableau {
         Ok(())
     }
 
-    /// The current day — the **sum of quantities** on the day `track` (PC.5: count the events; the track is
-    /// one `Event ×day` stack).
-    pub fn current_day(&self, track: PileId) -> usize {
-        self.content_cards(track)
+    /// The current day — the **sum of the `event` count quantities** on `progress` (PC.5: count the Day
+    /// Passes cards; the hero move markers are not counted).
+    pub fn current_day(&self, progress: PileId) -> usize {
+        self.content_cards(progress)
             .iter()
+            .filter(|&&c| self.card(c).is_some_and(|k| k.card_type() == "event"))
             .map(|&c| self.card(c).map_or(0, |k| k.quantity() as usize))
             .sum()
     }
@@ -2009,53 +1937,74 @@ mod tests {
     fn day_clock_advances_when_every_character_has_moved() {
         let mut t = Tableau::new();
         let root = t.root_id();
-        // The Day deck: one face-up identity copy per active character (front = hero name).
-        let day = t.add_pile(root, "Day").unwrap();
-        for h in ["Vael", "Bram", "Isolde"] {
-            let c = t.add_card(day, Face::Up { title: h.into() }, None).unwrap();
-            t.set_card_type(c, "hero").unwrap();
-        }
-        // The day track (its card count = the day, starting at 1) and a reserve of event/day cards.
-        let track = t.add_pile(root, "Days").unwrap();
-        t.add_card(
-            track,
-            Face::Up {
-                title: "Day".into(),
-            },
-            None,
-        )
-        .unwrap();
-        let reserve = t.add_pile(root, "Events").unwrap();
-        for _ in 0..5 {
-            t.add_card(
-                reserve,
+        // Progress: the day **count** (a `Day Passes` event card, quantity = the day) plus one face-up
+        // `hero` move marker per active character (front = hero name).
+        let progress = t.add_pile(root, "Progress").unwrap();
+        let count = t
+            .add_card(
+                progress,
                 Face::Up {
-                    title: "Day".into(),
+                    title: "Day Passes".into(),
                 },
                 None,
             )
             .unwrap();
+        t.set_card_type(count, "event").unwrap();
+        for h in ["Vael", "Bram", "Isolde"] {
+            let c = t
+                .add_card(progress, Face::Up { title: h.into() }, None)
+                .unwrap();
+            t.set_card_type(c, "hero").unwrap();
+        }
+        // A reserve of `Day Passes` cards to draw from as the days advance.
+        let reserve = t.add_pile(root, "Events").unwrap();
+        for _ in 0..5 {
+            let e = t
+                .add_card(
+                    reserve,
+                    Face::Up {
+                        title: "Day Passes".into(),
+                    },
+                    None,
+                )
+                .unwrap();
+            t.set_card_type(e, "event").unwrap();
         }
         let total = t.card_count(); // the closed deck after setup
 
-        assert_eq!(t.current_day(track), 1);
-        assert!(!t.day_is_over(day));
+        assert_eq!(t.current_day(progress), 1);
+        assert!(!t.day_is_over(progress));
 
-        t.mark_moved(day, "Vael").unwrap();
-        t.mark_moved(day, "Bram").unwrap();
-        assert!(!t.day_is_over(day), "one character still to move");
-        t.mark_moved(day, "Isolde").unwrap();
-        assert!(t.day_is_over(day), "everyone has moved — the day is over");
-
-        t.advance_day(day, track, reserve).unwrap();
-        assert_eq!(t.current_day(track), 2, "the day is the track's count");
-        assert_eq!(t.content_cards(reserve).len(), 4, "one event was drawn");
-        assert!(!t.day_is_over(day), "a new day — everyone can move again");
+        t.mark_moved(progress, "Vael").unwrap();
+        t.mark_moved(progress, "Bram").unwrap();
+        assert!(!t.day_is_over(progress), "one character still to move");
+        t.mark_moved(progress, "Isolde").unwrap();
         assert!(
-            t.content_cards(day)
+            t.day_is_over(progress),
+            "everyone has moved — the day is over"
+        );
+
+        t.advance_day(progress, reserve).unwrap();
+        assert_eq!(
+            t.current_day(progress),
+            2,
+            "the day is the count's quantity"
+        );
+        assert_eq!(
+            t.content_cards(reserve).len(),
+            4,
+            "one Day Passes was drawn"
+        );
+        assert!(
+            !t.day_is_over(progress),
+            "a new day — everyone can move again"
+        );
+        assert!(
+            t.content_cards(progress)
                 .iter()
+                .filter(|&&c| t.card(c).unwrap().card_type() == "hero")
                 .all(|&c| !t.card(c).unwrap().is_face_down()),
-            "every copy stood back up"
+            "every marker stood back up"
         );
 
         assert_eq!(
@@ -2073,10 +2022,10 @@ mod tests {
     fn equip_assembles_from_banks_and_unequip_returns_them_conserving_cards() {
         let mut t = Tableau::new();
         let root = t.root_id();
-        let identity = t.add_pile(root, "Identity").unwrap();
+        let heroes = t.add_pile(root, "Heroes").unwrap();
         let hero = t
             .add_card(
-                identity,
+                heroes,
                 Face::Up {
                     title: "Vael".into(),
                 },
@@ -2084,6 +2033,10 @@ mod tests {
             )
             .unwrap();
         t.set_card_type(hero, "hero").unwrap();
+        t.set_card_quantity(hero, 4).unwrap(); // the four copies recruiting deals out
+        // Where the stationed copies go.
+        let home = t.add_pile(root, "Home").unwrap();
+        let progress = t.add_pile(root, "Progress").unwrap();
         // Banks with many copies (PC.5): two of each stat name, four of each digit, one ability.
         let stats = t.add_pile(root, "Stats").unwrap();
         for (name, _) in crate::catalog::STATS {
@@ -2127,10 +2080,13 @@ mod tests {
             ability: "Alpha Strike".into(),
         };
         let deck = t
-            .equip_character(hero, &recipe, stats, numbers, abilities)
+            .equip_character(
+                "Vael", &recipe, heroes, stats, numbers, abilities, home, progress,
+            )
             .unwrap();
 
-        // The deck spells each stat as name+number, then the ability; the hero is its Zone label.
+        // The deck spells each stat as name+number, then the ability, then a hero **rank marker**; the
+        // deck's Zone label is another hero copy.
         let content: Vec<String> = t
             .content_cards(deck)
             .iter()
@@ -2149,21 +2105,42 @@ mod tests {
                 "1",
                 "Finesse",
                 "1",
-                "Alpha Strike"
+                "Alpha Strike",
+                "Vael"
             ]
         );
         assert_eq!(t.card(t.zone_card(deck).unwrap()).unwrap().name(), "Vael");
+        // The four copies were dealt: none left in Heroes; one at home; one on Progress.
         assert!(
-            t.content_cards(identity).is_empty(),
-            "the hero left Identity"
+            t.content_cards(heroes)
+                .iter()
+                .all(|&c| t.card(c).unwrap().name() != "Vael"),
+            "the Heroes stack emptied"
         );
-        assert_eq!(t.card_count(), total, "assembly minted nothing (PC.2)");
+        assert_eq!(t.content_cards(home).len(), 1, "position copy at home");
+        assert_eq!(
+            t.content_cards(progress).len(),
+            1,
+            "move marker on Progress"
+        );
+        assert_eq!(
+            t.card_count(),
+            total,
+            "assembly + dealing minted nothing (PC.2)"
+        );
 
-        // Un-equip: everything returns to its bank, the hero to Identity, the deck pile gone.
-        t.unequip_character(deck, identity, stats, numbers, abilities)
+        // Un-equip: everything returns — cards to banks, the four hero copies re-form the ×4 Heroes stack.
+        t.unequip_character(deck, heroes, stats, numbers, abilities)
             .unwrap();
         assert!(t.pile(deck).is_none(), "character deck removed");
-        assert_eq!(t.content_cards(identity).len(), 1, "hero back in Identity");
+        let restacked = t
+            .content_cards(heroes)
+            .iter()
+            .find(|&&c| t.card(c).unwrap().name() == "Vael")
+            .map(|&c| t.card(c).unwrap().quantity());
+        assert_eq!(restacked, Some(4), "four copies merged back to ×4");
+        assert!(t.content_cards(home).is_empty(), "position copy returned");
+        assert!(t.content_cards(progress).is_empty(), "move marker returned");
         // The returned cards merged back into the banks — the physical totals are restored (5 names ×2 =
         // 10, one ability), even though they now sit as fewer, larger stacks.
         let bank_sum = |t: &Tableau, p: PileId| -> u32 {
@@ -2792,6 +2769,9 @@ mod tests {
             )
             .unwrap();
         t.set_card_type(hero, "hero").unwrap();
+        t.set_card_quantity(hero, 4).unwrap(); // the four copies recruiting deals out
+        let home = t.add_pile(root, "Home").unwrap();
+        let progress = t.add_pile(root, "Progress").unwrap();
         let kits = t.add_pile(root, "Starting Kit").unwrap();
         let kit = t
             .add_card(
@@ -2855,9 +2835,11 @@ mod tests {
 
         let recipe = t.card(kit).unwrap().recipe().unwrap().clone();
         let character = t
-            .equip_character(hero, &recipe, stats, numbers, abilities)
+            .equip_character(
+                "Vael", &recipe, identity, stats, numbers, abilities, home, progress,
+            )
             .unwrap();
-        assert!(t.content_cards(identity).is_empty()); // hero left Identity → the deck's label
+        assert!(t.content_cards(identity).is_empty()); // the ×4 stack fully dealt out
         assert_eq!(
             t.card(t.zone_card(character).unwrap()).unwrap().name(),
             "Vael"
@@ -2867,7 +2849,8 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name().to_string())
             .collect();
-        // Each stat spelled name+number, then the ability — assembled from the banks (PC.2, no mint).
+        // Each stat spelled name+number, then the ability, then the hero rank marker — assembled from the
+        // banks + the Heroes stack (PC.2, no mint).
         assert_eq!(
             content,
             [
@@ -2881,7 +2864,8 @@ mod tests {
                 "2",
                 "Finesse",
                 "1",
-                "Jab"
+                "Jab",
+                "Vael"
             ]
         );
         assert_eq!(t.card(kit).unwrap().name(), "Skirmisher"); // kit spec untouched (reusable)

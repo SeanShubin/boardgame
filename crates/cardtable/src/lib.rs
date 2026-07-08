@@ -614,9 +614,9 @@ fn on_drop(
         return; // dropped onto the felt — in-zone reordering is handled by the grid
     };
     on.propagate(false);
-    // Dropping a character's **identity card** back onto the Identity deck **un-equips** them — every
-    // borrowed card merges back into its bank and the hero returns to Identity.
-    if top_deck(&table.0, "Identity") == Some(dest) && try_unequip(&mut table.0, dragged.0) {
+    // Dropping a character's **label card** back onto the Heroes deck **un-equips** them — every borrowed
+    // card merges back into its bank and the hero's four copies re-form the ×4 Heroes stack.
+    if top_deck(&table.0, "Heroes") == Some(dest) && try_unequip(&mut table.0, dragged.0) {
         rebuild.0 = true;
         return;
     }
@@ -658,68 +658,55 @@ fn home_location(table: &Tableau) -> Option<PileId> {
         .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some("Ashfen Crossing"))
 }
 
-/// Re-station the party after a recruit change (spec `physical-cards.md` PC.5): reconcile the day clock
-/// and location tokens against the active character decks.
-fn reconcile_party(table: &mut Tableau) {
-    if let (Some(day), Some(roster), Some(home)) = (
-        top_deck(table, "Day"),
-        top_deck(table, "Roster"),
-        home_location(table),
-    ) {
-        let _ = table.sync_party(day, home, roster);
-    }
-}
-
-/// **Equip** `identity` (a hero) with `kit` (a recipe card) — the conservation-clean recruit: assemble a
-/// character deck by *moving* the hero + the kit's stat-name / number / ability cards out of the banks
-/// (never minting), then station it. Returns whether it happened.
-fn try_equip(table: &mut Tableau, identity: CardId, kit: CardId) -> bool {
+/// **Equip** `hero` (a copy from the Heroes deck) with `kit` (a recipe card) — the conservation-clean
+/// recruit: `equip_character` assembles a character deck from the banks and **deals the hero's four
+/// copies** (deck label + rank marker + map position + Progress move marker) out of the Heroes `×4`
+/// stack. Returns whether it happened.
+fn try_equip(table: &mut Tableau, hero: CardId, kit: CardId) -> bool {
     let Some(recipe) = table.card(kit).and_then(|c| c.recipe().cloned()) else {
         return false;
     };
-    let (Some(stats), Some(numbers), Some(abilities)) = (
+    let Some(name) = table.card(hero).map(|c| c.front_title().to_string()) else {
+        return false;
+    };
+    let (Some(heroes), Some(stats), Some(numbers), Some(abilities), Some(home), Some(progress)) = (
+        table.card(hero).map(|c| c.home()),
         top_deck(table, "Stats"),
         top_deck(table, "Numbers"),
         top_deck(table, "Abilities"),
+        home_location(table),
+        top_deck(table, "Progress"),
     ) else {
         return false;
     };
-    if table
-        .equip_character(identity, &recipe, stats, numbers, abilities)
+    table
+        .equip_character(
+            &name, &recipe, heroes, stats, numbers, abilities, home, progress,
+        )
         .is_ok()
-    {
-        reconcile_party(table);
-        return true;
-    }
-    false
 }
 
-/// **Un-equip** a character whose identity card is `identity` (the label of its character deck) — return
-/// every borrowed card to its bank and the hero to Identity. Returns whether it happened (i.e. `identity`
-/// really is a character deck's label).
-fn try_unequip(table: &mut Tableau, identity: CardId) -> bool {
-    let Some(deck) = table.card(identity).map(|c| c.home()) else {
+/// **Un-equip** a character whose label card is `hero` (the character deck's Zone label) — return every
+/// borrowed card to its bank and gather the hero's four copies back onto the Heroes stack. Returns
+/// whether it happened (i.e. `hero` really is a character deck's label).
+fn try_unequip(table: &mut Tableau, hero: CardId) -> bool {
+    let Some(deck) = table.card(hero).map(|c| c.home()) else {
         return false;
     };
-    if table.pile(deck).and_then(|p| p.reflects()) != Some(identity) {
+    if table.pile(deck).and_then(|p| p.reflects()) != Some(hero) {
         return false; // not a character deck's label — a plain card
     }
-    let (Some(id_home), Some(stats), Some(numbers), Some(abilities)) = (
-        top_deck(table, "Identity"),
+    let (Some(heroes), Some(stats), Some(numbers), Some(abilities)) = (
+        top_deck(table, "Heroes"),
         top_deck(table, "Stats"),
         top_deck(table, "Numbers"),
         top_deck(table, "Abilities"),
     ) else {
         return false;
     };
-    if table
-        .unequip_character(deck, id_home, stats, numbers, abilities)
+    table
+        .unequip_character(deck, heroes, stats, numbers, abilities)
         .is_ok()
-    {
-        reconcile_party(table);
-        return true;
-    }
-    false
 }
 
 /// Slide a dragged **felt element** — a card or a nested pile — freely under the cursor, even off the
@@ -929,19 +916,32 @@ fn can_drop_on_card(table: &Tableau, dragged: CardId, target: CardId) -> bool {
     d_kit != t_kit
 }
 
+/// Whether `id` is a hero's **map position** copy — a `hero` card whose home is one of the Locations
+/// grid's place piles (as opposed to a hero copy in the Heroes deck, a character deck, or Progress).
+fn is_map_position(table: &Tableau, id: CardId) -> bool {
+    let Some(home) = table
+        .card(id)
+        .filter(|c| c.card_type() == "hero")
+        .map(|c| c.home())
+    else {
+        return false;
+    };
+    top_deck(table, "Locations")
+        .and_then(|loc| table.pile(loc))
+        .is_some_and(|loc| loc.subpiles().contains(&home))
+}
+
 /// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
-/// character's location token moves to any *other* place.
+/// character's position copy moves to any *other* place.
 fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
     top_deck(table, "Locations") == Some(table.focus_id())
-        && table
-            .card(dragged)
-            .is_some_and(|c| c.card_type() == "location-token")
+        && table.card(dragged).is_some_and(|c| c.card_type() == "hero")
         && table.card(dragged).map(|c| c.home()) != Some(target)
 }
 
-/// Whether the drilled-in `zone` is an individual **location** holding both a stationed hero (a
-/// `location-token`) and an `encounter` — the condition for offering combat. Excludes the Locations
-/// **map** itself (you must be inside a single place, not the grid) and every non-place zone.
+/// Whether the drilled-in `zone` is an individual **location** holding both a stationed hero (a `hero`
+/// position copy) and an `encounter` — the condition for offering combat. Excludes the Locations **map**
+/// itself (you must be inside a single place, not the grid) and every non-place zone.
 fn location_ready_for_combat(tree: &Tableau, zone: PileId) -> bool {
     let is_place = top_deck(tree, "Locations")
         .and_then(|loc| tree.pile(loc))
@@ -952,7 +952,7 @@ fn location_ready_for_combat(tree: &Tableau, zone: PileId) -> bool {
     let (mut has_hero, mut has_encounter) = (false, false);
     for c in tree.content_cards(zone) {
         match tree.card(c).map(|k| k.card_type()) {
-            Some("location-token") => has_hero = true,
+            Some("hero") => has_hero = true,
             Some("encounter") => has_encounter = true,
             _ => {}
         }
@@ -961,9 +961,9 @@ fn location_ready_for_combat(tree: &Tableau, zone: PileId) -> bool {
 }
 
 /// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
-/// the movable cue. A location token moves places; in the inn a hero/kit is worth picking up only when the
-/// opposite kind (`has_kit` / `has_hero`) is on show to pair with. Everything else (repositioning a Free
-/// card, reordering a fan, dragging a deck) is presentation only — no cue.
+/// the movable cue. A hero's map position copy moves places; in the inn a hero/kit is worth picking up only
+/// when the opposite kind (`has_kit` / `has_hero`) is on show to pair with. Everything else (repositioning
+/// a Free card, reordering a fan, dragging a deck) is presentation only — no cue.
 fn is_game_movable(
     table: &Tableau,
     id: CardId,
@@ -971,10 +971,7 @@ fn is_game_movable(
     has_kit: bool,
     has_hero: bool,
 ) -> bool {
-    if table
-        .card(id)
-        .is_some_and(|c| c.card_type() == "location-token")
-    {
+    if is_map_position(table, id) {
         return true;
     }
     if in_projection {
@@ -1250,9 +1247,9 @@ fn on_node_drag_end(
             }
             TableNode::Card(cid) => cid,
         };
-        // On the location **map** (the Locations grid drilled into), dragging a character's location-token
+        // On the location **map** (the Locations grid drilled into), dragging a character's position copy
         // onto another place card **moves** that character there (`Tableau::move_character` also spends its
-        // day-clock move by flipping the day-token). The day is *not* auto-advanced — ending the day is an
+        // move by flipping its Progress marker). The day is *not* auto-advanced — ending the day is an
         // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
         // cursor-follows and occludes picking, so the destination is found by geometry — by **box overlap**,
         // not the cursor point: if the dragged card's box overlaps exactly one **valid** drop target, that's
@@ -1261,12 +1258,7 @@ fn on_node_drag_end(
         // place are never counted — only real destinations. Overlapping two valid places, or none, is
         // ambiguous, so it snaps back.
         let on_map = top_deck(&table.0, "Locations") == Some(table.0.focus_id());
-        if on_map
-            && table
-                .0
-                .card(card)
-                .is_some_and(|c| c.card_type() == "location-token")
-        {
+        if on_map && table.0.card(card).is_some_and(|c| c.card_type() == "hero") {
             let drag_box = geom
                 .get(on.event().entity)
                 .ok()
@@ -1277,9 +1269,9 @@ fn on_node_drag_end(
                 }))
                 .map(|(z, _, _)| z.0)
             });
-            if let (Some(dest), Some(day)) = (dest, top_deck(&table.0, "Day")) {
+            if let (Some(dest), Some(progress)) = (dest, top_deck(&table.0, "Progress")) {
                 // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
-                let _ = table.0.move_character(card, dest, day);
+                let _ = table.0.move_character(card, dest, progress);
             }
             rebuild.0 = true;
             return;
@@ -1937,12 +1929,13 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                             })
                             .with_children(|grid| {
                                 for place in tree.pile(zone).expect("map zone").subpiles() {
+                                    // The heroes stationed at this place (their `hero` position copies)
+                                    // cascade below its place card.
                                     let tokens: Vec<CardId> = tree
                                         .content_cards(place)
                                         .into_iter()
                                         .filter(|&c| {
-                                            tree.card(c)
-                                                .is_some_and(|k| k.card_type() == "location-token")
+                                            tree.card(c).is_some_and(|k| k.card_type() == "hero")
                                         })
                                         .collect();
                                     // Tall enough for the place card plus one title strip per stationed token.
