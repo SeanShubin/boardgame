@@ -621,6 +621,25 @@ pub const SCHEDULE: &[&[(Intention, Intention)]] = {
     ]
 };
 
+/// The §4.6 sub-phase names, indexed by [`SCHEDULE`] position.
+pub const SUB_PHASE_NAMES: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
+
+/// A log header for sub-phase `idx`: its name and the rank→rank pairs it resolves — *who is allowed to
+/// strike whom* this sub-phase, e.g. `"── Intercept — Vanguard → Outrider ──"`.
+fn sub_phase_header(idx: usize) -> String {
+    let name = SUB_PHASE_NAMES.get(idx).copied().unwrap_or("?");
+    let pairs = SCHEDULE
+        .get(idx)
+        .map(|ps| {
+            ps.iter()
+                .map(|p| format!("{:?} → {:?}", p.0, p.1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    format!("── {name} — {pairs} ──")
+}
+
 /// Where the steppable resolver's cursor sits within the current sub-phase. One [`step`] performs
 /// exactly one of these transitions, leaving `State` in a serializable resting micro-state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -648,6 +667,10 @@ pub struct Resolution {
     pub step: usize,
     /// The cursor within the sub-phase: cycling, or its boundary.
     pub stage: Stage,
+    /// How many cycles of the current sub-phase have run — `0` on entry, so the log prints the sub-phase
+    /// header once (and reports a skip when the first cycle finds no eligible strike). Reset each boundary.
+    #[serde(default)]
+    pub cycle: u32,
 }
 
 impl Resolution {
@@ -656,6 +679,7 @@ impl Resolution {
         Resolution {
             step: 0,
             stage: Stage::Cycle,
+            cycle: 0,
         }
     }
 }
@@ -682,9 +706,22 @@ pub fn step(state: &mut State) -> bool {
     }
     match cur.stage {
         Stage::Cycle => {
+            // On entering a sub-phase (its first cycle), print the header — which sub-phase and the
+            // rank→rank pairs it resolves, so the strikes below have context.
+            if cur.cycle == 0 {
+                state.log.push(sub_phase_header(cur.step));
+            }
             // One sub-phase-cycle. While it makes progress, stay in `Cycle` (the pile persists across
-            // cycles); when a cycle commits nothing, the sub-phase is exhausted → its boundary.
-            if !resolve_sub_phase_cycle(state, cur.step) {
+            // cycles); when a cycle commits nothing, the sub-phase is exhausted → its boundary. A first
+            // cycle that commits nothing means the sub-phase found no eligible strike — report the skip.
+            if resolve_sub_phase_cycle(state, cur.step) {
+                cur.cycle += 1;
+            } else {
+                if cur.cycle == 0 {
+                    state
+                        .log
+                        .push("  (no eligible strikes — skipped)".to_string());
+                }
                 cur.stage = Stage::Boundary;
             }
         }
@@ -698,6 +735,7 @@ pub fn step(state: &mut State) -> bool {
             clear_phase_piles(&mut state.creatures);
             cur.step += 1;
             cur.stage = Stage::Cycle;
+            cur.cycle = 0;
         }
     }
     if cur.step >= SCHEDULE.len() {
@@ -718,6 +756,9 @@ pub fn step(state: &mut State) -> bool {
 /// Drives the steppable [`step`] machine to completion — the phase-boundary end state is identical to
 /// resolving the schedule in one synchronous pass.
 pub fn resolve_round(state: &mut State) {
+    state
+        .log
+        .push(format!("──────── Round {} ────────", state.round));
     state.resolution = Some(Resolution::start());
     while step(state) {}
 }
@@ -1128,7 +1169,11 @@ mod tests {
             "resolve_round clears the cursor"
         );
 
-        // Stepped: explicit micro-steps, each leaving a serializable resting micro-state.
+        // Stepped: explicit micro-steps, each leaving a serializable resting micro-state. Mirror the one
+        // thing `resolve_round` does around the step loop — the round header — so the logs still match.
+        stepped
+            .log
+            .push(format!("──────── Round {} ────────", stepped.round));
         stepped.resolution = Some(Resolution::start());
         let mut guard = 0;
         while step(&mut stepped) {
