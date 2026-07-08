@@ -105,6 +105,10 @@ pub enum CardKind {
     /// A **row header** in an [`Arrangement::Rows`] pile: the first card of a row, naming it. Not a
     /// content card — it isn't dragged or counted.
     Header,
+    /// A **virtual** readout — a card that shows game state (e.g. a combat log) rather than being a
+    /// physical tabletop card. It renders and expands like a Regular card, but is **not counted** in the
+    /// physical tally ([`Tableau::physical_card_count`]): it exists only in software.
+    Virtual,
 }
 
 /// The action a [`CardKind::Utility`] card performs when clicked — e.g. a card in the System deck.
@@ -251,6 +255,14 @@ impl Card {
     /// Whether the card has more than a name to show, so a click can grow it.
     pub fn is_expandable(&self) -> bool {
         !self.detail.is_empty() || !self.panel.is_empty()
+    }
+
+    /// Whether this is a **physical** tabletop card — the single source of truth for the physical tally
+    /// ([`Tableau::physical_card_count`]). Software cards are not physical: a [`Utility`](CardKind::Utility)
+    /// control (the System deck's Start Over / Exit) and a [`Virtual`](CardKind::Virtual) readout (a combat
+    /// log) both exist only in software, so neither is counted.
+    pub fn is_physical(&self) -> bool {
+        !matches!(self.kind(), CardKind::Utility(_) | CardKind::Virtual)
     }
 }
 
@@ -1613,20 +1625,26 @@ impl Tableau {
         let Some(p) = self.piles.get(&pile) else {
             return 0;
         };
-        // A deck that holds Utility action cards is software-only (the System deck) — nothing in it is a
-        // physical card, so it contributes zero, label and all.
-        let is_software_only = p.children.iter().any(|n| {
-            n.card()
-                .and_then(|c| self.cards.get(&c))
-                .is_some_and(|k| matches!(k.kind(), CardKind::Utility(_)))
-        });
+        // A deck that holds Utility action cards is software-only (the System deck) — its whole self is
+        // software, including its own label, so it contributes zero.
+        let is_software_only = p
+            .children
+            .iter()
+            .filter_map(|n| n.card().and_then(|c| self.cards.get(&c)))
+            .any(|k| matches!(k.kind(), CardKind::Utility(_)));
         if is_software_only {
             return 0;
         }
+        // Otherwise count each **physical** card (see [`Card::is_physical`]) — a Virtual readout (a combat
+        // log) sitting among real cards is skipped, the same predicate that excludes a System control.
         p.children
             .iter()
             .map(|node| match node {
-                Node::Card(c) => self.cards.get(c).map_or(0, |k| k.quantity() as usize),
+                Node::Card(c) => self
+                    .cards
+                    .get(c)
+                    .filter(|k| k.is_physical())
+                    .map_or(0, |k| k.quantity() as usize),
                 Node::Pile(sub) => self.physical_card_count(*sub),
             })
             .sum()

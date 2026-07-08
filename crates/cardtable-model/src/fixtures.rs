@@ -734,6 +734,22 @@ mod tests {
         );
     }
 
+    /// A [`CardKind::Virtual`] card (a combat log) is a software readout — it sits in a physical pile but
+    /// is not counted, so a location's tally reflects only its real tabletop cards.
+    #[test]
+    fn physical_card_count_skips_virtual_cards() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let place = t.add_pile(root, "Place").unwrap();
+        let zone = typed(&mut t, place, "Place", "Location");
+        t.set_card_kind(zone, CardKind::Zone).unwrap();
+        typed(&mut t, place, "A Foe", "foe"); // one physical card
+        let log = typed(&mut t, place, "Victory", "log");
+        t.set_card_kind(log, CardKind::Virtual).unwrap();
+        // The label + the foe count; the virtual log does not.
+        assert_eq!(t.physical_card_count(place), 1 + 1);
+    }
+
     /// The creature read-outs are *derived*, and the derivation reproduces the duel-locks positions
     /// (`duel-locks.ron` §4 `default_intentions`) exactly — so editing a stat re-derives the stance.
     #[test]
