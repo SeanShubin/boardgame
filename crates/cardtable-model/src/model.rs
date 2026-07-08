@@ -1356,7 +1356,7 @@ impl Tableau {
     }
 
     // --- The day clock (spec `physical-cards.md` PC.5) ------------------------------------------------
-    // **Progress** is the day clock: a `Day Passes ×N` **count** stack (type `event`; its quantity is the
+    // **Progress** is the day clock: a `Day Passed ×N` **count** stack (type `event`; its quantity is the
     // current day) plus one face-up `hero` **move marker** per active character (face-up = hasn't moved
     // today). A move flips a marker down; once every marker is down the day is over and
     // [`advance_day`](Tableau::advance_day) stands them back up and grows the count by one. Count and
@@ -1397,7 +1397,7 @@ impl Tableau {
     }
 
     /// Advance to the next day: stand every hero move marker on `progress` back up (leaving the count
-    /// alone), and draw **one** `Day Passes` card from `reserve` onto `progress` — merging into the count
+    /// alone), and draw **one** `Day Passed` card from `reserve` onto `progress` — merging into the count
     /// stack, so the day is that stack's **quantity** (PC.5, no number cap). A no-op on the draw if the
     /// reserve is spent (the game ran past its provisioned length — a bound to raise).
     pub fn advance_day(&mut self, progress: PileId, reserve: PileId) -> Result<(), TableauError> {
@@ -1406,7 +1406,7 @@ impl Tableau {
                 self.flip_up(c)?;
             }
         }
-        // Draw one Day Passes off the reserve and merge it into the Progress count stack (split & merge, PC.2).
+        // Draw one Day Passed off the reserve and merge it into the Progress count stack (split & merge, PC.2).
         if let Some(&stack) = self.content_cards(reserve).last() {
             let name = self
                 .card(stack)
@@ -1541,7 +1541,7 @@ impl Tableau {
     /// The number of **physical** cards `pile` holds — the count you'd get holding the deck at a
     /// tabletop — counted recursively through its nested sub-piles and shown in a zone's `(N)` title
     /// prefix. Every card physically *here* counts once, by its [`quantity`](Card::quantity): the pile's
-    /// own title (zone) card, row headers, and ordinary cards alike (a `Day Passes ×11` stack is 11).
+    /// own title (zone) card, row headers, and ordinary cards alike (a `Day Passed ×11` stack is 11).
     /// Two things don't count, because they aren't physical cards:
     /// - **Projected** cards keep their home in the deck the pile borrows from (the inn borrows Identity
     ///   and Kit) and are counted there, so no card is counted twice.
@@ -1937,14 +1937,14 @@ mod tests {
     fn day_clock_advances_when_every_character_has_moved() {
         let mut t = Tableau::new();
         let root = t.root_id();
-        // Progress: the day **count** (a `Day Passes` event card, quantity = the day) plus one face-up
+        // Progress: the day **count** (a `Day Passed` event card, quantity = the day) plus one face-up
         // `hero` move marker per active character (front = hero name).
         let progress = t.add_pile(root, "Progress").unwrap();
         let count = t
             .add_card(
                 progress,
                 Face::Up {
-                    title: "Day Passes".into(),
+                    title: "Day Passed".into(),
                 },
                 None,
             )
@@ -1956,14 +1956,14 @@ mod tests {
                 .unwrap();
             t.set_card_type(c, "hero").unwrap();
         }
-        // A reserve of `Day Passes` cards to draw from as the days advance.
+        // A reserve of `Day Passed` cards to draw from as the days advance.
         let reserve = t.add_pile(root, "Events").unwrap();
         for _ in 0..5 {
             let e = t
                 .add_card(
                     reserve,
                     Face::Up {
-                        title: "Day Passes".into(),
+                        title: "Day Passed".into(),
                     },
                     None,
                 )
@@ -1993,7 +1993,7 @@ mod tests {
         assert_eq!(
             t.content_cards(reserve).len(),
             4,
-            "one Day Passes was drawn"
+            "one Day Passed was drawn"
         );
         assert!(
             !t.day_is_over(progress),

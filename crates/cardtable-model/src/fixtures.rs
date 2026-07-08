@@ -477,11 +477,11 @@ pub fn sample_table() -> Tableau {
     // The physical **day clock** (spec `canon/2-spec/physical-cards.md` PC.5), consolidated onto **two**
     // decks (the reserve is now the Heroes deck, PC.2):
     // - **Progress** — the day clock proper. It starts **empty** (Day 0); each `advance_day` lays one
-    //   `Day Passes` count card here, so its `event`-card count *is* the current day (no number cap). Once
+    //   `Day Passed` count card here, so its `event`-card count *is* the current day (no number cap). Once
     //   heroes are recruited it also holds one face-up `hero` **move marker** per active character (face-up
     //   = hasn't moved today; a move flips it down, `Tableau::mark_moved`). Count (type `event`) and markers
     //   (type `hero`) are told apart by type.
-    // - **Events** — the bounded reserve of `Day Passes` cards `advance_day` draws from each time every
+    // - **Events** — the bounded reserve of `Day Passed` cards `advance_day` draws from each time every
     //   marker has flipped down. Its size is the provisioned max game length (raise as needed).
     const DAYS_PROVISIONED: usize = 12;
     let free = |tree: &mut Tableau, pile: PileId| {
@@ -502,7 +502,7 @@ pub fn sample_table() -> Tableau {
     free(&mut tree, progress);
 
     let events = tree.add_pile(root, "Events").expect("root exists");
-    let events_stack = typed(&mut tree, events, "Day Passes", "event"); // one `Day Passes ×N` stack (PC.2)
+    let events_stack = typed(&mut tree, events, "Day Passed", "event"); // one `Day Passed ×N` stack (PC.2)
     tree.set_card_quantity(events_stack, DAYS_PROVISIONED as u32)
         .expect("events stack");
     let events_zone = typed(&mut tree, events, "Events", "Label");
@@ -574,7 +574,7 @@ mod tests {
         // each + a Zone label. Locations: a "Location" Zone card + 9 place names + the inn's 2 row headers
         // + each non-inn place's encounter (a header + its foes: a solo = 1 keystone foe; a corner = all
         // four creatures with the keystone doubled = 5 physical). Rules: 5 leaf phases + a Zone label; the
-        // Engage sub-deck: 5 children + a Zone label. Day clock: Progress (1 Day Passes count + a label),
+        // Engage sub-deck: 5 children + a Zone label. Day clock: Progress (1 Day Passed count + a label),
         // Events (11 + a label). Bestiary: 4 creature concepts + a Zone label.
         assert_eq!(
             t.card_count(),
@@ -586,12 +586,12 @@ mod tests {
                 + (1 + 9 + 2 + 4 * (1 + 1) + 4 * (1 + 5)) // Locations: Zone + 9 places + 2 inn headers + 4 solos (header+1) + 4 corners (header+5)
                 + ((5 + 1) + (5 + 1))
                 + 1 // Progress: just a Zone label (starts empty — Day 0)
-                + (12 + 1) // Events: the full Day Passes reserve + a Zone label
+                + (12 + 1) // Events: the full Day Passed reserve + a Zone label
                 + (4 + 1) // Bestiary: 4 creature concepts + a Zone label
         );
     }
 
-    /// The consolidated day clock lives on **Progress** (PC.5): a `Day Passes` count reading Day 1 plus
+    /// The consolidated day clock lives on **Progress** (PC.5): a `Day Passed` count reading Day 1 plus
     /// per-hero move markers, with an Events reserve to draw from. Driving it — add a marker, spend its
     /// move, advance — grows the day and conserves the total card count (PC.2).
     #[test]
@@ -625,7 +625,7 @@ mod tests {
         t.mark_moved(progress, "Vael").unwrap();
         assert!(t.day_is_over(progress), "the only marker has flipped down");
 
-        // Advance: the marker stands back up, one `Day Passes` moves Events -> Progress, day ticks to 1.
+        // Advance: the marker stands back up, one `Day Passed` moves Events -> Progress, day ticks to 1.
         t.advance_day(progress, events).unwrap();
         assert_eq!(t.current_day(progress), 1);
         assert_eq!(events_qty(&t), 11, "one drawn from the reserve stack");
@@ -652,7 +652,7 @@ mod tests {
         // Inclusive of each deck's own title card, and stacks count by quantity: Heroes is 9 heroes ×4
         // copies + the "Heroes" label.
         assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 9 * 4 + 1);
-        // Events is a `Day Passes ×12` stack + the "Events" label.
+        // Events is a `Day Passed ×12` stack + the "Events" label.
         assert_eq!(t.physical_card_count(deck(&t, "Events")), 12 + 1);
         assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12 + 1);
         // A projection contributes only its *own* cards (the inn's 2 row headers), never the borrowed
