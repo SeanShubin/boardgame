@@ -27,9 +27,10 @@ pub enum CombatOutcome {
 /// which also returns the turn-by-turn log), and apply the consequences to `table`.
 ///
 /// Combat is a resolved event that leaves a single **virtual combat-log card** at the location (replacing any
-/// prior one — one log per location). On a **win** the foes and the encounter header return to the Bestiary
-/// (their origin); on a **loss** they stay, so the fight can be retried. Either way the heroes remain where
-/// they are and a day passes. A place with no heroes or no foes is a no-op reporting [`CombatOutcome::Loss`].
+/// prior one — one log per location). Foes are **virtual**, read from the catalog rather than dealt as cards:
+/// on a **win** the encounter header is cleared (nothing returns to the Bestiary); on a **loss** it stays, so
+/// the fight can be retried. Either way the heroes remain where they are and a day passes. A place with no
+/// heroes or no encounter is a no-op reporting [`CombatOutcome::Loss`].
 pub fn resolve_encounter(table: &mut Tableau, place: PileId, seed: u64) -> CombatOutcome {
     let heroes = hero_units(table, place);
     let foes = foe_units(table, place);
@@ -88,19 +89,19 @@ fn hero_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
         .collect()
 }
 
-/// The encounter's foes at `place` as combat units — each `foe` card resolved to its [`catalog::Creature`]
-/// (stats + reach / area / hoard / stance), expanded by the card's quantity so a `×2` keystone fields two.
+/// The encounter's foes at `place` as combat units. Foes are **virtual** — the location holds only an
+/// encounter card, so the roster comes from the catalog: the place's label names the encounter, and
+/// [`catalog::encounter_foes`] gives its `(creature, quantity)` list, expanded so a `×2` keystone fields two.
 fn foe_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
+    let Some(name) = table.pile(place).map(|p| p.label.clone()) else {
+        return Vec::new();
+    };
+    let Some(encounter) = catalog::encounter_for(&name) else {
+        return Vec::new();
+    };
     let mut units = Vec::new();
-    for c in table.content_cards(place) {
-        let Some(card) = table.card(c) else { continue };
-        if card.card_type() != "foe" {
-            continue;
-        }
-        let Some(creature) = catalog::creature(card.name()) else {
-            continue;
-        };
-        for _ in 0..card.quantity().max(1) {
+    for (creature, qty) in catalog::encounter_foes(encounter) {
+        for _ in 0..qty {
             units.push(DuelUnit {
                 name: creature.name.to_string(),
                 ability: creature.ability.to_string(),
@@ -117,10 +118,10 @@ fn foe_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
 }
 
 /// Fold the result onto the table. A location holds at most **one** combat-log card, so any prior one is
-/// removed first. On a **win** every `foe` and the `encounter` header returns to the Bestiary (their
-/// origin — the encounter is cleared); on a **loss** they stay, so it can be retried. Then the new virtual
-/// log card is left at the place and [`advance_day`](Tableau::advance_day) runs once — the fight costs a day.
-/// The heroes are not moved either way.
+/// removed first. Foes are **virtual** (the Bestiary supply never left home), so a **win** just clears the
+/// `encounter` header — nothing to send back; on a **loss** it stays, so the fight can be retried. Then the
+/// new virtual log card is left at the place and [`advance_day`](Tableau::advance_day) runs once — the fight
+/// costs a day. The heroes are not moved either way.
 fn apply_consequences(
     table: &mut Tableau,
     place: PileId,
@@ -131,11 +132,11 @@ fn apply_consequences(
     for c in cards_of_types(table, place, &["log"]) {
         let _ = table.remove_card(c);
     }
-    if outcome == CombatOutcome::Win
-        && let Some(bestiary) = find_pile(table, "Bestiary")
-    {
-        for c in cards_of_types(table, place, &["foe", "encounter"]) {
-            let _ = table.move_card(c, bestiary, 0);
+    if outcome == CombatOutcome::Win {
+        // The encounter is defeated: remove its header. The foes were virtual, so there is nothing to
+        // return to the Bestiary — its stacked supply was only ever *read*, never moved.
+        for c in cards_of_types(table, place, &["encounter"]) {
+            let _ = table.remove_card(c);
         }
     }
     add_log_card(table, place, outcome, log);
@@ -278,8 +279,10 @@ mod tests {
         place
     }
 
-    fn foe_count(t: &Tableau, place: PileId) -> usize {
-        cards_of_types(t, place, &["foe"]).len()
+    /// Whether an unresolved encounter still sits at `place`. Foes are virtual (no physical foe cards), so
+    /// the encounter header is the marker of a pending fight — present at setup, removed on a win.
+    fn has_encounter(t: &Tableau, place: PileId) -> bool {
+        !cards_of_types(t, place, &["encounter"]).is_empty()
     }
 
     /// The one combat-log card at `place` (its title), if any.
@@ -289,21 +292,22 @@ mod tests {
             .map(|&c| t.card(c).unwrap().name().to_string())
     }
 
-    /// The right kit wins: a Marksman clears Cinderwatch Keep's Coil — the foes return to the Bestiary, a
-    /// non-physical "Victory" log card is left behind (with a real narration panel), and a day passes.
+    /// The right kit wins: a Marksman clears Cinderwatch Keep's Coil — the encounter is cleared (foes are
+    /// virtual, so nothing returns to the Bestiary), a non-physical "Victory" log card is left behind (with
+    /// a real narration panel), and a day passes.
     #[test]
     fn answering_kit_wins_clears_foes_and_leaves_a_log() {
         let mut t = sample_table();
         let day_before = t.current_day(deck(&t, "Progress"));
         let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
-        assert!(foe_count(&t, place) > 0, "the Coil is stationed here");
+        assert!(has_encounter(&t, place), "the Coil's encounter waits here");
 
         let outcome = resolve_encounter(&mut t, place, 1);
         assert_eq!(outcome, CombatOutcome::Win);
-        assert_eq!(foe_count(&t, place), 0, "defeated foes returned to origin");
+        assert!(!has_encounter(&t, place), "the cleared encounter is gone");
         assert_eq!(log_title(&t, place).as_deref(), Some("Victory"));
         // The place now holds only its "Location" label + the hero token; the log card is virtual, so it
-        // does not raise the physical tally (the encounter header + foe are gone).
+        // does not raise the physical tally (the encounter header is gone; foes were never physical).
         assert_eq!(t.physical_card_count(place), 2);
         assert_eq!(
             t.current_day(deck(&t, "Progress")),
@@ -321,7 +325,7 @@ mod tests {
 
         let outcome = resolve_encounter(&mut t, place, 1);
         assert_eq!(outcome, CombatOutcome::Loss);
-        assert!(foe_count(&t, place) > 0, "the foes still hold the place");
+        assert!(has_encounter(&t, place), "the foes still hold the place");
         assert_eq!(log_title(&t, place).as_deref(), Some("Defeat"));
         let stayed = cards_of_types(&t, place, &["hero"])
             .iter()

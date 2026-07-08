@@ -375,19 +375,25 @@ pub fn sample_table() -> Tableau {
             )
             .expect("inn exists");
         } else if let Some(enc) = catalog::encounter_for(place) {
-            // Every non-inn location stations an **encounter**: a header card and its foes, dealt in as
-            // physical instances (PC.2 setup deal). A solo (an inn-adjacent cell) stations its one
-            // keystone creature; a corner fields all four creatures with the keystone doubled. No
-            // "favours" line — which kit answers it is inferred from the foes' postures on the table.
+            // Every non-inn location stations an **encounter** card. Its foes are **virtual** — the card
+            // *lists* them (name ×qty); the real foe cards live in the Bestiary and are only instantiated
+            // into the battle arena when a fight starts. A solo (an inn-adjacent cell) fields its one
+            // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
-            tree.set_card_detail(header, vec![enc.flavor.to_string()])
-                .expect("encounter flavor");
-            for (c, qty) in catalog::encounter_foes(enc) {
-                let foe = creature_card(&mut tree, place_pile, c);
-                if qty > 1 {
-                    tree.set_card_quantity(foe, qty).expect("foe stack");
-                }
-            }
+            let mut detail = vec![enc.flavor.to_string()];
+            let foes: Vec<String> = catalog::encounter_foes(enc)
+                .iter()
+                .map(|(c, q)| {
+                    if *q > 1 {
+                        format!("{} ×{q}", c.name)
+                    } else {
+                        c.name.to_string()
+                    }
+                })
+                .collect();
+            detail.push(format!("Foes: {}", foes.join(", ")));
+            tree.set_card_detail(header, detail)
+                .expect("encounter detail");
         }
     }
     let loc_zone = typed(&mut tree, locations, "Location", "Label");
@@ -520,12 +526,14 @@ pub fn sample_table() -> Tableau {
         .expect("events zone card");
     free(&mut tree, events);
 
-    // The **Bestiary**: the foes' home deck — one concept card per creature type (the canonical "what a
-    // Coil is", like the Stats deck holds stat concepts). The physical foe *instances* live at the
-    // encounters (dealt into the locations above); on defeat they will return here (combat, later).
+    // The **Bestiary**: the foes' home deck — one `foe` card per creature type, stacked `×N` (the
+    // provisioned supply of instances a battle can field; an encounter *lists* which and how many, and the
+    // arena deals them from here). A location holds only its encounter card, not physical foes.
+    const FOE_COPIES: u32 = 4;
     let bestiary = tree.add_pile(root, "Bestiary").expect("root exists");
     for c in &catalog::CREATURES {
-        creature_card(&mut tree, bestiary, c);
+        let f = creature_card(&mut tree, bestiary, c);
+        tree.set_card_quantity(f, FOE_COPIES).expect("foe stack");
     }
     let bestiary_zone = typed(&mut tree, bestiary, "Bestiary", "Label");
     tree.set_card_kind(bestiary_zone, CardKind::Zone)
@@ -582,10 +590,10 @@ mod tests {
         // Heroes: 9 heroes ×4 copies + a Zone card. Kit: 4 starter specs + a Zone card. The banks:
         // Abilities (4 abilities × 5 copies), Stats (5 names × 5 copies), Numbers (9 digits × 12 copies),
         // each + a Zone label. Locations: a "Location" Zone card + 9 place names + the inn's 2 row headers
-        // + each non-inn place's encounter (a header + its foes: a solo = 1 keystone foe; a corner = all
-        // four creatures with the keystone doubled = 5 physical). Rules: 5 leaf phases + a Zone label; the
-        // Engage sub-deck: 5 children + a Zone label. Day clock: Progress (1 Day Passed count + a label),
-        // Events (11 + a label). Bestiary: 4 creature concepts + a Zone label.
+        // + each non-inn place's encounter header (foes are *virtual* now — the header lists them, no foe
+        // cards are dealt): 8 non-inn places = 8 headers. Rules: 5 leaf phases + a Zone label; the Engage
+        // sub-deck: 5 children + a Zone label. Day clock: Progress (empty — Day 0 — + a label), Events (the
+        // Day Passed reserve + a label). Bestiary: 4 creature `foe` stacks (×4 each) + a Zone label.
         assert_eq!(
             t.card_count(),
             (9 * 4 + 1)
@@ -593,11 +601,11 @@ mod tests {
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 2 + 4 * (1 + 1) + 4 * (1 + 5)) // Locations: Zone + 9 places + 2 inn headers + 4 solos (header+1) + 4 corners (header+5)
+                + (1 + 9 + 2 + 8) // Locations: Zone + 9 places + 2 inn headers + 8 non-inn encounter headers
                 + ((5 + 1) + (5 + 1))
                 + 1 // Progress: just a Zone label (starts empty — Day 0)
                 + (12 + 1) // Events: the full Day Passed reserve + a Zone label
-                + (4 + 1) // Bestiary: 4 creature concepts + a Zone label
+                + (4 * 4 + 1) // Bestiary: 4 creature `foe` stacks ×4 + a Zone label
         );
     }
 
@@ -675,13 +683,14 @@ mod tests {
             2,
             "the inn's own Hero/Kit row headers"
         );
-        // A place counts its "Location" title + encounter header + foes. Index 0 (The Hollow Rampart) is
-        // a corner: 1 title + 1 header + all four foes with the keystone doubled (5 physical) = 7.
+        // A place counts its "Location" title + its encounter header. Foes are virtual (listed on the
+        // header, not dealt as cards), so a corner and a solo count the same. Index 0 (The Hollow Rampart)
+        // is a corner: 1 title + 1 header = 2.
         let a_corner = t.pile(locations).unwrap().subpiles()[0];
-        assert_eq!(t.physical_card_count(a_corner), 1 + 1 + 5);
-        // Index 1 (Cinderwatch Keep) is a solo: 1 title + 1 header + 1 keystone foe = 3.
+        assert_eq!(t.physical_card_count(a_corner), 1 + 1);
+        // Index 1 (Cinderwatch Keep) is a solo: 1 title + 1 header = 2.
         let a_solo = t.pile(locations).unwrap().subpiles()[1];
-        assert_eq!(t.physical_card_count(a_solo), 1 + 1 + 1);
+        assert_eq!(t.physical_card_count(a_solo), 1 + 1);
     }
 
     /// A software-only deck — one holding [`Utility`] action cards, like the renderer's System deck —
@@ -749,10 +758,11 @@ mod tests {
         assert_eq!(counter("The Mirage"), "Phantom");
     }
 
-    /// Each non-inn place stations its encounter as physical foe cards: a solo = its one keystone; a
-    /// corner = all four creatures with the keystone doubled. The foes are real members of the place.
+    /// Each non-inn place stations its encounter as a single **header** card — no physical foe cards. The
+    /// foes are *virtual*: the header lists them (name ×qty), and the real supply lives, stacked, in the
+    /// Bestiary. A solo header lists its one keystone; a corner header lists all four, keystone doubled.
     #[test]
-    fn encounters_deal_physical_foes_into_the_places() {
+    fn encounters_are_virtual_headers_backed_by_the_bestiary() {
         let t = sample_table();
         let locations = deck(&t, "Locations");
         let place = |name: &str| {
@@ -763,19 +773,36 @@ mod tests {
                 .find(|&&p| t.pile(p).unwrap().label == name)
                 .unwrap()
         };
-        let foe_qty = |p: PileId| -> u32 {
+        // No physical foe cards anywhere on the table — the foes are virtual.
+        let foe_cards = |p: PileId| -> usize {
             t.content_cards(p)
                 .iter()
                 .filter(|&&c| t.card(c).unwrap().card_type() == "foe")
-                .map(|&c| t.card(c).unwrap().quantity())
-                .sum()
+                .count()
         };
-        // A solo: one keystone foe (The Sundered Vault → the Anvil).
-        assert_eq!(foe_qty(place("The Sundered Vault")), 1);
-        // A corner: all four creatures, keystone doubled → 5 physical foes (Emberfall Hollow → Anvil×2).
-        assert_eq!(foe_qty(place("Emberfall Hollow")), 5);
-        // The Bestiary holds one concept card per creature type.
-        assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 + 1);
+        assert_eq!(foe_cards(place("The Sundered Vault")), 0);
+        assert_eq!(foe_cards(place("Emberfall Hollow")), 0);
+        // A place holds exactly one `encounter` header, listing its foes in its detail lines.
+        let header = |p: PileId| {
+            t.content_cards(p)
+                .into_iter()
+                .find(|&c| t.card(c).unwrap().card_type() == "encounter")
+                .expect("an encounter header")
+        };
+        let solo = header(place("The Sundered Vault"));
+        let solo_detail = t.card(solo).unwrap().detail().join(" ");
+        assert!(
+            solo_detail.contains("The Anvil"),
+            "the solo header lists its keystone: {solo_detail}"
+        );
+        let corner = header(place("Emberfall Hollow"));
+        let corner_detail = t.card(corner).unwrap().detail().join(" ");
+        assert!(
+            corner_detail.contains("The Anvil ×2"),
+            "the corner header lists the doubled keystone: {corner_detail}"
+        );
+        // The Bestiary backs them with a `×4` stack per creature type (+ its Zone label).
+        assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 * 4 + 1);
     }
 
     /// Find a top-level deck by label (test helper).
