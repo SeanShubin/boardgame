@@ -173,6 +173,12 @@ struct Pinned;
 #[derive(Component)]
 struct BackCard;
 
+/// A utility card that starts **combat** — shown (like [`BackCard`]) in a location's overlay band only
+/// when that place holds both a stationed hero and an encounter (see [`location_ready_for_combat`]).
+/// Resolution is wired separately; the card is the trigger.
+#[derive(Component)]
+struct CombatCard;
+
 /// A **debug event log** written to `cardtable-debug.log` next to the launch dir (truncated each launch,
 /// with a launch stamp), recording drags, drops (cursor position + each row's hover state) and the
 /// resulting Active-row state — so drop behaviour can be traced exactly. No file on the web.
@@ -452,6 +458,7 @@ fn on_click(
         Option<&CardRef>,
         Option<&PileDropZone>,
         Has<BackCard>,
+        Has<CombatCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
@@ -464,12 +471,16 @@ fn on_click(
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, pile, is_back)) = targets.get(on.event().entity) else {
+    let Ok((action, card, pile, is_back, is_combat)) = targets.get(on.event().entity) else {
         return;
     };
     if is_back {
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
+    } else if is_combat {
+        // The combat trigger. Resolution is wired next; for now record the request so the click gives
+        // feedback and the (future) combat system has an entry point.
+        info!("combat requested in zone {:?}", table.0.focus_id());
     } else if let Some(card_ref) = card {
         let id = card_ref.0;
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
@@ -897,6 +908,27 @@ fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
             .card(dragged)
             .is_some_and(|c| c.card_type() == "location-token")
         && table.card(dragged).map(|c| c.home()) != Some(target)
+}
+
+/// Whether the drilled-in `zone` is an individual **location** holding both a stationed hero (a
+/// `location-token`) and an `encounter` — the condition for offering combat. Excludes the Locations
+/// **map** itself (you must be inside a single place, not the grid) and every non-place zone.
+fn location_ready_for_combat(tree: &Tableau, zone: PileId) -> bool {
+    let is_place = top_deck(tree, "Locations")
+        .and_then(|loc| tree.pile(loc))
+        .is_some_and(|loc| loc.subpiles().contains(&zone));
+    if !is_place {
+        return false;
+    }
+    let (mut has_hero, mut has_encounter) = (false, false);
+    for c in tree.content_cards(zone) {
+        match tree.card(c).map(|k| k.card_type()) {
+            Some("location-token") => has_hero = true,
+            Some("encounter") => has_encounter = true,
+            _ => {}
+        }
+    }
+    has_hero && has_encounter
 }
 
 /// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
@@ -1955,6 +1987,20 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                     GlobalZIndex(10),
                 ))
                 .with_children(|slot| spawn_nav_card(slot, (BackCard, Pinned), "Back"));
+            }
+            // A **Combat** control, mirroring Back but on the right, on a location that holds both a hero
+            // and an encounter — the trigger to fight what is stationed here.
+            if location_ready_for_combat(tree, zone) {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(6.0),
+                        right: Val::Px(8.0),
+                        ..default()
+                    },
+                    GlobalZIndex(10),
+                ))
+                .with_children(|slot| spawn_nav_card(slot, (CombatCard, Pinned), "Combat"));
             }
             if !rail.is_empty() {
                 root.spawn((
