@@ -499,7 +499,17 @@ pub fn sample_table() -> Tableau {
     let progress_zone = typed(&mut tree, progress, "Progress", "Label");
     tree.set_card_kind(progress_zone, CardKind::Zone)
         .expect("progress zone card");
-    free(&mut tree, progress);
+    // A **structured** (non-editable Grid) day clock: the count card + move markers tile below the overlay
+    // band automatically, so a card dealt at runtime (advance_day's Day Passed, a recruit's move marker)
+    // never lands at the default (0,0) under the Back button. Status cards, so not draggable.
+    tree.set_layout(
+        progress,
+        Layout {
+            arrangement: Arrangement::Grid { columns: 5 },
+            editable: false,
+        },
+    )
+    .expect("progress exists");
 
     let events = tree.add_pile(root, "Events").expect("root exists");
     let events_stack = typed(&mut tree, events, "Day Passed", "event"); // one `Day Passed ×N` stack (PC.2)
