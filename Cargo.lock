@@ -1989,6 +1989,7 @@ name = "cardtable"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cardtable-combat",
  "cardtable-model",
  "contract",
  "web-time",
