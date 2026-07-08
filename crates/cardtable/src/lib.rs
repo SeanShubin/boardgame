@@ -1660,9 +1660,35 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // The **phase pile**: a card showing the current round + sub-phase (and who may strike whom this
-            // phase), drawn as the top of a small stack — the tabletop phase deck the engine rotates through.
-            spawn_phase_pile(root, &state.combat.phase());
+            let phase = state.combat.phase();
+            // The **phase pile** (round + sub-phase, the tabletop phase deck top-card-up) with the rank
+            // pairs it resolves — who may strike whom this phase — spelled out beside it.
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(14.0),
+                ..default()
+            })
+            .with_children(|row| {
+                spawn_phase_pile(row, &phase);
+                row.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(2.0),
+                    ..default()
+                })
+                .with_children(|col| {
+                    for line in &phase.pairs {
+                        col.spawn((
+                            Text::new(line.clone()),
+                            TextFont {
+                                font_size: FONT_BODY,
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
+                    }
+                });
+            });
             // Prompt banner: the current hero decision + its choice cards.
             root.spawn(Node {
                 flex_direction: FlexDirection::Row,
@@ -1772,8 +1798,8 @@ fn arena_log(parent: &mut ChildSpawnerCommands, log: &[String]) {
 /// of a small offset stack — the tabletop phase deck, top card up. Accented like an encounter (a fight
 /// marker). The stack layers behind hint the rest of the phase deck the engine rotates through.
 fn spawn_phase_pile(parent: &mut ChildSpawnerCommands, phase: &PhaseView) {
-    const PHASE_W: f32 = 208.0;
-    const PHASE_H: f32 = 92.0;
+    const PHASE_W: f32 = 150.0;
+    const PHASE_H: f32 = 84.0;
     const STEP: f32 = 4.0;
     let accent = type_accent("encounter");
     let layers = phase.total.saturating_sub(1).min(3);
@@ -1843,14 +1869,6 @@ fn spawn_phase_pile(parent: &mut ChildSpawnerCommands, phase: &PhaseView) {
                     },
                     TextColor(CARD_INK),
                     TextLayout::no_wrap(),
-                ));
-                c.spawn((
-                    Text::new(phase.pairs.clone()),
-                    TextFont {
-                        font_size: FONT_BODY,
-                        ..default()
-                    },
-                    TextColor(MUTED),
                 ));
             });
         });

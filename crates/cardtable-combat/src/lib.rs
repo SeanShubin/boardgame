@@ -348,14 +348,15 @@ pub struct ArenaView {
 
 /// The current phase as the top card of the **phase pile** (Intercept / Volley / Raid / Clash / Breach, or
 /// `Marshal` between rounds). `index`/`total` say how far through the pile the top card is (for the stack
-/// look); `pairs` is the rank→rank pairs this phase resolves — who may strike whom.
+/// look); `pairs` is the rank→rank pairs this phase resolves — who may strike whom — one per entry, spelled
+/// out (e.g. `"Vanguard -> Outrider"`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhaseView {
     pub round: u32,
     pub index: usize,
     pub total: usize,
     pub name: String,
-    pub pairs: String,
+    pub pairs: Vec<String>,
     /// `true` while resolving the schedule; `false` between rounds (Marshal).
     pub resolving: bool,
 }
@@ -404,12 +405,21 @@ pub enum ArenaAnswer {
     StrikeBack(bool),
 }
 
-/// The rank letter for an intention.
+/// The rank letter for an intention (`V`/`O`/`R`) — used on the compact unit tiles.
 fn rank_char(r: &Intention) -> char {
     match r {
         Intention::Vanguard => 'V',
         Intention::Outrider => 'O',
         Intention::Rearguard => 'R',
+    }
+}
+
+/// The full rank name for an intention — used where there's room to spell it out (the phase pairs).
+fn rank_name(r: &Intention) -> &'static str {
+    match r {
+        Intention::Vanguard => "Vanguard",
+        Intention::Outrider => "Outrider",
+        Intention::Rearguard => "Rearguard",
     }
 }
 
@@ -503,9 +513,8 @@ impl ManualCombat {
                     .get(r.step)
                     .map(|ps| {
                         ps.iter()
-                            .map(|(a, t)| format!("{}->{}", rank_char(a), rank_char(t)))
+                            .map(|(a, t)| format!("{} -> {}", rank_name(a), rank_name(t)))
                             .collect::<Vec<_>>()
-                            .join(" · ")
                     })
                     .unwrap_or_default();
                 PhaseView {
@@ -522,7 +531,7 @@ impl ManualCombat {
                 index: 0,
                 total,
                 name: "Marshal".to_string(),
-                pairs: "declare & deploy".to_string(),
+                pairs: vec!["declare & deploy".to_string()],
                 resolving: false,
             },
         }
