@@ -947,12 +947,42 @@ fn is_map_position(table: &Tableau, id: CardId) -> bool {
         .is_some_and(|loc| loc.subpiles().contains(&home))
 }
 
+/// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
+/// or right (Manhattan distance 1) by their row/column, read from the grid's `columns`. `false` if either
+/// isn't a place or the Locations deck isn't a grid.
+fn places_orthogonally_adjacent(table: &Tableau, a: PileId, b: PileId) -> bool {
+    let Some(locations) = top_deck(table, "Locations") else {
+        return false;
+    };
+    let Some(Arrangement::Grid { columns }) = table.pile(locations).map(|p| p.layout().arrangement)
+    else {
+        return false;
+    };
+    let places = table
+        .pile(locations)
+        .map(|p| p.subpiles())
+        .unwrap_or_default();
+    let (Some(ia), Some(ib)) = (
+        places.iter().position(|&p| p == a),
+        places.iter().position(|&p| p == b),
+    ) else {
+        return false;
+    };
+    let (ra, ca) = (ia / columns, ia % columns);
+    let (rb, cb) = (ib / columns, ib % columns);
+    ra.abs_diff(rb) + ca.abs_diff(cb) == 1
+}
+
 /// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
-/// character's position copy moves to any *other* place.
+/// character's position copy moves to an **orthogonally adjacent** place (one step up/down/left/right).
 fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
-    top_deck(table, "Locations") == Some(table.focus_id())
-        && table.card(dragged).is_some_and(|c| c.card_type() == "hero")
-        && table.card(dragged).map(|c| c.home()) != Some(target)
+    if top_deck(table, "Locations") != Some(table.focus_id()) {
+        return false;
+    }
+    let Some(card) = table.card(dragged).filter(|c| c.card_type() == "hero") else {
+        return false;
+    };
+    places_orthogonally_adjacent(table, card.home(), target)
 }
 
 /// Whether the drilled-in `zone` is an individual **location** holding both a stationed hero (a `hero`
