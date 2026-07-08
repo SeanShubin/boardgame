@@ -905,8 +905,9 @@ fn strikeback_request(state: &State, def_side: u8, soaker: usize, atk_i: usize) 
 
 /// Fill every unanswered entry in [`State::pending`] with the greedy ([`crate::policy`]) answer — the
 /// auto-answerer that makes [`step`] reproduce [`resolve_round`]. Reads the same policy functions with the
-/// same inputs the synchronous resolver used, so the greedy path is bit-identical by construction.
-fn answer_pending_greedily(state: &mut State) {
+/// same inputs the synchronous resolver used, so the greedy path is bit-identical by construction. Public
+/// so a manual-combat driver can offer an "auto" fallback (and so parity tests can drive greedily).
+pub fn answer_pending_greedily(state: &mut State) {
     let step_idx = state.resolution.map(|r| r.step).unwrap_or(0);
     let mut pending = std::mem::take(&mut state.pending);
     for pd in &mut pending {
@@ -1883,6 +1884,35 @@ mod tests {
                 .all(|a| !a.fallen),
             "no one falls when nothing strikes"
         );
+    }
+
+    /// The full-battle manual driver, answered greedily, reproduces `resolve_logged` (the auto playout)
+    /// outcome-and-log across a seed corpus — so a manual fight *is* the auto fight when the player defers
+    /// to the greedy, over multiple rounds (refresh, round cap, victory/draw), not just one.
+    #[test]
+    fn resolve_battle_manual_greedy_reproduces_auto() {
+        use crate::ruleset::Ruleset;
+        for seed in 0..30u64 {
+            let heroes = vec![fighter("Hero", 3, 4, 1), fighter("Squire", 2, 3, 1)];
+            let foes = vec![fighter("Brute", 3, 4, 1), fighter("Imp", 2, 3, 1)];
+            let (auto_won, auto_log) =
+                crate::solver::resolve_logged(heroes.clone(), foes.clone(), seed);
+
+            let mut state =
+                crate::game::battle_state_with(heroes, foes, false, seed, Ruleset::analysis());
+            crate::game::Deckbound.resolve_battle_manual(&mut state, |s, out| {
+                if matches!(out, StepOutcome::Resting) {
+                    answer_pending_greedily(s);
+                }
+            });
+
+            let manual_won = Some(matches!(
+                state.outcome,
+                Some(contract::Outcome::Win(contract::PlayerId(0)))
+            ));
+            assert_eq!(manual_won, auto_won, "seed {seed}: outcome matches auto");
+            assert_eq!(state.log, auto_log, "seed {seed}: log matches auto");
+        }
     }
 
     /// With **no AoE source** in a scenario (no Actor sets `aoe`), the AoE pool stays 0 across a whole

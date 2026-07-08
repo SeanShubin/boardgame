@@ -12,8 +12,11 @@
 //! *name* is flavour, ignored by the resolver — mechanics are all numbers, matching the duel-locks proof.
 
 use cardtable_model::{CardId, CardKind, Face, PileId, Tableau, catalog};
-use deckbound::Actor;
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
+use deckbound::combat::{StepOutcome, answer_pending_greedily};
+use deckbound::game::{battle_state_with, hero_won};
+use deckbound::ruleset::Ruleset;
+use deckbound::{Actor, Deckbound, State};
 
 /// The result of a resolved encounter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,26 +70,48 @@ fn hero_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
     table
         .content_cards(place)
         .into_iter()
-        .filter_map(|c| {
-            let card = table.card(c)?;
-            if card.card_type() != "hero" {
-                return None;
-            }
-            let name = card.front_title().to_string();
-            let recipe = table.character_recipe(character_deck(table, &name)?)?;
-            let (ranged, aoe) = catalog::ability_shape(&recipe.ability);
-            Some(DuelUnit {
-                name,
-                ability: recipe.ability,
-                stats: stat5(recipe.stats),
-                ranged,
-                aoe,
-                count: 1,
-                hoard: false,
-                pos: None,
-            })
-        })
+        .filter_map(|c| hero_card_unit(table, c))
         .collect()
+}
+
+/// One `hero` position card as a [`DuelUnit`] — the per-card kernel of [`hero_units`], shared with the
+/// manual path (which also needs the card's id). `None` for a non-hero card or one whose character deck
+/// can't be read back into a recipe.
+fn hero_card_unit(table: &Tableau, card: CardId) -> Option<DuelUnit> {
+    let c = table.card(card)?;
+    if c.card_type() != "hero" {
+        return None;
+    }
+    let name = c.front_title().to_string();
+    let recipe = table.character_recipe(character_deck(table, &name)?)?;
+    let (ranged, aoe) = catalog::ability_shape(&recipe.ability);
+    Some(DuelUnit {
+        name,
+        ability: recipe.ability,
+        stats: stat5(recipe.stats),
+        ranged,
+        aoe,
+        count: 1,
+        hoard: false,
+        pos: None,
+    })
+}
+
+/// One instantiated **foe** card as a [`DuelUnit`] — its name resolves to a [`catalog::Creature`]. The
+/// manual counterpart to [`foe_units`]'s per-creature kernel, but reading a *real* card rather than the
+/// virtual catalog roster (so it carries a `CardId` the arena can track).
+fn foe_card_unit(table: &Tableau, card: CardId) -> Option<DuelUnit> {
+    let creature = catalog::creature(table.card(card)?.front_title())?;
+    Some(DuelUnit {
+        name: creature.name.to_string(),
+        ability: creature.ability.to_string(),
+        stats: stat5(creature.stats),
+        ranged: creature.ranged,
+        aoe: creature.aoe,
+        count: 1,
+        hoard: creature.hoard,
+        pos: creature.pos.map(str::to_string),
+    })
 }
 
 /// The encounter's foes at `place` as combat units. Foes are **virtual** — the location holds only an
@@ -115,6 +140,198 @@ fn foe_units(table: &Tableau, place: PileId) -> Vec<DuelUnit> {
         }
     }
     units
+}
+
+// ===== Manual combat (headless) =========================================================================
+//
+// Where [`resolve_encounter`] plays the whole fight out in one call, manual combat instantiates the foes as
+// **real cards** and drives `deckbound`'s resumable resolver one decision at a time, so the player makes
+// every choice on the table. This module is still headless (no Bevy): it owns the battle [`State`], the
+// card↔actor identity map, and the [`CardMutation`] diff the renderer will animate — everything provable
+// with a scripted "player" in tests.
+
+/// A change to one combatant's card that a resolution step produced — the input to the arena's animation
+/// layer. Keyed by the arena `CardId` via the combat's card↔actor map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardMutation {
+    /// The unit's remaining Health changed (`from` → `to` face-up Health cards).
+    HealthChanged { card: CardId, from: u32, to: u32 },
+    /// The unit fell (all Health down) on this step.
+    Fell { card: CardId },
+}
+
+impl CardMutation {
+    /// The arena card this mutation applies to.
+    pub fn card(&self) -> CardId {
+        match *self {
+            CardMutation::HealthChanged { card, .. } | CardMutation::Fell { card } => card,
+        }
+    }
+}
+
+/// A manual combat in progress: the `deckbound` battle [`State`] plus the **card↔actor identity map** — a
+/// hero actor `i` is `hero_cards[i]`, a foe actor `j` is `foe_cards[j]`. The resolver rests at every
+/// decision (drive it with [`ManualCombat::run_to_end`], answering `state.pending`), and
+/// [`ManualCombat::diff`] turns an `Actor` delta into the [`CardMutation`]s the arena animates.
+pub struct ManualCombat {
+    /// The live battle state. Its `pending` list holds the decisions the player is currently being asked.
+    pub state: State,
+    hero_cards: Vec<CardId>,
+    foe_cards: Vec<CardId>,
+}
+
+/// Begin a manual combat at `place`: map its stationed heroes to units, **instantiate** the encounter's
+/// foes as real cards in `arena` (split off the `bestiary` stacks, PC.2), and build the seeded battle
+/// [`State`]. Returns `None` (dealing no foes) if the place has no stationed hero or no encounter. The foe
+/// cards live in `arena` until the fight is torn down, when they return to the Bestiary.
+pub fn begin_manual_combat(
+    table: &mut Tableau,
+    place: PileId,
+    arena: PileId,
+    bestiary: PileId,
+    seed: u64,
+) -> Option<ManualCombat> {
+    // Heroes: the stationed `hero` cards at the place, paired with their units (keep both in lockstep).
+    let hero_pairs: Vec<(CardId, DuelUnit)> = table
+        .content_cards(place)
+        .into_iter()
+        .filter_map(|c| Some((c, hero_card_unit(table, c)?)))
+        .collect();
+    if hero_pairs.is_empty() {
+        return None;
+    }
+    // Foes: instantiate the encounter's roster as real cards (nothing dealt if the place has no encounter).
+    let label = table.pile(place)?.label.clone();
+    let foe_cards = table
+        .instantiate_encounter_foes(bestiary, arena, &label)
+        .ok()?;
+    if foe_cards.is_empty() {
+        return None;
+    }
+    let foe_units: Vec<DuelUnit> = foe_cards
+        .iter()
+        .filter_map(|&c| foe_card_unit(table, c))
+        .collect();
+
+    let hero_cards: Vec<CardId> = hero_pairs.iter().map(|(c, _)| *c).collect();
+    let hero_actors: Vec<Actor> = hero_pairs.iter().map(|(_, u)| build_duel_unit(u)).collect();
+    let foe_actors: Vec<Actor> = foe_units.iter().map(build_duel_unit).collect();
+    let state = battle_state_with(hero_actors, foe_actors, false, seed, Ruleset::analysis());
+    Some(ManualCombat {
+        state,
+        hero_cards,
+        foe_cards,
+    })
+}
+
+impl ManualCombat {
+    /// The arena card standing in for actor `idx` on `side` (0 = heroes, 1 = foes), if mapped.
+    pub fn card_of(&self, side: u8, idx: usize) -> Option<CardId> {
+        let cards = if side == 0 {
+            &self.hero_cards
+        } else {
+            &self.foe_cards
+        };
+        cards.get(idx).copied()
+    }
+
+    /// The instantiated foe cards (in the Bestiary supply) — needed to return them on teardown.
+    pub fn foe_cards(&self) -> &[CardId] {
+        &self.foe_cards
+    }
+
+    /// The [`CardMutation`]s from `prev` to the current [`state`](Self::state) — per unit, a Health change
+    /// and/or a fall, keyed to its arena card.
+    pub fn diff(&self, prev: &State) -> Vec<CardMutation> {
+        diff_states(prev, &self.state, &self.hero_cards, &self.foe_cards)
+    }
+
+    /// Drive the fight to its end, answering each decision via `decide` and reporting the [`CardMutation`]s
+    /// of every transition via `observe`. With `decide = `[`answer_pending_greedily`] this is the auto
+    /// fight; a player driver answers `state.pending` instead. Returns the final [`CombatOutcome`].
+    pub fn run_to_end(
+        &mut self,
+        mut decide: impl FnMut(&mut State),
+        mut observe: impl FnMut(&[CardMutation]),
+    ) -> CombatOutcome {
+        let hero_cards = self.hero_cards.clone();
+        let foe_cards = self.foe_cards.clone();
+        let mut prev = self.state.clone();
+        Deckbound.resolve_battle_manual(&mut self.state, |s, out| {
+            if matches!(out, StepOutcome::Resting) {
+                decide(s);
+            }
+            let muts = diff_states(&prev, s, &hero_cards, &foe_cards);
+            if !muts.is_empty() {
+                observe(&muts);
+            }
+            prev = s.clone();
+        });
+        if hero_won(&self.state) {
+            CombatOutcome::Win
+        } else {
+            CombatOutcome::Loss
+        }
+    }
+
+    /// Resolve the rest of the fight automatically (greedy), still reporting mutations to `observe` — the
+    /// "let the game finish it" path from within a manual arena.
+    pub fn run_to_end_auto(&mut self, observe: impl FnMut(&[CardMutation])) -> CombatOutcome {
+        self.run_to_end(answer_pending_greedily, observe)
+    }
+}
+
+/// The card mutations from `prev` to `next` given the card↔actor map — per unit on both sides, a Health
+/// change and/or a fall. A free function so the resumable driver can call it without borrowing the combat.
+fn diff_states(
+    prev: &State,
+    next: &State,
+    hero_cards: &[CardId],
+    foe_cards: &[CardId],
+) -> Vec<CardMutation> {
+    let mut out = Vec::new();
+    for side in 0u8..2 {
+        let (p, n, cards) = if side == 0 {
+            (&prev.heroes, &next.heroes, hero_cards)
+        } else {
+            (&prev.creatures, &next.creatures, foe_cards)
+        };
+        for (i, (pr, nx)) in p.iter().zip(n.iter()).enumerate() {
+            let Some(&card) = cards.get(i) else {
+                continue;
+            };
+            let (from, to) = (pr.defense.health.remaining(), nx.defense.health.remaining());
+            if from != to {
+                out.push(CardMutation::HealthChanged { card, from, to });
+            }
+            if !pr.fallen && nx.fallen {
+                out.push(CardMutation::Fell { card });
+            }
+        }
+    }
+    out
+}
+
+/// Fold a **finished** manual combat back onto the table — the manual counterpart of the auto path's
+/// [`apply_consequences`]. The instantiated foe cards return to the `bestiary` (merged back into their `×N`
+/// stacks, PC.2, whatever state they ended in), then the shared consequence applies: on a **win** the
+/// `encounter` header at `place` is cleared (consumed), a single virtual combat-log card is left, and the
+/// day advances once. `combat` must be finished (its `state.outcome` set); it is consumed here.
+pub fn finish_manual_combat(
+    table: &mut Tableau,
+    place: PileId,
+    bestiary: PileId,
+    combat: ManualCombat,
+) -> CombatOutcome {
+    let outcome = if hero_won(&combat.state) {
+        CombatOutcome::Win
+    } else {
+        CombatOutcome::Loss
+    };
+    // The real foes go home to the Bestiary (win or lose — a loss leaves the *virtual* encounter to retry).
+    let _ = table.return_foes_to_bestiary(&combat.foe_cards, bestiary);
+    apply_consequences(table, place, outcome, combat.state.log);
+    outcome
 }
 
 /// Fold the result onto the table. A location holds at most **one** combat-log card, so any prior one is
@@ -348,6 +565,143 @@ mod tests {
             cards_of_types(&t, place, &["log"]).len(),
             1,
             "only the latest combat's log remains"
+        );
+    }
+
+    /// Manual combat instantiates the foes as **real cards**, drives the resumable resolver, and — answered
+    /// greedily — reaches the same outcome as the auto path, emitting card mutations for the blows that land.
+    #[test]
+    fn manual_combat_matches_auto_and_diffs_the_flips() {
+        // Auto reference: the Marksman clears Cinderwatch Keep at this seed.
+        let mut auto = sample_table();
+        let auto_place = station_at(&mut auto, marksman(), "Cinderwatch Keep");
+        let auto_outcome = resolve_encounter(&mut auto, auto_place, 7);
+        assert_eq!(auto_outcome, CombatOutcome::Win);
+
+        // Manual, same station + seed.
+        let mut t = sample_table();
+        let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
+        let bestiary = deck(&t, "Bestiary");
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+        let mut combat =
+            begin_manual_combat(&mut t, place, arena, bestiary, 7).expect("a fight begins");
+
+        // The foes are now real cards sitting in the arena.
+        assert!(!combat.foe_cards().is_empty(), "foes instantiated as cards");
+        assert_eq!(t.content_cards(arena).len(), combat.foe_cards().len());
+
+        let mut muts: Vec<CardMutation> = Vec::new();
+        let manual_outcome = combat.run_to_end_auto(|m| muts.extend_from_slice(m));
+
+        assert_eq!(
+            manual_outcome, auto_outcome,
+            "manual greedy reproduces the auto outcome"
+        );
+        assert!(!muts.is_empty(), "a real fight flips cards");
+
+        // Every mutation keys a known combatant card (a stationed hero, or an instantiated foe).
+        let known: std::collections::HashSet<CardId> = combat
+            .foe_cards()
+            .iter()
+            .copied()
+            .chain(cards_of_types(&t, place, &["hero"]))
+            .collect();
+        assert!(
+            muts.iter().all(|m| known.contains(&m.card())),
+            "mutations key real combatant cards"
+        );
+        // The win means at least one foe fell — a Fell mutation should name a foe card.
+        let foes: std::collections::HashSet<CardId> = combat.foe_cards().iter().copied().collect();
+        assert!(
+            muts.iter()
+                .any(|m| matches!(m, CardMutation::Fell { card } if foes.contains(card))),
+            "a foe fell on the way to victory"
+        );
+    }
+
+    /// No hero stationed → no fight begins, and (crucially) no foes are dealt out of the Bestiary.
+    #[test]
+    fn manual_combat_needs_a_stationed_hero() {
+        let mut t = sample_table();
+        let place = subpiles(&t, deck(&t, "Locations"))
+            .into_iter()
+            .find(|&p| t.pile(p).unwrap().label == "Cinderwatch Keep")
+            .unwrap();
+        let bestiary = deck(&t, "Bestiary");
+        let bestiary_before = t.physical_card_count(bestiary);
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+
+        assert!(begin_manual_combat(&mut t, place, arena, bestiary, 7).is_none());
+        assert!(
+            t.content_cards(arena).is_empty(),
+            "no foes dealt without a hero"
+        );
+        assert_eq!(
+            t.physical_card_count(bestiary),
+            bestiary_before,
+            "the Bestiary supply is untouched"
+        );
+    }
+
+    /// End-to-end capstone: a full manual fight from the sample table — instantiate foes → drive the
+    /// resolver to a decision → run it out → fold back — conserving cards the whole way. The foes round-trip
+    /// through the Bestiary; the only net change is the encounter header a win consumes.
+    #[test]
+    fn a_full_manual_fight_conserves_cards_and_folds_back() {
+        let mut t = sample_table();
+        let place = station_at(&mut t, marksman(), "Cinderwatch Keep");
+        let bestiary = deck(&t, "Bestiary");
+        let arena = t.add_pile(t.root_id(), "Arena").unwrap();
+
+        let total_before = t.card_count();
+        let phys_before = t.physical_card_count(t.root_id());
+        let bestiary_before = t.physical_card_count(bestiary);
+        let day_before = t.current_day(deck(&t, "Progress"));
+
+        let mut combat =
+            begin_manual_combat(&mut t, place, arena, bestiary, 7).expect("a fight begins");
+        let foe_count = combat.foe_cards().len();
+        // Instantiation split real foes off the Bestiary — nothing minted.
+        assert_eq!(
+            t.card_count(),
+            total_before,
+            "instantiation minted nothing (PC.2)"
+        );
+        assert_eq!(t.physical_card_count(bestiary), bestiary_before - foe_count);
+
+        // Drive the fight out (greedily, so the capstone is self-contained), then fold it back.
+        let outcome = combat.run_to_end_auto(|_| {});
+        assert_eq!(outcome, CombatOutcome::Win);
+        let outcome = finish_manual_combat(&mut t, place, bestiary, combat);
+        assert_eq!(outcome, CombatOutcome::Win);
+
+        // The foes are home (Bestiary whole), the arena is clear.
+        assert_eq!(
+            t.physical_card_count(bestiary),
+            bestiary_before,
+            "foes returned to the Bestiary"
+        );
+        assert!(t.content_cards(arena).is_empty(), "the arena is emptied");
+        // A win consumed the encounter header, left a virtual "Victory" log, and cost a day.
+        assert!(!has_encounter(&t, place), "the cleared encounter is gone");
+        assert_eq!(log_title(&t, place).as_deref(), Some("Victory"));
+        assert_eq!(
+            t.current_day(deck(&t, "Progress")),
+            day_before + 1,
+            "the fight cost a day"
+        );
+        // Conservation: every foe round-trips and the day-card is a move, so the only *physical* change is
+        // the one encounter header a win consumes. `card_count` itself is unchanged — the virtual Victory
+        // log card takes the consumed encounter's place 1:1.
+        assert_eq!(
+            t.physical_card_count(t.root_id()),
+            phys_before - 1,
+            "only the cleared encounter left the physical tally"
+        );
+        assert_eq!(
+            t.card_count(),
+            total_before,
+            "card_count conserved across the whole round-trip"
         );
     }
 }

@@ -264,6 +264,12 @@ pub fn battle_state_with(
     state
 }
 
+/// Whether the heroes (side 0) won this resolved battle — `false` for a loss or a draw. A convenience for
+/// callers (e.g. the card-table bridge) that only need the win/lose bit off a finished [`State`].
+pub fn hero_won(state: &State) -> bool {
+    matches!(state.outcome, Some(Outcome::Win(PlayerId(0))))
+}
+
 pub(crate) fn check_outcome(state: &mut State) {
     // A win requires **survivors**: you do not win by dying. A **simultaneous wipe** — both sides
     // emptied in the same resolution step (§1.9: deaths finalize together at a sub-phase boundary) — is a
@@ -310,6 +316,40 @@ impl Deckbound {
             return;
         }
         self.next_round(state);
+    }
+
+    /// Resolve a **full battle** resumably — the same round loop as the auto path
+    /// ([`resolve_and_advance`](Self::resolve_and_advance) + [`next_round`](Self::next_round)), but the
+    /// Engage resolution rests at each decision so an external driver can observe and answer it. `on_step`
+    /// is called after **every** [`step_manual`](combat::step_manual) transition: on
+    /// [`Resting`](combat::StepOutcome::Resting) it must fill [`State::pending`] (a player, or
+    /// [`answer_pending_greedily`](combat::answer_pending_greedily)); on `Advanced`/`Done` it may diff the
+    /// state to animate what changed. With a greedy answerer this reproduces
+    /// [`auto_resolve`](crate::solver::auto_resolve) exactly for a card-free `DuelUnit` battle — Marshal is
+    /// then a silent Deploy, so driving Engage directly loses nothing. (Synchronous: for a live UI that
+    /// answers across frames, pump [`step_manual`](combat::step_manual) directly instead.)
+    pub fn resolve_battle_manual(
+        &self,
+        state: &mut State,
+        mut on_step: impl FnMut(&mut State, combat::StepOutcome),
+    ) {
+        while state.outcome.is_none() {
+            state.log.push("-- Engage --".into());
+            combat::log_round_intro(state);
+            state.resolution = Some(combat::Resolution::start());
+            loop {
+                let outcome = combat::step_manual(state);
+                on_step(state, outcome);
+                if matches!(outcome, combat::StepOutcome::Done) {
+                    break;
+                }
+            }
+            check_outcome(state);
+            if state.outcome.is_some() {
+                break;
+            }
+            self.next_round(state);
+        }
     }
 
     fn next_round(&self, state: &mut State) {
