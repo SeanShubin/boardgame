@@ -12,10 +12,10 @@ mod persistence;
 
 use bevy::prelude::*;
 use cardtable::{
-    ActionRequests, BuildInfo, CardTablePlugin, CardTableSet, CombatRequest, FactoryBase,
-    ManualCombatRequest, NeedsRebuild, StatusLine, Table,
+    ActionRequests, ArenaCombat, ArenaState, BuildInfo, CardTablePlugin, CardTableSet,
+    CombatRequest, FactoryBase, ManualCombatRequest, NeedsRebuild, StatusLine, Table,
 };
-use cardtable_combat::{begin_manual_combat, finish_manual_combat, resolve_encounter};
+use cardtable_combat::{begin_manual_combat, resolve_encounter};
 use cardtable_model::{Tableau, sample_table};
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
@@ -86,35 +86,44 @@ fn resolve_combat(
     rebuild.0 = true;
 }
 
-/// Resolve a **manual** fight the player asked for. The interactive arena isn't built yet, so for now this
-/// runs the fight through the manual bridge headlessly (greedily) and folds it back — the same visible
-/// result as auto, but exercising the real manual path (foes instantiated as cards, the resumable
-/// resolver). Step 2 replaces the greedy run with the player-driven arena. The foes are dealt into a scratch
-/// pile and returned to the Bestiary by the teardown, so the pile is discarded empty; the rebuild happens
-/// after, so it never renders.
+/// Open the interactive **arena** for a manual fight the player asked for: instantiate the encounter's foes
+/// as real cards (into a scratch pile) and hand the [`cardtable_combat::ManualCombat`] to the renderer via
+/// [`ArenaCombat`]. From there the renderer's `drive_arena` steps the fight (the player decides, the AI
+/// answers the foes) and folds it back on the end. Deterministic — seeded by the current day.
 fn resolve_manual_combat(
     mut table: ResMut<Table>,
     mut request: ResMut<ManualCombatRequest>,
+    mut arena: ResMut<ArenaCombat>,
     mut rebuild: ResMut<NeedsRebuild>,
 ) {
     let Some(place) = request.0.take() else {
         return;
     };
+    if arena.0.is_some() {
+        return; // a fight is already up — don't stack another
+    }
     let seed = day_seed(&table.0);
     let root = table.0.root_id();
     let Some(bestiary) = find_top(&table.0, "Bestiary") else {
         return;
     };
-    let Ok(arena) = table.0.add_pile(root, "Arena") else {
+    let Ok(scratch) = table.0.add_pile(root, "Arena") else {
         return;
     };
-    if let Some(mut combat) = begin_manual_combat(&mut table.0, place, arena, bestiary, seed) {
-        combat.run_to_end_auto(|_| {});
-        let outcome = finish_manual_combat(&mut table.0, place, bestiary, combat);
-        info!("manual combat resolved (auto for now): {outcome:?}");
+    match begin_manual_combat(&mut table.0, place, scratch, bestiary, seed) {
+        Some(combat) => {
+            arena.0 = Some(ArenaState {
+                combat,
+                place,
+                bestiary,
+                scratch,
+            });
+            rebuild.0 = true; // switch the felt to the arena view
+        }
+        None => {
+            let _ = table.0.remove_pile(scratch);
+        }
     }
-    let _ = table.0.remove_pile(arena);
-    rebuild.0 = true;
 }
 
 /// A top-level deck by label (the game-state helpers reach a few fixed zones by name).
