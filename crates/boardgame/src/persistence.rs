@@ -1,10 +1,10 @@
 //! Persist the card-table [`Tableau`] as **RON** — to the browser's `localStorage` on the web, and to a
-//! file in the OS data directory natively (same serialization, two backends). [`load`] returns `None` on
-//! absence, any parse error, or a stale save, so an out-of-date save falls back to a fresh table rather
-//! than crashing. We do **not** migrate old formats: a save is stamped with a fingerprint of the pristine
-//! [`sample_table`](cardtable_model::sample_table) shape, and one that no longer matches is discarded —
-//! so any change to the fixture automatically clobbers stale saves, no version bumping. [`encode`] +
-//! [`write`] are split so the caller can dedupe (only write when the RON changed), for the autosave loop.
+//! file in the OS data directory natively (same serialization, two backends). The session **persists**
+//! across launches on both platforms; the player resets with the **Start Over** button, so a save is kept
+//! as long as it still deserializes (a fingerprint of the pristine shape is recorded for reference but no
+//! longer gates the load). A save that can't be parsed — an incompatible struct change — falls back to a
+//! fresh table rather than crashing. [`encode`] + [`write`] are split so the caller can dedupe (only write
+//! when the RON changed), for the autosave loop.
 
 use cardtable_model::Tableau;
 
@@ -42,10 +42,12 @@ pub fn encode(tableau: &Tableau) -> Option<String> {
     .ok()
 }
 
-/// Parse a RON string back to a tableau, discarding a save whose fingerprint no longer matches the build.
+/// Parse a RON string back to a tableau. The session **persists** across launches (and across builds):
+/// the fingerprint is recorded but no longer gates the load, so a save is kept as long as it still
+/// deserializes — use **Start Over** to reset. A save that can't be parsed (an incompatible struct
+/// change) falls back to a fresh table rather than crashing.
 fn decode(text: &str) -> Option<Tableau> {
-    let save: Save = ron::from_str(text).ok()?;
-    (save.fingerprint == fingerprint()).then_some(save.tableau)
+    ron::from_str::<Save>(text).ok().map(|save| save.tableau)
 }
 
 /// Load the saved tableau, or `None` if there is none (or it can't be read / parsed).
