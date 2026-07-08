@@ -1858,12 +1858,18 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                                         .collect();
                                     // Tall enough for the place card plus one title strip per stationed token.
                                     let cell_h = SMALL_H + tokens.len() as f32 * TITLE_OFFSET;
-                                    grid.spawn(Node {
-                                        position_type: PositionType::Relative,
-                                        width: Val::Px(SMALL_W),
-                                        height: Val::Px(cell_h),
-                                        ..default()
-                                    })
+                                    grid.spawn((
+                                        // The whole cascade is one drop target: dropping a token anywhere over
+                                        // the place *or its stacked tokens* moves the character here, and the
+                                        // drop-target glow wraps the full stack rather than just the top card.
+                                        PileDropZone(place),
+                                        Node {
+                                            position_type: PositionType::Relative,
+                                            width: Val::Px(SMALL_W),
+                                            height: Val::Px(cell_h),
+                                            ..default()
+                                        },
+                                    ))
                                     .with_children(|cell| {
                                         // The place card is the base of the cascade, at the cell's top.
                                         cell.spawn(Node {
@@ -2198,7 +2204,9 @@ fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: Pi
     let name = zone_title_with_count(tree, place);
     parent
         .spawn((
-            PileDropZone(place),
+            // Pure visual — the drop target + click-to-drill live on the enclosing cell (which spans the
+            // whole cascade), so a click here bubbles up to it and a token dropped anywhere on the stack
+            // still lands on this place.
             Node {
                 width: Val::Px(SMALL_W),
                 height: Val::Px(SMALL_H),
@@ -2206,7 +2214,7 @@ fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: Pi
                 border: UiRect::all(Val::Px(2.0)),
                 flex_direction: FlexDirection::Column,
                 // Title at the top: on the map a token cascades over the place card's body, so its name
-                // must sit in the top strip that stays exposed (and stays the click target to drill in).
+                // must sit in the top strip that stays exposed above the tokens.
                 justify_content: JustifyContent::FlexStart,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(2.0),
