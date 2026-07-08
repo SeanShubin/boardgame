@@ -1484,7 +1484,8 @@ mod tests {
     fn probe_niche_scenarios() {
         const BUDGET: u64 = 200_000;
         // (intended key role, shape name, foe bands) — best-effort shapes per the responsibilities table.
-        let niches: &[(&str, &str, &[(&str, u32)])] = &[
+        type Niche<'a> = (&'a str, &'a str, &'a [(&'a str, u32)]);
+        let niches: &[Niche] = &[
             ("Iron", "burst spike (heavy ranged)", &[("Slinger", 18)]),
             ("Salt", "attrition (sustained swarm)", &[("Husk", 30)]),
             ("Brass", "armored line (Toughness front)", &[("Brute", 9)]),

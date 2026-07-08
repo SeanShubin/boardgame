@@ -80,7 +80,7 @@ fn cmd_apply(args: &[String]) -> Result<(), String> {
     let action: Action =
         ron::from_str(&action_str).map_err(|e| format!("parsing --action: {e}"))?;
 
-    let game = Deckbound::default();
+    let game = Deckbound;
     game.apply(&mut state, &action)
         .map_err(|e| format!("illegal action {action:?}: {e}"))?;
 
@@ -98,7 +98,7 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     let actions: Vec<Action> =
         ron::from_str(&actions_text).map_err(|e| format!("parsing --actions: {e}"))?;
 
-    let game = Deckbound::default();
+    let game = Deckbound;
     for (i, action) in actions.iter().enumerate() {
         game.apply(&mut state, action)
             .map_err(|e| format!("illegal action #{i} {action:?}: {e}"))?;

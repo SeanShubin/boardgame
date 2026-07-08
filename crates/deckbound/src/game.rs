@@ -1359,7 +1359,7 @@ mod tests {
             let action = match s.phase {
                 Phase::Clash => {
                     let beat = s.clash.map(|c| c.beat).unwrap_or(0);
-                    if beat % 2 == 0 {
+                    if beat.is_multiple_of(2) {
                         Action::Play(Move::Strike)
                     } else {
                         Action::Play(Move::Anticipate)
