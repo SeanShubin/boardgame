@@ -190,6 +190,11 @@ struct BackCard;
 #[derive(Component)]
 struct CombatCard;
 
+/// A control card that **advances the day** — shown in the Progress zone's overlay. Clicking it draws a
+/// new `Day Passed` card onto Progress (the day count ticks up) and stands every move marker back up.
+#[derive(Component)]
+struct AdvanceDayCard;
+
 /// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
 /// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
 /// [`CardKind::Virtual`] readouts (a combat log), which can run long; ordinary panel cards clip.
@@ -486,6 +491,7 @@ fn on_click(
         Option<&PileDropZone>,
         Has<BackCard>,
         Has<CombatCard>,
+        Has<AdvanceDayCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
@@ -499,7 +505,9 @@ fn on_click(
     if guard.0 {
         return; // the release that ends a drag also fires Click — that's not an intentional click
     }
-    let Ok((action, card, pile, is_back, is_combat)) = targets.get(on.event().entity) else {
+    let Ok((action, card, pile, is_back, is_combat, is_advance_day)) =
+        targets.get(on.event().entity)
+    else {
         return;
     };
     if is_back {
@@ -510,6 +518,14 @@ fn on_click(
         // system) resolves it against the game rules and clears the request — the UI shell stays
         // game-agnostic.
         combat.0 = Some(table.0.focus_id());
+    } else if is_advance_day {
+        // Advance the day: lay a new `Day Passed` card on Progress and stand every move marker back up.
+        if let (Some(progress), Some(events)) =
+            (top_deck(&table.0, "Progress"), top_deck(&table.0, "Events"))
+        {
+            let _ = table.0.advance_day(progress, events);
+            rebuild.0 = true;
+        }
     } else if let Some(card_ref) = card {
         let id = card_ref.0;
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
@@ -2104,6 +2120,22 @@ fn build_ui(commands: &mut Commands, tree: &Tableau, rail: &[RailAction], front:
                     GlobalZIndex(10),
                 ))
                 .with_children(|slot| spawn_nav_card(slot, (CombatCard, Pinned), "Combat"));
+            }
+            // An **Advance Day** control in the Progress zone — lays a new `Day Passed` card (the day ticks
+            // up) and stands every move marker back up.
+            if top_deck(tree, "Progress") == Some(zone) {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(6.0),
+                        right: Val::Px(8.0),
+                        ..default()
+                    },
+                    GlobalZIndex(10),
+                ))
+                .with_children(|slot| {
+                    spawn_nav_card(slot, (AdvanceDayCard, Pinned), "Advance Day")
+                });
             }
             if !rail.is_empty() {
                 root.spawn((
