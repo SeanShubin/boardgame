@@ -71,13 +71,10 @@ FOES
     braces (+3 Toughness this round).
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
-  ──────── Round 1 ────────
-  ── Intercept — Vanguard → Outrider ──
+  ==== Round 1 ====
   Wisp avoids Brute's strike (-1t).
   Wisp avoids Brute's strike (-1t).
-  ── Volley — Rearguard → Outrider ──
     (no eligible strikes — skipped)
-  ── Raid — Outrider → Rearguard ──
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 121/123]
   Sear avoids Husk's strike (-2t).
     strike hits Sear: 3 might — turns 3 health cards face down. [health 2/5]
@@ -93,12 +90,10 @@ RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 108/123]
   Sear — all its health cards are face down; defeated.
   Hex — all its health cards are face down; defeated.
-  ── Clash — Rearguard → Vanguard, Vanguard → Vanguard ──
     strike hits Anvil: 10 might — turns a health card face down. [health 17/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 16/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 15/18]
     strike hits Anvil: 5 might — damage accumulates. [health 15/18]
-  ── Breach — Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard ──
     strike hits Anvil: 3 might — damage accumulates. [health 15/18]
     strike hits Anvil: 3 might — damage accumulates. [health 15/18]
 ENDROUND heroes: Anvil 15/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |  foes: Brute 128/128  Raider 124/124  Slinger 108/123  Seer 124/124  Husk 122/122
@@ -108,15 +103,12 @@ ENDROUND heroes: Anvil 15/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  
     braces (+3 Toughness this round).
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
-  ──────── Round 2 ────────
-  ── Intercept — Vanguard → Outrider ──
+  ==== Round 2 ====
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 121/122]
   Wisp avoids Brute's strike (-1t).
-  ── Volley — Rearguard → Outrider ──
     (no eligible strikes — skipped)
-  ── Raid — Outrider → Rearguard ──
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 106/123]
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 104/123]
     strike hits Slinger: 7 might — turns 3 health cards face down. [health 101/123]
@@ -124,12 +116,10 @@ RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 97/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 95/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 93/123]
-  ── Clash — Rearguard → Vanguard, Vanguard → Vanguard ──
     strike hits Anvil: 10 might — turns a health card face down. [health 14/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 13/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 12/18]
     strike hits Anvil: 5 might — damage accumulates. [health 12/18]
-  ── Breach — Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard ──
     strike hits Anvil: 5 might — damage accumulates. [health 12/18]
     strike hits Anvil: 3 might — damage accumulates. [health 12/18]
     strike hits Anvil: 3 might — turns a health card face down. [health 11/18]
@@ -143,15 +133,12 @@ ENDROUND heroes: Anvil 10/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  
     braces (+3 Toughness this round).
 RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
-  ──────── Round 3 ────────
-  ── Intercept — Vanguard → Outrider ──
+  ==== Round 3 ====
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 120/122]
   Wisp avoids Brute's strike (-1t).
-  ── Volley — Rearguard → Outrider ──
     (no eligible strikes — skipped)
-  ── Raid — Outrider → Rearguard ──
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 91/123]
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 89/123]
     strike hits Slinger: 7 might — turns 3 health cards face down. [health 86/123]
@@ -159,12 +146,10 @@ RANKS    heroes — vanguard: Anvil   outrider: Wisp, Vow   rearguard: —
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 82/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 80/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 78/123]
-  ── Clash — Rearguard → Vanguard, Vanguard → Vanguard ──
     strike hits Anvil: 10 might — turns a health card face down. [health 9/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 8/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 7/18]
     strike hits Anvil: 5 might — damage accumulates. [health 7/18]
-  ── Breach — Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard ──
     strike hits Anvil: 5 might — damage accumulates. [health 7/18]
     strike hits Anvil: 3 might — damage accumulates. [health 7/18]
     strike hits Anvil: 3 might — turns a health card face down. [health 6/18]
@@ -178,15 +163,12 @@ ENDROUND heroes: Anvil 5/18  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/12  |
     braces (+3 Toughness this round).
 RANKS    heroes — vanguard: —   outrider: Wisp, Vow   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
-  ──────── Round 4 ────────
-  ── Intercept — Vanguard → Outrider ──
+  ==== Round 4 ====
   Husk avoids Anvil's strike (-2t).
   Wisp avoids Brute's strike (-1t).
     strike hits Husk: 1 might — turns a health card face down. [health 119/122]
   Wisp avoids Brute's strike (-1t).
-  ── Volley — Rearguard → Outrider ──
     (no eligible strikes — skipped)
-  ── Raid — Outrider → Rearguard ──
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 76/123]
     strike hits Slinger: 7 might — turns 2 health cards face down. [health 74/123]
     strike hits Slinger: 7 might — turns 3 health cards face down. [health 71/123]
@@ -194,12 +176,10 @@ RANKS    heroes — vanguard: —   outrider: Wisp, Vow   rearguard: —
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 67/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 65/123]
     strike hits Slinger: 6 might — turns 2 health cards face down. [health 63/123]
-  ── Clash — Rearguard → Vanguard, Vanguard → Vanguard ──
     strike hits Anvil: 10 might — turns a health card face down. [health 4/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 3/18]
     strike hits Anvil: 10 might — turns a health card face down. [health 2/18]
     strike hits Anvil: 5 might — damage accumulates. [health 2/18]
-  ── Breach — Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard ──
     strike hits Anvil: 5 might — damage accumulates. [health 2/18]
     strike hits Anvil: 3 might — damage accumulates. [health 2/18]
     strike hits Anvil: 3 might — turns a health card face down. [health 1/18]
@@ -212,11 +192,9 @@ ENDROUND heroes: Anvil 0/18 down  Wisp 5/5  Sear 0/5 down  Hex 0/5 down  Vow 12/
 ── round 5 ──────────────────────────────────────
 RANKS    heroes — vanguard: —   outrider: —   rearguard: —
          foes   — vanguard: Brute   outrider: Raider, Husk   rearguard: Slinger, Seer
-  ──────── Round 5 ────────
-  ── Intercept — Vanguard → Outrider ──
+  ==== Round 5 ====
   Wisp avoids Brute's strike (-1t).
   Wisp avoids Brute's strike (-1t).
-  ── Volley — Rearguard → Outrider ──
   Wisp avoids Slinger's strike (-1t).
   Wisp avoids Seer's strike (-1t).
   Wisp avoids Slinger's strike (-1t).
@@ -224,14 +202,11 @@ RANKS    heroes — vanguard: —   outrider: —   rearguard: —
   Wisp avoids Slinger's strike (-1t).
   Wisp avoids Seer's strike (-1t).
   Wisp avoids Slinger's strike (-1t).
-  ── Raid — Outrider → Rearguard ──
     strike hits Slinger: 1 might — damage accumulates. [health 63/123]
     strike hits Slinger: 1 might — damage accumulates. [health 63/123]
     strike hits Slinger: 1 might — turns a health card face down. [health 62/123]
     strike hits Slinger: 1 might — damage accumulates. [health 62/123]
-  ── Clash — Rearguard → Vanguard, Vanguard → Vanguard ──
     (no eligible strikes — skipped)
-  ── Breach — Vanguard → Rearguard, Outrider → Vanguard, Outrider → Outrider, Rearguard → Rearguard ──
     strike hits Wisp: 5 might — turns 5 health cards face down. [health 0/5]
     strike hits Vow: 5 might — turns 5 health cards face down. [health 7/12]
     strike hits Vow: 5 might — turns 5 health cards face down. [health 2/12]

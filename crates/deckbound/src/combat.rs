@@ -624,20 +624,21 @@ pub const SCHEDULE: &[&[(Intention, Intention)]] = {
 /// The §4.6 sub-phase names, indexed by [`SCHEDULE`] position.
 pub const SUB_PHASE_NAMES: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
 
-/// A log header for sub-phase `idx`: its name and the rank→rank pairs it resolves — *who is allowed to
-/// strike whom* this sub-phase, e.g. `"── Intercept — Vanguard → Outrider ──"`.
+/// A log header for sub-phase `idx`: its name and the rank->rank pairs it resolves — *who is allowed to
+/// strike whom* this sub-phase, e.g. `"-- Intercept: Vanguard -> Outrider --"`. ASCII only, so it renders
+/// in the bundled UI font (which has no box-drawing / arrow glyphs).
 fn sub_phase_header(idx: usize) -> String {
     let name = SUB_PHASE_NAMES.get(idx).copied().unwrap_or("?");
     let pairs = SCHEDULE
         .get(idx)
         .map(|ps| {
             ps.iter()
-                .map(|p| format!("{:?} → {:?}", p.0, p.1))
+                .map(|p| format!("{:?} -> {:?}", p.0, p.1))
                 .collect::<Vec<_>>()
                 .join(", ")
         })
         .unwrap_or_default();
-    format!("── {name} — {pairs} ──")
+    format!("-- {name}: {pairs} --")
 }
 
 /// Where the steppable resolver's cursor sits within the current sub-phase. One [`step`] performs
@@ -756,9 +757,7 @@ pub fn step(state: &mut State) -> bool {
 /// Drives the steppable [`step`] machine to completion — the phase-boundary end state is identical to
 /// resolving the schedule in one synchronous pass.
 pub fn resolve_round(state: &mut State) {
-    state
-        .log
-        .push(format!("──────── Round {} ────────", state.round));
+    state.log.push(format!("==== Round {} ====", state.round));
     state.resolution = Some(Resolution::start());
     while step(state) {}
 }
@@ -1173,7 +1172,7 @@ mod tests {
         // thing `resolve_round` does around the step loop — the round header — so the logs still match.
         stepped
             .log
-            .push(format!("──────── Round {} ────────", stepped.round));
+            .push(format!("==== Round {} ====", stepped.round));
         stepped.resolution = Some(Resolution::start());
         let mut guard = 0;
         while step(&mut stepped) {
