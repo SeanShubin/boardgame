@@ -819,6 +819,28 @@ mod tests {
         }
     }
 
+    /// `character_recipe` reads a recruited hero's build back out of its deck cards — the stats and
+    /// ability round-trip, so combat can recover `[Might, Vitality, Toughness, Cadence, Finesse]`.
+    #[test]
+    fn character_recipe_round_trips_a_recruited_build() {
+        let mut t = sample_table();
+        let (cdeck, _name) = recruit(&mut t, 0, executioner());
+        let recovered = t.character_recipe(cdeck).expect("a complete build");
+        assert_eq!(recovered.stats, [6, 3, 1, 1, 1]);
+        assert_eq!(recovered.ability, "Alpha Strike");
+        // An incomplete deck (no character build) yields nothing.
+        assert_eq!(t.character_recipe(deck(&t, "Identity")), None);
+    }
+
+    /// Each kit ability's strike shape is derived, mirroring the reach/area a `Creature` stores.
+    #[test]
+    fn ability_shape_covers_the_kits() {
+        assert_eq!(catalog::ability_shape("Stand-Off"), (true, false)); // ranged
+        assert_eq!(catalog::ability_shape("Whirlwind"), (false, true)); // area
+        assert_eq!(catalog::ability_shape("Alpha Strike"), (false, false));
+        assert_eq!(catalog::ability_shape("Slip-and-Cut"), (false, false));
+    }
+
     /// Recruiting a character (an `equip` assembled from the banks) enlists its day-clock copy into the
     /// Day deck; un-equipping returns every card to its bank and the tokens to the Roster — all
     /// conservation-clean (PC.2), so the card count is unchanged across the whole round-trip.

@@ -77,6 +77,20 @@ pub fn ability_description(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
+/// A kit ability's **strike shape** as `(ranged, aoe)` — the reach and area a hero fights with, derived
+/// from its signature ability. Kits carry no explicit reach/area flags (unlike a [`Creature`], which
+/// stores them), so combat reads the shape here: Stand-Off strikes from range; Whirlwind hits an area;
+/// Alpha Strike and Slip-and-Cut are single melee blows. Unknown abilities default to melee, single.
+pub fn ability_shape(name: &str) -> (bool, bool) {
+    match name {
+        "Stand-Off" => (true, false), // ranged, single
+        "Whirlwind" => (false, true), // melee, area
+        "Alpha Strike" => (false, false),
+        "Slip-and-Cut" => (false, false),
+        _ => (false, false),
+    }
+}
+
 /// A **creature** — a foe stationed at an encounter, mirrored from the duel-locks balance instrument
 /// (`deckbound/data/balance/duel-locks.ron`, the source of truth for the numbers). `cardtable-model` is
 /// pure and cannot depend on `deckbound`, so the four locks are re-declared here — kept in step with the

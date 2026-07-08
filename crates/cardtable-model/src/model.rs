@@ -1085,6 +1085,42 @@ impl Tableau {
         Ok(())
     }
 
+    /// Recover a recruited character's [`Recipe`] from its `deck` — the inverse *read* of
+    /// [`equip_character`]. The recipe is not stored on the deck, so this parses it back from the cards:
+    /// pair each `"stat"` card with the `"number"` card that follows it (its value), placed by the stat's
+    /// index in [`catalog::STATS`](crate::catalog::STATS), and take the `"ability"` card's name. Returns
+    /// `None` unless the deck is a complete build (all five stat values + an ability). Used to turn a
+    /// party member back into `[Might, Vitality, Toughness, Cadence, Finesse]` + ability for combat.
+    pub fn character_recipe(&self, deck: PileId) -> Option<Recipe> {
+        let mut stats = [0u8; 5];
+        let mut seen = [false; 5];
+        let mut ability: Option<String> = None;
+        let mut pending: Option<usize> = None; // the stat card awaiting its number
+        for c in self.content_cards(deck) {
+            let card = self.card(c)?;
+            match card.card_type() {
+                "stat" => {
+                    pending = crate::catalog::STATS
+                        .iter()
+                        .position(|&(n, _)| n == card.name());
+                }
+                "number" => {
+                    if let Some(i) = pending.take() {
+                        stats[i] = card.name().parse().ok()?;
+                        seen[i] = true;
+                    }
+                }
+                "ability" => ability = Some(card.name().to_string()),
+                _ => {}
+            }
+        }
+        if seen.iter().all(|&b| b) {
+            ability.map(|ability| Recipe { stats, ability })
+        } else {
+            None
+        }
+    }
+
     /// Removes `pile` and everything under it — its cards, and recursively its sub-piles — and unlinks it
     /// from its parent. The root cannot be removed.
     pub fn remove_pile(&mut self, pile: PileId) -> Result<(), TableauError> {
