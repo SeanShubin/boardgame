@@ -466,6 +466,51 @@ renderer's scattered predicates (`can_drop_on_card`=equip, `can_drop_on_pile`+ad
 5. **Verify** the equip-buttons regression-watch (task #11) is structurally gone; goldens re-based to the
    board path.
 
+## 18. Board seam design + naming (stretch B — "formalize the seam")
+
+**Scope of B:** formalize the seam for the **non-combat** game (equip / march / day). The interactive
+**arena stays where it is** (renderer + `cardtable-combat`) and folds into the seam during the combat
+stretch (A), when it becomes rank×phase intentions. So B covers card-move/click gestures, not the arena.
+
+**The seam trait** (generic, lives in `cardtable-model` — the renderer depends on it, no game words):
+```
+pub trait BoardGame {
+    type Intention;
+    fn opening(&self) -> Board;                                    // the starting board (sample_table)
+    fn apply(&self, board: &mut Board, intentions: &[Self::Intention]);   // batch, order-free (§0.2)
+    fn drop_intention(&self, board: &Board, dragged: CardId, onto: DropTarget) -> Option<Self::Intention>;
+    fn click_intention(&self, board: &Board, card: CardId) -> Option<Self::Intention>;
+}
+// DropTarget = Card(CardId) | Pile(PileId).  Some(intention) = legal, None = illegal (subsumes the
+// renderer's can_drop_on_card / can_drop_on_pile predicates). The renderer is generic over G: BoardGame.
+```
+- **Intention** (game-side enum): `Equip{hero,kit}`, `Unequip{hero}`, `March{who,to}`, `AdvanceDay`.
+  Combat intentions join in stretch A.
+- The renderer turns a gesture into `Option<Intention>` via the trait, then calls `apply` on the
+  persistent board — no `deckbound` reference survives in `cardtable`.
+
+**Relocation (out of the generic crates, into the game crate = repurposed `deckbound-cardtable`):** the
+high-level ops `equip_character`/`unequip_character`/`move_character`/`advance_day`/`mark_moved`/
+`day_is_over`/`current_day`/`instantiate_encounter_foes`/`return_foes_to_bestiary`/`character_recipe`
+(become free fns over `&mut Board`), `sample_table` (fixtures), `catalog`, and the renderer's game
+predicates (`can_drop_*`, `is_map_position`, `places_orthogonally_adjacent`, `location_ready_for_combat`,
+`try_equip`/`try_unequip`). **`cardtable-model` keeps only generic conservation primitives**
+(`draw_named_from`, `return_one`, `add_pile`, `move_card`, `flip_*`, `focus`, `set_layout`, …) — the ops
+are built *on* these in the game crate.
+
+**Naming decisions (user asked to keep names honest):**
+- Seam trait **`BoardGame`** (in `cardtable-model`) — distinct from `contract::Game` (the sample's
+  `TableView` seam, which survives for `deckbound-sample`).
+- Game-side enum **`Intention`**; drop discriminator **`DropTarget`**.
+- **`Tableau` → `Board`** — the physical card board. The rename is disruptive (spans `cardtable-model`,
+  `cardtable`, `boardgame`, `cardtable-combat`); the trait is already named `BoardGame` to anticipate it.
+  Do the rename **during this stretch if it falls out cheaply**, else record for P6. (Recorded target.)
+- Game crate **`deckbound-cardtable` → `deckbound-board`** (deckbound as a board game) at P6; repurposed
+  now from emitter to `BoardGame` impl.
+- `cardtable-combat` — absorbed into the game crate in stretch A; the name retires.
+- `cardtable-model` (generic Board + `UiModel` + `BoardGame` + primitives) and `cardtable` (generic
+  renderer) — names stay honest, keep.
+
 ## 16. P3a design — the physical/UI split (field-by-field) + naming
 
 `model.rs` (3057 lines) fuses **three** concerns. P3a separates the first two; the third is P3c/P3b:
@@ -566,9 +611,8 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
   **no rail buttons** (screenshot); gate tests green (model 60 + characterization 6). **Both live defects
   fixed structurally:** equip-buttons (no rail-from-legal-actions mechanism exists) and focus/drag reset
   (one persistent Tableau, not rebuilt). `deckbound-cardtable` (the emitter) is now unused by the product.
-  *Still to verify in-app (needs driving the app): the actual drag-equip on the Inn projection + the Inn
-  rows render (task #11) — structurally sound (proven old-Inn code with Header rows + projection), not yet
-  eyeballed.* **Remaining P3b:** stretch 3 combat→rank×phase batch; stretch 4 purge/relocate (game ops out
+  *In-app confirmed (user, 2026-07-09): drag-equip on the Inn works, no buttons — task #11 DONE.*
+  **Remaining P3b:** stretch 3 combat→rank×phase batch; stretch 4 purge/relocate (game ops out
   of `cardtable-model` to the game side + generic-strip + physical/UI side-tables + delete dead emitter).
 - **P3a.2 — DONE** (`873f3dd`). Separated the **attention state** out of the physical `Tableau`: `focus`,
   `selection`, and the renderer-fed transient `surface`/`pinned` moved into a distinct `ui::UiModel`
