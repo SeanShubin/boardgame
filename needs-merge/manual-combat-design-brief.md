@@ -16,22 +16,32 @@ The built arena (v1) prompts **one decision at a time** and auto-paces. The user
 commit board**: per sub-phase you see the whole board, allocate all your strikes + tempo, and commit — with
 persistent **Reset**/**Commit**, everything expressible in **single clicks**, and **default = ignore/hold**.
 
-### Each combat sub-phase splits into two mini-phases (one-way, no back-and-forth)
-1. **Targeting** (offense): pick enemy targets and make **initiating tempo bids** to connect.
-   - Two-step, single-click: tap a legal enemy target (schedule-gated — Intercept → enemy Outriders — and
-     highlighted, with help text "Select outriders to intercept") → your legal strikers light up → tap a
-     striker to spend a Tempo card on that strike; **keep tapping to add tempo, cycle up and back to zero**.
-     Two strikers on one target = two hits. Freely re-target / re-allocate.
-2. **Reaction** (defense): for each incoming blow, **evade / strike-back / eat-it**.
-   - The revealed board shows who's hitting whom. Each **incoming blow** is its own single-click chip cycling
-     `eat-it → evade → strike-back → eat-it` (offering evade/strike-back only when legal + affordable).
-     Strike-back is a flat **1 tempo**, unevadable ("they came to me"); evade pays the finesse-scaled cost;
-     eat-it is free and the **default**.
+### Each combat sub-phase splits into THREE mini-phases (one-way, no back-and-forth)
+1. **Catch / Targeting** (offense): pick enemy targets and bid tempo to **reach contact** (finesse-gated —
+   `cards × F_att ≥ F_target`; may over-flip to tax the escape).
+   - Two-step, single-click: tap a legal enemy target (schedule-gated — Intercept → enemy Outriders —
+     highlighted, help text "Select outriders to intercept") → your legal strikers light up → tap a striker
+     to spend a Tempo card on that catch; **keep tapping to add tempo, cycle up and back to zero**. Freely
+     re-target / re-allocate.
+2. **React** (defense): for each incoming catch, **evade / strike-back / eat-it**.
+   - Each **incoming catch** is a single-click chip cycling `eat-it → evade → strike-back → eat-it` (offering
+     each only when legal + affordable). **Evade** flips until `cards × F_def >` the attacker's spent bid —
+     the hit misses *and* **breaks contact** (so the evader is out of mini-phase 3). **Strike-back** = 1 card
+     (adjacent, unevadable), take the hit + counter. **Eat-it** = free, the **default**.
+3. **Extra strikes** (finesse-free free-for-all): contact is paid for, so finesse no longer matters — every
+   unit **still in contact**, both sides, flips its **remaining** Tempo cards for extra hits (1 card = 1
+   strike), simultaneously. Unevadable; you tap which contacted enemy each hits.
 
-**Why exactly two, no ping-pong:** offense→defense is strictly one-way (targets lock in Targeting; Reaction
-only negates or counter-hits), and the strike-back is a *free, unevadable riposte* that provokes no new
-decision — so the loop closes at two. This maps directly onto the resolver's own **declare → apply** cycle
-(Targeting = declare, Reaction = apply).
+**Why exactly three, no ping-pong:** phases 1→2→3 are a strict one-way pipeline. Catch → the only reaction is
+in React → Extra strikes are **unevadable** (already in contact, no finesse gate to invoke), so phase 3 is
+**terminal** — nothing to react to, no loop back. Phases 1–2 map onto the resolver's **declare → apply**;
+phase 3 is a second finesse-free declare→apply among contacted units.
+
+**The design payoff:** the split cleaves *reaching contact* (the finesse mind-game, ph.1–2) from *raw
+follow-up once in contact* (finesse-free, ph.3). So (a) tempo burned over-bidding to catch/tax-evade is tempo
+you **don't** have for the phase-3 rain — a real budget split between aggression and follow-through; and (b)
+**evade breaks contact**, pulling you out of the whole phase-3 exchange — which is why it's worth its steep
+price (you escape the follow-up, not just one blow).
 
 ### The rule this pins down
 Reactions are decided against the **revealed pre-damage board**, then all strikes + reactions apply as one
@@ -46,38 +56,45 @@ stat-derived ranks; v2 makes declaration step one), then a **Reveal** (foe ranks
 future toggle).
 
 ### Cost model — RESOLVED 2026-07-09 (the tempo economy)
-**Tempo = the hit/not-hit currency; Might = the damage. They never interact** — extra tempo never makes a
-hit *harder*, only makes it *land* (and, later, buys *another* strike). Per single strike:
-1. **Attacker pays to connect** (Targeting phase) — the target isn't coming to them, so they must catch it.
-   A **finesse-derived minimum** to connect at all (F2 catching F3 = 2 tempo), plus optional **extra bid** on
-   top to tax the defender's escape.
-2. **Defender responds** (Reaction phase, having seen the bid):
-   - **Evade** — pay **strictly more** tempo than the attacker's total bid → the hit misses. A deliberately
-     losing trade (aggressor sets the price); the "I *cannot* eat this" button, not the default.
-   - **Strike back** — pay a flat cheap cost (no finesse tax — "the interceptor came to *him*"): take the hit
-     **and** land a counter. Always available.
+**Tempo = the hit/not-hit currency; Might = the damage. They never interact** — tempo never makes a hit
+*harder*, only makes it *land* (and, later, buys *another* strike).
+
+**Finesse is a multiplier on tempo cards** — the exchange rate from cards to **bid-value**: one flipped
+tempo card is worth `finesse`, so a unit's bid = `cards_flipped × finesse`. **Tempo cards do double duty** —
+flipping a card *is* the action (the physical strike/evade), *and* that flip contributes its `finesse` to
+the bid. One resource, not two. Per single strike:
+1. **Catch** (attacker, Targeting): flip cards until `cards × F_attacker ≥ F_target` — the target's finesse
+   is how hard it is to pin (F2 catching F3 = 2 cards: 2×2=4 ≥ 3). May flip **extra** to raise the bar the
+   defender must clear.
+2. **Defender responds** (Reaction, having seen the bid):
+   - **Evade** — flip until `cards × F_defender >` the attacker's **spent** bid (strictly more *value*). The
+     hit misses. A deliberately losing trade (aggressor sets the price); the "I *cannot* eat this" button.
+   - **Strike back** — **1 card** (no catch bar: the attacker came to *you*, adjacent, so finesse doesn't
+     gate it): take the hit **and** land a counter. Always available.
    - **Eat it** — free, take the hit. **Default.**
 3. **Damage = Might**, applied to whoever got hit, in the order-free batch.
 
-One strike per unit for now. This *replaces* the engine's current tempo/finesse economy (flat-1 to strike;
-`⌊Fa/Fd⌋+1` defender-evade via `policy::avoid_cost`; a can-crack gate on strike-back), so **v2 is a
-mechanics change to the resolver** (needs engine rework + balance re-validation), not just UI — the
-rules-adjacent half of v2, aligned with the order-free-batch direction.
+*Confirmed 2026-07-09:* evade must exceed the attacker's **spent value** (`cards_atk × F_atk`), not just the
+catch bar (so over-flipping to tax evasion does something). *Inferred, confirm at build:* catch bar = the
+target's finesse (`cards × F_att ≥ F_target`).
 
-*Tuning knobs (settle at build):* connect-cost formula — `⌊F_target/F_attacker⌋+1` (mirrors `avoid_cost`
-roles-swapped; fits F2-vs-F3=2) or difference-based; does the defender's own finesse **discount evade**, or
-is evade purely "out-bid the attacker" (finesse only matters when *being caught*)?; strike-back flat cost = 1?
+**Multi-strike = the 3rd mini-phase (in v2, not deferred).** Once contact is paid for, finesse stops
+mattering: in **Extra strikes** (mini-phase 3) every unit still in contact, both sides, flips its remaining
+Tempo for extra hits (1 card = 1 strike, unevadable). This is the clean solution — extra damage lives in its
+own finesse-free phase, gated by leftover tempo, so it never entangles the phase-1 catch bid. See the
+three-mini-phase section above.
 
-*Multi-strike (deferred, not v2):* a unit with spare tempo making **multiple separate strikes** = letting a
-unit produce more than one connect-bid/target assignment in Targeting (per-strike declare, not per-unit). The
-UI already anticipates it (tap a striker again to add a strike). Deferred because doubling a unit's strikes
-doubles its damage output → a real balance task, but a clean seam to add later.
+This cost model *replaces* the engine's current tempo/finesse economy (flat-1 to strike; `⌊Fa/Fd⌋+1`
+defender-evade via `policy::avoid_cost`; a can-crack gate on strike-back), and adds
+finesse-as-tempo-multiplier + the extra-strike phase — so **v2 is a mechanics change to the resolver**
+(engine rework + balance re-validation), not just UI: the rules-adjacent half of v2, aligned with the
+order-free-batch direction.
 
 ### Open design decisions
 - **Mini-phases: rules concept or UI artifact? — RESOLVED 2026-07-09: UI-first, promote later.** Present the
-  two mini-phases in the **UI for now** (ships the solo arena fast); keep mechanics an order-free batch;
-  promote the target→react reveal to first-class rules phases when PvP/fog arrive (the internal `CyclePhase`
-  cursor makes it an upgrade, not a rewrite). Rationale below.
+  three mini-phases (Catch / React / Extra strikes) in the **UI for now** (ships the solo arena fast); keep
+  mechanics an order-free batch; promote them to first-class rules phases when PvP/fog arrive (the internal
+  `CyclePhase` cursor makes it an upgrade, not a rewrite). Rationale below.
 - **Mini-phases: rules concept or UI artifact?** Explored 2026-07-09. The split is two things: the
   **resolution mechanics** (order-free batch — already settled, UI-agnostic) and the **information timing**
   (commit targets → reveal → react). The discriminator is **hidden information**: with none (solo vs.
