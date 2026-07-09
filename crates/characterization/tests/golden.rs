@@ -103,6 +103,12 @@ fn render_pile(t: &Tableau, pid: PileId, depth: usize, out: &mut String) {
         if !c.panel().is_empty() {
             line.push_str(&format!(" | panel={:?}", c.panel()));
         }
+        if let Some(k) = c.pair_key() {
+            line.push_str(&format!(" | pair_key={k}"));
+        }
+        if !c.pairings().is_empty() {
+            line.push_str(&format!(" | pairs={:?}", c.pairings()));
+        }
         out.push_str(&line);
         out.push('\n');
     }
@@ -337,55 +343,66 @@ fn golden_interaction_transcript() {
     assert_behavior("interaction_transcript", &blog);
 }
 
-/// P2.1: every flat bank the emitter authors reproduces the shipped world **verbatim**. Each zone the
-/// emitter's `view()` emits, rendered through the seam (`from_table_view` → `behavior`), must appear
-/// byte-for-byte inside `sample_table.behavior.txt`. As the emitter grows to author more of the world,
-/// more zones are covered here; the full-world *equality* gate lands at P2.4 (route `boardgame`).
+/// The emitter's opening world (new game, empty party) — a fresh golden, not `sample_table`. The emitter
+/// reproduces the shipped static world *except the Inn*, which is now the functional **equip view** (real
+/// hero/kit cards with pairings) rather than `sample_table`'s projection stub. `sample_table.behavior.txt`
+/// stays as the old-path witness until P2.4 deletes that path.
+///
+/// (Earlier this asserted the emitter's full view equalled `sample_table` verbatim — proven through P2.2b,
+/// in git history; the emitter now intentionally diverges at the Inn as it becomes interactive.)
 #[test]
-fn emitter_reproduces_the_static_world() {
+fn emitter_world_view() {
     use cardtable_model::from_table_view;
-    use contract::{Game, TableView};
-
-    // This test *verifies against* the sample golden, it doesn't bless one. Under BLESS the golden tests
-    // are concurrently rewriting that file, so skip to avoid reading it mid-write.
-    if std::env::var_os("BLESS").is_some() {
-        return;
-    }
+    use contract::Game;
 
     let game = deckbound_cardtable::CardTableWorld;
     let view = game.view(&game.new_game(1, 1), None);
-    assert!(!view.zones.is_empty(), "the emitter produced no zones");
+    assert_behavior("emitter_world", &behavior(&from_table_view(&view)));
+}
 
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("golden");
-    path.push("sample_table.behavior.txt");
-    let sample = std::fs::read_to_string(&path)
-        .unwrap()
-        .replace("\r\n", "\n");
+/// P2.3.1d: equip flows through the seam. The inn offers each un-recruited hero as a card that **pairs
+/// onto** a kit; applying the `Equip` action recruits the character, which then shows in the inn and is no
+/// longer offered to equip. Re-equipping a recruited hero is rejected.
+#[test]
+fn emitter_equip_recruits_a_character() {
+    use cardtable_model::from_table_view;
+    use contract::Game;
 
-    for zone in &view.zones {
-        let mini = TableView {
-            zones: vec![zone.clone()],
-            ..Default::default()
-        };
-        let projection = behavior(&from_table_view(&mini));
-        let block = projection
-            .strip_prefix("[table]\n")
-            .expect("projection starts with the root line");
-        assert!(
-            sample.contains(block),
-            "emitter zone `{}` is not reproduced verbatim in the shipped world:\n{block}",
-            zone.label
-        );
-    }
+    let game = deckbound_cardtable::CardTableWorld;
+    let mut world = game.new_game(1, 1);
 
-    // Full-world equality: with every top-level zone authored, the emitter reproduces the ENTIRE static
-    // world — all zones, in order, nothing missing or extra. This is the P2.4 acceptance gate, reached
-    // early. (The interactive fight is combat state, not the static world; it lands in P2.3.)
-    let full = behavior(&from_table_view(&view));
-    assert_eq!(
-        full, sample,
-        "the emitter's full view no longer equals the shipped world's behavioral projection"
+    // "Offered to equip" = the inn's un-recruited hero card, distinguished from the Heroes bank copy by
+    // its pairings (bank heroes carry none).
+    let offered = |w: &deckbound_cardtable::World| {
+        behavior(&from_table_view(&game.view(w, None)))
+            .contains("Vael Thornbrand | type=\"hero\" | qty=1 | pairs=")
+    };
+
+    assert!(
+        offered(&world),
+        "the inn offers Vael to equip before recruiting"
+    );
+
+    game.apply(
+        &mut world,
+        &deckbound_cardtable::Action::Equip { hero: 0, kit: 2 },
+    )
+    .expect("equip is legal");
+
+    let after = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        after.contains("Vael Thornbrand · Marksman | type=\"character\""),
+        "the recruited character shows in the inn"
+    );
+    assert!(!offered(&world), "the inn no longer offers Vael to equip");
+
+    assert!(
+        game.apply(
+            &mut world,
+            &deckbound_cardtable::Action::Equip { hero: 0, kit: 1 }
+        )
+        .is_err(),
+        "re-equipping a recruited hero is rejected"
     );
 }
 

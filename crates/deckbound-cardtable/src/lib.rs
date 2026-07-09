@@ -19,45 +19,86 @@ use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
 /// The card-table world game.
 pub struct CardTableWorld;
 
-/// The compact world state. Minimal for P2.1 (the banks are static); it grows with the party, cleared
-/// locations, the day, and any active fight as later steps add interaction.
+/// The compact world state — **not** a `Tableau`. Grows as interaction lands; for now it holds the
+/// recruited party (equipped characters). Cleared locations, the day, and any active fight come next.
 #[derive(Clone, Default)]
-pub struct World;
+pub struct World {
+    /// Recruited characters (a hero paired with a kit), in recruit order.
+    party: Vec<Character>,
+}
 
-/// A player action. Empty for P2.1 — the banks carry no interactions yet (equip / march / fight arrive
-/// with the Locations and the arena).
+/// One recruited character — a hero index (into [`HEROES`]) equipped with a kit index (into
+/// `catalog::ROSTER`).
+#[derive(Clone)]
+struct Character {
+    hero: usize,
+    kit: usize,
+}
+
+/// A player action.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub enum Action {}
+pub enum Action {
+    /// Recruit at the inn: equip hero #`hero` with kit #`kit`.
+    Equip { hero: usize, kit: usize },
+}
 
 impl Game for CardTableWorld {
     type State = World;
     type Action = Action;
 
     fn new_game(&self, _seed: u64, _players: usize) -> World {
-        World
+        World::default()
     }
 
     fn current_player(&self, _state: &World) -> Option<PlayerId> {
         Some(PlayerId(0))
     }
 
-    fn legal_actions(&self, _state: &World) -> Vec<Action> {
-        Vec::new()
+    fn legal_actions(&self, world: &World) -> Vec<Action> {
+        // Every un-recruited hero × every kit is a legal equip. Stable order (hero-major) so the view's
+        // pairing indices line up with this list.
+        let equipped: Vec<usize> = world.party.iter().map(|c| c.hero).collect();
+        let mut acts = Vec::new();
+        for hero in 0..HEROES.len() {
+            if equipped.contains(&hero) {
+                continue;
+            }
+            for kit in 0..catalog::ROSTER.len() {
+                acts.push(Action::Equip { hero, kit });
+            }
+        }
+        acts
     }
 
     fn action_label(&self, _state: &World, action: &Action) -> String {
-        match *action {}
+        match *action {
+            Action::Equip { hero, kit } => {
+                format!("Equip {} with {}", HEROES[hero], catalog::ROSTER[kit].0)
+            }
+        }
     }
 
-    fn apply(&self, _state: &mut World, action: &Action) -> Result<(), GameError> {
-        match *action {}
+    fn apply(&self, world: &mut World, action: &Action) -> Result<(), GameError> {
+        match *action {
+            Action::Equip { hero, kit } => {
+                if hero >= HEROES.len() || kit >= catalog::ROSTER.len() {
+                    return Err(GameError::new("no such hero or kit"));
+                }
+                if world.party.iter().any(|c| c.hero == hero) {
+                    return Err(GameError::new("that hero is already recruited"));
+                }
+                world.party.push(Character { hero, kit });
+                Ok(())
+            }
+        }
     }
 
     fn outcome(&self, _state: &World) -> Option<Outcome> {
         None
     }
 
-    fn view(&self, _state: &World, _perspective: Option<PlayerId>) -> TableView {
+    fn view(&self, world: &World, _perspective: Option<PlayerId>) -> TableView {
+        let acts = self.legal_actions(world);
         TableView {
             status: "Card table".into(),
             zones: vec![
@@ -66,7 +107,7 @@ impl Game for CardTableWorld {
                 abilities_zone(),
                 stats_zone(),
                 numbers_zone(),
-                locations_zone(),
+                locations_zone(world, &acts),
                 rules_zone(),
                 progress_zone(),
                 events_zone(),
@@ -179,20 +220,10 @@ const LOCATIONS: [&str; 9] = [
 
 /// One place on the map: its `Location` name card, then either the **Inn** sub-zone (Ashfen Crossing —
 /// drill in to recruit) or the location's **encounter** card (its foes listed virtually).
-fn place_zone(place: &str) -> ZoneView {
+fn place_zone(place: &str, world: &World, acts: &[Action]) -> ZoneView {
     let name = CardView::up(place).typed("Location");
     if place == "Ashfen Crossing" {
-        // The inn's recruit view. In the shipped world it *projects* the Heroes + Kit decks; the emitter
-        // authors it inline as the two row labels the projection showed (equip becomes a later action).
-        let inn = ZoneView::new(
-            "Inn",
-            vec![
-                CardView::up("Hero").typed("Label"),
-                CardView::up("Kit").typed("Label"),
-            ],
-        )
-        .with_arrangement(Arrangement::Rows);
-        ZoneView::new(place, vec![name]).with_zones(vec![inn])
+        ZoneView::new(place, vec![name]).with_zones(vec![inn_zone(world, acts)])
     } else if let Some(enc) = catalog::encounter_for(place) {
         let foes: Vec<String> = catalog::encounter_foes(enc)
             .iter()
@@ -214,11 +245,54 @@ fn place_zone(place: &str) -> ZoneView {
     }
 }
 
-fn locations_zone() -> ZoneView {
-    let places: Vec<ZoneView> = LOCATIONS.iter().map(|&p| place_zone(p)).collect();
+fn locations_zone(world: &World, acts: &[Action]) -> ZoneView {
+    let places: Vec<ZoneView> = LOCATIONS
+        .iter()
+        .map(|&p| place_zone(p, world, acts))
+        .collect();
     ZoneView::new("Locations", vec![CardView::up("Location").typed("Label")])
         .with_arrangement(Arrangement::Grid { columns: 3 })
         .with_zones(places)
+}
+
+/// The inn's **recruit view**: each un-recruited hero card **pairs onto** a kit to equip (the pairing the
+/// renderer performs as a drag-drop or tap-then-tap); the kits are the pairing **targets**; recruited
+/// characters are listed after. (Equipped-character display here is a first cut — a name · kit card.)
+fn inn_zone(world: &World, acts: &[Action]) -> ZoneView {
+    let equipped: Vec<usize> = world.party.iter().map(|c| c.hero).collect();
+    let mut cards = Vec::new();
+    // Un-recruited heroes, each pairing onto every kit target.
+    for (i, hero) in HEROES.iter().enumerate() {
+        if equipped.contains(&i) {
+            continue;
+        }
+        let mut card = CardView::up(*hero).typed("hero");
+        for (j, _) in catalog::ROSTER.iter().enumerate() {
+            if let Some(idx) = acts
+                .iter()
+                .position(|a| matches!(a, Action::Equip { hero, kit } if *hero == i && *kit == j))
+            {
+                card = card.pairs_onto(j as u32, idx);
+            }
+        }
+        cards.push(card);
+    }
+    // Kit pairing targets (keyed by kit index).
+    for (j, (name, _, _)) in catalog::ROSTER.iter().enumerate() {
+        cards.push(CardView::up(*name).typed("Kit").pair_key(j as u32));
+    }
+    // Recruited characters.
+    for ch in &world.party {
+        cards.push(
+            CardView::up(format!(
+                "{} · {}",
+                HEROES[ch.hero],
+                catalog::ROSTER[ch.kit].0
+            ))
+            .typed("character"),
+        );
+    }
+    ZoneView::new("Inn", cards).with_arrangement(Arrangement::Rows)
 }
 
 /// A rules **phase** card — a title and its description lines.
