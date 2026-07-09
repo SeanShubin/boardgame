@@ -1,7 +1,8 @@
 # Cardtable ↔ Deckbound Reunification & Reorg — Automated-Pass Plan
 
-**Status:** design, not yet executing beyond Phase 0.
-**Owner:** this instance (folds into `docs/` when settled, per the needs-merge convention).
+**Status:** P0–P2 built (product runs behind the seam). **RE-AIMED 2026-07-09 — see §0:** physical
+cards are the source of truth; resuming under the three-layer model (physical / UI / render).
+**Owner:** this instance (the sole worker — no separate merge instance; folds into `docs/` when settled).
 **Nature:** a long, mostly-unattended, **behavior-preserving** refactor. Same behavior in →
 same behavior out. That invariant is what lets the pass run with few questions.
 
@@ -9,6 +10,112 @@ Working crate names below are **placeholders** — the boundary matters, not the
 rename is cosmetic and behavior-preserving, so it is decided by policy (§8), not by asking.
 
 ---
+
+## 0. RE-AIMING — cards are the source of truth (2026-07-09)
+
+A design conversation reframed the whole pass. **This section supersedes the parts of §9/§14/§15 it
+names in §0.4.** The reunification (P0–P2) proved deckbound *can* run behind a seam — but it built that
+seam the wrong way round (abstract state deriving the cards). This is the correction we resume under.
+
+### 0.1 Three layers, one truth
+
+1. **Physical model** — a one-dimensional ordering of **conserved** cards, with label/divider cards
+   marking zones. This is the **entire** state: the save-game, the undo history, the thing you serialize
+   or send over a wire. *If it cannot be expressed as conserved cards, it is not state — it is
+   scaffolding.* The game rules operate **directly** on this.
+2. **UI model** — everything about *regarding* the cards: current zone, navigation stack, focus / what
+   takes the felt, **viewing surfaces** (a projection "show Heroes and Kit together" is the purest case),
+   arrangement (grid/rows/free), selection, and a **staging buffer** of pending intentions. The physical
+   model knows *nothing* about attention; the UI model owns all of it. One physical truth can back many
+   UI models (per player, per session) — so the physical model serializes; "where you were looking" is a
+   separate, disposable session concern.
+
+   **"Everything is a card" is a rendering vocabulary, not a claim that everything is physical.**
+   Card-shaped things partition across the layers: *physical cards* (conserved) = game / rank / phase /
+   label cards; *UI-model cards* (per-observer, not conserved) = Back/navigation, selection, and the
+   staging buffer's **pending-intention previews**; *render-only cards* = log entries and the action
+   affordances standing in for legal intentions. This is why UI-only "cards" (a Back card, a pending-hit
+   preview) exist without violating conservation — same look, different layer.
+3. **Rendering / IO** — pixels, input, animation, over the UI model.
+
+The two seams: the physical model answers *"what cards exist and what moves are legal"*; the UI model
+answers *"what am I looking at, and how."* Neither ever answers the other's question.
+
+### 0.2 The rules seam (replaces the abstract-`World` emitter of §14)
+
+The game is a predicate + reducer over the physical card model:
+
+- `legal_intentions(all_cards) -> [intention]`
+- `apply(all_cards, intentions[]) -> all_cards`  — **batch, order-free**, conservation-preserving
+
+`apply` takes the *whole* intention set at once, so the order the player expresses things cannot matter —
+there is no partial state between them. That order-independence is a **designed invariant** (it is why
+hits queue and land together at phase end). Nothing abstract survives a call: the resolver may build
+abstract `Actor`s as **throwaway scratch inside** `apply`, but they are never stored — the cards are the
+only truth. (This dissolves the old (a) rewrite-vs-(b) wrap fork: we take the cards→cards *shape* and
+keep the proven resolver as internal scratch.)
+
+### 0.3 Combat vocabulary — ranks vs intentions
+
+- **Ranks** — Vanguard / Outrider / Rearguard. **Physical cards** (rename from the V/O/R "intentions").
+  They persist in `all_cards` and, **paired with the current phase card**, gate which intentions are
+  legal: legality is a `(rank × phase)` lookup, both operands physical cards.
+- **Intentions** — the **transient** set the UI assembles and hands to `apply`. Never cards; they exist
+  only to be applied, then they *are* the new card state.
+- **Transient events** — the raw UI editing (add a hit, retarget, drop, queue another) that churns a
+  staging buffer into the final intention set. `apply` never sees events, only the set — the source of
+  the order-independence. (Events are how you edit; intentions are what you submit.)
+- **Phase is physical** — a rotating **phase deck** (front card rotates to the back), or a one-card
+  current-phase deck plus a not-in-phase deck. The phase card is a **first-class input to legality**, not
+  a counter; rotating it unlocks a different slice of what the same ranks may do.
+- **Advancing the phase is an intention** (RESOLVED). When the user signals *"done with the phase,"* the
+  UI appends a `rotate-phase` intention to the staging set and commits the whole batch to `apply` once —
+  so rotation is neither a hardcoded tail of `apply` nor its own transition; it goes through the same one
+  door as every state change. Consequences: **commit ≡ end-phase** (never apply mid-phase), and an empty
+  phase still advances via a one-element `[rotate-phase]` batch. Because `apply` computes from the
+  *pre-batch* state, hits resolve under the phase being left while the rotation is just another output
+  card-move — the simultaneity is safe. *Minor rules note:* whether "end phase" is always available or a
+  phase can gate its own exit is up to `legal_intentions` (it chooses whether to offer `rotate-phase`).
+- **Small-phase invariant** — phases are deliberately sized so a human can hold every legal intention in
+  their head at once; that is what makes each order-free batch humane and bounds `intentions[]` by
+  construction.
+
+### 0.4 What this supersedes
+
+- **§14 (emitter `State` = compact non-Tableau world state).** *Inverted.* The abstract `World` made the
+  cards a per-frame derivation of abstract truth; the physical card model must **be** the truth and the
+  game must operate on it. `deckbound-cardtable`'s `World` is the thing to replace.
+- **§9 Q1 Option A — *for the product only*.** Growing `TableView` card-table-native was right for the
+  **sample** (a button renderer genuinely needs a serialized snapshot). For the **product** it planted a
+  lossy snapshot boundary where the 1↔2 seam belongs and collapses physical+UI into one regenerated blob.
+  **The product retires the `TableView` snapshot; `TableView` survives only as the sample's seam.**
+- **The `focus` hint + `Tableau` holding `focus`/`arrangement`.** These are UI-model (attention) concerns.
+  A game emitting `focus: Some(0)` is a layer violation; *"the arena takes over the felt"* must become a
+  **UI-model navigation policy** reacting to the physical model, never a rules push. `focus`/`arrangement`
+  move out of the physical `Tableau` into the UI-model layer.
+- **§15 pairing.** Still valid as a gesture, now reframed: a pairing (and its target) is one kind of
+  **transient event** feeding an intention set — not a stored card.
+
+### 0.5 Revised roadmap
+
+The generic-vs-game split (P3–P7) still stands, but the target it splits *toward* is now the three-layer
+model, and one new structural phase precedes the cleanup:
+
+- **P3a — Split `cardtable-model` into a physical-model layer and a UI-model layer.** Physical: conserved
+  1-D card ordering + labels + move/conserve ops, knowing nothing of attention. UI-model:
+  navigation/focus/viewing-surfaces/arrangement/staging, persistent across transitions. Move
+  `focus`/`arrangement` out of the physical `Tableau`.
+- **P3b — Put the game on the physical model.** Replace `deckbound-cardtable`'s abstract `World` with
+  `legal_intentions`/`apply` over the physical card model; equip becomes conservation-clean deck assembly
+  again; combat becomes `(rank × phase)`-gated order-free batches with a physical phase deck; rename
+  V/O/R → **ranks**. Retire the product's `TableView` path (keep it for the sample).
+- **P3c — Purge game words from the generic crates** (the original P3): the leftover arena/equip/march in
+  the renderer, `catalog`/`fixtures`/day-queries in the model, absorb `cardtable-combat`.
+- **P4–P7** — as before (extract `deckbound-balance`; evict Grand Archive + demote `combat-lab`; rename;
+  ECS quality review), now against honest three-layer boundaries.
+
+Behavior preservation (§2) still governs: the golden masters guard outcome / log / rendered-projection
+across the re-aiming.
 
 ## 1. Goal — the boundary
 
@@ -289,6 +396,80 @@ click-only mode is a later `cardtable` toggle. Implemented in `contract` as `Pai
 `CardView.pair_key`/`pairings` (P2.3.1a). Drag-to-*arrange* piles stays a pure renderer service (not a
 game interaction). Note: only relevant to *game-meaningful* drags (equip); the arena's per-blow prompts are
 plain click-actions.
+
+## 16. P3a design — the physical/UI split (field-by-field) + naming
+
+`model.rs` (3057 lines) fuses **three** concerns. P3a separates the first two; the third is P3c/P3b:
+
+1. **Physical model** — the conserved card tree: card content, pile labels (dividers), nesting, order,
+   ids, and the move/conserve ops.
+2. **UI model** — attention + presentation: focus, selection, collapsed, layout/arrangement, geometry
+   (pos/size/footprint), zoom (card `Size`), projection (viewing surface), renderer-fed surface/pinned.
+3. **Deckbound game-semantics** (to leave in P3c/P3b, not P3a): `equip_character`, `unequip_character`,
+   `instantiate_encounter_foes`, `return_foes_to_bestiary`, `character_recipe`, `move_character`,
+   `mark_moved`, `day_is_over`, `advance_day`, `current_day`, `reflects` (the character-deck marker),
+   `recipe`. These are the "deckbound queries" §5 already flags — they move behind the seam.
+
+### 16.1 Field classification
+
+**`Tableau`** — `piles`, `cards`, `root`, `next_pile`, `next_card` → **physical**; `focus`, `selection` →
+**UI**; `surface`, `pinned` (both `#[serde(skip)]`, renderer-fed) → **UI (transient)**.
+
+**`Pile`** — `id`, `label`, `parent`, `children` → **physical**; `collapsed`, `pos`, `size`, `layout`,
+`projection` → **UI**; `reflects` → **deckbound-semantic** (P3b: becomes a real assembled deck).
+
+**`Card`** — `id`, `face`, `detail`, `panel`, `kind`, `card_type`, `home`, `quantity` → **physical**;
+`size` (zoom), `pos`, `footprint` → **UI**; `actionable`, `pair_key`, `pairings` → **seam/interaction**
+(populated from the `contract` view; under re-aiming these are how a card affords an intention — keep with
+the card as rendered content for now); `recipe` → **deckbound-semantic** (P3b).
+
+### 16.2 Method classification (the renderer-ripple map)
+
+- **Physical (no ripple to move):** `add_pile`, `add_card`, `root_id`, `pile`, `card`, `card_count`,
+  `stack_count`, `reorder`, `move_card`, `remove_card`, `move_pile`, `remove_pile`, `set_card_detail`,
+  `set_card_panel`, `set_card_kind`, `set_card_type`, `set_face`, `flip_down`, `flip_up`, `card_index`,
+  `zone_card`, `content_cards`, `physical_card_count`, `name_runs`, `name_runs`, `set_card_pair_key`,
+  `set_card_pairings`, `set_card_quantity`.
+- **UI (these ripple to `cardtable`):** `focus`, `focus_id`, `zoom_out`, `selection`, `is_selected`,
+  `select`, `deselect`, `clear_selection`, `set_layout`, `set_collapsed`, `set_pile_pos`, `set_pile_size`,
+  `set_card_pos`, `set_card_footprint`, `place_pile`, `cycle_card_size`, `set_projection`,
+  `projection_groups`, `row_groups`, `separate`, `arrange_row`, `structured_positions`,
+  `movable_children`, `set_surface`, `set_pinned`, `surface`.
+- **Deckbound-semantic (P3c/P3b):** the §16-intro list.
+
+### 16.3 Naming (given the layer clarification — the user asked to revisit)
+
+Targets recorded here; disruptive cross-crate renames still land in **P6**, now informed by the layers.
+
+- **The two layers, as modules first:** `cardtable_model::physical` (the conserved card board) and
+  `cardtable_model::ui` (attention/presentation). Promote to separate crates only if the boundary proves
+  clean. Provisional crate-level names for P6: **`card-board`** (physical) + **`card-ui-model`** (UI).
+- **Types:** keep `Tableau` as the *transitional composed* type (a `physical::Board` + a `ui::UiModel`)
+  so the renderer's `Tableau` calls keep compiling via delegation; the physical core type is **`Board`**.
+  `Pile`→ stays `Pile` (physical: label + children); `Card` stays `Card`. `Layout`/`Arrangement`/`Size`
+  are UI-model presentation names — fine. `focus`/`selection` are UI names — fine.
+- **Ranks vs intentions** (deckbound-side, P3b) already recorded in §0.3 — rename V/O/R `intention`→`rank`.
+- `from_table_view`/`binding` — becomes sample-only when the product retires `TableView` (§0.4); name is
+  still accurate, leave it.
+
+### 16.4 Safe step sequence (each a compiling, golden-green, committed checkpoint)
+
+The behavioral goldens ignore focus/selection/layout/geometry (they render the whole tree, faces + actionable
++ pairings), so the internal restructure below cannot change them. Nothing here changes the **public API**, so
+`cardtable` is untouched until the deliberate high-ripple step, which is teed up for careful (attended) work.
+
+- **P3a.1 — extract pure geometry** (`box_center`/`clamp_box`/`overlap_area`/`place_clear_of`/
+  `separate_boxes` + `Pos`) into `model/geometry.rs`. Free functions, no struct privacy — trivially safe.
+- **P3a.2 — introduce `ui::UiModel` sub-struct inside `Tableau`**, moving the attention fields into it
+  (`selection`, then `focus`, then `surface`/`pinned`), with `Tableau`'s public methods delegating. Serde
+  layout changes, which is harmless (nothing persists a `Tableau` since P2.4 dropped save). No renderer change.
+- **P3a.3 — move the per-`Pile`/`Card` UI fields** (`collapsed`, `pos`, `size`, `layout`, card `size`/`pos`/
+  `footprint`) alongside, keeping accessors delegating. Deeper (touches `separate`/`arrange_row`); attempt
+  only while green.
+- **P3a.4 (HIGH-RIPPLE — resume point, do attended) — promote the boundary into the API:** point `cardtable`
+  at `physical::Board` + `ui::UiModel` directly and dissolve the `Tableau` delegator. This is the step that
+  edits the 3400-line renderer; it is where the UI model gains its *persistence across rebuilds* (the world-
+  focus-reset fix) and so overlaps P3b. Left for careful work, not an unattended blast.
 
 ## 10. Observations (non-blocking; not behavior changes to make in this pass)
 
