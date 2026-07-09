@@ -6,18 +6,31 @@
 //! `BLESS` the tests compare against the committed goldens and fail on any drift.
 
 use cardtable_combat::{begin_manual_combat, resolve_encounter};
-use cardtable_model::{PileId, Recipe, Tableau, sample_table};
+use cardtable_model::{Node, PileId, Recipe, Tableau, sample_table};
 use std::path::PathBuf;
 
-/// Compare `actual` against the committed golden `<name>`, or (with `BLESS=1`) rewrite it.
+/// **Byte tier** — the full internal `Tableau` RON. Frozen for phases that preserve the construction
+/// path (P3 purge, P4/P5 moves, P6 rename); see plan §12.
+fn assert_golden(name: &str, actual: &str) {
+    assert_golden_file(&format!("{name}.ron"), actual);
+}
+
+/// **Behavioral tier** — the rendered projection (structure + content + interactivity, no geometry).
+/// Stable across construction-path changes, so it is the acceptance criterion for the reunification
+/// phases (P1/P2); see plan §12.
+fn assert_behavior(name: &str, actual: &str) {
+    assert_golden_file(&format!("{name}.behavior.txt"), actual);
+}
+
+/// Compare `actual` against the committed golden file, or (with `BLESS=1`) rewrite it.
 ///
 /// This is test infrastructure, not an ad-hoc script: the bless path only runs when the operator
 /// sets `BLESS`, and the default path is a pure comparison that fails loudly on drift or a missing
 /// golden. Goldens live beside this crate under `golden/` and are checked into the repo.
-fn assert_golden(name: &str, actual: &str) {
+fn assert_golden_file(filename: &str, actual: &str) {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("golden");
-    path.push(format!("{name}.ron"));
+    path.push(filename);
 
     if std::env::var_os("BLESS").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -27,7 +40,7 @@ fn assert_golden(name: &str, actual: &str) {
     }
 
     let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-        panic!("missing golden `{name}` at {} — run `BLESS=1 cargo test -p characterization` to create it", path.display())
+        panic!("missing golden `{filename}` at {} — run `BLESS=1 cargo test -p characterization` to create it", path.display())
     });
     // Normalize line endings on both sides: git may rewrite the committed goldens to CRLF on
     // checkout (Windows/autocrlf), while the freshly-serialized string is always LF. Behavior
@@ -36,8 +49,71 @@ fn assert_golden(name: &str, actual: &str) {
     assert_eq!(
         norm(actual),
         norm(&expected),
-        "golden `{name}` drifted (behavior changed)"
+        "golden `{filename}` drifted (behavior changed)"
     );
+}
+
+/// Project a `Tableau` to its **rendered** form: the recursive zone tree (structure + order) with each
+/// card's visible face and interactivity, and deliberately **no geometry** — positions/sizes are
+/// player-controlled drag state, not authored behavior, and the reunification path will legitimately
+/// reset them. Deterministic by construction: `children()` is an ordered `Vec`, so no canonicalization
+/// is needed. This is the behavioral tier (plan §12).
+fn behavior(t: &Tableau) -> String {
+    let mut out = String::new();
+    render_pile(t, t.root_id(), 0, &mut out);
+    out
+}
+
+fn render_pile(t: &Tableau, pid: PileId, depth: usize, out: &mut String) {
+    let pile = t.pile(pid).unwrap();
+    let indent = "  ".repeat(depth);
+    let mut markers = String::new();
+    if !pile.projection().is_empty() {
+        let sources: Vec<&str> = pile
+            .projection()
+            .iter()
+            .map(|&s| t.pile(s).map(|p| p.label.as_str()).unwrap_or("?"))
+            .collect();
+        markers.push_str(&format!(" projection={sources:?}"));
+    }
+    if let Some(cid) = pile.reflects() {
+        let who = t.card(cid).map(|c| c.front_title()).unwrap_or("?");
+        markers.push_str(&format!(" reflects={who:?}"));
+    }
+    out.push_str(&format!(
+        "{indent}[{}] layout={:?}{markers}\n",
+        pile.label,
+        pile.layout()
+    ));
+    for node in pile.children() {
+        match node {
+            Node::Card(cid) => {
+                let c = t.card(*cid).unwrap();
+                let face = if c.is_face_down() {
+                    "«down»".to_string()
+                } else {
+                    c.front_title().to_string()
+                };
+                let mut line = format!(
+                    "{indent}  - {face} | type={:?} | qty={}",
+                    c.card_type(),
+                    c.quantity()
+                );
+                if let Some(a) = c.actionable {
+                    line.push_str(&format!(" | act={a}"));
+                }
+                if !c.detail().is_empty() {
+                    line.push_str(&format!(" | detail={:?}", c.detail()));
+                }
+                if !c.panel().is_empty() {
+                    line.push_str(&format!(" | panel={:?}", c.panel()));
+                }
+                out.push_str(&line);
+                out.push('\n');
+            }
+            Node::Pile(child) => render_pile(t, *child, depth + 1, out),
+        }
+    }
 }
 
 /// Serialize a value to a **canonical** pretty RON snapshot.
@@ -82,6 +158,7 @@ fn canonicalize(value: ron::Value) -> ron::Value {
 fn golden_sample_table() {
     let table = sample_table();
     assert_golden("sample_table", &to_golden_ron(&table));
+    assert_behavior("sample_table", &behavior(&table));
 }
 
 // --- world navigation + fight setup (public-API replicas of cardtable-combat's test helpers) ------
@@ -161,6 +238,10 @@ fn auto_golden(name: &str, recipe: Recipe, dest: &str, seed: u64) {
         name,
         &format!("outcome: {outcome:?}\n---\n{}", to_golden_ron(&t)),
     );
+    assert_behavior(
+        name,
+        &format!("outcome: {outcome:?}\n---\n{}", behavior(&t)),
+    );
 }
 
 /// Manual-combat: the greedy-driven mutation stream + resulting `Tableau` (arena + folded state).
@@ -174,13 +255,13 @@ fn manual_golden(name: &str, recipe: Recipe, dest: &str, seed: u64) {
         begin_manual_combat(&mut t, place, arena, bestiary, seed).expect("a fight begins");
     let mut muts = Vec::new();
     let outcome = combat.run_to_end_auto(|m| muts.extend_from_slice(m));
-    let mut out = format!("outcome: {outcome:?}\nmutations:\n");
+    let mut head = format!("outcome: {outcome:?}\nmutations:\n");
     for m in &muts {
-        out.push_str(&format!("  {m:?}\n"));
+        head.push_str(&format!("  {m:?}\n"));
     }
-    out.push_str("---\n");
-    out.push_str(&to_golden_ron(&t));
-    assert_golden(name, &out);
+    head.push_str("---\n");
+    assert_golden(name, &format!("{head}{}", to_golden_ron(&t)));
+    assert_behavior(name, &format!("{head}{}", behavior(&t)));
 }
 
 /// The answering kit clears the Coil at two seeds — pins the win outcome + log narration + folded table.
@@ -229,28 +310,31 @@ fn golden_manual_marksman_cinderwatch_seed7() {
 fn golden_interaction_transcript() {
     let mut t = sample_table();
     let mut log = String::new();
-    let step = |t: &Tableau, label: &str, log: &mut String| {
+    let mut blog = String::new();
+    let step = |t: &Tableau, label: &str, log: &mut String, blog: &mut String| {
         log.push_str(&format!("== {label} ==\n{}\n", to_golden_ron(t)));
+        blog.push_str(&format!("== {label} ==\n{}\n", behavior(t)));
     };
 
     let locations = top(&t, "Locations");
     t.focus(locations).unwrap();
-    step(&t, "focus Locations", &mut log);
+    step(&t, "focus Locations", &mut log, &mut blog);
 
     let ashfen = place(&t, "Ashfen Crossing");
     t.focus(ashfen).unwrap();
-    step(&t, "focus Ashfen", &mut log);
+    step(&t, "focus Ashfen", &mut log, &mut blog);
 
     if let Some(&card) = t.content_cards(ashfen).first() {
         t.cycle_card_size(card).unwrap();
-        step(&t, "cycle first card size", &mut log);
+        step(&t, "cycle first card size", &mut log, &mut blog);
         t.select(card).unwrap();
-        step(&t, "select first card", &mut log);
+        step(&t, "select first card", &mut log, &mut blog);
     }
 
     let root = t.root_id();
     t.focus(root).unwrap();
-    step(&t, "focus root", &mut log);
+    step(&t, "focus root", &mut log, &mut blog);
 
     assert_golden("interaction_transcript", &log);
+    assert_behavior("interaction_transcript", &blog);
 }

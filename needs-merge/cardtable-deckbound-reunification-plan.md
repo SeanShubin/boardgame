@@ -155,8 +155,74 @@ When a choice arises mid-pass, apply in order:
 
 ## 9. Deferred-questions log (genuine behavior forks only)
 
-*(empty — append here if the seam genuinely cannot express something the bypass did; each entry:
-what, the exact gap, the options, why it needs a human.)*
+### Q1 — What does the seam carry? (P1 gate, OPEN)
+
+**The gap.** The current seam `Game::view() -> contract::TableView` is a **flat, CCG-style**
+snapshot: `zones: Vec<ZoneView>`, each a flat card list; no recursion, positions, zoom, sizes,
+projections, or arena felt. `from_table_view` (the sole bridge) builds a strictly flat `Tableau`
+(root → one pile per zone → cards) and even drops `body`/`corner`/`accent`. The product's `Tableau`
+is a real card table (nested zones, drill-in/out, drag-positioning, per-card sizes, the arena as a
+distinct felt). **Routing the product through the current seam would flatten it — a behavior
+regression, which the invariant forbids.** So "reunify onto the seam" forces a decision about what
+the seam carries. Not policy-resolvable: each option reshapes `contract` and `tabletop` differently.
+
+- **A — Grow `TableView` card-table-native** (recursive zones + positions/sizes + arena zone; keep
+  `view()->TableView->from_table_view`). One seam for both renderers. Cost: `contract` balloons with
+  card-table structure that `tabletop` doesn't need; `from_table_view` grows to inflate nesting.
+- **B — Seam carries the card table itself** (deckbound authors a `Tableau` via the generic
+  `cardtable-model`; `cardtable` provides only generic services). Best matches the stated boundary
+  ("deckbound tells cardtable what it needs; cardtable provides generic services") and preserves
+  behavior naturally. Cost: `tabletop`/`deckbound-sample` must consume this too (or `TableView`
+  survives as a second, legacy seam → the two-worlds problem returns); `contract`'s purity changes.
+- **C — Two honest, layered seams** (`TableView` stays the flat CCG seam for `tabletop`; a distinct
+  card-table seam has deckbound build a `Tableau` for the product). Truthful if a CCG table and a
+  card table are genuinely different renderers. Cost: not "one boundary."
+
+**RESOLVED → Option A (grow `TableView` card-table-native).** One seam, additive, both renderers.
+`tabletop` keeps reading `TableView` and ignores the new fields (additive-optional, per the seam rule).
+
+**Scope note (honest):** fully realizing Option A means `TableView`/`ZoneView`/`CardView` must grow
+enough to reconstruct the product `Tableau` — recursive zones, pile placement + layout/arrangement
+(and eventually projection/reflects), and richer card faces (detail/panel lines, type, badge, size,
+and for kit cards a recipe + quantity). At the limit the grown `TableView` approaches an isomorph of
+`Tableau`. That is inherent to "one card-table-native seam"; it is the chosen path, recorded so the
+pass doesn't pretend it's a small change. The two big lifts are (i) `deckbound::view()` authoring the
+nested world (today it emits flat CCG zones) and (ii) the `catalog`/`fixtures` content moving from
+`cardtable-model` into deckbound's view emitter.
+
+## 12. Harness refinement — behavioral tier vs byte tier (adopted)
+
+P0's goldens serialize the **entire internal `Tableau`** (ids, positions). That is the right strictness
+for phases that preserve the construction path (P3 purge, P4/P5 moves, P6 rename) — internals must not
+move. But P1/P2 **rebuild** the table through a new path (`deckbound::view() -> from_table_view`), which
+legitimately changes incidental internals (ids, default positions) while preserving what is **shown and
+clickable**. Byte-identity would flag those as failures though behavior is unchanged.
+
+So the witness gets **two tiers**:
+
+- **Byte tier (have):** full `Tableau` RON. Guards P3+ (same construction path; internals frozen).
+- **Behavioral tier (to build, P1.0):** a projection of what the renderer would show — the recursive
+  zone tree of `(label, layout)` with each card's visible face `(title, type, detail/badge, face-up?)`
+  and its `actionable` flag — plus the existing combat **outcome + log + mutation-stream** goldens
+  (already behavioral). This is stable across construction-path changes, so it is the acceptance
+  criterion for P1/P2. Behavior drift still shows; incidental id/position churn does not.
+
+Acceptance criteria update: **P1/P2 assert the behavioral tier; P3–P6 assert both tiers.**
+
+## 13. P1 sub-roadmap (Option A)
+
+- **P1.0 — Behavioral golden tier.** Add the rendered-projection goldens above (bless from current
+  behavior). Same seed/scenarios as P0. *(non-destructive; witness only)*
+- **P1.1 — Grow the seam, additively.** Extend `contract::{TableView,ZoneView,CardView}` with the
+  card-table-native fields (nesting, placement/layout, rich faces), all defaulted so `tabletop` and
+  existing games are untouched. Grow `from_table_view` to inflate them. Verify: workspace builds,
+  binding test + both golden tiers unchanged (nothing routes through the new fields yet).
+- **P1.2 — Prove the static world round-trips.** Have deckbound author a nested `TableView` that
+  `from_table_view` turns into a `Tableau` matching the **behavioral** golden of `sample_table` (not
+  byte-identical). Proves the world reconstructs through the seam.
+- **P1.3 — Prove an interactive fight round-trips.** Same, for a manual fight in `deckbound-sample`:
+  the arena as a zone, per-blow prompts as actionable cards, reproducing the combat behavioral goldens.
+  Any residual gap that additive growth can't close returns here as a new §9 question.
 
 ## 10. Observations (non-blocking; not behavior changes to make in this pass)
 
@@ -168,7 +234,14 @@ what, the exact gap, the options, why it needs a human.)*
 
 ## 11. Progress log (append-only)
 
-- **P0 — DONE (pending commit).** Witness crate `crates/characterization` added to the workspace.
+- **P1.0 — DONE.** Behavioral golden tier added (`golden/*.behavior.txt`): a rendered projection
+  (recursive zone tree + card face/type/qty/detail/panel + actionable, no geometry), deterministic by
+  construction, clippy-clean, byte tier unchanged. Six behavioral goldens parallel the six byte
+  goldens; every scenario now asserts both. This is the acceptance criterion for P1.1–P2. Next: **P1.1**
+  (grow `contract::{TableView,ZoneView,CardView}` additively + inflate in `from_table_view`).
+- **P1 — decision + design done.** §9 Q1 RESOLVED → Option A (grow `TableView` card-table-native).
+  Harness two-tier refinement adopted (§12). P1 sub-roadmap set (§13).
+- **P0 — DONE, committed `ed0fe25`.** Witness crate `crates/characterization` added to the workspace.
   Six golden-master tests pin all four §2 surfaces and are deterministic across processes + clippy-
   clean: `sample_table`, `interaction_transcript`, `auto_{marksman_seed1,marksman_seed7,
   executioner_seed1}_cinderwatch`, `manual_marksman_cinderwatch_seed7`. Canonicalization sorts every
