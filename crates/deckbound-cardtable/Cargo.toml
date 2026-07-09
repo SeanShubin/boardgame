@@ -8,6 +8,9 @@ edition.workspace = true
 
 [dependencies]
 contract = { workspace = true }
+# The generic card-table model: the physical `Board`/`Tableau` + the `BoardGame` seam this crate
+# implements (the cards-as-truth successor to the `contract::Game` view emitter above).
+cardtable-model = { workspace = true }
 # The combat resolver: the emitter delegates fight resolution to deckbound (outcomes are deterministic
 # and match the old path by construction). This is the logic cardtable-combat holds today, moving here.
 deckbound = { workspace = true }

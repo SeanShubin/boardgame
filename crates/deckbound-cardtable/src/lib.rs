@@ -16,7 +16,10 @@
 //! to let the AI take one) and folding the result back. What remains is outside this crate: the `cardtable`
 //! renderer performing the pairing gesture, then pointing `boardgame` at this emitter (deleting the bypass).
 
+mod board_game;
 mod catalog;
+
+pub use board_game::{CardTableGame, Intention};
 
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
