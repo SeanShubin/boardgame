@@ -234,6 +234,16 @@ Acceptance criteria update: **P1/P2 assert the behavioral tier; P3–P6 assert b
 
 ## 11. Progress log (append-only)
 
+- **P1.1 — DONE** (`9abe9b4` nesting, `1681efe` richness). The seam is card-table-native, additively:
+  `ZoneView.zones` (nested sub-zones) + `from_table_view` recursion; `CardFace::Up.panel` +
+  `CardView.quantity` + builders, and `from_table_view` now carries body→detail / panel / quantity
+  (type_line already carried). `tabletop`'s face match ends in `..` (robust to future growth). Every
+  existing renderer/game compiles unchanged; two new binding tests; both golden tiers unchanged;
+  deckbound 109 tests green. Next: **P1.2** — have deckbound author a nested `TableView` that
+  `from_table_view` turns into a `Tableau` matching the *behavioral* golden of `sample_table`. This is
+  the big lift (the view emitter ≈ the P2 deliverable): reproduce the world through the seam and assert
+  behavioral equivalence. Open sub-question from §13 (is `layout`/arrangement behavior or presentation?)
+  gets resolved empirically here.
 - **P1.0 — DONE.** Behavioral golden tier added (`golden/*.behavior.txt`): a rendered projection
   (recursive zone tree + card face/type/qty/detail/panel + actionable, no geometry), deterministic by
   construction, clippy-clean, byte tier unchanged. Six behavioral goldens parallel the six byte
