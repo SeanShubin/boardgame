@@ -64,6 +64,7 @@ impl Game for CardTableWorld {
                 stats_zone(),
                 numbers_zone(),
                 locations_zone(),
+                rules_zone(),
                 progress_zone(),
                 events_zone(),
                 bestiary_zone(),
@@ -215,6 +216,97 @@ fn locations_zone() -> ZoneView {
     ZoneView::new("Locations", vec![CardView::up("Location").typed("Label")])
         .with_arrangement(Arrangement::Grid { columns: 3 })
         .with_zones(places)
+}
+
+/// A rules **phase** card — a title and its description lines.
+fn phase(title: &str, detail: &[&str]) -> CardView {
+    CardView::up(title)
+        .typed("phase")
+        .body(detail.iter().map(|s| s.to_string()).collect())
+}
+
+/// The rules encyclopedia: the six round-phases, with the five combat sub-phases nested under **Engage**.
+fn rules_zone() -> ZoneView {
+    let engage = ZoneView::new(
+        "Engage",
+        vec![
+            phase(
+                "Intercept (1/5)",
+                &[
+                    "The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid.",
+                ],
+            ),
+            phase(
+                "Volley (2/5)",
+                &[
+                    "The back fires on the flankers: each Rearguard shoots an enemy Outrider — the pre-empt, before it arrives.",
+                ],
+            ),
+            phase(
+                "Raid (3/5)",
+                &[
+                    "Surviving Outriders strike the enemy Rearguard they crossed for — the breaker lands on the exposed back.",
+                ],
+            ),
+            phase(
+                "Clash (4/5)",
+                &[
+                    "The lines meet: each Rearguard fires an enemy Vanguard, and each engaging Vanguard strikes an enemy Vanguard.",
+                ],
+            ),
+            phase(
+                "Breach (5/5)",
+                &[
+                    "The deep blows land last: a Vanguard crosses to an exposed enemy Rearguard; stranded Outriders fall on the front.",
+                ],
+            ),
+            phase(
+                "Engage (4/6)",
+                &[
+                    "Intercept — Vanguard -> Outrider",
+                    "Volley — Rearguard -> Outrider",
+                    "Raid — Outrider -> Rearguard",
+                    "Clash — Rearguard / Vanguard -> Vanguard",
+                    "Breach — the trailing blows land",
+                    "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.",
+                ],
+            ),
+        ],
+    );
+    let cards = vec![
+        phase(
+            "Marshal (1/6)",
+            &[
+                "Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round.",
+            ],
+        ),
+        phase(
+            "Reveal (2/6)",
+            &[
+                "Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.",
+            ],
+        ),
+        phase(
+            "Ready (3/6)",
+            &[
+                "Standing abilities cast now (a Wall's brace, a Support's buff): ally-targeted, auto-land, last the round.",
+            ],
+        ),
+        phase(
+            "Wipe pile (5/6)",
+            &[
+                "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
+            ],
+        ),
+        phase(
+            "Refresh (6/6)",
+            &[
+                "Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
+            ],
+        ),
+        CardView::up("Rules").typed("Label"),
+    ];
+    ZoneView::new("Rules", cards).with_zones(vec![engage])
 }
 
 /// The day clock — starts empty (Day 0); each passing day lays a `Day Passed` card here at runtime. Only

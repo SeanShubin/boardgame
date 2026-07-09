@@ -342,7 +342,7 @@ fn golden_interaction_transcript() {
 /// byte-for-byte inside `sample_table.behavior.txt`. As the emitter grows to author more of the world,
 /// more zones are covered here; the full-world *equality* gate lands at P2.4 (route `boardgame`).
 #[test]
-fn emitter_banks_reproduce_the_shipped_world() {
+fn emitter_reproduces_the_static_world() {
     use cardtable_model::from_table_view;
     use contract::{Game, TableView};
 
@@ -378,4 +378,13 @@ fn emitter_banks_reproduce_the_shipped_world() {
             zone.label
         );
     }
+
+    // Full-world equality: with every top-level zone authored, the emitter reproduces the ENTIRE static
+    // world — all zones, in order, nothing missing or extra. This is the P2.4 acceptance gate, reached
+    // early. (The interactive fight is combat state, not the static world; it lands in P2.3.)
+    let full = behavior(&from_table_view(&view));
+    assert_eq!(
+        full, sample,
+        "the emitter's full view no longer equals the shipped world's behavioral projection"
+    );
 }
