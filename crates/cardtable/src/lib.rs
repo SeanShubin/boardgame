@@ -2156,7 +2156,13 @@ fn build_ui(
         build_arena_ui(commands, state);
         return;
     }
-    let zone = tree.focus_id();
+    // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
+    // root rather than panic the draw.
+    let zone = if tree.pile(tree.focus_id()).is_some() {
+        tree.focus_id()
+    } else {
+        tree.root_id()
+    };
     let at_root = zone == tree.root_id();
 
     commands
