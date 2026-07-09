@@ -224,6 +224,19 @@ Acceptance criteria update: **P1/P2 assert the behavioral tier; P3–P6 assert b
   the arena as a zone, per-blow prompts as actionable cards, reproducing the combat behavioral goldens.
   Any residual gap that additive growth can't close returns here as a new §9 question.
 
+**Sub-question RESOLVED (empirically, reading `sample_table.behavior.txt`):** `layout`/arrangement is
+**presentation**, and `projection`/`reflects` are **model mechanisms** the reunified emitter reimplements
+(the Inn becomes inline cards; character decks become deckbound-internal state). All three are dropped
+from the behavioral projection, which is now purely *nesting + order + card content + interactivity* —
+construction-path-stable, the point of the tier. The refined `*.behavior.txt` goldens are the **spec the
+view emitter must reproduce.**
+
+**P1.2 and P2 merge.** The discovery: reproducing the world through the seam *is* routing the product
+through it — the "view emitter" (deckbound authoring the nested `TableView`) is the P2 deliverable. So the
+next unit is: build that emitter, guarded by the refined behavioral golden, then point `boardgame` at it.
+Flat banks + nesting + rich cards are already proven end-to-end by the P1.1 binding tests; what remains is
+authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`fixtures`) as a view.
+
 ## 10. Observations (non-blocking; not behavior changes to make in this pass)
 
 - **The product's RON save is non-canonical.** `Tableau` stores `piles`/`cards` in `HashMap`s, so
@@ -234,6 +247,12 @@ Acceptance criteria update: **P1/P2 assert the behavioral tier; P3–P6 assert b
 
 ## 11. Progress log (append-only)
 
+- **P1.2 sub-question — RESOLVED; behavioral tier finalized.** Reading `sample_table.behavior.txt`
+  showed `layout`/arrangement diverges (presentation) and `projection`/`reflects` are model mechanisms
+  the emitter reimplements — all three dropped from the behavioral projection (byte tier still pins them
+  for P3+). Refined `*.behavior.txt` re-blessed; now a construction-stable spec for the emitter. Finding:
+  **P1.2 ≡ P2** — the view emitter *is* the routing work. Next unit: author the world as `Game::view()`
+  guarded by the refined behavioral golden, then point `boardgame` at it.
 - **P1.1 — DONE** (`9abe9b4` nesting, `1681efe` richness). The seam is card-table-native, additively:
   `ZoneView.zones` (nested sub-zones) + `from_table_view` recursion; `CardFace::Up.panel` +
   `CardView.quantity` + builders, and `from_table_view` now carries body→detail / panel / quantity

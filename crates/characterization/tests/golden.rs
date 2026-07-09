@@ -54,10 +54,18 @@ fn assert_golden_file(filename: &str, actual: &str) {
 }
 
 /// Project a `Tableau` to its **rendered** form: the recursive zone tree (structure + order) with each
-/// card's visible face and interactivity, and deliberately **no geometry** — positions/sizes are
-/// player-controlled drag state, not authored behavior, and the reunification path will legitimately
-/// reset them. Deterministic by construction: `children()` is an ordered `Vec`, so no canonicalization
-/// is needed. This is the behavioral tier (plan §12).
+/// card's visible face and interactivity. Deliberately excludes everything the reunification path
+/// legitimately reconstructs differently while preserving what the player sees and clicks:
+///
+/// - **geometry** (positions / sizes) — player-controlled drag state;
+/// - **arrangement** (`layout`: Free / Grid / List / Rows) — presentation the renderer applies, which
+///   `from_table_view` defaults rather than authoring;
+/// - **model mechanisms** (`projection`, `reflects`) — the Inn's projection and character-deck links are
+///   cardtable-model tricks the reunified emitter reimplements (inline cards; deckbound-internal state).
+///
+/// What remains — nesting, order, card face (title/type/detail/panel/qty), and `actionable` — is stable
+/// across construction paths, which is the point of the behavioral tier (plan §12). Deterministic by
+/// construction: `children()` is an ordered `Vec`.
 fn behavior(t: &Tableau) -> String {
     let mut out = String::new();
     render_pile(t, t.root_id(), 0, &mut out);
@@ -67,24 +75,7 @@ fn behavior(t: &Tableau) -> String {
 fn render_pile(t: &Tableau, pid: PileId, depth: usize, out: &mut String) {
     let pile = t.pile(pid).unwrap();
     let indent = "  ".repeat(depth);
-    let mut markers = String::new();
-    if !pile.projection().is_empty() {
-        let sources: Vec<&str> = pile
-            .projection()
-            .iter()
-            .map(|&s| t.pile(s).map(|p| p.label.as_str()).unwrap_or("?"))
-            .collect();
-        markers.push_str(&format!(" projection={sources:?}"));
-    }
-    if let Some(cid) = pile.reflects() {
-        let who = t.card(cid).map(|c| c.front_title()).unwrap_or("?");
-        markers.push_str(&format!(" reflects={who:?}"));
-    }
-    out.push_str(&format!(
-        "{indent}[{}] layout={:?}{markers}\n",
-        pile.label,
-        pile.layout()
-    ));
+    out.push_str(&format!("{indent}[{}]\n", pile.label));
     for node in pile.children() {
         match node {
             Node::Card(cid) => {
