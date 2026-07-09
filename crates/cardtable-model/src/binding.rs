@@ -94,6 +94,15 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
             tree.set_card_quantity(id, card.quantity)
                 .expect("just-created card exists");
         }
+        if let Some(key) = card.pair_key {
+            tree.set_card_pair_key(id, key)
+                .expect("just-created card exists");
+        }
+        if !card.pairings.is_empty() {
+            let pairings = card.pairings.iter().map(|p| (p.onto, p.action)).collect();
+            tree.set_card_pairings(id, pairings)
+                .expect("just-created card exists");
+        }
     }
     // Nested sub-zones become piles inside this one — the recursion that makes the seam card-table-native.
     for (i, sub) in zone.zones.iter().enumerate() {
@@ -208,6 +217,32 @@ mod tests {
         assert_eq!(c.detail(), &["force behind a strike".to_string()]);
         assert_eq!(c.panel(), &["a longer explanation".to_string()]);
         assert_eq!(c.quantity(), 5);
+    }
+
+    #[test]
+    fn carries_card_pairings() {
+        // A hero card pairs onto kit-target 3 (equip = legal action 5); the kit is that target.
+        let view = TableView {
+            zones: vec![zone(
+                "Inn",
+                vec![
+                    CardView::up("Vael").pairs_onto(3, 5),
+                    CardView::up("Marksman").pair_key(3),
+                ],
+            )],
+            ..Default::default()
+        };
+
+        let tree = from_table_view(&view);
+        let inn = tree
+            .pile(tree.pile(tree.root_id()).unwrap().subpiles()[0])
+            .unwrap();
+        let hero = tree.card(inn.cards()[0]).unwrap();
+        let kit = tree.card(inn.cards()[1]).unwrap();
+        assert_eq!(hero.pairings(), &[(3, 5)]);
+        assert!(hero.pair_key().is_none());
+        assert_eq!(kit.pair_key(), Some(3));
+        assert!(kit.pairings().is_empty());
     }
 
     #[test]

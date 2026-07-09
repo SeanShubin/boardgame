@@ -170,6 +170,16 @@ pub struct Card {
     /// [`card_count`](Tableau::card_count) totals them; splitting/merging a stack preserves that sum.
     #[serde(default = "default_quantity")]
     quantity: u32,
+    /// **Pairing target key** — if `Some(k)`, another card can be paired onto this one (the renderer's
+    /// drag-drop / tap-then-tap target). `None` = not a target. Mirrors `contract::CardView::pair_key`.
+    /// Skipped from the save when absent, so a card without pairings serializes exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pair_key: Option<u32>,
+    /// **Pairings** *from* this card — `(target pair_key, actionable index)`: completing the pairing
+    /// performs the source view's legal action at that index. Empty = pairs onto nothing. Mirrors
+    /// `contract::CardView::pairings`. Skipped from the save when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pairings: Vec<(u32, usize)>,
 }
 
 impl Card {
@@ -220,6 +230,17 @@ impl Card {
     /// Panel lines shown at [`Size::Large`].
     pub fn panel(&self) -> &[String] {
         &self.panel
+    }
+
+    /// This card's **pairing target key**, if it is a pairing target (something can be paired onto it).
+    pub fn pair_key(&self) -> Option<u32> {
+        self.pair_key
+    }
+
+    /// The **pairings** from this card — `(target key, actionable index)`: pairing this card onto the
+    /// target with that key performs the source view's legal action at that index.
+    pub fn pairings(&self) -> &[(u32, usize)] {
+        &self.pairings
     }
 
     /// What the card is (drives click meaning).
@@ -662,6 +683,8 @@ impl Tableau {
                 footprint: Pos::default(),
                 recipe: None,
                 quantity: 1,
+                pair_key: None,
+                pairings: Vec::new(),
             },
         );
         self.piles
@@ -1297,6 +1320,28 @@ impl Tableau {
             .get_mut(&card)
             .ok_or(TableauError::UnknownCard(card))?
             .panel = lines;
+        Ok(())
+    }
+
+    /// Marks a card as a **pairing target** with `key` (something can be paired onto it).
+    pub fn set_card_pair_key(&mut self, card: CardId, key: u32) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .pair_key = Some(key);
+        Ok(())
+    }
+
+    /// Sets a card's **pairings** — `(target pair_key, actionable index)` entries.
+    pub fn set_card_pairings(
+        &mut self,
+        card: CardId,
+        pairings: Vec<(u32, usize)>,
+    ) -> Result<(), TableauError> {
+        self.cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?
+            .pairings = pairings;
         Ok(())
     }
 
