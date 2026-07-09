@@ -43,7 +43,7 @@ use cardtable_combat::{
 pub use game::GamePlugin;
 
 mod board_driver;
-use board_driver::AffordanceClick;
+use board_driver::{AffordanceClick, DropTrace};
 pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
 
 mod logging;
@@ -113,6 +113,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<DropRequest>()
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
+            .init_resource::<DropTrace>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(

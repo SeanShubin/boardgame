@@ -30,6 +30,12 @@ pub struct AffordanceClick(pub Option<usize>);
 #[derive(Resource, Default)]
 pub struct AffordanceLabels(pub Vec<String>);
 
+/// A human-readable trace of each resolved drop — the dragged card, what it landed on (the *resolved*
+/// [`DropTarget`], not the raw pick-hit), and the outcome. Pushed by [`apply_drop`] (the one place that sees
+/// every drop's resolution), drained by the UI debug log so a session is reconstructable from that log alone.
+#[derive(Resource, Default)]
+pub struct DropTrace(pub Vec<String>);
+
 /// Marks a control card as the affordance at this index (into [`AffordanceLabels`]); clicking it records
 /// [`AffordanceClick`].
 #[derive(Component, Clone, Copy)]
@@ -60,18 +66,47 @@ fn apply_drop<G>(
     mut table: ResMut<Table>,
     game: Res<GameRes<G>>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut trace: ResMut<DropTrace>,
 ) where
     G: BoardGame + Send + Sync + 'static,
 {
     let Some((dragged, onto)) = request.0.take() else {
         return;
     };
-    if let Some(intention) = game.0.drop_intention(&table.0, dragged, onto) {
+    // Describe the drop before applying it (the cards move on apply). The target is the *resolved*
+    // DropTarget (e.g. the map place a march landed on), which the raw pointer event can't report.
+    let dragged_name = table
+        .0
+        .card(dragged)
+        .map(|c| c.front_title().to_string())
+        .unwrap_or_default();
+    let onto_desc = match onto {
+        DropTarget::Card(t) => format!(
+            "card {}",
+            table.0.card(t).map(|c| c.front_title()).unwrap_or_default()
+        ),
+        DropTarget::Pile(p) => format!(
+            "pile [{}]",
+            table
+                .0
+                .pile(p)
+                .map(|p| p.label.as_str())
+                .unwrap_or_default()
+        ),
+    };
+    let outcome = if let Some(intention) = game.0.drop_intention(&table.0, dragged, onto) {
         game.0.apply(&mut table.0, &[intention]);
+        "applied a game move"
     } else if let DropTarget::Pile(dest) = onto {
         let at = table.0.pile(dest).map_or(0, |p| p.cards().len());
         let _ = table.0.move_card(dragged, dest, at);
-    }
+        "default move into pile"
+    } else {
+        "no move (settled back)"
+    };
+    trace.0.push(format!(
+        "drop: {dragged_name} onto {onto_desc} -> {outcome}"
+    ));
     rebuild.0 = true;
 }
 

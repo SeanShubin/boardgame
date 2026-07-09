@@ -11,14 +11,15 @@
 //! Added by the product via [`LoggingPlugin`]; a pure observer/system side-channel that never mutates
 //! the board or the UI.
 
-use bevy::picking::events::{Click, DragDrop, DragStart, Pointer};
+use bevy::picking::events::{Click, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use cardtable_model::{CardId, Node as TableNode, PileId, Tableau};
 
+use crate::board_driver::DropTrace;
 use crate::{CardRef, Movable, PileDropZone, Table};
 
 /// A truncate-on-launch text log (native only; a no-op sink on the web).
@@ -54,9 +55,11 @@ impl Plugin for LoggingPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PhysicalLog(Log::create("physical-cards.log")))
             .insert_resource(UiLog(Log::create("ui-state.log")))
-            .add_systems(Update, (log_physical, log_view, log_layout))
+            .add_systems(
+                Update,
+                (log_physical, log_view, log_layout, drain_drop_trace),
+            )
             .add_observer(log_pickup)
-            .add_observer(log_drop)
             .add_observer(log_click);
     }
 }
@@ -209,30 +212,38 @@ fn log_view(table: Res<Table>, log: Res<UiLog>, mut last: Local<Option<PileId>>)
 /// once the geometry stops changing (so it reflects the settled arrangement, not mid-animation frames).
 fn log_layout(
     nodes: Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
+    zones: Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
     table: Res<Table>,
     log: Res<UiLog>,
     mut last_frame: Local<String>,
     mut last_logged: Local<String>,
 ) {
     // Every positioned felt element (card *and* pile) with its settled box (top-left + size) in logical
-    // pixels, ordered top-to-bottom then left-to-right. Position + size are exact, so any overlap or
-    // inter-element gap is computable from this — the layout is fully reconstructable without rendering.
-    let mut boxes: Vec<(String, f32, f32, f32, f32, String)> = nodes
-        .iter()
-        .filter_map(|(movable, cn, gt)| {
-            let (name, zoom) = match movable.0 {
-                TableNode::Card(cid) => {
-                    let card = table.0.card(cid)?;
-                    (card.front_title().to_string(), format!("{:?}", card.size()))
-                }
-                TableNode::Pile(pid) => (format!("[{}]", table.0.pile(pid)?.label), "-".into()),
-            };
-            let sf = cn.inverse_scale_factor;
-            let size = cn.size() * sf;
-            let tl = gt.translation * sf - size * 0.5;
-            Some((name, tl.x, tl.y, size.x, size.y, zoom))
-        })
-        .collect();
+    // pixels. Position + size are exact, so any overlap or inter-element gap is computable — the layout is
+    // fully reconstructable without rendering.
+    let mut boxes: Vec<(String, f32, f32, f32, f32, String)> = Vec::new();
+    let mut movable_piles: HashSet<PileId> = HashSet::new();
+    for (movable, cn, gt) in nodes.iter() {
+        let (name, zoom) = match movable.0 {
+            TableNode::Card(cid) => {
+                let Some(card) = table.0.card(cid) else {
+                    continue;
+                };
+                (card.front_title().to_string(), format!("{:?}", card.size()))
+            }
+            TableNode::Pile(pid) => {
+                movable_piles.insert(pid);
+                let Some(pile) = table.0.pile(pid) else {
+                    continue;
+                };
+                (format!("[{}]", pile.label), "-".into())
+            }
+        };
+        let sf = cn.inverse_scale_factor;
+        let size = cn.size() * sf;
+        let tl = gt.translation * sf - size * 0.5;
+        boxes.push((name, tl.x, tl.y, size.x, size.y, zoom));
+    }
     boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
 
     let cards_block: String = boxes
@@ -243,8 +254,8 @@ fn log_layout(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Overlaps — the visible result of the push/shove (`separate`) logic: with it working, nothing should
-    // overlap. Each entry gives the overlap depth in pixels; "none" means the push settled everything clear.
+    // Overlaps among the movable elements — the visible result of the push/shove (`separate`) logic: with
+    // it working nothing should overlap. (Drop-zone cells are excluded: a token legitimately sits on one.)
     let mut overlaps = Vec::new();
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
@@ -263,7 +274,35 @@ fn log_layout(
         format!("  overlaps: {}\n{}", overlaps.len(), overlaps.join("\n"))
     };
 
-    let snapshot = format!("{cards_block}\n{overlap_block}");
+    // Structured drop-zones (e.g. the Locations map's place cells) — the targets a drop can land on. Not
+    // Movable, so listed separately; a drop's destination is hit-testable against these.
+    let mut zone_boxes: Vec<(String, f32, f32, f32, f32)> = zones
+        .iter()
+        .filter_map(|(zone, cn, gt)| {
+            if movable_piles.contains(&zone.0) {
+                return None; // a top-level deck is both movable and a drop-zone; listed once (above)
+            }
+            let pile = table.0.pile(zone.0)?;
+            let sf = cn.inverse_scale_factor;
+            let size = cn.size() * sf;
+            let tl = gt.translation * sf - size * 0.5;
+            Some((pile.label.clone(), tl.x, tl.y, size.x, size.y))
+        })
+        .collect();
+    zone_boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
+    let zones_block = if zone_boxes.is_empty() {
+        String::new()
+    } else {
+        let lines: Vec<String> = zone_boxes
+            .iter()
+            .map(|(name, x, y, w, h)| {
+                format!("  [{name}] (drop-zone) @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0})")
+            })
+            .collect();
+        format!("\n  drop-zones:\n{}", lines.join("\n"))
+    };
+
+    let snapshot = format!("{cards_block}\n{overlap_block}{zones_block}");
     // Only log once the layout has settled (this frame equals the last) and differs from what was logged.
     if snapshot == *last_frame && snapshot != *last_logged && !snapshot.is_empty() {
         log.0.write(&format!("layout:\n{snapshot}\n"));
@@ -275,7 +314,7 @@ fn log_layout(
 fn card_name(table: &Tableau, cref: Option<&CardRef>) -> String {
     cref.and_then(|c| table.card(c.0))
         .map(|c| c.front_title().to_string())
-        .unwrap_or_else(|| "?".into())
+        .unwrap_or_else(|| "(control card)".into())
 }
 
 /// Log a card pick-up (drag start) with its pointer position.
@@ -296,37 +335,13 @@ fn log_pickup(
     }
 }
 
-/// Log a drop with the dragged card, what it landed on, and the pointer position.
-fn log_drop(
-    on: On<Pointer<DragDrop>>,
-    cards: Query<&CardRef>,
-    piles: Query<&PileDropZone>,
-    table: Res<Table>,
-    log: Res<UiLog>,
-) {
-    let event = on.event();
-    let Ok(dragged) = cards.get(event.event.dropped) else {
-        return;
-    };
-    let onto = if let Ok(target) = cards.get(event.entity) {
-        format!("card {}", card_name(&table.0, Some(target)))
-    } else if let Ok(zone) = piles.get(event.entity) {
-        let label = table
-            .0
-            .pile(zone.0)
-            .map(|p| p.label.clone())
-            .unwrap_or_default();
-        format!("pile [{label}]")
-    } else {
-        "felt".into()
-    };
-    let p = event.pointer_location.position;
-    log.0.write(&format!(
-        "drop: {} onto {onto} at ({:.0},{:.0})\n",
-        card_name(&table.0, Some(dragged)),
-        p.x,
-        p.y
-    ));
+/// Drain the driver's resolved-drop trace into the UI log — the authoritative record of what each drop did
+/// (dragged card, the *resolved* target, outcome). So a march's real destination shows here without needing
+/// the physical log to disambiguate the raw (occluded) pick-hit.
+fn drain_drop_trace(mut trace: ResMut<DropTrace>, log: Res<UiLog>) {
+    for line in trace.0.drain(..) {
+        log.0.write(&format!("{line}\n"));
+    }
 }
 
 /// Log a click on a card with its pointer position.
