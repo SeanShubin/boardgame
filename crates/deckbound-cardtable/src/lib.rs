@@ -10,5 +10,6 @@
 //! [`BoardGame`]: cardtable_model::BoardGame
 
 mod board_game;
+pub mod combat;
 
 pub use board_game::{CardTableGame, Intention};

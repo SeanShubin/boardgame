@@ -8,7 +8,8 @@ edition.workspace = true
 [dependencies]
 # The generic card-table model: the physical `Board`/`Tableau` + the `BoardGame` seam this crate implements.
 cardtable-model = { workspace = true }
-# NOTE: v2 combat (stretch A, stage 1) re-adds `deckbound = { workspace = true }` for its PRIMITIVES only —
-# the Might->toughness->flip health model (`stats::{Health, Defense}`), the sub-phase `combat::SCHEDULE` /
-# `SUB_PHASE_NAMES`, and ranks (`actor::Intention`). v2's cost economy is implemented FRESH in a new
-# `combat` module here, NOT by reworking deckbound's resolver (build-decision B).
+# deckbound PRIMITIVES only (v2 combat, build-decision B): ranks (`actor::Intention` = V/O/R) and the
+# sub-phase `combat::SCHEDULE`/`SUB_PHASE_NAMES` (rank×phase catch legality). v2's cost economy — the tempo/
+# finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module, NOT by
+# reworking deckbound's resolver. (Might→health is a small inline toughness-accumulate model, its semantics.)
+deckbound = { workspace = true }

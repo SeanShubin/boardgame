@@ -2356,6 +2356,7 @@ name = "deckbound-cardtable"
 version = "0.1.0"
 dependencies = [
  "cardtable-model",
+ "deckbound",
 ]
 
 [[package]]
