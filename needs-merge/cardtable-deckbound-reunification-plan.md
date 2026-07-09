@@ -283,6 +283,16 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.2 — DONE** (`38bdd0a`). Emitter now authors the nested zones, reproduced verbatim: Locations
+  (`Grid{columns:3}` of 9 drill-in places, each with its Location card + encounter [flavor + virtual
+  `Foes:` list], Inn authored inline inside Ashfen), Progress (empty day clock), Events (Day Passed ×12).
+  Resolved a seam point: `ZoneView` splits cards/zones, so `from_table_view` emits cards before sub-piles
+  and can't reproduce arbitrary interleave — the behavioral projection now canonicalizes it (cards first,
+  then sub-zones; each order preserved), consistent with the tier already abstracting arrangement/geometry.
+  Re-blessed behavioral goldens (pure reordering; byte tier + combat line counts unchanged). 9 of 10
+  top-level zones now reproduce verbatim; only **Rules** (nested Engage + phase text — pure content) and
+  the interactive fight remain. Next: **P2.2b** Rules → **P2.3** interactive fight as zones →
+  **P2.4** point `boardgame` at the emitter + delete the bypass (full-world equality gate).
 - **P2.1 — DONE** (`670cc7d`). Scaffolded the view emitter: new crate `deckbound-cardtable` (provisional
   name) holding the card-table world as a `contract::Game` — compact `World` state (not a Tableau),
   `view()` emits a nested `TableView`. Reproduced the six flat banks (Heroes/Kit/Abilities/Stats/Numbers/
