@@ -626,6 +626,17 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 
 ## 11. Progress log (append-only)
 
+- **Tooling: physical-cards + ui-state debug logs — DONE** (`6aad0a9`, self-sufficient at `d269ce4`).
+  `LoggingPlugin` writes two truncate-on-launch logs: the physical card tree + transition diffs (a human
+  confirms state changes), and the UI model + IO (view switches, settled layout boxes with overlap/push
+  results, and each drop's *resolved* target via the driver's `DropTrace`). In-app verified: a whole
+  session (start-over → 2 equips → 2 marches, incl. an intentional double-march rules-violation) is
+  reconstructable from `ui-state.log` alone.
+- **Emitter retirement — DONE** (`d2aea0c`). Deleted the dead `CardTableWorld` view-emitter (~1000 lines +
+  its `catalog` copy) — nothing used it but the goldens. `deckbound-cardtable` is now just `CardTableGame`
+  (deps: `cardtable-model` only). Retired the `characterization` crate (it guarded the reunification by
+  testing the emitter's projection); re-homed coverage into the game crate as board-operation tests
+  (equip is conservation-clean, march moves the position, advance-day ticks). Workspace builds clean.
 - **P3b stretch B — LIVE for drops (`2e7cbd0`); affordance-rendering + cue-cleanup remain.** The product
   now drives the persistent board through the `BoardGame` seam: `on_drop`/`on_node_drag_end` **record** a
   `DropRequest{ dragged, DropTarget }` (the inline `try_equip`/`try_unequip`/`move_character` deleted), and

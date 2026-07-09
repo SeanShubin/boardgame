@@ -1,8 +1,8 @@
 //! Deckbound as a [`BoardGame`] — the game operating on the **persistent physical board** through the
-//! seam (plan §17/§18), the cards-as-truth successor to the [`CardTableWorld`](crate::CardTableWorld)
-//! emitter. Equip / march / advance-day are conservation-clean transitions straight over the `Tableau`
-//! (PC.2: cards are moved / split / merged / flipped, never minted). Combat stays on the renderer's
-//! request path for now; stretch A folds it in here as rank×phase intentions.
+//! seam (plan §17/§18), the cards-as-truth successor to the retired `CardTableWorld` view-emitter. Equip /
+//! march / advance-day are conservation-clean transitions straight over the `Tableau` (PC.2: cards are
+//! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
+//! stretch A folds it in here as rank×phase intentions.
 
 use cardtable_model::{Arrangement, BoardGame, CardId, DropTarget, PileId, Tableau, sample_table};
 
