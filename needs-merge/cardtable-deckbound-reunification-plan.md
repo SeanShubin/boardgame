@@ -300,6 +300,14 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1 fight + arena — DONE** (`545d230` auto-resolve Fight, `6affd46` interactive arena foundation).
+  Full play loop through the seam: recruit → march → **fight**. `Action::Fight` auto-resolves (outcome-
+  parity); `Action::Arena` opens the interactive arena — an active battle `State` in `World`, the view
+  TAKES OVER the felt as an `[Arena]` (combatants w/ Health + log), `Action::StepArena` drives deckbound's
+  resumable resolver and folds back (Victory/Defeat log + cleared encounter). Fight- + arena-flow tests.
+  12 goldens green. **Remaining in P2.3.1: per-blow player choices** (Target/Evade/StrikeBack as answerable
+  prompt cards, replacing the arena foundation's greedy StepArena) — the manual-combat design's core. Then
+  **c** the `cardtable` renderer (drag-drop gesture + mode toggle, driven via run/verify), then **P2.4**.
 - **P2.3.1d (march) — DONE** (`f00f70e`). March is a pairing too: Location cards are targets
   (`pair_key=100+idx`), a stationed character pairs onto another location's card to march. `Character`
   gains `location`; `Action::March` re-stations; `place_zone` renders characters at their place with march

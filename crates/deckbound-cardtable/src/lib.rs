@@ -7,12 +7,13 @@
 //! from [`cardtable_model::catalog`] for now (it moves to this side in a later reorg phase).
 //!
 //! Built one slice at a time, guarded by the characterization behavioral golden. The entire static world
-//! is reproduced (all ten zones: the banks, the nested Locations grid, the Rules encyclopedia, the day
-//! clock), and the first **interaction** now flows through the seam: the Inn is the recruit view where a
-//! hero card *pairs onto* a kit to equip, and [`Action::Equip`] recruits the character. Still to come:
-//! march + the interactive fight (combat state → view → apply), then pointing `boardgame` at this emitter
-//! and deleting the hand-wired bypass. Fight *resolution* already delegates to deckbound with
-//! outcome-parity (see [`resolve_fight`]).
+//! is reproduced (all ten zones), and the full play loop now flows through the seam as **pairings**:
+//! recruit a hero onto a kit at the Inn ([`Action::Equip`]), march a character onto a location
+//! ([`Action::March`]), and fight the encounter — either [`Action::Fight`] (auto-resolve, outcome-parity
+//! via [`resolve_fight`]) or the interactive [`Action::Arena`], which drives deckbound's resumable battle
+//! blow-by-blow ([`Action::StepArena`]) and folds the result back. Still to come: per-blow player choices
+//! in the arena (Target / Evade / StrikeBack prompts, replacing the foundation's greedy step), then
+//! pointing `boardgame` at this emitter and deleting the hand-wired bypass.
 
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
