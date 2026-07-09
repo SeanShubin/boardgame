@@ -29,14 +29,20 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
     tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
         .expect("just-created pile exists");
     for card in &zone.cards {
-        let (face, card_type) = match &card.face {
+        let (face, card_type, detail, panel) = match &card.face {
             CardFace::Up {
-                title, type_line, ..
+                title,
+                type_line,
+                body,
+                panel,
+                ..
             } => (
                 Face::Up {
                     title: title.clone(),
                 },
                 type_line.clone(),
+                body.clone(),
+                panel.clone(),
             ),
             // A contract view carries no front for a face-down card, so it comes across anonymous
             // (empty remembered front). The model keeps the field (PC.2) for cards it flips itself.
@@ -45,6 +51,8 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
                     title: String::new(),
                 },
                 None,
+                Vec::new(),
+                Vec::new(),
             ),
         };
         let id = tree
@@ -52,6 +60,18 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
             .expect("just-created pile exists");
         if let Some(card_type) = card_type {
             tree.set_card_type(id, card_type)
+                .expect("just-created card exists");
+        }
+        if !detail.is_empty() {
+            tree.set_card_detail(id, detail)
+                .expect("just-created card exists");
+        }
+        if !panel.is_empty() {
+            tree.set_card_panel(id, panel)
+                .expect("just-created card exists");
+        }
+        if card.quantity != 1 {
+            tree.set_card_quantity(id, card.quantity)
                 .expect("just-created card exists");
         }
     }
@@ -150,5 +170,32 @@ mod tests {
         let keep = tree.pile(locations.subpiles()[0]).unwrap();
         assert_eq!(keep.label, "Keep");
         assert_eq!(tree.card(keep.cards()[0]).unwrap().front_title(), "Warden");
+    }
+
+    #[test]
+    fn carries_card_type_body_panel_and_quantity() {
+        let view = TableView {
+            zones: vec![zone(
+                "Stats",
+                vec![
+                    CardView::up("Might")
+                        .typed("stat")
+                        .body(vec!["force behind a strike".into()])
+                        .panel(vec!["a longer explanation".into()])
+                        .times(5),
+                ],
+            )],
+            ..Default::default()
+        };
+
+        let tree = from_table_view(&view);
+        let stats = tree
+            .pile(tree.pile(tree.root_id()).unwrap().subpiles()[0])
+            .unwrap();
+        let c = tree.card(stats.cards()[0]).unwrap();
+        assert_eq!(c.card_type(), "stat");
+        assert_eq!(c.detail(), &["force behind a strike".to_string()]);
+        assert_eq!(c.panel(), &["a longer explanation".to_string()]);
+        assert_eq!(c.quantity(), 5);
     }
 }

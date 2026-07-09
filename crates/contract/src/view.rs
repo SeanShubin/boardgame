@@ -171,6 +171,9 @@ pub struct CardView {
     /// should render such a card as interactive and **omit** that action from any button list,
     /// so a choice never appears as both a card and a button.
     pub action: Option<usize>,
+    /// How many identical physical cards this one stack stands for (drawn as a `×N` badge). Default 1;
+    /// a renderer that doesn't show stacks may ignore it.
+    pub quantity: u32,
 }
 
 /// The visible side of a card.
@@ -189,6 +192,10 @@ pub enum CardFace {
         type_line: Option<String>,
         /// Stat / rules lines in the card body, top to bottom.
         body: Vec<String>,
+        /// Optional **reading-panel** lines, shown when the card is enlarged (e.g. a combat log or a
+        /// rules blurb). Distinct from `body`: a card-table renderer may show `body` on the small face
+        /// and reveal `panel` only when the card is grown. Empty for an ordinary card.
+        panel: Vec<String>,
         /// An optional corner badge (e.g. a health total "5/8").
         corner: Option<String>,
         /// A colour hint for the card.
@@ -206,10 +213,12 @@ impl CardView {
                 title: title.into(),
                 type_line: None,
                 body: Vec::new(),
+                panel: Vec::new(),
                 corner: None,
                 accent: Accent::Neutral,
             },
             action: None,
+            quantity: 1,
         }
     }
 
@@ -223,6 +232,7 @@ impl CardView {
         Self {
             face: CardFace::Down,
             action: None,
+            quantity: 1,
         }
     }
 
@@ -254,6 +264,20 @@ impl CardView {
         if let CardFace::Up { corner, .. } = &mut self.face {
             *corner = Some(text.into());
         }
+        self
+    }
+
+    /// Set the reading-panel lines (no-op on a face-down card).
+    pub fn panel(mut self, lines: Vec<String>) -> Self {
+        if let CardFace::Up { panel, .. } = &mut self.face {
+            *panel = lines;
+        }
+        self
+    }
+
+    /// Set how many identical cards this stack stands for (the `×N` badge). Chainable.
+    pub fn times(mut self, quantity: u32) -> Self {
+        self.quantity = quantity;
         self
     }
 

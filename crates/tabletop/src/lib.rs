@@ -1905,6 +1905,9 @@ fn spawn_card(parent: &mut ChildSpawnerCommands, card: &CardView, order: &Cell<u
             body,
             corner,
             accent,
+            // The button renderer ignores card-table-only fields (panel, …); `..` keeps it robust to
+            // additive seam growth.
+            ..
         } => spawn_card_face(
             parent,
             title,
