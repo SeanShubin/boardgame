@@ -283,6 +283,15 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.1 — DONE** (`670cc7d`). Scaffolded the view emitter: new crate `deckbound-cardtable` (provisional
+  name) holding the card-table world as a `contract::Game` — compact `World` state (not a Tableau),
+  `view()` emits a nested `TableView`. Reproduced the six flat banks (Heroes/Kit/Abilities/Stats/Numbers/
+  Bestiary) from `catalog` + the hero roster, formatted to the golden's spec. Proof: a characterization
+  test drives `view()` through the seam and asserts every emitted zone appears **verbatim** in
+  `sample_table.behavior.txt` — passed all six on the first run (incl. derived Kit/Bestiary detail). The
+  pattern is established; remaining zones just add a `*_zone()` fn each, guarded by the same test. Next:
+  **P2.2** — nested Locations grid + encounters + the Inn (inline equip), Rules (nested Engage), Progress,
+  Events. Then P2.3 interactive fight, P2.4 route `boardgame`.
 - **P2.0 — DONE** (`5c84ae8`). Smell fixed: added a `ZoneView` builder
   (`new`/`with_layout`/`with_owner`/`with_zones`/`with_arrangement`) and migrated all 8 deckbound sites +
   the binding tests to it — additive seam growth no longer touches call sites. Then carried a card-table
