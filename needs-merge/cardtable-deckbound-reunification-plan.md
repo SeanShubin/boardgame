@@ -109,6 +109,15 @@ model, and one new structural phase precedes the cleanup:
   `legal_intentions`/`apply` over the physical card model; equip becomes conservation-clean deck assembly
   again; combat becomes `(rank × phase)`-gated order-free batches with a physical phase deck; rename
   V/O/R → **ranks**. Retire the product's `TableView` path (keep it for the sample).
+  - **Regression watch — the equip-buttons defect (MUST verify gone at P3b).** In the current product two
+    things are broken in the Inn: (i) every equip shows as a **loose-action rail button** ("Equip Osric
+    Vane with Executioner" ×36) because `GamePlugin::snapshot` builds its "already-on-a-card" `bound` set
+    from `card.action` only and **ignores `card.pairings`**, so pairing-bound actions leak to the rail;
+    (ii) the Inn's hero/kit cards **don't render** (empty felt) because the `Rows` arrangement expects a
+    leading `Header` card the emitter doesn't emit. We chose NOT to interim-patch these (user OK with equip
+    staying broken until the structural rework). P3b retires the whole `TableView`/`GamePlugin` rail path,
+    so both should vanish structurally — **explicitly confirm both are gone** (drag-equip works; the Inn
+    shows real hero/kit cards) as a P3b acceptance check, don't assume.
 - **P3c — Purge game words from the generic crates** (the original P3): the leftover arena/equip/march in
   the renderer, `catalog`/`fixtures`/day-queries in the model, absorb `cardtable-combat`.
 - **P4–P7** — as before (extract `deckbound-balance`; evict Grand Archive + demote `combat-lab`; rename;
