@@ -681,6 +681,7 @@ fn on_drop(
     piles: Query<&PileDropZone>,
     mut table: ResMut<Table>,
     mut rebuild: ResMut<NeedsRebuild>,
+    mut requests: ResMut<ActionRequests>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
@@ -692,6 +693,13 @@ fn on_drop(
     // through `on_node_drag_end`'s geometry instead — this is the latent path for a non-cursor-follow
     // projection. Either drag direction works.
     if let Ok(target) = cards.get(event.entity) {
+        // Generic **pairing**: the game declared that dragging this card onto that one performs an action
+        // (equip, march, fight, …). Report it; the game adapter applies it. Game-agnostic.
+        if let Some(action) = pairing_action(&table.0, dragged.0, target.0) {
+            on.propagate(false);
+            requests.0.push(action);
+            return;
+        }
         let is_projection = table
             .0
             .pile(table.0.focus_id())
@@ -1006,9 +1014,28 @@ fn animate_nodes(
     }
 }
 
-/// Whether the held card `dragged` may legally be dropped on the card `target` — the **inn equip** rule:
-/// inside a projection (the inn) a kit and a hero pair, i.e. exactly one of the two carries a recipe.
+/// The game action a **pairing** drop performs: dragging `dragged` onto `target` when `dragged` carries a
+/// pairing onto `target`'s [`pair_key`](cardtable_model::Card::pair_key). Game-agnostic — the game declares
+/// the pairings (in the view); the renderer just performs the gesture and reports the action index. This is
+/// how a game-meaningful drag (drag a hero onto a kit to equip, a character onto a location to march) flows
+/// through the seam, replacing the renderer's hardcoded equip/march rules.
+fn pairing_action(table: &Tableau, dragged: CardId, target: CardId) -> Option<usize> {
+    let key = table.card(target)?.pair_key()?;
+    table
+        .card(dragged)?
+        .pairings()
+        .iter()
+        .find(|(onto, _)| *onto == key)
+        .map(|&(_, action)| action)
+}
+
+/// Whether the held card `dragged` may legally be dropped on the card `target` — a **pairing** (the game
+/// declared one), or the legacy **inn equip** rule: inside a projection (the inn) a kit and a hero pair,
+/// i.e. exactly one of the two carries a recipe.
 fn can_drop_on_card(table: &Tableau, dragged: CardId, target: CardId) -> bool {
+    if pairing_action(table, dragged, target).is_some() {
+        return true;
+    }
     if dragged == target
         || table
             .pile(table.focus_id())
@@ -1359,6 +1386,7 @@ fn on_node_drag_end(
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
+    mut requests: ResMut<ActionRequests>,
     mut commands: Commands,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
@@ -1382,6 +1410,30 @@ fn on_node_drag_end(
             }
             TableNode::Card(cid) => cid,
         };
+        // Generic **pairing** (any zone, before the legacy deckbound drop rules below): if the release
+        // lands on a card this one pairs onto, report that action and let the game apply it. The dragged
+        // tile cursor-follows and occludes picking, so the target is found by cursor geometry. Game-agnostic.
+        {
+            let cursor = on.event().pointer_location.position;
+            let target = geom
+                .iter()
+                .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
+                .filter(|&(c, _, _)| c != card)
+                .find(|&(_, cn, gt)| {
+                    let sf = cn.inverse_scale_factor;
+                    let center = gt.translation * sf;
+                    let half = cn.size() * sf * 0.5;
+                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
+                })
+                .map(|(c, _, _)| c);
+            if let Some(target) = target
+                && let Some(action) = pairing_action(&table.0, card, target)
+            {
+                requests.0.push(action);
+                rebuild.0 = true;
+                return;
+            }
+        }
         // On the location **map** (the Locations grid drilled into), dragging a character's position copy
         // onto another place card **moves** that character there (`Tableau::move_character` also spends its
         // move by flipping its Progress marker). The day is *not* auto-advanced — ending the day is an
@@ -1436,8 +1488,9 @@ fn on_node_drag_end(
                 })
                 .map(|(c, _, _)| c);
             if let Some(target) = target {
-                // Pair the card carrying a recipe (the kit) with the other (the hero identity); either drag
-                // direction works. Two kits or two heroes equip nothing.
+                // (legacy) Pair the card carrying a recipe (the kit) with the other (the hero identity);
+                // either drag direction works. Two kits or two heroes equip nothing. (Generic pairings were
+                // already handled at the top of this handler.)
                 let dragged_kit = table.0.card(card).is_some_and(|c| c.recipe().is_some());
                 let target_kit = table.0.card(target).is_some_and(|c| c.recipe().is_some());
                 let pair = match (dragged_kit, target_kit) {
