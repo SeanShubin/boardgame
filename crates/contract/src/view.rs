@@ -27,6 +27,12 @@ pub struct TableView {
     /// first. When non-empty, a renderer should present it as a scrolling side panel distinct from
     /// the one-line `status` caption.
     pub log: Vec<String>,
+    /// Optional **focus hint** — the index (into `zones`) of a top-level zone the renderer should
+    /// **drill straight into**, so that zone's contents take over the felt instead of showing as one pile
+    /// among many. `None` = show the whole table. A game sets this when one zone *is* the moment (an
+    /// **arena** during a fight, a briefing), so it takes over and stays put across the frame-by-frame
+    /// rebuilds while the moment lasts. Additive: `None` by default; a renderer that can't focus ignores it.
+    pub focus: Option<usize>,
 }
 
 /// A spatial map a renderer can draw as a tiled board (a world of locations, §8). Tiles sit at grid

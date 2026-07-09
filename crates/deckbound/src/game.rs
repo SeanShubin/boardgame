@@ -1195,6 +1195,7 @@ impl Game for Deckbound {
             prose,
             map: None,
             log: self.feed(state),
+            focus: None,
         }
     }
 }

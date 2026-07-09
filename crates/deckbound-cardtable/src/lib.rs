@@ -345,12 +345,14 @@ impl Game for CardTableWorld {
     }
 
     fn view(&self, world: &World, _perspective: Option<PlayerId>) -> TableView {
-        // While a fight is underway, the arena takes over the felt.
+        // While a fight is underway, the arena takes over the felt: the only zone, focused so the renderer
+        // drills straight into it (and stays there across the per-step rebuilds).
         if let Some(fight) = &world.fight {
             let acts = self.legal_actions(world);
             return TableView {
                 status: "Arena".into(),
                 zones: vec![arena_zone(fight, &acts)],
+                focus: Some(0),
                 ..Default::default()
             };
         }
@@ -993,17 +995,19 @@ fn choice_card(label: String, idx: Option<usize>) -> CardView {
 
 /// One combatant as a card — its name, a `remaining/max` Health line, and whether it has fallen.
 fn combatant_card(a: &Actor, kind: &str) -> CardView {
-    let hp = format!(
-        "HP {}/{}",
-        a.defense.health.remaining(),
-        a.defense.health.max()
-    );
-    let line = if a.is_down() {
-        format!("{hp} — down")
+    // HP goes in the title (always visible at the card's default size; a `body` line only shows when the
+    // card is grown). "down" replaces it when the combatant has fallen.
+    let title = if a.is_down() {
+        format!("{} — down", a.name)
     } else {
-        hp
+        format!(
+            "{} — {}/{}",
+            a.name,
+            a.defense.health.remaining(),
+            a.defense.health.max()
+        )
     };
-    CardView::up(a.name.clone()).typed(kind).body(vec![line])
+    CardView::up(title).typed(kind)
 }
 
 /// A short label for a pending hero decision (the affordance the player will answer next).

@@ -16,6 +16,14 @@ pub fn from_table_view(view: &TableView) -> Tableau {
     for (index, zone) in view.zones.iter().enumerate() {
         add_zone(&mut tree, root, zone, index);
     }
+    // Honour the **focus hint**: drill straight into the named top-level zone so it takes over the felt
+    // (an arena during a fight). Ignored if out of range.
+    if let Some(i) = view.focus {
+        let subpiles = tree.pile(root).map(|p| p.subpiles()).unwrap_or_default();
+        if let Some(&pile) = subpiles.get(i) {
+            let _ = tree.focus(pile);
+        }
+    }
     tree
 }
 
