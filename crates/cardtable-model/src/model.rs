@@ -8,7 +8,9 @@
 use std::collections::HashMap;
 
 mod geometry;
+mod ui;
 use geometry::{clamp_box, separate_boxes};
+use ui::UiModel;
 
 /// A stable handle to a card within a [`Tableau`].
 #[derive(
@@ -428,25 +430,19 @@ pub enum TableauError {
     BankEmpty(String),
 }
 
-/// A tree of piles and cards, plus the current attention state (which pile is focused, which cards
-/// are selected). All behaviors are methods here; the renderer reads the resulting state to draw.
+/// A tree of piles and cards (the **physical model**: conserved cards, labels, nesting, order) plus a
+/// [`UiModel`] holding the current attention state (which pile is focused, which cards are selected) and
+/// renderer-fed transient state. The physical tree knows nothing of attention; the two are kept in
+/// distinct structs (plan §0/§16). All behaviors are methods here; the renderer reads the result to draw.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Tableau {
     piles: HashMap<PileId, Pile>,
     cards: HashMap<CardId, Card>,
     root: PileId,
-    focus: PileId,
-    selection: Vec<CardId>,
     next_pile: u64,
     next_card: u64,
-    // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without them.
-    #[serde(skip, default = "unbounded_surface")]
-    surface: Pos,
-    /// **Pinned** rectangles `(top-left, size)` — the fixed felt fixtures (the centered zone title, the
-    /// Back card) that freely-placed content must settle clear of. In [`separate`] they take top priority:
-    /// placed first, so nothing overrides them; they never move for a card. Fed by the renderer each frame.
-    #[serde(skip)]
-    pinned: Vec<(Pos, Pos)>,
+    /// Attention + renderer-fed transient state, separate from the physical tree above.
+    ui: UiModel,
 }
 
 /// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
@@ -485,14 +481,16 @@ impl Tableau {
             piles,
             cards: HashMap::new(),
             root,
-            focus: root,
-            selection: Vec::new(),
             next_pile: 1,
             next_card: 0,
-            // Effectively unbounded until the renderer reports the real table size, so piles aren't
-            // jammed to the origin before the first layout.
-            surface: unbounded_surface(),
-            pinned: Vec::new(),
+            ui: UiModel {
+                focus: root,
+                selection: Vec::new(),
+                // Effectively unbounded until the renderer reports the real table size, so piles aren't
+                // jammed to the origin before the first layout.
+                surface: unbounded_surface(),
+                pinned: Vec::new(),
+            },
         }
     }
 
@@ -581,7 +579,7 @@ impl Tableau {
 
     /// The currently focused (fanned, picked-up) pile.
     pub fn focus_id(&self) -> PileId {
-        self.focus
+        self.ui.focus
     }
 
     /// The pile with this id, if any.
@@ -609,12 +607,12 @@ impl Tableau {
 
     /// The selected cards, in selection order.
     pub fn selection(&self) -> &[CardId] {
-        &self.selection
+        &self.ui.selection
     }
 
     /// Whether `card` is currently selected.
     pub fn is_selected(&self, card: CardId) -> bool {
-        self.selection.contains(&card)
+        self.ui.selection.contains(&card)
     }
 
     // --- selection --------------------------------------------------------------------------
@@ -624,20 +622,20 @@ impl Tableau {
         if !self.cards.contains_key(&card) {
             return Err(TableauError::UnknownCard(card));
         }
-        if !self.selection.contains(&card) {
-            self.selection.push(card);
+        if !self.ui.selection.contains(&card) {
+            self.ui.selection.push(card);
         }
         Ok(())
     }
 
     /// Removes `card` from the selection (no-op if it was not selected).
     pub fn deselect(&mut self, card: CardId) {
-        self.selection.retain(|c| *c != card);
+        self.ui.selection.retain(|c| *c != card);
     }
 
     /// Clears the entire selection.
     pub fn clear_selection(&mut self) {
-        self.selection.clear();
+        self.ui.selection.clear();
     }
 
     // --- reordering & moving ----------------------------------------------------------------
@@ -709,7 +707,7 @@ impl Tableau {
             p.children.retain(|&n| n != Node::Card(card));
         }
         self.cards.remove(&card);
-        self.selection.retain(|&c| c != card);
+        self.ui.selection.retain(|&c| c != card);
         Ok(())
     }
 
@@ -769,15 +767,15 @@ impl Tableau {
         if !self.piles.contains_key(&pile) {
             return Err(TableauError::UnknownPile(pile));
         }
-        self.focus = pile;
+        self.ui.focus = pile;
         self.apply_collapse();
         Ok(())
     }
 
     /// Zooms out one level — focus moves to the current focus's parent. A no-op at the root.
     pub fn zoom_out(&mut self) {
-        if let Some(parent) = self.piles[&self.focus].parent {
-            self.focus = parent;
+        if let Some(parent) = self.piles[&self.ui.focus].parent {
+            self.ui.focus = parent;
             self.apply_collapse();
         }
     }
@@ -1119,7 +1117,7 @@ impl Tableau {
         }
         for card in cards {
             self.cards.remove(&card);
-            self.selection.retain(|&c| c != card);
+            self.ui.selection.retain(|&c| c != card);
         }
         if let Some(parent) = parent
             && let Some(pp) = self.piles.get_mut(&parent)
@@ -1453,19 +1451,19 @@ impl Tableau {
     /// Records the table surface size (the renderer feeds this back after layout). Decks are kept
     /// within `0..=surface-size` — the borders act as walls. See [`place_pile`] and [`separate`].
     pub fn set_surface(&mut self, w: f32, h: f32) {
-        self.surface = Pos { x: w, y: h };
+        self.ui.surface = Pos { x: w, y: h };
     }
 
     /// Set the felt's **pinned** rectangles — the fixed fixtures (centered title, Back) that content is
     /// shoved clear of, highest priority. Ordered highest-priority-first; fed by the renderer each frame.
     pub fn set_pinned(&mut self, pinned: Vec<(Pos, Pos)>) {
-        self.pinned = pinned;
+        self.ui.pinned = pinned;
     }
 
     /// The current table surface size (as last reported by the renderer). Used to lay cards out into a
     /// grid of as many columns as fit.
     pub fn surface(&self) -> Pos {
-        self.surface
+        self.ui.surface
     }
 
     /// The index of a card within its home pile's [`children`](Pile::children) (0 = bottom), if it
@@ -1555,7 +1553,7 @@ impl Tableau {
             .get(&pile)
             .ok_or(TableauError::UnknownPile(pile))?
             .size;
-        let pos = clamp_box(Pos { x, y }, size, self.surface);
+        let pos = clamp_box(Pos { x, y }, size, self.ui.surface);
         self.piles.get_mut(&pile).expect("checked above").pos = pos;
         Ok(pos)
     }
@@ -1614,7 +1612,7 @@ impl Tableau {
             .iter()
             .map(|&n| self.node_box(n).unwrap_or_default())
             .collect();
-        let settled = separate_boxes(&boxes, anchor_idx, self.surface, &self.pinned);
+        let settled = separate_boxes(&boxes, anchor_idx, self.ui.surface, &self.ui.pinned);
         for (&n, pos) in nodes.iter().zip(settled) {
             self.set_node_pos(n, pos);
         }
@@ -1634,7 +1632,7 @@ impl Tableau {
                 continue; // not laid out yet
             }
             // Wrap to the next row when this child would run past the right edge.
-            if x > gap && x + size.x + gap > self.surface.x {
+            if x > gap && x + size.x + gap > self.ui.surface.x {
                 x = gap;
                 y += row_h + gap;
                 row_h = 0.0;
@@ -1675,7 +1673,7 @@ impl Tableau {
                 let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
                 for n in nodes {
                     let s = size(n);
-                    if x > gap && x + s.x + gap > self.surface.x {
+                    if x > gap && x + s.x + gap > self.ui.surface.x {
                         x = gap;
                         y += row_h + gap;
                         row_h = 0.0;
@@ -1724,7 +1722,7 @@ impl Tableau {
     }
 
     fn apply_collapse(&mut self) {
-        let focus = self.focus;
+        let focus = self.ui.focus;
         let ids: Vec<PileId> = self.piles.keys().copied().collect();
         for id in ids {
             let on_path = self.is_ancestor_or_self(id, focus);
