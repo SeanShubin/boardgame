@@ -507,6 +507,20 @@ predicates (`can_drop_*`, `is_map_position`, `places_orthogonally_adjacent`, `lo
 (`draw_named_from`, `return_one`, `add_pile`, `move_card`, `flip_*`, `focus`, `set_layout`, …) — the ops
 are built *on* these in the game crate.
 
+**Renderer-rewire design (found by reading the plugin).** `CardTablePlugin` drives input through **Bevy
+observers** with the game logic *inline*, and the same base plugin also backs the surviving
+`contract::Game`/`GamePlugin` sample path — so it can't just be made generic over `BoardGame`, and Bevy
+observers can't cleanly "let the game try first, else fall back." Resolution — the renderer's existing
+**record-in-renderer / apply-in-driver** pattern (cf. `CombatRequest`): the generic observers **record** a
+`DropRequest{ dragged, DropTarget }` / affordance-click into a resource; a generic **`BoardGamePlugin<G>`**
+(added only by the product, holds `GameRes<G>`) drains it — `drop_intention`→`apply`, else default
+`move_card` — and `sync_affordances::<G>` fills an `Affordances` resource that `redraw` draws as
+`AffordanceControl(idx)` control cards. No `CardTablePlugin` generics, no observer conflict, both drivers
+coexist. The 5 touch-points to rewire: `on_drop` + `on_node_drag_end` (record drops, drop the inline
+`try_equip`/`try_unequip`/`move_character`/`can_drop_*`), `on_click` (affordance clicks; combat stays),
+`redraw` (Advance-Day injection ← affordances; Combat cards stay), `update_card_cues` (`is_game_movable` →
+a seam `movable()` later; keep for now). Combat (`CombatCard`/`CombatRequest`/arena) stays until stretch A.
+
 **Naming decisions (user asked to keep names honest):**
 - Seam trait **`BoardGame`** (in `cardtable-model`) — distinct from `contract::Game` (the sample's
   `TableView` seam, which survives for `deckbound-sample`).

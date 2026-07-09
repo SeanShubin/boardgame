@@ -42,6 +42,10 @@ use cardtable_combat::{
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
 
+mod board_driver;
+use board_driver::AffordanceClick;
+pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
+
 mod gallery;
 pub use gallery::run_card_gallery;
 
@@ -101,6 +105,11 @@ impl Plugin for CardTablePlugin {
             .init_resource::<CombatRequest>()
             .init_resource::<ManualCombatRequest>()
             .init_resource::<ArenaCombat>()
+            // Board-game driver request state (always present so the observers can record even with no
+            // game added; drained by `BoardGamePlugin` when a game is present).
+            .init_resource::<DropRequest>()
+            .init_resource::<AffordanceClick>()
+            .init_resource::<AffordanceLabels>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
