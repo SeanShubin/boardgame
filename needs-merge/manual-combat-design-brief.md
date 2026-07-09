@@ -45,15 +45,39 @@ Combat opens with the player assigning each hero a rank (V/O/R) — the Marshal 
 stat-derived ranks; v2 makes declaration step one), then a **Reveal** (foe ranks shown; fog-of-war is a
 future toggle).
 
+### Cost model — RESOLVED 2026-07-09 (the tempo economy)
+**Tempo = the hit/not-hit currency; Might = the damage. They never interact** — extra tempo never makes a
+hit *harder*, only makes it *land* (and, later, buys *another* strike). Per single strike:
+1. **Attacker pays to connect** (Targeting phase) — the target isn't coming to them, so they must catch it.
+   A **finesse-derived minimum** to connect at all (F2 catching F3 = 2 tempo), plus optional **extra bid** on
+   top to tax the defender's escape.
+2. **Defender responds** (Reaction phase, having seen the bid):
+   - **Evade** — pay **strictly more** tempo than the attacker's total bid → the hit misses. A deliberately
+     losing trade (aggressor sets the price); the "I *cannot* eat this" button, not the default.
+   - **Strike back** — pay a flat cheap cost (no finesse tax — "the interceptor came to *him*"): take the hit
+     **and** land a counter. Always available.
+   - **Eat it** — free, take the hit. **Default.**
+3. **Damage = Might**, applied to whoever got hit, in the order-free batch.
+
+One strike per unit for now. This *replaces* the engine's current tempo/finesse economy (flat-1 to strike;
+`⌊Fa/Fd⌋+1` defender-evade via `policy::avoid_cost`; a can-crack gate on strike-back), so **v2 is a
+mechanics change to the resolver** (needs engine rework + balance re-validation), not just UI — the
+rules-adjacent half of v2, aligned with the order-free-batch direction.
+
+*Tuning knobs (settle at build):* connect-cost formula — `⌊F_target/F_attacker⌋+1` (mirrors `avoid_cost`
+roles-swapped; fits F2-vs-F3=2) or difference-based; does the defender's own finesse **discount evade**, or
+is evade purely "out-bid the attacker" (finesse only matters when *being caught*)?; strike-back flat cost = 1?
+
+*Multi-strike (deferred, not v2):* a unit with spare tempo making **multiple separate strikes** = letting a
+unit produce more than one connect-bid/target assignment in Targeting (per-strike declare, not per-unit). The
+UI already anticipates it (tap a striker again to add a strike). Deferred because doubling a unit's strikes
+doubles its damage output → a real balance task, but a clean seam to add later.
+
 ### Open design decisions
-- **Cost-model fork — who pays the finesse contest?** The user's narrative has the **attacker** pay
-  finesse-scaled tempo to *connect* an intercept (F2 Vanguard → ⌊3/2⌋+1 = 2 tempo to catch an F3 Outrider).
-  The engine today does the mirror: attacker pays a flat 1 to strike; the **defender** optionally pays
-  ⌊Fa/Fd⌋+1 to *evade* (`policy::avoid_cost`). The user likely wants **both, context-dependent**: initiating
-  on a committed mover = attacker-pays-to-catch; soaking a blow = defender-pays-to-evade-or-eat; strike-back
-  = flat 1. **Decision: adopt the context-dependent model, or map the narrative onto the existing
-  defender-evades model?** (Changes the resolver's cost model.) *Also open:* does over-spending tempo on one
-  strike do anything (bigger hit / a kill), or does tempo buy only the *connection*, not the *damage*?
+- **Mini-phases: rules concept or UI artifact? — RESOLVED 2026-07-09: UI-first, promote later.** Present the
+  two mini-phases in the **UI for now** (ships the solo arena fast); keep mechanics an order-free batch;
+  promote the target→react reveal to first-class rules phases when PvP/fog arrive (the internal `CyclePhase`
+  cursor makes it an upgrade, not a rewrite). Rationale below.
 - **Mini-phases: rules concept or UI artifact?** Explored 2026-07-09. The split is two things: the
   **resolution mechanics** (order-free batch — already settled, UI-agnostic) and the **information timing**
   (commit targets → reveal → react). The discriminator is **hidden information**: with none (solo vs.
