@@ -9,18 +9,13 @@ path = "src/main.rs"
 
 [dependencies]
 bevy = { workspace = true }
-cardtable = { workspace = true }
-cardtable-model = { workspace = true }
-# The combat bridge: resolves an encounter (deckbound's resolver) and folds the result back onto the
-# table. This binary is where the game wires into the product; the renderer stays game-agnostic.
-cardtable-combat = { workspace = true }
-serde = { workspace = true }
-ron = { workspace = true }
+# The card-table renderer with its **game adapter** (the `game` feature's `GamePlugin` binds a
+# `contract::Game`: it builds the table from the game's view and drains clicks + pairing drops into
+# `Game::apply`).
+cardtable = { workspace = true, features = ["game"] }
+# The game itself: deckbound authored as a card-table `Game` (the view emitter). Provisional crate name.
+deckbound-cardtable = { workspace = true }
 
-# Native persistence: write the RON save to the OS data directory.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-directories = "5"
-
-# Web persistence: the RON save lives in the browser's localStorage.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage"] }
+# NOTE: persistence (the RON save + Start Over) was dropped when routing through the emitter — the game
+# STATE is now the source of truth (the Tableau is derived each frame), so a save must persist the
+# Action stream, not the table. Reworking that is a follow-on (reunification plan P2.4).

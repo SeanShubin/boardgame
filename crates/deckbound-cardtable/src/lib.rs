@@ -25,6 +25,7 @@ use deckbound::ruleset::Ruleset;
 use deckbound::{Actor, Deckbound, ManualStatus, State};
 
 /// The card-table world game.
+#[derive(Clone)]
 pub struct CardTableWorld;
 
 /// The compact world state — **not** a `Tableau`. Holds the RNG seed, the recruited party, and resolved
