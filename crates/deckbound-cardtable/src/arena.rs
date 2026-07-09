@@ -161,6 +161,18 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
     let root = board.root_id();
     let arena = board.add_pile(root, ARENA).ok()?;
 
+    // A hidden meta card remembers the originating place (for teardown) — never rewritten by the phase card.
+    if let Ok(meta) = board.add_card(
+        arena,
+        cardtable_model::Face::Down {
+            title: format!("place {}", place.0),
+        },
+        None,
+    ) {
+        let _ = board.set_card_kind(meta, CardKind::Virtual);
+        let _ = board.set_card_type(meta, "arena-meta");
+    }
+
     // Heroes: each stationed hero position card becomes a party combatant (moved into the arena).
     let heroes: Vec<CardId> = board
         .content_cards(place)
@@ -387,6 +399,67 @@ fn set_phase(board: &mut Tableau, arena: PileId, sub: usize, round: u32) {
             card,
             vec![format!("Round {round}"), format!("Sub-phase {}/5", sub + 1)],
         );
+    }
+}
+
+/// The active fight's arena zone, if a fight is underway.
+pub fn find_arena(board: &Tableau) -> Option<PileId> {
+    top_deck(board, ARENA)
+}
+
+/// The place a fight was opened from, remembered in the hidden meta card.
+fn place_of(board: &Tableau, arena: PileId) -> Option<PileId> {
+    board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("arena-meta"))
+        .find_map(|c| board.card(c).map(|k| k.front_title().to_string()))
+        .map(|s| PileId(num_after(&s, "place ") as u64))
+}
+
+/// **Fold the fight back** (teardown): return foe cards to the Bestiary; on a **win** clear the encounter;
+/// move the party's units back to the place as hero position cards; remove the arena; leave it; a fight
+/// spends a day. Conservation-clean (foes round-trip; the arena's scratch is torn down).
+pub fn fold_back(board: &mut Tableau, arena: PileId) {
+    let won = outcome(board, arena) == Some(true);
+    let place = place_of(board, arena);
+    let bestiary = top_deck(board, "Bestiary");
+
+    let foes: Vec<CardId> = board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("foe"))
+        .collect();
+    if let Some(b) = bestiary {
+        let _ = board.return_foes_to_bestiary(&foes, b);
+    }
+
+    let units: Vec<CardId> = board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("unit"))
+        .collect();
+    if let Some(place) = place {
+        for u in units {
+            let _ = board.set_card_type(u, "hero");
+            let _ = board.set_card_detail(u, Vec::new());
+            let at = board.pile(place).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(u, place, at);
+        }
+        if won
+            && let Some(enc) = board
+                .content_cards(place)
+                .into_iter()
+                .find(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
+        {
+            let _ = board.remove_card(enc);
+        }
+    }
+
+    let _ = board.remove_pile(arena);
+    board.zoom_out();
+    if let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events")) {
+        let _ = board.advance_day(p, e);
     }
 }
 

@@ -22,6 +22,10 @@ pub enum Intention {
     March { position: CardId, to: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
+    /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
+    Fight { place: PileId },
+    /// Commit the current fight's sub-phase (resolve it), or — once the fight is over — leave the arena.
+    Commit,
 }
 
 impl BoardGame for CardTableGame {
@@ -38,6 +42,18 @@ impl BoardGame for CardTableGame {
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
                 Intention::AdvanceDay => advance_day(board),
+                Intention::Fight { place } => {
+                    crate::arena::open_fight(board, place);
+                }
+                Intention::Commit => {
+                    if let Some(a) = crate::arena::find_arena(board) {
+                        if crate::arena::outcome(board, a).is_some() {
+                            crate::arena::fold_back(board, a);
+                        } else {
+                            crate::arena::resolve_sub_phase(board, a);
+                        }
+                    }
+                }
             }
         }
     }
@@ -70,7 +86,20 @@ impl BoardGame for CardTableGame {
     }
 
     fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Intention)> {
-        // The day track (Progress zone) offers Advance Day. (Combat affordances join at stretch A.)
+        // In the arena: commit the current sub-phase, or leave once the fight is decided.
+        if board.pile(focus).map(|p| p.label.as_str()) == Some(crate::arena::ARENA) {
+            let label = match crate::arena::outcome(board, focus) {
+                Some(true) => "Victory — leave",
+                Some(false) => "Defeat — leave",
+                None => "Commit sub-phase",
+            };
+            return vec![(label.to_string(), Intention::Commit)];
+        }
+        // A combat-ready place (a stationed hero + an encounter) offers a fight.
+        if combat_ready(board, focus) {
+            return vec![("Fight".to_string(), Intention::Fight { place: focus })];
+        }
+        // The day track (Progress zone) offers Advance Day.
         if top_deck(board, "Progress") == Some(focus) {
             return vec![("Advance Day".to_string(), Intention::AdvanceDay)];
         }
@@ -198,6 +227,17 @@ fn places_adjacent(board: &Tableau, a: PileId, b: PileId) -> bool {
 }
 
 // ---- fixed-zone lookups by label ------------------------------------------------------------------
+
+/// A place is combat-ready when it holds both a stationed hero and an encounter.
+fn combat_ready(board: &Tableau, place: PileId) -> bool {
+    let cards = board.content_cards(place);
+    let has = |t: &str| {
+        cards
+            .iter()
+            .any(|&c| board.card(c).map(|k| k.card_type()) == Some(t))
+    };
+    has("hero") && has("encounter")
+}
 
 fn top_deck(board: &Tableau, label: &str) -> Option<PileId> {
     board
