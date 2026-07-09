@@ -236,4 +236,89 @@ mod tests {
         game.apply(&mut board, &[Intention::AdvanceDay]);
         assert_eq!(board.current_day(progress), 1, "the day advanced");
     }
+
+    /// A card by front-title within a pile (test helper).
+    fn card_in(board: &Tableau, pile: PileId, name: &str) -> Option<CardId> {
+        board
+            .pile(pile)?
+            .cards()
+            .into_iter()
+            .find(|&c| board.card(c).map(|c| c.front_title()) == Some(name))
+    }
+
+    #[test]
+    fn equip_assembles_a_character_deck_conservation_clean() {
+        let game = CardTableGame;
+        let mut board = game.opening();
+        let root = board.root_id();
+        let before = board.physical_card_count(root);
+
+        let heroes = top_deck(&board, "Heroes").unwrap();
+        let kit = top_deck(&board, "Kit").unwrap();
+        let vael = card_in(&board, heroes, "Vael Thornbrand").expect("Vael is in the Heroes deck");
+        let marksman = card_in(&board, kit, "Marksman").expect("Marksman is in the Kit deck");
+
+        game.apply(
+            &mut board,
+            &[Intention::Equip {
+                identity: vael,
+                kit: marksman,
+            }],
+        );
+
+        // A character deck named for the hero now exists, its label being the hero's own card.
+        let deck =
+            top_deck(&board, "Vael Thornbrand").expect("a Vael character deck was assembled");
+        assert!(
+            board.pile(deck).unwrap().reflects().is_some(),
+            "the deck's label is the hero's own card"
+        );
+        // Conservation (PC.2): every card was moved / dealt from the banks, never minted.
+        assert_eq!(
+            board.physical_card_count(root),
+            before,
+            "physical card count is conserved through equip"
+        );
+        // The kit recipe card is a reusable spec — untouched.
+        assert!(
+            card_in(&board, kit, "Marksman").is_some(),
+            "the kit stays in the Kit deck"
+        );
+    }
+
+    #[test]
+    fn march_moves_the_map_position() {
+        let game = CardTableGame;
+        let mut board = game.opening();
+        let heroes = top_deck(&board, "Heroes").unwrap();
+        let kit = top_deck(&board, "Kit").unwrap();
+        let vael = card_in(&board, heroes, "Vael Thornbrand").unwrap();
+        let marksman = card_in(&board, kit, "Marksman").unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::Equip {
+                identity: vael,
+                kit: marksman,
+            }],
+        );
+
+        // The character's map position starts at the home town (Ashfen Crossing, the grid centre); march it
+        // to an orthogonally-adjacent place (index 1 is directly above the centre index 4).
+        let home = home_location(&board).expect("Ashfen Crossing");
+        let position =
+            card_in(&board, home, "Vael Thornbrand").expect("Vael's map position at Ashfen");
+        let locations = top_deck(&board, "Locations").unwrap();
+        let dest = board.pile(locations).unwrap().subpiles()[1];
+
+        game.apply(&mut board, &[Intention::March { position, to: dest }]);
+
+        assert!(
+            card_in(&board, home, "Vael Thornbrand").is_none(),
+            "the position left the home town"
+        );
+        assert!(
+            card_in(&board, dest, "Vael Thornbrand").is_some(),
+            "the position arrived at the destination"
+        );
+    }
 }

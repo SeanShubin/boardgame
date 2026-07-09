@@ -1,19 +1,10 @@
-# PROVISIONAL NAME (names are flexible per the reorg plan). The deckbound-side **view emitter**: the
-# card-table world authored as a `contract::Game`, so the product runs through the seam instead of a
-# hand-built Tableau. See needs-merge/cardtable-deckbound-reunification-plan.md §14.
+# PROVISIONAL NAME (names are flexible per the reorg plan; §16.3 target: `deckbound-board`). Deckbound
+# as a card-table **game** — it implements `cardtable_model::BoardGame` over the persistent physical board.
 [package]
 name = "deckbound-cardtable"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-contract = { workspace = true }
-# The generic card-table model: the physical `Board`/`Tableau` + the `BoardGame` seam this crate
-# implements (the cards-as-truth successor to the `contract::Game` view emitter above).
+# The generic card-table model: the physical `Board`/`Tableau` + the `BoardGame` seam this crate implements.
 cardtable-model = { workspace = true }
-# The combat resolver: the emitter delegates fight resolution to deckbound (outcomes are deterministic
-# and match the old path by construction). This is the logic cardtable-combat holds today, moving here.
-deckbound = { workspace = true }
-serde = { workspace = true }
-# Card content (the five stats, kits, creatures, encounters) lives in this crate's `catalog` module — it
-# moved here from cardtable-model when the generic model was purged of game words.
