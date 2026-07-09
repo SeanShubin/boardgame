@@ -7,6 +7,7 @@
 use cardtable_model::{Arrangement, BoardGame, CardId, DropTarget, PileId, Tableau, sample_table};
 
 /// The deckbound card-table game, played on a persistent physical board.
+#[derive(Clone, Copy)]
 pub struct CardTableGame;
 
 /// A legal move over the board — transient (the cards are the state, plan §0.3). Drop-borne:

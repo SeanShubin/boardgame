@@ -29,8 +29,8 @@ use bevy::ui::{BoxShadow, ComputedNode, Outline, ScrollPosition, UiGlobalTransfo
 use std::collections::HashMap;
 
 use cardtable_model::{
-    Arrangement, Card, CardId, CardKind, Face, Layout, Node as TableNode, PileId, Pos, Size,
-    Tableau, Utility,
+    Arrangement, Card, CardId, CardKind, DropTarget, Face, Layout, Node as TableNode, PileId, Pos,
+    Size, Tableau, Utility,
 };
 // The one place the renderer reaches past `cardtable-model`: the interactive combat **arena** reads the
 // bridge's plain-data view/answer API (never a `deckbound` type). Combat is the product's main thrust, so
@@ -688,63 +688,24 @@ fn on_drop(
     mut on: On<Pointer<DragDrop>>,
     cards: Query<&CardRef>,
     piles: Query<&PileDropZone>,
-    mut table: ResMut<Table>,
-    mut rebuild: ResMut<NeedsRebuild>,
-    mut requests: ResMut<ActionRequests>,
+    mut drop_request: ResMut<DropRequest>,
 ) {
     let event = on.event();
     let Ok(dragged) = cards.get(event.event.dropped) else {
         return; // only cards drop *into* piles
     };
-    // A card dropped *onto another card* inside a projection view whose cards don't cursor-follow is an
-    // **equip**: pair the one carrying a recipe (the kit) with the other (the hero identity). The live inn
-    // is a Rows fan whose cards *do* follow the cursor and occlude this hit-test, so recruit there runs
-    // through `on_node_drag_end`'s geometry instead — this is the latent path for a non-cursor-follow
-    // projection. Either drag direction works.
-    if let Ok(target) = cards.get(event.entity) {
-        // Generic **pairing**: the game declared that dragging this card onto that one performs an action
-        // (equip, march, fight, …). Report it; the game adapter applies it. Game-agnostic.
-        if let Some(action) = pairing_action(&table.0, dragged.0, target.0) {
-            on.propagate(false);
-            requests.0.push(action);
-            return;
-        }
-        let is_projection = table
-            .0
-            .pile(table.0.focus_id())
-            .is_some_and(|p| !p.projection().is_empty());
-        if is_projection {
-            let (a, b) = (dragged.0, target.0);
-            let a_kit = table.0.card(a).is_some_and(|c| c.recipe().is_some());
-            let b_kit = table.0.card(b).is_some_and(|c| c.recipe().is_some());
-            let pair = match (a_kit, b_kit) {
-                (true, false) => Some((b, a)), // a is the kit, b the identity
-                (false, true) => Some((a, b)), // b is the kit, a the identity
-                _ => None,                     // two kits or two heroes — nothing to equip
-            };
-            if let Some((identity, kit)) = pair {
-                on.propagate(false);
-                try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
-                rebuild.0 = true;
-            }
-        }
-        return;
-    }
-    let dest = if let Ok(zone) = piles.get(event.entity) {
-        zone.0
+    // Record what the card landed on — another card, or a pile — for the board-game driver to interpret
+    // (equip / un-equip / march) or, failing that, perform the default move into the pile. The renderer
+    // stays game-agnostic. A drop onto the bare felt is an in-zone reorder, handled by `on_node_drag_end`.
+    let onto = if let Ok(target) = cards.get(event.entity) {
+        DropTarget::Card(target.0)
+    } else if let Ok(zone) = piles.get(event.entity) {
+        DropTarget::Pile(zone.0)
     } else {
-        return; // dropped onto the felt — in-zone reordering is handled by the grid
+        return;
     };
     on.propagate(false);
-    // Dropping a character's **label card** back onto the Heroes deck **un-equips** them — every borrowed
-    // card merges back into its bank and the hero's four copies re-form the ×4 Heroes stack.
-    if top_deck(&table.0, "Heroes") == Some(dest) && try_unequip(&mut table.0, dragged.0) {
-        rebuild.0 = true;
-        return;
-    }
-    let at = table.0.pile(dest).map_or(0, |pile| pile.cards().len());
-    let _ = table.0.move_card(dragged.0, dest, at);
-    rebuild.0 = true;
+    drop_request.0 = Some((dragged.0, onto));
 }
 
 /// A short label for a node, for the debug log.
@@ -767,68 +728,6 @@ fn top_deck(table: &Tableau, label: &str) -> Option<PileId> {
         .subpiles()
         .into_iter()
         .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some(label))
-}
-
-/// The **home town** location where newly-recruited characters are stationed — the inn town (Ashfen
-/// Crossing), a place-pile under the Locations grid.
-fn home_location(table: &Tableau) -> Option<PileId> {
-    let locations = top_deck(table, "Locations")?;
-    table
-        .pile(locations)?
-        .subpiles()
-        .into_iter()
-        .find(|&s| table.pile(s).map(|p| p.label.as_str()) == Some("Ashfen Crossing"))
-}
-
-/// **Equip** `hero` (a copy from the Heroes deck) with `kit` (a recipe card) — the conservation-clean
-/// recruit: `equip_character` assembles a character deck from the banks and **deals the hero's four
-/// copies** (deck label + rank marker + map position + Progress move marker) out of the Heroes `×4`
-/// stack. Returns whether it happened.
-fn try_equip(table: &mut Tableau, hero: CardId, kit: CardId) -> bool {
-    let Some(recipe) = table.card(kit).and_then(|c| c.recipe().cloned()) else {
-        return false;
-    };
-    let Some(name) = table.card(hero).map(|c| c.front_title().to_string()) else {
-        return false;
-    };
-    let (Some(heroes), Some(stats), Some(numbers), Some(abilities), Some(home), Some(progress)) = (
-        table.card(hero).map(|c| c.home()),
-        top_deck(table, "Stats"),
-        top_deck(table, "Numbers"),
-        top_deck(table, "Abilities"),
-        home_location(table),
-        top_deck(table, "Progress"),
-    ) else {
-        return false;
-    };
-    table
-        .equip_character(
-            &name, &recipe, heroes, stats, numbers, abilities, home, progress,
-        )
-        .is_ok()
-}
-
-/// **Un-equip** a character whose label card is `hero` (the character deck's Zone label) — return every
-/// borrowed card to its bank and gather the hero's four copies back onto the Heroes stack. Returns
-/// whether it happened (i.e. `hero` really is a character deck's label).
-fn try_unequip(table: &mut Tableau, hero: CardId) -> bool {
-    let Some(deck) = table.card(hero).map(|c| c.home()) else {
-        return false;
-    };
-    if table.pile(deck).and_then(|p| p.reflects()) != Some(hero) {
-        return false; // not a character deck's label — a plain card
-    }
-    let (Some(heroes), Some(stats), Some(numbers), Some(abilities)) = (
-        top_deck(table, "Heroes"),
-        top_deck(table, "Stats"),
-        top_deck(table, "Numbers"),
-        top_deck(table, "Abilities"),
-    ) else {
-        return false;
-    };
-    table
-        .unequip_character(deck, heroes, stats, numbers, abilities)
-        .is_ok()
 }
 
 /// Slide a dragged **felt element** — a card or a nested pile — freely under the cursor, even off the
@@ -1395,7 +1294,7 @@ fn on_node_drag_end(
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
-    mut requests: ResMut<ActionRequests>,
+    mut drop_request: ResMut<DropRequest>,
     mut commands: Commands,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
@@ -1419,30 +1318,6 @@ fn on_node_drag_end(
             }
             TableNode::Card(cid) => cid,
         };
-        // Generic **pairing** (any zone, before the legacy deckbound drop rules below): if the release
-        // lands on a card this one pairs onto, report that action and let the game apply it. The dragged
-        // tile cursor-follows and occludes picking, so the target is found by cursor geometry. Game-agnostic.
-        {
-            let cursor = on.event().pointer_location.position;
-            let target = geom
-                .iter()
-                .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
-                .filter(|&(c, _, _)| c != card)
-                .find(|&(_, cn, gt)| {
-                    let sf = cn.inverse_scale_factor;
-                    let center = gt.translation * sf;
-                    let half = cn.size() * sf * 0.5;
-                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
-                })
-                .map(|(c, _, _)| c);
-            if let Some(target) = target
-                && let Some(action) = pairing_action(&table.0, card, target)
-            {
-                requests.0.push(action);
-                rebuild.0 = true;
-                return;
-            }
-        }
         // On the location **map** (the Locations grid drilled into), dragging a character's position copy
         // onto another place card **moves** that character there (`Tableau::move_character` also spends its
         // move by flipping its Progress marker). The day is *not* auto-advanced — ending the day is an
@@ -1465,9 +1340,9 @@ fn on_node_drag_end(
                 }))
                 .map(|(z, _, _)| z.0)
             });
-            if let (Some(dest), Some(progress)) = (dest, top_deck(&table.0, "Progress")) {
-                // Ignore the returned "day is over" flag — advancing is explicit, not automatic.
-                let _ = table.0.move_character(card, dest, progress);
+            if let Some(dest) = dest {
+                // Record the march for the driver (it re-checks legality via `drop_intention`).
+                drop_request.0 = Some((card, DropTarget::Pile(dest)));
             }
             rebuild.0 = true;
             return;
@@ -1497,22 +1372,11 @@ fn on_node_drag_end(
                 })
                 .map(|(c, _, _)| c);
             if let Some(target) = target {
-                // (legacy) Pair the card carrying a recipe (the kit) with the other (the hero identity);
-                // either drag direction works. Two kits or two heroes equip nothing. (Generic pairings were
-                // already handled at the top of this handler.)
-                let dragged_kit = table.0.card(card).is_some_and(|c| c.recipe().is_some());
-                let target_kit = table.0.card(target).is_some_and(|c| c.recipe().is_some());
-                let pair = match (dragged_kit, target_kit) {
-                    (true, false) => Some((target, card)), // dragged is the kit, target the identity
-                    (false, true) => Some((card, target)), // target is the kit, dragged the identity
-                    _ => None,
-                };
-                if let Some((identity, kit)) = pair {
-                    try_equip(&mut table.0, identity, kit); // assemble from banks (no mint, PC.2)
-                }
+                // Record the equip attempt (a hero onto a kit, or vice-versa) for the driver to interpret.
+                drop_request.0 = Some((card, DropTarget::Card(target)));
             }
-            // Whether or not an equip happened, a projection drag never reorders the source deck. Rebuild to
-            // snap the dragged card back to its projected slot (and show the new character deck if equipped).
+            // A projection drag never reorders the source deck. Rebuild to snap the dragged card back to its
+            // projected slot (and show the new character deck if the equip took).
             rebuild.0 = true;
             return;
         }
