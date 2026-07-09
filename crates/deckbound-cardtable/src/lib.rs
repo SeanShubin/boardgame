@@ -30,11 +30,14 @@ pub struct World {
 }
 
 /// One recruited character — a hero index (into [`HEROES`]) equipped with a kit index (into
-/// `catalog::ROSTER`).
+/// `catalog::ROSTER`), stationed at a map location.
 #[derive(Clone)]
 struct Character {
     hero: usize,
     kit: usize,
+    /// Where the character is stationed — an index into [`LOCATIONS`]. Recruited at the inn (Ashfen
+    /// Crossing); marching moves it.
+    location: usize,
 }
 
 /// A player action.
@@ -42,6 +45,8 @@ struct Character {
 pub enum Action {
     /// Recruit at the inn: equip hero #`hero` with kit #`kit`.
     Equip { hero: usize, kit: usize },
+    /// March party character #`character` to location #`location` (an index into [`LOCATIONS`]).
+    March { character: usize, location: usize },
 }
 
 impl Game for CardTableWorld {
@@ -69,13 +74,31 @@ impl Game for CardTableWorld {
                 acts.push(Action::Equip { hero, kit });
             }
         }
+        // March: each recruited character to any *other* location.
+        for (character, ch) in world.party.iter().enumerate() {
+            for location in 0..LOCATIONS.len() {
+                if location != ch.location {
+                    acts.push(Action::March {
+                        character,
+                        location,
+                    });
+                }
+            }
+        }
         acts
     }
 
-    fn action_label(&self, _state: &World, action: &Action) -> String {
+    fn action_label(&self, state: &World, action: &Action) -> String {
         match *action {
             Action::Equip { hero, kit } => {
                 format!("Equip {} with {}", HEROES[hero], catalog::ROSTER[kit].0)
+            }
+            Action::March {
+                character,
+                location,
+            } => {
+                let who = state.party.get(character).map_or("?", |c| HEROES[c.hero]);
+                format!("March {who} to {}", LOCATIONS[location])
             }
         }
     }
@@ -89,7 +112,25 @@ impl Game for CardTableWorld {
                 if world.party.iter().any(|c| c.hero == hero) {
                     return Err(GameError::new("that hero is already recruited"));
                 }
-                world.party.push(Character { hero, kit });
+                world.party.push(Character {
+                    hero,
+                    kit,
+                    location: ASHFEN,
+                });
+                Ok(())
+            }
+            Action::March {
+                character,
+                location,
+            } => {
+                if location >= LOCATIONS.len() {
+                    return Err(GameError::new("no such location"));
+                }
+                let ch = world
+                    .party
+                    .get_mut(character)
+                    .ok_or_else(|| GameError::new("no such character"))?;
+                ch.location = location;
                 Ok(())
             }
         }
@@ -220,37 +261,85 @@ const LOCATIONS: [&str; 9] = [
     "Ninefold Deep",
 ];
 
-/// One place on the map: its `Location` name card, then either the **Inn** sub-zone (Ashfen Crossing —
-/// drill in to recruit) or the location's **encounter** card (its foes listed virtually).
-fn place_zone(place: &str, world: &World, acts: &[Action]) -> ZoneView {
-    let name = CardView::up(place).typed("Location");
-    if place == "Ashfen Crossing" {
-        ZoneView::new(place, vec![name]).with_zones(vec![inn_zone(world, acts)])
-    } else if let Some(enc) = catalog::encounter_for(place) {
-        let foes: Vec<String> = catalog::encounter_foes(enc)
-            .iter()
-            .map(|(c, q)| {
-                if *q > 1 {
-                    format!("{} ×{q}", c.name)
-                } else {
-                    c.name.to_string()
-                }
-            })
-            .collect();
-        let encounter = CardView::up(enc.title).typed("encounter").body(vec![
-            enc.flavor.to_string(),
-            format!("Foes: {}", foes.join(", ")),
-        ]);
-        ZoneView::new(place, vec![name, encounter])
-    } else {
-        ZoneView::new(place, vec![name])
+/// The index of Ashfen Crossing (the inn) in [`LOCATIONS`] — where characters are recruited.
+const ASHFEN: usize = 4;
+
+/// The pairing-key base for **location** targets — a character marches by pairing onto a Location card.
+/// Offset past the kit keys (0–3) so pairing keys never collide within a view.
+const LOC_KEY_BASE: u32 = 100;
+
+/// One place on the map: its `Location` name card (a **march target**), its **encounter** (non-inn) or
+/// the **Inn** recruit sub-zone (Ashfen), and any **characters** stationed here — each pairing onto
+/// another location's card to march there.
+fn place_zone(idx: usize, place: &str, world: &World, acts: &[Action]) -> ZoneView {
+    let mut cards = vec![
+        CardView::up(place)
+            .typed("Location")
+            .pair_key(LOC_KEY_BASE + idx as u32),
+    ];
+    if place != "Ashfen Crossing"
+        && let Some(enc) = catalog::encounter_for(place)
+    {
+        cards.push(encounter_card(enc));
     }
+    // Characters stationed here, each able to march onto another location.
+    for (c, ch) in world.party.iter().enumerate() {
+        if ch.location != idx {
+            continue;
+        }
+        let mut card = character_card(ch);
+        for l in 0..LOCATIONS.len() {
+            if l == idx {
+                continue;
+            }
+            if let Some(a) = acts.iter().position(
+                |a| matches!(a, Action::March { character, location } if *character == c && *location == l),
+            ) {
+                card = card.pairs_onto(LOC_KEY_BASE + l as u32, a);
+            }
+        }
+        cards.push(card);
+    }
+    if place == "Ashfen Crossing" {
+        ZoneView::new(place, cards).with_zones(vec![inn_zone(world, acts)])
+    } else {
+        ZoneView::new(place, cards)
+    }
+}
+
+/// An encounter card — its flavor and the virtual `Foes:` list.
+fn encounter_card(enc: &catalog::Encounter) -> CardView {
+    let foes: Vec<String> = catalog::encounter_foes(enc)
+        .iter()
+        .map(|(c, q)| {
+            if *q > 1 {
+                format!("{} ×{q}", c.name)
+            } else {
+                c.name.to_string()
+            }
+        })
+        .collect();
+    CardView::up(enc.title).typed("encounter").body(vec![
+        enc.flavor.to_string(),
+        format!("Foes: {}", foes.join(", ")),
+    ])
+}
+
+/// A recruited character card — "Hero · Kit".
+fn character_card(ch: &Character) -> CardView {
+    CardView::up(format!(
+        "{} · {}",
+        HEROES[ch.hero],
+        catalog::ROSTER[ch.kit].0
+    ))
+    .typed("character")
 }
 
 fn locations_zone(world: &World, acts: &[Action]) -> ZoneView {
     let places: Vec<ZoneView> = LOCATIONS
         .iter()
-        .map(|&p| place_zone(p, world, acts))
+        .enumerate()
+        .map(|(idx, &p)| place_zone(idx, p, world, acts))
         .collect();
     ZoneView::new("Locations", vec![CardView::up("Location").typed("Label")])
         .with_arrangement(Arrangement::Grid { columns: 3 })
@@ -258,12 +347,11 @@ fn locations_zone(world: &World, acts: &[Action]) -> ZoneView {
 }
 
 /// The inn's **recruit view**: each un-recruited hero card **pairs onto** a kit to equip (the pairing the
-/// renderer performs as a drag-drop or tap-then-tap); the kits are the pairing **targets**; recruited
-/// characters are listed after. (Equipped-character display here is a first cut — a name · kit card.)
+/// renderer performs as a drag-drop or tap-then-tap); the kits are the pairing **targets**. Recruited
+/// characters appear at the Ashfen *place* (stationed there), not inside the inn.
 fn inn_zone(world: &World, acts: &[Action]) -> ZoneView {
     let equipped: Vec<usize> = world.party.iter().map(|c| c.hero).collect();
     let mut cards = Vec::new();
-    // Un-recruited heroes, each pairing onto every kit target.
     for (i, hero) in HEROES.iter().enumerate() {
         if equipped.contains(&i) {
             continue;
@@ -279,20 +367,8 @@ fn inn_zone(world: &World, acts: &[Action]) -> ZoneView {
         }
         cards.push(card);
     }
-    // Kit pairing targets (keyed by kit index).
     for (j, (name, _, _)) in catalog::ROSTER.iter().enumerate() {
         cards.push(CardView::up(*name).typed("Kit").pair_key(j as u32));
-    }
-    // Recruited characters.
-    for ch in &world.party {
-        cards.push(
-            CardView::up(format!(
-                "{} · {}",
-                HEROES[ch.hero],
-                catalog::ROSTER[ch.kit].0
-            ))
-            .typed("character"),
-        );
     }
     ZoneView::new("Inn", cards).with_arrangement(Arrangement::Rows)
 }

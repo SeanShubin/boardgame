@@ -406,6 +406,94 @@ fn emitter_equip_recruits_a_character() {
     );
 }
 
+/// P2.3.1d: march flows through the seam. A recruited character (stationed at the inn) can march to any
+/// other location — the affordance is a pairing onto the destination Location card, and `apply(March)`
+/// re-stations it. Verified via `legal_actions` (robust to view nesting).
+#[test]
+fn emitter_march_moves_a_character() {
+    use cardtable_model::from_table_view;
+    use contract::Game;
+    use deckbound_cardtable::Action;
+
+    let game = deckbound_cardtable::CardTableWorld;
+    let mut world = game.new_game(1, 1);
+    game.apply(&mut world, &Action::Equip { hero: 0, kit: 2 })
+        .unwrap();
+
+    // Recruited at the inn (Ashfen = idx 4): can march elsewhere, not to where it already is.
+    let acts = game.legal_actions(&world);
+    assert!(
+        acts.iter().any(|a| matches!(
+            a,
+            Action::March {
+                character: 0,
+                location: 1
+            }
+        )),
+        "can march to Cinderwatch from the inn"
+    );
+    assert!(
+        !acts.iter().any(|a| matches!(
+            a,
+            Action::March {
+                character: 0,
+                location: 4
+            }
+        )),
+        "can't march to the inn it already occupies"
+    );
+
+    // March to Cinderwatch Keep (idx 1).
+    game.apply(
+        &mut world,
+        &Action::March {
+            character: 0,
+            location: 1,
+        },
+    )
+    .unwrap();
+    let acts = game.legal_actions(&world);
+    assert!(
+        !acts.iter().any(|a| matches!(
+            a,
+            Action::March {
+                character: 0,
+                location: 1
+            }
+        )),
+        "no longer marchable to its current location"
+    );
+    assert!(
+        acts.iter().any(|a| matches!(
+            a,
+            Action::March {
+                character: 0,
+                location: 4
+            }
+        )),
+        "can march back to the inn"
+    );
+
+    // Exactly one character in the world; a bad character index errors.
+    let proj = behavior(&from_table_view(&game.view(&world, None)));
+    assert_eq!(
+        proj.matches("type=\"character\"").count(),
+        1,
+        "exactly one character in the world"
+    );
+    assert!(
+        game.apply(
+            &mut world,
+            &Action::March {
+                character: 9,
+                location: 0
+            }
+        )
+        .is_err(),
+        "marching a non-existent character errors"
+    );
+}
+
 /// P2.3.0: the emitter's fight resolution matches the old `cardtable-combat` path's outcome for the same
 /// kit + location + seed. Both delegate to deckbound's deterministic resolver, so outcome-parity holds by
 /// construction — this pins it. (Outcome-parity is the P2.3 acceptance criterion; the arena presentation

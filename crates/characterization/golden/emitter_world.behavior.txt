@@ -43,19 +43,19 @@
   [Locations]
     - Location | type="Label" | qty=1
     [The Hollow Rampart]
-      - The Hollow Rampart | type="Location" | qty=1
+      - The Hollow Rampart | type="Location" | qty=1 | pair_key=100
       - Breach of the Rampart | type="encounter" | qty=1 | detail=["The rampart is breached and everything pours through at once.", "Foes: The Anvil, The Swarm ×2, The Coil, The Mirage"]
     [Cinderwatch Keep]
-      - Cinderwatch Keep | type="Location" | qty=1
+      - Cinderwatch Keep | type="Location" | qty=1 | pair_key=101
       - The Coiled Sentry | type="encounter" | qty=1 | detail=["A watch-drake coiled in the ruined keep, lashing at anything within reach.", "Foes: The Coil"]
     [Greywater Ford]
-      - Greywater Ford | type="Location" | qty=1
+      - Greywater Ford | type="Location" | qty=1 | pair_key=102
       - Ambush at the Ford | type="encounter" | qty=1 | detail=["An ambush dug in at the crossing, ready to lash back at anything that wades in.", "Foes: The Anvil, The Swarm, The Coil ×2, The Mirage"]
     [The Sundered Vault]
-      - The Sundered Vault | type="Location" | qty=1
+      - The Sundered Vault | type="Location" | qty=1 | pair_key=103
       - The Vault Anvil | type="encounter" | qty=1 | detail=["An armored warden set to guard the sundered vault, unmoved by lesser blows.", "Foes: The Anvil"]
     [Ashfen Crossing]
-      - Ashfen Crossing | type="Location" | qty=1
+      - Ashfen Crossing | type="Location" | qty=1 | pair_key=104
       [Inn]
         - Vael Thornbrand | type="hero" | qty=1 | pairs=[(0, 0), (1, 1), (2, 2), (3, 3)]
         - Sera of the Ninth Watch | type="hero" | qty=1 | pairs=[(0, 4), (1, 5), (2, 6), (3, 7)]
@@ -71,16 +71,16 @@
         - Marksman | type="Kit" | qty=1 | pair_key=2
         - Phantom | type="Kit" | qty=1 | pair_key=3
     [Thornmarch Gate]
-      - Thornmarch Gate | type="Location" | qty=1
+      - Thornmarch Gate | type="Location" | qty=1 | pair_key=105
       - The Thorn Swarm | type="encounter" | qty=1 | detail=["A boiling mass of bramble-imps swarming the gate.", "Foes: The Swarm"]
     [Emberfall Hollow]
-      - Emberfall Hollow | type="Location" | qty=1
+      - Emberfall Hollow | type="Location" | qty=1 | pair_key=106
       - The Emberfall Beast | type="encounter" | qty=1 | detail=["A burning hollow guarded by something that will not fall to a single hand.", "Foes: The Anvil ×2, The Swarm, The Coil, The Mirage"]
     [The Salt Barrows]
-      - The Salt Barrows | type="Location" | qty=1
+      - The Salt Barrows | type="Location" | qty=1 | pair_key=107
       - The Barrow Mirage | type="encounter" | qty=1 | detail=["A grave-wraith drifting the salt barrows, never quite where it seems.", "Foes: The Mirage"]
     [Ninefold Deep]
-      - Ninefold Deep | type="Location" | qty=1
+      - Ninefold Deep | type="Location" | qty=1 | pair_key=108
       - Horror of the Ninefold Deep | type="encounter" | qty=1 | detail=["The deep shifts and feints; nothing down here holds still.", "Foes: The Anvil, The Swarm, The Coil, The Mirage ×2"]
   [Rules]
     - Marshal (1/6) | type="phase" | qty=1 | detail=["Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round."]
