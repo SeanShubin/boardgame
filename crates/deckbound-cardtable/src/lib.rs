@@ -6,14 +6,15 @@
 //! `cardtable_model::from_table_view`, so there is no round-trip on the game side. Content is sourced
 //! from [`cardtable_model::catalog`] for now (it moves to this side in a later reorg phase).
 //!
-//! Built one slice at a time, guarded by the characterization behavioral golden. The entire static world
-//! is reproduced (all ten zones), and the full play loop now flows through the seam as **pairings**:
-//! recruit a hero onto a kit at the Inn ([`Action::Equip`]), march a character onto a location
-//! ([`Action::March`]), and fight the encounter — either [`Action::Fight`] (auto-resolve, outcome-parity
-//! via [`resolve_fight`]) or the interactive [`Action::Arena`], which drives deckbound's resumable battle
-//! blow-by-blow ([`Action::StepArena`]) and folds the result back. Still to come: per-blow player choices
-//! in the arena (Target / Evade / StrikeBack prompts, replacing the foundation's greedy step), then
-//! pointing `boardgame` at this emitter and deleting the hand-wired bypass.
+//! Built one slice at a time, guarded by the characterization behavioral golden. The **entire game** now
+//! runs through the seam: the static world (all ten zones) is reproduced, and the full play loop flows as
+//! **pairings** — recruit a hero onto a kit at the Inn ([`Action::Equip`]), march a character onto a
+//! location ([`Action::March`]), and fight the encounter, either [`Action::Fight`] (auto-resolve,
+//! outcome-parity via [`resolve_fight`]) or the interactive [`Action::Arena`]. The arena drives deckbound's
+//! resumable battle blow-by-blow, rendering each hero decision as answerable choice cards
+//! ([`Action::Strike`] / [`Action::Hold`] / [`Action::Evade`] / [`Action::Riposte`], or [`Action::StepArena`]
+//! to let the AI take one) and folding the result back. What remains is outside this crate: the `cardtable`
+//! renderer performing the pairing gesture, then pointing `boardgame` at this emitter (deleting the bypass).
 
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};

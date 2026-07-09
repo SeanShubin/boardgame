@@ -300,6 +300,15 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1 arena per-blow choices — DONE** (`9585986`). The manual-combat design is realized: the player
+  makes every combat decision through the seam. The arena renders the current hero decision as answerable
+  `choice` cards — Strike-enemy / Hold (Target), Evade / Endure, Strike-back / Decline — each a clickable
+  action; `apply(answer)` sets the pending decision and drives on (foe greedy), folding on finish. Test
+  plays a whole fight via explicit choices. **The ENTIRE game now runs through `contract::Game`** — world +
+  equip/march/fight + interactive combat, all golden-tested (13 goldens). **P2.3.1 (emitter) is complete.**
+  Remaining for P2: **c** the `cardtable` renderer (perform the pairing gesture drag-drop + the click/drag
+  mode toggle — Bevy, verified by driving the app, not goldens), then **P2.4** point `boardgame` at the
+  emitter + delete the `sample_table`/`cardtable-combat` bypass (behavioral goldens the gate).
 - **P2.3.1 fight + arena — DONE** (`545d230` auto-resolve Fight, `6affd46` interactive arena foundation).
   Full play loop through the seam: recruit → march → **fight**. `Action::Fight` auto-resolves (outcome-
   parity); `Action::Arena` opens the interactive arena — an active battle `State` in `World`, the view
