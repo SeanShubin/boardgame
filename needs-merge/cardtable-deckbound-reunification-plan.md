@@ -295,6 +295,14 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1d (march) — DONE** (`f00f70e`). March is a pairing too: Location cards are targets
+  (`pair_key=100+idx`), a stationed character pairs onto another location's card to march. `Character`
+  gains `location`; `Action::March` re-stations; `place_zone` renders characters at their place with march
+  pairings; the inn is now purely the recruit affordance. Emitter_world re-blessed (Location cards gain
+  pair_key). March-flow test via `legal_actions`. 10 goldens green. **Remaining interactive piece: the
+  FIGHT/arena** — `Action::Fight`, an active-fight `World` state, arena `view()`, and per-blow stepping via
+  deckbound's resumable resolver (`resolve_fight` already gives outcome-parity), with fresh arena goldens.
+  Plus **c** the renderer drag-drop + mode toggle (Bevy). Then P2.4.
 - **P2.3.1d (equip) — DONE** (`2e5fded`). First interaction through the reunified seam: `World` gains a
   recruited party; the Inn is now the functional recruit view (each un-recruited hero card **pairs onto**
   a kit; `Action::Equip` recruits). Behavioral projection renders pairings. The emitter's Inn intentionally
