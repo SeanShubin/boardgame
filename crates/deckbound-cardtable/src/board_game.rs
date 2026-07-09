@@ -24,7 +24,10 @@ pub enum Intention {
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
     Fight { place: PileId },
-    /// Commit the current fight's sub-phase (resolve it), or — once the fight is over — leave the arena.
+    /// Tap a combatant in the arena — edit the staged plan for the current step (cycle rank / select /
+    /// bid / aim / react). What it does is read from the fight's step; see [`crate::arena::handle_tap`].
+    Tap { card: CardId },
+    /// Commit the current fight's step (resolve it), or — once the fight is over — leave the arena.
     Commit,
 }
 
@@ -45,12 +48,13 @@ impl BoardGame for CardTableGame {
                 Intention::Fight { place } => {
                     crate::arena::open_fight(board, place);
                 }
+                Intention::Tap { card } => crate::arena::handle_tap(board, card),
                 Intention::Commit => {
                     if let Some(a) = crate::arena::find_arena(board) {
                         if crate::arena::outcome(board, a).is_some() {
                             crate::arena::fold_back(board, a);
                         } else {
-                            crate::arena::resolve_sub_phase(board, a);
+                            crate::arena::commit(board, a);
                         }
                     }
                 }
@@ -85,15 +89,19 @@ impl BoardGame for CardTableGame {
         }
     }
 
+    fn tap_intention(&self, board: &Tableau, card: CardId) -> Option<Intention> {
+        // While a fight is up, tapping a combatant edits the staged plan for the current step.
+        let arena = crate::arena::find_arena(board)?;
+        crate::arena::is_combatant(board, arena, card).then_some(Intention::Tap { card })
+    }
+
     fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Intention)> {
-        // In the arena: commit the current sub-phase, or leave once the fight is decided.
+        // In the arena: commit the current step, or leave once the fight is decided.
         if board.pile(focus).map(|p| p.label.as_str()) == Some(crate::arena::ARENA) {
-            let label = match crate::arena::outcome(board, focus) {
-                Some(true) => "Victory — leave",
-                Some(false) => "Defeat — leave",
-                None => "Commit sub-phase",
-            };
-            return vec![(label.to_string(), Intention::Commit)];
+            return vec![(
+                crate::arena::commit_label(board, focus).to_string(),
+                Intention::Commit,
+            )];
         }
         // A combat-ready place (a stationed hero + an encounter) offers a fight.
         if combat_ready(board, focus) {

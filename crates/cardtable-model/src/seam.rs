@@ -52,4 +52,15 @@ pub trait BoardGame {
     /// *declares* them, so the renderer stays game-agnostic. Replaces the renderer's hardcoded affordance
     /// injection + `location_ready_for_combat`-style predicates. Empty = the zone offers no game action.
     fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Self::Intention)>;
+
+    /// Interpret a **tap** (single click) on the board card `card`: `Some(intention)` if tapping it is a
+    /// legal move, `None` to let the renderer handle the click normally (focus / zoom). This is the third
+    /// input verb beside drag ([`drop_intention`](BoardGame::drop_intention)) and zone control
+    /// ([`affordances`](BoardGame::affordances)) — for in-place per-card actions the "clicks/drags/piles
+    /// only" UI needs, e.g. cycling a combatant's tempo bid or picking a reaction during a fight. Most games
+    /// want no tap actions, so the default is `None`.
+    fn tap_intention(&self, board: &Tableau, card: CardId) -> Option<Self::Intention> {
+        let _ = (board, card);
+        None
+    }
 }

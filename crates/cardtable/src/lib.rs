@@ -43,7 +43,7 @@ use cardtable_combat::{
 pub use game::GamePlugin;
 
 mod board_driver;
-use board_driver::{AffordanceClick, DropTrace};
+use board_driver::{AffordanceClick, DropTrace, TapRequest};
 pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
 
 mod logging;
@@ -111,6 +111,7 @@ impl Plugin for CardTablePlugin {
             // Board-game driver request state (always present so the observers can record even with no
             // game added; drained by `BoardGamePlugin` when a game is present).
             .init_resource::<DropRequest>()
+            .init_resource::<TapRequest>()
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
             .init_resource::<DropTrace>()

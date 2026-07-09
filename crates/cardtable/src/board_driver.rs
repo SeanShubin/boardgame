@@ -25,6 +25,13 @@ pub struct DropRequest(pub Option<(CardId, DropTarget)>);
 #[derive(Resource, Default)]
 pub struct AffordanceClick(pub Option<usize>);
 
+/// A recorded **tap** on a board card the driver should interpret through the game's
+/// [`tap_intention`](cardtable_model::BoardGame::tap_intention) — the third input verb (beside drop and
+/// affordance) for in-place per-card actions (cycling a combatant's bid, picking a reaction). Drained by
+/// [`apply_tap`]; `None` when idle. Core-owned so the observers record without a game type.
+#[derive(Resource, Default)]
+pub struct TapRequest(pub Option<CardId>);
+
 /// The labels of the game actions offered in the current zone — `redraw` draws one control card each,
 /// tagged [`AffordanceControl`] with its index. Filled by [`sync_affordances`]; empty with no game/actions.
 #[derive(Resource, Default)]
@@ -110,6 +117,26 @@ fn apply_drop<G>(
     rebuild.0 = true;
 }
 
+/// Interpret a recorded tap through the game: if [`tap_intention`](cardtable_model::BoardGame::tap_intention)
+/// recognizes it as a move, apply it. A tap the game ignores is a no-op here (the renderer already handled
+/// the click as focus/zoom).
+fn apply_tap<G>(
+    mut request: ResMut<TapRequest>,
+    mut table: ResMut<Table>,
+    game: Res<GameRes<G>>,
+    mut rebuild: ResMut<NeedsRebuild>,
+) where
+    G: BoardGame + Send + Sync + 'static,
+{
+    let Some(card) = request.0.take() else {
+        return;
+    };
+    if let Some(intention) = game.0.tap_intention(&table.0, card) {
+        game.0.apply(&mut table.0, &[intention]);
+        rebuild.0 = true;
+    }
+}
+
 /// Apply the game action behind a clicked affordance control card.
 fn apply_affordance<G>(
     mut click: ResMut<AffordanceClick>,
@@ -173,6 +200,7 @@ where
                 Update,
                 (
                     apply_drop::<G>,
+                    apply_tap::<G>,
                     apply_affordance::<G>,
                     sync_affordances::<G>,
                 )
