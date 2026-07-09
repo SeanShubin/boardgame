@@ -481,6 +481,30 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 
 ## 11. Progress log (append-only)
 
+- **P3a.2 — DONE** (`873f3dd`). Separated the **attention state** out of the physical `Tableau`: `focus`,
+  `selection`, and the renderer-fed transient `surface`/`pinned` moved into a distinct `ui::UiModel`
+  sub-struct that `Tableau` holds; the public methods delegate through `self.ui`. The physical tree
+  (`piles`/`cards`/`root`/ids) now knows nothing of attention — the first *semantic* cut of the split.
+  21 field-access sites (all `self.X`, zero method-call collisions) redirected via `replace_all`; public
+  API unchanged so `cardtable` + `boardgame` build unchanged; 60 model tests + 6 behavioral goldens green.
+- **P3a.1 — DONE** (`d453db6`). Extracted the pure box-geometry helpers to `model/geometry.rs` (free
+  functions, no struct privacy, no API change). Trivially-safe first cut.
+- **P3a design + re-aiming captured — DONE** (`065b6d3`). Plan §0 (RE-AIMING: cards-are-truth three-layer
+  model) + §16 (field/method classification + naming + safe step sequence).
+- **P3a REMAINING (resume here, attended):**
+  - **P3a.3 — move the per-`Pile`/`Card` UI fields** (`collapsed`, `pos`, `size`, `layout`; card
+    `size`/`pos`/`footprint`) into a UI-model grouping, accessors delegating. *Higher risk than P3a.2:*
+    these names collide with the ubiquitous `Pos` type (`.pos`/`.size`/`.x`) **and** with public accessor
+    methods, so `replace_all` is unsafe — each site needs individual inspection across `separate` /
+    `structured_positions` / `arrange_row` / `row_groups`. Do this per-site, not bulk. `projection` (a
+    viewing surface, UI-model) and `reflects` (deckbound-semantic, P3b) also live on `Pile`.
+  - **P3a.4 — promote the boundary into the API (HIGH-RIPPLE):** point `cardtable` at the physical layer +
+    `UiModel` directly and dissolve the `Tableau` delegator; this is where the UI model gains *persistence
+    across rebuilds* (the world-focus-reset fix) and overlaps P3b. Edits the 3400-line renderer — attended.
+  - **Naming (user asked 2026-07-09):** targets recorded in §16.3 (`physical::Board` + `ui::UiModel`
+    modules now; provisional crates `card-board` + `card-ui-model` at P6; V/O/R→**ranks** at P3b). The
+    `ui` module now exists; a `physical` module is the natural next container for the P3a.3 fields.
+
 - **P2.3.1c (renderer) — DONE** (`fd9632e`) + **P2.4 (routing) — DONE** (`8021079`). **P2 COMPLETE.** The
   renderer performs game-declared **pairing** drops (`pairing_action` reads `card.pairings()`/`pair_key()`
   from the view-authored model; both drop paths report the action to `ActionRequests`; additive, current
