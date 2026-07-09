@@ -463,13 +463,21 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 - **P3a.2 — introduce `ui::UiModel` sub-struct inside `Tableau`**, moving the attention fields into it
   (`selection`, then `focus`, then `surface`/`pinned`), with `Tableau`'s public methods delegating. Serde
   layout changes, which is harmless (nothing persists a `Tableau` since P2.4 dropped save). No renderer change.
-- **P3a.3 — move the per-`Pile`/`Card` UI fields** (`collapsed`, `pos`, `size`, `layout`, card `size`/`pos`/
-  `footprint`) alongside, keeping accessors delegating. Deeper (touches `separate`/`arrange_row`); attempt
-  only while green.
-- **P3a.4 (HIGH-RIPPLE — resume point, do attended) — promote the boundary into the API:** point `cardtable`
-  at `physical::Board` + `ui::UiModel` directly and dissolve the `Tableau` delegator. This is the step that
-  edits the 3400-line renderer; it is where the UI model gains its *persistence across rebuilds* (the world-
-  focus-reset fix) and so overlaps P3b. Left for careful work, not an unattended blast.
+- **P3a.3 — per-pile/card UI state → id-keyed side-tables (HIGH-RIPPLE; do attended).** REVISED: the
+  per-`Pile`/`Card` UI fields (`collapsed`, `pos`, `size`, `layout`, `projection`; card `size`(zoom)/`pos`/
+  `footprint`) must **not** be grouped into an in-struct `CardUi`/`PileUi`. The architecture forbids it:
+  *"one physical truth backs many UI models"* means per-card/pile UI state cannot be embedded in the single
+  physical `Card`/`Pile` (that permits only one observer and dies on rebuild). So it moves into id-keyed
+  side-tables in the UI layer — `UiModel { pile_ui: HashMap<PileId, PileUi>, card_ui: HashMap<CardId, CardUi>,
+  focus, selection, surface, pinned }`. Consequence: `pile.pos()` / `card.size()` stop being `Pile`/`Card`
+  methods (the physical structs no longer hold the state) and become `Tableau`/UI-layer lookups — which
+  **ripples into the 3400-line renderer**. There is therefore *no* low-ripple in-struct intermediate that is
+  architecturally correct; the honest per-card/pile step is inherently high-ripple. **P3a.2 was the natural
+  end of safe autonomous work.**
+- **P3a.4 — promote the boundary into the API (HIGH-RIPPLE; do attended, folds P3a.3 in).** Point `cardtable`
+  at the physical layer + `UiModel` directly and dissolve the `Tableau` delegator. Same edit as P3a.3's
+  side-table ripple, so do them together: this is where the UI model gains its *persistence across rebuilds*
+  (the world-focus-reset fix) and so overlaps P3b. Not an unattended blast.
 
 ## 10. Observations (non-blocking; not behavior changes to make in this pass)
 
@@ -491,16 +499,15 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
   functions, no struct privacy, no API change). Trivially-safe first cut.
 - **P3a design + re-aiming captured — DONE** (`065b6d3`). Plan §0 (RE-AIMING: cards-are-truth three-layer
   model) + §16 (field/method classification + naming + safe step sequence).
-- **P3a REMAINING (resume here, attended):**
-  - **P3a.3 — move the per-`Pile`/`Card` UI fields** (`collapsed`, `pos`, `size`, `layout`; card
-    `size`/`pos`/`footprint`) into a UI-model grouping, accessors delegating. *Higher risk than P3a.2:*
-    these names collide with the ubiquitous `Pos` type (`.pos`/`.size`/`.x`) **and** with public accessor
-    methods, so `replace_all` is unsafe — each site needs individual inspection across `separate` /
-    `structured_positions` / `arrange_row` / `row_groups`. Do this per-site, not bulk. `projection` (a
-    viewing surface, UI-model) and `reflects` (deckbound-semantic, P3b) also live on `Pile`.
-  - **P3a.4 — promote the boundary into the API (HIGH-RIPPLE):** point `cardtable` at the physical layer +
-    `UiModel` directly and dissolve the `Tableau` delegator; this is where the UI model gains *persistence
-    across rebuilds* (the world-focus-reset fix) and overlaps P3b. Edits the 3400-line renderer — attended.
+- **P3a REMAINING (resume here, attended) — see §16.4 (revised):** the per-`Pile`/`Card` UI state
+  (`collapsed`, `pos`, `size`, `layout`, `projection`; card `size`(zoom)/`pos`/`footprint`) moves to
+  **id-keyed side-tables** in `UiModel` (`pile_ui`/`card_ui` maps), *not* in-struct `CardUi`/`PileUi` —
+  because "many UI models per one physical truth" forbids embedding UI state in the single physical struct.
+  That makes `pile.pos()`/`card.size()` become `Tableau`/UI-layer lookups instead of `Pile`/`Card` methods,
+  which **ripples into the 3400-line renderer** — so P3a.3 (side-tables) and P3a.4 (renderer talks to
+  physical + `UiModel` directly, gaining focus-persistence-across-rebuilds) are one attended step, and
+  overlap P3b. `reflects` (deckbound-semantic) stays for P3b/P3c. **P3a.2 was the natural end of safe
+  autonomous work.**
   - **Naming (user asked 2026-07-09):** targets recorded in §16.3 (`physical::Board` + `ui::UiModel`
     modules now; provisional crates `card-board` + `card-ui-model` at P6; V/O/R→**ranks** at P3b). The
     `ui` module now exists; a `physical` module is the natural next container for the P3a.3 fields.
