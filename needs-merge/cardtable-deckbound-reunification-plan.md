@@ -283,6 +283,14 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.0 — DONE** (`5c84ae8`). Smell fixed: added a `ZoneView` builder
+  (`new`/`with_layout`/`with_owner`/`with_zones`/`with_arrangement`) and migrated all 8 deckbound sites +
+  the binding tests to it — additive seam growth no longer touches call sites. Then carried a card-table
+  `Arrangement` (List/Grid/Free/Rows, distinct from the CCG `Layout`) through the seam so the reunified
+  product keeps its Locations grid / Inn rows / day calendar; `from_table_view` maps it via `set_layout`.
+  New binding test; both golden tiers unchanged; deckbound 109 + model 59 green; clippy clean. Next:
+  **P2.1** — scaffold the emitter `Game` (new crate; State/Action/view/apply) and reproduce the flat banks,
+  asserting `view()`→`from_table_view`→`behavior()` matches those behavioral-golden slices.
 - **P2 — OPENED (design in §14).** Emitter-home decided (new `contract::Game`, compact non-Tableau
   state, reuse deckbound combat); full visual fidelity chosen (carry arrangement). Sub-roadmap P2.0–P2.4
   set. Next executable unit: **P2.0** — carry a card-table arrangement through the seam (additive),
