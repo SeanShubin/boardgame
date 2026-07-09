@@ -49,7 +49,7 @@ pub struct Combatant {
     /// Face-up health cards remaining (Vitality at full); 0 ⇒ fallen at the next boundary.
     pub health: u32,
     /// Damage accumulated this sub-phase; wiped at the sub-phase boundary (sub-threshold damage never carries).
-    pending: u32,
+    pub(crate) pending: u32,
     pub fallen: bool,
 }
 

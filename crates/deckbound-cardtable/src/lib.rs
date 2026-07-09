@@ -9,6 +9,7 @@
 //!
 //! [`BoardGame`]: cardtable_model::BoardGame
 
+pub mod arena;
 mod board_game;
 pub mod combat;
 
