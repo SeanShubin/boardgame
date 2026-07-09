@@ -4,8 +4,76 @@
 > `cdaacd0` → `981960a`) — Stages 1–5 of the build plan. Foes instantiate as real cards; the deckbound
 > resolver is resumable at every decision (`combat::step_manual`, greedy-parity across all existing tests +
 > 40 seeds); `ManualCombat` in `cardtable-combat` owns the card↔actor map, drives the fight diffing
-> `CardMutation`s, and folds it back. **Only the interactive renderer arena remains** (deferred — needs a
-> human: visuals, drag gestures, iPad). The sections below are the design of record.
+> `CardMutation`s, and folds it back. **The interactive arena (step 2) is BUILT** (`688742c`→`012f51b`):
+> rank-lanes view, phase pile, tempo, per-decision prompts, log panel. The sections below are the design of
+> record; **Arena v2 (below) is the next evolution, from the user's narrative vision (2026-07-09).**
+
+---
+
+## Arena v2 — plan-then-commit, two mini-phases (2026-07-09, from the user's narrative)
+
+The built arena (v1) prompts **one decision at a time** and auto-paces. The user's vision is a **plan-then-
+commit board**: per sub-phase you see the whole board, allocate all your strikes + tempo, and commit — with
+persistent **Reset**/**Commit**, everything expressible in **single clicks**, and **default = ignore/hold**.
+
+### Each combat sub-phase splits into two mini-phases (one-way, no back-and-forth)
+1. **Targeting** (offense): pick enemy targets and make **initiating tempo bids** to connect.
+   - Two-step, single-click: tap a legal enemy target (schedule-gated — Intercept → enemy Outriders — and
+     highlighted, with help text "Select outriders to intercept") → your legal strikers light up → tap a
+     striker to spend a Tempo card on that strike; **keep tapping to add tempo, cycle up and back to zero**.
+     Two strikers on one target = two hits. Freely re-target / re-allocate.
+2. **Reaction** (defense): for each incoming blow, **evade / strike-back / eat-it**.
+   - The revealed board shows who's hitting whom. Each **incoming blow** is its own single-click chip cycling
+     `eat-it → evade → strike-back → eat-it` (offering evade/strike-back only when legal + affordable).
+     Strike-back is a flat **1 tempo**, unevadable ("they came to me"); evade pays the finesse-scaled cost;
+     eat-it is free and the **default**.
+
+**Why exactly two, no ping-pong:** offense→defense is strictly one-way (targets lock in Targeting; Reaction
+only negates or counter-hits), and the strike-back is a *free, unevadable riposte* that provokes no new
+decision — so the loop closes at two. This maps directly onto the resolver's own **declare → apply** cycle
+(Targeting = declare, Reaction = apply).
+
+### The rule this pins down
+Reactions are decided against the **revealed pre-damage board**, then all strikes + reactions apply as one
+**order-free batch** → a **committed strike still lands even if its unit dies**, and a **doomed soaker can
+still strike back** (commit-based, not "who's alive post-cascade"). This is *simpler* than the engine's
+current post-cascade strike-back check and is the recommended change. (Aligns with the "cards are truth /
+`apply(all_cards, intentions)->all_cards`, order-free" direction.)
+
+### Rank declaration up front
+Combat opens with the player assigning each hero a rank (V/O/R) — the Marshal step (v1 uses default
+stat-derived ranks; v2 makes declaration step one), then a **Reveal** (foe ranks shown; fog-of-war is a
+future toggle).
+
+### Open design decisions
+- **Cost-model fork — who pays the finesse contest?** The user's narrative has the **attacker** pay
+  finesse-scaled tempo to *connect* an intercept (F2 Vanguard → ⌊3/2⌋+1 = 2 tempo to catch an F3 Outrider).
+  The engine today does the mirror: attacker pays a flat 1 to strike; the **defender** optionally pays
+  ⌊Fa/Fd⌋+1 to *evade* (`policy::avoid_cost`). The user likely wants **both, context-dependent**: initiating
+  on a committed mover = attacker-pays-to-catch; soaking a blow = defender-pays-to-evade-or-eat; strike-back
+  = flat 1. **Decision: adopt the context-dependent model, or map the narrative onto the existing
+  defender-evades model?** (Changes the resolver's cost model.) *Also open:* does over-spending tempo on one
+  strike do anything (bigger hit / a kill), or does tempo buy only the *connection*, not the *damage*?
+- **Mini-phases: rules concept or UI artifact?** Explored 2026-07-09. The split is two things: the
+  **resolution mechanics** (order-free batch — already settled, UI-agnostic) and the **information timing**
+  (commit targets → reveal → react). The discriminator is **hidden information**: with none (solo vs.
+  visible AI, fog off) the mini-phases are **UI pacing**; with **PvP / fog** the commit-reveal boundary is a
+  genuine rules mechanic. **Recommendation:** split along the seam the balance philosophy already draws
+  (§5.1 fidelity rule — solver measures *raw balance*, blind to the *blind-bid / mind-game* layer): keep the
+  **mechanics as an order-free batch** (solver's perfect-info domain, unchanged), and model the
+  **target→react reveal as a thin rules-level information protocol** that is explicitly part of the blind-bid
+  layer the solver doesn't touch. The two mini-phases become the *observable expression* of that protocol —
+  not a UI invention, not baked-in interaction cadence.
+  - **Pros of rules-level:** PvP + fog fall out for free; one source of truth (no UI↔engine drift);
+    save/spectate/replay; a hook for future cards ("at the start of the Reaction phase…"); shared vocabulary.
+  - **Cons of rules-level:** ~2× named sub-phases + restructuring the balance-validated resolver (risk);
+    and hidden-info phases make combat **imperfect-information → the exact solver's perfect-info assumption
+    breaks** (mitigated by keeping it in the blind-bid layer the solver already excludes).
+  - **Fast-ship alternative:** if shipping the *solo* arena first and deferring PvP/fog, keep mechanics
+    order-free, present two mini-phases in the **UI only**, and promote them to rules when PvP arrives (the
+    internal `CyclePhase` cursor makes that a clean upgrade, not a rewrite).
+
+---
 
 
 **Status:** preparation for a large design task. This is the verified ground-truth map + scope + open
