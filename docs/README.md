@@ -19,16 +19,8 @@ How the framework itself is built and extended — shared across every game.
   the `TableView` rendering seam.
 - [Adding a game](technical/adding-a-game.md) — step-by-step.
 
-## Reference (external material)
-
-Rulesets and material from other games, mirrored for study — not games built here.
-
-- [Grand Archive](reference/grand-archive/README.md) — a verbatim local mirror of
-  the Grand Archive TCG Comprehensive Rules (v1.1.1).
-
 ## Layout
 
 - `docs/games/<game>/` — the common root for one game: `rules/` (how to play) and
   `design/` (why it is built that way).
 - `docs/technical/` — framework documentation that applies to all games.
-- `docs/reference/` — external rulesets mirrored for reference.
