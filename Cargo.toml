@@ -11,7 +11,7 @@ members = [
     "crates/deckbound",
     "crates/boardgame",
     "crates/deckbound-sample",
-    "crates/combat-lab",
+    "tools/combat-lab",
     "crates/gatcg",
     "crates/deckbound-cardtable",
 ]
