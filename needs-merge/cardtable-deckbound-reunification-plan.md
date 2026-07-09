@@ -134,8 +134,13 @@ Each phase ends at a compiling, test-green, golden-identical commit (staged by e
   moves into `deckbound` (absorbing `cardtable-combat`). Golden masters unchanged.
 - **P4 — Extract `deckbound-balance`.** Move `balance.rs`/`solver.rs`/`duel.rs` + analysis examples
   + `data/balance/` out of `deckbound`. Pure move; deckbound tests + balance examples still run.
-- **P5 — Demote tooling.** Move `combat-lab`, `gatcg` under `tools/`. Non-destructive; workspace
-  still builds.
+- **P5 — Demote tooling + evict Grand Archive.** `combat-lab` → `tools/` (stays in-repo). **`gatcg`
+  content moves OUT to `../grand-archive`** (a sibling repo): the actual TCG rules, the card-database
+  downloaders, the image/rules mirrors. **Keep in-repo only the comparative-analysis notes** — future
+  design inspiration + game-theoretic comparison of deckbound vs Grand Archive vs Magic: the Gathering.
+  So this repo retains only the *thinking about* Grand Archive, not the Grand Archive *content/tooling*.
+  (User directive; the external move is destructive-for-this-repo, so confirm the `../grand-archive`
+  landing before deleting here.)
 - **P6 — Rename to honest names** (if adopting §4 names). Cosmetic, behavior-preserving.
 - **P7 — Quality review.** Only now run the ECS quality pass, against honest boundaries.
 
