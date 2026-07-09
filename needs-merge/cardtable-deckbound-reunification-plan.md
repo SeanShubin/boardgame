@@ -612,6 +612,22 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 
 ## 11. Progress log (append-only)
 
+- **P3b stretch B — IN PROGRESS (seam contract + game side done; renderer rewire remains).**
+  - Seam contract `BoardGame`/`DropTarget` in `cardtable-model` (`0841ab8`), then **corrected**
+    (`c27b25a`): building surfaced that Combat/Advance-Day are contextual *affordance* control-cards the
+    game declares per zone, not board-card clicks — so `click_intention` → `affordances(board, focus) ->
+    [(label, intention)]` (§18 updated).
+  - Game side (`9d6fd97`): `CardTableGame: BoardGame` in `deckbound-cardtable` — `Intention`
+    (Equip/Unequip/March/AdvanceDay), `apply` as conservation-clean `Tableau` ops, `drop_intention`
+    (equip/unequip/march legality ported from the renderer's predicates), `affordances` (Advance Day).
+    Self-contained + unit-tested; the renderer still uses its own inline `try_equip`/predicates
+    (transient duplication the rewire removes). `CardTableWorld` emitter stays until stretch 4.
+  - **REMAINING — the renderer rewire (own stretch; it can break the working product mid-way):** make
+    `cardtable` drive through `G: BoardGame` (game as a resource) — route `on_drop`/`on_node_drag_end`
+    drops through `drop_intention` + `apply`, render `affordances()` as clickable control cards, delete the
+    inline `try_equip`/`try_unequip`/`can_drop_*`/adjacency/Advance-Day-injection, make the game-touching
+    systems generic. Combat (Combat/ManualCombat card injection + `CombatRequest`/`resolve_combat` + arena)
+    stays until stretch A. Then point `boardgame` at `CardTableGame` via the renderer's generic driver.
 - **P3b stretch 1+2 — DONE** (`4777cd7`). **The product is back on the persistent physical board.**
   Discarded the emitter/`GamePlugin`/`TableView` product path; `boardgame` again drives the physical
   `Tableau` directly via `CardTablePlugin` (`sample_table` world, conservation-clean equip/march/day,
