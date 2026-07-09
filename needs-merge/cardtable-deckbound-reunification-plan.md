@@ -295,6 +295,14 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1d (equip) — DONE** (`2e5fded`). First interaction through the reunified seam: `World` gains a
+  recruited party; the Inn is now the functional recruit view (each un-recruited hero card **pairs onto**
+  a kit; `Action::Equip` recruits). Behavioral projection renders pairings. The emitter's Inn intentionally
+  diverges from `sample_table`'s projection stub, so the gate moved to a fresh `emitter_world` golden;
+  `sample_table.behavior.txt` stays as the old-path witness. Tests: `emitter_world_view` + equip-flow. 9
+  goldens green. Remaining P2.3.1: **march** (character → location), **fight** (start + arena `view()` +
+  per-blow stepping via `resolve_fight`/deckbound's resumable resolver, fresh arena goldens), and **c**
+  the renderer drag-drop + mode toggle in `cardtable` (Bevy, drive with run/verify). Then P2.4.
 - **P2.3.1b — DONE** (`df774dd`). Pairing carries seam → model: `Card` gains `pair_key`/`pairings`
   (native tuples, no contract dep) + accessors/setters; `from_table_view` carries them; `skip_serializing_if`
   keeps the byte format + golden unchanged. So the renderer (reads the Tableau) can perform pairings.

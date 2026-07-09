@@ -6,11 +6,13 @@
 //! `cardtable_model::from_table_view`, so there is no round-trip on the game side. Content is sourced
 //! from [`cardtable_model::catalog`] for now (it moves to this side in a later reorg phase).
 //!
-//! Built one slice at a time, guarded by the characterization behavioral golden. The **entire static
-//! world** is reproduced (all ten zones: the banks, the nested Locations grid + Inn, the Rules
-//! encyclopedia, the day clock) — the characterization test asserts the emitter's full `view()` equals
-//! the shipped world's behavioral projection. Still to come: the interactive fight (combat state → view
-//! → apply), then pointing `boardgame` at this emitter and deleting the hand-wired bypass.
+//! Built one slice at a time, guarded by the characterization behavioral golden. The entire static world
+//! is reproduced (all ten zones: the banks, the nested Locations grid, the Rules encyclopedia, the day
+//! clock), and the first **interaction** now flows through the seam: the Inn is the recruit view where a
+//! hero card *pairs onto* a kit to equip, and [`Action::Equip`] recruits the character. Still to come:
+//! march + the interactive fight (combat state → view → apply), then pointing `boardgame` at this emitter
+//! and deleting the hand-wired bypass. Fight *resolution* already delegates to deckbound with
+//! outcome-parity (see [`resolve_fight`]).
 
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
