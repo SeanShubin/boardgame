@@ -273,6 +273,18 @@ next unit is: build that emitter, guarded by the refined behavioral golden, then
 Flat banks + nesting + rich cards are already proven end-to-end by the P1.1 binding tests; what remains is
 authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`fixtures`) as a view.
 
+## 15. Interaction model (decided)
+
+The `contract` seam expressed only click-actions, but the product's equip is a **drag** (hero onto kit).
+Decision (user): **grow the seam for drag-drop**, but state it **neutrally** as a *pairing* so the renderer
+performs it as a drag-drop **or** a click-source-then-target, per an **interaction-mode toggle** — one or
+the other, never both at once (user prefers toggling over supporting both, which reads as clunky). So the
+mode toggle is a **renderer-side** switch with zero game/seam change. Drag-drop is the default mode; the
+click-only mode is a later `cardtable` toggle. Implemented in `contract` as `Pairing { onto, action }` +
+`CardView.pair_key`/`pairings` (P2.3.1a). Drag-to-*arrange* piles stays a pure renderer service (not a
+game interaction). Note: only relevant to *game-meaningful* drags (equip); the arena's per-blow prompts are
+plain click-actions.
+
 ## 10. Observations (non-blocking; not behavior changes to make in this pass)
 
 - **The product's RON save is non-canonical.** `Tableau` stores `piles`/`cards` in `HashMap`s, so
@@ -283,6 +295,12 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1a — DONE** (`34d58d2`). Interaction model decided (§15): grow the seam for a **neutral pairing**
+  (drag-drop or click-then-click per a renderer-side mode toggle). Added `contract::Pairing` +
+  `CardView.pair_key`/`pairings` + builders; additive, unit-tested, goldens unchanged. Remaining P2.3.1:
+  **b** carry pairing through `from_table_view` → model `Card`; **c** renderer drag-drop handling + the
+  mode toggle in `cardtable`; **d** emitter `World` state + equip/march/fight actions + arena `view()`;
+  bless fresh arena goldens. Then P2.4 routing.
 - **P2.3.0 — DONE** (`7f2d622`). Combat acceptance criterion set to **outcome-parity + fresh arena**
   (user decision). Added `resolve_fight(kit, location, seed)` to the emitter: builds the same `DuelUnit`s
   the old path built (kit from catalog ROSTER + strike shape; foes from the encounter) and delegates to
