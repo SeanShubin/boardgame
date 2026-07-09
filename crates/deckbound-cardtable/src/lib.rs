@@ -14,6 +14,7 @@
 
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
+use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
 
 /// The card-table world game.
 pub struct CardTableWorld;
@@ -345,4 +346,79 @@ fn bestiary_zone() -> ZoneView {
         })
         .collect();
     labeled("Bestiary", cards)
+}
+
+// --- combat --------------------------------------------------------------------------------------
+//
+// Fight resolution delegates to deckbound's deterministic resolver. The emitter builds the same
+// `DuelUnit`s the old `cardtable-combat` path built — a hero from its kit (catalog `ROSTER` + strike
+// shape), the foes from the location's encounter (catalog) — so the outcome matches the old path by
+// construction. This is the combat logic moving from `cardtable-combat` to the emitter side; the
+// interactive arena (view + per-blow stepping) is authored on top of it next.
+
+/// `[u8; 5]` → the resolver's `(Might, Vitality, Toughness, Cadence, Finesse)` tuple.
+fn stat5(s: [u8; 5]) -> Stat5 {
+    (
+        s[0] as u32,
+        s[1] as u32,
+        s[2] as u32,
+        s[3] as u32,
+        s[4] as u32,
+    )
+}
+
+/// A kit as a combat unit: its stat line plus the strike shape derived from its signature ability.
+fn kit_unit(kit: &str) -> Option<DuelUnit> {
+    let (name, stats, ability) = catalog::ROSTER.iter().find(|(n, _, _)| *n == kit)?;
+    let (ranged, aoe) = catalog::ability_shape(ability);
+    Some(DuelUnit {
+        name: (*name).to_string(),
+        ability: (*ability).to_string(),
+        stats: stat5(*stats),
+        ranged,
+        aoe,
+        count: 1,
+        hoard: false,
+        pos: None,
+    })
+}
+
+/// The foes stationed at `location` as combat units — the encounter's `(creature, quantity)` roster from
+/// the catalog, expanded so a `×2` keystone fields two. Empty if the location has no encounter.
+fn foe_units(location: &str) -> Vec<DuelUnit> {
+    let Some(enc) = catalog::encounter_for(location) else {
+        return Vec::new();
+    };
+    let mut units = Vec::new();
+    for (creature, qty) in catalog::encounter_foes(enc) {
+        for _ in 0..qty {
+            units.push(DuelUnit {
+                name: creature.name.to_string(),
+                ability: creature.ability.to_string(),
+                stats: stat5(creature.stats),
+                ranged: creature.ranged,
+                aoe: creature.aoe,
+                count: 1,
+                hoard: creature.hoard,
+                pos: creature.pos.map(str::to_string),
+            });
+        }
+    }
+    units
+}
+
+/// Resolve a fight: `kit` vs the encounter at `location`, seeded. Returns the turn-by-turn log and whether
+/// the hero won (`Some(true)`), lost/drew (`Some(false)`), or the fight was a no-op (`None` — unknown kit
+/// or a location with no encounter). Delegates to deckbound's deterministic resolver, so the outcome
+/// matches the old `cardtable-combat` path for the same inputs and seed.
+pub fn resolve_fight(kit: &str, location: &str, seed: u64) -> Option<(bool, Vec<String>)> {
+    let hero = kit_unit(kit)?;
+    let foes = foe_units(location);
+    if foes.is_empty() {
+        return None;
+    }
+    let hero_actors = vec![build_duel_unit(&hero)];
+    let foe_actors = foes.iter().map(build_duel_unit).collect();
+    let (won, log) = deckbound::resolve_logged(hero_actors, foe_actors, seed);
+    Some((won == Some(true), log))
 }

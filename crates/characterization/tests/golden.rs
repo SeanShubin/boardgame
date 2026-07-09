@@ -388,3 +388,36 @@ fn emitter_reproduces_the_static_world() {
         "the emitter's full view no longer equals the shipped world's behavioral projection"
     );
 }
+
+/// P2.3.0: the emitter's fight resolution matches the old `cardtable-combat` path's outcome for the same
+/// kit + location + seed. Both delegate to deckbound's deterministic resolver, so outcome-parity holds by
+/// construction — this pins it. (Outcome-parity is the P2.3 acceptance criterion; the arena presentation
+/// is authored fresh on top of this and blessed separately.)
+#[test]
+fn emitter_fight_outcomes_match_the_old_path() {
+    let cases = [
+        ("Marksman", marksman(), "Cinderwatch Keep", 1u64),
+        ("Marksman", marksman(), "Cinderwatch Keep", 7),
+        ("Executioner", executioner(), "Cinderwatch Keep", 1),
+    ];
+    for (kit, recipe, location, seed) in cases {
+        // Old path: station the hero on the sample table, then resolve the encounter.
+        let mut t = sample_table();
+        let place = station_at(&mut t, recipe, location);
+        let old = resolve_encounter(&mut t, place, seed);
+
+        // New path: the emitter resolves the kit vs the location's encounter directly.
+        let (won, _log) = deckbound_cardtable::resolve_fight(kit, location, seed)
+            .expect("the location has an encounter");
+        let new = if won {
+            cardtable_combat::CombatOutcome::Win
+        } else {
+            cardtable_combat::CombatOutcome::Loss
+        };
+
+        assert_eq!(
+            old, new,
+            "outcome parity for {kit} @ {location} seed {seed}"
+        );
+    }
+}
