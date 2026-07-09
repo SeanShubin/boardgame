@@ -494,6 +494,67 @@ fn emitter_march_moves_a_character() {
     );
 }
 
+/// P2.3.1-fight: the Fight action auto-resolves through the seam. A character stationed where an encounter
+/// waits pairs onto it to fight; `apply(Fight)` resolves via deckbound (outcome-parity), and on a win the
+/// encounter clears — its card is gone, a Victory combat-log is left, and it can't be fought again.
+#[test]
+fn emitter_fight_clears_an_encounter() {
+    use cardtable_model::from_table_view;
+    use contract::Game;
+    use deckbound_cardtable::Action;
+
+    // Seed 7: Marksman clears Cinderwatch Keep (the Coil) — the same matchup the parity test pins.
+    let game = deckbound_cardtable::CardTableWorld;
+    let mut world = game.new_game(7, 1);
+    game.apply(&mut world, &Action::Equip { hero: 0, kit: 2 })
+        .unwrap();
+    game.apply(
+        &mut world,
+        &Action::March {
+            character: 0,
+            location: 1,
+        },
+    )
+    .unwrap();
+
+    let before = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        before.contains("The Coiled Sentry | type=\"encounter\""),
+        "the encounter is present before the fight"
+    );
+    assert!(
+        game.legal_actions(&world)
+            .iter()
+            .any(|a| matches!(a, Action::Fight { character: 0 })),
+        "the character is offered a fight"
+    );
+
+    game.apply(&mut world, &Action::Fight { character: 0 })
+        .expect("the fight resolves");
+
+    let after = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        !after.contains("The Coiled Sentry | type=\"encounter\""),
+        "the cleared encounter card is gone"
+    );
+    assert!(
+        after.contains("Victory | type=\"log\""),
+        "a Victory combat-log is left"
+    );
+    assert!(
+        !game
+            .legal_actions(&world)
+            .iter()
+            .any(|a| matches!(a, Action::Fight { character: 0 })),
+        "no more fight offered once cleared"
+    );
+    assert!(
+        game.apply(&mut world, &Action::Fight { character: 0 })
+            .is_err(),
+        "fighting a cleared encounter errors"
+    );
+}
+
 /// P2.3.0: the emitter's fight resolution matches the old `cardtable-combat` path's outcome for the same
 /// kit + location + seed. Both delegate to deckbound's deterministic resolver, so outcome-parity holds by
 /// construction — this pins it. (Outcome-parity is the P2.3 acceptance criterion; the arena presentation

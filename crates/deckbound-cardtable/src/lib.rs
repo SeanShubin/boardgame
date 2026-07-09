@@ -21,12 +21,36 @@ use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
 /// The card-table world game.
 pub struct CardTableWorld;
 
-/// The compact world state — **not** a `Tableau`. Grows as interaction lands; for now it holds the
-/// recruited party (equipped characters). Cleared locations, the day, and any active fight come next.
+/// The compact world state — **not** a `Tableau`. Holds the RNG seed, the recruited party, and resolved
+/// fights (their logs / cleared encounters). The interactive per-blow arena is layered on next.
 #[derive(Clone, Default)]
 pub struct World {
+    /// The RNG seed for this game's fights (from `new_game`).
+    seed: u64,
     /// Recruited characters (a hero paired with a kit), in recruit order.
     party: Vec<Character>,
+    /// Resolved fights, in order — the outcome + log per location.
+    results: Vec<FightResult>,
+}
+
+impl World {
+    /// Whether the encounter at location `idx` has been cleared (a won fight).
+    fn cleared(&self, idx: usize) -> bool {
+        self.results.iter().any(|r| r.location == idx && r.won)
+    }
+
+    /// The latest fight result at location `idx`, if any.
+    fn last_result(&self, idx: usize) -> Option<&FightResult> {
+        self.results.iter().rev().find(|r| r.location == idx)
+    }
+}
+
+/// A resolved fight — its outcome and turn-by-turn log, stationed at a location.
+#[derive(Clone)]
+struct FightResult {
+    location: usize,
+    won: bool,
+    log: Vec<String>,
 }
 
 /// One recruited character — a hero index (into [`HEROES`]) equipped with a kit index (into
@@ -47,14 +71,19 @@ pub enum Action {
     Equip { hero: usize, kit: usize },
     /// March party character #`character` to location #`location` (an index into [`LOCATIONS`]).
     March { character: usize, location: usize },
+    /// Fight: character #`character` attacks the encounter at its current location.
+    Fight { character: usize },
 }
 
 impl Game for CardTableWorld {
     type State = World;
     type Action = Action;
 
-    fn new_game(&self, _seed: u64, _players: usize) -> World {
-        World::default()
+    fn new_game(&self, seed: u64, _players: usize) -> World {
+        World {
+            seed,
+            ..World::default()
+        }
     }
 
     fn current_player(&self, _state: &World) -> Option<PlayerId> {
@@ -85,6 +114,14 @@ impl Game for CardTableWorld {
                 }
             }
         }
+        // Fight: each character stationed where an un-cleared encounter waits.
+        for (character, ch) in world.party.iter().enumerate() {
+            if catalog::encounter_for(LOCATIONS[ch.location]).is_some()
+                && !world.cleared(ch.location)
+            {
+                acts.push(Action::Fight { character });
+            }
+        }
         acts
     }
 
@@ -99,6 +136,10 @@ impl Game for CardTableWorld {
             } => {
                 let who = state.party.get(character).map_or("?", |c| HEROES[c.hero]);
                 format!("March {who} to {}", LOCATIONS[location])
+            }
+            Action::Fight { character } => {
+                let who = state.party.get(character).map_or("?", |c| HEROES[c.hero]);
+                format!("Fight with {who}")
             }
         }
     }
@@ -131,6 +172,30 @@ impl Game for CardTableWorld {
                     .get_mut(character)
                     .ok_or_else(|| GameError::new("no such character"))?;
                 ch.location = location;
+                Ok(())
+            }
+            Action::Fight { character } => {
+                let (loc, kit_idx) = {
+                    let ch = world
+                        .party
+                        .get(character)
+                        .ok_or_else(|| GameError::new("no such character"))?;
+                    (ch.location, ch.kit)
+                };
+                let loc_name = LOCATIONS[loc];
+                if catalog::encounter_for(loc_name).is_none() {
+                    return Err(GameError::new("no encounter at this location"));
+                }
+                if world.cleared(loc) {
+                    return Err(GameError::new("this encounter is already cleared"));
+                }
+                let (won, log) = resolve_fight(catalog::ROSTER[kit_idx].0, loc_name, world.seed)
+                    .ok_or_else(|| GameError::new("no fight to resolve"))?;
+                world.results.push(FightResult {
+                    location: loc,
+                    won,
+                    log,
+                });
                 Ok(())
             }
         }
@@ -267,22 +332,40 @@ const ASHFEN: usize = 4;
 /// The pairing-key base for **location** targets — a character marches by pairing onto a Location card.
 /// Offset past the kit keys (0–3) so pairing keys never collide within a view.
 const LOC_KEY_BASE: u32 = 100;
+/// The pairing-key base for **encounter** targets — a character fights by pairing onto an encounter card.
+const ENC_KEY_BASE: u32 = 200;
 
-/// One place on the map: its `Location` name card (a **march target**), its **encounter** (non-inn) or
-/// the **Inn** recruit sub-zone (Ashfen), and any **characters** stationed here — each pairing onto
-/// another location's card to march there.
+/// One place on the map: its `Location` name card (a **march target**); its **encounter** (a **fight
+/// target**, shown until cleared) or the **Inn** recruit sub-zone (Ashfen); a **combat-log** card once
+/// fought; and any **characters** stationed here — each pairing onto other locations to march and onto
+/// the encounter to fight.
 fn place_zone(idx: usize, place: &str, world: &World, acts: &[Action]) -> ZoneView {
+    let encounter = if place == "Ashfen Crossing" {
+        None
+    } else {
+        catalog::encounter_for(place)
+    };
+    let cleared = world.cleared(idx);
+    let fightable = encounter.is_some() && !cleared;
+
     let mut cards = vec![
         CardView::up(place)
             .typed("Location")
             .pair_key(LOC_KEY_BASE + idx as u32),
     ];
-    if place != "Ashfen Crossing"
-        && let Some(enc) = catalog::encounter_for(place)
+    if let Some(enc) = encounter
+        && !cleared
     {
-        cards.push(encounter_card(enc));
+        cards.push(encounter_card(enc).pair_key(ENC_KEY_BASE + idx as u32));
     }
-    // Characters stationed here, each able to march onto another location.
+    if let Some(r) = world.last_result(idx) {
+        cards.push(
+            CardView::up(if r.won { "Victory" } else { "Defeat" })
+                .typed("log")
+                .panel(r.log.clone()),
+        );
+    }
+    // Characters stationed here — each marches onto another location, and fights the encounter here.
     for (c, ch) in world.party.iter().enumerate() {
         if ch.location != idx {
             continue;
@@ -297,6 +380,13 @@ fn place_zone(idx: usize, place: &str, world: &World, acts: &[Action]) -> ZoneVi
             ) {
                 card = card.pairs_onto(LOC_KEY_BASE + l as u32, a);
             }
+        }
+        if fightable
+            && let Some(a) = acts
+                .iter()
+                .position(|a| matches!(a, Action::Fight { character } if *character == c))
+        {
+            card = card.pairs_onto(ENC_KEY_BASE + idx as u32, a);
         }
         cards.push(card);
     }
