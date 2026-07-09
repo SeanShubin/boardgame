@@ -46,6 +46,9 @@ mod board_driver;
 use board_driver::AffordanceClick;
 pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
 
+mod logging;
+pub use logging::LoggingPlugin;
+
 mod gallery;
 pub use gallery::run_card_gallery;
 

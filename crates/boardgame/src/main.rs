@@ -13,7 +13,8 @@ mod persistence;
 use bevy::prelude::*;
 use cardtable::{
     ActionRequests, ArenaCombat, ArenaState, BoardGamePlugin, BuildInfo, CardTableSet,
-    CombatRequest, FactoryBase, ManualCombatRequest, NeedsRebuild, StatusLine, Table,
+    CombatRequest, FactoryBase, LoggingPlugin, ManualCombatRequest, NeedsRebuild, StatusLine,
+    Table,
 };
 use cardtable_combat::{begin_manual_combat, resolve_encounter};
 use cardtable_model::{Tableau, sample_table};
@@ -40,7 +41,7 @@ fn main() -> AppExit {
     // Drive the game-agnostic renderer from the deckbound `BoardGame` over the persistent board. The
     // plugin seeds `Table` from the game's opening position; we then override it with the saved session if
     // there is one (web: localStorage, native: OS data dir). The System deck is re-injected idempotently.
-    app.add_plugins(BoardGamePlugin(CardTableGame))
+    app.add_plugins((BoardGamePlugin(CardTableGame), LoggingPlugin))
         .insert_resource(Table(persistence::load().unwrap_or_else(sample_table)))
         // The pristine table "Start Over" resets to (a fresh sample, discarding save + session).
         .insert_resource(FactoryBase(sample_table()))
