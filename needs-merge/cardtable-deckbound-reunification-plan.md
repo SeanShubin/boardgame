@@ -558,6 +558,18 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 
 ## 11. Progress log (append-only)
 
+- **P3b stretch 1+2 — DONE** (`4777cd7`). **The product is back on the persistent physical board.**
+  Discarded the emitter/`GamePlugin`/`TableView` product path; `boardgame` again drives the physical
+  `Tableau` directly via `CardTablePlugin` (`sample_table` world, conservation-clean equip/march/day,
+  combat via `cardtable-combat`, RON persistence + Start-Over) — restored from the pre-reunification
+  wiring (git `main`) and it compiled against the branch unchanged. Boots to the physical-board world with
+  **no rail buttons** (screenshot); gate tests green (model 60 + characterization 6). **Both live defects
+  fixed structurally:** equip-buttons (no rail-from-legal-actions mechanism exists) and focus/drag reset
+  (one persistent Tableau, not rebuilt). `deckbound-cardtable` (the emitter) is now unused by the product.
+  *Still to verify in-app (needs driving the app): the actual drag-equip on the Inn projection + the Inn
+  rows render (task #11) — structurally sound (proven old-Inn code with Header rows + projection), not yet
+  eyeballed.* **Remaining P3b:** stretch 3 combat→rank×phase batch; stretch 4 purge/relocate (game ops out
+  of `cardtable-model` to the game side + generic-strip + physical/UI side-tables + delete dead emitter).
 - **P3a.2 — DONE** (`873f3dd`). Separated the **attention state** out of the physical `Tableau`: `focus`,
   `selection`, and the renderer-fed transient `surface`/`pinned` moved into a distinct `ui::UiModel`
   sub-struct that `Tableau` holds; the public methods delegate through `self.ui`. The physical tree
