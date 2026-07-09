@@ -555,6 +555,65 @@ fn emitter_fight_clears_an_encounter() {
     );
 }
 
+/// P2.3.1-arena: the interactive arena drives deckbound's resumable battle. Opening it takes over the
+/// felt (the view becomes the Arena — combatants with Health + the running log); stepping advances the
+/// fight; when it ends it folds back to the world (Victory log + cleared encounter). Foundation answers
+/// greedily, so the outcome still matches the resolver; per-blow player choices replace that next.
+#[test]
+fn emitter_arena_plays_a_fight_to_completion() {
+    use cardtable_model::from_table_view;
+    use contract::Game;
+    use deckbound_cardtable::Action;
+
+    let game = deckbound_cardtable::CardTableWorld;
+    let mut world = game.new_game(7, 1);
+    game.apply(&mut world, &Action::Equip { hero: 0, kit: 2 })
+        .unwrap();
+    game.apply(
+        &mut world,
+        &Action::March {
+            character: 0,
+            location: 1,
+        },
+    )
+    .unwrap();
+
+    // Open the arena at Cinderwatch (the Coil).
+    game.apply(&mut world, &Action::Arena { character: 0 })
+        .expect("the arena opens");
+    let arena = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(arena.contains("[Arena]"), "the arena takes over the felt");
+    assert!(arena.contains("The Coil"), "the foe is shown in the arena");
+
+    // Step to completion — while fighting, StepArena is the only legal move.
+    let mut guard = 0;
+    while game
+        .legal_actions(&world)
+        .iter()
+        .any(|a| matches!(a, Action::StepArena))
+    {
+        game.apply(&mut world, &Action::StepArena)
+            .expect("the arena steps");
+        guard += 1;
+        assert!(guard < 1000, "the fight must terminate");
+    }
+
+    // Folded back: Marksman won, arena closed, encounter cleared, a Victory log left.
+    let after = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        !after.contains("[Arena]"),
+        "the arena closes when the fight ends"
+    );
+    assert!(
+        after.contains("Victory | type=\"log\""),
+        "the win folds back as a Victory log"
+    );
+    assert!(
+        !after.contains("The Coiled Sentry | type=\"encounter\""),
+        "the cleared encounter is gone"
+    );
+}
+
 /// P2.3.0: the emitter's fight resolution matches the old `cardtable-combat` path's outcome for the same
 /// kit + location + seed. Both delegate to deckbound's deterministic resolver, so outcome-parity holds by
 /// construction — this pins it. (Outcome-parity is the P2.3 acceptance criterion; the arena presentation

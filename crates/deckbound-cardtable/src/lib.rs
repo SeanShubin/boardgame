@@ -17,6 +17,10 @@
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
+use deckbound::combat::{PendingDecision, answer_pending_greedily_side};
+use deckbound::game::{battle_state_with, hero_won};
+use deckbound::ruleset::Ruleset;
+use deckbound::{Actor, Deckbound, ManualStatus, State};
 
 /// The card-table world game.
 pub struct CardTableWorld;
@@ -31,6 +35,15 @@ pub struct World {
     party: Vec<Character>,
     /// Resolved fights, in order — the outcome + log per location.
     results: Vec<FightResult>,
+    /// The **active interactive fight** (the arena), if one is underway. While set, the view is the arena.
+    fight: Option<Fight>,
+}
+
+/// An in-progress interactive fight — deckbound's resumable battle [`State`] plus the location it is at.
+#[derive(Clone)]
+struct Fight {
+    state: State,
+    location: usize,
 }
 
 impl World {
@@ -71,8 +84,13 @@ pub enum Action {
     Equip { hero: usize, kit: usize },
     /// March party character #`character` to location #`location` (an index into [`LOCATIONS`]).
     March { character: usize, location: usize },
-    /// Fight: character #`character` attacks the encounter at its current location.
+    /// Fight: character #`character` **auto-resolves** the encounter at its current location.
     Fight { character: usize },
+    /// Open the interactive **arena**: character #`character` fights the encounter blow-by-blow.
+    Arena { character: usize },
+    /// Advance the active arena one step (foundation: answers the hero decision greedily; per-blow player
+    /// choices replace this next). Folds the result when the fight ends.
+    StepArena,
 }
 
 impl Game for CardTableWorld {
@@ -91,6 +109,10 @@ impl Game for CardTableWorld {
     }
 
     fn legal_actions(&self, world: &World) -> Vec<Action> {
+        // While the arena is up, the only move is to step it (per-blow choices arrive here next).
+        if world.fight.is_some() {
+            return vec![Action::StepArena];
+        }
         // Every un-recruited hero × every kit is a legal equip. Stable order (hero-major) so the view's
         // pairing indices line up with this list.
         let equipped: Vec<usize> = world.party.iter().map(|c| c.hero).collect();
@@ -114,12 +136,13 @@ impl Game for CardTableWorld {
                 }
             }
         }
-        // Fight: each character stationed where an un-cleared encounter waits.
+        // Fight / Arena: each character stationed where an un-cleared encounter waits.
         for (character, ch) in world.party.iter().enumerate() {
             if catalog::encounter_for(LOCATIONS[ch.location]).is_some()
                 && !world.cleared(ch.location)
             {
                 acts.push(Action::Fight { character });
+                acts.push(Action::Arena { character });
             }
         }
         acts
@@ -141,6 +164,11 @@ impl Game for CardTableWorld {
                 let who = state.party.get(character).map_or("?", |c| HEROES[c.hero]);
                 format!("Fight with {who}")
             }
+            Action::Arena { character } => {
+                let who = state.party.get(character).map_or("?", |c| HEROES[c.hero]);
+                format!("Enter the arena with {who}")
+            }
+            Action::StepArena => "Advance the arena".into(),
         }
     }
 
@@ -198,6 +226,56 @@ impl Game for CardTableWorld {
                 });
                 Ok(())
             }
+            Action::Arena { character } => {
+                if world.fight.is_some() {
+                    return Err(GameError::new("a fight is already underway"));
+                }
+                let (loc, kit_idx) = {
+                    let ch = world
+                        .party
+                        .get(character)
+                        .ok_or_else(|| GameError::new("no such character"))?;
+                    (ch.location, ch.kit)
+                };
+                if catalog::encounter_for(LOCATIONS[loc]).is_none() {
+                    return Err(GameError::new("no encounter at this location"));
+                }
+                if world.cleared(loc) {
+                    return Err(GameError::new("this encounter is already cleared"));
+                }
+                let mut state = start_battle(kit_idx, loc, world.seed)
+                    .ok_or_else(|| GameError::new("no fight to open"))?;
+                drive_to_hero_decision(&mut state);
+                if state.outcome.is_some() {
+                    fold_fight(world, loc, &state);
+                } else {
+                    world.fight = Some(Fight {
+                        state,
+                        location: loc,
+                    });
+                }
+                Ok(())
+            }
+            Action::StepArena => {
+                {
+                    let fight = world
+                        .fight
+                        .as_mut()
+                        .ok_or_else(|| GameError::new("no arena is open"))?;
+                    // Foundation: answer the hero decision greedily, then drive to the next pause.
+                    answer_pending_greedily_side(&mut fight.state, 0);
+                    drive_to_hero_decision(&mut fight.state);
+                }
+                if world
+                    .fight
+                    .as_ref()
+                    .is_some_and(|f| f.state.outcome.is_some())
+                {
+                    let fight = world.fight.take().expect("just checked it is some");
+                    fold_fight(world, fight.location, &fight.state);
+                }
+                Ok(())
+            }
         }
     }
 
@@ -206,6 +284,14 @@ impl Game for CardTableWorld {
     }
 
     fn view(&self, world: &World, _perspective: Option<PlayerId>) -> TableView {
+        // While a fight is underway, the arena takes over the felt.
+        if let Some(fight) = &world.fight {
+            return TableView {
+                status: "Arena".into(),
+                zones: vec![arena_zone(fight)],
+                ..Default::default()
+            };
+        }
         let acts = self.legal_actions(world);
         TableView {
             status: "Card table".into(),
@@ -663,4 +749,122 @@ pub fn resolve_fight(kit: &str, location: &str, seed: u64) -> Option<(bool, Vec<
     let foe_actors = foes.iter().map(build_duel_unit).collect();
     let (won, log) = deckbound::resolve_logged(hero_actors, foe_actors, seed);
     Some((won == Some(true), log))
+}
+
+// --- interactive arena ---------------------------------------------------------------------------
+//
+// The arena drives deckbound's *resumable* battle: build a `State`, then advance one atomic transition
+// at a time, answering the foe side greedily and pausing for the hero's per-blow choices. This is the
+// same resolver as `resolve_fight` (so outcomes still match), stepped instead of played out at once.
+
+/// Build the seeded battle `State` for `kit` vs the encounter at `location`, or `None` if there is none.
+fn start_battle(kit_idx: usize, location: usize, seed: u64) -> Option<State> {
+    let hero = kit_unit(catalog::ROSTER[kit_idx].0)?;
+    let foes = foe_units(LOCATIONS[location]);
+    if foes.is_empty() {
+        return None;
+    }
+    let heroes = vec![build_duel_unit(&hero)];
+    let creatures = foes.iter().map(build_duel_unit).collect();
+    Some(battle_state_with(
+        heroes,
+        creatures,
+        false,
+        seed,
+        Ruleset::analysis(),
+    ))
+}
+
+/// Whether a pending decision is an **unanswered hero** (side 0) decision — the ones the player owns.
+fn hero_undecided(pd: &PendingDecision) -> bool {
+    matches!(
+        pd,
+        PendingDecision::Target {
+            side: 0,
+            answer: None,
+            ..
+        } | PendingDecision::Evade {
+            side: 0,
+            answer: None,
+            ..
+        } | PendingDecision::StrikeBack {
+            side: 0,
+            answer: None,
+            ..
+        }
+    )
+}
+
+/// Advance the fight, answering the **foe** side greedily, until a hero decision awaits or it finishes.
+fn drive_to_hero_decision(state: &mut State) {
+    let db = Deckbound;
+    loop {
+        match db.advance_manual_battle(state) {
+            ManualStatus::Finished => return,
+            ManualStatus::Advanced => continue,
+            ManualStatus::Deciding => {
+                answer_pending_greedily_side(state, 1); // the foe AI answers its own decisions
+                if state.pending.iter().any(hero_undecided) {
+                    return; // the player must answer before we go on
+                }
+                // Only foe decisions were pending; they are answered now — loop to consume them.
+            }
+        }
+    }
+}
+
+/// Record a finished fight's outcome + log at its location.
+fn fold_fight(world: &mut World, location: usize, state: &State) {
+    world.results.push(FightResult {
+        location,
+        won: hero_won(state),
+        log: state.log.clone(),
+    });
+}
+
+/// The arena view: the hero combatants, the foe combatants (each a card with its remaining Health), any
+/// hero decision awaiting an answer, and the running log.
+fn arena_zone(fight: &Fight) -> ZoneView {
+    let mut cards = Vec::new();
+    for a in &fight.state.heroes {
+        cards.push(combatant_card(a, "hero"));
+    }
+    for a in &fight.state.creatures {
+        cards.push(combatant_card(a, "foe"));
+    }
+    for pd in fight.state.pending.iter().filter(|pd| hero_undecided(pd)) {
+        cards.push(CardView::up(pending_label(pd)).typed("decision"));
+    }
+    if !fight.state.log.is_empty() {
+        cards.push(
+            CardView::up("Combat log")
+                .typed("log")
+                .panel(fight.state.log.clone()),
+        );
+    }
+    ZoneView::new("Arena", cards)
+}
+
+/// One combatant as a card — its name, a `remaining/max` Health line, and whether it has fallen.
+fn combatant_card(a: &Actor, kind: &str) -> CardView {
+    let hp = format!(
+        "HP {}/{}",
+        a.defense.health.remaining(),
+        a.defense.health.max()
+    );
+    let line = if a.is_down() {
+        format!("{hp} — down")
+    } else {
+        hp
+    };
+    CardView::up(a.name.clone()).typed(kind).body(vec![line])
+}
+
+/// A short label for a pending hero decision (the affordance the player will answer next).
+fn pending_label(pd: &PendingDecision) -> String {
+    match pd {
+        PendingDecision::Target { attacker, .. } => format!("{attacker}: choose a target"),
+        PendingDecision::Evade { .. } => "Evade the blow?".into(),
+        PendingDecision::StrikeBack { .. } => "Strike back?".into(),
+    }
 }
