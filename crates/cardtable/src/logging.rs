@@ -233,7 +233,7 @@ fn log_layout(
             Some((name, tl.x, tl.y, size.x, size.y, zoom))
         })
         .collect();
-    boxes.sort_by(|a, b| (a.2 as i32, a.1 as i32).cmp(&(b.2 as i32, b.1 as i32)));
+    boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
 
     let cards_block: String = boxes
         .iter()
