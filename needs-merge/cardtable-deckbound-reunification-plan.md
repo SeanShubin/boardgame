@@ -479,11 +479,20 @@ pub trait BoardGame {
     fn opening(&self) -> Board;                                    // the starting board (sample_table)
     fn apply(&self, board: &mut Board, intentions: &[Self::Intention]);   // batch, order-free (§0.2)
     fn drop_intention(&self, board: &Board, dragged: CardId, onto: DropTarget) -> Option<Self::Intention>;
-    fn click_intention(&self, board: &Board, card: CardId) -> Option<Self::Intention>;
+    fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Self::Intention)>;
 }
-// DropTarget = Card(CardId) | Pile(PileId).  Some(intention) = legal, None = illegal (subsumes the
-// renderer's can_drop_on_card / can_drop_on_pile predicates). The renderer is generic over G: BoardGame.
+// DropTarget = Card(CardId) | Pile(PileId).  drop_intention: Some=legal, None=illegal (subsumes
+// can_drop_on_card / can_drop_on_pile). The renderer is generic over G: BoardGame.
 ```
+
+**Design correction found while building (2026-07-09):** the game's click-triggered actions — **Combat**,
+**Advance Day** — are *not* clicks on board cards; they are contextual **affordance control-cards** the
+renderer injects when a zone qualifies (`location_ready_for_combat`, being in the day track). So a
+`click_intention(board, card)` is the wrong shape (the game can't recognize a renderer-injected control
+card from the board). Replaced it with **`affordances(board, focus) -> [(label, intention)]`**: the game
+*declares* the zone's actions, the renderer draws each as a clickable card. This subsumes the hardcoded
+Combat/Advance-Day injection + the `location_ready_for_combat` predicate. `Intention` gains `AdvanceDay`
+(and `Fight`/`Arena` at stretch A) as affordance-borne, plus `Equip`/`Unequip`/`March` as drop-borne.
 - **Intention** (game-side enum): `Equip{hero,kit}`, `Unequip{hero}`, `March{who,to}`, `AdvanceDay`.
   Combat intentions join in stretch A.
 - The renderer turns a gesture into `Option<Intention>` via the trait, then calls `apply` on the

@@ -46,7 +46,10 @@ pub trait BoardGame {
         onto: DropTarget,
     ) -> Option<Self::Intention>;
 
-    /// Interpret clicking `card` as a game move (e.g. an Advance-Day card), or `None` when the click is
-    /// pure navigation/examination the renderer handles itself.
-    fn click_intention(&self, board: &Tableau, card: CardId) -> Option<Self::Intention>;
+    /// The contextual game actions offered in the currently-focused zone — each `(label, intention)`
+    /// becomes a clickable **control card** the renderer draws (e.g. "Fight" when a location is ready,
+    /// "Advance Day" in the day track). These are *not* board cards the game recognizes on click; the game
+    /// *declares* them, so the renderer stays game-agnostic. Replaces the renderer's hardcoded affordance
+    /// injection + `location_ready_for_combat`-style predicates. Empty = the zone offers no game action.
+    fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Self::Intention)>;
 }
