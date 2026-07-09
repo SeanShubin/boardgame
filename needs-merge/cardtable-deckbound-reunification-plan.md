@@ -283,6 +283,15 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.3.0 — DONE** (`7f2d622`). Combat acceptance criterion set to **outcome-parity + fresh arena**
+  (user decision). Added `resolve_fight(kit, location, seed)` to the emitter: builds the same `DuelUnit`s
+  the old path built (kit from catalog ROSTER + strike shape; foes from the encounter) and delegates to
+  deckbound's resolver, so outcomes match by construction. Parity test pins it (Marksman@Cinderwatch
+  seeds 1/7 → Win, Executioner → Loss vs the old `resolve_encounter`). Combat logic is moving from
+  `cardtable-combat` to the emitter. Next: **P2.3.1** — the interactive **arena presentation**: model
+  `World` state (party/positions/day/active fight) + `Action` (equip/march/fight + per-blow prompts),
+  `view()` renders the arena as zones, `apply()` steps it (following the `manual-combat-design` notes);
+  bless fresh arena goldens. Then P2.4 route `boardgame`, delete the bypass, retire the old combat goldens.
 - **P2.2b — DONE** (`fd03d47`). Added the Rules encyclopedia (6 phases + nested Engage). With every
   top-level zone authored, strengthened the test to **full-world equality**: the emitter's entire
   `view()` → `from_table_view` → `behavior()` equals `sample_table.behavior.txt`. **The complete static
