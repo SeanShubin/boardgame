@@ -626,7 +626,18 @@ The behavioral goldens ignore focus/selection/layout/geometry (they render the w
 
 ## 11. Progress log (append-only)
 
-- **P3b stretch B — IN PROGRESS (seam contract + game side done; renderer rewire remains).**
+- **P3b stretch B — LIVE for drops (`2e7cbd0`); affordance-rendering + cue-cleanup remain.** The product
+  now drives the persistent board through the `BoardGame` seam: `on_drop`/`on_node_drag_end` **record** a
+  `DropRequest{ dragged, DropTarget }` (the inline `try_equip`/`try_unequip`/`move_character` deleted), and
+  `boardgame` runs `BoardGamePlugin(CardTableGame)` (overriding `Table` with the saved session). Equip /
+  un-equip / march now execute in `deckbound-cardtable` behind the seam; `cardtable`'s core no longer applies
+  them. Verified: clippy-clean, tests green, boots on the persisted equipped board (character decks render).
+  **Remaining in B (small):** wire the **affordance** rendering — `redraw` draw `AffordanceLabels` as control
+  cards + `on_click` record `AffordanceClick`, retiring the inline `AdvanceDayCard` path (the driver's
+  `sync_affordances`/`apply_affordance` are already built and running). **Deferred to stretch A / cleanup:**
+  combat (`CombatCard`/`CombatRequest`/arena) + the movable-cue predicates (`is_game_movable`,
+  `can_drop_*`, `pairing_action`) still live in `cardtable`.
+- **P3b stretch B — earlier steps.**
   - Seam contract `BoardGame`/`DropTarget` in `cardtable-model` (`0841ab8`), then **corrected**
     (`c27b25a`): building surfaced that Combat/Advance-Day are contextual *affordance* control-cards the
     game declares per zone, not board-card clicks — so `click_intention` → `affordances(board, focus) ->
