@@ -534,6 +534,38 @@ a seam `movable()` later; keep for now). Combat (`CombatCard`/`CombatRequest`/ar
 - `cardtable-model` (generic Board + `UiModel` + `BoardGame` + primitives) and `cardtable` (generic
   renderer) — names stay honest, keep.
 
+## 19. P3b stretch A — v2 combat build plan (LOCKED 2026-07-09; path B)
+
+The full v2 design + locked economy is in `needs-merge/manual-combat-design-brief.md` §"Arena v2" and the
+`[[manual-combat-design]]` memory. **Build decision (B), confirmed:** implement the v2 economy **fresh** in
+`deckbound-cardtable` as `apply(&mut Board, &[Intention])`, reusing from deckbound only primitives
+(`stats::{Health, Defense}` for Might→toughness→flip, `combat::{SCHEDULE, SUB_PHASE_NAMES}`, `actor::Intention`
+ranks). Do **not** rework `deckbound/combat.rs`. **Solver/balance re-validation deferred** to after the feel
+test; the safety net is fresh unit tests. Foe AI = simple greedy (tunable, not locked). Mini-phases UI-first.
+
+**Locked mechanics (see the memory for detail):** each combat sub-phase = 3 one-way mini-phases —
+**Catch** (`cards × F_att ≥ F_target`, over-flip taxes evade) → **React** (evade `cards × F_def >` attacker's
+*spent* bid, breaks contact / strike-back 1 card unevadable / eat=default) → **Extra strikes** (finesse-free,
+remaining tempo along un-evaded contact edges, evaders excluded). Tempo = **Cadence** per-round pool; Finesse
+= bid multiplier; Might = damage (unchanged); order-free **commit-based** batch (committed strike lands even
+if its unit dies; doomed soaker still ripostes).
+
+**Stages (each compiles + unit-tested before the next):**
+1. **Mechanics core (headless).** New `deckbound-cardtable::combat` module: a `Combatant` model (5 stats +
+   `Health`/`Defense` + per-round tempo pool + rank + contact edges) and the 3-mini-phase resolution
+   (bid math, catch/evade/strike-back/eat, extra-strikes, Might→health). Pure functions; unit tests for bid
+   math, 3-phase resolution, conservation. **No board/renderer.** (Re-adds the `deckbound` dep.)
+2. **Board ↔ combat.** Represent the fight on the `Tableau` (instantiate foes via the existing
+   `Tableau::instantiate_encounter_foes`; combatants in rank lanes; health as card state; a phase deck).
+   Extend `CardTableGame::Intention` with combat variants (`Fight` to open, `SetRank`, `Catch`, `React`,
+   `ExtraStrike`, `Commit`/`RotatePhase`); `apply` reads board→`Combatant`s→resolves→writes board. Board tests.
+3. **Arena UI.** A `build_ui` arena branch (modelled on the Locations-map special case): rank lanes, phase
+   deck, health piles, the plan-then-commit flow (tap target → strikers light → tap to bid tempo; React chips;
+   Extra strikes; persistent Reset/Commit). Route gestures via `drop_intention`/`affordances`. Greedy foe AI.
+4. **Fold-back + teardown (folds P3c-combat).** Deaths, return foes to Bestiary, clear encounter on win,
+   advance day; retire `cardtable-combat` + the old `drive_arena`/`ArenaCombat` path.
+5. **Playtest the feel** (the goal), then circle back to the solver + balance.
+
 ## 16. P3a design — the physical/UI split (field-by-field) + naming
 
 `model.rs` (3057 lines) fuses **three** concerns. P3a separates the first two; the third is P3c/P3b:
