@@ -127,6 +127,49 @@ pub struct ZoneView {
     /// only `cards`; a card-table renderer presents each sub-zone as its own drill-in pile. Additive: a
     /// game that never nests leaves it empty and every existing renderer is unaffected.
     pub zones: Vec<ZoneView>,
+    /// The card-table [`Arrangement`] for this zone's cards (grid / rows / free / list). `List` by
+    /// default; honoured by a card-table renderer, ignored by the button renderer.
+    pub arrangement: Arrangement,
+}
+
+impl ZoneView {
+    /// A zone with a label and cards — laid out as a `Row` for the button renderer and `List` for the
+    /// card table, no owner, no nesting. Chain the `with_*` setters to change any of those. Using this
+    /// instead of a struct literal means additive seam growth never touches call sites again.
+    pub fn new(label: impl Into<String>, cards: Vec<CardView>) -> Self {
+        Self {
+            label: label.into(),
+            layout: Layout::Row,
+            owner: None,
+            cards,
+            zones: Vec::new(),
+            arrangement: Arrangement::List,
+        }
+    }
+
+    /// Set the CCG [`Layout`] hint (default `Row`).
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
+
+    /// Set the owning player.
+    pub fn with_owner(mut self, owner: PlayerId) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    /// Nest sub-zones inside this one (a card-table drills into them).
+    pub fn with_zones(mut self, zones: Vec<ZoneView>) -> Self {
+        self.zones = zones;
+        self
+    }
+
+    /// Set the card-table [`Arrangement`] (default `List`).
+    pub fn with_arrangement(mut self, arrangement: Arrangement) -> Self {
+        self.arrangement = arrangement;
+        self
+    }
 }
 
 /// A hint for how a renderer should arrange the cards in a zone.
@@ -138,6 +181,22 @@ pub enum Layout {
     Row,
     /// An overlapping fan, as a hand is held.
     Fan,
+}
+
+/// How a **card-table** renderer should arrange a zone's cards. Distinct from the CCG [`Layout`] hint:
+/// a button renderer ignores this, a card-table renderer honours it. Additive — a game that doesn't
+/// care leaves the default (`List`), and every existing renderer is unaffected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Arrangement {
+    /// A one-dimensional list that wraps across rows (the default).
+    #[default]
+    List,
+    /// A grid `columns` wide, where a card's row *and* column are both meaningful.
+    Grid { columns: usize },
+    /// Freely positioned and dragged at will; order is irrelevant.
+    Free,
+    /// A stack of header-led horizontal rows (as the inn uses).
+    Rows,
 }
 
 /// A colour hint for a card, so a renderer can tell allies from foes, flag a

@@ -3,9 +3,9 @@
 //! [`CardView`](contract::CardView) becomes a card, carrying its actionable index. This is the sole
 //! module that depends on `contract`; everything in [`model`](crate::model) stays game-agnostic.
 
-use contract::{CardFace, TableView, ZoneView};
+use contract::{Arrangement, CardFace, TableView, ZoneView};
 
-use crate::model::{Face, PileId, Tableau};
+use crate::model::{Arrangement as ModelArrangement, Face, Layout as ModelLayout, PileId, Tableau};
 
 /// Builds a fresh [`Tableau`] from a table snapshot: a root pile holding one sub-pile per zone, in
 /// presentation order, each filled with the zone's cards — and, recursively, any nested sub-zones as
@@ -28,6 +28,26 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
         .expect("parent pile exists");
     tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
         .expect("just-created pile exists");
+    // Honour the card-table arrangement (grid / rows / free). `List` is the model default that
+    // `add_pile` already sets, so only override otherwise; preserve the pile's `editable` flag (the seam
+    // doesn't carry that yet).
+    if zone.arrangement != Arrangement::List {
+        let arrangement = match zone.arrangement {
+            Arrangement::List => ModelArrangement::List,
+            Arrangement::Grid { columns } => ModelArrangement::Grid { columns },
+            Arrangement::Free => ModelArrangement::Free,
+            Arrangement::Rows => ModelArrangement::Rows,
+        };
+        let editable = tree.pile(pile).map(|p| p.layout().editable).unwrap_or(true);
+        tree.set_layout(
+            pile,
+            ModelLayout {
+                arrangement,
+                editable,
+            },
+        )
+        .expect("just-created pile exists");
+    }
     for card in &zone.cards {
         let (face, card_type, detail, panel) = match &card.face {
             CardFace::Up {
@@ -85,23 +105,14 @@ fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contract::{CardView, Layout, TableView, ZoneView};
+    use contract::{CardView, TableView, ZoneView};
 
     fn zone(label: &str, cards: Vec<CardView>) -> ZoneView {
-        ZoneView {
-            label: label.to_string(),
-            layout: Layout::Stack,
-            owner: None,
-            cards,
-            zones: Vec::new(),
-        }
+        ZoneView::new(label, cards)
     }
 
     fn nested(label: &str, cards: Vec<CardView>, zones: Vec<ZoneView>) -> ZoneView {
-        ZoneView {
-            zones,
-            ..zone(label, cards)
-        }
+        ZoneView::new(label, cards).with_zones(zones)
     }
 
     #[test]
@@ -197,5 +208,25 @@ mod tests {
         assert_eq!(c.detail(), &["force behind a strike".to_string()]);
         assert_eq!(c.panel(), &["a longer explanation".to_string()]);
         assert_eq!(c.quantity(), 5);
+    }
+
+    #[test]
+    fn carries_zone_arrangement() {
+        let view = TableView {
+            zones: vec![
+                zone("Locations", vec![CardView::up("Map")])
+                    .with_arrangement(Arrangement::Grid { columns: 3 }),
+            ],
+            ..Default::default()
+        };
+
+        let tree = from_table_view(&view);
+        let loc = tree
+            .pile(tree.pile(tree.root_id()).unwrap().subpiles()[0])
+            .unwrap();
+        assert_eq!(
+            loc.layout().arrangement,
+            ModelArrangement::Grid { columns: 3 }
+        );
     }
 }

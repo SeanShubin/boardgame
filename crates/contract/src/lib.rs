@@ -18,6 +18,6 @@ pub mod view;
 pub use game::{Game, GameError, Outcome, RefEntry};
 pub use player::PlayerId;
 pub use view::{
-    Accent, CardFace, CardView, Grid, GridCell, GridRow, Layout, MapTile, MapView, ProseLine,
-    TableView, ZoneView,
+    Accent, Arrangement, CardFace, CardView, Grid, GridCell, GridRow, Layout, MapTile, MapView,
+    ProseLine, TableView, ZoneView,
 };

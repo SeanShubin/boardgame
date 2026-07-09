@@ -5,7 +5,7 @@
 //! **Clash-module** 1v1 duel (the optional four-card mix-up, [`crate::duel`]). All
 //! numbers live in `data/booklet.ron`.
 
-use contract::{Accent, CardView, Game, GameError, Layout, Outcome, PlayerId, TableView, ZoneView};
+use contract::{Accent, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
 use engine::Rng;
 
 use crate::actor::{Actor, Intention, Range};
@@ -1132,26 +1132,14 @@ impl Game for Deckbound {
                         cards.push(entries[i].view.clone().action(i));
                         i += 1;
                     }
-                    zones.push(ZoneView {
-                        label: kind.to_string(),
-                        layout: Layout::Row,
-                        owner: None,
-                        cards,
-                        zones: Vec::new(),
-                    });
+                    zones.push(ZoneView::new(kind.to_string(), cards));
                 }
             }
             // A card's detail: the printed card itself, plus its rules description as a reading pane.
             Phase::Menu(Menu::CardDetail(idx)) => {
                 let entries = scenarios::card_catalog();
                 if let Some(e) = entries.get(*idx) {
-                    zones.push(ZoneView {
-                        label: e.kind.to_string(),
-                        layout: Layout::Row,
-                        owner: None,
-                        cards: vec![e.view.clone()],
-                        zones: Vec::new(),
-                    });
+                    zones.push(ZoneView::new(e.kind.to_string(), vec![e.view.clone()]));
                     prose = e.detail.clone();
                 }
             }
@@ -1191,13 +1179,10 @@ impl Game for Deckbound {
                     }
                     cards.push(card);
                 }
-                zones.push(ZoneView {
-                    label: "Marshal (click to cycle: Vanguard / Outrider / Rearguard)".into(),
-                    layout: Layout::Row,
-                    owner: None,
+                zones.push(ZoneView::new(
+                    "Marshal (click to cycle: Vanguard / Outrider / Rearguard)",
                     cards,
-                    zones: Vec::new(),
-                });
+                ));
             }
             _ => {
                 zones.push(creature_zone(state, None));
@@ -1239,12 +1224,9 @@ fn actor_card(a: &crate::actor::Actor, accent: Accent) -> CardView {
 }
 
 fn hero_zone(state: &State, focus: Option<usize>) -> ZoneView {
-    ZoneView {
-        label: "Your party".into(),
-        layout: Layout::Row,
-        owner: None,
-        zones: Vec::new(),
-        cards: state
+    ZoneView::new(
+        "Your party",
+        state
             .heroes
             .iter()
             .enumerate()
@@ -1257,16 +1239,13 @@ fn hero_zone(state: &State, focus: Option<usize>) -> ZoneView {
                 actor_card(h, accent)
             })
             .collect(),
-    }
+    )
 }
 
 fn creature_zone(state: &State, focus: Option<usize>) -> ZoneView {
-    ZoneView {
-        label: "Foes".into(),
-        layout: Layout::Row,
-        owner: None,
-        zones: Vec::new(),
-        cards: state
+    ZoneView::new(
+        "Foes",
+        state
             .creatures
             .iter()
             .enumerate()
@@ -1280,7 +1259,7 @@ fn creature_zone(state: &State, focus: Option<usize>) -> ZoneView {
                 actor_card(c, accent)
             })
             .collect(),
-    }
+    )
 }
 
 /// Wrap `text` to `width`-ish columns over at most `max` lines (a tiny word-wrap for card
@@ -1313,12 +1292,9 @@ fn wrap(text: &str, width: usize, max: usize) -> Vec<String> {
 /// `OpenCategory(i)` — index `i` in `legal_actions` for `Menu(Rules)` — showing its entry count.
 /// Picking one opens that category's rules as a prose reading pane (the content, not cards).
 fn category_zone() -> ZoneView {
-    ZoneView {
-        label: "Rules — pick a category".into(),
-        layout: Layout::Row,
-        owner: None,
-        zones: Vec::new(),
-        cards: categories()
+    ZoneView::new(
+        "Rules — pick a category",
+        categories()
             .iter()
             .enumerate()
             .map(|(i, c)| {
@@ -1328,7 +1304,7 @@ fn category_zone() -> ZoneView {
                     .action(i)
             })
             .collect(),
-    }
+    )
 }
 
 /// The top menu: each scenario set and Rules is a **clickable card** bound to its open action
@@ -1350,28 +1326,22 @@ fn menu_zone() -> ZoneView {
         ("Cards", "Browse every card and how it works."),
         ("Rules", "The rulebook — browse by category."),
     ];
-    ZoneView {
-        label: "Deckbound — choose a set".into(),
-        layout: Layout::Row,
-        owner: None,
-        zones: Vec::new(),
-        cards: items
+    ZoneView::new(
+        "Deckbound — choose a set",
+        items
             .iter()
             .enumerate()
             .map(|(i, (t, d))| CardView::up(*t).body(wrap(d, 22, 4)).action(i))
             .collect(),
-    }
+    )
 }
 
 /// A scenario list: each scenario is a **clickable card** (bound to `PickScenario(i)`) carrying
 /// its blurb. The only button is **Back**.
 fn scenario_zone(menu: Menu) -> ZoneView {
-    ZoneView {
-        label: "Pick a scenario".into(),
-        layout: Layout::Row,
-        owner: None,
-        zones: Vec::new(),
-        cards: list_for(menu)
+    ZoneView::new(
+        "Pick a scenario",
+        list_for(menu)
             .iter()
             .enumerate()
             .map(|(i, s)| {
@@ -1389,7 +1359,7 @@ fn scenario_zone(menu: Menu) -> ZoneView {
                     .action(i)
             })
             .collect(),
-    }
+    )
 }
 
 /// The §4 / §8.5 **playstyle triangle** (Aggressor ▸ Glass-Cannon ▸ Turtle ▸ Aggressor) as a small
