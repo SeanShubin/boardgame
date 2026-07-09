@@ -16,9 +16,8 @@ edition.workspace = true
 [dependencies]
 
 [dev-dependencies]
+# The generic model, only for `from_table_view` (inflate the emitter's view) + the projection accessors.
 cardtable-model = { workspace = true }
-cardtable-combat = { workspace = true }
+# The card-table world Game under test.
 deckbound-cardtable = { workspace = true }
 contract = { workspace = true }
-ron = { workspace = true }
-serde = { workspace = true }
