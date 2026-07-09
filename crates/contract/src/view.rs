@@ -122,6 +122,11 @@ pub struct ZoneView {
     pub owner: Option<PlayerId>,
     /// The cards in the pile, in presentation order.
     pub cards: Vec<CardView>,
+    /// **Nested sub-zones** — piles that live *inside* this one (a card-table drills into them). Empty
+    /// for a flat zone. A renderer that can't nest (e.g. the button `tabletop`) may ignore this and draw
+    /// only `cards`; a card-table renderer presents each sub-zone as its own drill-in pile. Additive: a
+    /// game that never nests leaves it empty and every existing renderer is unaffected.
+    pub zones: Vec<ZoneView>,
 }
 
 /// A hint for how a renderer should arrange the cards in a zone.

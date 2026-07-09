@@ -1137,6 +1137,7 @@ impl Game for Deckbound {
                         layout: Layout::Row,
                         owner: None,
                         cards,
+                        zones: Vec::new(),
                     });
                 }
             }
@@ -1149,6 +1150,7 @@ impl Game for Deckbound {
                         layout: Layout::Row,
                         owner: None,
                         cards: vec![e.view.clone()],
+                        zones: Vec::new(),
                     });
                     prose = e.detail.clone();
                 }
@@ -1194,6 +1196,7 @@ impl Game for Deckbound {
                     layout: Layout::Row,
                     owner: None,
                     cards,
+                    zones: Vec::new(),
                 });
             }
             _ => {
@@ -1240,6 +1243,7 @@ fn hero_zone(state: &State, focus: Option<usize>) -> ZoneView {
         label: "Your party".into(),
         layout: Layout::Row,
         owner: None,
+        zones: Vec::new(),
         cards: state
             .heroes
             .iter()
@@ -1261,6 +1265,7 @@ fn creature_zone(state: &State, focus: Option<usize>) -> ZoneView {
         label: "Foes".into(),
         layout: Layout::Row,
         owner: None,
+        zones: Vec::new(),
         cards: state
             .creatures
             .iter()
@@ -1312,6 +1317,7 @@ fn category_zone() -> ZoneView {
         label: "Rules — pick a category".into(),
         layout: Layout::Row,
         owner: None,
+        zones: Vec::new(),
         cards: categories()
             .iter()
             .enumerate()
@@ -1348,6 +1354,7 @@ fn menu_zone() -> ZoneView {
         label: "Deckbound — choose a set".into(),
         layout: Layout::Row,
         owner: None,
+        zones: Vec::new(),
         cards: items
             .iter()
             .enumerate()
@@ -1363,6 +1370,7 @@ fn scenario_zone(menu: Menu) -> ZoneView {
         label: "Pick a scenario".into(),
         layout: Layout::Row,
         owner: None,
+        zones: Vec::new(),
         cards: list_for(menu)
             .iter()
             .enumerate()

@@ -3,51 +3,63 @@
 //! [`CardView`](contract::CardView) becomes a card, carrying its actionable index. This is the sole
 //! module that depends on `contract`; everything in [`model`](crate::model) stays game-agnostic.
 
-use contract::{CardFace, TableView};
+use contract::{CardFace, TableView, ZoneView};
 
-use crate::model::{Face, Tableau};
+use crate::model::{Face, PileId, Tableau};
 
 /// Builds a fresh [`Tableau`] from a table snapshot: a root pile holding one sub-pile per zone, in
-/// presentation order, each filled with the zone's cards.
+/// presentation order, each filled with the zone's cards — and, recursively, any nested sub-zones as
+/// piles inside their parent (so a card-table can drill into them).
 pub fn from_table_view(view: &TableView) -> Tableau {
     let mut tree = Tableau::new();
     let root = tree.root_id();
     for (index, zone) in view.zones.iter().enumerate() {
-        let pile = tree
-            .add_pile(root, zone.label.clone())
-            .expect("root pile exists");
-        // Lay the piles out in a starting row; the renderer lets the player drag them anywhere.
-        tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
-            .expect("just-created pile exists");
-        for card in &zone.cards {
-            let (face, card_type) = match &card.face {
-                CardFace::Up {
-                    title, type_line, ..
-                } => (
-                    Face::Up {
-                        title: title.clone(),
-                    },
-                    type_line.clone(),
-                ),
-                // A contract view carries no front for a face-down card, so it comes across anonymous
-                // (empty remembered front). The model keeps the field (PC.2) for cards it flips itself.
-                CardFace::Down => (
-                    Face::Down {
-                        title: String::new(),
-                    },
-                    None,
-                ),
-            };
-            let id = tree
-                .add_card(pile, face, card.action)
-                .expect("just-created pile exists");
-            if let Some(card_type) = card_type {
-                tree.set_card_type(id, card_type)
-                    .expect("just-created card exists");
-            }
-        }
+        add_zone(&mut tree, root, zone, index);
     }
     tree
+}
+
+/// Add one [`ZoneView`] as a pile under `parent`, fill it with the zone's cards, then recurse into its
+/// nested sub-zones. `index` positions the pile in a starting row (the renderer lets the player drag it
+/// anywhere afterwards).
+fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -> PileId {
+    let pile = tree
+        .add_pile(parent, zone.label.clone())
+        .expect("parent pile exists");
+    tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
+        .expect("just-created pile exists");
+    for card in &zone.cards {
+        let (face, card_type) = match &card.face {
+            CardFace::Up {
+                title, type_line, ..
+            } => (
+                Face::Up {
+                    title: title.clone(),
+                },
+                type_line.clone(),
+            ),
+            // A contract view carries no front for a face-down card, so it comes across anonymous
+            // (empty remembered front). The model keeps the field (PC.2) for cards it flips itself.
+            CardFace::Down => (
+                Face::Down {
+                    title: String::new(),
+                },
+                None,
+            ),
+        };
+        let id = tree
+            .add_card(pile, face, card.action)
+            .expect("just-created pile exists");
+        if let Some(card_type) = card_type {
+            tree.set_card_type(id, card_type)
+                .expect("just-created card exists");
+        }
+    }
+    // Nested sub-zones become piles inside this one — the recursion that makes the seam card-table-native.
+    for (i, sub) in zone.zones.iter().enumerate() {
+        add_zone(tree, pile, sub, i);
+    }
+    pile
 }
 
 #[cfg(test)]
@@ -61,6 +73,14 @@ mod tests {
             layout: Layout::Stack,
             owner: None,
             cards,
+            zones: Vec::new(),
+        }
+    }
+
+    fn nested(label: &str, cards: Vec<CardView>, zones: Vec<ZoneView>) -> ZoneView {
+        ZoneView {
+            zones,
+            ..zone(label, cards)
         }
     }
 
@@ -100,5 +120,35 @@ mod tests {
         assert!(!back.is_actionable());
 
         assert_eq!(tree.card_count(), 3);
+    }
+
+    #[test]
+    fn nested_zones_become_piles_inside_their_parent() {
+        // A "Locations" zone with one card, containing a "Keep" sub-zone that itself holds a card.
+        let view = TableView {
+            zones: vec![nested(
+                "Locations",
+                vec![CardView::up("Map")],
+                vec![zone("Keep", vec![CardView::up("Warden")])],
+            )],
+            ..Default::default()
+        };
+
+        let tree = from_table_view(&view);
+        let root = tree.pile(tree.root_id()).unwrap();
+        assert_eq!(root.subpiles().len(), 1, "one top-level zone");
+
+        let locations = tree.pile(root.subpiles()[0]).unwrap();
+        assert_eq!(locations.label, "Locations");
+        assert_eq!(locations.cards().len(), 1, "its own card stays");
+        assert_eq!(
+            locations.subpiles().len(),
+            1,
+            "the nested zone became a pile inside it"
+        );
+
+        let keep = tree.pile(locations.subpiles()[0]).unwrap();
+        assert_eq!(keep.label, "Keep");
+        assert_eq!(tree.card(keep.cards()[0]).unwrap().front_title(), "Warden");
     }
 }
