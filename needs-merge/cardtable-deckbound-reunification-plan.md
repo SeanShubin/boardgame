@@ -406,6 +406,66 @@ click-only mode is a later `cardtable` toggle. Implemented in `contract` as `Pai
 game interaction). Note: only relevant to *game-meaningful* drags (equip); the arena's per-blow prompts are
 plain click-actions.
 
+## 17. P3b target architecture + build sequence (cards-as-truth product)
+
+Decided (user: focus P3b, favour **long stretches** to the goal over incrementalism, **skip intermediate
+states that won't exist in the eventual solution**, infer decisions from the old working example + the
+architecture). The decision oracle is the pre-reunification physical-`Tableau` product — its logic still
+lives in the tree (`model.rs` ops, `fixtures::sample_table`, `cardtable-combat`, the renderer's
+`try_equip`/`drive_arena`/`can_drop_*`). See the archaeology map (this session) for file:line detail.
+
+### 17.1 Discard (the intermediates)
+
+The **product's** `contract::Game` → `TableView` → `GamePlugin` routing and the abstract `World` emitter
+are the intermediate to remove — they are the very inversion §0.4 names, and the source of both live
+defects (equip-buttons = `GamePlugin::snapshot` rail-leak; focus/drag reset = rebuild-each-action). Gone
+for the product: `deckbound_cardtable::{World, view(), Action-as-TableView}`, the product's `from_table_view`
+loop, the pairing-rail. **Kept** (sample only): `contract`, `TableView`, `from_table_view`, `tabletop`,
+`deckbound-sample` (`deckbound` still implements `contract::Game` for the button/`cardtable` sample path).
+
+### 17.2 Target structure
+
+- **Generic `cardtable-model`** — the physical `Board` (conserved cards + labels + nesting; today's
+  `Tableau` physical half) + `UiModel`, and pure primitives only: move / split-off (`draw_named_from`) /
+  merge (`return_one`) / flip / focus / layout / selection. **No** equip/march/combat/fixtures/catalog.
+- **Board-based game seam** (replaces `contract::Game` for the product): a trait the game implements —
+  `legal_intentions(&Board) -> Vec<Intention>`, `apply(&mut Board, &[Intention])`, opening board, labels.
+  The generic renderer is generic over it and never mentions deckbound. Order-free batch `apply` (§0.2).
+- **Game = repurposed `deckbound-cardtable`** — implements the seam *on the Board*: equip/march/fight/day
+  as conservation-clean transitions (the oracle's ops), combat as rank×phase batches. Owns `sample_table`
+  + `catalog`. This is the abstract `World` emitter **rewritten** to operate on the physical board, not a
+  new crate.
+- **Renderer `cardtable`** — drives the `Board`, turns clicks/drags into intentions or navigation, observes
+  `Board` + `UiModel`. Reuses the old-path input→op logic, now routed through the seam.
+- **Persistence** — the `Board` as RON (restore `persistence.rs`: fingerprint + dedupe + native/wasm, skip
+  mid-fight), since the board is again the single source of truth.
+
+### 17.3 Intentions
+
+Non-combat (map to the oracle's ops): `Equip{hero,kit}`, `Unequip{hero}`, `March{character,to}`,
+`Fight{place}` (auto), `Arena{place}` (interactive), `AdvanceDay`. Combat (rank×phase, §0.3): staged
+strike/evade/strike-back as transient events → intention set; `RotatePhase` appended on "done"; `apply`
+resolves the phase (deckbound resolver as scratch). Legality (`legal_intentions`) consolidates the
+renderer's scattered predicates (`can_drop_on_card`=equip, `can_drop_on_pile`+adjacency=march,
+`location_ready_for_combat`=fight, Advance-Day availability) + the rank×phase gate.
+
+### 17.4 Build sequence (long stretches)
+
+1. **Spine on the board.** Stand up the Board-based seam; rewrite `deckbound-cardtable` to
+   `legal_intentions`/`apply` over the `Board` for the **non-combat** world (equip/march/day + the static
+   layout via `sample_table`), reusing the conservation ops. Wire `boardgame` to it (drop `GamePlugin`/emitter
+   view). Renderer drives the board. **Result: a working product on the physical board** — drag-equip works,
+   focus/drag persist, no rail buttons. (Combat still stubbed/auto.)
+2. **Persist the board** — restore `persistence.rs` (Board RON).
+3. **Combat as rank×phase batch** — the new design (ranks + phase deck as cards, staged intentions, batch
+   `apply`, deckbound resolver as scratch, per-blow evade/strike-back). Replaces the old per-decision arena
+   driver where it diverges.
+4. **Purge + relocate (folds P3c/P3a.3):** move equip/march/combat/`fixtures`/`catalog` out of
+   `cardtable-model` into the game; strip the model to generic Board+UiModel+primitives; per-card/pile UI →
+   id-keyed side-tables (now meaningful — the board persists). Delete the dead emitter `TableView` product code.
+5. **Verify** the equip-buttons regression-watch (task #11) is structurally gone; goldens re-based to the
+   board path.
+
 ## 16. P3a design — the physical/UI split (field-by-field) + naming
 
 `model.rs` (3057 lines) fuses **three** concerns. P3a separates the first two; the third is P3c/P3b:
