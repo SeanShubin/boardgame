@@ -567,6 +567,7 @@ fn on_click(
         Has<ArenaHoldCard>,
         Option<&ArenaEvadeCard>,
         Option<&ArenaStrikeBackCard>,
+        Option<&AffordanceControl>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
@@ -574,6 +575,7 @@ fn on_click(
     mut combat: ResMut<CombatRequest>,
     mut manual_combat: ResMut<ManualCombatRequest>,
     mut arena: ResMut<ArenaCombat>,
+    mut affordance_click: ResMut<AffordanceClick>,
     mut front: ResMut<FannedFront>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
@@ -594,6 +596,7 @@ fn on_click(
         is_arena_hold,
         arena_evade,
         arena_strikeback,
+        affordance,
     )) = targets.get(on.event().entity)
     else {
         return;
@@ -605,6 +608,14 @@ fn on_click(
             st.combat.answer_current(answer);
             rebuild.0 = true;
         }
+        on.propagate(false);
+        return;
+    }
+    // A game **affordance** control (Fight / Commit sub-phase / Advance Day, …): record the click index for
+    // the board driver's `apply_affordance`, which turns it into a `Game::apply`.
+    if let Some(ctrl) = affordance {
+        affordance_click.0 = Some(ctrl.0);
+        rebuild.0 = true;
         on.propagate(false);
         return;
     }
@@ -1011,27 +1022,6 @@ fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
         return false;
     };
     places_orthogonally_adjacent(table, card.home(), target)
-}
-
-/// Whether the drilled-in `zone` is an individual **location** holding both a stationed hero (a `hero`
-/// position copy) and an `encounter` — the condition for offering combat. Excludes the Locations **map**
-/// itself (you must be inside a single place, not the grid) and every non-place zone.
-fn location_ready_for_combat(tree: &Tableau, zone: PileId) -> bool {
-    let is_place = top_deck(tree, "Locations")
-        .and_then(|loc| tree.pile(loc))
-        .is_some_and(|loc| loc.subpiles().contains(&zone));
-    if !is_place {
-        return false;
-    }
-    let (mut has_hero, mut has_encounter) = (false, false);
-    for c in tree.content_cards(zone) {
-        match tree.card(c).map(|k| k.card_type()) {
-            Some("hero") => has_hero = true,
-            Some("encounter") => has_encounter = true,
-            _ => {}
-        }
-    }
-    has_hero && has_encounter
 }
 
 /// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
@@ -1538,6 +1528,7 @@ fn settle_table_piles(
 /// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
 /// snapshot). Pile positions are not structural — they animate (see [`animate_nodes`]) — so
 /// repositioning never triggers a rebuild.
+#[allow(clippy::too_many_arguments)] // a Bevy draw system — its inputs are resources, not a god-param
 fn redraw(
     mut commands: Commands,
     mut rebuild: ResMut<NeedsRebuild>,
@@ -1545,6 +1536,7 @@ fn redraw(
     rail: Res<ActionRail>,
     front: Res<FannedFront>,
     arena: Res<ArenaCombat>,
+    affordances: Res<AffordanceLabels>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
@@ -1554,7 +1546,14 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
-    build_ui(&mut commands, &table.0, &rail.0, front.0, arena.0.as_ref());
+    build_ui(
+        &mut commands,
+        &table.0,
+        &rail.0,
+        front.0,
+        arena.0.as_ref(),
+        &affordances.0,
+    );
 }
 
 // ---- combat arena -------------------------------------------------------
@@ -2149,6 +2148,7 @@ fn build_ui(
     rail: &[RailAction],
     front: Option<CardId>,
     arena: Option<&ArenaState>,
+    affordances: &[String],
 ) {
     // A manual fight is modal: while one is up, the whole felt is the combat arena — the normal zone view,
     // its overlays, and the combat entry buttons are all suppressed.
@@ -2579,8 +2579,10 @@ fn build_ui(
             }
             // The **combat** controls, mirroring Back but on the right, on a location that holds both a hero
             // and an encounter: the player picks **Auto** (play it out) or **Manual** (decide every step).
-            // A row so the two cards sit side by side without colliding on the shared right edge.
-            if location_ready_for_combat(tree, zone) {
+            // The game's **contextual affordances** (Fight, Commit sub-phase, Advance Day, …) — one control
+            // card each, declared by the game per focused zone (`BoardGame::affordances`) and drained back
+            // into `Game::apply` by the board driver. Supersedes the old hardcoded combat / advance-day cards.
+            if !affordances.is_empty() {
                 root.spawn((
                     Node {
                         position_type: PositionType::Absolute,
@@ -2593,24 +2595,9 @@ fn build_ui(
                     GlobalZIndex(10),
                 ))
                 .with_children(|slot| {
-                    spawn_nav_card(slot, (CombatCard, Pinned), "Auto Combat");
-                    spawn_nav_card(slot, (ManualCombatCard, Pinned), "Manual Combat");
-                });
-            }
-            // An **Advance Day** control in the Progress zone — lays a new `Day Passed` card (the day ticks
-            // up) and stands every move marker back up.
-            if top_deck(tree, "Progress") == Some(zone) {
-                root.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        top: Val::Px(6.0),
-                        right: Val::Px(8.0),
-                        ..default()
-                    },
-                    GlobalZIndex(10),
-                ))
-                .with_children(|slot| {
-                    spawn_nav_card(slot, (AdvanceDayCard, Pinned), "Advance Day")
+                    for (i, label) in affordances.iter().enumerate() {
+                        spawn_nav_card(slot, (AffordanceControl(i), Pinned), label);
+                    }
                 });
             }
             if !rail.is_empty() {
