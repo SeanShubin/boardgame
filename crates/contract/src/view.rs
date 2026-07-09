@@ -220,6 +220,21 @@ pub enum Accent {
     Suggested,
 }
 
+/// A **pairing** interaction between two cards — stated *neutrally*, so a renderer performs it as a
+/// **drag-drop** (drag the source onto the target) *or* a **click-source-then-target** tap sequence,
+/// per its interaction mode. A host can toggle between the two modes without any game or seam change,
+/// and the two are never active at once (one interaction, two possible gestures).
+///
+/// A card carrying this pairs onto the target card whose [`pair_key`](CardView::pair_key) equals `onto`;
+/// completing the pairing performs `legal_actions[action]` (e.g. dragging a hero onto a kit → equip).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pairing {
+    /// The [`pair_key`](CardView::pair_key) of the target card this one pairs onto.
+    pub onto: u32,
+    /// The `legal_actions` index performed when the pairing completes.
+    pub action: usize,
+}
+
 /// A single card as it should appear to the viewer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardView {
@@ -233,6 +248,12 @@ pub struct CardView {
     /// How many identical physical cards this one stack stands for (drawn as a `×N` badge). Default 1;
     /// a renderer that doesn't show stacks may ignore it.
     pub quantity: u32,
+    /// If set, this card is a **pairing target** identified by this key — another card can be paired
+    /// onto it (see [`Pairing`]). `None` = not a pairing target.
+    pub pair_key: Option<u32>,
+    /// The **pairings** available *from* this card: pairing it onto a target performs an action. Empty =
+    /// this card pairs onto nothing. See [`Pairing`].
+    pub pairings: Vec<Pairing>,
 }
 
 /// The visible side of a card.
@@ -278,6 +299,8 @@ impl CardView {
             },
             action: None,
             quantity: 1,
+            pair_key: None,
+            pairings: Vec::new(),
         }
     }
 
@@ -292,6 +315,8 @@ impl CardView {
             face: CardFace::Down,
             action: None,
             quantity: 1,
+            pair_key: None,
+            pairings: Vec::new(),
         }
     }
 
@@ -340,11 +365,46 @@ impl CardView {
         self
     }
 
+    /// Mark this card as a **pairing target** with `key` — another card can be paired onto it (e.g. a
+    /// kit is a target a hero pairs onto to equip). Chainable.
+    pub fn pair_key(mut self, key: u32) -> Self {
+        self.pair_key = Some(key);
+        self
+    }
+
+    /// Add a **pairing** *from* this card: pairing it onto the target whose [`pair_key`](Self::pair_key)
+    /// is `onto` performs `legal_actions[action]`. Chainable; call repeatedly for several targets.
+    pub fn pairs_onto(mut self, onto: u32, action: usize) -> Self {
+        self.pairings.push(Pairing { onto, action });
+        self
+    }
+
     /// Set the colour accent (no-op on a face-down card).
     pub fn accent(mut self, a: Accent) -> Self {
         if let CardFace::Up { accent, .. } = &mut self.face {
             *accent = a;
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_builders_state_a_neutral_interaction() {
+        // A hero pairs onto kit-target 3 to perform legal action 5 (equip); the kit is that target.
+        let hero = CardView::up("Vael").pairs_onto(3, 5);
+        assert_eq!(hero.pairings, vec![Pairing { onto: 3, action: 5 }]);
+        assert!(hero.pair_key.is_none());
+
+        let kit = CardView::up("Marksman").pair_key(3);
+        assert_eq!(kit.pair_key, Some(3));
+        assert!(kit.pairings.is_empty());
+
+        // A plain card carries neither — additive: existing cards are unaffected.
+        let plain = CardView::up("Might");
+        assert!(plain.pair_key.is_none() && plain.pairings.is_empty());
     }
 }

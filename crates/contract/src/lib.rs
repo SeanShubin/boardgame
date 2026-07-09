@@ -19,5 +19,5 @@ pub use game::{Game, GameError, Outcome, RefEntry};
 pub use player::PlayerId;
 pub use view::{
     Accent, Arrangement, CardFace, CardView, Grid, GridCell, GridRow, Layout, MapTile, MapView,
-    ProseLine, TableView, ZoneView,
+    Pairing, ProseLine, TableView, ZoneView,
 };
