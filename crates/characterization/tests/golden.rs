@@ -61,11 +61,15 @@ fn assert_golden_file(filename: &str, actual: &str) {
 /// - **arrangement** (`layout`: Free / Grid / List / Rows) — presentation the renderer applies, which
 ///   `from_table_view` defaults rather than authoring;
 /// - **model mechanisms** (`projection`, `reflects`) — the Inn's projection and character-deck links are
-///   cardtable-model tricks the reunified emitter reimplements (inline cards; deckbound-internal state).
+///   cardtable-model tricks the reunified emitter reimplements (inline cards; deckbound-internal state);
+/// - **card-vs-sub-zone interleave** — the seam's `ZoneView` holds cards and sub-zones in *separate*
+///   lists, so `from_table_view` always emits a pile's cards before its sub-piles. We therefore render
+///   cards first, then sub-zones (card order and sub-zone order each preserved), canonicalizing an
+///   interleave the split-seam construction path can't reproduce.
 ///
-/// What remains — nesting, order, card face (title/type/detail/panel/qty), and `actionable` — is stable
-/// across construction paths, which is the point of the behavioral tier (plan §12). Deterministic by
-/// construction: `children()` is an ordered `Vec`.
+/// What remains — nesting, card/sub-zone order, card face (title/type/detail/panel/qty), and
+/// `actionable` — is stable across construction paths, which is the point of the behavioral tier
+/// (plan §12). Deterministic by construction: `children()` is an ordered `Vec`.
 fn behavior(t: &Tableau) -> String {
     let mut out = String::new();
     render_pile(t, t.root_id(), 0, &mut out);
@@ -76,33 +80,36 @@ fn render_pile(t: &Tableau, pid: PileId, depth: usize, out: &mut String) {
     let pile = t.pile(pid).unwrap();
     let indent = "  ".repeat(depth);
     out.push_str(&format!("{indent}[{}]\n", pile.label));
+    // Cards first (in order)...
     for node in pile.children() {
-        match node {
-            Node::Card(cid) => {
-                let c = t.card(*cid).unwrap();
-                let face = if c.is_face_down() {
-                    "«down»".to_string()
-                } else {
-                    c.front_title().to_string()
-                };
-                let mut line = format!(
-                    "{indent}  - {face} | type={:?} | qty={}",
-                    c.card_type(),
-                    c.quantity()
-                );
-                if let Some(a) = c.actionable {
-                    line.push_str(&format!(" | act={a}"));
-                }
-                if !c.detail().is_empty() {
-                    line.push_str(&format!(" | detail={:?}", c.detail()));
-                }
-                if !c.panel().is_empty() {
-                    line.push_str(&format!(" | panel={:?}", c.panel()));
-                }
-                out.push_str(&line);
-                out.push('\n');
-            }
-            Node::Pile(child) => render_pile(t, *child, depth + 1, out),
+        let Node::Card(cid) = node else { continue };
+        let c = t.card(*cid).unwrap();
+        let face = if c.is_face_down() {
+            "«down»".to_string()
+        } else {
+            c.front_title().to_string()
+        };
+        let mut line = format!(
+            "{indent}  - {face} | type={:?} | qty={}",
+            c.card_type(),
+            c.quantity()
+        );
+        if let Some(a) = c.actionable {
+            line.push_str(&format!(" | act={a}"));
+        }
+        if !c.detail().is_empty() {
+            line.push_str(&format!(" | detail={:?}", c.detail()));
+        }
+        if !c.panel().is_empty() {
+            line.push_str(&format!(" | panel={:?}", c.panel()));
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    // ...then nested sub-zones (in order).
+    for node in pile.children() {
+        if let Node::Pile(child) = node {
+            render_pile(t, *child, depth + 1, out);
         }
     }
 }
@@ -338,6 +345,12 @@ fn golden_interaction_transcript() {
 fn emitter_banks_reproduce_the_shipped_world() {
     use cardtable_model::from_table_view;
     use contract::{Game, TableView};
+
+    // This test *verifies against* the sample golden, it doesn't bless one. Under BLESS the golden tests
+    // are concurrently rewriting that file, so skip to avoid reading it mid-write.
+    if std::env::var_os("BLESS").is_some() {
+        return;
+    }
 
     let game = deckbound_cardtable::CardTableWorld;
     let view = game.view(&game.new_game(1, 1), None);

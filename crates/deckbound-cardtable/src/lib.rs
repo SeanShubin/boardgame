@@ -11,7 +11,7 @@
 //! Progress, Events, and the interactive fight follow.
 
 use cardtable_model::catalog;
-use contract::{CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
+use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};
 
 /// The card-table world game.
 pub struct CardTableWorld;
@@ -63,6 +63,9 @@ impl Game for CardTableWorld {
                 abilities_zone(),
                 stats_zone(),
                 numbers_zone(),
+                locations_zone(),
+                progress_zone(),
+                events_zone(),
                 bestiary_zone(),
             ],
             ..Default::default()
@@ -155,6 +158,77 @@ fn numbers_zone() -> ZoneView {
         .map(|n| CardView::up(n.to_string()).typed("number").times(12))
         .collect();
     labeled("Numbers", cards)
+}
+
+/// The nine map locations, in row-major grid order (Ashfen Crossing, the inn, is the centre cell).
+const LOCATIONS: [&str; 9] = [
+    "The Hollow Rampart",
+    "Cinderwatch Keep",
+    "Greywater Ford",
+    "The Sundered Vault",
+    "Ashfen Crossing",
+    "Thornmarch Gate",
+    "Emberfall Hollow",
+    "The Salt Barrows",
+    "Ninefold Deep",
+];
+
+/// One place on the map: its `Location` name card, then either the **Inn** sub-zone (Ashfen Crossing —
+/// drill in to recruit) or the location's **encounter** card (its foes listed virtually).
+fn place_zone(place: &str) -> ZoneView {
+    let name = CardView::up(place).typed("Location");
+    if place == "Ashfen Crossing" {
+        // The inn's recruit view. In the shipped world it *projects* the Heroes + Kit decks; the emitter
+        // authors it inline as the two row labels the projection showed (equip becomes a later action).
+        let inn = ZoneView::new(
+            "Inn",
+            vec![
+                CardView::up("Hero").typed("Label"),
+                CardView::up("Kit").typed("Label"),
+            ],
+        )
+        .with_arrangement(Arrangement::Rows);
+        ZoneView::new(place, vec![name]).with_zones(vec![inn])
+    } else if let Some(enc) = catalog::encounter_for(place) {
+        let foes: Vec<String> = catalog::encounter_foes(enc)
+            .iter()
+            .map(|(c, q)| {
+                if *q > 1 {
+                    format!("{} ×{q}", c.name)
+                } else {
+                    c.name.to_string()
+                }
+            })
+            .collect();
+        let encounter = CardView::up(enc.title).typed("encounter").body(vec![
+            enc.flavor.to_string(),
+            format!("Foes: {}", foes.join(", ")),
+        ]);
+        ZoneView::new(place, vec![name, encounter])
+    } else {
+        ZoneView::new(place, vec![name])
+    }
+}
+
+fn locations_zone() -> ZoneView {
+    let places: Vec<ZoneView> = LOCATIONS.iter().map(|&p| place_zone(p)).collect();
+    ZoneView::new("Locations", vec![CardView::up("Location").typed("Label")])
+        .with_arrangement(Arrangement::Grid { columns: 3 })
+        .with_zones(places)
+}
+
+/// The day clock — starts empty (Day 0); each passing day lays a `Day Passed` card here at runtime. Only
+/// its name label at the start.
+fn progress_zone() -> ZoneView {
+    labeled("Progress", Vec::new()).with_arrangement(Arrangement::Grid { columns: 5 })
+}
+
+/// The reserve of `Day Passed` cards the day clock draws from.
+fn events_zone() -> ZoneView {
+    labeled(
+        "Events",
+        vec![CardView::up("Day Passed").typed("event").times(12)],
+    )
 }
 
 fn bestiary_zone() -> ZoneView {

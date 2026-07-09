@@ -42,6 +42,7 @@ outcome: Win
     - 9 | type="number" | qty=12
     - Numbers | type="Label" | qty=1
   [Locations]
+    - Location | type="Label" | qty=1
     [The Hollow Rampart]
       - The Hollow Rampart | type="Location" | qty=1
       - Breach of the Rampart | type="encounter" | qty=1 | detail=["The rampart is breached and everything pours through at once.", "Foes: The Anvil, The Swarm ×2, The Coil, The Mirage"]
@@ -72,11 +73,13 @@ outcome: Win
     [Ninefold Deep]
       - Ninefold Deep | type="Location" | qty=1
       - Horror of the Ninefold Deep | type="encounter" | qty=1 | detail=["The deep shifts and feints; nothing down here holds still.", "Foes: The Anvil, The Swarm, The Coil, The Mirage ×2"]
-    - Location | type="Label" | qty=1
   [Rules]
     - Marshal (1/6) | type="phase" | qty=1 | detail=["Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round."]
     - Reveal (2/6) | type="phase" | qty=1 | detail=["Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open."]
     - Ready (3/6) | type="phase" | qty=1 | detail=["Standing abilities cast now (a Wall's brace, a Support's buff): ally-targeted, auto-land, last the round."]
+    - Wipe pile (5/6) | type="phase" | qty=1 | detail=["The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe."]
+    - Refresh (6/6) | type="phase" | qty=1 | detail=["Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw."]
+    - Rules | type="Label" | qty=1
     [Engage]
       - Intercept (1/5) | type="phase" | qty=1 | detail=["The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid."]
       - Volley (2/5) | type="phase" | qty=1 | detail=["The back fires on the flankers: each Rearguard shoots an enemy Outrider — the pre-empt, before it arrives."]
@@ -84,9 +87,6 @@ outcome: Win
       - Clash (4/5) | type="phase" | qty=1 | detail=["The lines meet: each Rearguard fires an enemy Vanguard, and each engaging Vanguard strikes an enemy Vanguard."]
       - Breach (5/5) | type="phase" | qty=1 | detail=["The deep blows land last: a Vanguard crosses to an exposed enemy Rearguard; stranded Outriders fall on the front."]
       - Engage (4/6) | type="phase" | qty=1 | detail=["Intercept — Vanguard -> Outrider", "Volley — Rearguard -> Outrider", "Raid — Outrider -> Rearguard", "Clash — Rearguard / Vanguard -> Vanguard", "Breach — the trailing blows land", "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next."]
-    - Wipe pile (5/6) | type="phase" | qty=1 | detail=["The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe."]
-    - Refresh (6/6) | type="phase" | qty=1 | detail=["Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw."]
-    - Rules | type="Label" | qty=1
   [Progress]
     - Progress | type="Label" | qty=1
     - Vael Thornbrand | type="hero" | qty=1
