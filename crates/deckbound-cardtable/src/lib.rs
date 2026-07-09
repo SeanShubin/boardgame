@@ -6,9 +6,11 @@
 //! `cardtable_model::from_table_view`, so there is no round-trip on the game side. Content is sourced
 //! from [`cardtable_model::catalog`] for now (it moves to this side in a later reorg phase).
 //!
-//! Built one slice at a time, guarded by the characterization behavioral golden. **P2.1** reproduces the
-//! flat banks (Heroes / Kit / Abilities / Stats / Numbers / Bestiary); the nested Locations, Rules,
-//! Progress, Events, and the interactive fight follow.
+//! Built one slice at a time, guarded by the characterization behavioral golden. The **entire static
+//! world** is reproduced (all ten zones: the banks, the nested Locations grid + Inn, the Rules
+//! encyclopedia, the day clock) — the characterization test asserts the emitter's full `view()` equals
+//! the shipped world's behavioral projection. Still to come: the interactive fight (combat state → view
+//! → apply), then pointing `boardgame` at this emitter and deleting the hand-wired bypass.
 
 use cardtable_model::catalog;
 use contract::{Arrangement, CardView, Game, GameError, Outcome, PlayerId, TableView, ZoneView};

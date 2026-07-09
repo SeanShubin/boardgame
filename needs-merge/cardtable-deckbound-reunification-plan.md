@@ -283,6 +283,15 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2.2b — DONE** (`fd03d47`). Added the Rules encyclopedia (6 phases + nested Engage). With every
+  top-level zone authored, strengthened the test to **full-world equality**: the emitter's entire
+  `view()` → `from_table_view` → `behavior()` equals `sample_table.behavior.txt`. **The complete static
+  world is reproduced through the seam** — the reunification's core thesis, proven. Remaining: **P2.3**
+  interactive fight (model combat as `World` state + actions; `view()` renders the arena, `apply()`
+  steps it, delegating to deckbound's resolver — reproduce the combat behavioral goldens) and **P2.4**
+  point `boardgame` at the emitter + delete the bypass. NOTE (fidelity, non-behavioral): the emitter
+  doesn't yet set `Free` arrangement on the free-drag banks (behavioral tier ignores arrangement); do a
+  byte/visual fidelity pass at P2.4.
 - **P2.2 — DONE** (`38bdd0a`). Emitter now authors the nested zones, reproduced verbatim: Locations
   (`Grid{columns:3}` of 9 drill-in places, each with its Location card + encounter [flavor + virtual
   `Foes:` list], Inn authored inline inside Ashfen), Progress (empty day clock), Events (Day Passed ×12).
