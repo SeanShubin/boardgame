@@ -614,6 +614,71 @@ fn emitter_arena_plays_a_fight_to_completion() {
     );
 }
 
+/// P2.3.1-arena: per-blow **player choices** drive the fight. The arena renders the current hero decision
+/// as answerable `choice` cards (each a clickable action); playing via those explicit answers (never the
+/// greedy StepArena) carries the fight to completion and folds a combat-log back.
+#[test]
+fn emitter_arena_player_choices_play_a_fight() {
+    use cardtable_model::from_table_view;
+    use contract::Game;
+    use deckbound_cardtable::Action;
+
+    let game = deckbound_cardtable::CardTableWorld;
+    let mut world = game.new_game(7, 1);
+    game.apply(&mut world, &Action::Equip { hero: 0, kit: 2 })
+        .unwrap();
+    game.apply(
+        &mut world,
+        &Action::March {
+            character: 0,
+            location: 1,
+        },
+    )
+    .unwrap();
+    game.apply(&mut world, &Action::Arena { character: 0 })
+        .unwrap();
+
+    // The arena shows the decision and clickable choice cards bound to legal actions.
+    let arena = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        arena.contains("type=\"decision\""),
+        "a hero decision is shown"
+    );
+    assert!(
+        arena.contains("- Strike ") && arena.contains("type=\"choice\" | qty=1 | act="),
+        "answerable, clickable choices are shown"
+    );
+
+    // A "player" that always takes the first explicit answer (never StepArena) — drives via real choices.
+    let mut guard = 0;
+    while game
+        .legal_actions(&world)
+        .iter()
+        .any(|a| matches!(a, Action::StepArena))
+    {
+        let acts = game.legal_actions(&world);
+        let choice = acts
+            .iter()
+            .find(|a| !matches!(a, Action::StepArena))
+            .expect("a hero decision always offers at least one answer while the arena is up")
+            .clone();
+        game.apply(&mut world, &choice).expect("the choice applies");
+        guard += 1;
+        assert!(guard < 2000, "the player-driven fight must terminate");
+    }
+
+    // The fight completed through explicit choices; a combat-log folded back (win or loss).
+    let after = behavior(&from_table_view(&game.view(&world, None)));
+    assert!(
+        !after.contains("[Arena]"),
+        "the arena closes when the player-driven fight ends"
+    );
+    assert!(
+        after.contains("type=\"log\""),
+        "a combat-log is folded back to the world"
+    );
+}
+
 /// P2.3.0: the emitter's fight resolution matches the old `cardtable-combat` path's outcome for the same
 /// kit + location + seed. Both delegate to deckbound's deterministic resolver, so outcome-parity holds by
 /// construction — this pins it. (Outcome-parity is the P2.3 acceptance criterion; the arena presentation
