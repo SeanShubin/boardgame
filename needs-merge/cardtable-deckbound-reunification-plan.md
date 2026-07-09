@@ -153,6 +153,42 @@ When a choice arises mid-pass, apply in order:
    names; game-side new crates take a `deckbound-` prefix.
 7. **Anything not settled by 1–6 that would change behavior → §9 (defer), don't guess.**
 
+## 14. P2 design — the view emitter (opened)
+
+**Emitter-home (decided):** a **new `contract::Game`** for the card-table world, on the deckbound side
+(the deckbound-presentation layer; provisional crate name TBD — names are flexible).
+
+**Non-circular state (the key insight):** the emitter's `State` is **not** a `Tableau`. It is compact
+world state — party/kits, which locations are cleared, the day, any active fight. `view()` renders that
+state to a nested `TableView`; `from_table_view` inflates the `Tableau` renderer-side. The `Tableau` is
+never the source of truth, so there is no Tableau→TableView→Tableau round-trip on the game side. This is
+why the reunification is *re-expressing* `fixtures.rs` as `(data + a view fn)`, not moving a Tableau.
+`apply()` handles equip / march / fight, delegating combat to deckbound's resolver (the logic
+`cardtable-combat` already holds). Content (`catalog`/`fixtures`) is referenced from `cardtable-model`
+for now; it physically moves in P3.
+
+**Visual fidelity (decided → full):** keep the product's look (Locations `Grid{columns:3}`, the Inn
+`Rows`, the Progress `Grid{columns:5}`). The contract `Layout` enum (Stack/Row/Fan) is a CCG vocabulary
+that can't express these, and `from_table_view` ignores layout today. So a small additive growth is
+needed: carry a **card-table arrangement** on `ZoneView` and map it via `set_layout`. The Inn's equip
+view is authored **inline** by the emitter (no model `projection` needed); character decks become
+deckbound-internal state (no model `reflects`).
+
+**P2 sub-roadmap:**
+- **P2.0 — Carry arrangement through the seam (additive).** Add a contract-side arrangement type +
+  `ZoneView` field; `from_table_view` maps it to the model `Arrangement` via `set_layout`. (Consider a
+  `ZoneView` builder here — the struct is accreting optional card-table fields, and per-field literal
+  churn across deckbound's ~15 sites is a smell.) Verify: goldens unchanged, new binding test, tabletop
+  compiles.
+- **P2.1 — Scaffold the emitter `Game`** (State/Action/view/apply) and reproduce the **flat banks**
+  (Stats/Abilities/Numbers/Heroes/Kit/Bestiary) — assert `view()`→`from_table_view`→`behavior()` matches
+  those slices of the behavioral golden.
+- **P2.2 — Locations grid + encounters** (nested, arrangement `Grid`), and the **Inn** (inline equip).
+- **P2.3 — Interactive fight as zones** (folds in old P1.3): the arena as a zone, per-blow prompts as
+  actionable cards; reproduce the combat behavioral goldens.
+- **P2.4 — Point `boardgame` at the emitter** via `Game → TableView → from_table_view`; delete the
+  hand-wired `sample_table` + `resolve_*` bypass. Behavioral goldens are the acceptance gate.
+
 ## 9. Deferred-questions log (genuine behavior forks only)
 
 ### Q1 — What does the seam carry? (P1 gate, OPEN)
@@ -247,6 +283,10 @@ authoring the *specific* world content (today in `cardtable-model`'s `catalog`/`
 
 ## 11. Progress log (append-only)
 
+- **P2 — OPENED (design in §14).** Emitter-home decided (new `contract::Game`, compact non-Tableau
+  state, reuse deckbound combat); full visual fidelity chosen (carry arrangement). Sub-roadmap P2.0–P2.4
+  set. Next executable unit: **P2.0** — carry a card-table arrangement through the seam (additive),
+  ideally introducing a `ZoneView` builder to stop per-field literal churn.
 - **P1.2 sub-question — RESOLVED; behavioral tier finalized.** Reading `sample_table.behavior.txt`
   showed `layout`/arrangement diverges (presentation) and `projection`/`reflects` are model mechanisms
   the emitter reimplements — all three dropped from the behavioral projection (byte tier still pins them
