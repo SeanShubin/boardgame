@@ -75,8 +75,15 @@ the bid. One resource, not two. Per single strike:
 3. **Damage = Might**, applied to whoever got hit, in the order-free batch.
 
 *Confirmed 2026-07-09:* evade must exceed the attacker's **spent value** (`cards_atk × F_atk`), not just the
-catch bar (so over-flipping to tax evasion does something). *Inferred, confirm at build:* catch bar = the
-target's finesse (`cards × F_att ≥ F_target`).
+catch bar (so over-flipping to tax evasion does something); catch bar = the target's finesse
+(`cards × F_att ≥ F_target`).
+
+**The finesse contest is strictly commit-then-resolve** (the blind-bid seam): the attacker locks
+`cards × F_att` **first**, and only then does the target's finesse resolve the catch (`≥ F_target`) and power
+any evade counter — the defender never answers simultaneously, always with the committed bid in hand. **Fog
+off:** inert (F_target is pre-readable, so bid precisely). **Fog on:** load-bearing (you commit into
+uncertainty about what sticks). So the attacker→defender order isn't UI convenience — it's the information
+order that defines the bluff, and the reason to promote target→react to rules phases when fog/PvP arrive.
 
 **Multi-strike = the 3rd mini-phase (in v2, not deferred).** Once contact is paid for, finesse stops
 mattering: in **Extra strikes** (mini-phase 3) every unit still in contact, both sides, flips its remaining
