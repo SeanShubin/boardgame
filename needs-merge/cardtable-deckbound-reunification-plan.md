@@ -295,6 +295,12 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1b — DONE** (`df774dd`). Pairing carries seam → model: `Card` gains `pair_key`/`pairings`
+  (native tuples, no contract dep) + accessors/setters; `from_table_view` carries them; `skip_serializing_if`
+  keeps the byte format + golden unchanged. So the renderer (reads the Tableau) can perform pairings.
+  Remaining P2.3.1: **c** renderer drag-drop handling + mode toggle in `cardtable` (Bevy; drive with
+  run/verify, no golden); **d** emitter `World` state + equip/march/fight actions (emit pairings for equip)
+  + arena `view()`; bless fresh arena goldens.
 - **P2.3.1a — DONE** (`34d58d2`). Interaction model decided (§15): grow the seam for a **neutral pairing**
   (drag-drop or click-then-click per a renderer-side mode toggle). Added `contract::Pairing` +
   `CardView.pair_key`/`pairings` + builders; additive, unit-tested, goldens unchanged. Remaining P2.3.1:
