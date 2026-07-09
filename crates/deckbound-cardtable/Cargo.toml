@@ -8,9 +8,9 @@ edition.workspace = true
 
 [dependencies]
 contract = { workspace = true }
-# Content source (catalog) for now; the reorg's later phase moves that content to this side.
-cardtable-model = { workspace = true }
 # The combat resolver: the emitter delegates fight resolution to deckbound (outcomes are deterministic
 # and match the old path by construction). This is the logic cardtable-combat holds today, moving here.
 deckbound = { workspace = true }
 serde = { workspace = true }
+# Card content (the five stats, kits, creatures, encounters) lives in this crate's `catalog` module — it
+# moved here from cardtable-model when the generic model was purged of game words.

@@ -2361,7 +2361,6 @@ dependencies = [
 name = "deckbound-cardtable"
 version = "0.1.0"
 dependencies = [
- "cardtable-model",
  "contract",
  "deckbound",
  "serde",
