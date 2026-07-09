@@ -243,6 +243,12 @@ struct ArenaEvadeCard(bool);
 #[derive(Component)]
 struct ArenaStrikeBackCard(bool);
 
+/// A **v2 board-arena combatant** the player can tap to edit the staged plan for the current step (cycle
+/// rank / select / bid / aim / react). Carries the combatant's board [`CardId`]; the tap is recorded into
+/// [`TapRequest`] and interpreted by the game's `tap_intention`.
+#[derive(Component, Clone, Copy)]
+struct ArenaUnitCard(CardId);
+
 /// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
 /// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
 /// [`CardKind::Virtual`] readouts (a combat log), which can run long; ordinary panel cards clip.
@@ -569,6 +575,7 @@ fn on_click(
         Option<&ArenaEvadeCard>,
         Option<&ArenaStrikeBackCard>,
         Option<&AffordanceControl>,
+        Option<&ArenaUnitCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
@@ -577,6 +584,7 @@ fn on_click(
     mut manual_combat: ResMut<ManualCombatRequest>,
     mut arena: ResMut<ArenaCombat>,
     mut affordance_click: ResMut<AffordanceClick>,
+    mut tap_request: ResMut<TapRequest>,
     mut front: ResMut<FannedFront>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
@@ -598,6 +606,7 @@ fn on_click(
         arena_evade,
         arena_strikeback,
         affordance,
+        arena_unit,
     )) = targets.get(on.event().entity)
     else {
         return;
@@ -612,8 +621,16 @@ fn on_click(
         on.propagate(false);
         return;
     }
-    // A game **affordance** control (Fight / Commit sub-phase / Advance Day, …): record the click index for
-    // the board driver's `apply_affordance`, which turns it into a `Game::apply`.
+    // A **v2 board-arena combatant** tap: record the board card for the driver's `apply_tap`, which asks the
+    // game's `tap_intention` to interpret it (cycle rank / select / bid / aim / react) against the fight step.
+    if let Some(unit) = arena_unit {
+        tap_request.0 = Some(unit.0);
+        rebuild.0 = true;
+        on.propagate(false);
+        return;
+    }
+    // A game **affordance** control (Fight / Commit / Advance Day, …): record the click index for the board
+    // driver's `apply_affordance`, which turns it into a `Game::apply`.
     if let Some(ctrl) = affordance {
         affordance_click.0 = Some(ctrl.0);
         rebuild.0 = true;
@@ -1907,6 +1924,310 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
     ));
 }
 
+// ---- v2 board arena (the interactive fight rendered from the cards) ------------------------------------
+
+/// The active v2 fight's `[Arena]` zone (a top-level pile labelled `Arena`), if a fight is underway. The
+/// renderer reaches past `cardtable-model` here only by the combat card-type conventions the game encodes
+/// on the board (`unit` / `foe` / `phase` / `contact`); everything drawn is read from those cards.
+fn board_arena(tree: &Tableau) -> Option<PileId> {
+    tree.pile(tree.root_id())?
+        .subpiles()
+        .into_iter()
+        .find(|&p| tree.pile(p).map(|p| p.label.as_str()) == Some("Arena"))
+}
+
+/// One combatant parsed from its `[Arena]` card: constant identity + mutable state (rank/HP/tempo on detail
+/// 0–2) + the player's staged plan (active / aim / bid / react on the detail lines after that).
+struct ArenaUnit {
+    card: CardId,
+    name: String,
+    party: bool,
+    rank: char,
+    hp: u32,
+    max: u32,
+    tempo: u32,
+    fallen: bool,
+    active: bool,
+    aim: Option<CardId>,
+    bid: u32,
+    react: Option<String>,
+}
+
+/// Parse the integer that follows `prefix` on `line`, stopping at the first `/` or space (e.g. `"HP 2/3"`).
+fn detail_num(line: &str, prefix: &str) -> u32 {
+    line.strip_prefix(prefix)
+        .and_then(|s| s.split(['/', ' ']).next())
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+fn read_arena_unit(tree: &Tableau, card: CardId) -> Option<ArenaUnit> {
+    let c = tree.card(card)?;
+    let party = match c.card_type() {
+        "unit" => true,
+        "foe" => false,
+        _ => return None,
+    };
+    let d = c.detail();
+    let rank = d
+        .first()
+        .and_then(|l| l.chars().next())
+        .unwrap_or('V')
+        .to_ascii_uppercase();
+    let hp = d.get(1).map(|l| detail_num(l, "HP ")).unwrap_or(0);
+    let max = d
+        .get(1)
+        .and_then(|l| l.split('/').nth(1))
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(hp);
+    let tempo = d.get(2).map(|l| detail_num(l, "Tempo ")).unwrap_or(0);
+    let mut u = ArenaUnit {
+        card,
+        name: c.front_title().to_string(),
+        party,
+        rank,
+        hp,
+        max,
+        tempo,
+        fallen: hp == 0,
+        active: false,
+        aim: None,
+        bid: 0,
+        react: None,
+    };
+    for line in d.iter().skip(3) {
+        if line == "active" {
+            u.active = true;
+        } else if let Some(id) = line.strip_prefix("aim ") {
+            u.aim = id.trim().parse().ok().map(CardId);
+        } else if let Some(n) = line.strip_prefix("bid ") {
+            u.bid = n.trim().parse().unwrap_or(0);
+        } else if let Some(r) = line.strip_prefix("react ") {
+            u.react = Some(r.to_string());
+        }
+    }
+    Some(u)
+}
+
+/// Build the modal **v2 combat arena** from the board: the phase banner, a per-step prompt, three rank lanes
+/// (party left, foes right) with each unit showing its staged plan, the landed contacts, and the Commit
+/// control. Tapping a unit records a [`TapRequest`] the game interprets against the current step.
+fn build_arena_v2_ui(
+    commands: &mut Commands,
+    tree: &Tableau,
+    arena: PileId,
+    affordances: &[String],
+) {
+    let cards = tree.content_cards(arena);
+    let units: Vec<ArenaUnit> = cards
+        .iter()
+        .filter_map(|&c| read_arena_unit(tree, c))
+        .collect();
+
+    // The phase card: "Phase: X" + [Round r, Sub-phase s/5, Step: Y].
+    let phase = cards
+        .iter()
+        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("phase"));
+    let phase_title = phase
+        .and_then(|&c| tree.card(c))
+        .map(|c| c.front_title().to_string())
+        .unwrap_or_else(|| "Phase".into());
+    let phase_detail = phase
+        .and_then(|&c| tree.card(c))
+        .map(|c| c.detail().to_vec())
+        .unwrap_or_default();
+    let step = phase_detail
+        .get(2)
+        .and_then(|l| l.strip_prefix("Step: "))
+        .unwrap_or("Marshal")
+        .to_string();
+    let round = phase_detail.first().cloned().unwrap_or_default();
+
+    // Foes that some active attacker is aiming at (a targeting cue), and the landed contacts.
+    let aimed: Vec<CardId> = units.iter().filter_map(|u| u.aim).collect();
+    let name_of = |id: CardId| {
+        tree.card(id)
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_default()
+    };
+    let contacts: Vec<String> = cards
+        .iter()
+        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
+        .filter_map(|&c| {
+            let d = tree.card(c)?.detail().to_vec();
+            let from = CardId(detail_num(d.first()?, "from ") as u64);
+            let to = CardId(detail_num(d.get(1)?, "to ") as u64);
+            Some(format!("{} → {}", name_of(from), name_of(to)))
+        })
+        .collect();
+
+    let prompt = match step.as_str() {
+        "Catch" => {
+            "Catch — tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
+        }
+        "React" => "React — tap a struck hero to cycle Eat / Evade / Strike Back.",
+        "Extra" => "Extra strikes — tap a hero in contact to spend its remaining tempo.",
+        _ => {
+            "Marshal — tap a hero to change its rank (Vanguard → Outrider → Rearguard), then Commit."
+        }
+    };
+
+    commands
+        .spawn((
+            CardTableRoot,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::all(Val::Px(16.0)),
+                row_gap: Val::Px(10.0),
+                ..default()
+            },
+            BackgroundColor(FELT),
+        ))
+        .with_children(|root| {
+            // Phase banner.
+            root.spawn((
+                Text::new(format!("{phase_title}   ({round} · Step: {step})")),
+                TextFont {
+                    font_size: FONT_HEAD,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+            // Per-step prompt.
+            arena_prompt_line(root, prompt);
+            // Three rank lanes: party left, foes right.
+            for (rank, label) in [('V', "Vanguard"), ('O', "Outrider"), ('R', "Rearguard")] {
+                root.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    min_height: Val::Px(SMALL_H + 8.0),
+                    ..default()
+                })
+                .with_children(|lane| {
+                    arena_lane_label(lane, label);
+                    for u in units.iter().filter(|u| u.party && u.rank == rank) {
+                        spawn_arena_v2_unit(lane, u, false, &name_of);
+                    }
+                    arena_divider(lane);
+                    for u in units.iter().filter(|u| !u.party && u.rank == rank) {
+                        spawn_arena_v2_unit(lane, u, aimed.contains(&u.card), &name_of);
+                    }
+                });
+            }
+            // Landed contacts (what React / Extra act along).
+            if !contacts.is_empty() {
+                arena_prompt_line(root, &format!("Contacts: {}", contacts.join(",  ")));
+            }
+            // The Commit control (the game's single arena affordance).
+            if let Some(label) = affordances.first() {
+                root.spawn(Node {
+                    margin: UiRect::top(Val::Px(6.0)),
+                    ..default()
+                })
+                .with_children(|row| {
+                    spawn_nav_card(row, (AffordanceControl(0), Pinned), label);
+                });
+            }
+        });
+}
+
+/// A muted instruction line on the felt (per-step prompt / contacts summary).
+fn arena_prompt_line(parent: &mut ChildSpawnerCommands, text: &str) {
+    parent.spawn((
+        Text::new(text.to_string()),
+        TextFont {
+            font_size: FONT_BODY,
+            ..default()
+        },
+        TextColor(MUTED),
+    ));
+}
+
+/// A v2 arena unit tile: name · rank · HP · tempo, plus the staged plan (active / → aim / bid / reaction),
+/// tagged [`ArenaUnitCard`] so a tap edits that plan. `cued` rings a foe an active attacker is aiming at.
+fn spawn_arena_v2_unit(
+    parent: &mut ChildSpawnerCommands,
+    u: &ArenaUnit,
+    cued: bool,
+    name_of: &dyn Fn(CardId) -> String,
+) {
+    let accent = type_accent(if u.party { "hero" } else { "foe" });
+    let (bg, ink) = if u.fallen {
+        (CARD_BACK, MUTED)
+    } else {
+        (CARD_FACE, CARD_INK)
+    };
+    let border = if u.active || cued { TARGET_CUE } else { accent };
+    let bar = format!("{} · HP {}/{} · T{}", u.rank, u.hp, u.max, u.tempo);
+    // The staged-plan line: what this unit will do on Commit.
+    let mut plan = String::new();
+    if u.active {
+        plan.push_str("● ");
+    }
+    if let Some(aim) = u.aim {
+        plan.push_str(&format!("→ {} ", name_of(aim)));
+    }
+    if u.bid > 0 {
+        plan.push_str(&format!("bid {} ", u.bid));
+    }
+    if let Some(react) = &u.react {
+        plan.push_str(react);
+    }
+    let mut tile = parent.spawn((
+        ArenaUnitCard(u.card),
+        Node {
+            width: Val::Px(SMALL_W),
+            min_height: Val::Px(SMALL_H),
+            padding: UiRect::all(Val::Px(8.0)),
+            border: UiRect::all(Val::Px(2.0)),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            row_gap: Val::Px(3.0),
+            border_radius: BorderRadius::all(Val::Px(10.0)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        BackgroundColor(bg),
+        BorderColor::all(border),
+        card_shadow(),
+    ));
+    tile.with_children(|c| {
+        c.spawn((
+            Text::new(u.name.clone()),
+            TextFont {
+                font_size: title_font(&u.name, FONT_TITLE, SMALL_INNER),
+                ..default()
+            },
+            TextLayout::no_wrap(),
+            TextColor(ink),
+        ));
+        c.spawn((
+            Text::new(bar),
+            TextFont {
+                font_size: FONT_BODY,
+                ..default()
+            },
+            TextColor(if u.fallen { FACE_DOWN_EDGE } else { MUTED }),
+        ));
+        if !plan.trim().is_empty() {
+            c.spawn((
+                Text::new(plan.trim().to_string()),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(TARGET_CUE),
+            ));
+        }
+    });
+}
+
 /// Step the interactive combat arena each frame. When a fight is up: if it's **finished**, fold it back onto
 /// the table ([`finish_manual_combat`]) and close the arena; if the **party** owes a decision, wait (the
 /// arena shows it, answered via [`on_click`]); otherwise auto-answer the **foe** AI / advance one step,
@@ -2155,6 +2476,12 @@ fn build_ui(
     // its overlays, and the combat entry buttons are all suppressed.
     if let Some(state) = arena {
         build_arena_ui(commands, state);
+        return;
+    }
+    // A **v2 board fight** in progress: the `[Arena]` zone is modal — render the interactive combat board
+    // straight from the cards (rank lanes, each unit's staged plan, the phase, the Commit control).
+    if let Some(pile) = board_arena(tree) {
+        build_arena_v2_ui(commands, tree, pile, affordances);
         return;
     }
     // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
