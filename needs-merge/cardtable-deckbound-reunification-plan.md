@@ -300,6 +300,21 @@ plain click-actions.
 
 ## 11. Progress log (append-only)
 
+- **P2.3.1c (renderer) — DONE** (`fd9632e`) + **P2.4 (routing) — DONE** (`8021079`). **P2 COMPLETE.** The
+  renderer performs game-declared **pairing** drops (`pairing_action` reads `card.pairings()`/`pair_key()`
+  from the view-authored model; both drop paths report the action to `ActionRequests`; additive, current
+  product unaffected). Then `boardgame` was routed through `cardtable`'s `GamePlugin` bound to
+  `deckbound_cardtable::CardTableWorld`: the Table is built from the game's `view` each frame, and clicks +
+  pairing drops flow into `Game::apply`. The hand-wired bypass is **deleted** (sample_table, FactoryBase,
+  resolve_combat/manual, the `cardtable-combat` dep). Verified: `cargo run -p boardgame` **boots cleanly**
+  (view→Table→renderer wiring sound; window opens on the GPU, no panic). Dropped persistence (state is now
+  the source of truth; action-stream save is a follow-on; `persistence.rs` removed).
+  **The deployed product runs deckbound's entire card-table world — banks, map, interactive per-blow arena —
+  through the `contract::Game` seam. No bypass.** 13 goldens green; gate crates clippy-clean.
+  Remaining is the **reorg cleanup** (P3–P7): purge the leftover game words from the generic crates
+  (`cardtable`'s hardcoded equip/march, `cardtable-model`'s catalog/fixtures; absorb `cardtable-combat`),
+  extract `deckbound-balance`, evict Grand Archive + demote `combat-lab`, rename, then the quality review.
+
 - **P2.3.1 arena per-blow choices — DONE** (`9585986`). The manual-combat design is realized: the player
   makes every combat decision through the seam. The arena renders the current hero decision as answerable
   `choice` cards — Strike-enemy / Hold (Target), Evade / Endure, Strike-back / Decline — each a clickable
