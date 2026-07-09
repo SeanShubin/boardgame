@@ -329,3 +329,40 @@ fn golden_interaction_transcript() {
     assert_golden("interaction_transcript", &log);
     assert_behavior("interaction_transcript", &blog);
 }
+
+/// P2.1: every flat bank the emitter authors reproduces the shipped world **verbatim**. Each zone the
+/// emitter's `view()` emits, rendered through the seam (`from_table_view` → `behavior`), must appear
+/// byte-for-byte inside `sample_table.behavior.txt`. As the emitter grows to author more of the world,
+/// more zones are covered here; the full-world *equality* gate lands at P2.4 (route `boardgame`).
+#[test]
+fn emitter_banks_reproduce_the_shipped_world() {
+    use cardtable_model::from_table_view;
+    use contract::{Game, TableView};
+
+    let game = deckbound_cardtable::CardTableWorld;
+    let view = game.view(&game.new_game(1, 1), None);
+    assert!(!view.zones.is_empty(), "the emitter produced no zones");
+
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("golden");
+    path.push("sample_table.behavior.txt");
+    let sample = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\r\n", "\n");
+
+    for zone in &view.zones {
+        let mini = TableView {
+            zones: vec![zone.clone()],
+            ..Default::default()
+        };
+        let projection = behavior(&from_table_view(&mini));
+        let block = projection
+            .strip_prefix("[table]\n")
+            .expect("projection starts with the root line");
+        assert!(
+            sample.contains(block),
+            "emitter zone `{}` is not reproduced verbatim in the shipped world:\n{block}",
+            zone.label
+        );
+    }
+}

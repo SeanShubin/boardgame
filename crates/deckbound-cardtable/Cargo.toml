@@ -1,0 +1,13 @@
+# PROVISIONAL NAME (names are flexible per the reorg plan). The deckbound-side **view emitter**: the
+# card-table world authored as a `contract::Game`, so the product runs through the seam instead of a
+# hand-built Tableau. See needs-merge/cardtable-deckbound-reunification-plan.md §14.
+[package]
+name = "deckbound-cardtable"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contract = { workspace = true }
+# Content source (catalog) for now; the reorg's later phase moves that content to this side.
+cardtable-model = { workspace = true }
+serde = { workspace = true }

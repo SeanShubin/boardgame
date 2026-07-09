@@ -18,5 +18,7 @@ edition.workspace = true
 [dev-dependencies]
 cardtable-model = { workspace = true }
 cardtable-combat = { workspace = true }
+deckbound-cardtable = { workspace = true }
+contract = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }

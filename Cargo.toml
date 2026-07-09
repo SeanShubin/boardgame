@@ -14,6 +14,7 @@ members = [
     "crates/combat-lab",
     "crates/gatcg",
     "crates/characterization",
+    "crates/deckbound-cardtable",
 ]
 
 [workspace.package]
@@ -31,6 +32,7 @@ mdtable = { path = "crates/mdtable" }
 cardtable-model = { path = "crates/cardtable-model" }
 cardtable-combat = { path = "crates/cardtable-combat" }
 cardtable = { path = "crates/cardtable" }
+deckbound-cardtable = { path = "crates/deckbound-cardtable" }
 tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
 serde = { version = "1", features = ["derive"] }

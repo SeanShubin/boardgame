@@ -2048,6 +2048,8 @@ version = "0.1.0"
 dependencies = [
  "cardtable-combat",
  "cardtable-model",
+ "contract",
+ "deckbound-cardtable",
  "ron 0.8.1",
  "serde",
 ]
@@ -2357,6 +2359,15 @@ dependencies = [
  "engine",
  "mdtable",
  "ron 0.8.1",
+ "serde",
+]
+
+[[package]]
+name = "deckbound-cardtable"
+version = "0.1.0"
+dependencies = [
+ "cardtable-model",
+ "contract",
  "serde",
 ]
 
