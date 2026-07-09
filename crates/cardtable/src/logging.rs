@@ -66,12 +66,15 @@ impl Plugin for LoggingPlugin {
 
 // ---- physical-cards.log: the card tree + transitions ---------------------------------------------
 
-/// One card in a physical snapshot: where it lives (a `/`-joined pile-label path) and which way it faces.
+/// One card in a physical snapshot: where it lives (a `/`-joined pile-label path), which way it faces, and
+/// its detail lines (a combatant's rank/HP/tempo and staged plan ride here) — so a detail-only change (e.g.
+/// staging a combat plan) still counts as a physical change and re-logs.
 #[derive(Clone, PartialEq)]
 struct CardState {
     path: String,
     name: String,
     face_up: bool,
+    detail: Vec<String>,
 }
 
 /// A physical snapshot: the rendered hierarchy (for the state block) and a per-card map (for diffing).
@@ -120,12 +123,22 @@ fn walk(
                     "{indent}  - {} ({face}){qty}\n",
                     card.front_title()
                 ));
+                let detail: Vec<String> = card
+                    .detail()
+                    .iter()
+                    .filter(|l| !l.is_empty())
+                    .cloned()
+                    .collect();
+                for line in &detail {
+                    tree.push_str(&format!("{indent}      · {line}\n"));
+                }
                 cards.insert(
                     *cid,
                     CardState {
                         path: path.clone(),
                         name: card.front_title().to_string(),
                         face_up: !card.is_face_down(),
+                        detail,
                     },
                 );
             }
