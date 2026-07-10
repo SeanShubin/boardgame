@@ -135,6 +135,7 @@ impl Plugin for CardTablePlugin {
                     fan_layout,
                     update_card_cues,
                     scroll_hovered_panel,
+                    animate_target_arrows,
                 ),
             )
             // Step the interactive combat arena (advance the fight, answer the AI foes, close on the end).
@@ -252,6 +253,23 @@ struct ArenaStrikeBackCard(bool);
 /// [`TapRequest`] and interpreted by the game's `tap_intention`.
 #[derive(Component, Clone, Copy)]
 struct ArenaUnitCard(CardId);
+
+/// The **armed hero** during Catch — the tile a targeting arrow flows *from* (rendering the attention layer:
+/// a selection in progress). Set by [`spawn_arena_v2_unit`], read by [`animate_target_arrows`].
+#[derive(Component)]
+struct ArrowSource;
+
+/// A **reachable foe** during Catch — a tile a targeting arrow flows *to*. `confirmed` marks the aimed target
+/// (solid, green) vs. a merely-possible one (dotted, amber).
+#[derive(Component)]
+struct ArrowTarget {
+    confirmed: bool,
+}
+
+/// One transient dot of a targeting arrow (a top-level overlay node). Re-spawned each frame by
+/// [`animate_target_arrows`] so the dots flow toward the target.
+#[derive(Component)]
+struct ArrowDot;
 
 /// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
 /// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
@@ -2806,11 +2824,11 @@ fn build_combat_lanes(
                 .with_children(|lane| {
                     spawn_rank_card(lane, label);
                     for u in all.iter().filter(|u| u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
+                        spawn_arena_v2_unit(lane, u, sel_of(u), step, name_of);
                     }
                     arena_divider(lane);
                     for u in all.iter().filter(|u| !u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
+                        spawn_arena_v2_unit(lane, u, sel_of(u), step, name_of);
                     }
                 });
         }
@@ -3176,6 +3194,7 @@ fn spawn_arena_v2_unit(
     parent: &mut ChildSpawnerCommands,
     u: &ArenaUnit,
     sel: Sel,
+    step: &str,
     name_of: &dyn Fn(CardId) -> String,
 ) {
     // Three-state visual: fallen recedes hardest, then No (dim), then Yes (available), then On (chosen).
@@ -3234,6 +3253,22 @@ fn spawn_arena_v2_unit(
         BorderColor::all(border),
         card_shadow(),
     ));
+    // Targeting-arrow anchors (Catch only): the armed hero is the source, each lit foe a target (the aimed one
+    // is confirmed). A per-frame system reads these to draw the dotted flow between them.
+    if step == "Catch" && !u.fallen {
+        match (sel, u.party) {
+            (Sel::On, true) => {
+                tile.insert(ArrowSource);
+            }
+            (Sel::On, false) => {
+                tile.insert(ArrowTarget { confirmed: true });
+            }
+            (Sel::Yes, false) => {
+                tile.insert(ArrowTarget { confirmed: false });
+            }
+            _ => {}
+        }
+    }
     tile.with_children(|c| {
         c.spawn((
             Text::new(u.name.clone()),
@@ -3275,6 +3310,84 @@ fn spawn_arena_v2_unit(
             ));
         }
     });
+}
+
+/// Draw the **targeting arrows** — the attention layer made visible. When a hero is armed during Catch, a
+/// dotted line of dots flows from it to each reachable foe (amber, sparse) and, once a target is aimed, a
+/// denser green line to that foe (confirmed). Dots are transient top-level overlay nodes re-spawned each
+/// frame so they animate toward the target; they sit above the felt (`GlobalZIndex`) and never eat clicks
+/// (`Pickable::IGNORE`). Presentation-only — wall-clock drives the flow, never the rules.
+fn animate_target_arrows(
+    mut commands: Commands,
+    time: Res<Time>,
+    sources: Query<&UiGlobalTransform, With<ArrowSource>>,
+    targets: Query<(&UiGlobalTransform, &ArrowTarget)>,
+    dots: Query<Entity, With<ArrowDot>>,
+) {
+    for e in &dots {
+        commands.entity(e).despawn(); // clear last frame's flow
+    }
+    let Some(src) = sources.iter().next() else {
+        return; // no armed hero -> no arrows
+    };
+    let src = src.translation;
+    let phase = time.elapsed_secs();
+    for (target_tf, target) in &targets {
+        spawn_arrow_dots(
+            &mut commands,
+            src,
+            target_tf.translation,
+            target.confirmed,
+            phase,
+        );
+    }
+}
+
+/// Spawn one arrow's worth of dots from `a` to `b` (tile centers, logical px), flowing toward `b`. Confirmed
+/// arrows are denser and green; possible ones sparser and amber. Dots grow toward the target as a soft head.
+fn spawn_arrow_dots(commands: &mut Commands, a: Vec2, b: Vec2, confirmed: bool, phase: f32) {
+    let dir = b - a;
+    let len = dir.length();
+    if len < 72.0 {
+        return; // tiles adjacent/overlapping - nothing useful to draw
+    }
+    let unit = dir / len;
+    // Start clear of the source tile and stop short of the target so the dots read as a gap-spanning arrow.
+    let start = a + unit * 36.0;
+    let end = b - unit * 36.0;
+    let span = (end - start).length();
+    let spacing = if confirmed { 11.0 } else { 17.0 };
+    let flow = (phase * 42.0).rem_euclid(spacing); // px/sec toward the target
+    let color = if confirmed {
+        TARGET_CUE
+    } else {
+        SELECTABLE_CUE
+    };
+    let mut d = flow;
+    while d <= span {
+        let t = d / span;
+        let size = (if confirmed { 5.0 } else { 4.0 }) * (0.6 + 0.9 * t); // grow into a head near the target
+        let p = start + unit * d;
+        commands.spawn((
+            ArrowDot,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(p.x - size * 0.5),
+                top: Val::Px(p.y - size * 0.5),
+                width: Val::Px(size),
+                height: Val::Px(size),
+                border_radius: BorderRadius::all(Val::Percent(50.0)),
+                ..default()
+            },
+            BackgroundColor(color),
+            GlobalZIndex(1000),
+            Pickable {
+                should_block_lower: false,
+                is_hoverable: false,
+            },
+        ));
+        d += spacing;
+    }
 }
 
 /// Step the interactive combat arena each frame. When a fight is up: if it's **finished**, fold it back onto
