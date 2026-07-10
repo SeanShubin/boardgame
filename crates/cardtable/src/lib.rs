@@ -2420,13 +2420,16 @@ fn build_arena_v2_ui(
             .map(|c| c.front_title().to_string())
             .unwrap_or_default()
     };
+    let m = palette::MDASH;
     let prompt = match step.as_str() {
         "Catch" => {
-            "Catch - tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
+            format!(
+                "Catch {m} tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
+            )
         }
-        "React" => "React - tap a struck hero to cycle Eat / Evade / Strike Back.",
-        "Extra" => "Extra strikes - tap a hero in contact to spend its remaining tempo.",
-        _ => "Formation - drag each hero into a rank row (or tap to cycle), then Start.",
+        "React" => format!("React {m} tap a struck hero to cycle Eat / Evade / Strike Back."),
+        "Extra" => format!("Extra strikes {m} tap a hero in contact to spend its remaining tempo."),
+        _ => format!("Formation {m} drag each hero into a rank row (or tap to cycle), then Start."),
     };
 
     // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is only live
@@ -2488,7 +2491,7 @@ fn build_arena_v2_ui(
                     },
                     TextColor(INK),
                 ));
-                arena_prompt_line(main, prompt);
+                arena_prompt_line(main, &prompt);
                 main.spawn(Node {
                     width: Val::Percent(100.0),
                     flex_grow: 1.0,
@@ -2715,11 +2718,12 @@ fn build_combat_lanes(
             .map(|u| u.name.clone())
             .unwrap_or_else(|| name_of(c))
     };
+    let (arrow, mdash, times) = (palette::ARROW, palette::MDASH, palette::TIMES);
     let mut log: Vec<String> = Vec::new();
     if !pairs.is_empty() {
         let pretty = pairs
             .iter()
-            .map(|&(a, t)| format!("{} -> {}", rank_word(a), rank_word(t)))
+            .map(|&(a, t)| format!("{} {arrow} {}", rank_word(a), rank_word(t)))
             .collect::<Vec<_>>()
             .join(",  ");
         log.push(format!("This phase, may strike:  {pretty}"));
@@ -2730,7 +2734,7 @@ fn build_combat_lanes(
             let mut any = false;
             for u in all.iter().filter(|u| u.party && u.aim.is_some()) {
                 log.push(format!(
-                    "  {} -> {}  (bid {})",
+                    "  {} {arrow} {}  (bid {})",
                     u.name,
                     name_by_card(u.aim.unwrap()),
                     u.bid
@@ -2753,7 +2757,7 @@ fn build_combat_lanes(
                     .map(|u| u.react.clone().unwrap_or_else(|| "Eat".into()))
                     .unwrap_or_else(|| "Eat".into());
                 log.push(format!(
-                    "  {} struck {}  (bid {}) - {}",
+                    "  {} struck {}  (bid {}) {mdash} {}",
                     name_by_card(from),
                     name_by_card(to),
                     bid,
@@ -2774,14 +2778,14 @@ fn build_combat_lanes(
                         if !u.party {
                             "extra strike (foe)".into()
                         } else if u.bid > 0 {
-                            format!("extra strike x{}", u.bid)
+                            format!("extra strike {times}{}", u.bid)
                         } else {
                             "holding".into()
                         }
                     })
                     .unwrap_or_default();
                 log.push(format!(
-                    "  {} on {} - {}",
+                    "  {} on {} {mdash} {}",
                     name_by_card(from),
                     name_by_card(to),
                     act
@@ -2886,10 +2890,11 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
 /// (fixed) rank row.
 fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
     let accent = type_accent(if u.party { "hero" } else { "foe" });
+    let dot = palette::MIDDOT;
     let bar = if u.party {
-        format!("HP {}/{} | T{}", u.hp, u.max, u.tempo)
+        format!("HP {}/{} {dot} T{}", u.hp, u.max, u.tempo)
     } else {
-        format!("{} | HP {}/{}", u.rank, u.hp, u.max)
+        format!("{} {dot} HP {}/{}", u.rank, u.hp, u.max)
     };
     let mut tile = parent.spawn((
         Node {
@@ -2957,14 +2962,16 @@ fn spawn_arena_v2_unit(
     } else {
         2.0
     };
-    let bar = format!("{} | HP {}/{} | T{}", u.rank, u.hp, u.max, u.tempo);
+    let dot = palette::MIDDOT;
+    let bar = format!("{} {dot} HP {}/{} {dot} T{}", u.rank, u.hp, u.max, u.tempo);
     // The staged-plan line: what this unit will do on Commit.
     let mut plan = String::new();
     if u.active {
-        plan.push_str("* ");
+        plan.push(palette::BULLET);
+        plan.push(' ');
     }
     if let Some(aim) = u.aim {
-        plan.push_str(&format!("-> {} ", name_of(aim)));
+        plan.push_str(&format!("{} {} ", palette::ARROW, name_of(aim)));
     }
     if u.bid > 0 {
         plan.push_str(&format!("bid {} ", u.bid));

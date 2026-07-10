@@ -28,6 +28,20 @@ pub const SYMBOLS: &[char] = &[
     '\u{2026}', '\u{00B0}', // ellipsis degree
 ];
 
+// Named symbols for use in UI strings. Referencing these (or `\u{...}` escapes) keeps source ASCII - the
+// font renders the real glyph - so the "no raw non-ASCII in code" guard stays intact. All are in [`SYMBOLS`],
+// so the coverage test guarantees the bundled fonts can draw them.
+/// Rightwards arrow, for "a to b" (instead of `->`).
+pub const ARROW: char = '\u{2192}';
+/// Em dash, for a parenthetical break (instead of ` - `).
+pub const MDASH: char = '\u{2014}';
+/// Middle dot, a compact field separator (instead of ` | `).
+pub const MIDDOT: char = '\u{00B7}';
+/// Multiplication sign, for counts like "x3" (instead of `x`).
+pub const TIMES: char = '\u{00D7}';
+/// Bullet, for a marker/flag (instead of `*`).
+pub const BULLET: char = '\u{2022}';
+
 /// The lowest printable ASCII byte (space).
 pub const ASCII_LO: u8 = 0x20;
 /// The highest printable ASCII byte (`~`).
