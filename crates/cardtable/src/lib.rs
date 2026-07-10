@@ -2226,6 +2226,7 @@ struct ArenaUnit {
     hp: u32,
     max: u32,
     tempo: u32,
+    finesse: u32,
     fallen: bool,
     active: bool,
     aim: Option<CardId>,
@@ -2256,6 +2257,11 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(hp);
     let tempo = d.get(1).map(|l| detail_num(l, "Tempo ")).unwrap_or(0);
+    let finesse = d
+        .get(2)
+        .map(|l| detail_num(l, "Finesse "))
+        .unwrap_or(1)
+        .max(1);
     let mut u = ArenaUnit {
         card,
         name: c.front_title().to_string(),
@@ -2264,13 +2270,14 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         hp,
         max,
         tempo,
+        finesse,
         fallen: hp == 0,
         active: false,
         aim: None,
         bid: 0,
         react: None,
     };
-    for line in d.iter().skip(2) {
+    for line in d.iter().skip(3) {
         if line == "active" {
             u.active = true;
         } else if let Some(id) = line.strip_prefix("aim ") {
@@ -2640,35 +2647,34 @@ fn build_combat_lanes(
         .collect();
 
     // The active party attacker (its rank + aim), for Catch foe-targeting cues.
-    let active: Option<(char, Option<CardId>)> = all
-        .iter()
-        .find(|u| u.party && u.active)
-        .map(|u| (u.rank, u.aim));
-    let living_foe_rank = |r: char| all.iter().any(|u| !u.party && !u.fallen && u.rank == r);
+    let active = all.iter().find(|u| u.party && u.active);
+    // Can the attacker reach the target *and* afford the minimum landing bid (ceil(F_tgt / F_att) <= tempo)?
+    let can_land = |atk: &ArenaUnit, tgt: &ArenaUnit| {
+        tgt.finesse.div_ceil(atk.finesse.max(1)).max(1) <= atk.tempo
+    };
+    let legal = |a: char, t: char| pairs.iter().any(|&(pa, pt)| pa == a && pt == t);
 
     let sel_of = |u: &ArenaUnit| -> Sel {
         match step {
+            // A party unit is selectable only if it has a foe it can legally reach AND afford to land on.
             "Catch" if u.party => {
                 if u.active {
                     Sel::On
                 } else if !u.fallen
                     && u.tempo > 0
-                    && pairs
+                    && all
                         .iter()
-                        .any(|&(a, t)| a == u.rank && living_foe_rank(t))
+                        .any(|f| !f.party && !f.fallen && legal(u.rank, f.rank) && can_land(u, f))
                 {
                     Sel::Yes
                 } else {
                     Sel::No
                 }
             }
+            // A foe is a target only if the active attacker can legally reach AND afford it.
             "Catch" => match active {
-                Some((_, aim)) if aim == Some(u.card) => Sel::On,
-                Some((arank, _))
-                    if !u.fallen && pairs.iter().any(|&(a, t)| a == arank && t == u.rank) =>
-                {
-                    Sel::Yes
-                }
+                Some(atk) if atk.aim == Some(u.card) => Sel::On,
+                Some(atk) if !u.fallen && legal(atk.rank, u.rank) && can_land(atk, u) => Sel::Yes,
                 _ => Sel::No,
             },
             "React" if u.party && !u.fallen && edges.iter().any(|&(_, to, _)| to == u.card) => {

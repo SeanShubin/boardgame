@@ -147,8 +147,14 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
-fn detail(hp: u32, max: u32, tempo: u32) -> Vec<String> {
-    vec![format!("HP {hp}/{max}"), format!("Tempo {tempo}")]
+fn detail(hp: u32, max: u32, tempo: u32, finesse: u32) -> Vec<String> {
+    // Finesse rides the card too (though the game re-derives stats from the source) so the renderer can
+    // compute min-to-land and show whether a target is affordable. The staged plan starts after these three.
+    vec![
+        format!("HP {hp}/{max}"),
+        format!("Tempo {tempo}"),
+        format!("Finesse {finesse}"),
+    ]
 }
 
 fn num_after(line: &str, prefix: &str) -> u32 {
@@ -199,7 +205,7 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
 /// Write a resolved combatant's mutable state back onto its card (HP / tempo). This also **clears the staged
 /// plan** (detail is reset to the two base lines).
 fn write_combatant(board: &mut Tableau, card: CardId, u: &Combatant, max: u32) {
-    let _ = board.set_card_detail(card, detail(u.health, max, u.tempo));
+    let _ = board.set_card_detail(card, detail(u.health, max, u.tempo, u.finesse));
 }
 
 // ---- the staged plan (detail lines after the base two) ------------------------------------------------
@@ -240,7 +246,7 @@ struct Staged {
 
 fn read_staged(d: &[String]) -> Staged {
     let mut s = Staged::default();
-    for line in d.iter().skip(2) {
+    for line in d.iter().skip(3) {
         if line == "active" {
             s.active = true;
         } else if let Some(id) = line.strip_prefix("aim ") {
@@ -263,8 +269,8 @@ fn write_staged(board: &mut Tableau, card: CardId, s: &Staged) {
     let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
         return;
     };
-    let mut lines: Vec<String> = d.into_iter().take(2).collect();
-    while lines.len() < 2 {
+    let mut lines: Vec<String> = d.into_iter().take(3).collect();
+    while lines.len() < 3 {
         lines.push(String::new());
     }
     if s.active {
@@ -454,8 +460,10 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
             let at = board.pile(pool).map_or(0, |p| p.cards().len());
             let _ = board.move_card(card, pool, at);
             let _ = board.set_card_type(card, "unit");
-            let _ =
-                board.set_card_detail(card, detail(stats.vitality, stats.vitality, stats.cadence));
+            let _ = board.set_card_detail(
+                card,
+                detail(stats.vitality, stats.vitality, stats.cadence, stats.finesse),
+            );
         }
     }
 
@@ -468,8 +476,10 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
         if let Some((stats, ranged)) = foe_stats(&name) {
             let _ = board.set_card_type(card, "foe");
-            let _ =
-                board.set_card_detail(card, detail(stats.vitality, stats.vitality, stats.cadence));
+            let _ = board.set_card_detail(
+                card,
+                detail(stats.vitality, stats.vitality, stats.cadence, stats.finesse),
+            );
             let rank = default_rank(&stats, ranged);
             if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
                 let at = board.pile(rp).map_or(0, |p| p.cards().len());
@@ -1206,7 +1216,8 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
                 _ => None,
             };
             if let Some(s) = stats {
-                let _ = board.set_card_detail(card, detail(s.vitality, s.vitality, s.cadence));
+                let _ = board
+                    .set_card_detail(card, detail(s.vitality, s.vitality, s.cadence, s.finesse));
             }
         }
     }
