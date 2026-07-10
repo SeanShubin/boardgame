@@ -414,13 +414,16 @@ fn log_click(
     units: Query<&crate::ArenaUnitCard>,
     affordances: Query<&crate::AffordanceControl>,
     backs: Query<(), With<crate::BackCard>>,
+    zones: Query<&PileDropZone>,
     table: Res<Table>,
     log: Res<UiLog>,
 ) {
     let entity = on.event().entity;
     let p = on.event().pointer_location.position;
-    // Best-effort name + kind of what was under the pointer (combatant / affordance / back before the generic
-    // card, since a formation tile carries both `ArenaUnitCard` and `Movable`).
+    // A click **bubbles** up the node hierarchy, firing this observer once per ancestor. Log only the entity
+    // that actually carries an interactive role (combatant / affordance / back / card / drop-zone), so one
+    // physical click leaves one line instead of one per bubbled node. Order matters: a formation tile carries
+    // both `ArenaUnitCard` and `Movable`, and a card sits inside a drop-zone.
     let what = if let Ok(unit) = units.get(entity) {
         let name = table
             .0
@@ -434,15 +437,22 @@ fn log_click(
         "Back [control]".into()
     } else if let Some(name) = interacted_card(&table.0, entity, &cards, &movables) {
         format!("{name} [card]")
+    } else if let Ok(zone) = zones.get(entity) {
+        let label = table
+            .0
+            .pile(zone.0)
+            .map(|pile| pile.label.clone())
+            .unwrap_or_default();
+        format!("{label} [zone]")
     } else {
-        "(no interactive target)".into()
+        return; // an inert bubbled node (a container / the felt) - not the click's real target
     };
-    // The drag-guard is still set when the click that ends a drag fires; `on_click` drops that click, so note
-    // it here rather than let it look like a click that did nothing.
-    let outcome = if guard.0 {
-        "  IGNORED (drag-guard)"
-    } else {
-        ""
+    // The drag-guard holds the drag's start position while a drag is live; `on_click` drops the ending click
+    // only if the pointer travelled past the tolerance. Mirror that here so a suppressed click is marked,
+    // rather than looking like a click that did nothing.
+    let outcome = match guard.0 {
+        Some(start) if p.distance(start) > crate::CLICK_DRAG_TOLERANCE => "  IGNORED (drag-guard)",
+        _ => "",
     };
     log.0.write(&format!(
         "click: {what} at ({:.0},{:.0}){outcome}\n",

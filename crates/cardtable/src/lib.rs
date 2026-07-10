@@ -302,9 +302,17 @@ fn make_debug_log() -> DebugLog {
 
 /// True while a pointer drag is in progress. Bevy fires a `Click` at the end of *every* drag (press
 /// and release over the same entity, regardless of the drag), so this guards the click handler from
-/// treating a drag's release as a real click. Set on [`DragStart`], cleared on [`DragEnd`].
+/// treating a drag's release as a real click. Holds the pointer position where the current drag **began**
+/// (`Some` while a drag is live, cleared to `None` on [`DragEnd`]); the click that ends the drag is only
+/// suppressed if the pointer actually travelled past [`CLICK_DRAG_TOLERANCE`] — a jittery tap (a press that
+/// wobbled a few pixels and back) still counts as a click. Set on [`DragStart`], cleared on [`DragEnd`].
 #[derive(Resource, Default)]
-struct DragGuard(bool);
+struct DragGuard(Option<Vec2>);
+
+/// How far (screen px) the pointer must travel between press and release before the release counts as a
+/// **drag** rather than a **click**. Below this, a wobble-during-press is treated as a tap, so a slightly
+/// shaky click (common on trackpads / touch) is no longer swallowed by the drag guard.
+const CLICK_DRAG_TOLERANCE: f32 = 8.0;
 
 /// Set when the UI must be torn down and rebuilt — *structural* changes only (open/close a pile, move
 /// a card, a new game snapshot). Pile positions are not structural; they animate, so repositioning
@@ -589,15 +597,17 @@ fn install_ui_fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
     ]));
 }
 
-fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
-    guard.0 = true;
+fn on_drag_start(on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
+    // Remember where the drag began; the click that ends it is only suppressed if the pointer actually
+    // travelled from here (see `on_click`).
+    guard.0 = Some(on.event().pointer_location.position);
 }
 
 /// Clear the drag guard whenever *any* drag ends, so only the click that ends a drag is suppressed and
 /// real clicks work again afterward. Covers every draggable — piles, grid cards, and projection cards
 /// (which carry no `Movable`, so the specific card-drag handler never runs for them).
 fn on_drag_end_clear_guard(_on: On<Pointer<DragEnd>>, mut guard: ResMut<DragGuard>) {
-    guard.0 = false;
+    guard.0 = None;
 }
 
 /// A picking click, resolved by *what* the target is (the only meaning a click carries): a **Back**
@@ -638,8 +648,11 @@ fn on_click(
     build: Res<BuildInfo>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if guard.0 {
-        return; // the release that ends a drag also fires Click — that's not an intentional click
+    if let Some(start) = guard.0
+        && on.event().pointer_location.position.distance(start) > CLICK_DRAG_TOLERANCE
+    {
+        return; // the release that ends a *real* drag also fires Click — not an intentional click. A tap
+        // that barely moved (within the tolerance) falls through and is treated as the click it is.
     }
     let Ok((
         action,
@@ -1388,7 +1401,7 @@ fn on_node_drag_end(
     mut trace: ResMut<DropTrace>,
     mut commands: Commands,
 ) {
-    guard.0 = false; // the drag is over; let real clicks through again
+    guard.0 = None; // the drag is over; let real clicks through again
     if let Ok((movable, node)) = movables.get(on.event().entity) {
         on.propagate(false);
         dragging.0 = None;
@@ -1623,7 +1636,7 @@ fn settle_table_piles(
     mut prev: Local<HashMap<PileId, Pos>>,
     mut prev_surface: Local<Pos>,
 ) {
-    if guard.0 {
+    if guard.0.is_some() {
         return; // a drag is in progress — don't fight it
     }
     let root = table.0.root_id();
