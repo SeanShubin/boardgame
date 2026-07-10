@@ -1322,6 +1322,7 @@ fn on_node_drag_end(
     mut rebuild: ResMut<NeedsRebuild>,
     mut guard: ResMut<DragGuard>,
     mut drop_request: ResMut<DropRequest>,
+    mut trace: ResMut<DropTrace>,
     mut commands: Commands,
 ) {
     guard.0 = false; // the drag is over; let real clicks through again
@@ -1380,7 +1381,6 @@ fn on_node_drag_end(
         // stays put and a card straddling two rows lands in the one it's more over. `drop_intention` turns a
         // rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
         if let Some(arena) = board_arena(&table.0)
-            && arena == table.0.focus_id()
             && table.0.card(card).is_some_and(|c| c.card_type() == "unit")
         {
             let center = geom
@@ -1437,6 +1437,19 @@ fn on_node_drag_end(
         let Some(home) = table.0.card(card).map(|c| c.home()) else {
             return;
         };
+        // A drag that resolves to none of the game paths above **stays in its home pile** — the card only
+        // reorders / repositions. Trace it so a silent snap-back (a drag that looked like it should move a
+        // card but didn't) is visible in the log, not invisible.
+        let card_name = table
+            .0
+            .card(card)
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_default();
+        let home_label = table
+            .0
+            .pile(home)
+            .map(|p| p.label.clone())
+            .unwrap_or_default();
         if matches!(
             table.0.pile(home).map(|p| p.layout().arrangement),
             Some(Arrangement::Free)
@@ -1444,6 +1457,9 @@ fn on_node_drag_end(
             // Unordered: keep it where dropped, then shove the rest out of its way.
             let _ = table.0.set_card_pos(card, px(node.left), px(node.top));
             table.0.separate(home, TableNode::Card(card));
+            trace.0.push(format!(
+                "drag-end: {card_name} repositioned within [{home_label}] (no pile change)"
+            ));
             return;
         }
         // Structured (List/Grid): snap into the nearest slot by reordering among the *contents* only, so a
@@ -1477,6 +1493,9 @@ fn on_node_drag_end(
         ) {
             let _ = table.0.reorder(home, from, to);
         }
+        trace.0.push(format!(
+            "drag-end: {card_name} reordered within [{home_label}] (no pile change — snapped back)"
+        ));
     }
 }
 

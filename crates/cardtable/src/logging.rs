@@ -359,21 +359,35 @@ fn card_name(table: &Tableau, cref: Option<&CardRef>) -> String {
         .unwrap_or_else(|| "(control card)".into())
 }
 
+/// The dragged/clicked card's name, from either a `CardRef` (table cards) or a `Movable(Card)` (bespoke tiles
+/// like the arena's formation tiles, which carry no `CardRef`). `None` if the entity is neither.
+fn interacted_card(
+    table: &Tableau,
+    entity: Entity,
+    cards: &Query<&CardRef>,
+    movables: &Query<&Movable>,
+) -> Option<String> {
+    if let Ok(cref) = cards.get(entity) {
+        return Some(card_name(table, Some(cref)));
+    }
+    if let Ok(Movable(TableNode::Card(cid))) = movables.get(entity) {
+        return table.card(*cid).map(|c| c.front_title().to_string());
+    }
+    None
+}
+
 /// Log a card pick-up (drag start) with its pointer position.
 fn log_pickup(
     on: On<Pointer<DragStart>>,
     cards: Query<&CardRef>,
+    movables: Query<&Movable>,
     table: Res<Table>,
     log: Res<UiLog>,
 ) {
-    if let Ok(cref) = cards.get(on.event().entity) {
+    if let Some(name) = interacted_card(&table.0, on.event().entity, &cards, &movables) {
         let p = on.event().pointer_location.position;
-        log.0.write(&format!(
-            "pick up: {} at ({:.0},{:.0})\n",
-            card_name(&table.0, Some(cref)),
-            p.x,
-            p.y
-        ));
+        log.0
+            .write(&format!("pick up: {name} at ({:.0},{:.0})\n", p.x, p.y));
     }
 }
 
@@ -387,14 +401,16 @@ fn drain_drop_trace(mut trace: ResMut<DropTrace>, log: Res<UiLog>) {
 }
 
 /// Log a click on a card with its pointer position.
-fn log_click(on: On<Pointer<Click>>, cards: Query<&CardRef>, table: Res<Table>, log: Res<UiLog>) {
-    if let Ok(cref) = cards.get(on.event().entity) {
+fn log_click(
+    on: On<Pointer<Click>>,
+    cards: Query<&CardRef>,
+    movables: Query<&Movable>,
+    table: Res<Table>,
+    log: Res<UiLog>,
+) {
+    if let Some(name) = interacted_card(&table.0, on.event().entity, &cards, &movables) {
         let p = on.event().pointer_location.position;
-        log.0.write(&format!(
-            "click: {} at ({:.0},{:.0})\n",
-            card_name(&table.0, Some(cref)),
-            p.x,
-            p.y
-        ));
+        log.0
+            .write(&format!("click: {name} at ({:.0},{:.0})\n", p.x, p.y));
     }
 }
