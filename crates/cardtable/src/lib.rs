@@ -3109,13 +3109,18 @@ fn spawn_arena_v2_unit(
     name_of: &dyn Fn(CardId) -> String,
 ) {
     // Three-state visual: fallen recedes hardest, then No (dim), then Yes (available), then On (chosen).
+    // Cue by what a click *does* to the pending action, not just the state: green = confirm/target (a foe),
+    // amber = pick/switch a unit (a hero - selecting another aborts the current pick and re-arms), white =
+    // the armed subject (the active hero whose target you are choosing).
     let (bg, border, ink) = if u.fallen {
         (CARD_BACK, MUTED, MUTED)
     } else {
-        match sel {
-            Sel::On => (CARD_FACE, TARGET_CUE, CARD_INK),
-            Sel::Yes => (CARD_FACE, SELECTABLE_CUE, CARD_INK),
-            Sel::No => (DIM_FACE, MUTED, MUTED),
+        match (sel, u.party) {
+            (Sel::On, true) => (CARD_FACE, ARMED_CUE, CARD_INK), // active hero: armed, awaiting a target
+            (Sel::On, false) => (CARD_FACE, TARGET_CUE, CARD_INK), // aimed foe: the confirmed target
+            (Sel::Yes, true) => (CARD_FACE, SELECTABLE_CUE, CARD_INK), // switch-to hero (aborts + re-arms)
+            (Sel::Yes, false) => (CARD_FACE, TARGET_CUE, CARD_INK),    // confirm-here foe
+            (Sel::No, _) => (DIM_FACE, MUTED, MUTED),
         }
     };
     let border_w = if sel == Sel::On && !u.fallen {
@@ -3292,6 +3297,9 @@ const MOVABLE_CUE: Color = Color::srgba(0.86, 0.90, 0.97, 0.50);
 const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
 /// A combat tile you **can act on** this step (a legal catch / target / reaction) — warm amber "available".
 const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
+/// The **active hero** during targeting — the armed but unfinished action whose target you are choosing. A
+/// bright silver-white ring, distinct from the green target cue and the amber switch cue.
+const ARMED_CUE: Color = Color::srgb(0.95, 0.96, 1.0);
 /// A combat tile with **nothing to do** this step — a greyed face that recedes so the live cards stand out.
 const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
 /// The **ranged** marker on a formation tile (a cool blue "fires from a distance" cue).
