@@ -10,6 +10,10 @@ cardtable-combat = { workspace = true }
 bevy = { workspace = true }
 web-time = { workspace = true }
 
+[dev-dependencies]
+# Read font cmaps directly (no rendering) to assert the palette is actually covered by the bundled fonts.
+ttf-parser = "0.25"
+
 [features]
 # The game adapter (GamePlugin): binds a `contract::Game` to the renderer core. Off by default so the
 # core (and feature prototypes / examples) need no game.

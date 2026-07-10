@@ -1993,6 +1993,7 @@ dependencies = [
  "cardtable-combat",
  "cardtable-model",
  "contract",
+ "ttf-parser",
  "web-time",
 ]
 

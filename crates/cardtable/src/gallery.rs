@@ -18,7 +18,7 @@ use bevy::ui::ScrollPosition;
 use cardtable_model::{CardId, Tableau, sample_table};
 
 use crate::{
-    CardRef, FELT, install_ui_font, setup_camera, spawn_card_large, spawn_card_medium,
+    CardRef, FELT, install_ui_fonts, setup_camera, spawn_card_large, spawn_card_medium,
     spawn_card_small,
 };
 
@@ -69,7 +69,7 @@ pub fn run_card_gallery() {
         .init_resource::<Audited>()
         .add_systems(
             Startup,
-            (setup_camera, install_ui_font, build_gallery).chain(),
+            (setup_camera, install_ui_fonts, build_gallery).chain(),
         )
         .add_systems(Update, (audit_gallery, scroll_gallery, update_scrollbar))
         .run();

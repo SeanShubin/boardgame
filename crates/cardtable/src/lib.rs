@@ -43,6 +43,7 @@ use cardtable_combat::{
 pub use game::GamePlugin;
 
 mod board_driver;
+pub mod palette;
 use board_driver::{AffordanceClick, DropTrace, TapRequest};
 pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
 
@@ -121,7 +122,7 @@ impl Plugin for CardTablePlugin {
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
-            .add_systems(Startup, (setup_camera, install_ui_font))
+            .add_systems(Startup, (setup_camera, install_ui_fonts))
             // Inject the System deck (a drill-in Free deck) at startup.
             .add_systems(Startup, inject_system_deck)
             .add_systems(
@@ -526,20 +527,27 @@ fn relative_time(seconds_ago: i64) -> String {
     format!("{} ago", pluralize(quantity, unit, &format!("{unit}s")))
 }
 
-/// The bundled UI typeface — **Nunito Sans** (a warm, friendly humanist sans that's still crisp for
-/// small text on cards). Covers the punctuation the renderer uses (em dashes, curly quotes) that
-/// Bevy's built-in `FiraMono-subset` lacks, which would otherwise show as tofu boxes. SIL Open Font
-/// License; see `fonts/NunitoSans-OFL.txt`. A Latin static instance (~33 KB) keeps the wasm small.
-const UI_FONT: &[u8] = include_bytes!("../fonts/NunitoSans-Regular.ttf");
+/// The bundled UI typefaces: **DejaVu Sans** (proportional, for cards and body) and **DejaVu Sans Mono** (for
+/// the combat log's aligned columns). DejaVu covers the whole [`palette`] in one font - arrows, card suits,
+/// geometric shapes, dingbats, math, dashes - which base Noto Sans did not (that gap was caught by the
+/// `fonts_cover_palette` test). Bitstream Vera / public-domain license; see `fonts/DejaVu-LICENSE.txt`.
+/// Static faces, ~1.1 MB total; subset to the palette (~30 KB) before the wasm ships.
+const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
-/// Replace Bevy's ASCII-only default font with the bundled Nunito Sans face. Bevy registers its default
-/// font at `AssetId::default()`, and every `TextFont { ..default() }` here points there, so overwriting
-/// that one asset reskins all UI text without threading a font handle through each label.
-fn install_ui_font(mut fonts: ResMut<Assets<Font>>) {
-    let font = Font::from_bytes(UI_FONT.to_vec());
+/// The monospace font handle (DejaVu Sans Mono), for UI that wants aligned columns - the combat log.
+#[derive(Resource, Clone)]
+pub struct MonoFont(pub Handle<Font>);
+
+/// Install the UI fonts: override Bevy's default with DejaVu Sans (so every `TextFont { ..default() }` picks it
+/// up without threading a handle through each label), and register DejaVu Sans Mono in [`MonoFont`] for the
+/// labels that opt into monospace.
+fn install_ui_fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
     fonts
-        .insert(AssetId::default(), font)
+        .insert(AssetId::default(), Font::from_bytes(DEJAVU_SANS.to_vec()))
         .expect("override the default font");
+    let mono = fonts.add(Font::from_bytes(DEJAVU_SANS_MONO.to_vec()));
+    commands.insert_resource(MonoFont(mono));
 }
 
 fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
