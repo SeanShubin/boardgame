@@ -1359,6 +1359,39 @@ fn on_node_drag_end(
             rebuild.0 = true;
             return;
         }
+        // In the arena **formation** (Marshal), dropping a hero anywhere over a rank / pool row moves it into
+        // that pile — rank *is* pile membership, so this is the same box-overlap-vs-drop-zone resolution as the
+        // map. The source row is excluded (a release back where it started snaps back). `drop_intention` turns
+        // a rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
+        if let Some(arena) = board_arena(&table.0)
+            && arena == table.0.focus_id()
+            && table.0.card(card).is_some_and(|c| c.card_type() == "unit")
+        {
+            let source = table
+                .0
+                .pile(arena)
+                .map(|p| p.subpiles())
+                .unwrap_or_default()
+                .into_iter()
+                .find(|&sp| table.0.pile(sp).is_some_and(|p| p.cards().contains(&card)));
+            let drag_box = geom
+                .get(on.event().entity)
+                .ok()
+                .map(|(_, cn, gt)| node_box(cn, gt));
+            let dest = drag_box.and_then(|db| {
+                exactly_one(drop_zones.iter().filter(|&(z, cn, gt)| {
+                    is_arena_subpile(&table.0, arena, z.0)
+                        && Some(z.0) != source
+                        && boxes_overlap(db, node_box(cn, gt))
+                }))
+                .map(|(z, _, _)| z.0)
+            });
+            if let Some(dest) = dest {
+                drop_request.0 = Some((card, DropTarget::Pile(dest)));
+            }
+            rebuild.0 = true;
+            return;
+        }
         // In a projection view (the inn) a card drag is only ever an **equip attempt**: drag a hero onto a
         // kit (or a kit onto a hero) to assemble a character deck from the banks. `on_drop`'s DragDrop can't
         // carry it — the dragged fan tile follows the cursor and occludes the picking hit-test, so the drop
@@ -1928,7 +1961,8 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
 
 /// The active v2 fight's `[Arena]` zone (a top-level pile labelled `Arena`), if a fight is underway. The
 /// renderer reaches past `cardtable-model` here only by the combat card-type conventions the game encodes
-/// on the board (`unit` / `foe` / `phase` / `contact`); everything drawn is read from those cards.
+/// on the board (`unit` / `foe` / `phase` / `contact`) and the rank sub-pile labels; everything drawn is
+/// read from those cards and piles.
 fn board_arena(tree: &Tableau) -> Option<PileId> {
     tree.pile(tree.root_id())?
         .subpiles()
@@ -1936,8 +1970,27 @@ fn board_arena(tree: &Tableau) -> Option<PileId> {
         .find(|&p| tree.pile(p).map(|p| p.label.as_str()) == Some("Arena"))
 }
 
-/// One combatant parsed from its `[Arena]` card: constant identity + mutable state (rank/HP/tempo on detail
-/// 0–2) + the player's staged plan (active / aim / bid / react on the detail lines after that).
+/// A sub-pile of `arena` by label (the `Pool` or a rank pile).
+fn arena_sub(tree: &Tableau, arena: PileId, label: &str) -> Option<PileId> {
+    tree.pile(arena)?
+        .subpiles()
+        .into_iter()
+        .find(|&p| tree.pile(p).map(|p| p.label.as_str()) == Some(label))
+}
+
+/// Whether `pile` is a sub-pile of the arena (a formation drop target: a rank pile or the Pool).
+fn is_arena_subpile(tree: &Tableau, arena: PileId, pile: PileId) -> bool {
+    tree.pile(arena)
+        .map(|p| p.subpiles())
+        .unwrap_or_default()
+        .contains(&pile)
+}
+
+/// The rank piles in formation display order (front rank first), with their one-letter tag.
+const RANK_ROWS: [(&str, char); 3] = [("Outrider", 'O'), ("Vanguard", 'V'), ("Rearguard", 'R')];
+
+/// One combatant parsed from its rank-pile card: identity + mutable state (HP/tempo on detail 0–1) + the
+/// player's staged plan (active / aim / bid / react on detail 2+). Its `rank` is the pile it was found in.
 struct ArenaUnit {
     card: CardId,
     name: String,
@@ -1961,7 +2014,7 @@ fn detail_num(line: &str, prefix: &str) -> u32 {
         .unwrap_or(0)
 }
 
-fn read_arena_unit(tree: &Tableau, card: CardId) -> Option<ArenaUnit> {
+fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit> {
     let c = tree.card(card)?;
     let party = match c.card_type() {
         "unit" => true,
@@ -1969,18 +2022,13 @@ fn read_arena_unit(tree: &Tableau, card: CardId) -> Option<ArenaUnit> {
         _ => return None,
     };
     let d = c.detail();
-    let rank = d
-        .first()
-        .and_then(|l| l.chars().next())
-        .unwrap_or('V')
-        .to_ascii_uppercase();
-    let hp = d.get(1).map(|l| detail_num(l, "HP ")).unwrap_or(0);
+    let hp = d.first().map(|l| detail_num(l, "HP ")).unwrap_or(0);
     let max = d
-        .get(1)
+        .first()
         .and_then(|l| l.split('/').nth(1))
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(hp);
-    let tempo = d.get(2).map(|l| detail_num(l, "Tempo ")).unwrap_or(0);
+    let tempo = d.get(1).map(|l| detail_num(l, "Tempo ")).unwrap_or(0);
     let mut u = ArenaUnit {
         card,
         name: c.front_title().to_string(),
@@ -1995,7 +2043,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId) -> Option<ArenaUnit> {
         bid: 0,
         react: None,
     };
-    for line in d.iter().skip(3) {
+    for line in d.iter().skip(2) {
         if line == "active" {
             u.active = true;
         } else if let Some(id) = line.strip_prefix("aim ") {
@@ -2009,23 +2057,28 @@ fn read_arena_unit(tree: &Tableau, card: CardId) -> Option<ArenaUnit> {
     Some(u)
 }
 
-/// Build the modal **v2 combat arena** from the board: the phase banner, a per-step prompt, three rank lanes
-/// (party left, foes right) with each unit showing its staged plan, the landed contacts, and the Commit
-/// control. Tapping a unit records a [`TapRequest`] the game interprets against the current step.
+/// The combatants in one rank pile (in order).
+fn units_in_rank(tree: &Tableau, arena: PileId, label: &str, rank: char) -> Vec<ArenaUnit> {
+    arena_sub(tree, arena, label)
+        .map(|p| tree.content_cards(p))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| read_arena_unit(tree, c, rank))
+        .collect()
+}
+
+/// Build the modal **v2 combat arena** from the board: a phase banner, then either the **formation** (during
+/// Marshal — assign heroes to rank rows) or the **combat lanes** (during a fight step), then the Commit
+/// control. Everything is read from the arena's rank piles and loose phase/contact cards.
 fn build_arena_v2_ui(
     commands: &mut Commands,
     tree: &Tableau,
     arena: PileId,
     affordances: &[String],
 ) {
-    let cards = tree.content_cards(arena);
-    let units: Vec<ArenaUnit> = cards
-        .iter()
-        .filter_map(|&c| read_arena_unit(tree, c))
-        .collect();
-
-    // The phase card: "Phase: X" + [Round r, Sub-phase s/5, Step: Y].
-    let phase = cards
+    // The phase card (loose in the arena): "Phase: X" + [Round r, Sub-phase s/5, Step: Y].
+    let loose = tree.content_cards(arena);
+    let phase = loose
         .iter()
         .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("phase"));
     let phase_title = phase
@@ -2043,33 +2096,19 @@ fn build_arena_v2_ui(
         .to_string();
     let round = phase_detail.first().cloned().unwrap_or_default();
 
-    // Foes that some active attacker is aiming at (a targeting cue), and the landed contacts.
-    let aimed: Vec<CardId> = units.iter().filter_map(|u| u.aim).collect();
     let name_of = |id: CardId| {
         tree.card(id)
             .map(|c| c.front_title().to_string())
             .unwrap_or_default()
     };
-    let contacts: Vec<String> = cards
-        .iter()
-        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
-        .filter_map(|&c| {
-            let d = tree.card(c)?.detail().to_vec();
-            let from = CardId(detail_num(d.first()?, "from ") as u64);
-            let to = CardId(detail_num(d.get(1)?, "to ") as u64);
-            Some(format!("{} → {}", name_of(from), name_of(to)))
-        })
-        .collect();
-
+    let marshal = step == "Marshal";
     let prompt = match step.as_str() {
         "Catch" => {
             "Catch — tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
         }
         "React" => "React — tap a struck hero to cycle Eat / Evade / Strike Back.",
         "Extra" => "Extra strikes — tap a hero in contact to spend its remaining tempo.",
-        _ => {
-            "Marshal — tap a hero to change its rank (Vanguard → Outrider → Rearguard), then Commit."
-        }
+        _ => "Formation — drag each hero into a rank row (or tap to cycle), then Start.",
     };
 
     commands
@@ -2088,7 +2127,6 @@ fn build_arena_v2_ui(
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // Phase banner.
             root.spawn((
                 Text::new(format!("{phase_title}   ({round} · Step: {step})")),
                 TextFont {
@@ -2097,43 +2135,140 @@ fn build_arena_v2_ui(
                 },
                 TextColor(INK),
             ));
-            // Per-step prompt.
             arena_prompt_line(root, prompt);
-            // Three rank lanes: party left, foes right.
-            for (rank, label) in [('V', "Vanguard"), ('O', "Outrider"), ('R', "Rearguard")] {
-                root.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(8.0),
-                    min_height: Val::Px(SMALL_H + 8.0),
-                    ..default()
-                })
-                .with_children(|lane| {
-                    arena_lane_label(lane, label);
-                    for u in units.iter().filter(|u| u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, false, &name_of);
-                    }
-                    arena_divider(lane);
-                    for u in units.iter().filter(|u| !u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, aimed.contains(&u.card), &name_of);
-                    }
+
+            if marshal {
+                build_formation(root, tree, arena);
+            } else {
+                build_combat_lanes(root, tree, arena, &loose, &name_of);
+            }
+
+            // The Commit control (the game's single arena affordance). During Marshal it is only live when
+            // the formation is complete (an empty Pool); otherwise it renders as a disabled hint.
+            let ready = !marshal
+                || arena_sub(tree, arena, "Pool").is_none_or(|p| {
+                    tree.content_cards(p)
+                        .iter()
+                        .all(|&c| tree.card(c).map(|k| k.card_type()) != Some("unit"))
                 });
-            }
-            // Landed contacts (what React / Extra act along).
-            if !contacts.is_empty() {
-                arena_prompt_line(root, &format!("Contacts: {}", contacts.join(",  ")));
-            }
-            // The Commit control (the game's single arena affordance).
             if let Some(label) = affordances.first() {
                 root.spawn(Node {
                     margin: UiRect::top(Val::Px(6.0)),
                     ..default()
                 })
                 .with_children(|row| {
-                    spawn_nav_card(row, (AffordanceControl(0), Pinned), label);
+                    if ready {
+                        spawn_nav_card(row, (AffordanceControl(0), Pinned), label);
+                    } else {
+                        spawn_disabled_nav(row, label);
+                    }
                 });
             }
         });
+}
+
+/// The **formation** (Marshal): a `[Pool]` row of unranked heroes, then a row per rank. Each row is a
+/// `PileDropZone` over its rank/pool pile, so **dragging** a hero anywhere into a row moves it there (rank =
+/// pile membership); tapping a hero cycles it to the next rank (the no-drag path). Foes show in their rank
+/// row for context (not draggable).
+fn build_formation(root: &mut ChildSpawnerCommands, tree: &Tableau, arena: PileId) {
+    // The Pool of unranked heroes.
+    if let Some(pool) = arena_sub(tree, arena, "Pool") {
+        formation_row(root, tree, pool, "Heroes", None);
+    }
+    // One row per rank (front to back).
+    for (label, rank) in RANK_ROWS {
+        if let Some(pile) = arena_sub(tree, arena, label) {
+            formation_row(root, tree, pile, label, Some(rank));
+        }
+    }
+}
+
+/// One formation row: a full-width `PileDropZone` over `pile`, a rank label on the left, then its members —
+/// heroes as draggable [`Movable`] tiles, foes as static context tiles.
+fn formation_row(
+    root: &mut ChildSpawnerCommands,
+    tree: &Tableau,
+    pile: PileId,
+    label: &str,
+    rank: Option<char>,
+) {
+    root.spawn((
+        PileDropZone(pile),
+        Node {
+            position_type: PositionType::Relative,
+            width: Val::Px(720.0),
+            min_height: Val::Px(SMALL_H + 12.0),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            padding: UiRect::all(Val::Px(6.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            border_radius: BorderRadius::all(Val::Px(8.0)),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        BorderColor::all(MUTED),
+    ))
+    .with_children(|row| {
+        arena_lane_label(row, label);
+        for card in tree.content_cards(pile) {
+            let Some(u) = read_arena_unit(tree, card, rank.unwrap_or('—')) else {
+                continue;
+            };
+            spawn_formation_tile(row, &u);
+        }
+    });
+}
+
+/// The **combat lanes** (Catch / React / Extra): one row per rank, party on the left of the divider, foes on
+/// the right, each unit showing its staged plan; then the landed contacts. Units are tap targets.
+fn build_combat_lanes(
+    root: &mut ChildSpawnerCommands,
+    tree: &Tableau,
+    arena: PileId,
+    loose: &[CardId],
+    name_of: &dyn Fn(CardId) -> String,
+) {
+    let all: Vec<ArenaUnit> = RANK_ROWS
+        .iter()
+        .flat_map(|&(label, rank)| units_in_rank(tree, arena, label, rank))
+        .collect();
+    let aimed: Vec<CardId> = all.iter().filter_map(|u| u.aim).collect();
+
+    for (label, rank) in RANK_ROWS {
+        root.spawn(Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            min_height: Val::Px(SMALL_H + 8.0),
+            ..default()
+        })
+        .with_children(|lane| {
+            arena_lane_label(lane, label);
+            for u in all.iter().filter(|u| u.party && u.rank == rank) {
+                spawn_arena_v2_unit(lane, u, false, name_of);
+            }
+            arena_divider(lane);
+            for u in all.iter().filter(|u| !u.party && u.rank == rank) {
+                spawn_arena_v2_unit(lane, u, aimed.contains(&u.card), name_of);
+            }
+        });
+    }
+
+    let contacts: Vec<String> = loose
+        .iter()
+        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
+        .filter_map(|&c| {
+            let d = tree.card(c)?.detail().to_vec();
+            let from = CardId(detail_num(d.first()?, "from ") as u64);
+            let to = CardId(detail_num(d.get(1)?, "to ") as u64);
+            Some(format!("{} → {}", name_of(from), name_of(to)))
+        })
+        .collect();
+    if !contacts.is_empty() {
+        arena_prompt_line(root, &format!("Contacts: {}", contacts.join(",  ")));
+    }
 }
 
 /// A muted instruction line on the felt (per-step prompt / contacts summary).
@@ -2146,6 +2281,84 @@ fn arena_prompt_line(parent: &mut ChildSpawnerCommands, text: &str) {
         },
         TextColor(MUTED),
     ));
+}
+
+/// A greyed, non-interactive nav card — a control that is present but not yet live (the disabled Start while
+/// heroes remain unranked). Carries no marker, so a click does nothing.
+fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
+    parent
+        .spawn((
+            Node {
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(10.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED),
+        ))
+        .with_children(|c| {
+            c.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
+}
+
+/// A **formation tile**: a combatant during Marshal. A hero is [`Movable`] (drag it into a rank row) and an
+/// [`ArenaUnitCard`] (tap it to cycle rank) — both input modes at once. A foe is a static context tile in its
+/// (fixed) rank row.
+fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
+    let accent = type_accent(if u.party { "hero" } else { "foe" });
+    let bar = if u.party {
+        format!("HP {}/{} · T{}", u.hp, u.max, u.tempo)
+    } else {
+        format!("{} · HP {}/{}", u.rank, u.hp, u.max)
+    };
+    let mut tile = parent.spawn((
+        Node {
+            width: Val::Px(SMALL_W),
+            min_height: Val::Px(SMALL_H),
+            padding: UiRect::all(Val::Px(8.0)),
+            border: UiRect::all(Val::Px(2.0)),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            row_gap: Val::Px(3.0),
+            border_radius: BorderRadius::all(Val::Px(10.0)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        BackgroundColor(if u.party { CARD_FACE } else { CARD_BACK }),
+        BorderColor::all(accent),
+        card_shadow(),
+    ));
+    if u.party {
+        tile.insert((Movable(TableNode::Card(u.card)), ArenaUnitCard(u.card)));
+    }
+    tile.with_children(|c| {
+        c.spawn((
+            Text::new(u.name.clone()),
+            TextFont {
+                font_size: title_font(&u.name, FONT_TITLE, SMALL_INNER),
+                ..default()
+            },
+            TextLayout::no_wrap(),
+            TextColor(if u.party { CARD_INK } else { INK }),
+        ));
+        c.spawn((
+            Text::new(bar),
+            TextFont {
+                font_size: FONT_BODY,
+                ..default()
+            },
+            TextColor(MUTED),
+        ));
+    });
 }
 
 /// A v2 arena unit tile: name · rank · HP · tempo, plus the staged plan (active / → aim / bid / reaction),
