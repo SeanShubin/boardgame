@@ -2176,6 +2176,40 @@ fn arena_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
         });
 }
 
+/// A rank's **row-header card** (Outrider / Vanguard / Rearguard) — the left anchor of a combat lane. Drawn as
+/// a card of fixed width so the three ranks read as neat left-aligned cards with their combatants laid out to
+/// the right, mirroring the physical table (a rank pile with its cards). Static during combat — ranks are set
+/// in Marshal.
+fn spawn_rank_card(parent: &mut ChildSpawnerCommands, name: &str) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(96.0),
+                min_height: Val::Px(SMALL_H),
+                padding: UiRect::all(Val::Px(6.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(FACE_DOWN_EDGE),
+            card_shadow(),
+        ))
+        .with_children(|c| {
+            c.spawn((
+                Text::new(name.to_string()),
+                TextFont {
+                    font_size: FONT_BODY,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+        });
+}
+
 /// The centre divider between the party (left) and the foes (right) in a lane.
 fn arena_divider(parent: &mut ChildSpawnerCommands) {
     parent.spawn((
@@ -2735,7 +2769,7 @@ fn build_combat_lanes(
             ..default()
         })
         .with_children(|lane| {
-            arena_lane_label(lane, label);
+            spawn_rank_card(lane, label);
             for u in all.iter().filter(|u| u.party && u.rank == rank) {
                 spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
             }
