@@ -24,6 +24,8 @@ pub enum Intention {
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
     Fight { place: PileId },
+    /// Assign `unit` a rank by moving it into rank pile `to` (the formation drag / drop).
+    Assign { unit: CardId, to: PileId },
     /// Tap a combatant in the arena — edit the staged plan for the current step (cycle rank / select /
     /// bid / aim / react). What it does is read from the fight's step; see [`crate::arena::handle_tap`].
     Tap { card: CardId },
@@ -48,6 +50,7 @@ impl BoardGame for CardTableGame {
                 Intention::Fight { place } => {
                     crate::arena::open_fight(board, place);
                 }
+                Intention::Assign { unit, to } => crate::arena::assign(board, unit, to),
                 Intention::Tap { card } => crate::arena::handle_tap(board, card),
                 Intention::Commit => {
                     if let Some(a) = crate::arena::find_arena(board) {
@@ -73,6 +76,17 @@ impl BoardGame for CardTableGame {
             DropTarget::Card(target) => equip_pair(board, dragged, target)
                 .map(|(identity, kit)| Intention::Equip { identity, kit }),
             DropTarget::Pile(dest) => {
+                // In the arena during Marshal, a hero dropped into a rank row takes that rank (pile membership).
+                if let Some(arena) = crate::arena::find_arena(board)
+                    && crate::arena::current_step(board, arena) == crate::arena::Step::Marshal
+                    && crate::arena::is_rank_pile(board, arena, dest)
+                    && board.card(dragged).map(|c| c.card_type()) == Some("unit")
+                {
+                    return Some(Intention::Assign {
+                        unit: dragged,
+                        to: dest,
+                    });
+                }
                 // A character deck's label dropped back on the Heroes deck un-equips.
                 if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
                     return Some(Intention::Unequip { label: dragged });
