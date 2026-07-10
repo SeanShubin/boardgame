@@ -44,6 +44,10 @@ pub struct Combatant {
     pub cadence: u32,
     /// The health bar: accumulated damage flips a health card each `toughness` crossed.
     pub toughness: u32,
+    /// Carries a **melee** blow (effective in the Vanguard / as an Outrider). Independent of `ranged`.
+    pub melee: bool,
+    /// Carries a **ranged** shot (effective in the Rearguard). Independent of `melee`.
+    pub ranged: bool,
     /// Tempo cards left this round.
     pub tempo: u32,
     /// Face-up health cards remaining (Vitality at full); 0 ⇒ fallen at the next boundary.
@@ -111,6 +115,20 @@ pub fn legal_catch(sub: usize, atk: Rank, tgt: Rank) -> bool {
         .is_some_and(|pairs| pairs.contains(&(atk, tgt)))
 }
 
+/// Whether a strike thrown *from* `rank` is **ranged** — a Rearguard fires over its own line; a Vanguard or
+/// Outrider strikes melee (someone approached). Range is position-determined (spec 4.2).
+pub fn rank_is_ranged(rank: Rank) -> bool {
+    matches!(rank, Rank::Rearguard)
+}
+
+/// Whether a body carrying these reaches is **effective** as an attacker in `rank`: it must carry the attack
+/// type the position uses (a Rearguard needs `ranged`; a Vanguard / Outrider needs `melee`). A mismatch is
+/// legal to *place* but lands nothing — the spec's "self-sort by attack type" (4.2), enforced as force, not
+/// a ban: an ineffective body simply never forms a [`Contact`].
+pub fn effective_in_rank(rank: Rank, melee: bool, ranged: bool) -> bool {
+    if rank_is_ranged(rank) { ranged } else { melee }
+}
+
 /// A catch lands when the attacker's bid value reaches the target's finesse: `cards × F_att ≥ F_target`.
 pub fn catch_lands(cards: u32, f_att: u32, f_target: u32) -> bool {
     cards * f_att >= f_target
@@ -129,6 +147,12 @@ pub fn evade_succeeds(cards: u32, f_def: u32, atk_spent: u32) -> bool {
 pub fn resolve_catch(units: &mut [Combatant], catches: &[Catch]) -> Vec<Contact> {
     let mut contacts = Vec::new();
     for c in catches {
+        // Range gate (mechanics backstop, spec 4.2): a body whose reach does not match its position lands
+        // nothing here — no contact, no tempo spent. The UI already hides these; this makes it a rule.
+        let atk = &units[c.attacker];
+        if !effective_in_rank(atk.rank, atk.melee, atk.ranged) {
+            continue;
+        }
         let cards = c.cards.min(units[c.attacker].tempo);
         units[c.attacker].tempo -= cards;
         let f_att = units[c.attacker].finesse;
@@ -172,10 +196,16 @@ pub fn resolve_react(
                 }
             }
             React::StrikeBack => {
-                let spent = 1.min(units[tgt].tempo);
-                units[tgt].tempo -= spent;
                 damage[tgt] += units[atk].might; // take the hit...
-                damage[atk] += units[tgt].might; // ...and counter (commit-based, even if the soaker dies)
+                // ...and counter, but only **melee-vs-melee**: you strike back at a foe that *approached*
+                // you (a melee strike), and only if you carry a melee blow. Against a ranged shot, or with
+                // no melee of your own, there is nothing to answer with - you simply eat it. One Tempo card,
+                // Finesse-irrelevant; commit-based (the counter lands even if the soaker dies).
+                let incoming_melee = !rank_is_ranged(units[atk].rank);
+                if incoming_melee && units[tgt].melee && units[tgt].tempo > 0 {
+                    units[tgt].tempo -= 1;
+                    damage[atk] += units[tgt].might;
+                }
                 surviving.push(*contact);
             }
         }
@@ -244,6 +274,8 @@ mod tests {
             finesse,
             cadence,
             toughness,
+            melee: true,
+            ranged: false,
             tempo: cadence,
             health,
             pending: 0,
@@ -259,6 +291,100 @@ mod tests {
         // Evade must STRICTLY exceed the attacker's spent value.
         assert!(!evade_succeeds(2, 2, 4)); // 4 is not > 4
         assert!(evade_succeeds(3, 2, 4)); // 6 > 4
+    }
+
+    #[test]
+    fn reach_must_match_position() {
+        // Position sets the required attack type; the body must carry it.
+        assert!(effective_in_rank(Rank::Vanguard, true, false)); // melee up front: yes
+        assert!(!effective_in_rank(Rank::Vanguard, false, true)); // ranged up front: dead weight
+        assert!(effective_in_rank(Rank::Rearguard, false, true)); // ranged in back: yes
+        assert!(!effective_in_rank(Rank::Rearguard, true, false)); // melee in back: dead weight
+        assert!(effective_in_rank(Rank::Rearguard, true, true)); // carries both: fine anywhere
+    }
+
+    #[test]
+    fn catch_gated_by_reach() {
+        // A melee-only Rearguard cannot form a contact even where the SCHEDULE permits the rank pair
+        // (Breach R->R). No tempo is spent on the fizzled strike.
+        let mut mismatch = vec![
+            unit("A", Side::Party, Rank::Rearguard, 2, 2, 3, 1, 3), // melee-only (helper default)
+            unit("D", Side::Foe, Rank::Rearguard, 1, 1, 2, 1, 3),
+        ];
+        let catch = Catch {
+            attacker: 0,
+            target: 1,
+            cards: 2,
+        };
+        assert!(
+            resolve_catch(&mut mismatch, &[catch]).is_empty(),
+            "melee body fires nothing from the back"
+        );
+        assert_eq!(
+            mismatch[0].tempo, 3,
+            "no tempo spent on an ineffective strike"
+        );
+
+        // Give it a ranged reach and the same strike lands.
+        let mut ranged = mismatch.clone();
+        ranged[0].ranged = true;
+        assert_eq!(
+            resolve_catch(&mut ranged, &[catch]).len(),
+            1,
+            "a ranged body fires from the back"
+        );
+    }
+
+    #[test]
+    fn strikeback_is_melee_versus_melee_only() {
+        // Incoming melee (attacker is a Vanguard), defender carries melee -> counters.
+        let mut u = vec![
+            unit("A", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
+            unit("D", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 5),
+        ];
+        let contact = Contact {
+            attacker: 0,
+            target: 1,
+            bid: 4,
+        };
+        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
+        assert_eq!(
+            u[0].health, 2,
+            "melee counter landed (5 -> 2 at might 3, toughness 1)"
+        );
+        assert_eq!(u[1].tempo, 3, "spent 1 Tempo on the strike-back");
+
+        // Incoming ranged (attacker is a Rearguard): no strike-back, just take the hit.
+        let mut u = vec![
+            unit("A", Side::Foe, Rank::Rearguard, 2, 2, 4, 1, 5),
+            unit("D", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 5),
+        ];
+        let contact = Contact {
+            attacker: 0,
+            target: 1,
+            bid: 4,
+        };
+        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
+        assert_eq!(u[0].health, 5, "no counter against a ranged shot");
+        assert_eq!(
+            u[1].tempo, 4,
+            "no Tempo spent - nothing to strike back with"
+        );
+
+        // Incoming melee but the defender is ranged-only: nothing to answer with.
+        let mut u = vec![
+            unit("A", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
+            unit("D", Side::Party, Rank::Rearguard, 3, 2, 4, 1, 5),
+        ];
+        u[1].melee = false;
+        u[1].ranged = true;
+        let contact = Contact {
+            attacker: 0,
+            target: 1,
+            bid: 4,
+        };
+        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
+        assert_eq!(u[0].health, 5, "a ranged-only body has no melee counter");
     }
 
     #[test]

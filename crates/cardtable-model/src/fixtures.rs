@@ -934,6 +934,17 @@ mod tests {
         assert_eq!(catalog::ability_shape("Slip-and-Cut"), (false, false));
     }
 
+    /// Each kit ability's reach is `(melee, ranged)` — today every kit carries exactly one, and an unknown
+    /// ability defaults to melee. (The model permits both / neither; no kit uses that yet.)
+    #[test]
+    fn ability_reach_covers_the_kits() {
+        assert_eq!(catalog::ability_reach("Stand-Off"), (false, true)); // ranged only
+        assert_eq!(catalog::ability_reach("Whirlwind"), (true, false)); // melee
+        assert_eq!(catalog::ability_reach("Alpha Strike"), (true, false));
+        assert_eq!(catalog::ability_reach("Slip-and-Cut"), (true, false));
+        assert_eq!(catalog::ability_reach("(unknown)"), (true, false)); // default melee
+    }
+
     /// Recruiting deals a hero's **four** copies out of the `×4` Heroes stack — two to the character deck
     /// (Zone label + rank marker), one to the inn (map position), one onto Progress (move marker) — and
     /// un-recruiting returns all four, re-forming the `×4`. All conservation-clean (PC.2): the total card

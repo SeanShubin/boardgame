@@ -77,18 +77,31 @@ pub fn ability_description(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
+/// A kit ability's **reach** as `(melee, ranged)` — which attack types the hero carries. Range is
+/// *position-determined* in combat (a Rearguard fires; a Vanguard/Outrider strikes — spec 4.2), but a body
+/// must **carry** the matching attack type to be effective in a position: a melee-only body in the
+/// Rearguard, or a ranged-only body up front, is legal but lands nothing. The two flags are **independent** —
+/// a kit may carry both, or (with no strike card) neither. Today's kits each carry exactly one; unknown
+/// abilities default to melee.
+pub fn ability_reach(name: &str) -> (bool, bool) {
+    match name {
+        "Stand-Off" => (false, true), // ranged only
+        "Whirlwind" => (true, false), // melee (area)
+        "Alpha Strike" => (true, false),
+        "Slip-and-Cut" => (true, false),
+        _ => (true, false),
+    }
+}
+
 /// A kit ability's **strike shape** as `(ranged, aoe)` — the reach and area a hero fights with, derived
 /// from its signature ability. Kits carry no explicit reach/area flags (unlike a [`Creature`], which
 /// stores them), so combat reads the shape here: Stand-Off strikes from range; Whirlwind hits an area;
-/// Alpha Strike and Slip-and-Cut are single melee blows. Unknown abilities default to melee, single.
+/// Alpha Strike and Slip-and-Cut are single melee blows. The `ranged` bit is [`ability_reach`]'s ranged
+/// flag; unknown abilities default to melee, single.
 pub fn ability_shape(name: &str) -> (bool, bool) {
-    match name {
-        "Stand-Off" => (true, false), // ranged, single
-        "Whirlwind" => (false, true), // melee, area
-        "Alpha Strike" => (false, false),
-        "Slip-and-Cut" => (false, false),
-        _ => (false, false),
-    }
+    let (_melee, ranged) = ability_reach(name);
+    let aoe = matches!(name, "Whirlwind");
+    (ranged, aoe)
 }
 
 /// A **creature** — a foe stationed at an encounter, mirrored from the duel-locks balance instrument
@@ -99,12 +112,14 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
 /// Coil holds the front regardless of its stats). A creature's **intention** and **posture** are not
 /// stored — they derive from these fields (see [`creature_intention`] / [`creature_posture`]), so
-/// editing a stat re-derives the read-out.
+/// editing a stat re-derives the read-out. `melee`/`ranged` are the creature's **reach** (which attack
+/// types it carries — independent, like a kit's [`ability_reach`]); the four locks are all melee.
 #[derive(Clone, Copy, Debug)]
 pub struct Creature {
     pub name: &'static str,
     pub ability: &'static str,
     pub stats: [u8; 5],
+    pub melee: bool,
     pub ranged: bool,
     pub aoe: bool,
     pub hoard: bool,
@@ -119,6 +134,7 @@ pub const CREATURES: [Creature; 4] = [
         name: "The Anvil",
         ability: "Immovable",
         stats: [1, 2, 5, 1, 1],
+        melee: true,
         ranged: false,
         aoe: false,
         hoard: false,
@@ -128,6 +144,7 @@ pub const CREATURES: [Creature; 4] = [
         name: "The Swarm",
         ability: "Overrun",
         stats: [1, 45, 1, 1, 1],
+        melee: true,
         ranged: false,
         aoe: false,
         hoard: true,
@@ -137,6 +154,7 @@ pub const CREATURES: [Creature; 4] = [
         name: "The Coil",
         ability: "Riposte",
         stats: [6, 4, 2, 2, 1],
+        melee: true,
         ranged: false,
         aoe: false,
         hoard: false,
@@ -146,6 +164,7 @@ pub const CREATURES: [Creature; 4] = [
         name: "The Mirage",
         ability: "Feint",
         stats: [6, 5, 2, 1, 2],
+        melee: true,
         ranged: false,
         aoe: false,
         hoard: false,

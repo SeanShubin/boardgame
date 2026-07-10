@@ -45,7 +45,7 @@ struct Stats {
     finesse: u32,
 }
 
-fn stats_of(s: [u8; 5], ranged: bool) -> (Stats, bool) {
+fn stats_of(s: [u8; 5], melee: bool, ranged: bool) -> (Stats, bool, bool) {
     (
         Stats {
             might: s[0] as u32,
@@ -54,6 +54,7 @@ fn stats_of(s: [u8; 5], ranged: bool) -> (Stats, bool) {
             cadence: s[3] as u32,
             finesse: s[4] as u32,
         },
+        melee,
         ranged,
     )
 }
@@ -90,22 +91,24 @@ fn character_deck(board: &Tableau, name: &str) -> Option<PileId> {
         })
 }
 
-fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool)> {
+/// A combatant's stats plus its **reach** `(melee, ranged)` — the attack types it carries (see
+/// `catalog::ability_reach`). Returned together so callers can position + gate it in one read.
+fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool, bool)> {
     let recipe = board.character_recipe(character_deck(board, name)?)?;
-    let (ranged, _aoe) = cardtable_model::catalog::ability_shape(&recipe.ability);
-    Some(stats_of(recipe.stats, ranged))
+    let (melee, ranged) = cardtable_model::catalog::ability_reach(&recipe.ability);
+    Some(stats_of(recipe.stats, melee, ranged))
 }
 
-fn foe_stats(name: &str) -> Option<(Stats, bool)> {
+fn foe_stats(name: &str) -> Option<(Stats, bool, bool)> {
     let c = cardtable_model::catalog::creature(name)?;
-    Some(stats_of(c.stats, c.ranged))
+    Some(stats_of(c.stats, c.melee, c.ranged))
 }
 
 /// The vitality (max HP) of a combatant by name and side — the health bar's full value.
 fn max_health(board: &Tableau, name: &str, side: Side) -> u32 {
     match side {
-        Side::Party => hero_stats(board, name).map(|(s, _)| s.vitality),
-        Side::Foe => foe_stats(name).map(|(s, _)| s.vitality),
+        Side::Party => hero_stats(board, name).map(|(s, _, _)| s.vitality),
+        Side::Foe => foe_stats(name).map(|(s, _, _)| s.vitality),
     }
     .unwrap_or(0)
 }
@@ -147,14 +150,18 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
-fn detail(hp: u32, max: u32, tempo: u32, finesse: u32, ranged: bool) -> Vec<String> {
+fn detail(hp: u32, max: u32, tempo: u32, finesse: u32, melee: bool, ranged: bool) -> Vec<String> {
     // Finesse rides the card (the game re-derives stats from the source, but the renderer needs it to show
-    // affordability) and the `Ranged` flag rides its line (so the formation can flag ranged units for
-    // positioning). Both are constant; the staged plan starts after these three lines.
+    // affordability) and the reach flags (`Melee` / `Ranged`) ride its line, so the formation can flag which
+    // positions a unit is effective in. All three are constant; the staged plan starts after these lines.
     vec![
         format!("HP {hp}/{max}"),
         format!("Tempo {tempo}"),
-        format!("Finesse {finesse}{}", if ranged { " Ranged" } else { "" }),
+        format!(
+            "Finesse {finesse}{}{}",
+            if melee { " Melee" } else { "" },
+            if ranged { " Ranged" } else { "" }
+        ),
     ]
 }
 
@@ -175,7 +182,7 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         "foe" => Side::Foe,
         _ => return None,
     };
-    let (stats, _ranged) = match side {
+    let (stats, melee, ranged) = match side {
         Side::Party => hero_stats(board, &name)?,
         Side::Foe => foe_stats(&name)?,
     };
@@ -196,6 +203,8 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         finesse: stats.finesse.max(1),
         cadence: stats.cadence,
         toughness: stats.toughness.max(1),
+        melee,
+        ranged,
         tempo,
         health: hp,
         pending: 0,
@@ -206,13 +215,16 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
 /// Write a resolved combatant's mutable state back onto its card (HP / tempo). This also **clears the staged
 /// plan** (detail is reset to the two base lines).
 fn write_combatant(board: &mut Tableau, card: CardId, u: &Combatant, max: u32) {
-    // Ranged is a constant of the character, re-derived from the source so it survives the writeback.
-    let ranged = match u.side {
-        Side::Party => hero_stats(board, &u.name).map(|(_, r)| r),
-        Side::Foe => foe_stats(&u.name).map(|(_, r)| r),
+    // Reach is a constant of the character, re-derived from the source so it survives the writeback.
+    let (melee, ranged) = match u.side {
+        Side::Party => hero_stats(board, &u.name).map(|(_, m, r)| (m, r)),
+        Side::Foe => foe_stats(&u.name).map(|(_, m, r)| (m, r)),
     }
-    .unwrap_or(false);
-    let _ = board.set_card_detail(card, detail(u.health, max, u.tempo, u.finesse, ranged));
+    .unwrap_or((true, false));
+    let _ = board.set_card_detail(
+        card,
+        detail(u.health, max, u.tempo, u.finesse, melee, ranged),
+    );
 }
 
 // ---- the staged plan (detail lines after the base two) ------------------------------------------------
@@ -463,7 +475,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         .collect();
     for card in heroes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, ranged)) = hero_stats(board, &name) {
+        if let Some((stats, melee, ranged)) = hero_stats(board, &name) {
             let at = board.pile(pool).map_or(0, |p| p.cards().len());
             let _ = board.move_card(card, pool, at);
             let _ = board.set_card_type(card, "unit");
@@ -474,6 +486,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
                     stats.vitality,
                     stats.cadence,
                     stats.finesse,
+                    melee,
                     ranged,
                 ),
             );
@@ -487,7 +500,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         .ok()?;
     for card in foes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, ranged)) = foe_stats(&name) {
+        if let Some((stats, melee, ranged)) = foe_stats(&name) {
             let _ = board.set_card_type(card, "foe");
             let _ = board.set_card_detail(
                 card,
@@ -496,6 +509,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
                     stats.vitality,
                     stats.cadence,
                     stats.finesse,
+                    melee,
                     ranged,
                 ),
             );
@@ -626,7 +640,11 @@ fn pairs_line(sub: usize) -> String {
 fn greedy_catches(units: &[Combatant], side: Side, sub: usize) -> Vec<Catch> {
     let mut catches = Vec::new();
     for (i, u) in units.iter().enumerate() {
-        if u.fallen || u.side != side || u.tempo == 0 {
+        if u.fallen
+            || u.side != side
+            || u.tempo == 0
+            || !combat::effective_in_rank(u.rank, u.melee, u.ranged)
+        {
             continue;
         }
         if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
@@ -663,7 +681,10 @@ fn greedy_extras(units: &[Combatant], side: Side, surviving: &[Contact]) -> Vec<
 fn party_catches(board: &Tableau, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Catch> {
     let mut catches = Vec::new();
     for (i, u) in units.iter().enumerate() {
-        if u.fallen || u.side != Side::Party {
+        if u.fallen
+            || u.side != Side::Party
+            || !combat::effective_in_rank(u.rank, u.melee, u.ranged)
+        {
             continue;
         }
         let s = staged_of(board, cards[i]);
@@ -749,6 +770,7 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
         Step::Catch => units.iter().enumerate().any(|(i, u)| {
             living_party(i)
                 && u.tempo > 0
+                && combat::effective_in_rank(u.rank, u.melee, u.ranged)
                 && units.iter().any(|v| {
                     v.side == Side::Foe && !v.fallen && combat::legal_catch(sub, u.rank, v.rank)
                 })
@@ -827,7 +849,7 @@ fn autofill_pool(board: &mut Tableau, arena: PileId) {
         let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
             continue;
         };
-        if let Some((stats, ranged)) = hero_stats(board, &name) {
+        if let Some((stats, _melee, ranged)) = hero_stats(board, &name) {
             let rank = default_rank(&stats, ranged);
             if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
                 let at = board.pile(rp).map_or(0, |p| p.cards().len());
@@ -990,6 +1012,15 @@ fn cycle_rank_pile(board: &mut Tableau, arena: PileId, card: CardId) {
 }
 
 fn select_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], chosen: usize) {
+    // An ineffective body (wrong reach for its position) carries no usable strike this phase, so it never
+    // becomes the active attacker - there is nothing for it to aim.
+    if !combat::effective_in_rank(
+        units[chosen].rank,
+        units[chosen].melee,
+        units[chosen].ranged,
+    ) {
+        return;
+    }
     for (i, c) in cards.iter().enumerate() {
         if units[i].side != Side::Party {
             continue;
@@ -1019,7 +1050,12 @@ fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: u
     else {
         return;
     };
-    if !combat::legal_catch(sub, units[active].rank, units[foe].rank) {
+    if !combat::effective_in_rank(
+        units[active].rank,
+        units[active].melee,
+        units[active].ranged,
+    ) || !combat::legal_catch(sub, units[active].rank, units[foe].rank)
+    {
         return;
     }
     let mut s = staged_of(board, cards[active]);
@@ -1066,9 +1102,16 @@ fn cycle_catch_bid(board: &mut Tableau, cards: &[CardId], units: &[Combatant], a
     write_staged(board, cards[active], &s);
 }
 
-fn cycle_react(board: &mut Tableau, card: CardId) {
+/// Cycle a defender's staged reaction. `strikeback_ok` gates the Strike Back option: strike-back is
+/// melee-vs-melee only (spec 3.1 / the design call), so when the incoming blow is ranged, or the defender
+/// carries no melee, the cycle skips straight over Strike Back (Eat -> Evade -> Eat).
+fn cycle_react(board: &mut Tableau, card: CardId, strikeback_ok: bool) {
     let mut s = staged_of(board, card);
-    s.react = Some(s.react.unwrap_or(ReactKind::Eat).next());
+    let mut next = s.react.unwrap_or(ReactKind::Eat).next();
+    if next == ReactKind::StrikeBack && !strikeback_ok {
+        next = next.next(); // skip Strike Back -> back to Eat
+    }
+    s.react = Some(next);
     write_staged(board, card, &s);
 }
 
@@ -1103,11 +1146,18 @@ pub fn handle_tap(board: &mut Tableau, card: CardId) {
             Side::Foe => aim_active(board, &cards, &units, sub, i),
         },
         Step::React => {
-            let incoming = read_contacts(board, arena, &cards)
-                .iter()
-                .any(|c| c.target == i);
-            if side == Side::Party && incoming {
-                cycle_react(board, card);
+            let incoming: Vec<Contact> = read_contacts(board, arena, &cards)
+                .into_iter()
+                .filter(|c| c.target == i)
+                .collect();
+            if side == Side::Party && !incoming.is_empty() {
+                // Strike Back is offered only if this defender carries a melee blow AND at least one incoming
+                // strike is melee (its attacker came to you - a Vanguard/Outrider, not a Rearguard's shot).
+                let strikeback_ok = units[i].melee
+                    && incoming
+                        .iter()
+                        .any(|c| !combat::rank_is_ranged(units[c.attacker].rank));
+                cycle_react(board, card, strikeback_ok);
             }
         }
         Step::Extra => {
@@ -1234,10 +1284,10 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
                 "foe" => foe_stats(&name),
                 _ => None,
             };
-            if let Some((s, ranged)) = stats {
+            if let Some((s, melee, ranged)) = stats {
                 let _ = board.set_card_detail(
                     card,
-                    detail(s.vitality, s.vitality, s.cadence, s.finesse, ranged),
+                    detail(s.vitality, s.vitality, s.cadence, s.finesse, melee, ranged),
                 );
             }
         }

@@ -2227,6 +2227,7 @@ struct ArenaUnit {
     max: u32,
     tempo: u32,
     finesse: u32,
+    melee: bool,
     ranged: bool,
     fallen: bool,
     active: bool,
@@ -2263,6 +2264,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         .map(|l| detail_num(l, "Finesse "))
         .unwrap_or(1)
         .max(1);
+    let melee = d.get(2).is_some_and(|l| l.contains("Melee"));
     let ranged = d.get(2).is_some_and(|l| l.contains("Ranged"));
     let mut u = ArenaUnit {
         card,
@@ -2273,6 +2275,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         max,
         tempo,
         finesse,
+        melee,
         ranged,
         fallen: hp == 0,
         active: false,
@@ -2437,7 +2440,9 @@ fn build_arena_v2_ui(
                 "Catch {m} tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
             )
         }
-        "React" => format!("React {m} tap a struck hero to cycle Eat / Evade / Strike Back."),
+        "React" => format!(
+            "React {m} tap a struck hero to cycle Eat / Evade / Strike Back (Strike Back answers a melee blow only)."
+        ),
         "Extra" => format!("Extra strikes {m} tap a hero in contact to spend its remaining tempo."),
         _ => format!("Formation {m} drag each hero into a rank row (or tap to cycle), then Start."),
     };
@@ -2665,6 +2670,7 @@ fn build_combat_lanes(
                     Sel::On
                 } else if !u.fallen
                     && u.tempo > 0
+                    && unit_effective(u)
                     && all
                         .iter()
                         .any(|f| !f.party && !f.fallen && legal(u.rank, f.rank) && can_land(u, f))
@@ -2674,10 +2680,18 @@ fn build_combat_lanes(
                     Sel::No
                 }
             }
-            // A foe is a target only if the active attacker can legally reach AND afford it.
+            // A foe is a target only if the active attacker is effective in its rank AND can legally reach and
+            // afford it (an off-range attacker's strike would land nothing, so it never lights up a target).
             "Catch" => match active {
                 Some(atk) if atk.aim == Some(u.card) => Sel::On,
-                Some(atk) if !u.fallen && legal(atk.rank, u.rank) && can_land(atk, u) => Sel::Yes,
+                Some(atk)
+                    if !u.fallen
+                        && unit_effective(atk)
+                        && legal(atk.rank, u.rank)
+                        && can_land(atk, u) =>
+                {
+                    Sel::Yes
+                }
                 _ => Sel::No,
             },
             "React" if u.party && !u.fallen && edges.iter().any(|&(_, to, _)| to == u.card) => {
@@ -2741,9 +2755,18 @@ fn build_combat_lanes(
         log.push(line);
     }
     if !pairs.is_empty() {
+        // Each pair is annotated with its range - the attacker's position fixes it (Rearguard fires ranged;
+        // Vanguard/Outrider strike melee), so a body must carry that attack type to connect.
         let pretty = pairs
             .iter()
-            .map(|&(a, t)| format!("{} {arrow} {}", rank_word(a), rank_word(t)))
+            .map(|&(a, t)| {
+                format!(
+                    "{} {arrow} {} ({})",
+                    rank_word(a),
+                    rank_word(t),
+                    rank_range_word(a)
+                )
+            })
             .collect::<Vec<_>>()
             .join(",  ");
         log.push(format!("This phase, may strike:  {pretty}"));
@@ -2861,6 +2884,47 @@ fn rank_word(c: char) -> &'static str {
         'O' => "Outrider",
         'R' => "Rearguard",
         _ => "Vanguard",
+    }
+}
+
+/// A strike thrown *from* rank `r` is **ranged** iff it is the Rearguard (`'R'`) — a mirror of the game's
+/// `combat::rank_is_ranged`; a Vanguard/Outrider (`'V'`/`'O'`) strikes melee. `'?'` (unranked Pool) is not a
+/// position and has no range.
+fn rank_ranged(r: char) -> bool {
+    r == 'R'
+}
+
+/// The attack type a position fights with, as a word for help text.
+fn rank_range_word(r: char) -> &'static str {
+    if rank_ranged(r) { "ranged" } else { "melee" }
+}
+
+/// Whether a unit sits in an actual position (a rank, not the unranked Pool `'?'`).
+fn unit_ranked(u: &ArenaUnit) -> bool {
+    matches!(u.rank, 'V' | 'O' | 'R')
+}
+
+/// Whether `u` is **effective** as an attacker in its current position: it must carry the attack type the
+/// position uses (Rearguard -> ranged; Vanguard/Outrider -> melee). Mirrors `combat::effective_in_rank`. An
+/// unranked (Pool) unit is trivially "effective" — it has no position to mismatch yet.
+fn unit_effective(u: &ArenaUnit) -> bool {
+    if !unit_ranked(u) {
+        return true;
+    }
+    if rank_ranged(u.rank) {
+        u.ranged
+    } else {
+        u.melee
+    }
+}
+
+/// This unit's reach as a short word — which attack types it carries.
+fn reach_word(u: &ArenaUnit) -> &'static str {
+    match (u.melee, u.ranged) {
+        (true, true) => "melee + ranged",
+        (true, false) => "melee",
+        (false, true) => "ranged",
+        (false, false) => "no strike",
     }
 }
 
@@ -2993,15 +3057,30 @@ fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
             },
             TextColor(MUTED),
         ));
-        // Ranged marker, so you can put ranged units in the back rank on sight.
-        if u.ranged {
+        // Reach badges — which attack types this body carries (melee close, ranged from the back), so you can
+        // position it on sight: melee -> Vanguard/Outrider, ranged -> Rearguard.
+        let reach_color = match (u.melee, u.ranged) {
+            (true, false) => MELEE_CUE,
+            (false, true) => RANGED_CUE,
+            _ => MUTED, // both, or neither
+        };
+        c.spawn((
+            Text::new(reach_word(u)),
+            TextFont {
+                font_size: FONT_BADGE,
+                ..default()
+            },
+            TextColor(reach_color),
+        ));
+        // Placed in a rank it can't use? Legal, but dead weight — say so plainly (spec 4.2 self-sort).
+        if !unit_effective(u) {
             c.spawn((
-                Text::new(format!("{} ranged", palette::ARROW)),
+                Text::new(format!("{} ineffective here", palette::TIMES)),
                 TextFont {
                     font_size: FONT_BADGE,
                     ..default()
                 },
-                TextColor(RANGED_CUE),
+                TextColor(WARN_CUE),
             ));
         }
     });
@@ -3085,6 +3164,18 @@ fn spawn_arena_v2_unit(
             },
             TextColor(if u.fallen { FACE_DOWN_EDGE } else { MUTED }),
         ));
+        // Off-range: a living body in a rank whose attack type it does not carry lands nothing here (spec 4.2).
+        // Flagged so its dimming reads as "wrong position," not merely "nothing staged."
+        if !u.fallen && !unit_effective(u) {
+            c.spawn((
+                Text::new(format!("{} off-range ({})", palette::TIMES, reach_word(u))),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(WARN_CUE),
+            ));
+        }
         if !plan.trim().is_empty() {
             c.spawn((
                 Text::new(plan.trim().to_string()),
@@ -3192,6 +3283,10 @@ const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
 const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
 /// The **ranged** marker on a formation tile (a cool blue "fires from a distance" cue).
 const RANGED_CUE: Color = Color::srgb(0.45, 0.72, 0.95);
+/// The **melee** marker on a formation tile (a warm steel-orange "strikes in close" cue).
+const MELEE_CUE: Color = Color::srgb(0.95, 0.58, 0.38);
+/// A **warning** cue — a unit parked in a rank whose attack type it does not carry (ineffective, but legal).
+const WARN_CUE: Color = Color::srgb(0.92, 0.40, 0.40);
 /// Corner radius for a cue ring, matching a card's own [`BorderRadius`] so the outline rounds instead of
 /// boxing the card — a Bevy outline follows its node's radius, and a bare `Movable` wrapper has none.
 const CUE_RADIUS: Val = Val::Px(12.0);
