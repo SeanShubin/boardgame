@@ -2760,25 +2760,37 @@ fn build_combat_lanes(
         }
     };
 
-    for (label, rank) in RANK_ROWS {
-        root.spawn(Node {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
-            min_height: Val::Px(SMALL_H + 8.0),
-            ..default()
-        })
-        .with_children(|lane| {
-            spawn_rank_card(lane, label);
-            for u in all.iter().filter(|u| u.party && u.rank == rank) {
-                spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
-            }
-            arena_divider(lane);
-            for u in all.iter().filter(|u| !u.party && u.rank == rank) {
-                spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
-            }
-        });
-    }
+    // Left-align the rank rows within one column so the rank cards form a true vertical column (the main
+    // area centers its children, which would otherwise center each row on its own width and stagger the
+    // rank cards). The block itself still sits centered in the main area.
+    root.spawn(Node {
+        flex_direction: FlexDirection::Column,
+        align_items: AlignItems::FlexStart,
+        row_gap: Val::Px(6.0),
+        ..default()
+    })
+    .with_children(|lanes| {
+        for (label, rank) in RANK_ROWS {
+            lanes
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    min_height: Val::Px(SMALL_H + 8.0),
+                    ..default()
+                })
+                .with_children(|lane| {
+                    spawn_rank_card(lane, label);
+                    for u in all.iter().filter(|u| u.party && u.rank == rank) {
+                        spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
+                    }
+                    arena_divider(lane);
+                    for u in all.iter().filter(|u| !u.party && u.rank == rank) {
+                        spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
+                    }
+                });
+        }
+    });
 
     // The combat log: a large card under the lanes with the full state of this phase — who may strike whom,
     // every target/reaction/strike decision, and the contacts that landed.
