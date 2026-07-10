@@ -2751,9 +2751,7 @@ fn build_combat_lanes(
         .and_then(|&c| tree.card(c))
         .map(|c| c.detail().to_vec())
         .unwrap_or_default();
-    if let Some(line) = condense_skips(&skips) {
-        log.push(line);
-    }
+    log.extend(condense_skips(&skips));
     if !pairs.is_empty() {
         // Each pair is annotated with its range - the attacker's position fixes it (Rearguard fires ranged;
         // Vanguard/Outrider strike melee), so a body must carry that attack type to connect.
@@ -2843,39 +2841,41 @@ fn build_combat_lanes(
 /// Condense the auto-skip notes (`"phase|step|reason"`) into one brief line. Consecutive skips of the same
 /// sub-phase collapse to just the phase name when the *whole* sub-phase (all three steps) was skipped;
 /// a partial skip keeps `"phase step (reason)"`. Returns `None` when nothing was skipped.
-fn condense_skips(skips: &[String]) -> Option<String> {
-    if skips.is_empty() {
-        return None;
-    }
-    let parsed: Vec<(&str, &str, &str)> = skips
-        .iter()
-        .map(|s| {
-            let mut it = s.split('|');
-            (
-                it.next().unwrap_or(""),
-                it.next().unwrap_or(""),
-                it.next().unwrap_or(""),
-            )
-        })
-        .collect();
+/// One `Skipped: {sub-phase} ({targeting})` line per auto-passed sub-phase — the targeting we did not get to,
+/// spelled out (e.g. `Skipped: Clash (Rearguard -> Vanguard, Vanguard -> Vanguard)`). Each skiplog entry is
+/// `"{phase}|{step}|{reason}|{pairs}"`; a sub-phase is listed once (its steps share the same pairs), in the
+/// order the walk passed them.
+fn condense_skips(skips: &[String]) -> Vec<String> {
+    let mut seen: Vec<&str> = Vec::new();
     let mut out: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < parsed.len() {
-        let phase = parsed[i].0;
-        let end = (i..parsed.len())
-            .take_while(|&j| parsed[j].0 == phase)
-            .count()
-            + i;
-        if end - i == 3 {
-            out.push(phase.to_string()); // the whole sub-phase was skipped
-        } else {
-            for &(p, step, reason) in &parsed[i..end] {
-                out.push(format!("{p} {step} ({reason})"));
-            }
+    for s in skips {
+        let mut it = s.split('|');
+        let phase = it.next().unwrap_or("");
+        let (_step, _reason) = (it.next(), it.next());
+        let pairs = it.next().unwrap_or("");
+        if phase.is_empty() || seen.contains(&phase) {
+            continue;
         }
-        i = end;
+        seen.push(phase);
+        let targeting = pairs
+            .split(',')
+            .filter(|p| !p.is_empty())
+            .filter_map(|p| {
+                let mut c = p.split('>');
+                let a = c.next()?.chars().next()?;
+                let t = c.next()?.chars().next()?;
+                Some(format!(
+                    "{} {} {}",
+                    rank_word(a),
+                    palette::ARROW,
+                    rank_word(t)
+                ))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push(format!("Skipped: {phase} ({targeting})"));
     }
-    Some(format!("Skipped: {}", out.join(", ")))
+    out
 }
 
 /// The full rank name for a one-letter code (`'V'`/`'O'`/`'R'`).

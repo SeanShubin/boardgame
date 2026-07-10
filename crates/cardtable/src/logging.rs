@@ -400,17 +400,52 @@ fn drain_drop_trace(mut trace: ResMut<DropTrace>, log: Res<UiLog>) {
     }
 }
 
-/// Log a click on a card with its pointer position.
+/// Log **every** click with its pointer position, what it hit, and its outcome — including the clicks the
+/// game *ignores*, so a "dropped" click is visible here instead of vanishing. Two ignore paths mirror
+/// `on_click`: a click landing inside the **drag-guard** window (a press that moved far enough to start a
+/// drag — the usual cause of a lost tap) is suppressed, and a click on an entity with **no interactive
+/// target** does nothing. Combat tiles / controls / cards are named by kind so the arena taps show up (they
+/// carry `ArenaUnitCard` / `AffordanceControl`, not `CardRef`, so the old logger missed them).
 fn log_click(
     on: On<Pointer<Click>>,
+    guard: Res<crate::DragGuard>,
     cards: Query<&CardRef>,
     movables: Query<&Movable>,
+    units: Query<&crate::ArenaUnitCard>,
+    affordances: Query<&crate::AffordanceControl>,
+    backs: Query<(), With<crate::BackCard>>,
     table: Res<Table>,
     log: Res<UiLog>,
 ) {
-    if let Some(name) = interacted_card(&table.0, on.event().entity, &cards, &movables) {
-        let p = on.event().pointer_location.position;
-        log.0
-            .write(&format!("click: {name} at ({:.0},{:.0})\n", p.x, p.y));
-    }
+    let entity = on.event().entity;
+    let p = on.event().pointer_location.position;
+    // Best-effort name + kind of what was under the pointer (combatant / affordance / back before the generic
+    // card, since a formation tile carries both `ArenaUnitCard` and `Movable`).
+    let what = if let Ok(unit) = units.get(entity) {
+        let name = table
+            .0
+            .card(unit.0)
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_else(|| "(combatant)".into());
+        format!("{name} [combatant]")
+    } else if let Ok(ctrl) = affordances.get(entity) {
+        format!("affordance #{} [control]", ctrl.0)
+    } else if backs.get(entity).is_ok() {
+        "Back [control]".into()
+    } else if let Some(name) = interacted_card(&table.0, entity, &cards, &movables) {
+        format!("{name} [card]")
+    } else {
+        "(no interactive target)".into()
+    };
+    // The drag-guard is still set when the click that ends a drag fires; `on_click` drops that click, so note
+    // it here rather than let it look like a click that did nothing.
+    let outcome = if guard.0 {
+        "  IGNORED (drag-guard)"
+    } else {
+        ""
+    };
+    log.0.write(&format!(
+        "click: {what} at ({:.0},{:.0}){outcome}\n",
+        p.x, p.y
+    ));
 }
