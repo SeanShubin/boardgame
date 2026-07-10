@@ -933,9 +933,17 @@ fn animate_nodes(
         if dragging.0 == Some(movable.0) {
             continue; // free while held
         }
-        let target = if in_arena {
-            Pos { x: 0.0, y: 0.0 } // flex base: ease any drag offset back into the row
-        } else if structured {
+        // Arena tiles are flex-positioned. Snap any drag offset straight back to base (no ease): a row-child
+        // tile can never out-z a later row, so *easing* it home would slide it visibly under the rows it
+        // passes. Only a tile actively dragged is offset, and that one floats on the held layer (HELD_Z).
+        if in_arena {
+            if px(node.left) != 0.0 || px(node.top) != 0.0 {
+                node.left = Val::Px(0.0);
+                node.top = Val::Px(0.0);
+            }
+            continue;
+        }
+        let target = if structured {
             match layout.get(&movable.0) {
                 Some(&p) => p,
                 None => continue,
@@ -2145,16 +2153,17 @@ fn build_arena_v2_ui(
             ));
             arena_prompt_line(root, prompt);
 
-            // The rank rows / lanes fill the middle and scroll if they don't fit, so the footer controls
-            // below are never pushed off-screen.
+            // The rank rows / lanes fill the middle and scroll if they don't fit. Bottom padding keeps the
+            // last row clear of the pinned footer bar below.
             root.spawn(Node {
                 width: Val::Percent(100.0),
                 flex_grow: 1.0,
                 min_height: Val::Px(0.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
+                justify_content: JustifyContent::FlexStart,
                 row_gap: Val::Px(8.0),
+                padding: UiRect::bottom(Val::Px(56.0)),
                 overflow: Overflow::scroll_y(),
                 ..default()
             })
@@ -2166,12 +2175,22 @@ fn build_arena_v2_ui(
                 }
             });
 
-            // Footer controls — always visible (after the flex-grow middle).
-            root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(10.0),
-                ..default()
-            })
+            // Footer controls — pinned to the viewport bottom so they are *always* visible regardless of how
+            // tall the formation grows (flex alone kept pushing them off-screen).
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    bottom: Val::Px(8.0),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::Center,
+                    column_gap: Val::Px(10.0),
+                    padding: UiRect::vertical(Val::Px(6.0)),
+                    ..default()
+                },
+                BackgroundColor(FELT),
+            ))
             .with_children(|row| {
                 for (i, label) in affordances.iter().enumerate() {
                     if i == 0 && !ready {
