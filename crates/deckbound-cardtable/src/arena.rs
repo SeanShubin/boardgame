@@ -703,9 +703,8 @@ pub fn commit_label(board: &Tableau, arena: PileId) -> &'static str {
                     "Assign every hero a rank"
                 }
             }
-            Step::Catch => "Commit catches",
-            Step::React => "Commit reactions",
-            Step::Extra => "Commit strikes",
+            // The Step deck already names the mini-phase (Catch/React/Extra), so the button is just "Commit".
+            Step::Catch | Step::React | Step::Extra => "Commit",
         },
     }
 }
@@ -731,6 +730,58 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
         Step::Extra => read_contacts(board, arena, &cards)
             .iter()
             .any(|c| living_party(c.attacker) && units[c.attacker].tempo > 0),
+    }
+}
+
+/// A brief note for the current step when it is being auto-skipped: `"{Phase} {Step} (why)"`. ASCII - it is
+/// stored on a card (so it shows in the physical log too); the renderer prints it in the combat log.
+pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
+    let (_, _, sub, _, step) = arena_state(board, arena);
+    let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
+    let (name, reason) = match step {
+        Step::Catch => ("Catch", "no legal target"),
+        Step::React => ("React", "nothing struck you"),
+        Step::Extra => ("Extra", "no surviving contact"),
+        Step::Marshal => ("Marshal", ""),
+    };
+    format!("{phase} {name} ({reason})")
+}
+
+/// Clear the record of auto-skipped steps (a fresh burst starts each time the player commits).
+pub fn clear_skips(board: &mut Tableau, arena: PileId) {
+    let stale: Vec<CardId> = board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("skiplog"))
+        .collect();
+    for c in stale {
+        let _ = board.remove_card(c);
+    }
+}
+
+/// Append a line to the skiplog card (a loose card that accumulates the current burst's auto-skips).
+pub fn note_skip(board: &mut Tableau, arena: PileId, line: String) {
+    if let Some(c) = board
+        .content_cards(arena)
+        .into_iter()
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("skiplog"))
+    {
+        let mut d = board
+            .card(c)
+            .map(|k| k.detail().to_vec())
+            .unwrap_or_default();
+        d.push(line);
+        let _ = board.set_card_detail(c, d);
+    } else if let Ok(c) = board.add_card(
+        arena,
+        cardtable_model::Face::Down {
+            title: "skipped".into(),
+        },
+        None,
+    ) {
+        let _ = board.set_card_kind(c, CardKind::Virtual);
+        let _ = board.set_card_type(c, "skiplog");
+        let _ = board.set_card_detail(c, vec![line]);
     }
 }
 
@@ -927,6 +978,11 @@ fn cycle_bid(board: &mut Tableau, card: CardId, tempo: u32) {
 }
 
 /// Aim the active party attacker at foe index `foe` (if the SCHEDULE permits), seeding a minimum bid.
+/// The minimum tempo the attacker must bid to *land* a catch on the target: `ceil(F_target / F_att)`.
+fn min_to_land(attacker: &Combatant, target: &Combatant) -> u32 {
+    target.finesse.div_ceil(attacker.finesse.max(1)).max(1)
+}
+
 fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: usize, foe: usize) {
     let Some(active) = (0..units.len())
         .find(|&i| units[i].side == Side::Party && staged_of(board, cards[i]).active)
@@ -937,11 +993,46 @@ fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: u
         return;
     }
     let mut s = staged_of(board, cards[active]);
-    s.aim = Some(cards[foe]);
-    if s.bid == 0 {
-        let need = units[foe].finesse.div_ceil(units[active].finesse.max(1));
-        s.bid = need.min(units[active].tempo).max(1);
+    // Re-tapping the already-aimed foe cancels the catch (there is no bid-0 "no catch" state to cycle to).
+    if s.aim == Some(cards[foe]) {
+        s.aim = None;
+        s.bid = 0;
+        write_staged(board, cards[active], &s);
+        return;
     }
+    // Only aim if the attacker can actually afford to land it; seed at the minimum landing bid.
+    let need = min_to_land(&units[active], &units[foe]);
+    if need > units[active].tempo {
+        return;
+    }
+    s.aim = Some(cards[foe]);
+    s.bid = need;
+    write_staged(board, cards[active], &s);
+}
+
+/// Cycle the active attacker's catch bid through the *landing* range `[min_to_land, tempo]`, wrapping back to
+/// the minimum - never below it (those bids miss) and never 0 (that is just "no catch"; cancel by re-tapping
+/// the foe). A no-op if the unit has no aim.
+fn cycle_catch_bid(board: &mut Tableau, cards: &[CardId], units: &[Combatant], active: usize) {
+    let s = staged_of(board, cards[active]);
+    let Some(aim) = s.aim else {
+        return;
+    };
+    let Some(target) = cards.iter().position(|&c| c == aim) else {
+        return;
+    };
+    let tempo = units[active].tempo;
+    let min = min_to_land(&units[active], &units[target]);
+    if min > tempo {
+        return;
+    }
+    let next = if s.bid >= tempo {
+        min
+    } else {
+        (s.bid + 1).max(min)
+    };
+    let mut s = s;
+    s.bid = next;
     write_staged(board, cards[active], &s);
 }
 
@@ -974,7 +1065,7 @@ pub fn handle_tap(board: &mut Tableau, card: CardId) {
         Step::Catch => match side {
             Side::Party => {
                 if staged_of(board, card).active {
-                    cycle_bid(board, card, units[i].tempo);
+                    cycle_catch_bid(board, &cards, &units, i);
                 } else {
                     select_active(board, &cards, &units, i);
                 }

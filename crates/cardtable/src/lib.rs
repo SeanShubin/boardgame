@@ -2720,6 +2720,16 @@ fn build_combat_lanes(
     };
     let (arrow, mdash, times) = (palette::ARROW, palette::MDASH, palette::TIMES);
     let mut log: Vec<String> = Vec::new();
+    // Phases auto-resolved (no decision for you) since your last commit, with why - one brief line.
+    let skips: Vec<String> = loose
+        .iter()
+        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("skiplog"))
+        .and_then(|&c| tree.card(c))
+        .map(|c| c.detail().to_vec())
+        .unwrap_or_default();
+    if !skips.is_empty() {
+        log.push(format!("Skipped: {}", skips.join(", ")));
+    }
     if !pairs.is_empty() {
         let pretty = pairs
             .iter()

@@ -63,13 +63,17 @@ impl BoardGame for CardTableGame {
                         } else {
                             crate::arena::commit(board, a);
                             // Skip straight past any following steps the player has no decision in (they
-                            // resolve greedily), stopping at the next real choice or the fight's end.
+                            // resolve greedily), stopping at the next real choice or the fight's end. Record
+                            // each skipped step so the combat log can report what was auto-resolved and why.
+                            crate::arena::clear_skips(board, a);
                             let mut guard = 0;
                             while crate::arena::outcome(board, a).is_none()
                                 && !crate::arena::step_needs_input(board, a)
                                 && guard < 100
                             {
+                                let note = crate::arena::current_skip_line(board, a);
                                 crate::arena::commit(board, a);
+                                crate::arena::note_skip(board, a, note);
                                 guard += 1;
                             }
                         }
