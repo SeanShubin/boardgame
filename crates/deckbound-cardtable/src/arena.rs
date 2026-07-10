@@ -990,8 +990,10 @@ fn teardown(board: &mut Tableau, arena: PileId, clear_encounter: bool, spend_day
         }
     }
 
-    let _ = board.remove_pile(arena);
+    // Leave the arena *before* removing it: `zoom_out` looks up the focused pile's parent, so the arena must
+    // still exist (removing it first would leave focus dangling on a missing key and panic the next draw).
     board.zoom_out();
+    let _ = board.remove_pile(arena);
     if spend_day
         && let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events"))
     {
@@ -1122,6 +1124,39 @@ mod tests {
         assert!(
             outcome(&board, arena).is_some(),
             "the fight reached a winner"
+        );
+    }
+
+    #[test]
+    fn cancel_tears_the_arena_down_leaving_the_encounter_intact() {
+        let mut board = sample_table();
+        let arena = open_a_fight(&mut board);
+        let place = place_of(&board, arena).expect("the fight remembers its place");
+        assert!(
+            board
+                .content_cards(place)
+                .iter()
+                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter")),
+            "the place has an encounter before the fight"
+        );
+
+        // Cancel from the arena (focus == arena, as after open_fight) must not panic and must tear down.
+        cancel_fight(&mut board, arena);
+
+        assert!(find_arena(&board).is_none(), "the arena was torn down");
+        assert!(
+            board
+                .content_cards(place)
+                .iter()
+                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter")),
+            "cancel leaves the encounter intact (no win)"
+        );
+        assert!(
+            board
+                .content_cards(place)
+                .iter()
+                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("hero")),
+            "the heroes returned to the place"
         );
     }
 
