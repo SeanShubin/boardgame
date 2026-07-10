@@ -130,7 +130,7 @@ fn walk(
                     .cloned()
                     .collect();
                 for line in &detail {
-                    tree.push_str(&format!("{indent}      · {line}\n"));
+                    tree.push_str(&format!("{indent}      - {line}\n"));
                 }
                 cards.insert(
                     *cid,
@@ -190,7 +190,7 @@ fn log_physical(table: Res<Table>, log: Res<PhysicalLog>, mut last: Local<Option
             let diff = transitions(&prev.cards, &now.cards);
             let mut out = String::from("--- transitions ---\n");
             if diff.is_empty() {
-                out.push_str("(reordering — no card changed pile or face)\n");
+                out.push_str("(reordering - no card changed pile or face)\n");
             } else {
                 for line in diff {
                     out.push_str(&line);
@@ -298,7 +298,7 @@ fn log_layout(
             if ox > 0.5 && oy > 0.5 {
                 let (front, back) = if zi >= zj { (ni, nj) } else { (nj, ni) };
                 overlaps.push(format!(
-                    "  OVERLAP: {ni} & {nj} by ({ox:.0}x{oy:.0}) — {front} over {back}"
+                    "  OVERLAP: {ni} & {nj} by ({ox:.0}x{oy:.0}) - {front} over {back}"
                 ));
             }
         }

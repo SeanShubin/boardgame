@@ -669,8 +669,8 @@ pub fn outcome(board: &Tableau, arena: PileId) -> Option<bool> {
 /// The label for the Commit control, given the current step (or the fight's decision).
 pub fn commit_label(board: &Tableau, arena: PileId) -> &'static str {
     match outcome(board, arena) {
-        Some(true) => "Victory — leave",
-        Some(false) => "Defeat — leave",
+        Some(true) => "Victory - leave",
+        Some(false) => "Defeat - leave",
         None => match arena_state(board, arena).4 {
             Step::Marshal => {
                 if formation_complete(board, arena) {

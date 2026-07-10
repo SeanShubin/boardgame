@@ -315,7 +315,7 @@ mod tests {
         // Evade: D flips 2 (2×3=6 > 4) -> misses, no damage, tempo spent.
         let mut u = base();
         resolve_react(&mut u, &[contact], &[React::Evade { cards: 2 }]);
-        assert_eq!(u[1].health, 3, "evaded — no damage");
+        assert_eq!(u[1].health, 3, "evaded - no damage");
         assert_eq!(u[1].tempo, 2, "spent 2 tempo evading");
 
         // Strike-back: D takes 3 AND counters for 2; both land even though D is doomed (commit-based).

@@ -53,7 +53,7 @@ fn main() -> AppExit {
             timestamp: option_env!("BUILD_GIT_TIMESTAMP").and_then(|s| s.parse::<i64>().ok()),
         })
         .insert_resource(StatusLine(
-            "Click a pile to enter it · click a card to grow it · drag to arrange".into(),
+            "Click a pile to enter it | click a card to grow it | drag to arrange".into(),
         ))
         // No game yet: drain the core's click outbox each frame so requests don't accumulate. A
         // future feature (or a game adapter) will consume these instead of discarding them.
@@ -103,7 +103,7 @@ fn resolve_manual_combat(
         return;
     };
     if arena.0.is_some() {
-        return; // a fight is already up — don't stack another
+        return; // a fight is already up - don't stack another
     }
     let seed = day_seed(&table.0);
     let root = table.0.root_id();

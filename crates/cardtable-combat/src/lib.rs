@@ -507,7 +507,7 @@ impl ManualCombat {
                 let name = deckbound::combat::SUB_PHASE_NAMES
                     .get(r.step)
                     .copied()
-                    .unwrap_or("—")
+                    .unwrap_or("-")
                     .to_string();
                 let pairs = deckbound::combat::SCHEDULE
                     .get(r.step)
@@ -620,7 +620,7 @@ impl ManualCombat {
             (PendingDecision::StrikeBack { answer, .. }, ArenaAnswer::StrikeBack(b)) => {
                 *answer = Some(b);
             }
-            _ => {} // the answer kind doesn't match the current decision — ignore
+            _ => {} // the answer kind doesn't match the current decision - ignore
         }
     }
 }
@@ -872,7 +872,7 @@ mod tests {
     fn a_new_fight_replaces_the_previous_log() {
         let mut t = sample_table();
         let place = station_at(&mut t, executioner(), "Cinderwatch Keep");
-        resolve_encounter(&mut t, place, 1); // loss — foes remain, "Defeat" logged
+        resolve_encounter(&mut t, place, 1); // loss - foes remain, "Defeat" logged
         resolve_encounter(&mut t, place, 1); // fight again
         assert_eq!(
             cards_of_types(&t, place, &["log"]).len(),

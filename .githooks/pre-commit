@@ -22,3 +22,18 @@ files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
 echo "pre-commit: rustfmt on staged Rust files"
 echo "$files" | xargs rustfmt --edition 2024
 echo "$files" | xargs git add
+
+# Reject NEW non-ASCII in Rust code. Typographic Unicode (arrows, dots, bullets, em-dashes, ellipses) that
+# ends up in a string literal renders as unprintable glyphs in the app UI and in the debug logs, over and
+# over. So code stays ASCII: use "->" not an arrow, "--" not an em-dash, "x" not a multiply sign, "*" not a
+# bullet, "..." not an ellipsis. Only newly ADDED lines are checked, and // comments are exempt.
+bad=$(git diff --cached --unified=0 -- '*.rs' \
+  | grep -E '^\+' | grep -vE '^\+\+\+' \
+  | sed -e 's@^+@@' -e 's@//.*@@' \
+  | grep -nP '[^\x00-\x7F]' || true)
+if [ -n "$bad" ]; then
+  echo "pre-commit: BLOCKED - non-ASCII added in code (use ASCII in strings/logs, not typographic Unicode):"
+  echo "$bad"
+  echo "Replace with ASCII (-> -- x * ...), re-stage, and commit again."
+  exit 1
+fi

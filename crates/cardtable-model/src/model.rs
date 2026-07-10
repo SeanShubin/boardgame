@@ -1948,7 +1948,7 @@ mod tests {
         t.mark_moved(progress, "Isolde").unwrap();
         assert!(
             t.day_is_over(progress),
-            "everyone has moved — the day is over"
+            "everyone has moved - the day is over"
         );
 
         t.advance_day(progress, reserve).unwrap();
@@ -1964,7 +1964,7 @@ mod tests {
         );
         assert!(
             !t.day_is_over(progress),
-            "a new day — everyone can move again"
+            "a new day - everyone can move again"
         );
         assert!(
             t.content_cards(progress)
@@ -2105,7 +2105,7 @@ mod tests {
             .iter()
             .find(|&&c| t.card(c).unwrap().name() == "Vael")
             .map(|&c| t.card(c).unwrap().quantity());
-        assert_eq!(restacked, Some(4), "four copies merged back to ×4");
+        assert_eq!(restacked, Some(4), "four copies merged back to x4");
         assert!(t.content_cards(home).is_empty(), "position copy returned");
         assert!(t.content_cards(progress).is_empty(), "move marker returned");
         // The returned cards merged back into the banks — the physical totals are restored (5 names ×2 =
@@ -2462,7 +2462,7 @@ mod tests {
         let b = t.add_pile(root, "B").unwrap();
         t.set_pile_size(a, 100.0, 100.0).unwrap();
         t.set_pile_size(b, 100.0, 100.0).unwrap();
-        t.set_surface(150.0, 300.0); // only 50px right of A — B (100 wide) can't slide right
+        t.set_surface(150.0, 300.0); // only 50px right of A - B (100 wide) can't slide right
         t.set_pile_pos(a, 0.0, 0.0).unwrap();
         t.set_pile_pos(b, 10.0, 0.0).unwrap(); // overlapping A, pinned near the right wall
 
@@ -2534,7 +2534,7 @@ mod tests {
             t.set_pile_size(d, 100.0, 100.0).unwrap();
             t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the surface's center
         }
-        t.set_surface(200.0, 200.0); // a 2×2 grid of 100×100 cells is the only clear packing
+        t.set_surface(200.0, 200.0); // a 2x2 grid of 100x100 cells is the only clear packing
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
@@ -2806,7 +2806,7 @@ mod tests {
                 "Vael", &recipe, identity, stats, numbers, abilities, home, progress,
             )
             .unwrap();
-        assert!(t.content_cards(identity).is_empty()); // the ×4 stack fully dealt out
+        assert!(t.content_cards(identity).is_empty()); // the x4 stack fully dealt out
         assert_eq!(
             t.card(t.zone_card(character).unwrap()).unwrap().name(),
             "Vael"

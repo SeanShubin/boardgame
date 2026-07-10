@@ -15,7 +15,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "cardtable — sandbox".into(),
+                title: "cardtable - sandbox".into(),
                 resolution: (1100u32, 760u32).into(),
                 ..default()
             }),
@@ -24,7 +24,7 @@ fn main() {
         .add_plugins(CardTablePlugin)
         .insert_resource(Table(sample_table()))
         .insert_resource(StatusLine(
-            "Click a pile to enter it · click a card to grow it · Back / Exit to navigate".into(),
+            "Click a pile to enter it | click a card to grow it | Back / Exit to navigate".into(),
         ))
         // Stand in for a game: drain the core's click outbox. Runs in `Apply`, after the core's input.
         .add_systems(Update, log_actions.in_set(CardTableSet::Apply))

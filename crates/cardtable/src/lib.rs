@@ -292,7 +292,7 @@ fn make_debug_log() -> DebugLog {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    log.line(format!("=== cardtable debug log — launch {stamp} ==="));
+    log.line(format!("=== cardtable debug log - launch {stamp} ==="));
     log
 }
 
@@ -1494,7 +1494,7 @@ fn on_node_drag_end(
             let _ = table.0.reorder(home, from, to);
         }
         trace.0.push(format!(
-            "drag-end: {card_name} reordered within [{home_label}] (no pile change — snapped back)"
+            "drag-end: {card_name} reordered within [{home_label}] (no pile change - snapped back)"
         ));
     }
 }
@@ -1718,7 +1718,7 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
                 }) => {
                     arena_prompt(
                         bar,
-                        &format!("{attacker} strikes {soaker} — evade? ({soaker} tempo {tempo})"),
+                        &format!("{attacker} strikes {soaker} - evade? ({soaker} tempo {tempo})"),
                     );
                     spawn_nav_card(bar, ArenaEvadeCard(true), &format!("Evade (-{cost}t)"));
                     spawn_nav_card(bar, ArenaEvadeCard(false), "Endure");
@@ -1731,13 +1731,13 @@ fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
                     arena_prompt(
                         bar,
                         &format!(
-                            "{attacker} struck {soaker} — strike back? ({soaker} tempo {tempo})"
+                            "{attacker} struck {soaker} - strike back? ({soaker} tempo {tempo})"
                         ),
                     );
                     spawn_nav_card(bar, ArenaStrikeBackCard(true), "Strike Back (-1t)");
                     spawn_nav_card(bar, ArenaStrikeBackCard(false), "Hold");
                 }
-                None => arena_prompt(bar, "Resolving…"),
+                None => arena_prompt(bar, "Resolving..."),
             });
             // Three rank lanes: party on the left, foes on the right of each.
             for (rank, name) in [('V', "Vanguard"), ('O', "Outrider"), ('R', "Rearguard")] {
@@ -1893,7 +1893,7 @@ fn spawn_arena_unit(parent: &mut ChildSpawnerCommands, u: &UnitView, target: Opt
     };
     // rank · Health remaining/max · Tempo (face-up Tempo cards) — everything a strike/evade decision needs.
     let bar = format!(
-        "{} · HP {}/{} · T{}",
+        "{} | HP {}/{} | T{}",
         u.rank,
         u.health_remaining,
         u.health_max,
@@ -2153,11 +2153,11 @@ fn build_arena_v2_ui(
     let marshal = step == "Marshal";
     let prompt = match step.as_str() {
         "Catch" => {
-            "Catch — tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
+            "Catch - tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
         }
-        "React" => "React — tap a struck hero to cycle Eat / Evade / Strike Back.",
-        "Extra" => "Extra strikes — tap a hero in contact to spend its remaining tempo.",
-        _ => "Formation — drag each hero into a rank row (or tap to cycle), then Start.",
+        "React" => "React - tap a struck hero to cycle Eat / Evade / Strike Back.",
+        "Extra" => "Extra strikes - tap a hero in contact to spend its remaining tempo.",
+        _ => "Formation - drag each hero into a rank row (or tap to cycle), then Start.",
     };
 
     // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is only live
@@ -2185,7 +2185,7 @@ fn build_arena_v2_ui(
         ))
         .with_children(|root| {
             root.spawn((
-                Text::new(format!("{phase_title}   ({round} · Step: {step})")),
+                Text::new(format!("{phase_title}   ({round} | Step: {step})")),
                 TextFont {
                     font_size: FONT_HEAD,
                     ..default()
@@ -2290,7 +2290,7 @@ fn formation_row(
     .with_children(|row| {
         arena_lane_label(row, label);
         for card in tree.content_cards(pile) {
-            let Some(u) = read_arena_unit(tree, card, rank.unwrap_or('—')) else {
+            let Some(u) = read_arena_unit(tree, card, rank.unwrap_or('?')) else {
                 continue;
             };
             // Formation is about arranging *your* party — foes (pre-ranked in their pile) are not shown here.
@@ -2425,7 +2425,7 @@ fn build_combat_lanes(
     if !pairs.is_empty() {
         let pretty = pairs
             .iter()
-            .map(|&(a, t)| format!("{} → {}", rank_word(a), rank_word(t)))
+            .map(|&(a, t)| format!("{} -> {}", rank_word(a), rank_word(t)))
             .collect::<Vec<_>>()
             .join(",  ");
         log.push(format!("This phase, may strike:  {pretty}"));
@@ -2436,7 +2436,7 @@ fn build_combat_lanes(
             let mut any = false;
             for u in all.iter().filter(|u| u.party && u.aim.is_some()) {
                 log.push(format!(
-                    "  {} → {}  (bid {})",
+                    "  {} -> {}  (bid {})",
                     u.name,
                     name_by_card(u.aim.unwrap()),
                     u.bid
@@ -2459,7 +2459,7 @@ fn build_combat_lanes(
                     .map(|u| u.react.clone().unwrap_or_else(|| "Eat".into()))
                     .unwrap_or_else(|| "Eat".into());
                 log.push(format!(
-                    "  {} struck {}  (bid {}) — {}",
+                    "  {} struck {}  (bid {}) - {}",
                     name_by_card(from),
                     name_by_card(to),
                     bid,
@@ -2480,14 +2480,14 @@ fn build_combat_lanes(
                         if !u.party {
                             "extra strike (foe)".into()
                         } else if u.bid > 0 {
-                            format!("extra strike ×{}", u.bid)
+                            format!("extra strike x{}", u.bid)
                         } else {
                             "holding".into()
                         }
                     })
                     .unwrap_or_default();
                 log.push(format!(
-                    "  {} on {} — {}",
+                    "  {} on {} - {}",
                     name_by_card(from),
                     name_by_card(to),
                     act
@@ -2593,9 +2593,9 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
 fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
     let accent = type_accent(if u.party { "hero" } else { "foe" });
     let bar = if u.party {
-        format!("HP {}/{} · T{}", u.hp, u.max, u.tempo)
+        format!("HP {}/{} | T{}", u.hp, u.max, u.tempo)
     } else {
-        format!("{} · HP {}/{}", u.rank, u.hp, u.max)
+        format!("{} | HP {}/{}", u.rank, u.hp, u.max)
     };
     let mut tile = parent.spawn((
         Node {
@@ -2663,14 +2663,14 @@ fn spawn_arena_v2_unit(
     } else {
         2.0
     };
-    let bar = format!("{} · HP {}/{} · T{}", u.rank, u.hp, u.max, u.tempo);
+    let bar = format!("{} | HP {}/{} | T{}", u.rank, u.hp, u.max, u.tempo);
     // The staged-plan line: what this unit will do on Commit.
     let mut plan = String::new();
     if u.active {
-        plan.push_str("● ");
+        plan.push_str("* ");
     }
     if let Some(aim) = u.aim {
-        plan.push_str(&format!("→ {} ", name_of(aim)));
+        plan.push_str(&format!("-> {} ", name_of(aim)));
     }
     if u.bid > 0 {
         plan.push_str(&format!("bid {} ", u.bid));
@@ -3858,7 +3858,7 @@ fn spawn_card_small(parent: &mut ChildSpawnerCommands, card: &Card, quantity: us
             (card.card_type() == "hero").then(|| "moved".to_string())
         } else {
             // Face-up: a stack of N identical physical cards shows its `×N` (PC.2).
-            (quantity > 1).then(|| format!("×{quantity}"))
+            (quantity > 1).then(|| format!("x{quantity}"))
         };
         small_face(c, &label, card.card_type(), ink, sub);
         // A clear, font-safe face-down stamp: a slim accent bar pinned across the card's foot. It reads as

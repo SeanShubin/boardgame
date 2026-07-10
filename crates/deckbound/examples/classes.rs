@@ -25,10 +25,10 @@ const ROUNDS: u32 = 8;
 
 fn cell_name(c: &ClassDef) -> &'static str {
     match (c.ranged, c.aoe) {
-        (false, false) => "melee·single",
-        (true, false) => "ranged·single",
-        (false, true) => "melee·aoe",
-        (true, true) => "ranged·aoe",
+        (false, false) => "melee|single",
+        (true, false) => "ranged|single",
+        (false, true) => "melee|aoe",
+        (true, true) => "ranged|aoe",
     }
 }
 
@@ -68,11 +68,11 @@ fn duel(a: &ClassDef, b: &ClassDef) -> i8 {
 /// The capability-matrix coverage — every loaded class binned into {melee,ranged} × {single,aoe}, with its
 /// emergent role, so the four-cell coverage (and any empty cell) is visible at a glance.
 fn attack_matrix(classes: &[ClassDef]) {
-    println!("Capability coverage (melee/ranged × single/aoe)");
+    println!("Capability coverage (melee/ranged x single/aoe)");
     for &ranged in &[false, true] {
         for &aoe in &[false, true] {
             let kind = format!(
-                "{}·{}",
+                "{}|{}",
                 if ranged { "ranged" } else { "melee" },
                 if aoe { "aoe" } else { "single" }
             );
@@ -82,7 +82,7 @@ fn attack_matrix(classes: &[ClassDef]) {
                 .map(|c| format!("{} ({})", c.name, role_tag(unit_from_class(c, 0).intent)))
                 .collect();
             let fill = if cell.is_empty() {
-                "— (empty)".to_string()
+                "- (empty)".to_string()
             } else {
                 cell.join(", ")
             };
@@ -101,7 +101,7 @@ fn main() {
         });
     let classes = load_classes(&path);
     let n = classes.len();
-    println!("Roster report — {n} classes from {}\n", path.display());
+    println!("Roster report - {n} classes from {}\n", path.display());
 
     attack_matrix(&classes);
 
@@ -147,12 +147,12 @@ fn main() {
         print!("  {:<11}", classes[i].name);
         for (j, &b) in beat[i].iter().enumerate() {
             let cell = if i == j {
-                "  — ".to_string()
+                "  - ".to_string()
             } else {
                 match b.cmp(&0) {
                     std::cmp::Ordering::Greater => "  W ".to_string(),
                     std::cmp::Ordering::Less => "  L ".to_string(),
-                    std::cmp::Ordering::Equal => "  · ".to_string(),
+                    std::cmp::Ordering::Equal => "  | ".to_string(),
                 }
             };
             print!("{cell:>5}");
@@ -173,7 +173,7 @@ fn main() {
         .collect();
     println!();
     if dominant.is_empty() && dead.is_empty() {
-        println!("No dominant or dead class — no strictly-best or strictly-worst archetype.");
+        println!("No dominant or dead class - no strictly-best or strictly-worst archetype.");
     } else {
         if !dominant.is_empty() {
             println!(

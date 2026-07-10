@@ -58,7 +58,7 @@ pub fn run_card_gallery() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Card Gallery — text audit".into(),
+                title: "Card Gallery - text audit".into(),
                 resolution: (1100u32, 900u32).into(),
                 ..default()
             }),
@@ -293,7 +293,7 @@ fn audit_gallery(
             );
         }
     }
-    println!("CARD GALLERY: {flagged} of {checked} (card × size) samples overflow their footprint");
+    println!("CARD GALLERY: {flagged} of {checked} (card x size) samples overflow their footprint");
 
     let red = Color::srgb(0.80, 0.20, 0.20);
     for wrapper in offenders {

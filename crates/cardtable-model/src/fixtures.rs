@@ -30,8 +30,8 @@ fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability
     tree.set_card_detail(
         id,
         vec![
-            format!("Might {might} · Vitality {vitality} · Toughness {toughness}"),
-            format!("Cadence {cadence} · Finesse {finesse}"),
+            format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
+            format!("Cadence {cadence} | Finesse {finesse}"),
             format!("Abilities: {ability}"),
         ],
     )
@@ -61,12 +61,12 @@ fn creature_card(tree: &mut Tableau, pile: PileId, c: &catalog::Creature) -> Car
         id,
         vec![
             format!(
-                "{} · {}",
+                "{} | {}",
                 catalog::creature_intention(c),
                 catalog::creature_posture(c)
             ),
-            format!("Might {might} · Vitality {vitality} · Toughness {toughness}"),
-            format!("Cadence {cadence} · Finesse {finesse}"),
+            format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
+            format!("Cadence {cadence} | Finesse {finesse}"),
             format!(
                 "{}: {}",
                 c.ability,
@@ -113,7 +113,7 @@ const HEROES: [&str; 9] = [
 const PHASES: [(&str, &str); 10] = [
     (
         "Marshal",
-        "Secretly assign each unit an intention — Vanguard, Outrider or Rearguard — and maybe bind a group. Re-declared each round.",
+        "Secretly assign each unit an intention - Vanguard, Outrider or Rearguard - and maybe bind a group. Re-declared each round.",
     ),
     (
         "Reveal",
@@ -129,11 +129,11 @@ const PHASES: [(&str, &str); 10] = [
     ),
     (
         "Volley",
-        "The back fires on the flankers: each Rearguard shoots an enemy Outrider — the pre-empt, before it arrives.",
+        "The back fires on the flankers: each Rearguard shoots an enemy Outrider - the pre-empt, before it arrives.",
     ),
     (
         "Raid",
-        "Surviving Outriders strike the enemy Rearguard they crossed for — the breaker lands on the exposed back.",
+        "Surviving Outriders strike the enemy Rearguard they crossed for - the breaker lands on the exposed back.",
     ),
     (
         "Clash",
@@ -145,7 +145,7 @@ const PHASES: [(&str, &str); 10] = [
     ),
     (
         "Wipe pile",
-        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears — sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
+        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears - sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
     ),
     (
         "Refresh",
@@ -385,7 +385,7 @@ pub fn sample_table() -> Tableau {
                 .iter()
                 .map(|(c, q)| {
                     if *q > 1 {
-                        format!("{} ×{q}", c.name)
+                        format!("{} x{q}", c.name)
                     } else {
                         c.name.to_string()
                     }
@@ -442,11 +442,11 @@ pub fn sample_table() -> Tableau {
             tree.set_card_detail(
                 engage_zone,
                 vec![
-                    "Intercept — Vanguard -> Outrider".into(),
-                    "Volley — Rearguard -> Outrider".into(),
-                    "Raid — Outrider -> Rearguard".into(),
-                    "Clash — Rearguard / Vanguard -> Vanguard".into(),
-                    "Breach — the trailing blows land".into(),
+                    "Intercept - Vanguard -> Outrider".into(),
+                    "Volley - Rearguard -> Outrider".into(),
+                    "Raid - Outrider -> Rearguard".into(),
+                    "Clash - Rearguard / Vanguard -> Vanguard".into(),
+                    "Breach - the trailing blows land".into(),
                     "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.".into(),
                 ],
             )
@@ -518,7 +518,7 @@ pub fn sample_table() -> Tableau {
     .expect("progress exists");
 
     let events = tree.add_pile(root, "Events").expect("root exists");
-    let events_stack = typed(&mut tree, events, "Day Passed", "event"); // one `Day Passed ×N` stack (PC.2)
+    let events_stack = typed(&mut tree, events, "Day Passed", "event"); // one `Day Passed xN` stack (PC.2)
     tree.set_card_quantity(events_stack, DAYS_PROVISIONED as u32)
         .expect("events stack");
     let events_zone = typed(&mut tree, events, "Events", "Label");
@@ -603,9 +603,9 @@ mod tests {
                 + (9 * 12 + 1)
                 + (1 + 9 + 2 + 8) // Locations: Zone + 9 places + 2 inn headers + 8 non-inn encounter headers
                 + ((5 + 1) + (5 + 1))
-                + 1 // Progress: just a Zone label (starts empty — Day 0)
+                + 1 // Progress: just a Zone label (starts empty - Day 0)
                 + (12 + 1) // Events: the full Day Passed reserve + a Zone label
-                + (4 * 4 + 1) // Bestiary: 4 creature `foe` stacks ×4 + a Zone label
+                + (4 * 4 + 1) // Bestiary: 4 creature `foe` stacks x4 + a Zone label
         );
     }
 
@@ -626,7 +626,7 @@ mod tests {
         };
         assert_eq!(t.current_day(progress), 0);
         assert_eq!(events_qty(&t), 12);
-        assert!(!t.day_is_over(progress), "no markers — never 'over'");
+        assert!(!t.day_is_over(progress), "no markers - never 'over'");
 
         // A hero move marker on Progress (a setup deal), then spend its move.
         let total = t.card_count();
@@ -798,7 +798,7 @@ mod tests {
         let corner = header(place("Emberfall Hollow"));
         let corner_detail = t.card(corner).unwrap().detail().join(" ");
         assert!(
-            corner_detail.contains("The Anvil ×2"),
+            corner_detail.contains("The Anvil x2"),
             "the corner header lists the doubled keystone: {corner_detail}"
         );
         // The Bestiary backs them with a `×4` stack per creature type (+ its Zone label).
@@ -977,7 +977,7 @@ mod tests {
         assert_eq!(
             copies_in(&t, heroes),
             0,
-            "Heroes stack emptied — no re-recruit"
+            "Heroes stack emptied - no re-recruit"
         );
         assert_eq!(t.card_count(), total, "recruiting minted nothing (PC.2)");
 
@@ -997,7 +997,7 @@ mod tests {
                 k.card_type() == "hero" && k.front_title() == name
             })
             .map(|&c| t.card(c).unwrap().quantity());
-        assert_eq!(restacked, Some(4), "four copies merged back to ×4");
+        assert_eq!(restacked, Some(4), "four copies merged back to x4");
         assert_eq!(t.card_count(), total, "conservation across the round-trip");
     }
 
@@ -1039,7 +1039,7 @@ mod tests {
         let position = named(&t, ashfen, &name).unwrap();
         let total = t.card_count();
         let day_over = t.move_character(position, thornmarch, progress).unwrap();
-        assert!(day_over, "the only character moved — the day is over");
+        assert!(day_over, "the only character moved - the day is over");
         assert!(
             named(&t, thornmarch, &name).is_some(),
             "stationed at the new location"
@@ -1081,7 +1081,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("the Abilities bank should hold {name}"));
             assert!(
                 t.card(*stack).unwrap().quantity() > 1,
-                "the {name} stack should be an ×N (got {})",
+                "the {name} stack should be an xN (got {})",
                 t.card(*stack).unwrap().quantity()
             );
         }

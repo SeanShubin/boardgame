@@ -18,19 +18,19 @@ pub const STATS: [(&str, &str); 5] = [
     ),
     (
         "Vitality",
-        "Your life. With Toughness it sets your Health — how much you endure before you fall.",
+        "Your life. With Toughness it sets your Health - how much you endure before you fall.",
     ),
     (
         "Toughness",
-        "The bar your damage-pile must clear: within a sub-phase, damage piles up and each time it reaches your Toughness one Health card flips — leftover is wiped, not carried.",
+        "The bar your damage-pile must clear: within a sub-phase, damage piles up and each time it reaches your Toughness one Health card flips - leftover is wiped, not carried.",
     ),
     (
         "Cadence",
-        "Your pace — how many actions you get each round.",
+        "Your pace - how many actions you get each round.",
     ),
     (
         "Finesse",
-        "Your skill — the grade of each action; how cheaply you win a contest.",
+        "Your skill - the grade of each action; how cheaply you win a contest.",
     ),
 ];
 
@@ -39,13 +39,13 @@ pub const STATS: [(&str, &str); 5] = [
 /// but carry distinct abilities; the description records the underlying reach × area (see
 /// `deckbound::duel` / the duel-locks set).
 pub const ABILITIES: [(&str, &str); 4] = [
-    ("Alpha Strike", "Melee · single target — one big blow."),
-    ("Whirlwind", "Melee · area — hits the whole pack."),
+    ("Alpha Strike", "Melee | single target - one big blow."),
+    ("Whirlwind", "Melee | area - hits the whole pack."),
     (
         "Stand-Off",
-        "Ranged · single target — strikes from the back, no riposte.",
+        "Ranged | single target - strikes from the back, no riposte.",
     ),
-    ("Slip-and-Cut", "Melee · single target — evades, then cuts."),
+    ("Slip-and-Cut", "Melee | single target - evades, then cuts."),
 ];
 
 /// The starter roster — the four **duel-locks kits** (`deckbound/data/balance/duel-locks.ron`), each
@@ -158,7 +158,7 @@ pub const CREATURES: [Creature; 4] = [
 pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     (
         "Immovable",
-        "Toughness above all but the heaviest blow — sub-bar hits are wiped, so only one overwhelming strike cracks it.",
+        "Toughness above all but the heaviest blow - sub-bar hits are wiped, so only one overwhelming strike cracks it.",
     ),
     (
         "Overrun",
@@ -166,7 +166,7 @@ pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     ),
     (
         "Riposte",
-        "Strikes back at every melee blow it can reach, twice a round — answer it from range, where it can't reach.",
+        "Strikes back at every melee blow it can reach, twice a round - answer it from range, where it can't reach.",
     ),
     (
         "Feint",
@@ -211,10 +211,10 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 /// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
-        "Immovable" => "Executioner", // armored → one big blow (Alpha Strike)
-        "Overrun" => "Broadsider",    // hoard → area (Whirlwind)
-        "Riposte" => "Marksman",      // ripostes → ranged, no riposte (Stand-Off)
-        "Feint" => "Phantom",         // evasive → out-tempo (Slip-and-Cut)
+        "Immovable" => "Executioner", // armored -> one big blow (Alpha Strike)
+        "Overrun" => "Broadsider",    // hoard -> area (Whirlwind)
+        "Riposte" => "Marksman",      // ripostes -> ranged, no riposte (Stand-Off)
+        "Feint" => "Phantom",         // evasive -> out-tempo (Slip-and-Cut)
         _ => "",
     }
 }
