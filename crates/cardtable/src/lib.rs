@@ -2328,8 +2328,8 @@ fn build_combat_lanes(
         .flat_map(|&(label, rank)| units_in_rank(tree, arena, label, rank))
         .collect();
 
-    // Landed-contact edges (attacker card → target card) — drives React / Extra selectability + the summary.
-    let edges: Vec<(CardId, CardId)> = loose
+    // Landed-contact edges (attacker card → target card, at bid) — drives React/Extra selectability + the log.
+    let edges: Vec<(CardId, CardId, u32)> = loose
         .iter()
         .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
         .filter_map(|&c| {
@@ -2337,6 +2337,7 @@ fn build_combat_lanes(
             Some((
                 CardId(detail_num(d.first()?, "from ") as u64),
                 CardId(detail_num(d.get(1)?, "to ") as u64),
+                detail_num(d.get(2)?, "bid "),
             ))
         })
         .collect();
@@ -2373,14 +2374,14 @@ fn build_combat_lanes(
                 }
                 _ => Sel::No,
             },
-            "React" if u.party && !u.fallen && edges.iter().any(|&(_, to)| to == u.card) => {
+            "React" if u.party && !u.fallen && edges.iter().any(|&(_, to, _)| to == u.card) => {
                 if u.react.is_some() { Sel::On } else { Sel::Yes }
             }
             "Extra"
                 if u.party
                     && !u.fallen
                     && u.tempo > 0
-                    && edges.iter().any(|&(from, _)| from == u.card) =>
+                    && edges.iter().any(|&(from, _, _)| from == u.card) =>
             {
                 if u.bid > 0 {
                     Sel::On
@@ -2412,13 +2413,140 @@ fn build_combat_lanes(
         });
     }
 
-    let contacts: Vec<String> = edges
-        .iter()
-        .map(|&(from, to)| format!("{} → {}", name_of(from), name_of(to)))
-        .collect();
-    if !contacts.is_empty() {
-        arena_prompt_line(root, &format!("Contacts: {}", contacts.join(",  ")));
+    // The combat log: a large card under the lanes with the full state of this phase — who may strike whom,
+    // every target/reaction/strike decision, and the contacts that landed.
+    let name_by_card = |c: CardId| {
+        all.iter()
+            .find(|u| u.card == c)
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| name_of(c))
+    };
+    let mut log: Vec<String> = Vec::new();
+    if !pairs.is_empty() {
+        let pretty = pairs
+            .iter()
+            .map(|&(a, t)| format!("{} → {}", rank_word(a), rank_word(t)))
+            .collect::<Vec<_>>()
+            .join(",  ");
+        log.push(format!("This phase, may strike:  {pretty}"));
     }
+    match step {
+        "Catch" => {
+            log.push("Targets".into());
+            let mut any = false;
+            for u in all.iter().filter(|u| u.party && u.aim.is_some()) {
+                log.push(format!(
+                    "  {} → {}  (bid {})",
+                    u.name,
+                    name_by_card(u.aim.unwrap()),
+                    u.bid
+                ));
+                any = true;
+            }
+            if !any {
+                log.push("  (no targets chosen yet)".into());
+            }
+        }
+        "React" => {
+            log.push("Strikes landed & reactions".into());
+            if edges.is_empty() {
+                log.push("  (nobody was caught)".into());
+            }
+            for &(from, to, bid) in &edges {
+                let react = all
+                    .iter()
+                    .find(|u| u.card == to && u.party)
+                    .map(|u| u.react.clone().unwrap_or_else(|| "Eat".into()))
+                    .unwrap_or_else(|| "Eat".into());
+                log.push(format!(
+                    "  {} struck {}  (bid {}) — {}",
+                    name_by_card(from),
+                    name_by_card(to),
+                    bid,
+                    react
+                ));
+            }
+        }
+        "Extra" => {
+            log.push("Surviving contacts & extra strikes".into());
+            if edges.is_empty() {
+                log.push("  (no contacts survived)".into());
+            }
+            for &(from, to, _) in &edges {
+                let act = all
+                    .iter()
+                    .find(|u| u.card == from)
+                    .map(|u| {
+                        if !u.party {
+                            "extra strike (foe)".into()
+                        } else if u.bid > 0 {
+                            format!("extra strike ×{}", u.bid)
+                        } else {
+                            "holding".into()
+                        }
+                    })
+                    .unwrap_or_default();
+                log.push(format!(
+                    "  {} on {} — {}",
+                    name_by_card(from),
+                    name_by_card(to),
+                    act
+                ));
+            }
+        }
+        _ => {}
+    }
+    arena_log_panel(root, &log);
+}
+
+/// The full rank name for a one-letter code (`'V'`/`'O'`/`'R'`).
+fn rank_word(c: char) -> &'static str {
+    match c {
+        'O' => "Outrider",
+        'R' => "Rearguard",
+        _ => "Vanguard",
+    }
+}
+
+/// The **combat log**: a large card under the lanes listing this phase's whole state. Un-indented lines are
+/// section headers (bright); indented lines are entries (muted).
+fn arena_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(720.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(12.0)),
+                margin: UiRect::top(Val::Px(6.0)),
+                row_gap: Val::Px(2.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED),
+        ))
+        .with_children(|panel| {
+            panel.spawn((
+                Text::new("Combat log"),
+                TextFont {
+                    font_size: FONT_TITLE,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+            for line in lines {
+                let header = !line.starts_with(' ');
+                panel.spawn((
+                    Text::new(line.clone()),
+                    TextFont {
+                        font_size: FONT_BODY,
+                        ..default()
+                    },
+                    TextColor(if header { INK } else { MUTED }),
+                ));
+            }
+        });
 }
 
 /// A muted instruction line on the felt (per-step prompt / contacts summary).

@@ -33,6 +33,8 @@ pub enum Intention {
     Commit,
     /// Cancel the current fight (retreat): tear the arena down with nothing resolved, encounter intact.
     CancelFight,
+    /// Restart the current fight: reset combatants and phase to round 1 · Marshal, keeping the formation.
+    RestartFight,
 }
 
 impl BoardGame for CardTableGame {
@@ -76,6 +78,11 @@ impl BoardGame for CardTableGame {
                 Intention::CancelFight => {
                     if let Some(a) = crate::arena::find_arena(board) {
                         crate::arena::cancel_fight(board, a);
+                    }
+                }
+                Intention::RestartFight => {
+                    if let Some(a) = crate::arena::find_arena(board) {
+                        crate::arena::restart_fight(board, a);
                     }
                 }
             }
@@ -135,6 +142,7 @@ impl BoardGame for CardTableGame {
                     crate::arena::commit_label(board, arena).to_string(),
                     Intention::Commit,
                 ),
+                ("Restart battle".to_string(), Intention::RestartFight),
                 ("Cancel battle".to_string(), Intention::CancelFight),
             ];
         }

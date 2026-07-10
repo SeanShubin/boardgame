@@ -1064,6 +1064,35 @@ pub fn cancel_fight(board: &mut Tableau, arena: PileId) {
     teardown(board, arena, false, false);
 }
 
+/// **Restart the fight**: reset every combatant to full HP and fresh tempo, drop the staged plans and any
+/// landed contacts, and return to round 1 · Marshal — **keeping the current formation** (rank-pile
+/// membership), so you can re-form or just Start again. Foes, place, and encounter are untouched.
+pub fn restart_fight(board: &mut Tableau, arena: PileId) {
+    clear_contacts(board, arena);
+    for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
+        let Some(pile) = sub_pile(board, arena, label) else {
+            continue;
+        };
+        for card in board.content_cards(pile) {
+            let Some((name, ctype)) = board
+                .card(card)
+                .map(|c| (c.front_title().to_string(), c.card_type().to_string()))
+            else {
+                continue;
+            };
+            let stats = match ctype.as_str() {
+                "unit" => hero_stats(board, &name).map(|(s, _)| s),
+                "foe" => foe_stats(&name).map(|(s, _)| s),
+                _ => None,
+            };
+            if let Some(s) = stats {
+                let _ = board.set_card_detail(card, detail(s.vitality, s.vitality, s.cadence));
+            }
+        }
+    }
+    set_phase(board, arena, 1, 0, Step::Marshal);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
