@@ -2143,27 +2143,29 @@ fn build_arena_v2_ui(
                 build_combat_lanes(root, tree, arena, &loose, &name_of);
             }
 
-            // The Commit control (the game's single arena affordance). During Marshal it is only live when
-            // the formation is complete (an empty Pool); otherwise it renders as a disabled hint.
+            // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is
+            // only live when the formation is complete (an empty Pool); Cancel is always live.
             let ready = !marshal
                 || arena_sub(tree, arena, "Pool").is_none_or(|p| {
                     tree.content_cards(p)
                         .iter()
                         .all(|&c| tree.card(c).map(|k| k.card_type()) != Some("unit"))
                 });
-            if let Some(label) = affordances.first() {
-                root.spawn(Node {
-                    margin: UiRect::top(Val::Px(6.0)),
-                    ..default()
-                })
-                .with_children(|row| {
-                    if ready {
-                        spawn_nav_card(row, (AffordanceControl(0), Pinned), label);
-                    } else {
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
+                margin: UiRect::top(Val::Px(6.0)),
+                ..default()
+            })
+            .with_children(|row| {
+                for (i, label) in affordances.iter().enumerate() {
+                    if i == 0 && !ready {
                         spawn_disabled_nav(row, label);
+                    } else {
+                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
                     }
-                });
-            }
+                }
+            });
         });
 }
 

@@ -31,6 +31,8 @@ pub enum Intention {
     Tap { card: CardId },
     /// Commit the current fight's step (resolve it), or — once the fight is over — leave the arena.
     Commit,
+    /// Cancel the current fight (retreat): tear the arena down with nothing resolved, encounter intact.
+    CancelFight,
 }
 
 impl BoardGame for CardTableGame {
@@ -59,6 +61,11 @@ impl BoardGame for CardTableGame {
                         } else {
                             crate::arena::commit(board, a);
                         }
+                    }
+                }
+                Intention::CancelFight => {
+                    if let Some(a) = crate::arena::find_arena(board) {
+                        crate::arena::cancel_fight(board, a);
                     }
                 }
             }
@@ -110,12 +117,15 @@ impl BoardGame for CardTableGame {
     }
 
     fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Intention)> {
-        // In the arena: commit the current step, or leave once the fight is decided.
+        // In the arena: commit the current step (index 0), and always offer a retreat (index 1).
         if board.pile(focus).map(|p| p.label.as_str()) == Some(crate::arena::ARENA) {
-            return vec![(
-                crate::arena::commit_label(board, focus).to_string(),
-                Intention::Commit,
-            )];
+            return vec![
+                (
+                    crate::arena::commit_label(board, focus).to_string(),
+                    Intention::Commit,
+                ),
+                ("Cancel battle".to_string(), Intention::CancelFight),
+            ];
         }
         // A combat-ready place (a stationed hero + an encounter) offers a fight.
         if combat_ready(board, focus) {

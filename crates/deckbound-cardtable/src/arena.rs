@@ -960,11 +960,10 @@ fn all_of_type(board: &Tableau, arena: PileId, card_type: &str) -> Vec<CardId> {
     out
 }
 
-/// **Fold the fight back** (teardown): return foe cards to the Bestiary; on a **win** clear the encounter;
-/// move the party's units back to the place as hero position cards; remove the arena; leave it; a fight
-/// spends a day. Conservation-clean (foes round-trip; the arena's scratch is torn down).
-pub fn fold_back(board: &mut Tableau, arena: PileId) {
-    let won = outcome(board, arena) == Some(true);
+/// Tear the arena down: return foe cards to the Bestiary, move the party's units back to the place as hero
+/// position cards, remove the arena, and leave it. `clear_encounter` removes the beaten encounter (a win);
+/// `spend_day` advances the day clock (a resolved fight costs a day, a cancel does not). Conservation-clean.
+fn teardown(board: &mut Tableau, arena: PileId, clear_encounter: bool, spend_day: bool) {
     let place = place_of(board, arena);
     let bestiary = top_deck(board, "Bestiary");
 
@@ -981,7 +980,7 @@ pub fn fold_back(board: &mut Tableau, arena: PileId) {
             let at = board.pile(place).map_or(0, |p| p.cards().len());
             let _ = board.move_card(u, place, at);
         }
-        if won
+        if clear_encounter
             && let Some(enc) = board
                 .content_cards(place)
                 .into_iter()
@@ -993,9 +992,23 @@ pub fn fold_back(board: &mut Tableau, arena: PileId) {
 
     let _ = board.remove_pile(arena);
     board.zoom_out();
-    if let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events")) {
+    if spend_day
+        && let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events"))
+    {
         let _ = board.advance_day(p, e);
     }
+}
+
+/// **Fold the fight back** after a decision: on a **win** the encounter is cleared; the fight spends a day.
+pub fn fold_back(board: &mut Tableau, arena: PileId) {
+    let won = outcome(board, arena) == Some(true);
+    teardown(board, arena, won, true);
+}
+
+/// **Cancel the fight** (retreat): tear the arena down with nothing resolved — the encounter is left intact
+/// and no day is spent. The clean inverse of [`open_fight`], for backing out of a battle.
+pub fn cancel_fight(board: &mut Tableau, arena: PileId) {
+    teardown(board, arena, false, false);
 }
 
 #[cfg(test)]
