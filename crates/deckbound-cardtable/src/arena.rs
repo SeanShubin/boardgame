@@ -147,13 +147,14 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
-fn detail(hp: u32, max: u32, tempo: u32, finesse: u32) -> Vec<String> {
-    // Finesse rides the card too (though the game re-derives stats from the source) so the renderer can
-    // compute min-to-land and show whether a target is affordable. The staged plan starts after these three.
+fn detail(hp: u32, max: u32, tempo: u32, finesse: u32, ranged: bool) -> Vec<String> {
+    // Finesse rides the card (the game re-derives stats from the source, but the renderer needs it to show
+    // affordability) and the `Ranged` flag rides its line (so the formation can flag ranged units for
+    // positioning). Both are constant; the staged plan starts after these three lines.
     vec![
         format!("HP {hp}/{max}"),
         format!("Tempo {tempo}"),
-        format!("Finesse {finesse}"),
+        format!("Finesse {finesse}{}", if ranged { " Ranged" } else { "" }),
     ]
 }
 
@@ -205,7 +206,13 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
 /// Write a resolved combatant's mutable state back onto its card (HP / tempo). This also **clears the staged
 /// plan** (detail is reset to the two base lines).
 fn write_combatant(board: &mut Tableau, card: CardId, u: &Combatant, max: u32) {
-    let _ = board.set_card_detail(card, detail(u.health, max, u.tempo, u.finesse));
+    // Ranged is a constant of the character, re-derived from the source so it survives the writeback.
+    let ranged = match u.side {
+        Side::Party => hero_stats(board, &u.name).map(|(_, r)| r),
+        Side::Foe => foe_stats(&u.name).map(|(_, r)| r),
+    }
+    .unwrap_or(false);
+    let _ = board.set_card_detail(card, detail(u.health, max, u.tempo, u.finesse, ranged));
 }
 
 // ---- the staged plan (detail lines after the base two) ------------------------------------------------
@@ -456,13 +463,19 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         .collect();
     for card in heroes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, _ranged)) = hero_stats(board, &name) {
+        if let Some((stats, ranged)) = hero_stats(board, &name) {
             let at = board.pile(pool).map_or(0, |p| p.cards().len());
             let _ = board.move_card(card, pool, at);
             let _ = board.set_card_type(card, "unit");
             let _ = board.set_card_detail(
                 card,
-                detail(stats.vitality, stats.vitality, stats.cadence, stats.finesse),
+                detail(
+                    stats.vitality,
+                    stats.vitality,
+                    stats.cadence,
+                    stats.finesse,
+                    ranged,
+                ),
             );
         }
     }
@@ -478,7 +491,13 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
             let _ = board.set_card_type(card, "foe");
             let _ = board.set_card_detail(
                 card,
-                detail(stats.vitality, stats.vitality, stats.cadence, stats.finesse),
+                detail(
+                    stats.vitality,
+                    stats.vitality,
+                    stats.cadence,
+                    stats.finesse,
+                    ranged,
+                ),
             );
             let rank = default_rank(&stats, ranged);
             if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
@@ -1211,13 +1230,15 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
                 continue;
             };
             let stats = match ctype.as_str() {
-                "unit" => hero_stats(board, &name).map(|(s, _)| s),
-                "foe" => foe_stats(&name).map(|(s, _)| s),
+                "unit" => hero_stats(board, &name),
+                "foe" => foe_stats(&name),
                 _ => None,
             };
-            if let Some(s) = stats {
-                let _ = board
-                    .set_card_detail(card, detail(s.vitality, s.vitality, s.cadence, s.finesse));
+            if let Some((s, ranged)) = stats {
+                let _ = board.set_card_detail(
+                    card,
+                    detail(s.vitality, s.vitality, s.cadence, s.finesse, ranged),
+                );
             }
         }
     }

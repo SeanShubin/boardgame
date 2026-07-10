@@ -2227,6 +2227,7 @@ struct ArenaUnit {
     max: u32,
     tempo: u32,
     finesse: u32,
+    ranged: bool,
     fallen: bool,
     active: bool,
     aim: Option<CardId>,
@@ -2262,6 +2263,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         .map(|l| detail_num(l, "Finesse "))
         .unwrap_or(1)
         .max(1);
+    let ranged = d.get(2).is_some_and(|l| l.contains("Ranged"));
     let mut u = ArenaUnit {
         card,
         name: c.front_title().to_string(),
@@ -2271,6 +2273,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         max,
         tempo,
         finesse,
+        ranged,
         fallen: hp == 0,
         active: false,
         aim: None,
@@ -2990,6 +2993,17 @@ fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
             },
             TextColor(MUTED),
         ));
+        // Ranged marker, so you can put ranged units in the back rank on sight.
+        if u.ranged {
+            c.spawn((
+                Text::new(format!("{} ranged", palette::ARROW)),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(RANGED_CUE),
+            ));
+        }
     });
 }
 
@@ -3176,6 +3190,8 @@ const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
 const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
 /// A combat tile with **nothing to do** this step — a greyed face that recedes so the live cards stand out.
 const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
+/// The **ranged** marker on a formation tile (a cool blue "fires from a distance" cue).
+const RANGED_CUE: Color = Color::srgb(0.45, 0.72, 0.95);
 /// Corner radius for a cue ring, matching a card's own [`BorderRadius`] so the outline rounds instead of
 /// boxing the card — a Bevy outline follows its node's radius, and a bare `Movable` wrapper has none.
 const CUE_RADIUS: Val = Val::Px(12.0);
