@@ -2231,20 +2231,20 @@ fn build_arena_v2_ui(
         });
 }
 
-/// The **formation** (Marshal): a `[Pool]` row of unranked heroes, then a row per rank. Each row is a
-/// `PileDropZone` over its rank/pool pile, so **dragging** a hero anywhere into a row moves it there (rank =
-/// pile membership); tapping a hero cycles it to the next rank (the no-drag path). Foes show in their rank
-/// row for context (not draggable).
+/// The **formation** (Marshal): a row per rank, then the `[Pool]` row of unranked heroes at the bottom (next
+/// to the Start control, where heroes are drawn *from*). Each row is a `PileDropZone` over its rank/pool
+/// pile, so **dragging** a hero anywhere into a row moves it there (rank = pile membership); tapping a hero
+/// cycles it to the next rank (the no-drag path). Foes show in their rank row for context (not draggable).
 fn build_formation(root: &mut ChildSpawnerCommands, tree: &Tableau, arena: PileId) {
-    // The Pool of unranked heroes.
-    if let Some(pool) = arena_sub(tree, arena, "Pool") {
-        formation_row(root, tree, pool, "Heroes", None);
-    }
     // One row per rank (front to back).
     for (label, rank) in RANK_ROWS {
         if let Some(pile) = arena_sub(tree, arena, label) {
             formation_row(root, tree, pile, label, Some(rank));
         }
+    }
+    // The Pool of unranked heroes sits at the bottom — where you drag them up from into a rank.
+    if let Some(pool) = arena_sub(tree, arena, "Pool") {
+        formation_row(root, tree, pool, "Heroes", None);
     }
 }
 
