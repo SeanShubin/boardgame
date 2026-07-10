@@ -117,6 +117,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<AffordanceLabels>()
             .init_resource::<DropTrace>()
             .init_resource::<FontSample>()
+            .init_resource::<CardScreenRects>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
@@ -135,7 +136,8 @@ impl Plugin for CardTablePlugin {
                     fan_layout,
                     update_card_cues,
                     scroll_hovered_panel,
-                    animate_target_arrows,
+                    // Position authority first, then the feature that reads it.
+                    (track_card_rects, animate_target_arrows).chain(),
                 ),
             )
             // Step the interactive combat arena (advance the fight, answer the AI foes, close on the end).
@@ -270,6 +272,22 @@ struct ArrowTarget {
 /// [`animate_target_arrows`] so the dots flow toward the target.
 #[derive(Component)]
 struct ArrowDot;
+
+/// **The single authority for where a card is on screen** — each on-screen card's rect in *logical* pixels
+/// (viewport origin, top-left), rebuilt every frame by [`track_card_rects`]. Any feature that needs a card's
+/// position (the targeting arrows, and future point-at-a-card work) reads this instead of re-deriving the
+/// physical→logical / center conversion from `UiGlobalTransform` + `ComputedNode` — the source of a whole
+/// class of coordinate bugs (a node's transform is in *physical* px; `Val::Px` is *logical*). The physical
+/// metaphor's core promise — *every card has a place* — should be a one-line query: `rects.center(card)`.
+#[derive(Resource, Default)]
+struct CardScreenRects(HashMap<CardId, Rect>);
+
+impl CardScreenRects {
+    /// The card's on-screen centre in logical pixels, if it is currently rendered as a card.
+    fn center(&self, card: CardId) -> Option<Vec2> {
+        self.0.get(&card).map(Rect::center)
+    }
+}
 
 /// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
 /// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
@@ -3336,34 +3354,57 @@ fn spawn_arena_v2_unit(
     });
 }
 
+/// Rebuild [`CardScreenRects`] from the current UI layout — **the one place** the physical→logical
+/// conversion lives. `UiGlobalTransform.translation` is a node's *physical*-pixel centre; `ComputedNode`
+/// carries its size and the `inverse_scale_factor` that maps both to logical pixels (what `Val::Px` uses).
+/// Covers table cards (`CardRef`) and arena combat tiles (`ArenaUnitCard`); rebuilt fresh each frame so
+/// despawned cards drop out.
+fn track_card_rects(
+    mut rects: ResMut<CardScreenRects>,
+    cards: Query<(&CardRef, &ComputedNode, &UiGlobalTransform)>,
+    units: Query<(&ArenaUnitCard, &ComputedNode, &UiGlobalTransform)>,
+) {
+    rects.0.clear();
+    let mut put = |id: CardId, cn: &ComputedNode, gt: &UiGlobalTransform| {
+        let sf = cn.inverse_scale_factor;
+        rects.0.insert(
+            id,
+            Rect::from_center_size(gt.translation * sf, cn.size() * sf),
+        );
+    };
+    for (c, cn, gt) in &cards {
+        put(c.0, cn, gt);
+    }
+    for (u, cn, gt) in &units {
+        put(u.0, cn, gt);
+    }
+}
+
 /// Draw the **targeting arrows** — the attention layer made visible. When a hero is armed during Catch, a
 /// dotted line of dots flows from it to each reachable foe (amber, sparse) and, once a target is aimed, a
-/// denser green line to that foe (confirmed). Dots are transient top-level overlay nodes re-spawned each
-/// frame so they animate toward the target; they sit above the felt (`GlobalZIndex`) and never eat clicks
-/// (`Pickable::IGNORE`). Presentation-only — wall-clock drives the flow, never the rules.
+/// denser green line to that foe (confirmed). Endpoints come from [`CardScreenRects`] (the single position
+/// authority) — never re-derived here. Dots are transient top-level overlay nodes re-spawned each frame so
+/// they animate toward the target; they sit above the felt (`GlobalZIndex`) and never eat clicks.
+/// Presentation-only — wall-clock drives the flow, never the rules.
 fn animate_target_arrows(
     mut commands: Commands,
     time: Res<Time>,
-    sources: Query<&UiGlobalTransform, With<ArrowSource>>,
-    targets: Query<(&UiGlobalTransform, &ArrowTarget)>,
+    rects: Res<CardScreenRects>,
+    sources: Query<&ArenaUnitCard, With<ArrowSource>>,
+    targets: Query<(&ArenaUnitCard, &ArrowTarget)>,
     dots: Query<Entity, With<ArrowDot>>,
 ) {
     for e in &dots {
         commands.entity(e).despawn(); // clear last frame's flow
     }
-    let Some(src) = sources.iter().next() else {
-        return; // no armed hero -> no arrows
+    let Some(src) = sources.iter().next().and_then(|c| rects.center(c.0)) else {
+        return; // no armed hero (or not yet laid out) -> no arrows
     };
-    let src = src.translation;
     let phase = time.elapsed_secs();
-    for (target_tf, target) in &targets {
-        spawn_arrow_dots(
-            &mut commands,
-            src,
-            target_tf.translation,
-            target.confirmed,
-            phase,
-        );
+    for (card, target) in &targets {
+        if let Some(dst) = rects.center(card.0) {
+            spawn_arrow_dots(&mut commands, src, dst, target.confirmed, phase);
+        }
     }
 }
 
