@@ -64,6 +64,52 @@ rules must refuse; refuse like a servant explaining, not a warden barring the do
 
 ---
 
+## 0.6 The attention layer is real — "chrome" vs. rendering the mind
+
+The "cards only, no chrome" tenet (everything is a card or a deck; no invented UI furniture; meaning
+comes from what you click) is right — but it needs a boundary, or it forbids things it shouldn't. The
+boundary is the **three layers** of the game (see the reunification model): the **physical, conserved
+cards** are the source of truth; the **attention layer** — which cards you are working with, and the
+*in-progress selections and relationships you are forming between them* — is a genuine part of play; and
+the **render** shows both.
+
+The key realisation (the human's): **the attention layer is not unreal just because a physical table
+leaves it in the player's head.** At a real table, "this attacker is going to hit that defender" is a
+decision you are actively making — it lives in your mind, it evaporates when you walk away, and you
+rebuild it from the persistent cards when you come back. A digital table can do one thing the physical
+table cannot: **hold and show the attention layer**, so it survives the walk-away. Rendering an
+in-progress selection is therefore **not adding something unreal — it is refusing to lose something
+real.** It is the same move as [Permit, then settle](#05-permit-then-settle-agency-over-enforcement-servant-not-warden):
+the software earns its place by doing what the table can't.
+
+So the anti-chrome rule is refined, not dropped:
+
+- **Chrome (still forbidden):** decoration and invented furniture that represents *nothing in the game* —
+  ornamental frames, gratuitous labels, a HUD for its own sake.
+- **Rendering the attention layer (allowed):** transient marks that represent a **selection or relationship
+  the player is actually forming or considering.** A targeting arrow from an armed attacker to its possible
+  targets is not chrome — it *draws a relationship between two cards*, which is exactly the thing piles and
+  positions express poorly and a line expresses naturally. (Cursors, drag-ghosts, and snap-guides are the
+  same category: none is a "card," and all are legitimate.)
+
+Two guard-rails keep this honest:
+
+1. **Fidelity by permanence.** Prefer to render attention that is *already on the cards* (physical truth):
+   a **confirmed** aim is staged on the attacker's card, so a **solid** arrow to it is a pure view of card
+   data. A merely **possible** target is not yet committed, so a **dotted** arrow marks it as tentative — an
+   *assist* (the game showing what the rules permit, like highlighting legal moves), one soft step away from
+   pure representation. Tentative vs. real must be legible in the mark itself (dotted vs. solid).
+2. **Only relationships the player is forming.** An attention mark must correspond to a decision in play —
+   never ambient decoration. When the gesture ends (confirm or abort), the mark ends.
+
+Realised today: during **Catch**, arming a hero flows a **dotted amber** line of dots to each reachable
+foe (possible) and a **denser green** line to the aimed foe (confirmed); the colour language is the same
+as the tiles (green = confirm/target, amber = switch/possible). The arrows add only what colour cannot —
+*which* foe belongs to *this* hero, and the direction of the blow. They are presentation-only (wall-clock
+animates the flow; the deterministic rules never see it) and vanish the instant the selection resolves.
+
+---
+
 ## 1. The primitives — **cards** and **decks**
 
 - **Card** — already exists (a [`CardView`]). A single face-up or face-down card.
