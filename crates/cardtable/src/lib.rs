@@ -2305,10 +2305,15 @@ fn deck_names(tree: &Tableau, arena: PileId, label: &str) -> Vec<String> {
         .collect()
 }
 
-/// The **visible phase-deck card**: the UI representation of a physical rotating phase deck. Draws the deck's
-/// cards top-to-bottom (current on top) with the current one highlighted, so it reads like a card with the
-/// rest of the deck stacked beneath.
-fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, names: &[String]) {
+/// The two phase decks in their fixed canonical order (the physical decks rotate; the display does not).
+const MAJOR_ORDER: [&str; 6] = ["Marshal", "Intercept", "Volley", "Raid", "Clash", "Breach"];
+const STEP_ORDER: [&str; 3] = ["Catch", "React", "Extra"];
+
+/// The **visible phase-deck card**: the UI representation of a physical rotating phase deck. Draws the phases
+/// in their fixed order (Marshal..Breach) with the *current* one highlighted, so how far along the round is
+/// reads at a glance. The physical deck rotates so its top is current; here the highlight just moves down the
+/// fixed list (the player mentally wraps around).
+fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, order: &[&str], current: &str) {
     parent
         .spawn((
             Node {
@@ -2333,25 +2338,25 @@ fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, names: &[Str
                 },
                 TextColor(MUTED),
             ));
-            for (i, name) in names.iter().enumerate() {
-                let current = i == 0;
+            for name in order {
+                let is_current = *name == current;
                 deck.spawn((
                     Node {
                         padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
                         border_radius: BorderRadius::all(Val::Px(4.0)),
                         ..default()
                     },
-                    BackgroundColor(if current { TARGET_CUE } else { Color::NONE }),
+                    BackgroundColor(if is_current { TARGET_CUE } else { Color::NONE }),
                 ))
                 .with_children(|row| {
                     row.spawn((
-                        Text::new(name.clone()),
+                        Text::new(name.to_string()),
                         TextFont {
                             font_size: FONT_BODY,
                             ..default()
                         },
                         TextLayout::no_wrap(),
-                        TextColor(if current { CARD_INK } else { MUTED }),
+                        TextColor(if is_current { CARD_INK } else { MUTED }),
                     ));
                 });
             }
@@ -2439,60 +2444,70 @@ fn build_arena_v2_ui(
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(12.0)),
-                row_gap: Val::Px(8.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Stretch,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // Header: the round, then the two phase decks drawn as cards - the major-phase deck (always) and,
-            // once the schedule is running, the mini-phase deck. Each shows its cards top-to-bottom (current on
-            // top) with the current highlighted, mirroring the physical rotating decks.
-            root.spawn((
-                Text::new(round.clone()),
-                TextFont {
-                    font_size: FONT_HEAD,
-                    ..default()
-                },
-                TextColor(INK),
-            ));
+            // Left sidebar: the two phase decks, stacked. The physical decks rotate; these show the fixed
+            // order (Marshal..Breach) with the current phase highlighted, so progress reads down the left edge.
+            // The mini-phase deck appears only once the schedule is running (not during Marshal).
             root.spawn(Node {
-                flex_direction: FlexDirection::Row,
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::FlexStart,
-                column_gap: Val::Px(12.0),
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(10.0),
                 ..default()
             })
-            .with_children(|decks| {
-                spawn_phase_deck(decks, "Phase", &phase_names);
+            .with_children(|side| {
+                spawn_phase_deck(side, "Phase", &MAJOR_ORDER, &major);
                 if !marshal {
-                    spawn_phase_deck(decks, "Step", &step_names);
+                    spawn_phase_deck(side, "Step", &STEP_ORDER, &step);
                 }
             });
-            arena_prompt_line(root, prompt);
 
-            // The rank rows / lanes fill the middle and scroll if they don't fit. Bottom padding keeps the
-            // last row clear of the pinned footer bar below.
+            // Main column: the round, the per-step prompt, then the rank rows / lanes (fill + scroll). Bottom
+            // padding keeps the last row clear of the pinned footer bar.
             root.spawn(Node {
-                width: Val::Percent(100.0),
                 flex_grow: 1.0,
-                min_height: Val::Px(0.0),
+                min_width: Val::Px(0.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::FlexStart,
+                padding: UiRect::all(Val::Px(12.0)),
                 row_gap: Val::Px(8.0),
-                padding: UiRect::bottom(Val::Px(56.0)),
-                overflow: Overflow::scroll_y(),
                 ..default()
             })
-            .with_children(|mid| {
-                if marshal {
-                    build_formation(mid, tree, arena);
-                } else {
-                    build_combat_lanes(mid, tree, arena, &loose, &step, &pairs, &name_of);
-                }
+            .with_children(|main| {
+                main.spawn((
+                    Text::new(round.clone()),
+                    TextFont {
+                        font_size: FONT_HEAD,
+                        ..default()
+                    },
+                    TextColor(INK),
+                ));
+                arena_prompt_line(main, prompt);
+                main.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::FlexStart,
+                    row_gap: Val::Px(8.0),
+                    padding: UiRect::bottom(Val::Px(56.0)),
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                })
+                .with_children(|mid| {
+                    if marshal {
+                        build_formation(mid, tree, arena);
+                    } else {
+                        build_combat_lanes(mid, tree, arena, &loose, &step, &pairs, &name_of);
+                    }
+                });
             });
 
             // Footer controls — pinned to the viewport bottom so they are *always* visible regardless of how
