@@ -522,11 +522,32 @@ fn phase_title(sub: usize, step: Step) -> String {
 }
 
 fn phase_detail(round: u32, sub: usize, step: Step) -> Vec<String> {
-    vec![
+    let mut d = vec![
         format!("Round {round}"),
         format!("Sub-phase {}/5", sub + 1),
         format!("Step: {}", step.name()),
-    ]
+    ];
+    // The sub-phase's legal attacker>target rank pairs (by first letter, e.g. "V>O,R>V"), so the renderer can
+    // tell which units are legal to act on this phase without knowing the SCHEDULE. Only meaningful mid-fight.
+    if step != Step::Marshal {
+        d.push(format!("Pairs: {}", pairs_line(sub)));
+    }
+    d
+}
+
+/// The sub-phase's legal `attacker>target` rank pairs as first-letter codes (e.g. `"V>O,R>V"`).
+fn pairs_line(sub: usize) -> String {
+    let letter = |r: Rank| r.label().chars().next().unwrap_or('?');
+    SCHEDULE
+        .get(sub)
+        .map(|pairs| {
+            pairs
+                .iter()
+                .map(|(a, t)| format!("{}>{}", letter(*a), letter(*t)))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
 }
 
 fn set_phase(board: &mut Tableau, arena: PileId, round: u32, sub: usize, step: Step) {
@@ -662,6 +683,30 @@ pub fn commit_label(board: &Tableau, arena: PileId) -> &'static str {
             Step::React => "Commit reactions",
             Step::Extra => "Commit strikes",
         },
+    }
+}
+
+/// Whether the current step offers the **player** any decision. A step with nothing for the party to do —
+/// no unit that can legally catch, no incoming contact to react to, no surviving contact to strike along —
+/// can be auto-resolved (greedy foe) and skipped. Marshal always needs input (assign ranks / Start).
+pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
+    let (cards, units, sub, _round, step) = arena_state(board, arena);
+    let living_party = |i: usize| units[i].side == Side::Party && !units[i].fallen;
+    match step {
+        Step::Marshal => true,
+        Step::Catch => units.iter().enumerate().any(|(i, u)| {
+            living_party(i)
+                && u.tempo > 0
+                && units.iter().any(|v| {
+                    v.side == Side::Foe && !v.fallen && combat::legal_catch(sub, u.rank, v.rank)
+                })
+        }),
+        Step::React => read_contacts(board, arena, &cards)
+            .iter()
+            .any(|c| living_party(c.target)),
+        Step::Extra => read_contacts(board, arena, &cards)
+            .iter()
+            .any(|c| living_party(c.attacker) && units[c.attacker].tempo > 0),
     }
 }
 

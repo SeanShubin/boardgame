@@ -60,6 +60,16 @@ impl BoardGame for CardTableGame {
                             crate::arena::fold_back(board, a);
                         } else {
                             crate::arena::commit(board, a);
+                            // Skip straight past any following steps the player has no decision in (they
+                            // resolve greedily), stopping at the next real choice or the fight's end.
+                            let mut guard = 0;
+                            while crate::arena::outcome(board, a).is_none()
+                                && !crate::arena::step_needs_input(board, a)
+                                && guard < 100
+                            {
+                                crate::arena::commit(board, a);
+                                guard += 1;
+                            }
                         }
                     }
                 }

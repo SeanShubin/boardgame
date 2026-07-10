@@ -2131,6 +2131,19 @@ fn build_arena_v2_ui(
         .unwrap_or("Marshal")
         .to_string();
     let round = phase_detail.first().cloned().unwrap_or_default();
+    // The sub-phase's legal attacker>target rank pairs (e.g. "V>O,R>V"), for combat-lane selectability.
+    let pairs: Vec<(char, char)> = phase_detail
+        .iter()
+        .find_map(|l| l.strip_prefix("Pairs: "))
+        .map(|s| {
+            s.split(',')
+                .filter_map(|p| {
+                    let mut it = p.split('>');
+                    Some((it.next()?.chars().next()?, it.next()?.chars().next()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let name_of = |id: CardId| {
         tree.card(id)
@@ -2199,7 +2212,7 @@ fn build_arena_v2_ui(
                 if marshal {
                     build_formation(mid, tree, arena);
                 } else {
-                    build_combat_lanes(mid, tree, arena, &loose, &name_of);
+                    build_combat_lanes(mid, tree, arena, &loose, &step, &pairs, &name_of);
                 }
             });
 
@@ -2290,18 +2303,94 @@ fn formation_row(
 
 /// The **combat lanes** (Catch / React / Extra): one row per rank, party on the left of the divider, foes on
 /// the right, each unit showing its staged plan; then the landed contacts. Units are tap targets.
+/// A combat tile's selection state — how the player can interact with it *this step*.
+#[derive(Clone, Copy, PartialEq)]
+enum Sel {
+    /// Nothing to do with this card now — dimmed, recedes.
+    No,
+    /// A legal thing to act on (catch it, target it, react with it) — an "available" cue.
+    Yes,
+    /// The current choice: the active attacker, the aimed foe, or a unit with a staged action — highlighted.
+    On,
+}
+
 fn build_combat_lanes(
     root: &mut ChildSpawnerCommands,
     tree: &Tableau,
     arena: PileId,
     loose: &[CardId],
+    step: &str,
+    pairs: &[(char, char)],
     name_of: &dyn Fn(CardId) -> String,
 ) {
     let all: Vec<ArenaUnit> = RANK_ROWS
         .iter()
         .flat_map(|&(label, rank)| units_in_rank(tree, arena, label, rank))
         .collect();
-    let aimed: Vec<CardId> = all.iter().filter_map(|u| u.aim).collect();
+
+    // Landed-contact edges (attacker card → target card) — drives React / Extra selectability + the summary.
+    let edges: Vec<(CardId, CardId)> = loose
+        .iter()
+        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
+        .filter_map(|&c| {
+            let d = tree.card(c)?.detail().to_vec();
+            Some((
+                CardId(detail_num(d.first()?, "from ") as u64),
+                CardId(detail_num(d.get(1)?, "to ") as u64),
+            ))
+        })
+        .collect();
+
+    // The active party attacker (its rank + aim), for Catch foe-targeting cues.
+    let active: Option<(char, Option<CardId>)> = all
+        .iter()
+        .find(|u| u.party && u.active)
+        .map(|u| (u.rank, u.aim));
+    let living_foe_rank = |r: char| all.iter().any(|u| !u.party && !u.fallen && u.rank == r);
+
+    let sel_of = |u: &ArenaUnit| -> Sel {
+        match step {
+            "Catch" if u.party => {
+                if u.active {
+                    Sel::On
+                } else if !u.fallen
+                    && u.tempo > 0
+                    && pairs
+                        .iter()
+                        .any(|&(a, t)| a == u.rank && living_foe_rank(t))
+                {
+                    Sel::Yes
+                } else {
+                    Sel::No
+                }
+            }
+            "Catch" => match active {
+                Some((_, aim)) if aim == Some(u.card) => Sel::On,
+                Some((arank, _))
+                    if !u.fallen && pairs.iter().any(|&(a, t)| a == arank && t == u.rank) =>
+                {
+                    Sel::Yes
+                }
+                _ => Sel::No,
+            },
+            "React" if u.party && !u.fallen && edges.iter().any(|&(_, to)| to == u.card) => {
+                if u.react.is_some() { Sel::On } else { Sel::Yes }
+            }
+            "Extra"
+                if u.party
+                    && !u.fallen
+                    && u.tempo > 0
+                    && edges.iter().any(|&(from, _)| from == u.card) =>
+            {
+                if u.bid > 0 {
+                    Sel::On
+                } else {
+                    Sel::Yes
+                }
+            }
+            _ => Sel::No,
+        }
+    };
 
     for (label, rank) in RANK_ROWS {
         root.spawn(Node {
@@ -2314,24 +2403,18 @@ fn build_combat_lanes(
         .with_children(|lane| {
             arena_lane_label(lane, label);
             for u in all.iter().filter(|u| u.party && u.rank == rank) {
-                spawn_arena_v2_unit(lane, u, false, name_of);
+                spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
             }
             arena_divider(lane);
             for u in all.iter().filter(|u| !u.party && u.rank == rank) {
-                spawn_arena_v2_unit(lane, u, aimed.contains(&u.card), name_of);
+                spawn_arena_v2_unit(lane, u, sel_of(u), name_of);
             }
         });
     }
 
-    let contacts: Vec<String> = loose
+    let contacts: Vec<String> = edges
         .iter()
-        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
-        .filter_map(|&c| {
-            let d = tree.card(c)?.detail().to_vec();
-            let from = CardId(detail_num(d.first()?, "from ") as u64);
-            let to = CardId(detail_num(d.get(1)?, "to ") as u64);
-            Some(format!("{} → {}", name_of(from), name_of(to)))
-        })
+        .map(|&(from, to)| format!("{} → {}", name_of(from), name_of(to)))
         .collect();
     if !contacts.is_empty() {
         arena_prompt_line(root, &format!("Contacts: {}", contacts.join(",  ")));
@@ -2429,20 +2512,29 @@ fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
 }
 
 /// A v2 arena unit tile: name · rank · HP · tempo, plus the staged plan (active / → aim / bid / reaction),
-/// tagged [`ArenaUnitCard`] so a tap edits that plan. `cued` rings a foe an active attacker is aiming at.
+/// tagged [`ArenaUnitCard`] so a tap edits that plan. Its **selection state** drives the visual: `On` is the
+/// current choice (bright ring), `Yes` is actionable this step (amber ring), `No` is dimmed (nothing to do).
 fn spawn_arena_v2_unit(
     parent: &mut ChildSpawnerCommands,
     u: &ArenaUnit,
-    cued: bool,
+    sel: Sel,
     name_of: &dyn Fn(CardId) -> String,
 ) {
-    let accent = type_accent(if u.party { "hero" } else { "foe" });
-    let (bg, ink) = if u.fallen {
-        (CARD_BACK, MUTED)
+    // Three-state visual: fallen recedes hardest, then No (dim), then Yes (available), then On (chosen).
+    let (bg, border, ink) = if u.fallen {
+        (CARD_BACK, MUTED, MUTED)
     } else {
-        (CARD_FACE, CARD_INK)
+        match sel {
+            Sel::On => (CARD_FACE, TARGET_CUE, CARD_INK),
+            Sel::Yes => (CARD_FACE, SELECTABLE_CUE, CARD_INK),
+            Sel::No => (DIM_FACE, MUTED, MUTED),
+        }
     };
-    let border = if u.active || cued { TARGET_CUE } else { accent };
+    let border_w = if sel == Sel::On && !u.fallen {
+        3.0
+    } else {
+        2.0
+    };
     let bar = format!("{} · HP {}/{} · T{}", u.rank, u.hp, u.max, u.tempo);
     // The staged-plan line: what this unit will do on Commit.
     let mut plan = String::new();
@@ -2464,7 +2556,7 @@ fn spawn_arena_v2_unit(
             width: Val::Px(SMALL_W),
             min_height: Val::Px(SMALL_H),
             padding: UiRect::all(Val::Px(8.0)),
-            border: UiRect::all(Val::Px(2.0)),
+            border: UiRect::all(Val::Px(border_w)),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
@@ -2596,6 +2688,10 @@ const MOVABLE_CUE: Color = Color::srgba(0.86, 0.90, 0.97, 0.50);
 /// The **valid-drop-target glow** — a *thicker* ring worn, while a drag is held, by every place the held
 /// card can legally land ([`can_drop_on_card`] / [`can_drop_on_pile`]). Bright green so "drop here" reads.
 const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
+/// A combat tile you **can act on** this step (a legal catch / target / reaction) — warm amber "available".
+const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
+/// A combat tile with **nothing to do** this step — a greyed face that recedes so the live cards stand out.
+const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
 /// Corner radius for a cue ring, matching a card's own [`BorderRadius`] so the outline rounds instead of
 /// boxing the card — a Bevy outline follows its node's radius, and a bare `Movable` wrapper has none.
 const CUE_RADIUS: Val = Val::Px(12.0);
