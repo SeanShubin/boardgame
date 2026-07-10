@@ -775,9 +775,17 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
                     v.side == Side::Foe && !v.fallen && combat::legal_catch(sub, u.rank, v.rank)
                 })
         }),
-        Step::React => read_contacts(board, arena, &cards)
-            .iter()
-            .any(|c| living_party(c.target)),
+        Step::React => {
+            let contacts = read_contacts(board, arena, &cards);
+            // Only a real choice needs input: a struck unit that can afford to evade or strike back. One that
+            // can only Eat (e.g. no Tempo) auto-resolves.
+            units.iter().enumerate().any(|(i, _)| {
+                living_party(i) && {
+                    let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
+                    evade_ok || strikeback_ok
+                }
+            })
+        }
         Step::Extra => read_contacts(board, arena, &cards)
             .iter()
             .any(|c| living_party(c.attacker) && units[c.attacker].tempo > 0),
@@ -793,7 +801,7 @@ pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
     let (name, reason) = match step {
         Step::Catch => ("Catch", "no legal target"),
-        Step::React => ("React", "nothing struck you"),
+        Step::React => ("React", "no reaction available"),
         Step::Extra => ("Extra", "no surviving contact"),
         Step::Marshal => ("Marshal", ""),
     };
@@ -841,6 +849,23 @@ pub fn note_skip(board: &mut Tableau, arena: PileId, line: String) {
 /// Cards to spend to evade a `bid` at finesse `f_def`: the smallest count whose value strictly exceeds it.
 fn evade_cost(bid: u32, f_def: u32, tempo: u32) -> u32 {
     (bid / f_def.max(1) + 1).min(tempo)
+}
+
+/// The reactions defender `i` can actually **afford** against its incoming contacts (Eat is always free, so it
+/// is not returned): `evade_ok` needs enough Tempo to strictly beat some incoming bid; `strikeback_ok` needs a
+/// Tempo card *and* a melee answer to a melee blow (spec: they came to you). A defender with neither is forced
+/// to Eat, so the UI must offer no choice and the step auto-resolves - a unit with no Tempo cannot evade or
+/// strike back.
+fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, bool) {
+    let u = &units[i];
+    if u.fallen || u.tempo == 0 {
+        return (false, false);
+    }
+    let incoming = || contacts.iter().filter(|c| c.target == i);
+    let evade_ok = incoming().any(|c| c.bid / u.finesse.max(1) + 1 <= u.tempo);
+    let strikeback_ok =
+        u.melee && incoming().any(|c| !combat::rank_is_ranged(units[c.attacker].rank));
+    (evade_ok, strikeback_ok)
 }
 
 /// Move any Pool stragglers into their default rank pile (a direct commit's safety net; the UI gates Start
@@ -1106,11 +1131,20 @@ fn cycle_catch_bid(board: &mut Tableau, cards: &[CardId], units: &[Combatant], a
 /// Cycle a defender's staged reaction. `strikeback_ok` gates the Strike Back option: strike-back is
 /// melee-vs-melee only (spec 3.1 / the design call), so when the incoming blow is ranged, or the defender
 /// carries no melee, the cycle skips straight over Strike Back (Eat -> Evade -> Eat).
-fn cycle_react(board: &mut Tableau, card: CardId, strikeback_ok: bool) {
+fn cycle_react(board: &mut Tableau, card: CardId, evade_ok: bool, strikeback_ok: bool) {
     let mut s = staged_of(board, card);
-    let mut next = s.react.unwrap_or(ReactKind::Eat).next();
-    if next == ReactKind::StrikeBack && !strikeback_ok {
-        next = next.next(); // skip Strike Back -> back to Eat
+    let mut next = s.react.unwrap_or(ReactKind::Eat);
+    // Advance to the next *affordable* reaction. Eat is always available, so this terminates within a lap.
+    for _ in 0..3 {
+        next = next.next();
+        let available = match next {
+            ReactKind::Eat => true,
+            ReactKind::Evade => evade_ok,
+            ReactKind::StrikeBack => strikeback_ok,
+        };
+        if available {
+            break;
+        }
     }
     s.react = Some(next);
     write_staged(board, card, &s);
@@ -1147,18 +1181,13 @@ pub fn handle_tap(board: &mut Tableau, card: CardId) {
             Side::Foe => aim_active(board, &cards, &units, sub, i),
         },
         Step::React => {
-            let incoming: Vec<Contact> = read_contacts(board, arena, &cards)
-                .into_iter()
-                .filter(|c| c.target == i)
-                .collect();
-            if side == Side::Party && !incoming.is_empty() {
-                // Strike Back is offered only if this defender carries a melee blow AND at least one incoming
-                // strike is melee (its attacker came to you - a Vanguard/Outrider, not a Rearguard's shot).
-                let strikeback_ok = units[i].melee
-                    && incoming
-                        .iter()
-                        .any(|c| !combat::rank_is_ranged(units[c.attacker].rank));
-                cycle_react(board, card, strikeback_ok);
+            let contacts = read_contacts(board, arena, &cards);
+            if side == Side::Party && contacts.iter().any(|c| c.target == i) {
+                // Cycle only through reactions this defender can afford - Evade / Strike Back both cost a
+                // Tempo card (and Strike Back needs a melee answer to a melee blow), so a spent unit stays on
+                // Eat.
+                let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
+                cycle_react(board, card, evade_ok, strikeback_ok);
             }
         }
         Step::Extra => {

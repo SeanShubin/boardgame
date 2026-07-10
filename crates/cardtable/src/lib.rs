@@ -2708,6 +2708,26 @@ fn build_combat_lanes(
         tgt.finesse.div_ceil(atk.finesse.max(1)).max(1) <= atk.tempo
     };
     let legal = |a: char, t: char| pairs.iter().any(|&(pa, pt)| pa == a && pt == t);
+    // In React a struck unit only has a choice if it can *afford* one: Evade needs enough Tempo to strictly
+    // beat an incoming bid; Strike Back needs a Tempo card and a melee answer to a melee blow. A spent unit
+    // (Tempo 0) can only Eat, so it is not selectable.
+    let react_choice = |u: &ArenaUnit| -> bool {
+        if u.fallen || u.tempo == 0 {
+            return false;
+        }
+        let incoming: Vec<&(CardId, CardId, u32)> =
+            edges.iter().filter(|&&(_, to, _)| to == u.card).collect();
+        let evade_ok = incoming
+            .iter()
+            .any(|&&(_, _, bid)| bid / u.finesse.max(1) + 1 <= u.tempo);
+        let strikeback_ok = u.melee
+            && incoming.iter().any(|&&(from, _, _)| {
+                all.iter()
+                    .find(|a| a.card == from)
+                    .is_some_and(|a| a.rank != 'R')
+            });
+        evade_ok || strikeback_ok
+    };
 
     let sel_of = |u: &ArenaUnit| -> Sel {
         match step {
@@ -2741,8 +2761,12 @@ fn build_combat_lanes(
                 }
                 _ => Sel::No,
             },
-            "React" if u.party && !u.fallen && edges.iter().any(|&(_, to, _)| to == u.card) => {
-                if u.react.is_some() { Sel::On } else { Sel::Yes }
+            "React" if u.party && react_choice(u) => {
+                if u.react.is_some() {
+                    Sel::On
+                } else {
+                    Sel::Yes
+                }
             }
             "Extra"
                 if u.party
