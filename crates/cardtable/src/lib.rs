@@ -2294,6 +2294,70 @@ fn units_in_rank(tree: &Tableau, arena: PileId, label: &str, rank: char) -> Vec<
         .collect()
 }
 
+/// The card titles of a phase deck (`[Phases]` / `[Steps]`), top card first - the current phase is the top.
+fn deck_names(tree: &Tableau, arena: PileId, label: &str) -> Vec<String> {
+    arena_sub(tree, arena, label)
+        .and_then(|p| tree.pile(p))
+        .map(|pile| pile.cards())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| tree.card(c).map(|k| k.front_title().to_string()))
+        .collect()
+}
+
+/// The **visible phase-deck card**: the UI representation of a physical rotating phase deck. Draws the deck's
+/// cards top-to-bottom (current on top) with the current one highlighted, so it reads like a card with the
+/// rest of the deck stacked beneath.
+fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, names: &[String]) {
+    parent
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                min_width: Val::Px(128.0),
+                padding: UiRect::all(Val::Px(6.0)),
+                row_gap: Val::Px(2.0),
+                border: UiRect::all(Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(FACE_DOWN_EDGE),
+            card_shadow(),
+        ))
+        .with_children(|deck| {
+            deck.spawn((
+                Text::new(title.to_string()),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+            for (i, name) in names.iter().enumerate() {
+                let current = i == 0;
+                deck.spawn((
+                    Node {
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(if current { TARGET_CUE } else { Color::NONE }),
+                ))
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new(name.clone()),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextLayout::no_wrap(),
+                        TextColor(if current { CARD_INK } else { MUTED }),
+                    ));
+                });
+            }
+        });
+}
+
 /// Build the modal **v2 combat arena** from the board: a phase banner, then either the **formation** (during
 /// Marshal — assign heroes to rank rows) or the **combat lanes** (during a fight step), then the Commit
 /// control. Everything is read from the arena's rank piles and loose phase/contact cards.
@@ -2303,27 +2367,37 @@ fn build_arena_v2_ui(
     arena: PileId,
     affordances: &[String],
 ) {
-    // The phase card (loose in the arena): "Phase: X" + [Round r, Sub-phase s/5, Step: Y].
     let loose = tree.content_cards(arena);
-    let phase = loose
+    // The phase is read from the two rotating decks: the top of [Phases] is the current major phase, and (once
+    // the schedule is running) the top of [Steps] is the current mini-phase. The decks' card order *is* the
+    // phase, so these lists also drive the two visible phase-deck cards below.
+    let phase_names = deck_names(tree, arena, "Phases");
+    let step_names = deck_names(tree, arena, "Steps");
+    let major = phase_names
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "Marshal".to_string());
+    let marshal = major == "Marshal";
+    let step = if marshal {
+        "Marshal".to_string()
+    } else {
+        step_names
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "Catch".to_string())
+    };
+    let round = loose
         .iter()
-        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("phase"));
-    let phase_title = phase
+        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("round"))
         .and_then(|&c| tree.card(c))
         .map(|c| c.front_title().to_string())
-        .unwrap_or_else(|| "Phase".into());
-    let phase_detail = phase
-        .and_then(|&c| tree.card(c))
-        .map(|c| c.detail().to_vec())
         .unwrap_or_default();
-    let step = phase_detail
-        .get(2)
-        .and_then(|l| l.strip_prefix("Step: "))
-        .unwrap_or("Marshal")
-        .to_string();
-    let round = phase_detail.first().cloned().unwrap_or_default();
-    // The sub-phase's legal attacker>target rank pairs (e.g. "V>O,R>V"), for combat-lane selectability.
-    let pairs: Vec<(char, char)> = phase_detail
+    // Legal rank pairs for the current sub-phase, read off the [Phases] top card, for lane selectability.
+    let pairs: Vec<(char, char)> = arena_sub(tree, arena, "Phases")
+        .and_then(|p| tree.pile(p).and_then(|pile| pile.cards().first().copied()))
+        .and_then(|top| tree.card(top))
+        .map(|c| c.detail().to_vec())
+        .unwrap_or_default()
         .iter()
         .find_map(|l| l.strip_prefix("Pairs: "))
         .map(|s| {
@@ -2341,7 +2415,6 @@ fn build_arena_v2_ui(
             .map(|c| c.front_title().to_string())
             .unwrap_or_default()
     };
-    let marshal = step == "Marshal";
     let prompt = match step.as_str() {
         "Catch" => {
             "Catch - tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
@@ -2375,14 +2448,29 @@ fn build_arena_v2_ui(
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
+            // Header: the round, then the two phase decks drawn as cards - the major-phase deck (always) and,
+            // once the schedule is running, the mini-phase deck. Each shows its cards top-to-bottom (current on
+            // top) with the current highlighted, mirroring the physical rotating decks.
             root.spawn((
-                Text::new(format!("{phase_title}   ({round} | Step: {step})")),
+                Text::new(round.clone()),
                 TextFont {
                     font_size: FONT_HEAD,
                     ..default()
                 },
                 TextColor(INK),
             ));
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::FlexStart,
+                column_gap: Val::Px(12.0),
+                ..default()
+            })
+            .with_children(|decks| {
+                spawn_phase_deck(decks, "Phase", &phase_names);
+                if !marshal {
+                    spawn_phase_deck(decks, "Step", &step_names);
+                }
+            });
             arena_prompt_line(root, prompt);
 
             // The rank rows / lanes fill the middle and scroll if they don't fit. Bottom padding keeps the

@@ -145,25 +145,6 @@ pub enum Step {
     Extra,
 }
 
-impl Step {
-    fn name(self) -> &'static str {
-        match self {
-            Step::Marshal => "Marshal",
-            Step::Catch => "Catch",
-            Step::React => "React",
-            Step::Extra => "Extra",
-        }
-    }
-    fn parse(s: &str) -> Step {
-        match s {
-            "Catch" => Step::Catch,
-            "React" => Step::React,
-            "Extra" => Step::Extra,
-            _ => Step::Marshal,
-        }
-    }
-}
-
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
 fn detail(hp: u32, max: u32, tempo: u32) -> Vec<String> {
@@ -388,23 +369,28 @@ fn arena_state(board: &Tableau, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, 
 }
 
 fn read_phase(board: &Tableau, arena: PileId) -> (usize, u32, Step) {
-    for c in board.content_cards(arena) {
-        if board.card(c).map(|k| k.card_type()) == Some("phase") {
-            let d = board
-                .card(c)
-                .map(|k| k.detail().to_vec())
-                .unwrap_or_default();
-            let round = d.first().map(|l| num_after(l, "Round ")).unwrap_or(1);
-            let sub = (d.get(1).map(|l| num_after(l, "Sub-phase ")).unwrap_or(1) as usize)
-                .saturating_sub(1);
-            let step = d
-                .get(2)
-                .map(|l| Step::parse(l.strip_prefix("Step: ").unwrap_or("")))
-                .unwrap_or(Step::Marshal);
-            return (sub, round, step);
+    let round = board
+        .content_cards(arena)
+        .into_iter()
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
+        .and_then(|c| board.card(c))
+        .map(|c| num_after(c.front_title(), "Round "))
+        .unwrap_or(1);
+    // The current major phase is the top of [Phases]; if it is a sub-phase, the mini-phase is the top of
+    // [Steps]. Marshal (or a missing deck) means the schedule has not started this round.
+    let major = deck_top(board, arena, PHASES);
+    match major.as_deref() {
+        Some(name) if name != "Marshal" => {
+            let sub = SUB_PHASE_NAMES.iter().position(|&n| n == name).unwrap_or(0);
+            let step = match deck_top(board, arena, STEPS).as_deref() {
+                Some("React") => Step::React,
+                Some("Extra") => Step::Extra,
+                _ => Step::Catch,
+            };
+            (sub, round, step)
         }
+        _ => (0, round, Step::Marshal),
     }
-    (0, 1, Step::Marshal)
 }
 
 /// The vitality (max HP) of every combatant, index-aligned with the cards.
@@ -492,47 +478,101 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         }
     }
 
-    add_phase_card(board, arena, 1, 0, Step::Marshal);
+    install_phase_decks(board, arena);
     let _ = board.focus(arena);
     Some(arena)
 }
 
-fn add_phase_card(board: &mut Tableau, arena: PileId, round: u32, sub: usize, step: Step) {
+/// The two rotating **phase decks**, sub-piles of the arena, so the phase is encoded in the physical card
+/// ordering (packing up the deck tells you the phase). `[Phases]` holds the six major phases (Marshal + the
+/// five sub-phases); `[Steps]` holds the three mini-phases (Catch/React/Extra). The **top** card of each is
+/// the current one; a transition moves the top card to the bottom. A loose `round` card counts the rounds.
+const PHASES: &str = "Phases";
+const STEPS: &str = "Steps";
+
+/// (Re)install the phase decks + round counter at round 1: Marshal on top of `[Phases]`, Catch on top of
+/// `[Steps]`. Each sub-phase card carries its legal rank pairs, so the renderer reads them off the top card.
+fn install_phase_decks(board: &mut Tableau, arena: PileId) {
+    for label in [PHASES, STEPS] {
+        if let Some(p) = sub_pile(board, arena, label) {
+            let _ = board.remove_pile(p);
+        }
+    }
+    let stale: Vec<CardId> = board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
+        .collect();
+    for c in stale {
+        let _ = board.remove_card(c);
+    }
+    if let Ok(phases) = board.add_pile(arena, PHASES) {
+        add_deck_card(board, phases, "Marshal", "phase-major", None);
+        for (i, name) in SUB_PHASE_NAMES.iter().enumerate() {
+            add_deck_card(board, phases, name, "phase-major", Some(pairs_line(i)));
+        }
+    }
+    if let Ok(steps) = board.add_pile(arena, STEPS) {
+        for name in ["Catch", "React", "Extra"] {
+            add_deck_card(board, steps, name, "phase-mini", None);
+        }
+    }
+    set_round(board, arena, 1);
+}
+
+fn add_deck_card(
+    board: &mut Tableau,
+    deck: PileId,
+    title: &str,
+    card_type: &str,
+    pairs: Option<String>,
+) {
     if let Ok(card) = board.add_card(
-        arena,
+        deck,
         cardtable_model::Face::Up {
-            title: phase_title(sub, step),
+            title: title.to_string(),
         },
         None,
     ) {
         let _ = board.set_card_kind(card, CardKind::Virtual);
-        let _ = board.set_card_type(card, "phase");
-        let _ = board.set_card_detail(card, phase_detail(round, sub, step));
+        let _ = board.set_card_type(card, card_type);
+        if let Some(p) = pairs {
+            let _ = board.set_card_detail(card, vec![format!("Pairs: {p}")]);
+        }
     }
 }
 
-fn phase_title(sub: usize, step: Step) -> String {
-    match step {
-        Step::Marshal => "Phase: Marshal".to_string(),
-        _ => format!(
-            "Phase: {}",
-            SUB_PHASE_NAMES.get(sub).copied().unwrap_or("Marshal")
-        ),
+/// Write the round-counter card (`Round N`, loose in the arena).
+fn set_round(board: &mut Tableau, arena: PileId, round: u32) {
+    let title = format!("Round {round}");
+    if let Some(c) = board
+        .content_cards(arena)
+        .into_iter()
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
+    {
+        let _ = board.set_face(c, cardtable_model::Face::Up { title });
+    } else if let Ok(c) = board.add_card(arena, cardtable_model::Face::Up { title }, None) {
+        let _ = board.set_card_kind(c, CardKind::Virtual);
+        let _ = board.set_card_type(c, "round");
     }
 }
 
-fn phase_detail(round: u32, sub: usize, step: Step) -> Vec<String> {
-    let mut d = vec![
-        format!("Round {round}"),
-        format!("Sub-phase {}/5", sub + 1),
-        format!("Step: {}", step.name()),
-    ];
-    // The sub-phase's legal attacker>target rank pairs (by first letter, e.g. "V>O,R>V"), so the renderer can
-    // tell which units are legal to act on this phase without knowing the SCHEDULE. Only meaningful mid-fight.
-    if step != Step::Marshal {
-        d.push(format!("Pairs: {}", pairs_line(sub)));
+/// The title of a phase deck's top (current) card.
+fn deck_top(board: &Tableau, arena: PileId, label: &str) -> Option<String> {
+    let deck = sub_pile(board, arena, label)?;
+    let top = board.pile(deck)?.cards().first().copied()?;
+    board.card(top).map(|c| c.front_title().to_string())
+}
+
+/// Rotate a phase deck one step: move its top card to the bottom (a phase transition).
+fn rotate_deck(board: &mut Tableau, arena: PileId, label: &str) {
+    let Some(deck) = sub_pile(board, arena, label) else {
+        return;
+    };
+    let cards = board.pile(deck).map(|p| p.cards()).unwrap_or_default();
+    if let Some(&top) = cards.first() {
+        let _ = board.move_card(top, deck, cards.len());
     }
-    d
 }
 
 /// The sub-phase's legal `attacker>target` rank pairs as first-letter codes (e.g. `"V>O,R>V"`).
@@ -548,22 +588,6 @@ fn pairs_line(sub: usize) -> String {
                 .join(",")
         })
         .unwrap_or_default()
-}
-
-fn set_phase(board: &mut Tableau, arena: PileId, round: u32, sub: usize, step: Step) {
-    if let Some(card) = board
-        .content_cards(arena)
-        .into_iter()
-        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("phase"))
-    {
-        let _ = board.set_face(
-            card,
-            cardtable_model::Face::Up {
-                title: phase_title(sub, step),
-            },
-        );
-        let _ = board.set_card_detail(card, phase_detail(round, sub, step));
-    }
 }
 
 // ---- the greedy AI (foe side always; party side when nothing is staged) --------------------------------
@@ -737,9 +761,10 @@ fn autofill_pool(board: &mut Tableau, arena: PileId) {
 /// Returns whether the fight is over.
 pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
     let (_, _, _, round0, step0) = arena_state(board, arena);
+    let _ = round0;
     if step0 == Step::Marshal {
         autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
-        set_phase(board, arena, round0, 0, Step::Catch);
+        rotate_deck(board, arena, PHASES); // Marshal -> the first sub-phase (Intercept); Steps stays at Catch
         return outcome(board, arena).is_some();
     }
 
@@ -763,7 +788,7 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
             let contacts = combat::resolve_catch(&mut units, &catches);
             writeback(board, &units); // clears the staged catch plan
             write_contacts(board, arena, &cards, &contacts);
-            set_phase(board, arena, round, sub, Step::React);
+            rotate_deck(board, arena, STEPS); // Catch -> React
         }
 
         Step::React => {
@@ -791,7 +816,7 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
             writeback(board, &units); // clears the staged reactions
             clear_contacts(board, arena);
             write_contacts(board, arena, &cards, &surviving);
-            set_phase(board, arena, round, sub, Step::Extra);
+            rotate_deck(board, arena, STEPS); // React -> Extra
         }
 
         Step::Extra => {
@@ -805,14 +830,17 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
             combat::end_sub_phase(&mut units);
             clear_contacts(board, arena);
 
-            let next_sub = sub + 1;
-            if next_sub >= SCHEDULE.len() {
+            // Advance both decks: Steps back to Catch, Phases on to the next sub-phase. If Phases wraps back
+            // to Marshal, a new round has begun - refresh tempo and bump the round counter.
+            rotate_deck(board, arena, STEPS);
+            rotate_deck(board, arena, PHASES);
+            let new_round = deck_top(board, arena, PHASES).as_deref() == Some("Marshal");
+            if new_round {
                 combat::refresh_round(&mut units);
-                writeback(board, &units);
-                set_phase(board, arena, round + 1, 0, Step::Marshal);
-            } else {
-                writeback(board, &units);
-                set_phase(board, arena, round, next_sub, Step::Catch);
+            }
+            writeback(board, &units);
+            if new_round {
+                set_round(board, arena, round + 1);
             }
         }
     }
@@ -1090,7 +1118,7 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
             }
         }
     }
-    set_phase(board, arena, 1, 0, Step::Marshal);
+    install_phase_decks(board, arena);
 }
 
 #[cfg(test)]
