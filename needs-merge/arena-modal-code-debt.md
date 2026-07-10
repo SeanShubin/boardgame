@@ -53,3 +53,24 @@ formation tiles weren't in the pickup log — no `CardRef`). We added, per bug: 
 the layout log, `Movable`-tile pickup/click logging, and a `drag-end … (no pile change)`
 trace. Remaining: treat state-transition logging for high-implicit-state subsystems
 (focus, drag offsets, z-order, pile membership) as a default, not an afterthought.
+
+## #6 — Card-position authority (`CardScreenRects`) — started, not finished
+
+`CardScreenRects` (commit 3d4c3c6) is now the single source for "where is card X on
+screen" in *logical* px, rebuilt each frame by `track_card_rects` (the one place the
+physical->logical / `inverse_scale_factor` conversion lives). The targeting arrows read it;
+this fixed a HiDPI offset bug that came from re-deriving the conversion ad hoc. Root cause
+is the same as #2: position was *computed*, never *owned*.
+
+Remaining (execute when we next touch UI positioning):
+- **Absorb the other re-derivers.** `logging::log_layout`, `scroll_hovered_panel`, and any
+  drop hit-testing still do their own `translation * inverse_scale_factor`. Route them
+  through the authority so the conversion exists exactly once.
+- **Track piles too**, not just cards (`CardRef` / `ArenaUnitCard`). `log_layout` needs
+  `PileDropZone` rects; generalize to `ScreenRects { cards, piles }` (or key by a node id).
+- **Answer "where is a *collapsed* card?"** A card folded into a deck has no tile of its
+  own; its honest physical position is its deck's rect. The authority should fall back to
+  the containing deck so callers can point at any card, on screen or not (the physical-
+  metaphor promise, doc SS0 / SS0.6).
+- Converges with #2: once position is owned, `animate_nodes`' arena special-case and the
+  `Movable`-vs-flex fight can be reconsidered against a single position model.
