@@ -116,15 +116,18 @@ impl Plugin for CardTablePlugin {
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
             .init_resource::<DropTrace>()
+            .init_resource::<FontSample>()
             .insert_resource(NeedsRebuild(true))
             .insert_resource(make_debug_log())
             .configure_sets(
                 Update,
                 (CardTableSet::Input, CardTableSet::Apply, CardTableSet::Draw).chain(),
             )
-            .add_systems(Startup, (setup_camera, install_ui_fonts))
-            // Inject the System deck (a drill-in Free deck) at startup.
-            .add_systems(Startup, inject_system_deck)
+            // Fonts first (they build `UiFonts`), then the System deck (its Fonts sub-deck reads `UiFonts`).
+            .add_systems(
+                Startup,
+                (setup_camera, install_ui_fonts, inject_system_deck).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -448,6 +451,22 @@ fn install_system_deck(table: &mut Tableau, build: &BuildInfo) {
         let _ = table.set_card_type(id, "version");
         let _ = table.set_card_detail(id, version_detail(build));
     }
+    // The **Fonts** deck: a drill-in sub-deck with one card per bundled face. Tapping a font card opens the
+    // sample grid (the whole palette rendered in that font). Names come from `FONT_NAMES`, the same source
+    // `UiFonts` is built from, so the deck can only offer fonts that are actually loaded.
+    if let Ok(fonts_pile) = table.add_pile(pile, "Fonts") {
+        for name in FONT_NAMES {
+            if let Ok(c) = table.add_card(
+                fonts_pile,
+                Face::Up {
+                    title: name.to_string(),
+                },
+                None,
+            ) {
+                let _ = table.set_card_type(c, "font");
+            }
+        }
+    }
     // "System" is a Zone (naming) card — the deck's label, not one of its actions.
     if let Ok(system) = table.add_card(
         pile,
@@ -535,19 +554,39 @@ fn relative_time(seconds_ago: i64) -> String {
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
+/// The bundled UI font faces, by display name - the single source of truth for what the **font deck** offers.
+/// Each is `(name, handle)`; the deck builds one card per entry and the sample view renders the palette in the
+/// matching handle, so the deck can never list a font that isn't loaded.
+const FONT_NAMES: [&str; 2] = ["DejaVu Sans", "DejaVu Sans Mono"];
+
 /// The monospace font handle (DejaVu Sans Mono), for UI that wants aligned columns - the combat log.
 #[derive(Resource, Clone)]
 pub struct MonoFont(pub Handle<Font>);
 
+/// The loaded UI fonts as `(name, handle)`, index-aligned with [`FONT_NAMES`]. Drives the font deck's cards
+/// and the sample grid.
+#[derive(Resource, Clone)]
+pub struct UiFonts(pub Vec<(String, Handle<Font>)>);
+
+/// The font currently shown large in the sample grid (its name), or `None`. Set by tapping a font card,
+/// cleared by the sample view's Back card.
+#[derive(Resource, Default)]
+pub struct FontSample(pub Option<String>);
+
 /// Install the UI fonts: override Bevy's default with DejaVu Sans (so every `TextFont { ..default() }` picks it
-/// up without threading a handle through each label), and register DejaVu Sans Mono in [`MonoFont`] for the
-/// labels that opt into monospace.
+/// up without threading a handle through each label), register DejaVu Sans Mono in [`MonoFont`] for monospace
+/// labels, and record both in [`UiFonts`] for the font deck.
 fn install_ui_fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
     fonts
         .insert(AssetId::default(), Font::from_bytes(DEJAVU_SANS.to_vec()))
         .expect("override the default font");
+    let sans: Handle<Font> = Handle::default(); // the overridden default asset
     let mono = fonts.add(Font::from_bytes(DEJAVU_SANS_MONO.to_vec()));
-    commands.insert_resource(MonoFont(mono));
+    commands.insert_resource(MonoFont(mono.clone()));
+    commands.insert_resource(UiFonts(vec![
+        (FONT_NAMES[0].to_string(), sans),
+        (FONT_NAMES[1].to_string(), mono),
+    ]));
 }
 
 fn on_drag_start(_on: On<Pointer<DragStart>>, mut guard: ResMut<DragGuard>) {
@@ -593,6 +632,7 @@ fn on_click(
     mut arena: ResMut<ArenaCombat>,
     mut affordance_click: ResMut<AffordanceClick>,
     mut tap_request: ResMut<TapRequest>,
+    mut font_sample: ResMut<FontSample>,
     mut front: ResMut<FannedFront>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
@@ -645,6 +685,13 @@ fn on_click(
         on.propagate(false);
         return;
     }
+    // The font **sample** grid is modal: its Back card closes the sample rather than leaving a zone.
+    if is_back && font_sample.0.is_some() {
+        font_sample.0 = None;
+        rebuild.0 = true;
+        on.propagate(false);
+        return;
+    }
     if is_back {
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
@@ -667,6 +714,14 @@ fn on_click(
         }
     } else if let Some(card_ref) = card {
         let id = card_ref.0;
+        // A **font card** (in the System deck's Fonts sub-deck): tapping it opens the sample grid - the whole
+        // palette rendered large in that font.
+        if table.0.card(id).map(|c| c.card_type()) == Some("font") {
+            font_sample.0 = table.0.card(id).map(|c| c.front_title().to_string());
+            rebuild.0 = true;
+            on.propagate(false);
+            return;
+        }
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
         // you can examine it — its full face rises above its overlapping neighbours. Everywhere else a tap
         // fires the card's utility action, grows/shrinks the card (cycle render size), fires a loose action,
@@ -1624,6 +1679,8 @@ fn redraw(
     front: Res<FannedFront>,
     arena: Res<ArenaCombat>,
     affordances: Res<AffordanceLabels>,
+    font_sample: Res<FontSample>,
+    ui_fonts: Option<Res<UiFonts>>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
@@ -1633,6 +1690,11 @@ fn redraw(
     for entity in &roots {
         commands.entity(entity).despawn();
     }
+    // The font sample grid is modal: while a font is selected, it is the whole felt.
+    if let (Some(name), Some(fonts)) = (font_sample.0.as_deref(), ui_fonts.as_deref()) {
+        build_font_sample(&mut commands, name, fonts);
+        return;
+    }
     build_ui(
         &mut commands,
         &table.0,
@@ -1641,6 +1703,127 @@ fn redraw(
         arena.0.as_ref(),
         &affordances.0,
     );
+}
+
+/// Build the modal **font sample**: the whole [`palette`] rendered large in the chosen font, in a neat grid,
+/// with a Back card to close. The glyphs are guaranteed drawable by the `fonts_cover_palette` test, so no cell
+/// is ever tofu.
+fn build_font_sample(commands: &mut Commands, name: &str, fonts: &UiFonts) {
+    let handle = fonts
+        .0
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, h)| h.clone())
+        .unwrap_or_default();
+    let chars = palette::available();
+    commands
+        .spawn((
+            CardTableRoot,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(16.0)),
+                row_gap: Val::Px(10.0),
+                ..default()
+            },
+            BackgroundColor(FELT),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Text::new(name.to_string()),
+                TextFont {
+                    font: handle.clone().into(),
+                    font_size: FONT_HEAD,
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+            arena_prompt_line(
+                root,
+                &format!("{} characters available in this font", chars.len()),
+            );
+            // A scrollable grid of the palette, one cell per glyph, drawn in the selected font.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                align_content: AlignContent::FlexStart,
+                justify_content: JustifyContent::Center,
+                column_gap: Val::Px(6.0),
+                row_gap: Val::Px(6.0),
+                padding: UiRect::bottom(Val::Px(56.0)),
+                overflow: Overflow::scroll_y(),
+                ..default()
+            })
+            .with_children(|grid| {
+                for c in chars {
+                    spawn_glyph_cell(grid, c, handle.clone());
+                }
+            });
+            // Footer: a Back card pinned to the bottom, closing the sample.
+            root.spawn(Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                bottom: Val::Px(8.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::vertical(Val::Px(6.0)),
+                ..default()
+            })
+            .insert(BackgroundColor(FELT))
+            .with_children(|row| spawn_nav_card(row, (BackCard, Pinned), "Back"));
+        });
+}
+
+/// One glyph cell in the font sample: the character drawn large (in `handle`) over its `U+XXXX` codepoint.
+fn spawn_glyph_cell(parent: &mut ChildSpawnerCommands, c: char, handle: Handle<Font>) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(56.0),
+                height: Val::Px(56.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED),
+        ))
+        .with_children(|cell| {
+            cell.spawn((
+                Text::new(if c == ' ' {
+                    "space".to_string()
+                } else {
+                    c.to_string()
+                }),
+                TextFont {
+                    font: handle.into(),
+                    font_size: if c == ' ' {
+                        FONT_BADGE
+                    } else {
+                        FontSize::Px(26.0)
+                    },
+                    ..default()
+                },
+                TextColor(INK),
+            ));
+            cell.spawn((
+                Text::new(format!("{:04X}", c as u32)),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(MUTED),
+            ));
+        });
 }
 
 // ---- combat arena -------------------------------------------------------
