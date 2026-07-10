@@ -2802,6 +2802,20 @@ fn build_combat_lanes(
         }
     };
 
+    // Fix the party side to a single width (the widest rank's party count) so the divider - and thus the
+    // foe side - lines up vertically across all three rows. Fewer heroes just leave empty space before the
+    // divider rather than pulling it left.
+    let max_party = RANK_ROWS
+        .iter()
+        .map(|&(_, rank)| all.iter().filter(|u| u.party && u.rank == rank).count())
+        .max()
+        .unwrap_or(0);
+    let party_w = if max_party == 0 {
+        0.0
+    } else {
+        max_party as f32 * SMALL_W + (max_party - 1) as f32 * 8.0
+    };
+
     // Left-align the rank rows within one column so the rank cards form a true vertical column (the main
     // area centers its children, which would otherwise center each row on its own width and stagger the
     // rank cards). The block itself still sits centered in the main area.
@@ -2823,9 +2837,19 @@ fn build_combat_lanes(
                 })
                 .with_children(|lane| {
                     spawn_rank_card(lane, label);
-                    for u in all.iter().filter(|u| u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, sel_of(u), step, name_of);
-                    }
+                    // Fixed-width party cell (left-aligned) so every row's divider sits at the same x.
+                    lane.spawn(Node {
+                        width: Val::Px(party_w),
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(8.0),
+                        ..default()
+                    })
+                    .with_children(|party| {
+                        for u in all.iter().filter(|u| u.party && u.rank == rank) {
+                            spawn_arena_v2_unit(party, u, sel_of(u), step, name_of);
+                        }
+                    });
                     arena_divider(lane);
                     for u in all.iter().filter(|u| !u.party && u.rank == rank) {
                         spawn_arena_v2_unit(lane, u, sel_of(u), step, name_of);
