@@ -990,9 +990,11 @@ fn teardown(board: &mut Tableau, arena: PileId, clear_encounter: bool, spend_day
         }
     }
 
-    // Leave the arena *before* removing it: `zoom_out` looks up the focused pile's parent, so the arena must
-    // still exist (removing it first would leave focus dangling on a missing key and panic the next draw).
-    board.zoom_out();
+    // Leave the arena subtree entirely before removing it. Focus may have drilled into a rank sub-pile, so a
+    // single `zoom_out` wouldn't fully exit — point focus at the root (the arena is always a root sub-pile)
+    // so nothing is left focused on a pile that's about to be removed (which would dangle / panic the draw).
+    let root = board.root_id();
+    let _ = board.focus(root);
     let _ = board.remove_pile(arena);
     if spend_day
         && let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events"))

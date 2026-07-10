@@ -897,10 +897,11 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
-    // The combat arena is a bespoke flex modal: its `Movable` tiles are laid out by flex (left/top = 0), so
-    // their target is the flex base, not the stale table model-position their cards still carry. This eases a
-    // released drag-offset smoothly back into the row instead of leaving the tile stranded behind another row.
-    let in_arena = board_arena(&table.0) == Some(focus);
+    // The combat arena is a bespoke flex modal (rendered whenever it *exists*, regardless of which sub-zone
+    // focus drilled into): its `Movable` tiles are laid out by flex (left/top = 0), so they snap to that base
+    // rather than the stale table model-position their cards still carry. Keyed on the arena existing — not
+    // being focused — so a drilled-into rank pile doesn't strand the tiles at their old map positions.
+    let in_arena = board_arena(&table.0).is_some();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.

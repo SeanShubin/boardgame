@@ -117,11 +117,12 @@ impl BoardGame for CardTableGame {
     }
 
     fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Intention)> {
-        // In the arena: commit the current step (index 0), and always offer a retreat (index 1).
-        if board.pile(focus).map(|p| p.label.as_str()) == Some(crate::arena::ARENA) {
+        // While a fight is up it is modal: offer its controls (Commit index 0, Cancel index 1) no matter
+        // which sub-zone focus has drilled into (e.g. a rank pile clicked during formation).
+        if let Some(arena) = crate::arena::find_arena(board) {
             return vec![
                 (
-                    crate::arena::commit_label(board, focus).to_string(),
+                    crate::arena::commit_label(board, arena).to_string(),
                     Intention::Commit,
                 ),
                 ("Cancel battle".to_string(), Intention::CancelFight),
