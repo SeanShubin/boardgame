@@ -164,9 +164,11 @@ fn autosave(
     mut last: Local<Option<String>>,
 ) {
     // Don't persist mid-fight: the table then holds the transient arena scratch pile + instantiated foes,
-    // but the fight itself (the `ArenaCombat` resource) isn't saved — so a reload would strand an orphan
-    // pile. The fight folds back cleanly on its end, and the next tick saves that.
-    if arena.0.is_some() {
+    // but the fight itself isn't recoverable from the save — a reload would strand an orphan pile (and, if
+    // the card format has since changed, load stale per-combat detail). The fight folds back cleanly on its
+    // end, and the next tick saves that. Two fight kinds to skip: the old `ArenaCombat` resource, and the v2
+    // board-native `[Arena]` pile (cards-as-truth — no resource, so it needs its own check).
+    if arena.0.is_some() || deckbound_cardtable::arena::find_arena(&table.0).is_some() {
         return;
     }
     *cooldown += time.delta_secs();

@@ -1300,6 +1300,54 @@ mod tests {
     use super::*;
     use cardtable_model::sample_table;
 
+    /// A recruited melee kit (Phantom = Slip-and-Cut) must flag `Melee` (not `no strike`) on its combat card:
+    /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
+    /// the "Dallen Rook shows no strike" regression - which can only occur if a card carries a stale,
+    /// pre-reach detail line (a fight persisted by an older build), never from this live path.
+    #[test]
+    fn a_melee_kit_flags_melee_on_its_combat_card() {
+        use crate::CardTableGame;
+        use crate::Intention;
+        use cardtable_model::BoardGame;
+
+        let mut board = sample_table();
+        let heroes = top_deck(&board, "Heroes").unwrap();
+        let kit = top_deck(&board, "Kit").unwrap();
+        let hero = board.pile(heroes).unwrap().cards()[0];
+        let hero_name = board.card(hero).unwrap().front_title().to_string();
+        let phantom = board
+            .pile(kit)
+            .unwrap()
+            .cards()
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Phantom"))
+            .unwrap();
+        CardTableGame.apply(
+            &mut board,
+            &[Intention::Equip {
+                identity: hero,
+                kit: phantom,
+            }],
+        );
+
+        let (stats, melee, ranged) = hero_stats(&board, &hero_name).expect("recipe resolves");
+        assert!(melee && !ranged, "Slip-and-Cut is melee-only");
+        let d = detail(
+            stats.vitality,
+            stats.vitality,
+            stats.cadence,
+            stats.finesse,
+            melee,
+            ranged,
+        );
+        assert!(
+            d[2].contains("Melee"),
+            "the combat card carries the Melee token: {:?}",
+            d[2]
+        );
+        assert!(!d[2].contains("Ranged"));
+    }
+
     /// Set up a fight at a place with an encounter, with Vael recruited (Marksman) and marched there.
     fn open_a_fight(board: &mut Tableau) -> PileId {
         use crate::CardTableGame;
