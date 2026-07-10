@@ -733,8 +733,9 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
     }
 }
 
-/// A brief note for the current step when it is being auto-skipped: `"{Phase} {Step} (why)"`. ASCII - it is
-/// stored on a card (so it shows in the physical log too); the renderer prints it in the combat log.
+/// A compact note for the current step when it is being auto-skipped: `"{Phase}|{Step}|{why}"` (pipe-encoded
+/// so the renderer can group consecutive same-phase skips - a whole skipped sub-phase collapses to its name).
+/// ASCII - it is stored on a card (so it shows in the physical log too).
 pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
     let (_, _, sub, _, step) = arena_state(board, arena);
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
@@ -744,7 +745,7 @@ pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
         Step::Extra => ("Extra", "no surviving contact"),
         Step::Marshal => ("Marshal", ""),
     };
-    format!("{phase} {name} ({reason})")
+    format!("{phase}|{name}|{reason}")
 }
 
 /// Clear the record of auto-skipped steps (a fresh burst starts each time the player commits).

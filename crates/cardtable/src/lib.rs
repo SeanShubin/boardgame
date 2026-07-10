@@ -2720,15 +2720,16 @@ fn build_combat_lanes(
     };
     let (arrow, mdash, times) = (palette::ARROW, palette::MDASH, palette::TIMES);
     let mut log: Vec<String> = Vec::new();
-    // Phases auto-resolved (no decision for you) since your last commit, with why - one brief line.
+    // Phases auto-resolved (no decision for you) since your last commit - one brief line. An entire skipped
+    // sub-phase collapses to just its name; a partial skip keeps the step and reason.
     let skips: Vec<String> = loose
         .iter()
         .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("skiplog"))
         .and_then(|&c| tree.card(c))
         .map(|c| c.detail().to_vec())
         .unwrap_or_default();
-    if !skips.is_empty() {
-        log.push(format!("Skipped: {}", skips.join(", ")));
+    if let Some(line) = condense_skips(&skips) {
+        log.push(line);
     }
     if !pairs.is_empty() {
         let pretty = pairs
@@ -2805,6 +2806,44 @@ fn build_combat_lanes(
         _ => {}
     }
     arena_log_panel(root, &log);
+}
+
+/// Condense the auto-skip notes (`"phase|step|reason"`) into one brief line. Consecutive skips of the same
+/// sub-phase collapse to just the phase name when the *whole* sub-phase (all three steps) was skipped;
+/// a partial skip keeps `"phase step (reason)"`. Returns `None` when nothing was skipped.
+fn condense_skips(skips: &[String]) -> Option<String> {
+    if skips.is_empty() {
+        return None;
+    }
+    let parsed: Vec<(&str, &str, &str)> = skips
+        .iter()
+        .map(|s| {
+            let mut it = s.split('|');
+            (
+                it.next().unwrap_or(""),
+                it.next().unwrap_or(""),
+                it.next().unwrap_or(""),
+            )
+        })
+        .collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < parsed.len() {
+        let phase = parsed[i].0;
+        let end = (i..parsed.len())
+            .take_while(|&j| parsed[j].0 == phase)
+            .count()
+            + i;
+        if end - i == 3 {
+            out.push(phase.to_string()); // the whole sub-phase was skipped
+        } else {
+            for &(p, step, reason) in &parsed[i..end] {
+                out.push(format!("{p} {step} ({reason})"));
+            }
+        }
+        i = end;
+    }
+    Some(format!("Skipped: {}", out.join(", ")))
 }
 
 /// The full rank name for a one-letter code (`'V'`/`'O'`/`'R'`).
