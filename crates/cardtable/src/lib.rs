@@ -896,12 +896,11 @@ fn animate_nodes(
     {
         return;
     }
-    // The combat arena is a bespoke modal laid out by flex; its `Movable` tiles must not be pulled toward the
-    // stale table model-position their cards still carry (that dragged them behind other rows).
-    if board_arena(&table.0) == Some(table.0.focus_id()) {
-        return;
-    }
     let focus = table.0.focus_id();
+    // The combat arena is a bespoke flex modal: its `Movable` tiles are laid out by flex (left/top = 0), so
+    // their target is the flex base, not the stale table model-position their cards still carry. This eases a
+    // released drag-offset smoothly back into the row instead of leaving the tile stranded behind another row.
+    let in_arena = board_arena(&table.0) == Some(focus);
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -934,7 +933,9 @@ fn animate_nodes(
         if dragging.0 == Some(movable.0) {
             continue; // free while held
         }
-        let target = if structured {
+        let target = if in_arena {
+            Pos { x: 0.0, y: 0.0 } // flex base: ease any drag offset back into the row
+        } else if structured {
             match layout.get(&movable.0) {
                 Some(&p) => p,
                 None => continue,
@@ -2110,6 +2111,15 @@ fn build_arena_v2_ui(
         _ => "Formation — drag each hero into a rank row (or tap to cycle), then Start.",
     };
 
+    // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is only live
+    // when the formation is complete (an empty Pool); Cancel is always live.
+    let ready = !marshal
+        || arena_sub(tree, arena, "Pool").is_none_or(|p| {
+            tree.content_cards(p)
+                .iter()
+                .all(|&c| tree.card(c).map(|k| k.card_type()) != Some("unit"))
+        });
+
     commands
         .spawn((
             CardTableRoot,
@@ -2118,9 +2128,8 @@ fn build_arena_v2_ui(
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                padding: UiRect::all(Val::Px(16.0)),
-                row_gap: Val::Px(10.0),
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(8.0),
                 ..default()
             },
             BackgroundColor(FELT),
@@ -2136,24 +2145,31 @@ fn build_arena_v2_ui(
             ));
             arena_prompt_line(root, prompt);
 
-            if marshal {
-                build_formation(root, tree, arena);
-            } else {
-                build_combat_lanes(root, tree, arena, &loose, &name_of);
-            }
+            // The rank rows / lanes fill the middle and scroll if they don't fit, so the footer controls
+            // below are never pushed off-screen.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                row_gap: Val::Px(8.0),
+                overflow: Overflow::scroll_y(),
+                ..default()
+            })
+            .with_children(|mid| {
+                if marshal {
+                    build_formation(mid, tree, arena);
+                } else {
+                    build_combat_lanes(mid, tree, arena, &loose, &name_of);
+                }
+            });
 
-            // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is
-            // only live when the formation is complete (an empty Pool); Cancel is always live.
-            let ready = !marshal
-                || arena_sub(tree, arena, "Pool").is_none_or(|p| {
-                    tree.content_cards(p)
-                        .iter()
-                        .all(|&c| tree.card(c).map(|k| k.card_type()) != Some("unit"))
-                });
+            // Footer controls — always visible (after the flex-grow middle).
             root.spawn(Node {
                 flex_direction: FlexDirection::Row,
                 column_gap: Val::Px(10.0),
-                margin: UiRect::top(Val::Px(6.0)),
                 ..default()
             })
             .with_children(|row| {
