@@ -13,7 +13,7 @@
 
 use bevy::picking::events::{Click, DragStart, Pointer};
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, UiGlobalTransform};
+use bevy::ui::{ComputedNode, UiGlobalTransform, UiStack};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -224,19 +224,30 @@ fn log_view(table: Res<Table>, log: Res<UiLog>, mut last: Local<Option<PileId>>)
 /// Log the settled layout of the current view: each rendered card's name, position, size and zoom. Logged
 /// once the geometry stops changing (so it reflects the settled arrangement, not mid-animation frames).
 fn log_layout(
-    nodes: Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
-    zones: Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
+    nodes: Query<(Entity, &Movable, &ComputedNode, &UiGlobalTransform)>,
+    zones: Query<(Entity, &PileDropZone, &ComputedNode, &UiGlobalTransform)>,
     table: Res<Table>,
+    ui_stack: Res<UiStack>,
     log: Res<UiLog>,
     mut last_frame: Local<String>,
     mut last_logged: Local<String>,
 ) {
+    // The render order: an element's index in the UI stack. Higher = drawn on top (in front). Logging it
+    // makes "card rendered behind a drop target" visible — the two boxes overlap and the one with the lower
+    // z is the one hidden. (From the previous frame's stack, computed in PostUpdate; fine for a log.)
+    let z_of: HashMap<Entity, usize> = ui_stack
+        .uinodes
+        .iter()
+        .enumerate()
+        .map(|(i, &e)| (e, i))
+        .collect();
+
     // Every positioned felt element (card *and* pile) with its settled box (top-left + size) in logical
-    // pixels. Position + size are exact, so any overlap or inter-element gap is computable — the layout is
-    // fully reconstructable without rendering.
-    let mut boxes: Vec<(String, f32, f32, f32, f32, String)> = Vec::new();
+    // pixels and its z (render order). Position + size are exact, so any overlap or inter-element gap is
+    // computable — the layout is fully reconstructable without rendering.
+    let mut boxes: Vec<(String, f32, f32, f32, f32, String, usize)> = Vec::new();
     let mut movable_piles: HashSet<PileId> = HashSet::new();
-    for (movable, cn, gt) in nodes.iter() {
+    for (entity, movable, cn, gt) in nodes.iter() {
         let (name, zoom) = match movable.0 {
             TableNode::Card(cid) => {
                 let Some(card) = table.0.card(cid) else {
@@ -255,29 +266,40 @@ fn log_layout(
         let sf = cn.inverse_scale_factor;
         let size = cn.size() * sf;
         let tl = gt.translation * sf - size * 0.5;
-        boxes.push((name, tl.x, tl.y, size.x, size.y, zoom));
+        boxes.push((
+            name,
+            tl.x,
+            tl.y,
+            size.x,
+            size.y,
+            zoom,
+            z_of.get(&entity).copied().unwrap_or(0),
+        ));
     }
     boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
 
     let cards_block: String = boxes
         .iter()
-        .map(|(name, x, y, w, h, zoom)| {
-            format!("  {name} @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0}) zoom {zoom}")
+        .map(|(name, x, y, w, h, zoom, z)| {
+            format!("  {name} @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0}) zoom {zoom} z{z}")
         })
         .collect::<Vec<_>>()
         .join("\n");
 
     // Overlaps among the movable elements — the visible result of the push/shove (`separate`) logic: with
-    // it working nothing should overlap. (Drop-zone cells are excluded: a token legitimately sits on one.)
+    // it working nothing should overlap. When two do overlap, the lower z is the one hidden behind.
     let mut overlaps = Vec::new();
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
-            let (ni, ax, ay, aw, ah, _) = &boxes[i];
-            let (nj, bx, by, bw, bh, _) = &boxes[j];
+            let (ni, ax, ay, aw, ah, _, zi) = &boxes[i];
+            let (nj, bx, by, bw, bh, _, zj) = &boxes[j];
             let ox = (ax + aw).min(bx + bw) - ax.max(*bx);
             let oy = (ay + ah).min(by + bh) - ay.max(*by);
             if ox > 0.5 && oy > 0.5 {
-                overlaps.push(format!("  OVERLAP: {ni} & {nj} by ({ox:.0}x{oy:.0})"));
+                let (front, back) = if zi >= zj { (ni, nj) } else { (nj, ni) };
+                overlaps.push(format!(
+                    "  OVERLAP: {ni} & {nj} by ({ox:.0}x{oy:.0}) — {front} over {back}"
+                ));
             }
         }
     }
@@ -287,11 +309,11 @@ fn log_layout(
         format!("  overlaps: {}\n{}", overlaps.len(), overlaps.join("\n"))
     };
 
-    // Structured drop-zones (e.g. the Locations map's place cells) — the targets a drop can land on. Not
-    // Movable, so listed separately; a drop's destination is hit-testable against these.
-    let mut zone_boxes: Vec<(String, f32, f32, f32, f32)> = zones
+    // Structured drop-zones (e.g. the Locations map's place cells, the formation rows) — the targets a drop
+    // can land on. Not Movable, so listed separately, with their z so a card-behind-zone is spottable.
+    let mut zone_boxes: Vec<(String, f32, f32, f32, f32, usize)> = zones
         .iter()
-        .filter_map(|(zone, cn, gt)| {
+        .filter_map(|(entity, zone, cn, gt)| {
             if movable_piles.contains(&zone.0) {
                 return None; // a top-level deck is both movable and a drop-zone; listed once (above)
             }
@@ -299,7 +321,14 @@ fn log_layout(
             let sf = cn.inverse_scale_factor;
             let size = cn.size() * sf;
             let tl = gt.translation * sf - size * 0.5;
-            Some((pile.label.clone(), tl.x, tl.y, size.x, size.y))
+            Some((
+                pile.label.clone(),
+                tl.x,
+                tl.y,
+                size.x,
+                size.y,
+                z_of.get(&entity).copied().unwrap_or(0),
+            ))
         })
         .collect();
     zone_boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
@@ -308,8 +337,8 @@ fn log_layout(
     } else {
         let lines: Vec<String> = zone_boxes
             .iter()
-            .map(|(name, x, y, w, h)| {
-                format!("  [{name}] (drop-zone) @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0})")
+            .map(|(name, x, y, w, h, z)| {
+                format!("  [{name}] (drop-zone) @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0}) z{z}")
             })
             .collect();
         format!("\n  drop-zones:\n{}", lines.join("\n"))

@@ -896,6 +896,11 @@ fn animate_nodes(
     {
         return;
     }
+    // The combat arena is a bespoke modal laid out by flex; its `Movable` tiles must not be pulled toward the
+    // stale table model-position their cards still carry (that dragged them behind other rows).
+    if board_arena(&table.0) == Some(table.0.focus_id()) {
+        return;
+    }
     let focus = table.0.focus_id();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
@@ -1359,32 +1364,26 @@ fn on_node_drag_end(
             rebuild.0 = true;
             return;
         }
-        // In the arena **formation** (Marshal), dropping a hero anywhere over a rank / pool row moves it into
-        // that pile — rank *is* pile membership, so this is the same box-overlap-vs-drop-zone resolution as the
-        // map. The source row is excluded (a release back where it started snaps back). `drop_intention` turns
-        // a rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
+        // In the arena **formation** (Marshal), dropping a hero moves it into a rank / pool row — rank *is*
+        // pile membership. Resolve by the **dragged card's centre** (not the cursor, and not box-overlap):
+        // pick the arena row whose centre is nearest the card's centre, source row included, so a small nudge
+        // stays put and a card straddling two rows lands in the one it's more over. `drop_intention` turns a
+        // rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
         if let Some(arena) = board_arena(&table.0)
             && arena == table.0.focus_id()
             && table.0.card(card).is_some_and(|c| c.card_type() == "unit")
         {
-            let source = table
-                .0
-                .pile(arena)
-                .map(|p| p.subpiles())
-                .unwrap_or_default()
-                .into_iter()
-                .find(|&sp| table.0.pile(sp).is_some_and(|p| p.cards().contains(&card)));
-            let drag_box = geom
+            let center = geom
                 .get(on.event().entity)
                 .ok()
-                .map(|(_, cn, gt)| node_box(cn, gt));
-            let dest = drag_box.and_then(|db| {
-                exactly_one(drop_zones.iter().filter(|&(z, cn, gt)| {
-                    is_arena_subpile(&table.0, arena, z.0)
-                        && Some(z.0) != source
-                        && boxes_overlap(db, node_box(cn, gt))
-                }))
-                .map(|(z, _, _)| z.0)
+                .map(|(_, cn, gt)| node_box(cn, gt).0);
+            let dest = center.and_then(|cc| {
+                drop_zones
+                    .iter()
+                    .filter(|(z, _, _)| is_arena_subpile(&table.0, arena, z.0))
+                    .map(|(z, cn, gt)| (z.0, (node_box(cn, gt).0 - cc).length_squared()))
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(id, _)| id)
             });
             if let Some(dest) = dest {
                 drop_request.0 = Some((card, DropTarget::Pile(dest)));
@@ -2218,7 +2217,10 @@ fn formation_row(
             let Some(u) = read_arena_unit(tree, card, rank.unwrap_or('—')) else {
                 continue;
             };
-            spawn_formation_tile(row, &u);
+            // Formation is about arranging *your* party — foes (pre-ranked in their pile) are not shown here.
+            if u.party {
+                spawn_formation_tile(row, &u);
+            }
         }
     });
 }
