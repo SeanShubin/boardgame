@@ -929,7 +929,11 @@ pub fn handle_tap(board: &mut Tableau, card: CardId) {
 
 // ---- teardown -----------------------------------------------------------------------------------------
 
-/// The active fight's arena zone, if a fight is underway.
+/// **The game-side authority for "is a fight modal right now".** The arena is *modal*: it is active whenever
+/// it **exists**, regardless of which zone `focus` points at. Every arena decision the game makes — the
+/// `Commit` / `Cancel` / `Tap` intentions and the `affordances` it offers — gates on this, **never on the
+/// focused pile**, so drilling `focus` into a rank sub-pile can't strip the fight's controls or actions.
+/// Mirrors the renderer's `active_arena`; both find the top-level `[Arena]` by label.
 pub fn find_arena(board: &Tableau) -> Option<PileId> {
     top_deck(board, ARENA)
 }

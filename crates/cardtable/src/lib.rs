@@ -901,7 +901,7 @@ fn animate_nodes(
     // focus drilled into): its `Movable` tiles are laid out by flex (left/top = 0), so they snap to that base
     // rather than the stale table model-position their cards still carry. Keyed on the arena existing — not
     // being focused — so a drilled-into rank pile doesn't strand the tiles at their old map positions.
-    let in_arena = board_arena(&table.0).is_some();
+    let in_arena = active_arena(&table.0).is_some();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -1380,7 +1380,7 @@ fn on_node_drag_end(
         // pick the arena row whose centre is nearest the card's centre, source row included, so a small nudge
         // stays put and a card straddling two rows lands in the one it's more over. `drop_intention` turns a
         // rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
-        if let Some(arena) = board_arena(&table.0)
+        if let Some(arena) = active_arena(&table.0)
             && table.0.card(card).is_some_and(|c| c.card_type() == "unit")
         {
             let center = geom
@@ -1987,11 +1987,19 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
 
 // ---- v2 board arena (the interactive fight rendered from the cards) ------------------------------------
 
-/// The active v2 fight's `[Arena]` zone (a top-level pile labelled `Arena`), if a fight is underway. The
-/// renderer reaches past `cardtable-model` here only by the combat card-type conventions the game encodes
-/// on the board (`unit` / `foe` / `phase` / `contact`) and the rank sub-pile labels; everything drawn is
-/// read from those cards and piles.
-fn board_arena(tree: &Tableau) -> Option<PileId> {
+/// **The single authority for "is a fight modal right now".** The v2 arena is *modal*: it owns the whole
+/// screen whenever it **exists** (a top-level `[Arena]` pile), independent of which zone `focus` points at.
+///
+/// Every arena-aware system — the draw dispatch, `animate_nodes`, the drag-end resolver — MUST gate on this,
+/// **never on `focus_id()`**. Keying on `focus` is the exact bug that was fixed four separate times: clicking
+/// a rank sub-pile drills `focus` into it, so `arena == focus_id()` goes false while the arena is still up,
+/// and that one system silently misbehaves (tiles strand, controls vanish, drops snap back). Route new
+/// arena logic through here so that class of bug stays impossible.
+///
+/// (The renderer reaches past `cardtable-model` here only by the combat card-type / label conventions the
+/// game encodes on the board — `Arena` / `Pool` / rank labels, `unit` / `foe` / `phase` / `contact`. That
+/// string coupling is tracked as P3c; the game side's mirror of this check is `arena::find_arena`.)
+fn active_arena(tree: &Tableau) -> Option<PileId> {
     tree.pile(tree.root_id())?
         .subpiles()
         .into_iter()
@@ -2752,7 +2760,7 @@ fn build_ui(
     }
     // A **v2 board fight** in progress: the `[Arena]` zone is modal — render the interactive combat board
     // straight from the cards (rank lanes, each unit's staged plan, the phase, the Commit control).
-    if let Some(pile) = board_arena(tree) {
+    if let Some(pile) = active_arena(tree) {
         build_arena_v2_ui(commands, tree, pile, affordances);
         return;
     }
