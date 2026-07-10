@@ -1300,7 +1300,7 @@ mod tests {
     use super::*;
     use cardtable_model::sample_table;
 
-    /// A recruited melee kit (Phantom = Slip-and-Cut) must flag `Melee` (not `no strike`) on its combat card:
+    /// A recruited melee kit (Phantom carries Jab) must flag `Melee` (not `no strike`) on its combat card:
     /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
     /// the "Dallen Rook shows no strike" regression - which can only occur if a card carries a stale,
     /// pre-reach detail line (a fight persisted by an older build), never from this live path.
@@ -1331,7 +1331,7 @@ mod tests {
         );
 
         let (stats, melee, ranged) = hero_stats(&board, &hero_name).expect("recipe resolves");
-        assert!(melee && !ranged, "Slip-and-Cut is melee-only");
+        assert!(melee && !ranged, "Jab is melee-only");
         let d = detail(
             stats.vitality,
             stats.vitality,

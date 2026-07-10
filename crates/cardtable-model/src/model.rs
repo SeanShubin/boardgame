@@ -2034,7 +2034,7 @@ mod tests {
             .add_card(
                 abilities,
                 Face::Up {
-                    title: "Alpha Strike".into(),
+                    title: "Jab".into(),
                 },
                 None,
             )
@@ -2044,7 +2044,7 @@ mod tests {
         let total = t.card_count();
         let recipe = Recipe {
             stats: [6, 3, 1, 1, 1],
-            ability: "Alpha Strike".into(),
+            ability: "Jab".into(),
         };
         let deck = t
             .equip_character(
@@ -2072,7 +2072,7 @@ mod tests {
                 "1",
                 "Finesse",
                 "1",
-                "Alpha Strike",
+                "Jab",
                 "Vael"
             ]
         );

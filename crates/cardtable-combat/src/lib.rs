@@ -746,13 +746,13 @@ mod tests {
     fn marksman() -> Recipe {
         Recipe {
             stats: [4, 4, 1, 2, 2],
-            ability: "Stand-Off".into(),
+            ability: "Shot".into(),
         }
     }
     fn executioner() -> Recipe {
         Recipe {
             stats: [6, 3, 1, 1, 1],
-            ability: "Alpha Strike".into(),
+            ability: "Jab".into(),
         }
     }
 

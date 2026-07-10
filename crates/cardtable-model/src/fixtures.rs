@@ -908,7 +908,7 @@ mod tests {
     fn executioner() -> Recipe {
         Recipe {
             stats: [6, 3, 1, 1, 1],
-            ability: "Alpha Strike".into(),
+            ability: "Jab".into(),
         }
     }
 
@@ -920,28 +920,28 @@ mod tests {
         let (cdeck, _name) = recruit(&mut t, 0, executioner());
         let recovered = t.character_recipe(cdeck).expect("a complete build");
         assert_eq!(recovered.stats, [6, 3, 1, 1, 1]);
-        assert_eq!(recovered.ability, "Alpha Strike");
+        assert_eq!(recovered.ability, "Jab");
         // An incomplete deck (no character build) yields nothing.
         assert_eq!(t.character_recipe(deck(&t, "Heroes")), None);
     }
 
-    /// Each kit ability's strike shape is derived, mirroring the reach/area a `Creature` stores.
+    /// Each generic attack's strike shape `(ranged, aoe)` — the four (reach x spread) combinations.
     #[test]
-    fn ability_shape_covers_the_kits() {
-        assert_eq!(catalog::ability_shape("Stand-Off"), (true, false)); // ranged
-        assert_eq!(catalog::ability_shape("Whirlwind"), (false, true)); // area
-        assert_eq!(catalog::ability_shape("Alpha Strike"), (false, false));
-        assert_eq!(catalog::ability_shape("Slip-and-Cut"), (false, false));
+    fn ability_shape_covers_the_attacks() {
+        assert_eq!(catalog::ability_shape("Jab"), (false, false)); // melee single
+        assert_eq!(catalog::ability_shape("Shot"), (true, false)); // ranged single
+        assert_eq!(catalog::ability_shape("Sweep"), (false, true)); // melee area
+        assert_eq!(catalog::ability_shape("Salvo"), (true, true)); // ranged area
     }
 
-    /// Each kit ability's reach is `(melee, ranged)` — today every kit carries exactly one, and an unknown
-    /// ability defaults to melee. (The model permits both / neither; no kit uses that yet.)
+    /// Each generic attack's reach `(melee, ranged)` — Jab/Sweep are melee, Shot/Salvo ranged; an unknown
+    /// name defaults to melee. (The reach model permits both / neither; a single attack card is one reach.)
     #[test]
-    fn ability_reach_covers_the_kits() {
-        assert_eq!(catalog::ability_reach("Stand-Off"), (false, true)); // ranged only
-        assert_eq!(catalog::ability_reach("Whirlwind"), (true, false)); // melee
-        assert_eq!(catalog::ability_reach("Alpha Strike"), (true, false));
-        assert_eq!(catalog::ability_reach("Slip-and-Cut"), (true, false));
+    fn ability_reach_covers_the_attacks() {
+        assert_eq!(catalog::ability_reach("Jab"), (true, false)); // melee
+        assert_eq!(catalog::ability_reach("Sweep"), (true, false)); // melee
+        assert_eq!(catalog::ability_reach("Shot"), (false, true)); // ranged
+        assert_eq!(catalog::ability_reach("Salvo"), (false, true)); // ranged
         assert_eq!(catalog::ability_reach("(unknown)"), (true, false)); // default melee
     }
 
@@ -1214,7 +1214,7 @@ mod tests {
             executioner
                 .detail()
                 .iter()
-                .any(|l| l.contains("Abilities: Alpha Strike"))
+                .any(|l| l.contains("Abilities: Jab"))
         );
 
         let top = t.card(*kit.cards().last().unwrap()).unwrap();
@@ -1284,7 +1284,7 @@ mod tests {
             0,
             Recipe {
                 stats: [4, 3, 1, 2, 3],
-                ability: "Slip-and-Cut".into(),
+                ability: "Jab".into(),
             },
         );
 
@@ -1308,7 +1308,7 @@ mod tests {
                 "2",
                 "Finesse",
                 "3",
-                "Slip-and-Cut",
+                "Jab",
                 name.as_str() // the rank marker (a hero copy) sits with the character
             ]
         );

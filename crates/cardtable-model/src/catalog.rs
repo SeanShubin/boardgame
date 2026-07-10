@@ -34,18 +34,25 @@ pub const STATS: [(&str, &str); 5] = [
     ),
 ];
 
-/// The kits' signature abilities — one per starter (the strike each carries, named for flavor), each
-/// `(name, description)`. Two kits strike melee-single (the Executioner's burst vs the Phantom's Tempo)
-/// but carry distinct abilities; the description records the underlying reach × area (see
-/// `deckbound::duel` / the duel-locks set).
+/// The four **generic attack** cards — the strike a body carries, one per `(reach x spread)` combination,
+/// each `(name, description)`. A kit's identity lives in its *stats*; the attack card only sets **how** it
+/// strikes, so two kits with the same attack differ only by their numbers. Reach and area both derive from
+/// which of these a body carries (see [`ability_reach`] / [`ability_shape`]). Mirrors the reference sim's
+/// strike-card set (`deckbound::sub_phase::strike_card`), so both name the same four attacks.
 pub const ABILITIES: [(&str, &str); 4] = [
-    ("Alpha Strike", "Melee | single target - one big blow."),
-    ("Whirlwind", "Melee | area - hits the whole pack."),
+    ("Jab", "Melee | single target - a close blow to one foe."),
     (
-        "Stand-Off",
-        "Ranged | single target - strikes from the back, no riposte.",
+        "Shot",
+        "Ranged | single target - a shot at one foe from the back.",
     ),
-    ("Slip-and-Cut", "Melee | single target - evades, then cuts."),
+    (
+        "Sweep",
+        "Melee | area - a close arc across a whole rank or group.",
+    ),
+    (
+        "Salvo",
+        "Ranged | area - fire across a whole rank or group.",
+    ),
 ];
 
 /// The starter roster — the four **duel-locks kits** (`deckbound/data/balance/duel-locks.ron`), each
@@ -53,10 +60,10 @@ pub const ABILITIES: [(&str, &str); 4] = [
 /// order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole answer to one
 /// creature lock: Executioner→the Anvil, Broadsider→the Swarm, Marksman→the Coil, Phantom→the Mirage.
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
-    ("Executioner", [6, 3, 1, 1, 1], "Alpha Strike"),
-    ("Broadsider", [2, 3, 3, 1, 1], "Whirlwind"),
-    ("Marksman", [4, 4, 1, 2, 2], "Stand-Off"),
-    ("Phantom", [4, 3, 1, 2, 3], "Slip-and-Cut"),
+    ("Executioner", [6, 3, 1, 1, 1], "Jab"),
+    ("Broadsider", [2, 3, 3, 1, 1], "Sweep"),
+    ("Marksman", [4, 4, 1, 2, 2], "Shot"),
+    ("Phantom", [4, 3, 1, 2, 3], "Jab"),
 ];
 
 /// The description for a stat by name (from [`STATS`]), or `""` if unknown.
@@ -85,22 +92,19 @@ pub fn ability_description(name: &str) -> &'static str {
 /// abilities default to melee.
 pub fn ability_reach(name: &str) -> (bool, bool) {
     match name {
-        "Stand-Off" => (false, true), // ranged only
-        "Whirlwind" => (true, false), // melee (area)
-        "Alpha Strike" => (true, false),
-        "Slip-and-Cut" => (true, false),
-        _ => (true, false),
+        "Shot" | "Salvo" => (false, true), // ranged
+        "Jab" | "Sweep" => (true, false),  // melee
+        _ => (true, false),                // unknown -> melee
     }
 }
 
-/// A kit ability's **strike shape** as `(ranged, aoe)` — the reach and area a hero fights with, derived
-/// from its signature ability. Kits carry no explicit reach/area flags (unlike a [`Creature`], which
-/// stores them), so combat reads the shape here: Stand-Off strikes from range; Whirlwind hits an area;
-/// Alpha Strike and Slip-and-Cut are single melee blows. The `ranged` bit is [`ability_reach`]'s ranged
-/// flag; unknown abilities default to melee, single.
+/// A generic attack's **strike shape** as `(ranged, aoe)` — the reach and area a body fights with, derived
+/// from which of the four attacks it carries: `Jab` melee-single, `Shot` ranged-single, `Sweep` melee-area,
+/// `Salvo` ranged-area. The `ranged` bit is [`ability_reach`]'s ranged flag; `aoe` is set by the two Sweep /
+/// Salvo cards. Unknown names default to melee, single.
 pub fn ability_shape(name: &str) -> (bool, bool) {
     let (_melee, ranged) = ability_reach(name);
-    let aoe = matches!(name, "Whirlwind");
+    let aoe = matches!(name, "Sweep" | "Salvo");
     (ranged, aoe)
 }
 
@@ -230,10 +234,10 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 /// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
-        "Immovable" => "Executioner", // armored -> one big blow (Alpha Strike)
-        "Overrun" => "Broadsider",    // hoard -> area (Whirlwind)
-        "Riposte" => "Marksman",      // ripostes -> ranged, no riposte (Stand-Off)
-        "Feint" => "Phantom",         // evasive -> out-tempo (Slip-and-Cut)
+        "Immovable" => "Executioner", // armored -> one big blow (Jab, high Might)
+        "Overrun" => "Broadsider",    // hoard -> area (Sweep)
+        "Riposte" => "Marksman",      // ripostes -> ranged (Shot), out of reach
+        "Feint" => "Phantom",         // evasive -> out-tempo (Jab, high Finesse)
         _ => "",
     }
 }
