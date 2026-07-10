@@ -12,5 +12,7 @@
 pub mod arena;
 mod board_game;
 pub mod combat;
+pub mod fixtures;
 
 pub use board_game::{CardTableGame, Intention};
+pub use fixtures::sample_table;

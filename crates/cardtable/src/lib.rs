@@ -50,7 +50,9 @@ pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, Dro
 mod logging;
 pub use logging::LoggingPlugin;
 
+mod demo;
 mod gallery;
+pub use demo::demo_table;
 pub use gallery::run_card_gallery;
 
 // ---- public presentation state (the shared inputs) ----------------------

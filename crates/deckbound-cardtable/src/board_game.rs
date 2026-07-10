@@ -4,7 +4,9 @@
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{Arrangement, BoardGame, CardId, DropTarget, PileId, Tableau, sample_table};
+use cardtable_model::{Arrangement, BoardGame, CardId, DropTarget, PileId, Tableau};
+
+use crate::sample_table;
 
 /// The deckbound card-table game, played on a persistent physical board.
 #[derive(Clone, Copy)]

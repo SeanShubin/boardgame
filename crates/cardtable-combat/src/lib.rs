@@ -740,7 +740,8 @@ fn subpiles(table: &Tableau, pile: PileId) -> Vec<PileId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cardtable_model::{Recipe, sample_table};
+    use cardtable_model::Recipe;
+    use deckbound_cardtable::sample_table;
 
     /// The four inn-adjacent solo encounters and the kit that answers each (the duel-locks diagonal).
     fn marksman() -> Recipe {

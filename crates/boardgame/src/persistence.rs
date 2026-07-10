@@ -26,7 +26,7 @@ fn fingerprint() -> u64 {
     static FP: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     *FP.get_or_init(|| {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        ron::to_string(&cardtable_model::sample_table())
+        ron::to_string(&deckbound_cardtable::sample_table())
             .unwrap_or_default()
             .hash(&mut hasher);
         hasher.finish()

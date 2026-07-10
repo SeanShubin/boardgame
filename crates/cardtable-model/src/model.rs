@@ -2897,13 +2897,22 @@ mod tests {
         }
     }
 
-    /// Conservation guard: in the sample table every card is a **real member** of some pile — owned as a
-    /// child, not merely shown. A projection (the inn) *displays* other decks' cards but never lists them
-    /// among its own children, so a projected card is still counted at its true home. Thus no card can
-    /// exist only as a projection with no real home.
+    /// Conservation guard: every card is a **real member** of some pile — owned as a child, not merely
+    /// shown. A **projection** pile *displays* other decks' cards but never lists them among its own
+    /// children, so a projected card is still counted only at its true home. Thus no card can exist only as
+    /// a projection with no real home. Built on a minimal projection-bearing table (a game-free analogue of
+    /// the inn) so this stays a pure model invariant.
     #[test]
-    fn sample_table_has_no_projection_only_cards() {
-        let t = crate::fixtures::sample_table();
+    fn projections_never_own_cards() {
+        let mut t = Tableau::new();
+        let root = t.root_id();
+        let a = t.add_pile(root, "A").unwrap();
+        let b = t.add_pile(root, "B").unwrap();
+        t.add_card(a, Face::Up { title: "x".into() }, None).unwrap();
+        t.add_card(b, Face::Up { title: "y".into() }, None).unwrap();
+        // A projection pile that *shows* A and B but owns no cards of its own.
+        let view = t.add_pile(root, "View").unwrap();
+        t.set_projection(view, vec![a, b]).unwrap();
         // Walk every pile and tally who owns each card (a pile owns exactly the Card nodes in its children).
         let mut owners: HashMap<CardId, usize> = HashMap::new();
         for pile in t.piles.values() {

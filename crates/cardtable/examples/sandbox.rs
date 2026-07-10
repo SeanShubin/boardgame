@@ -8,8 +8,8 @@
 //! Mage) report their index — here we just log it, where a game would apply it.
 
 use bevy::prelude::*;
+use cardtable::demo_table;
 use cardtable::{ActionRequests, CardTablePlugin, CardTableSet, StatusLine, Table};
-use cardtable_model::sample_table;
 
 fn main() {
     App::new()
@@ -22,7 +22,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(CardTablePlugin)
-        .insert_resource(Table(sample_table()))
+        .insert_resource(Table(demo_table()))
         .insert_resource(StatusLine(
             "Click a pile to enter it | click a card to grow it | Back / Exit to navigate".into(),
         ))

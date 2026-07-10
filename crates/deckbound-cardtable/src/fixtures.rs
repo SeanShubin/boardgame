@@ -2,10 +2,10 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use crate::catalog;
-use crate::model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Recipe, Tableau};
+use cardtable_model::catalog;
+use cardtable_model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Recipe, Tableau};
 
-/// Add a face-up card with a name and a [`type`](crate::model::Card::card_type) to `pile`, returning
+/// Add a face-up card with a name and a [`type`](cardtable_model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
 fn typed(tree: &mut Tableau, pile: PileId, title: &str, card_type: &str) -> CardId {
     let id = tree
@@ -709,8 +709,11 @@ mod tests {
                 None,
             )
             .unwrap();
-        t.set_card_kind(start, CardKind::Utility(crate::model::Utility::StartOver))
-            .unwrap();
+        t.set_card_kind(
+            start,
+            CardKind::Utility(cardtable_model::Utility::StartOver),
+        )
+        .unwrap();
         let label = typed(&mut t, system, "System", "Label");
         t.set_card_kind(label, CardKind::Zone).unwrap();
         assert_eq!(t.physical_card_count(system), 0);

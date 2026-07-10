@@ -1328,7 +1328,7 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cardtable_model::sample_table;
+    use crate::sample_table;
 
     /// A recruited melee kit (Phantom carries Jab) must flag `Melee` (not `no strike`) on its combat card:
     /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards

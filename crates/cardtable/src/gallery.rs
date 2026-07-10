@@ -12,10 +12,11 @@
 //! - **Medium** — width fixed but height grows with line count, so only *horizontal* overflow is a fault.
 //! - **Large** — a scrollable panel, so again only *horizontal* overflow is a fault.
 
+use crate::demo::demo_table;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::ui::ScrollPosition;
-use cardtable_model::{CardId, Tableau, sample_table};
+use cardtable_model::{CardId, Tableau};
 
 use crate::{
     CardRef, FELT, install_ui_fonts, setup_camera, spawn_card_large, spawn_card_medium,
@@ -65,7 +66,7 @@ pub fn run_card_gallery() {
             ..default()
         }))
         .insert_resource(ClearColor(FELT))
-        .insert_resource(GalleryCards(sample_table()))
+        .insert_resource(GalleryCards(demo_table()))
         .init_resource::<Audited>()
         .add_systems(
             Startup,

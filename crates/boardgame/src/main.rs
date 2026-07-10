@@ -17,8 +17,9 @@ use cardtable::{
     Table,
 };
 use cardtable_combat::{begin_manual_combat, resolve_encounter};
-use cardtable_model::{Tableau, sample_table};
+use cardtable_model::Tableau;
 use deckbound_cardtable::CardTableGame;
+use deckbound_cardtable::sample_table;
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
 const AUTOSAVE_SECS: f32 = 2.0;

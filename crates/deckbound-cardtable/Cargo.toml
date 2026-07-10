@@ -13,3 +13,7 @@ cardtable-model = { workspace = true }
 # finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module, NOT by
 # reworking deckbound's resolver. (Might→health is a small inline toughness-accumulate model, its semantics.)
 deckbound = { workspace = true }
+
+[dev-dependencies]
+# The fixtures' tests round-trip the tableau through RON (the persistence format).
+ron = { workspace = true }
