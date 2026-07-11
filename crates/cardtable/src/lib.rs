@@ -29,8 +29,8 @@ use bevy::ui::{BoxShadow, ComputedNode, Outline, ScrollPosition, UiGlobalTransfo
 use std::collections::HashMap;
 
 use cardtable_model::{
-    Arrangement, Board, Card, CardId, CardKind, DropTarget, Face, Layout, Node as TableNode,
-    PileId, Pos, Size, Utility,
+    Arrangement, Board, Card, CardId, CardKind, DropTarget, Face, Highlight, Lane, Layout,
+    Node as TableNode, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone, Utility,
 };
 
 #[cfg(feature = "game")]
@@ -39,7 +39,9 @@ pub use game::GamePlugin;
 mod board_driver;
 pub mod palette;
 use board_driver::{AffordanceClick, DropTrace, TapRequest};
-pub use board_driver::{AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest};
+pub use board_driver::{
+    AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest, SceneState,
+};
 
 mod logging;
 pub use logging::LoggingPlugin;
@@ -108,6 +110,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<TapRequest>()
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
+            .init_resource::<SceneState>()
             .init_resource::<DropTrace>()
             .init_resource::<FontSample>()
             .init_resource::<CardScreenRects>()
@@ -217,23 +220,9 @@ struct AdvanceDayCard;
 #[derive(Component, Clone, Copy)]
 struct ArenaUnitCard(CardId);
 
-/// The **armed hero** during Catch — the tile a targeting arrow flows *from* (rendering the attention layer:
-/// a selection in progress). Set by [`spawn_arena_v2_unit`], read by [`animate_target_arrows`]. `area` marks
-/// an area attacker so its arrow reads as a broad sweep (a fan) rather than a single thread.
-#[derive(Component)]
-struct ArrowSource {
-    area: bool,
-}
-
-/// A **reachable foe** during Catch — a tile a targeting arrow flows *to*. `confirmed` marks the aimed target
-/// (solid, green) vs. a merely-possible one (dotted, amber).
-#[derive(Component)]
-struct ArrowTarget {
-    confirmed: bool,
-}
-
-/// One transient dot of a targeting arrow (a top-level overlay node). Re-spawned each frame by
-/// [`animate_target_arrows`] so the dots flow toward the target.
+/// One transient dot of an attention arrow (a top-level overlay node). Re-spawned each frame by
+/// [`animate_target_arrows`] so the dots flow toward the target. The *which* cards link is now decided by the
+/// game (a [`Scene`]'s links); this marker just tags a drawn dot for cleanup.
 #[derive(Component)]
 struct ArrowDot;
 
@@ -893,6 +882,7 @@ fn animate_nodes(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<Dragging>,
+    scene: Res<SceneState>,
     mut movables: Query<(&Movable, &mut Node)>,
 ) {
     if table
@@ -903,11 +893,10 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
-    // The combat arena is a bespoke flex modal (rendered whenever it *exists*, regardless of which sub-zone
-    // focus drilled into): its `Movable` tiles are laid out by flex (left/top = 0), so they snap to that base
-    // rather than the stale table model-position their cards still carry. Keyed on the arena existing — not
-    // being focused — so a drilled-into rank pile doesn't strand the tiles at their old map positions.
-    let in_arena = active_arena(&table.0).is_some();
+    // A game **scene** (a combat arena) is a bespoke flex modal: its `Movable` tiles are laid out by flex
+    // (left/top = 0), so they snap to that base rather than the stale table model-position their cards still
+    // carry. Keyed on a scene existing (not on focus), so drilling focus into a sub-pile can't strand tiles.
+    let in_arena = scene.0.is_some();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -1323,6 +1312,7 @@ fn on_node_drag_end(
     movables: Query<(&Movable, &Node)>,
     geom: Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
     drop_zones: Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
+    scene: Res<SceneState>,
     mut table: ResMut<Table>,
     mut dragging: ResMut<Dragging>,
     mut rebuild: ResMut<NeedsRebuild>,
@@ -1381,13 +1371,14 @@ fn on_node_drag_end(
             rebuild.0 = true;
             return;
         }
-        // In the arena **formation** (Marshal), dropping a hero moves it into a rank / pool row — rank *is*
-        // pile membership. Resolve by the **dragged card's centre** (not the cursor, and not box-overlap):
-        // pick the arena row whose centre is nearest the card's centre, source row included, so a small nudge
-        // stays put and a card straddling two rows lands in the one it's more over. `drop_intention` turns a
-        // rank-pile drop into an `Assign`; a Pool drop is the default move (unranking).
-        if let Some(arena) = active_arena(&table.0)
-            && table.0.card(card).is_some_and(|c| c.card_type() == "unit")
+        // In a scene with **assignment rows** (a formation), dropping a tile moves it into the nearest row's
+        // drop pile. Resolve by the **dragged card's centre** (not the cursor, and not box-overlap): pick the
+        // row whose centre is nearest the card's centre, source row included, so a small nudge stays put and a
+        // card straddling two rows lands in the one it's more over. `drop_intention` interprets the drop (the
+        // game turns a rank-pile drop into an `Assign`; a Pool drop is the default move). The renderer knows
+        // only "these piles are the scene's row drop zones" — never what a rank is.
+        if let Some(scene) = &scene.0
+            && let SceneBody::Rows(rows) = &scene.body
         {
             let center = geom
                 .get(on.event().entity)
@@ -1396,7 +1387,7 @@ fn on_node_drag_end(
             let dest = center.and_then(|cc| {
                 drop_zones
                     .iter()
-                    .filter(|(z, _, _)| is_arena_subpile(&table.0, arena, z.0))
+                    .filter(|(z, _, _)| rows.iter().any(|r| r.drop_pile == z.0))
                     .map(|(z, cn, gt)| (z.0, (node_box(cn, gt).0 - cc).length_squared()))
                     .min_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(id, _)| id)
@@ -1621,6 +1612,7 @@ fn redraw(
     rail: Res<ActionRail>,
     front: Res<FannedFront>,
     affordances: Res<AffordanceLabels>,
+    scene: Res<SceneState>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
     roots: Query<Entity, With<CardTableRoot>>,
@@ -1635,6 +1627,11 @@ fn redraw(
     // The font sample grid is modal: while a font is selected, it is the whole felt.
     if let (Some(name), Some(fonts)) = (font_sample.0.as_deref(), ui_fonts.as_deref()) {
         build_font_sample(&mut commands, name, fonts);
+        return;
+    }
+    // A game **scene** (a combat arena, etc.) is modal: the game declares it, the renderer draws it blind.
+    if let Some(scene) = &scene.0 {
+        draw_scene(&mut commands, scene, &affordances.0);
         return;
     }
     build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
@@ -1829,155 +1826,6 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
     ));
 }
 
-// ---- v2 board arena (the interactive fight rendered from the cards) ------------------------------------
-
-/// **The single authority for "is a fight modal right now".** The v2 arena is *modal*: it owns the whole
-/// screen whenever it **exists** (a top-level `[Arena]` pile), independent of which zone `focus` points at.
-///
-/// Every arena-aware system — the draw dispatch, `animate_nodes`, the drag-end resolver — MUST gate on this,
-/// **never on `focus_id()`**. Keying on `focus` is the exact bug that was fixed four separate times: clicking
-/// a rank sub-pile drills `focus` into it, so `arena == focus_id()` goes false while the arena is still up,
-/// and that one system silently misbehaves (tiles strand, controls vanish, drops snap back). Route new
-/// arena logic through here so that class of bug stays impossible.
-///
-/// (The renderer reaches past `cardtable-model` here only by the combat card-type / label conventions the
-/// game encodes on the board — `Arena` / `Pool` / rank labels, `unit` / `foe` / `phase` / `contact`. That
-/// string coupling is tracked as P3c; the game side's mirror of this check is `arena::find_arena`.)
-fn active_arena(tree: &Board) -> Option<PileId> {
-    tree.pile(tree.root_id())?
-        .subpiles()
-        .into_iter()
-        .find(|&p| tree.pile(p).map(|p| p.label.as_str()) == Some("Arena"))
-}
-
-/// A sub-pile of `arena` by label (the `Pool` or a rank pile).
-fn arena_sub(tree: &Board, arena: PileId, label: &str) -> Option<PileId> {
-    tree.pile(arena)?
-        .subpiles()
-        .into_iter()
-        .find(|&p| tree.pile(p).map(|p| p.label.as_str()) == Some(label))
-}
-
-/// Whether `pile` is a sub-pile of the arena (a formation drop target: a rank pile or the Pool).
-fn is_arena_subpile(tree: &Board, arena: PileId, pile: PileId) -> bool {
-    tree.pile(arena)
-        .map(|p| p.subpiles())
-        .unwrap_or_default()
-        .contains(&pile)
-}
-
-/// The rank piles in formation display order (front rank first), with their one-letter tag.
-const RANK_ROWS: [(&str, char); 3] = [("Outrider", 'O'), ("Vanguard", 'V'), ("Rearguard", 'R')];
-
-/// One combatant parsed from its rank-pile card: identity + mutable state (HP/tempo on detail 0–1) + the
-/// player's staged plan (active / aim / bid / react on detail 2+). Its `rank` is the pile it was found in.
-struct ArenaUnit {
-    card: CardId,
-    name: String,
-    party: bool,
-    rank: char,
-    hp: u32,
-    max: u32,
-    tempo: u32,
-    finesse: u32,
-    melee: bool,
-    ranged: bool,
-    area: bool,
-    fallen: bool,
-    active: bool,
-    aim: Option<CardId>,
-    bid: u32,
-    react: Option<String>,
-}
-
-/// Parse the integer that follows `prefix` on `line`, stopping at the first `/` or space (e.g. `"HP 2/3"`).
-fn detail_num(line: &str, prefix: &str) -> u32 {
-    line.strip_prefix(prefix)
-        .and_then(|s| s.split(['/', ' ']).next())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
-}
-
-fn read_arena_unit(tree: &Board, card: CardId, rank: char) -> Option<ArenaUnit> {
-    let c = tree.card(card)?;
-    let party = match c.card_type() {
-        "unit" => true,
-        "foe" => false,
-        _ => return None,
-    };
-    let d = c.detail();
-    let hp = d.first().map(|l| detail_num(l, "HP ")).unwrap_or(0);
-    let max = d
-        .first()
-        .and_then(|l| l.split('/').nth(1))
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(hp);
-    let tempo = d.get(1).map(|l| detail_num(l, "Tempo ")).unwrap_or(0);
-    let finesse = d
-        .get(2)
-        .map(|l| detail_num(l, "Finesse "))
-        .unwrap_or(1)
-        .max(1);
-    let melee = d.get(2).is_some_and(|l| l.contains("Melee"));
-    let ranged = d.get(2).is_some_and(|l| l.contains("Ranged"));
-    let area = d.get(2).is_some_and(|l| l.contains("Area"));
-    let mut u = ArenaUnit {
-        card,
-        name: c.front_title().to_string(),
-        party,
-        rank,
-        hp,
-        max,
-        tempo,
-        finesse,
-        melee,
-        ranged,
-        area,
-        fallen: hp == 0,
-        active: false,
-        aim: None,
-        bid: 0,
-        react: None,
-    };
-    for line in d.iter().skip(3) {
-        if line == "active" {
-            u.active = true;
-        } else if let Some(id) = line.strip_prefix("aim ") {
-            u.aim = id.trim().parse().ok().map(CardId);
-        } else if let Some(n) = line.strip_prefix("bid ") {
-            u.bid = n.trim().parse().unwrap_or(0);
-        } else if let Some(r) = line.strip_prefix("react ") {
-            u.react = Some(r.to_string());
-        }
-    }
-    Some(u)
-}
-
-/// The combatants in one rank pile (in order).
-fn units_in_rank(tree: &Board, arena: PileId, label: &str, rank: char) -> Vec<ArenaUnit> {
-    arena_sub(tree, arena, label)
-        .map(|p| tree.content_cards(p))
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|c| read_arena_unit(tree, c, rank))
-        .collect()
-}
-
-/// The card titles of a phase deck (`[Phases]` / `[Steps]`), top card first - the current phase is the top.
-fn deck_names(tree: &Board, arena: PileId, label: &str) -> Vec<String> {
-    arena_sub(tree, arena, label)
-        .and_then(|p| tree.pile(p))
-        .map(|pile| pile.cards())
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|c| tree.card(c).map(|k| k.front_title().to_string()))
-        .collect()
-}
-
-/// The two phase decks in their fixed canonical order (the physical decks rotate; the display does not).
-const MAJOR_ORDER: [&str; 6] = ["Marshal", "Intercept", "Volley", "Raid", "Clash", "Breach"];
-const STEP_ORDER: [&str; 3] = ["Catch", "React", "Extra"];
-
 /// The **visible phase-deck card**: the UI representation of a physical rotating phase deck. Draws the phases
 /// in their fixed order (Marshal..Breach) with the *current* one highlighted, so how far along the round is
 /// reads at a glance. The physical deck rotates so its top is current; here the highlight just moves down the
@@ -2030,613 +1878,6 @@ fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, order: &[&st
                 });
             }
         });
-}
-
-/// Build the modal **v2 combat arena** from the board: a phase banner, then either the **formation** (during
-/// Marshal — assign heroes to rank rows) or the **combat lanes** (during a fight step), then the Commit
-/// control. Everything is read from the arena's rank piles and loose phase/contact cards.
-fn build_arena_v2_ui(commands: &mut Commands, tree: &Board, arena: PileId, affordances: &[String]) {
-    let loose = tree.content_cards(arena);
-    // The phase is read from the two rotating decks: the top of [Phases] is the current major phase, and (once
-    // the schedule is running) the top of [Steps] is the current mini-phase. The decks' card order *is* the
-    // phase, so these lists also drive the two visible phase-deck cards below.
-    let phase_names = deck_names(tree, arena, "Phases");
-    let step_names = deck_names(tree, arena, "Steps");
-    let major = phase_names
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "Marshal".to_string());
-    let marshal = major == "Marshal";
-    let step = if marshal {
-        "Marshal".to_string()
-    } else {
-        step_names
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "Catch".to_string())
-    };
-    let round = loose
-        .iter()
-        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("round"))
-        .and_then(|&c| tree.card(c))
-        .map(|c| c.front_title().to_string())
-        .unwrap_or_default();
-    // Legal rank pairs for the current sub-phase, read off the [Phases] top card, for lane selectability.
-    let pairs: Vec<(char, char)> = arena_sub(tree, arena, "Phases")
-        .and_then(|p| tree.pile(p).and_then(|pile| pile.cards().first().copied()))
-        .and_then(|top| tree.card(top))
-        .map(|c| c.detail().to_vec())
-        .unwrap_or_default()
-        .iter()
-        .find_map(|l| l.strip_prefix("Pairs: "))
-        .map(|s| {
-            s.split(',')
-                .filter_map(|p| {
-                    let mut it = p.split('>');
-                    Some((it.next()?.chars().next()?, it.next()?.chars().next()?))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let name_of = |id: CardId| {
-        tree.card(id)
-            .map(|c| c.front_title().to_string())
-            .unwrap_or_default()
-    };
-    let m = palette::MDASH;
-    let prompt = match step.as_str() {
-        "Catch" => {
-            format!(
-                "Catch {m} tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
-            )
-        }
-        "React" => format!(
-            "React {m} tap a struck hero to cycle Eat / Evade / Strike Back (Strike Back answers a melee blow only)."
-        ),
-        "Extra" => format!("Extra strikes {m} tap a hero in contact to spend its remaining tempo."),
-        _ => format!("Formation {m} drag each hero into a rank row (or tap to cycle), then Start."),
-    };
-
-    // The arena controls: Commit (index 0) and Cancel (index 1). During Marshal, Commit (Start) is only live
-    // when the formation is complete (an empty Pool); Cancel is always live.
-    let ready = !marshal
-        || arena_sub(tree, arena, "Pool").is_none_or(|p| {
-            tree.content_cards(p)
-                .iter()
-                .all(|&c| tree.card(c).map(|k| k.card_type()) != Some("unit"))
-        });
-
-    commands
-        .spawn((
-            CardTableRoot,
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Stretch,
-                ..default()
-            },
-            BackgroundColor(FELT),
-        ))
-        .with_children(|root| {
-            // Left sidebar: the two phase decks, stacked. The physical decks rotate; these show the fixed
-            // order (Marshal..Breach) with the current phase highlighted, so progress reads down the left edge.
-            // The mini-phase deck appears only once the schedule is running (not during Marshal).
-            root.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::FlexStart,
-                padding: UiRect::all(Val::Px(12.0)),
-                row_gap: Val::Px(10.0),
-                ..default()
-            })
-            .with_children(|side| {
-                spawn_phase_deck(side, "Phase", &MAJOR_ORDER, &major);
-                if !marshal {
-                    spawn_phase_deck(side, "Step", &STEP_ORDER, &step);
-                }
-            });
-
-            // Main column: the round, the per-step prompt, then the rank rows / lanes (fill + scroll). Bottom
-            // padding keeps the last row clear of the pinned footer bar.
-            root.spawn(Node {
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(12.0)),
-                row_gap: Val::Px(8.0),
-                ..default()
-            })
-            .with_children(|main| {
-                main.spawn((
-                    Text::new(round.clone()),
-                    TextFont {
-                        font_size: FONT_HEAD,
-                        ..default()
-                    },
-                    TextColor(INK),
-                ));
-                arena_prompt_line(main, &prompt);
-                main.spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    min_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::FlexStart,
-                    row_gap: Val::Px(8.0),
-                    padding: UiRect::bottom(Val::Px(56.0)),
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                })
-                .with_children(|mid| {
-                    if marshal {
-                        build_formation(mid, tree, arena);
-                    } else {
-                        build_combat_lanes(mid, tree, arena, &loose, &step, &pairs, &name_of);
-                    }
-                });
-            });
-
-            // Footer controls — pinned to the viewport bottom so they are *always* visible regardless of how
-            // tall the formation grows (flex alone kept pushing them off-screen).
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    bottom: Val::Px(8.0),
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::Center,
-                    column_gap: Val::Px(10.0),
-                    padding: UiRect::vertical(Val::Px(6.0)),
-                    ..default()
-                },
-                BackgroundColor(FELT),
-            ))
-            .with_children(|row| {
-                for (i, label) in affordances.iter().enumerate() {
-                    if i == 0 && !ready {
-                        spawn_disabled_nav(row, label);
-                    } else {
-                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
-                    }
-                }
-            });
-        });
-}
-
-/// The **formation** (Marshal): a row per rank, then the `[Pool]` row of unranked heroes at the bottom (next
-/// to the Start control, where heroes are drawn *from*). Each row is a `PileDropZone` over its rank/pool
-/// pile, so **dragging** a hero anywhere into a row moves it there (rank = pile membership); tapping a hero
-/// cycles it to the next rank (the no-drag path). Foes show in their rank row for context (not draggable).
-fn build_formation(root: &mut ChildSpawnerCommands, tree: &Board, arena: PileId) {
-    // One row per rank (front to back).
-    for (label, rank) in RANK_ROWS {
-        if let Some(pile) = arena_sub(tree, arena, label) {
-            formation_row(root, tree, pile, label, Some(rank));
-        }
-    }
-    // The Pool of unranked heroes sits at the bottom — where you drag them up from into a rank.
-    if let Some(pool) = arena_sub(tree, arena, "Pool") {
-        formation_row(root, tree, pool, "Heroes", None);
-    }
-}
-
-/// One formation row: a full-width `PileDropZone` over `pile`, a rank label on the left, then its members —
-/// heroes as draggable [`Movable`] tiles, foes as static context tiles.
-fn formation_row(
-    root: &mut ChildSpawnerCommands,
-    tree: &Board,
-    pile: PileId,
-    label: &str,
-    rank: Option<char>,
-) {
-    root.spawn((
-        PileDropZone(pile),
-        Node {
-            position_type: PositionType::Relative,
-            width: Val::Px(720.0),
-            min_height: Val::Px(SMALL_H + 12.0),
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
-            padding: UiRect::all(Val::Px(6.0)),
-            border: UiRect::all(Val::Px(1.0)),
-            border_radius: BorderRadius::all(Val::Px(8.0)),
-            ..default()
-        },
-        BackgroundColor(PANEL),
-        BorderColor::all(MUTED),
-    ))
-    .with_children(|row| {
-        arena_lane_label(row, label);
-        for card in tree.content_cards(pile) {
-            let Some(u) = read_arena_unit(tree, card, rank.unwrap_or('?')) else {
-                continue;
-            };
-            // Formation is about arranging *your* party — foes (pre-ranked in their pile) are not shown here.
-            if u.party {
-                spawn_formation_tile(row, &u);
-            }
-        }
-    });
-}
-
-/// The **combat lanes** (Catch / React / Extra): one row per rank, party on the left of the divider, foes on
-/// the right, each unit showing its staged plan; then the landed contacts. Units are tap targets.
-/// A combat tile's selection state — how the player can interact with it *this step*.
-#[derive(Clone, Copy, PartialEq)]
-enum Sel {
-    /// Nothing to do with this card now — dimmed, recedes.
-    No,
-    /// A legal thing to act on (catch it, target it, react with it) — an "available" cue.
-    Yes,
-    /// The current choice: the active attacker, the aimed foe, or a unit with a staged action — highlighted.
-    On,
-}
-
-fn build_combat_lanes(
-    root: &mut ChildSpawnerCommands,
-    tree: &Board,
-    arena: PileId,
-    loose: &[CardId],
-    step: &str,
-    pairs: &[(char, char)],
-    name_of: &dyn Fn(CardId) -> String,
-) {
-    let all: Vec<ArenaUnit> = RANK_ROWS
-        .iter()
-        .flat_map(|&(label, rank)| units_in_rank(tree, arena, label, rank))
-        .collect();
-
-    // Landed-contact edges (attacker card → target card, at bid) — drives React/Extra selectability + the log.
-    let edges: Vec<(CardId, CardId, u32)> = loose
-        .iter()
-        .filter(|&&c| tree.card(c).map(|k| k.card_type()) == Some("contact"))
-        .filter_map(|&c| {
-            let d = tree.card(c)?.detail().to_vec();
-            Some((
-                CardId(detail_num(d.first()?, "from ") as u64),
-                CardId(detail_num(d.get(1)?, "to ") as u64),
-                detail_num(d.get(2)?, "bid "),
-            ))
-        })
-        .collect();
-
-    // The active party attacker (its rank + aim), for Catch foe-targeting cues.
-    let active = all.iter().find(|u| u.party && u.active);
-    // Can the attacker reach the target *and* afford the minimum landing bid (ceil(F_tgt / F_att) <= tempo)?
-    let can_land = |atk: &ArenaUnit, tgt: &ArenaUnit| {
-        tgt.finesse.div_ceil(atk.finesse.max(1)).max(1) <= atk.tempo
-    };
-    let legal = |a: char, t: char| pairs.iter().any(|&(pa, pt)| pa == a && pt == t);
-    // In React a struck unit only has a choice if it can *afford* one: Evade needs enough Tempo to strictly
-    // beat an incoming bid; Strike Back needs a Tempo card and a melee answer to a melee blow. A spent unit
-    // (Tempo 0) can only Eat, so it is not selectable.
-    let react_choice = |u: &ArenaUnit| -> bool {
-        if u.fallen || u.tempo == 0 {
-            return false;
-        }
-        let incoming: Vec<&(CardId, CardId, u32)> =
-            edges.iter().filter(|&&(_, to, _)| to == u.card).collect();
-        let evade_ok = incoming
-            .iter()
-            .any(|&&(_, _, bid)| bid / u.finesse.max(1) < u.tempo);
-        let strikeback_ok = u.melee
-            && incoming.iter().any(|&&(from, _, _)| {
-                all.iter()
-                    .find(|a| a.card == from)
-                    .is_some_and(|a| a.rank != 'R')
-            });
-        evade_ok || strikeback_ok
-    };
-
-    let sel_of = |u: &ArenaUnit| -> Sel {
-        match step {
-            // A party unit is selectable only if it has a foe it can legally reach AND afford to land on.
-            "Catch" if u.party => {
-                if u.active {
-                    Sel::On
-                } else if !u.fallen
-                    && u.tempo > 0
-                    && unit_effective(u)
-                    && all
-                        .iter()
-                        .any(|f| !f.party && !f.fallen && legal(u.rank, f.rank) && can_land(u, f))
-                {
-                    Sel::Yes
-                } else {
-                    Sel::No
-                }
-            }
-            // A foe is a target only if the active attacker is effective in its rank AND can legally reach and
-            // afford it (an off-range attacker's strike would land nothing, so it never lights up a target).
-            "Catch" => match active {
-                Some(atk) if atk.aim == Some(u.card) => Sel::On,
-                Some(atk)
-                    if !u.fallen
-                        && unit_effective(atk)
-                        && legal(atk.rank, u.rank)
-                        && can_land(atk, u) =>
-                {
-                    Sel::Yes
-                }
-                _ => Sel::No,
-            },
-            "React" if u.party && react_choice(u) => {
-                if u.react.is_some() {
-                    Sel::On
-                } else {
-                    Sel::Yes
-                }
-            }
-            "Extra"
-                if u.party
-                    && !u.fallen
-                    && u.tempo > 0
-                    && edges.iter().any(|&(from, _, _)| from == u.card) =>
-            {
-                if u.bid > 0 {
-                    Sel::On
-                } else {
-                    Sel::Yes
-                }
-            }
-            _ => Sel::No,
-        }
-    };
-
-    // Fix the party side to a single width (the widest rank's party count) so the divider - and thus the
-    // foe side - lines up vertically across all three rows. Fewer heroes just leave empty space before the
-    // divider rather than pulling it left.
-    let max_party = RANK_ROWS
-        .iter()
-        .map(|&(_, rank)| all.iter().filter(|u| u.party && u.rank == rank).count())
-        .max()
-        .unwrap_or(0);
-    let party_w = if max_party == 0 {
-        0.0
-    } else {
-        max_party as f32 * SMALL_W + (max_party - 1) as f32 * 8.0
-    };
-
-    // Left-align the rank rows within one column so the rank cards form a true vertical column (the main
-    // area centers its children, which would otherwise center each row on its own width and stagger the
-    // rank cards). The block itself still sits centered in the main area.
-    root.spawn(Node {
-        flex_direction: FlexDirection::Column,
-        align_items: AlignItems::FlexStart,
-        row_gap: Val::Px(6.0),
-        ..default()
-    })
-    .with_children(|lanes| {
-        for (label, rank) in RANK_ROWS {
-            lanes
-                .spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(8.0),
-                    min_height: Val::Px(SMALL_H + 8.0),
-                    ..default()
-                })
-                .with_children(|lane| {
-                    spawn_rank_card(lane, label);
-                    // Fixed-width party cell (left-aligned) so every row's divider sits at the same x.
-                    lane.spawn(Node {
-                        width: Val::Px(party_w),
-                        flex_direction: FlexDirection::Row,
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(8.0),
-                        ..default()
-                    })
-                    .with_children(|party| {
-                        for u in all.iter().filter(|u| u.party && u.rank == rank) {
-                            spawn_arena_v2_unit(party, u, sel_of(u), step, name_of);
-                        }
-                    });
-                    arena_divider(lane);
-                    for u in all.iter().filter(|u| !u.party && u.rank == rank) {
-                        spawn_arena_v2_unit(lane, u, sel_of(u), step, name_of);
-                    }
-                });
-        }
-    });
-
-    // The combat log: a large card under the lanes with the full state of this phase — who may strike whom,
-    // every target/reaction/strike decision, and the contacts that landed.
-    let name_by_card = |c: CardId| {
-        all.iter()
-            .find(|u| u.card == c)
-            .map(|u| u.name.clone())
-            .unwrap_or_else(|| name_of(c))
-    };
-    let (arrow, mdash, times) = (palette::ARROW, palette::MDASH, palette::TIMES);
-    let mut log: Vec<String> = Vec::new();
-    // Phases auto-resolved (no decision for you) since your last commit - one brief line. An entire skipped
-    // sub-phase collapses to just its name; a partial skip keeps the step and reason.
-    let skips: Vec<String> = loose
-        .iter()
-        .find(|&&c| tree.card(c).map(|k| k.card_type()) == Some("skiplog"))
-        .and_then(|&c| tree.card(c))
-        .map(|c| c.detail().to_vec())
-        .unwrap_or_default();
-    log.extend(condense_skips(&skips));
-    if !pairs.is_empty() {
-        // Each pair is annotated with its range - the attacker's position fixes it (Rearguard fires ranged;
-        // Vanguard/Outrider strike melee), so a body must carry that attack type to connect.
-        let pretty = pairs
-            .iter()
-            .map(|&(a, t)| {
-                format!(
-                    "{} {arrow} {} ({})",
-                    rank_word(a),
-                    rank_word(t),
-                    rank_range_word(a)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",  ");
-        log.push(format!("This phase, may strike:  {pretty}"));
-    }
-    match step {
-        "Catch" => {
-            log.push("Targets".into());
-            let mut any = false;
-            for u in all.iter().filter(|u| u.party && u.aim.is_some()) {
-                log.push(format!(
-                    "  {} {arrow} {}  (bid {})",
-                    u.name,
-                    name_by_card(u.aim.unwrap()),
-                    u.bid
-                ));
-                any = true;
-            }
-            if !any {
-                log.push("  (no targets chosen yet)".into());
-            }
-        }
-        "React" => {
-            log.push("Strikes landed & reactions".into());
-            if edges.is_empty() {
-                log.push("  (nobody was caught)".into());
-            }
-            for &(from, to, bid) in &edges {
-                let react = all
-                    .iter()
-                    .find(|u| u.card == to && u.party)
-                    .map(|u| u.react.clone().unwrap_or_else(|| "Eat".into()))
-                    .unwrap_or_else(|| "Eat".into());
-                log.push(format!(
-                    "  {} struck {}  (bid {}) {mdash} {}",
-                    name_by_card(from),
-                    name_by_card(to),
-                    bid,
-                    react
-                ));
-            }
-        }
-        "Extra" => {
-            log.push("Surviving contacts & extra strikes".into());
-            if edges.is_empty() {
-                log.push("  (no contacts survived)".into());
-            }
-            for &(from, to, _) in &edges {
-                let act = all
-                    .iter()
-                    .find(|u| u.card == from)
-                    .map(|u| {
-                        if !u.party {
-                            "extra strike (foe)".into()
-                        } else if u.bid > 0 {
-                            format!("extra strike {times}{}", u.bid)
-                        } else {
-                            "holding".into()
-                        }
-                    })
-                    .unwrap_or_default();
-                log.push(format!(
-                    "  {} on {} {mdash} {}",
-                    name_by_card(from),
-                    name_by_card(to),
-                    act
-                ));
-            }
-        }
-        _ => {}
-    }
-    arena_log_panel(root, &log);
-}
-
-/// Condense the auto-skip notes (`"phase|step|reason"`) into one brief line. Consecutive skips of the same
-/// sub-phase collapse to just the phase name when the *whole* sub-phase (all three steps) was skipped;
-/// a partial skip keeps `"phase step (reason)"`. Returns `None` when nothing was skipped.
-/// One `Skipped: {sub-phase} ({targeting})` line per auto-passed sub-phase — the targeting we did not get to,
-/// spelled out (e.g. `Skipped: Clash (Rearguard -> Vanguard, Vanguard -> Vanguard)`). Each skiplog entry is
-/// `"{phase}|{step}|{reason}|{pairs}"`; a sub-phase is listed once (its steps share the same pairs), in the
-/// order the walk passed them.
-fn condense_skips(skips: &[String]) -> Vec<String> {
-    let mut seen: Vec<&str> = Vec::new();
-    let mut out: Vec<String> = Vec::new();
-    for s in skips {
-        let mut it = s.split('|');
-        let phase = it.next().unwrap_or("");
-        let (_step, _reason) = (it.next(), it.next());
-        let pairs = it.next().unwrap_or("");
-        if phase.is_empty() || seen.contains(&phase) {
-            continue;
-        }
-        seen.push(phase);
-        let targeting = pairs
-            .split(',')
-            .filter(|p| !p.is_empty())
-            .filter_map(|p| {
-                let mut c = p.split('>');
-                let a = c.next()?.chars().next()?;
-                let t = c.next()?.chars().next()?;
-                Some(format!(
-                    "{} {} {}",
-                    rank_word(a),
-                    palette::ARROW,
-                    rank_word(t)
-                ))
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push(format!("Skipped: {phase} ({targeting})"));
-    }
-    out
-}
-
-/// The full rank name for a one-letter code (`'V'`/`'O'`/`'R'`).
-fn rank_word(c: char) -> &'static str {
-    match c {
-        'O' => "Outrider",
-        'R' => "Rearguard",
-        _ => "Vanguard",
-    }
-}
-
-/// A strike thrown *from* rank `r` is **ranged** iff it is the Rearguard (`'R'`) — a mirror of the game's
-/// `combat::rank_is_ranged`; a Vanguard/Outrider (`'V'`/`'O'`) strikes melee. `'?'` (unranked Pool) is not a
-/// position and has no range.
-fn rank_ranged(r: char) -> bool {
-    r == 'R'
-}
-
-/// The attack type a position fights with, as a word for help text.
-fn rank_range_word(r: char) -> &'static str {
-    if rank_ranged(r) { "ranged" } else { "melee" }
-}
-
-/// Whether a unit sits in an actual position (a rank, not the unranked Pool `'?'`).
-fn unit_ranked(u: &ArenaUnit) -> bool {
-    matches!(u.rank, 'V' | 'O' | 'R')
-}
-
-/// Whether `u` is **effective** as an attacker in its current position: it must carry the attack type the
-/// position uses (Rearguard -> ranged; Vanguard/Outrider -> melee). Mirrors `combat::effective_in_rank`. An
-/// unranked (Pool) unit is trivially "effective" — it has no position to mismatch yet.
-fn unit_effective(u: &ArenaUnit) -> bool {
-    if !unit_ranked(u) {
-        return true;
-    }
-    if rank_ranged(u.rank) {
-        u.ranged
-    } else {
-        u.melee
-    }
-}
-
-/// This unit's reach as a short word — which attack types it carries.
-fn reach_word(u: &ArenaUnit) -> &'static str {
-    match (u.melee, u.ranged) {
-        (true, true) => "melee + ranged",
-        (true, false) => "melee",
-        (false, true) => "ranged",
-        (false, false) => "no strike",
-    }
 }
 
 /// The **combat log**: a large card under the lanes listing this phase's whole state. Un-indented lines are
@@ -2718,134 +1959,235 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
         });
 }
 
-/// A **formation tile**: a combatant during Marshal. A hero is [`Movable`] (drag it into a rank row) and an
-/// [`ArenaUnitCard`] (tap it to cycle rank) — both input modes at once. A foe is a static context tile in its
-/// (fixed) rank row.
-fn spawn_formation_tile(parent: &mut ChildSpawnerCommands, u: &ArenaUnit) {
-    let accent = type_accent(if u.party { "hero" } else { "foe" });
-    let dot = palette::MIDDOT;
-    let bar = if u.party {
-        format!("HP {}/{} {dot} T{}", u.hp, u.max, u.tempo)
-    } else {
-        format!("{} {dot} HP {}/{}", u.rank, u.hp, u.max)
-    };
-    let mut tile = parent.spawn((
-        Node {
-            width: Val::Px(SMALL_W),
-            min_height: Val::Px(SMALL_H),
-            padding: UiRect::all(Val::Px(8.0)),
-            border: UiRect::all(Val::Px(2.0)),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            row_gap: Val::Px(3.0),
-            border_radius: BorderRadius::all(Val::Px(10.0)),
-            overflow: Overflow::clip(),
-            ..default()
-        },
-        BackgroundColor(if u.party { CARD_FACE } else { CARD_BACK }),
-        BorderColor::all(accent),
-        card_shadow(),
-    ));
-    if u.party {
-        tile.insert((Movable(TableNode::Card(u.card)), ArenaUnitCard(u.card)));
-    }
-    tile.with_children(|c| {
-        c.spawn((
-            Text::new(u.name.clone()),
-            TextFont {
-                font_size: title_font(&u.name, FONT_TITLE, SMALL_INNER),
+// ---- drawing a game Scene (a rules-blind modal: tracks, tiles, rows/lanes, links, log) ----------------
+
+/// Draw a game-declared [`Scene`] in place of the felt: progress tracks down the left, a heading + prompt,
+/// the body (assignment rows or two-sided lanes) in a scroll region, an optional log, and the zone's
+/// affordance controls pinned to the footer. The renderer draws this **without knowing what any of it means**
+/// — the game decided every tile, badge, highlight and link. (Links are drawn separately by
+/// [`animate_target_arrows`], which reads the same [`SceneState`].)
+fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
+    commands
+        .spawn((
+            CardTableRoot,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Stretch,
                 ..default()
             },
-            TextLayout::no_wrap(),
-            TextColor(if u.party { CARD_INK } else { INK }),
-        ));
-        c.spawn((
-            Text::new(bar),
-            TextFont {
-                font_size: FONT_BODY,
+            BackgroundColor(FELT),
+        ))
+        .with_children(|root| {
+            // Left sidebar: the progress tracks, stacked (fixed order, current highlighted).
+            root.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::FlexStart,
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(10.0),
                 ..default()
-            },
-            TextColor(MUTED),
-        ));
-        // Reach badges — which attack types this body carries (melee close, ranged from the back), so you can
-        // position it on sight: melee -> Vanguard/Outrider, ranged -> Rearguard.
-        let reach_color = match (u.melee, u.ranged) {
-            (true, false) => MELEE_CUE,
-            (false, true) => RANGED_CUE,
-            _ => MUTED, // both, or neither
-        };
-        c.spawn((
-            Text::new(reach_word(u)),
-            TextFont {
-                font_size: FONT_BADGE,
+            })
+            .with_children(|side| {
+                for track in &scene.tracks {
+                    let labels: Vec<&str> = track.items.iter().map(|i| i.label.as_str()).collect();
+                    let current = track
+                        .items
+                        .iter()
+                        .find(|i| i.current)
+                        .map(|i| i.label.as_str())
+                        .unwrap_or("");
+                    spawn_phase_deck(side, &track.title, &labels, current);
+                }
+            });
+
+            // Main column: heading, prompt, then the body + log (fill + scroll). Bottom padding keeps the
+            // last row clear of the pinned footer bar.
+            root.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(8.0),
                 ..default()
-            },
-            TextColor(reach_color),
-        ));
-        // Placed in a rank it can't use? Legal, but dead weight — say so plainly (spec 4.2 self-sort).
-        if !unit_effective(u) {
-            c.spawn((
-                Text::new(format!("{} ineffective here", palette::TIMES)),
-                TextFont {
-                    font_size: FONT_BADGE,
+            })
+            .with_children(|main| {
+                if !scene.heading.is_empty() {
+                    main.spawn((
+                        Text::new(scene.heading.clone()),
+                        TextFont {
+                            font_size: FONT_HEAD,
+                            ..default()
+                        },
+                        TextColor(INK),
+                    ));
+                }
+                if !scene.prompt.is_empty() {
+                    arena_prompt_line(main, &scene.prompt);
+                }
+                main.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::FlexStart,
+                    row_gap: Val::Px(8.0),
+                    padding: UiRect::bottom(Val::Px(56.0)),
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                })
+                .with_children(|mid| {
+                    match &scene.body {
+                        SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
+                        SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
+                    }
+                    if !scene.log.is_empty() {
+                        arena_log_panel(mid, &scene.log);
+                    }
+                });
+            });
+
+            // Footer controls — the zone's affordances, pinned to the viewport bottom so they stay visible.
+            // A control the scene marks disabled is drawn inert.
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    bottom: Val::Px(8.0),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::Center,
+                    column_gap: Val::Px(10.0),
+                    padding: UiRect::vertical(Val::Px(6.0)),
                     ..default()
                 },
-                TextColor(WARN_CUE),
-            ));
+                BackgroundColor(FELT),
+            ))
+            .with_children(|row| {
+                for (i, label) in affordances.iter().enumerate() {
+                    if scene.disabled_controls.contains(&i) {
+                        spawn_disabled_nav(row, label);
+                    } else {
+                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
+                    }
+                }
+            });
+        });
+}
+
+/// **Assignment rows** (a formation being arranged): each row is a full-width `PileDropZone` over its pile, a
+/// label, then its tiles. Dragging a `draggable` tile into any row's drop zone moves the card there.
+fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
+    for row in rows {
+        root.spawn((
+            PileDropZone(row.drop_pile),
+            Node {
+                position_type: PositionType::Relative,
+                width: Val::Px(720.0),
+                min_height: Val::Px(SMALL_H + 12.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(8.0),
+                padding: UiRect::all(Val::Px(6.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED),
+        ))
+        .with_children(|r| {
+            arena_lane_label(r, &row.label);
+            for tile in &row.tiles {
+                draw_scene_tile(r, tile);
+            }
+        });
+    }
+}
+
+/// **Two-sided lanes** (a face-off): one row per lane — a label, the left group in a fixed-width cell (so the
+/// divider lines up across lanes), the divider, then the right group.
+fn draw_scene_lanes(root: &mut ChildSpawnerCommands, lanes: &[Lane]) {
+    // Fix the left cell to the widest lane's left count so the divider aligns vertically across lanes.
+    let max_left = lanes.iter().map(|l| l.left.len()).max().unwrap_or(0);
+    let left_w = if max_left == 0 {
+        0.0
+    } else {
+        max_left as f32 * SMALL_W + (max_left - 1) as f32 * 8.0
+    };
+    root.spawn(Node {
+        flex_direction: FlexDirection::Column,
+        align_items: AlignItems::FlexStart,
+        row_gap: Val::Px(6.0),
+        ..default()
+    })
+    .with_children(|col| {
+        for lane in lanes {
+            col.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(8.0),
+                min_height: Val::Px(SMALL_H + 8.0),
+                ..default()
+            })
+            .with_children(|ln| {
+                spawn_rank_card(ln, &lane.label);
+                ln.spawn(Node {
+                    width: Val::Px(left_w),
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    ..default()
+                })
+                .with_children(|left| {
+                    for tile in &lane.left {
+                        draw_scene_tile(left, tile);
+                    }
+                });
+                arena_divider(ln);
+                for tile in &lane.right {
+                    draw_scene_tile(ln, tile);
+                }
+            });
         }
     });
 }
 
-/// A v2 arena unit tile: name · rank · HP · tempo, plus the staged plan (active / → aim / bid / reaction),
-/// tagged [`ArenaUnitCard`] so a tap edits that plan. Its **selection state** drives the visual: `On` is the
-/// current choice (bright ring), `Yes` is actionable this step (amber ring), `No` is dimmed (nothing to do).
-fn spawn_arena_v2_unit(
-    parent: &mut ChildSpawnerCommands,
-    u: &ArenaUnit,
-    sel: Sel,
-    step: &str,
-    name_of: &dyn Fn(CardId) -> String,
-) {
-    // Three-state visual: fallen recedes hardest, then No (dim), then Yes (available), then On (chosen).
-    // Cue by what a click *does* to the pending action, not just the state: green = confirm/target (a foe),
-    // amber = pick/switch a unit (a hero - selecting another aborts the current pick and re-arms), white =
-    // the armed subject (the active hero whose target you are choosing).
-    let (bg, border, ink) = if u.fallen {
-        (CARD_BACK, MUTED, MUTED)
-    } else {
-        match (sel, u.party) {
-            (Sel::On, true) => (CARD_FACE, ARMED_CUE, CARD_INK), // active hero: armed, awaiting a target
-            (Sel::On, false) => (CARD_FACE, TARGET_CUE, CARD_INK), // aimed foe: the confirmed target
-            (Sel::Yes, true) => (CARD_FACE, SELECTABLE_CUE, CARD_INK), // switch-to hero (aborts + re-arms)
-            (Sel::Yes, false) => (CARD_FACE, TARGET_CUE, CARD_INK),    // confirm-here foe
-            (Sel::No, _) => (DIM_FACE, MUTED, MUTED),
-        }
-    };
-    let border_w = if sel == Sel::On && !u.fallen {
-        3.0
-    } else {
-        2.0
-    };
-    let dot = palette::MIDDOT;
-    let bar = format!("{} {dot} HP {}/{} {dot} T{}", u.rank, u.hp, u.max, u.tempo);
-    // The staged-plan line: what this unit will do on Commit.
-    let mut plan = String::new();
-    if u.active {
-        plan.push(palette::BULLET);
-        plan.push(' ');
+/// The (background, border, ink, border-width) look for a tile's [`Highlight`] and [`Team`]. This is where a
+/// neutral emphasis level becomes a concrete ring/dim — the renderer's presentation choice, not the game's.
+fn tile_look(highlight: Highlight, team: Team) -> (Color, Color, Color, f32) {
+    match (highlight, team) {
+        (Highlight::Spent, _) => (CARD_BACK, MUTED, MUTED, 2.0),
+        (Highlight::Active, Team::Left) => (CARD_FACE, ARMED_CUE, CARD_INK, 3.0),
+        (Highlight::Active, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 3.0),
+        (Highlight::Available, Team::Left) => (CARD_FACE, SELECTABLE_CUE, CARD_INK, 2.0),
+        (Highlight::Available, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 2.0),
+        (Highlight::Dim, _) => (DIM_FACE, MUTED, MUTED, 2.0),
+        (Highlight::Idle, Team::Left) => (CARD_FACE, type_accent("hero"), CARD_INK, 2.0),
+        (Highlight::Idle, Team::Right) => (CARD_BACK, type_accent("foe"), INK, 2.0),
     }
-    if let Some(aim) = u.aim {
-        plan.push_str(&format!("{} {} ", palette::ARROW, name_of(aim)));
+}
+
+/// A [`Tone`] resolved to a palette color (the game's neutral emphasis/hue -> a concrete color).
+fn tone_color(tone: Tone) -> Color {
+    match tone {
+        Tone::Muted => MUTED,
+        Tone::Warn => WARN_CUE,
+        Tone::Good => TARGET_CUE,
+        Tone::Cool => MELEE_CUE,
+        Tone::Warm => RANGED_CUE,
+        Tone::Faded => FACE_DOWN_EDGE,
     }
-    if u.bid > 0 {
-        plan.push_str(&format!("bid {} ", u.bid));
-    }
-    if let Some(react) = &u.react {
-        plan.push_str(react);
-    }
-    let mut tile = parent.spawn((
-        ArenaUnitCard(u.card),
+}
+
+/// One [`Scene`] tile: a card with a title, badge lines, a highlight ring, and its input verbs. Tagged
+/// [`ArenaUnitCard`] when tappable (a tap routes to the game's `tap_intention`) and [`Movable`] when
+/// draggable (a drag drops into a row's pile). The renderer draws it; the game gave it all its meaning.
+fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
+    let (bg, border, ink, border_w) = tile_look(tile.highlight, tile.team);
+    let mut node = parent.spawn((
         Node {
             width: Val::Px(SMALL_W),
             min_height: Val::Px(SMALL_H),
@@ -2863,60 +2205,31 @@ fn spawn_arena_v2_unit(
         BorderColor::all(border),
         card_shadow(),
     ));
-    // Targeting-arrow anchors (Catch only): the armed hero is the source, each lit foe a target (the aimed one
-    // is confirmed). A per-frame system reads these to draw the dotted flow between them.
-    if step == "Catch" && !u.fallen {
-        match (sel, u.party) {
-            (Sel::On, true) => {
-                tile.insert(ArrowSource { area: u.area });
-            }
-            (Sel::On, false) => {
-                tile.insert(ArrowTarget { confirmed: true });
-            }
-            (Sel::Yes, false) => {
-                tile.insert(ArrowTarget { confirmed: false });
-            }
-            _ => {}
-        }
+    if tile.tappable {
+        node.insert(ArenaUnitCard(tile.card));
     }
-    tile.with_children(|c| {
+    if tile.draggable {
+        node.insert(Movable(TableNode::Card(tile.card)));
+    }
+    node.with_children(|c| {
         c.spawn((
-            Text::new(u.name.clone()),
+            Text::new(tile.title.clone()),
             TextFont {
-                font_size: title_font(&u.name, FONT_TITLE, SMALL_INNER),
+                font_size: title_font(&tile.title, FONT_TITLE, SMALL_INNER),
                 ..default()
             },
             TextLayout::no_wrap(),
             TextColor(ink),
         ));
-        c.spawn((
-            Text::new(bar),
-            TextFont {
-                font_size: FONT_BODY,
-                ..default()
-            },
-            TextColor(if u.fallen { FACE_DOWN_EDGE } else { MUTED }),
-        ));
-        // Off-range: a living body in a rank whose attack type it does not carry lands nothing here (spec 4.2).
-        // Flagged so its dimming reads as "wrong position," not merely "nothing staged."
-        if !u.fallen && !unit_effective(u) {
+        // The first badge is the stat bar (body font); the rest are compact cues (badge font).
+        for (i, badge) in tile.badges.iter().enumerate() {
             c.spawn((
-                Text::new(format!("{} off-range ({})", palette::TIMES, reach_word(u))),
+                Text::new(badge.text.clone()),
                 TextFont {
-                    font_size: FONT_BADGE,
+                    font_size: if i == 0 { FONT_BODY } else { FONT_BADGE },
                     ..default()
                 },
-                TextColor(WARN_CUE),
-            ));
-        }
-        if !plan.trim().is_empty() {
-            c.spawn((
-                Text::new(plan.trim().to_string()),
-                TextFont {
-                    font_size: FONT_BADGE,
-                    ..default()
-                },
-                TextColor(TARGET_CUE),
+                TextColor(tone_color(badge.tone)),
             ));
         }
     });
@@ -2925,8 +2238,8 @@ fn spawn_arena_v2_unit(
 /// Rebuild [`CardScreenRects`] from the current UI layout — **the one place** the physical→logical
 /// conversion lives. `UiGlobalTransform.translation` is a node's *physical*-pixel centre; `ComputedNode`
 /// carries its size and the `inverse_scale_factor` that maps both to logical pixels (what `Val::Px` uses).
-/// Covers table cards (`CardRef`) and arena combat tiles (`ArenaUnitCard`); rebuilt fresh each frame so
-/// despawned cards drop out.
+/// Covers table cards (`CardRef`) and scene tiles (`ArenaUnitCard`); rebuilt fresh each frame so despawned
+/// cards drop out.
 fn track_card_rects(
     mut rects: ResMut<CardScreenRects>,
     cards: Query<(&CardRef, &ComputedNode, &UiGlobalTransform)>,
@@ -2948,34 +2261,29 @@ fn track_card_rects(
     }
 }
 
-/// Draw the **targeting arrows** — the attention layer made visible. When a hero is armed during Catch, a
-/// dotted line of dots flows from it to each reachable foe (amber, sparse) and, once a target is aimed, a
-/// denser green line to that foe (confirmed). Endpoints come from [`CardScreenRects`] (the single position
-/// authority) — never re-derived here. Dots are transient top-level overlay nodes re-spawned each frame so
-/// they animate toward the target; they sit above the felt (`GlobalZIndex`) and never eat clicks.
-/// Presentation-only — wall-clock drives the flow, never the rules.
+/// Draw the **attention arrows** — the game-declared card-to-card links ([`Scene`] links) made visible as a
+/// flowing line of dots from each `from` card to its `to` card. Endpoints come from [`CardScreenRects`] (the
+/// single position authority) — never re-derived here. The renderer knows only "these two cards are linked
+/// right now" (the game reads the link as combat targeting; the renderer does not). Dots are transient
+/// top-level overlay nodes re-spawned each frame so they animate toward the target; they sit above the felt
+/// (`GlobalZIndex`) and never eat clicks. Presentation-only — wall-clock drives the flow, never the rules.
 fn animate_target_arrows(
     mut commands: Commands,
     time: Res<Time>,
     rects: Res<CardScreenRects>,
-    sources: Query<(&ArenaUnitCard, &ArrowSource)>,
-    targets: Query<(&ArenaUnitCard, &ArrowTarget)>,
+    scene: Res<SceneState>,
     dots: Query<Entity, With<ArrowDot>>,
 ) {
     for e in &dots {
         commands.entity(e).despawn(); // clear last frame's flow
     }
-    let Some((src, area)) = sources
-        .iter()
-        .next()
-        .and_then(|(c, s)| Some((rects.center(c.0)?, s.area)))
-    else {
-        return; // no armed hero (or not yet laid out) -> no arrows
+    let Some(scene) = &scene.0 else {
+        return; // no modal scene -> no links to draw
     };
     let phase = time.elapsed_secs();
-    for (card, target) in &targets {
-        if let Some(dst) = rects.center(card.0) {
-            spawn_arrow_dots(&mut commands, src, dst, target.confirmed, area, phase);
+    for link in &scene.links {
+        if let (Some(a), Some(b)) = (rects.center(link.from), rects.center(link.to)) {
+            spawn_arrow_dots(&mut commands, a, b, link.confirmed, link.broad, phase);
         }
     }
 }
@@ -3244,12 +2552,6 @@ fn build_ui(
     front: Option<CardId>,
     affordances: &[String],
 ) {
-    // A **board fight** in progress: the `[Arena]` zone is modal — render the interactive combat board
-    // straight from the cards (rank lanes, each unit's staged plan, the phase, the Commit control).
-    if let Some(pile) = active_arena(tree) {
-        build_arena_v2_ui(commands, tree, pile, affordances);
-        return;
-    }
     // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
     // root rather than panic the draw.
     let zone = if tree.pile(tree.focus_id()).is_some() {

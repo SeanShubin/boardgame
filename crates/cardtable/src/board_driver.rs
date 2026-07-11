@@ -10,7 +10,7 @@
 //! contextual actions as control cards without knowing the game.
 
 use bevy::prelude::*;
-use cardtable_model::{BoardGame, CardId, DropTarget};
+use cardtable_model::{BoardGame, CardId, DropTarget, Scene};
 
 use crate::{CardTablePlugin, CardTableSet, NeedsRebuild, Table};
 
@@ -36,6 +36,13 @@ pub struct TapRequest(pub Option<CardId>);
 /// tagged [`AffordanceControl`] with its index. Filled by [`sync_affordances`]; empty with no game/actions.
 #[derive(Resource, Default)]
 pub struct AffordanceLabels(pub Vec<String>);
+
+/// The **modal scene** the game wants drawn in place of the felt (a combat arena), or `None` for the ordinary
+/// table. Filled by [`sync_affordances`] from [`BoardGame::scene`](cardtable_model::BoardGame::scene); the
+/// renderer draws it without knowing what it means. Core-owned so `redraw` / the arrow overlay read it
+/// without a game type.
+#[derive(Resource, Default)]
+pub struct SceneState(pub Option<Scene>);
 
 /// A human-readable trace of each resolved drop — the dragged card, what it landed on (the *resolved*
 /// [`DropTarget`], not the raw pick-hit), and the outcome. Pushed by [`apply_drop`] (the one place that sees
@@ -157,13 +164,15 @@ fn apply_affordance<G>(
     }
 }
 
-/// Recompute the current zone's affordances from the game each frame: labels for `redraw`, intentions for
-/// [`apply_affordance`]. Cheap (a small lookup); runs before the Draw set so `redraw` sees fresh labels.
+/// Recompute the current zone's affordances **and** modal scene from the game each frame: labels + intentions
+/// for the controls, and the [`SceneState`] the renderer draws. Cheap (small lookups); runs before the Draw
+/// set so `redraw` sees fresh state.
 fn sync_affordances<G>(
     table: Res<Table>,
     game: Res<GameRes<G>>,
     mut labels: ResMut<AffordanceLabels>,
     mut affordances: ResMut<Affordances<G>>,
+    mut scene: ResMut<SceneState>,
 ) where
     G: BoardGame + Send + Sync + 'static,
     G::Intention: Send + Sync + 'static,
@@ -175,6 +184,7 @@ fn sync_affordances<G>(
         .into_iter()
         .map(|(_, intention)| intention)
         .collect();
+    scene.0 = game.0.scene(&table.0, focus);
 }
 
 // ---- the plugin ----------------------------------------------------------------------------------

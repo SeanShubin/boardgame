@@ -587,3 +587,133 @@ fn read_skips(board: &Board, arena: PileId) -> Vec<String> {
         .map(|c| c.detail().to_vec())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sample_table;
+
+    /// Open a fight from the sample board: recruit Vael (a Marksman), march to an encounter, open it.
+    fn open_a_fight() -> (Board, PileId) {
+        use crate::{CardTableGame, Intention};
+        use cardtable_model::BoardGame;
+
+        let mut board = sample_table();
+        let game = CardTableGame;
+        let top = |b: &Board, label: &str| {
+            b.pile(b.root_id())
+                .unwrap()
+                .subpiles()
+                .into_iter()
+                .find(|&p| b.pile(p).map(|q| q.label.as_str()) == Some(label))
+        };
+        let heroes = top(&board, "Heroes").unwrap();
+        let kit = top(&board, "Kit").unwrap();
+        let vael = board
+            .pile(heroes)
+            .unwrap()
+            .cards()
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
+            .unwrap();
+        let marksman = board
+            .pile(kit)
+            .unwrap()
+            .cards()
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Marksman"))
+            .unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::Equip {
+                identity: vael,
+                kit: marksman,
+            }],
+        );
+        let locations = top(&board, "Locations").unwrap();
+        let place = board
+            .pile(locations)
+            .unwrap()
+            .subpiles()
+            .into_iter()
+            .find(|&p| {
+                board
+                    .content_cards(p)
+                    .iter()
+                    .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
+            })
+            .unwrap();
+        let position = board
+            .content_cards(board.pile(locations).unwrap().subpiles()[4])
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+            .unwrap();
+        let progress = top(&board, "Progress").unwrap();
+        let _ = board.move_character(position, place, progress);
+        let arena = arena::open_fight(&mut board, place).expect("a fight opens");
+        (board, arena)
+    }
+
+    #[test]
+    fn no_fight_means_no_scene() {
+        let board = sample_table();
+        assert!(
+            scene(&board, board.root_id()).is_none(),
+            "with no arena up, the game asks for no modal scene (the renderer draws the felt)"
+        );
+    }
+
+    #[test]
+    fn a_fresh_fight_is_a_formation_scene() {
+        let (board, _arena) = open_a_fight();
+        let s = scene(&board, board.root_id()).expect("a fight is up, so there is a scene");
+        // Marshal: assignment rows, one of which is the Heroes pool holding the unranked party.
+        let SceneBody::Rows(rows) = &s.body else {
+            panic!("a fresh fight (Marshal) is an assignment-rows scene");
+        };
+        let heroes = rows
+            .iter()
+            .find(|r| r.label == "Heroes")
+            .expect("a Heroes pool row");
+        assert!(
+            heroes.tiles.iter().any(|t| t.title == "Vael Thornbrand"),
+            "the recruited hero is a draggable tile in the pool"
+        );
+        assert!(
+            heroes.tiles.iter().all(|t| t.draggable && t.tappable),
+            "formation tiles are both drag- and tap-able"
+        );
+        // The Phase track exists, currently on Marshal; the Start control (index 0) is disabled until ranked.
+        assert!(s.tracks.iter().any(|t| t.title == "Phase"));
+        assert_eq!(
+            s.disabled_controls,
+            vec![0],
+            "Start is inert until every hero is ranked"
+        );
+    }
+
+    #[test]
+    fn after_start_the_scene_becomes_lanes() {
+        let (mut board, arena) = open_a_fight();
+        // Rank the lone hero, then Start (commit Marshal) to enter the schedule.
+        let hero = arena::sub_pile(&board, arena, arena::POOL)
+            .map(|p| board.content_cards(p))
+            .unwrap_or_default()
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("unit"))
+            .unwrap();
+        let outrider = arena::sub_pile(&board, arena, "Outrider").unwrap();
+        arena::assign(&mut board, hero, outrider);
+        arena::commit(&mut board, arena); // Marshal -> the first sub-phase
+
+        let s = scene(&board, board.root_id()).expect("the fight is still up");
+        assert!(
+            matches!(s.body, SceneBody::Lanes(_)),
+            "once the schedule runs, the scene is two-sided lanes"
+        );
+        assert!(
+            s.tracks.iter().any(|t| t.title == "Step"),
+            "the Step track appears once the schedule is running"
+        );
+    }
+}
