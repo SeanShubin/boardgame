@@ -4,7 +4,9 @@
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{Arrangement, Board, BoardGame, CardId, DropTarget, PileId, Scene};
+use cardtable_model::{
+    Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Face, PileId, Scene,
+};
 
 use crate::sample_table;
 
@@ -217,6 +219,32 @@ fn equip(board: &mut Board, identity: CardId, kit: CardId) {
     }) {
         let _ = board.set_card_detail(pos, vec![format!("Kit: {kit_name}")]);
     }
+    // Station an app-only **kit manifest** at the front of the assembled deck: a header that names the kit
+    // (the cardset) and lists the build it produced - the ability + the stat line - so the deck declares its
+    // own composition and is auditable at a glance. It carries no new information (the stat / ability cards
+    // are already in the deck), so it is a `Virtual` projection: not counted in `physical_card_count`, minted
+    // freely, and removed on unequip. The map card says who took what; this says what the deck is.
+    if let Some(deck) = top_deck(board, &name)
+        && let Ok(manifest) = board.add_card(
+            deck,
+            Face::Up {
+                title: kit_name.clone(),
+            },
+            None,
+        )
+    {
+        let _ = board.set_card_kind(manifest, CardKind::Virtual);
+        let _ = board.set_card_type(manifest, "kit");
+        let mut detail = vec![format!("Ability: {}", recipe.ability)];
+        for (stat, value) in deckbound_content::catalog::stat_names()
+            .iter()
+            .zip(recipe.stats.iter())
+        {
+            detail.push(format!("{stat} {value}"));
+        }
+        let _ = board.set_card_detail(manifest, detail);
+        let _ = board.move_card(manifest, deck, 0); // an audit header, above the rest of the deck
+    }
 }
 
 fn unequip(board: &mut Board, label: CardId) {
@@ -226,6 +254,13 @@ fn unequip(board: &mut Board, label: CardId) {
     let Some(deck) = board.card(label).map(|c| c.home()) else {
         return;
     };
+    // Drop the app-only kit manifest (a Virtual readout) first, so the reconcile doesn't mistake it for a
+    // borrowed bank card and shove it into the Heroes stack (its default for an unrecognized card type).
+    for c in board.content_cards(deck) {
+        if board.card(c).map(|k| k.kind()) == Some(CardKind::Virtual) {
+            let _ = board.remove_card(c);
+        }
+    }
     let (Some(heroes), Some(stats), Some(numbers), Some(abilities)) = (
         top_deck(board, "Heroes"),
         top_deck(board, "Stats"),
@@ -432,6 +467,88 @@ mod tests {
                 .any(|l| l.contains("Kit: Marksman")),
             "the hero card shows its taken kit: {:?}",
             board.card(pos).unwrap().detail()
+        );
+    }
+
+    #[test]
+    fn equip_stations_an_auditable_kit_manifest() {
+        let game = CardTableGame;
+        let mut board = game.opening();
+        let root = board.root_id();
+        let before = board.physical_card_count(root);
+
+        let heroes = top_deck(&board, "Heroes").unwrap();
+        let kit = top_deck(&board, "Kit").unwrap();
+        let vael = card_in(&board, heroes, "Vael Thornbrand").unwrap();
+        let marksman = card_in(&board, kit, "Marksman").unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::Equip {
+                identity: vael,
+                kit: marksman,
+            }],
+        );
+
+        let deck = top_deck(&board, "Vael Thornbrand").expect("a character deck was assembled");
+        // The deck carries a Virtual "kit" manifest, titled for the kit, as its front (header) card - the
+        // deck declares its own composition, auditable at a glance.
+        let manifest = board
+            .content_cards(deck)
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("kit"))
+            .expect("the deck carries a kit manifest");
+        let m = board.card(manifest).unwrap();
+        assert_eq!(
+            m.kind(),
+            CardKind::Virtual,
+            "the manifest is an app-only projection, not conserved truth"
+        );
+        assert_eq!(m.front_title(), "Marksman", "it is titled for the kit");
+        assert_eq!(
+            board.content_cards(deck)[0],
+            manifest,
+            "it is the deck's header (front card)"
+        );
+        assert!(
+            m.detail().iter().any(|l| l.starts_with("Ability:")),
+            "it lists the ability: {:?}",
+            m.detail()
+        );
+        assert!(
+            m.detail().iter().any(|l| l.contains("Might")),
+            "it lists the stat line: {:?}",
+            m.detail()
+        );
+
+        // Conservation (PC.2): a Virtual readout carries no physical card, so the count is unchanged.
+        assert_eq!(
+            board.physical_card_count(root),
+            before,
+            "the manifest is not counted - equip stays conservation-clean"
+        );
+
+        // Round-trip: unequip drops the manifest cleanly, not into a bank.
+        let label = board
+            .pile(deck)
+            .unwrap()
+            .reflects()
+            .expect("the deck's label");
+        game.apply(&mut board, &[Intention::Unequip { label }]);
+        assert!(
+            top_deck(&board, "Vael Thornbrand").is_none(),
+            "the deck was torn down"
+        );
+        assert!(
+            board
+                .content_cards(heroes)
+                .iter()
+                .all(|&c| board.card(c).map(|k| k.card_type()) != Some("kit")),
+            "the manifest was discarded, never returned to the Heroes stack"
+        );
+        assert_eq!(
+            board.physical_card_count(root),
+            before,
+            "unequip round-trips conservation-clean"
         );
     }
 
