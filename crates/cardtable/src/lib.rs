@@ -214,11 +214,11 @@ struct BackCard;
 #[derive(Component)]
 struct AdvanceDayCard;
 
-/// A **v2 board-arena combatant** the player can tap to edit the staged plan for the current step (cycle
-/// rank / select / bid / aim / react). Carries the combatant's board [`CardId`]; the tap is recorded into
-/// [`TapRequest`] and interpreted by the game's `tap_intention`.
+/// A **scene tile** the player can tap for an in-place game action. Carries the tile's board [`CardId`]; the
+/// tap is recorded into [`TapRequest`] and interpreted by the game's `tap_intention` (the game decides what
+/// tapping it does). Also drives the tile's screen-rect tracking for arrow endpoints.
 #[derive(Component, Clone, Copy)]
-struct ArenaUnitCard(CardId);
+struct TileCard(CardId);
 
 /// One transient dot of an attention arrow (a top-level overlay node). Re-spawned each frame by
 /// [`animate_target_arrows`] so the dots flow toward the target. The *which* cards link is now decided by the
@@ -586,7 +586,7 @@ fn on_click(
         Has<BackCard>,
         Has<AdvanceDayCard>,
         Option<&AffordanceControl>,
-        Option<&ArenaUnitCard>,
+        Option<&TileCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
@@ -610,8 +610,8 @@ fn on_click(
     else {
         return;
     };
-    // A **v2 board-arena combatant** tap: record the board card for the driver's `apply_tap`, which asks the
-    // game's `tap_intention` to interpret it (cycle rank / select / bid / aim / react) against the fight step.
+    // A **scene tile** tap: record the board card for the driver's `apply_tap`, which asks the game's
+    // `tap_intention` to interpret it (the renderer never knows what the tap means).
     if let Some(unit) = arena_unit {
         tap_request.0 = Some(unit.0);
         rebuild.0 = true;
@@ -896,7 +896,7 @@ fn animate_nodes(
     // A game **scene** (a combat arena) is a bespoke flex modal: its `Movable` tiles are laid out by flex
     // (left/top = 0), so they snap to that base rather than the stale table model-position their cards still
     // carry. Keyed on a scene existing (not on focus), so drilling focus into a sub-pile can't strand tiles.
-    let in_arena = scene.0.is_some();
+    let in_scene = scene.0.is_some();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -932,7 +932,7 @@ fn animate_nodes(
         // Arena tiles are flex-positioned. Snap any drag offset straight back to base (no ease): a row-child
         // tile can never out-z a later row, so *easing* it home would slide it visibly under the rows it
         // passes. Only a tile actively dragged is offset, and that one floats on the held layer (HELD_Z).
-        if in_arena {
+        if in_scene {
             if px(node.left) != 0.0 || px(node.top) != 0.0 {
                 node.left = Val::Px(0.0);
                 node.top = Val::Px(0.0);
@@ -1672,7 +1672,7 @@ fn build_font_sample(commands: &mut Commands, name: &str, fonts: &UiFonts) {
                 },
                 TextColor(INK),
             ));
-            arena_prompt_line(
+            spawn_prompt_line(
                 root,
                 &format!("{} characters available in this font", chars.len()),
             );
@@ -1758,10 +1758,10 @@ fn spawn_glyph_cell(parent: &mut ChildSpawnerCommands, c: char, handle: Handle<F
         });
 }
 
-// ---- combat arena -------------------------------------------------------
+// ---- generic scene drawers (labels, tracks, dividers, panels) -----------
 
-/// A rank-lane label at the left of a lane.
-fn arena_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
+/// A small muted text label at the left of a row.
+fn spawn_row_label(parent: &mut ChildSpawnerCommands, name: &str) {
     parent
         .spawn(Node {
             width: Val::Px(84.0),
@@ -1779,11 +1779,9 @@ fn arena_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
         });
 }
 
-/// A rank's **row-header card** (Outrider / Vanguard / Rearguard) — the left anchor of a combat lane. Drawn as
-/// a card of fixed width so the three ranks read as neat left-aligned cards with their combatants laid out to
-/// the right, mirroring the physical table (a rank pile with its cards). Static during combat — ranks are set
-/// in Marshal.
-fn spawn_rank_card(parent: &mut ChildSpawnerCommands, name: &str) {
+/// A **row-header card** — a fixed-width labeled card anchoring the left of a lane, so lanes read as neat
+/// left-aligned cards with their tiles laid out to the right (mirroring a labeled pile on the table).
+fn spawn_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
     parent
         .spawn((
             Node {
@@ -1814,7 +1812,7 @@ fn spawn_rank_card(parent: &mut ChildSpawnerCommands, name: &str) {
 }
 
 /// The centre divider between the party (left) and the foes (right) in a lane.
-fn arena_divider(parent: &mut ChildSpawnerCommands) {
+fn spawn_divider(parent: &mut ChildSpawnerCommands) {
     parent.spawn((
         Node {
             width: Val::Px(2.0),
@@ -1826,11 +1824,10 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
     ));
 }
 
-/// The **visible phase-deck card**: the UI representation of a physical rotating phase deck. Draws the phases
-/// in their fixed order (Marshal..Breach) with the *current* one highlighted, so how far along the round is
-/// reads at a glance. The physical deck rotates so its top is current; here the highlight just moves down the
-/// fixed list (the player mentally wraps around).
-fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, order: &[&str], current: &str) {
+/// A **progress-track card**: a titled vertical list of step labels (`order`) with the `current` one
+/// highlighted, so how far along a sequence is reads at a glance. The game supplies the labels and which is
+/// current; the renderer just draws the list.
+fn spawn_track(parent: &mut ChildSpawnerCommands, title: &str, order: &[&str], current: &str) {
     parent
         .spawn((
             Node {
@@ -1880,9 +1877,9 @@ fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, order: &[&st
         });
 }
 
-/// The **combat log**: a large card under the lanes listing this phase's whole state. Un-indented lines are
-/// section headers (bright); indented lines are entries (muted).
-fn arena_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+/// A **text log panel**: a large card under the body listing the scene's log lines. Un-indented lines are
+/// section headers (bright); leading-space lines are entries (muted). The game supplies every line.
+fn spawn_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
     parent
         .spawn((
             Node {
@@ -1900,7 +1897,7 @@ fn arena_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
         ))
         .with_children(|panel| {
             panel.spawn((
-                Text::new("Combat log"),
+                Text::new("Log"),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
@@ -1922,7 +1919,7 @@ fn arena_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
 }
 
 /// A muted instruction line on the felt (per-step prompt / contacts summary).
-fn arena_prompt_line(parent: &mut ChildSpawnerCommands, text: &str) {
+fn spawn_prompt_line(parent: &mut ChildSpawnerCommands, text: &str) {
     parent.spawn((
         Text::new(text.to_string()),
         TextFont {
@@ -1997,7 +1994,7 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
                         .find(|i| i.current)
                         .map(|i| i.label.as_str())
                         .unwrap_or("");
-                    spawn_phase_deck(side, &track.title, &labels, current);
+                    spawn_track(side, &track.title, &labels, current);
                 }
             });
 
@@ -2024,7 +2021,7 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
                     ));
                 }
                 if !scene.prompt.is_empty() {
-                    arena_prompt_line(main, &scene.prompt);
+                    spawn_prompt_line(main, &scene.prompt);
                 }
                 main.spawn(Node {
                     width: Val::Percent(100.0),
@@ -2044,7 +2041,7 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
                         SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
                     }
                     if !scene.log.is_empty() {
-                        arena_log_panel(mid, &scene.log);
+                        spawn_log_panel(mid, &scene.log);
                     }
                 });
             });
@@ -2099,7 +2096,7 @@ fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
             BorderColor::all(MUTED),
         ))
         .with_children(|r| {
-            arena_lane_label(r, &row.label);
+            spawn_row_label(r, &row.label);
             for tile in &row.tiles {
                 draw_scene_tile(r, tile);
             }
@@ -2133,7 +2130,7 @@ fn draw_scene_lanes(root: &mut ChildSpawnerCommands, lanes: &[Lane]) {
                 ..default()
             })
             .with_children(|ln| {
-                spawn_rank_card(ln, &lane.label);
+                spawn_lane_label(ln, &lane.label);
                 ln.spawn(Node {
                     width: Val::Px(left_w),
                     flex_direction: FlexDirection::Row,
@@ -2146,7 +2143,7 @@ fn draw_scene_lanes(root: &mut ChildSpawnerCommands, lanes: &[Lane]) {
                         draw_scene_tile(left, tile);
                     }
                 });
-                arena_divider(ln);
+                spawn_divider(ln);
                 for tile in &lane.right {
                     draw_scene_tile(ln, tile);
                 }
@@ -2176,14 +2173,14 @@ fn tone_color(tone: Tone) -> Color {
         Tone::Muted => MUTED,
         Tone::Warn => WARN_CUE,
         Tone::Good => TARGET_CUE,
-        Tone::Cool => MELEE_CUE,
-        Tone::Warm => RANGED_CUE,
+        Tone::Cool => COOL_ACCENT,
+        Tone::Warm => WARM_ACCENT,
         Tone::Faded => FACE_DOWN_EDGE,
     }
 }
 
 /// One [`Scene`] tile: a card with a title, badge lines, a highlight ring, and its input verbs. Tagged
-/// [`ArenaUnitCard`] when tappable (a tap routes to the game's `tap_intention`) and [`Movable`] when
+/// [`TileCard`] when tappable (a tap routes to the game's `tap_intention`) and [`Movable`] when
 /// draggable (a drag drops into a row's pile). The renderer draws it; the game gave it all its meaning.
 fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
     let (bg, border, ink, border_w) = tile_look(tile.highlight, tile.team);
@@ -2206,7 +2203,7 @@ fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
         card_shadow(),
     ));
     if tile.tappable {
-        node.insert(ArenaUnitCard(tile.card));
+        node.insert(TileCard(tile.card));
     }
     if tile.draggable {
         node.insert(Movable(TableNode::Card(tile.card)));
@@ -2238,12 +2235,12 @@ fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
 /// Rebuild [`CardScreenRects`] from the current UI layout — **the one place** the physical→logical
 /// conversion lives. `UiGlobalTransform.translation` is a node's *physical*-pixel centre; `ComputedNode`
 /// carries its size and the `inverse_scale_factor` that maps both to logical pixels (what `Val::Px` uses).
-/// Covers table cards (`CardRef`) and scene tiles (`ArenaUnitCard`); rebuilt fresh each frame so despawned
+/// Covers table cards (`CardRef`) and scene tiles (`TileCard`); rebuilt fresh each frame so despawned
 /// cards drop out.
 fn track_card_rects(
     mut rects: ResMut<CardScreenRects>,
     cards: Query<(&CardRef, &ComputedNode, &UiGlobalTransform)>,
-    units: Query<(&ArenaUnitCard, &ComputedNode, &UiGlobalTransform)>,
+    units: Query<(&TileCard, &ComputedNode, &UiGlobalTransform)>,
 ) {
     rects.0.clear();
     let mut put = |id: CardId, cn: &ComputedNode, gt: &UiGlobalTransform| {
@@ -2384,18 +2381,18 @@ const MOVABLE_CUE: Color = Color::srgba(0.86, 0.90, 0.97, 0.50);
 /// The **valid-drop-target glow** — a *thicker* ring worn, while a drag is held, by every place the held
 /// card can legally land ([`can_drop_on_card`] / [`can_drop_on_pile`]). Bright green so "drop here" reads.
 const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
-/// A combat tile you **can act on** this step (a legal catch / target / reaction) — warm amber "available".
+/// The **`Available`** tile cue (left team) — a tile you can act on this step. Warm amber "available".
 const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
-/// The **active hero** during targeting — the armed but unfinished action whose target you are choosing. A
-/// bright silver-white ring, distinct from the green target cue and the amber switch cue.
+/// The **`Active`** tile cue (left team) — the current in-progress choice. A bright silver-white ring,
+/// distinct from the green (right-team) target cue and the amber switch cue.
 const ARMED_CUE: Color = Color::srgb(0.95, 0.96, 1.0);
-/// A combat tile with **nothing to do** this step — a greyed face that recedes so the live cards stand out.
+/// The **`Dim`** tile face — nothing to act on this step; a greyed face that recedes so live tiles stand out.
 const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
-/// The **ranged** marker on a formation tile (a cool blue "fires from a distance" cue).
-const RANGED_CUE: Color = Color::srgb(0.45, 0.72, 0.95);
-/// The **melee** marker on a formation tile (a warm steel-orange "strikes in close" cue).
-const MELEE_CUE: Color = Color::srgb(0.95, 0.58, 0.38);
-/// A **warning** cue — a unit parked in a rank whose attack type it does not carry (ineffective, but legal).
+/// A **cool-hued** badge accent ([`Tone::Cool`]) — a cool blue.
+const COOL_ACCENT: Color = Color::srgb(0.45, 0.72, 0.95);
+/// A **warm-hued** badge accent ([`Tone::Warm`]) — a warm steel-orange.
+const WARM_ACCENT: Color = Color::srgb(0.95, 0.58, 0.38);
+/// A **warning** badge cue ([`Tone::Warn`]) — a soft red.
 const WARN_CUE: Color = Color::srgb(0.92, 0.40, 0.40);
 /// Corner radius for a cue ring, matching a card's own [`BorderRadius`] so the outline rounds instead of
 /// boxing the card — a Bevy outline follows its node's radius, and a bare `Movable` wrapper has none.

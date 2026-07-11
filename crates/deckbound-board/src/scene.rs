@@ -557,10 +557,11 @@ fn rank_range_word(rank: Rank) -> &'static str {
 }
 
 fn reach_badge(melee: bool, ranged: bool) -> Badge {
+    // Melee reads as a warm (close, aggressive) accent; ranged as a cool (distant) one.
     let (text, tone) = match (melee, ranged) {
         (true, true) => ("melee + ranged", Tone::Muted),
-        (true, false) => ("melee", Tone::Cool),
-        (false, true) => ("ranged", Tone::Warm),
+        (true, false) => ("melee", Tone::Warm),
+        (false, true) => ("ranged", Tone::Cool),
         (false, false) => ("no strike", Tone::Muted),
     };
     Badge {

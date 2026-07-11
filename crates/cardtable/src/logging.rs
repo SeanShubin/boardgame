@@ -405,7 +405,7 @@ fn drain_drop_trace(mut trace: ResMut<DropTrace>, log: Res<UiLog>) {
 /// `on_click`: a click landing inside the **drag-guard** window (a press that moved far enough to start a
 /// drag — the usual cause of a lost tap) is suppressed, and a click on an entity with **no interactive
 /// target** does nothing. Combat tiles / controls / cards are named by kind so the arena taps show up (they
-/// carry `ArenaUnitCard` / `AffordanceControl`, not `CardRef`, so the old logger missed them).
+/// carry `TileCard` / `AffordanceControl`, not `CardRef`, so the old logger missed them).
 // A Bevy system: every parameter is a scheduler-injected Query/Res, so the arg count is inherent, not a smell.
 #[allow(clippy::too_many_arguments)]
 fn log_click(
@@ -413,7 +413,7 @@ fn log_click(
     guard: Res<crate::DragGuard>,
     cards: Query<&CardRef>,
     movables: Query<&Movable>,
-    units: Query<&crate::ArenaUnitCard>,
+    units: Query<&crate::TileCard>,
     affordances: Query<&crate::AffordanceControl>,
     backs: Query<(), With<crate::BackCard>>,
     zones: Query<&PileDropZone>,
@@ -425,7 +425,7 @@ fn log_click(
     // A click **bubbles** up the node hierarchy, firing this observer once per ancestor. Log only the entity
     // that actually carries an interactive role (combatant / affordance / back / card / drop-zone), so one
     // physical click leaves one line instead of one per bubbled node. Order matters: a formation tile carries
-    // both `ArenaUnitCard` and `Movable`, and a card sits inside a drop-zone.
+    // both `TileCard` and `Movable`, and a card sits inside a drop-zone.
     let what = if let Ok(unit) = units.get(entity) {
         let name = table
             .0
