@@ -109,7 +109,12 @@ impl Policy for Greedy {
                 {
                     return None;
                 }
-                let need = v.finesse.div_ceil(u.finesse.max(1)).max(1);
+                // An area strike is unevadable and costs one card; a single strike bids the minimum to land.
+                let need = if u.aoe {
+                    1
+                } else {
+                    v.finesse.div_ceil(u.finesse.max(1)).max(1)
+                };
                 (need <= u.tempo).then_some((j, need))
             }) {
                 catches.push(Catch {
@@ -173,6 +178,8 @@ mod tests {
             armor: 0,
             melee: true,
             ranged: false,
+            aoe: false,
+            horde: false,
             tempo: cadence,
             health,
             pending: 0,

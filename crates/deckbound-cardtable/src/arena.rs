@@ -209,6 +209,11 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         armor: 0,
         melee,
         ranged,
+        // TODO: derive `aoe` from the equipped attack (Sweep / Salvo) so those sweep in the live game, and
+        // model foe `horde`. Deferred with the rest of the frozen-combat work — the balance tooling drives
+        // AoE / horde today; the arena still resolves every strike as single-target.
+        aoe: false,
+        horde: false,
         tempo,
         health: hp,
         pending: 0,

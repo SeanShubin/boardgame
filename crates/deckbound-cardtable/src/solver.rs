@@ -219,6 +219,17 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
                 {
                     continue;
                 }
+                if u.aoe {
+                    // An area strike is one unevadable sweep of the target's rank — no bid to tune, one card.
+                    if u.tempo > 0 {
+                        opts.push(Some(Catch {
+                            attacker: i,
+                            target: j,
+                            cards: 1,
+                        }));
+                    }
+                    continue;
+                }
                 let min_land = v.finesse.div_ceil(u.finesse.max(1)).max(1);
                 if min_land > u.tempo {
                     continue; // can't even land
@@ -315,6 +326,8 @@ mod tests {
             armor: 0,
             melee,
             ranged,
+            aoe: false,
+            horde: false,
             tempo: cadence,
             health: vitality,
             pending: 0,

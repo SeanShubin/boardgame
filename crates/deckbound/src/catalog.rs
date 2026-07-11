@@ -112,7 +112,7 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
 /// the same way [`ROSTER`] mirrors that file's kits. (This card content now lives in `deckbound` alongside
 /// that RON — a later cleanup could read the numbers from it directly instead of re-declaring.) `stats` is
 /// `[Might, Vitality, Toughness,
-/// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `hoard` marks a card
+/// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `horde` marks a card
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
 /// Coil holds the front regardless of its stats). A creature's **intention** and **posture** are not
 /// stored — they derive from these fields (see [`creature_intention`] / [`creature_posture`]), so
@@ -126,7 +126,7 @@ pub struct Creature {
     pub melee: bool,
     pub ranged: bool,
     pub aoe: bool,
-    pub hoard: bool,
+    pub horde: bool,
     pub pos: Option<&'static str>,
 }
 
@@ -141,7 +141,7 @@ pub const CREATURES: [Creature; 4] = [
         melee: true,
         ranged: false,
         aoe: false,
-        hoard: false,
+        horde: false,
         pos: None,
     },
     Creature {
@@ -151,7 +151,7 @@ pub const CREATURES: [Creature; 4] = [
         melee: true,
         ranged: false,
         aoe: false,
-        hoard: true,
+        horde: true,
         pos: None,
     },
     Creature {
@@ -161,7 +161,7 @@ pub const CREATURES: [Creature; 4] = [
         melee: true,
         ranged: false,
         aoe: false,
-        hoard: false,
+        horde: false,
         pos: Some("Vanguard"),
     },
     Creature {
@@ -171,7 +171,7 @@ pub const CREATURES: [Creature; 4] = [
         melee: true,
         ranged: false,
         aoe: false,
-        hoard: false,
+        horde: false,
         pos: None,
     },
 ];
@@ -185,7 +185,7 @@ pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     ),
     (
         "Overrun",
-        "A hoard of one-Health bodies. Single strikes kill one at a time and drown; an area attack clears the pack at once.",
+        "A horde of one-Health bodies. Single strikes kill one at a time and drown; an area attack clears the pack at once.",
     ),
     (
         "Riposte",
@@ -219,11 +219,11 @@ pub fn creature_intention(c: &Creature) -> &'static str {
 }
 
 /// A creature's **posture** — the one-word tell of *why* it is hard — read off its ability (itself the
-/// creature's signature mechanic): `armored`, `hoard`, `ripostes`, or `evasive`.
+/// creature's signature mechanic): `armored`, `horde`, `ripostes`, or `evasive`.
 pub fn creature_posture(c: &Creature) -> &'static str {
     match c.ability {
         "Immovable" => "armored",
-        "Overrun" => "hoard",
+        "Overrun" => "horde",
         "Riposte" => "ripostes",
         "Feint" => "evasive",
         _ => "",
@@ -235,7 +235,7 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
         "Immovable" => "Executioner", // armored -> one big blow (Jab, high Might)
-        "Overrun" => "Broadsider",    // hoard -> area (Sweep)
+        "Overrun" => "Broadsider",    // horde -> area (Sweep)
         "Riposte" => "Marksman",      // ripostes -> ranged (Shot), out of reach
         "Feint" => "Phantom",         // evasive -> out-tempo (Jab, high Finesse)
         _ => "",

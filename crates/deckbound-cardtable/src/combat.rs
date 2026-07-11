@@ -53,6 +53,16 @@ pub struct Combatant {
     pub melee: bool,
     /// Carries a **ranged** shot (effective in the Rearguard). Independent of `melee`.
     pub ranged: bool,
+    /// Carries an **area** strike (Sweep / Salvo): its catch hits *every* legal enemy in the target rank at
+    /// once and is **unevadable** — but it spends only one tempo and cannot concentrate (no extra strikes),
+    /// so it trades focus for coverage. The answer to a [`horde`](Self::horde); dead weight against one wall.
+    pub aoe: bool,
+    /// This combatant is a **horde**: a pack of one-Health bodies (its `health` is the body count). A single
+    /// strike kills exactly **one** body per hit no matter the Might (you cut them down one at a time); an
+    /// **area** strike clears the whole pack at once. Its offense scales with the pack — it swarms with one
+    /// tempo card per living body. The only group that appears in play (spec: groups are defined for the
+    /// solver but not fielded through the hero UI).
+    pub horde: bool,
     /// Tempo cards left this round.
     pub tempo: u32,
     /// Face-up health cards remaining (Vitality at full); 0 ⇒ fallen at the next boundary.
@@ -88,11 +98,26 @@ impl Combatant {
             armor,
             melee,
             ranged,
+            aoe: false,
+            horde: false,
             tempo: cadence,
             health: vitality,
             pending: 0,
             fallen: false,
         }
+    }
+
+    /// Builder: mark this body as carrying an **area** strike (Sweep / Salvo). See [`Self::aoe`].
+    pub fn with_aoe(mut self, aoe: bool) -> Self {
+        self.aoe = aoe;
+        self
+    }
+
+    /// Builder: make this a **horde** of one-Health bodies (its Vitality is the body count). See
+    /// [`Self::horde`].
+    pub fn as_horde(mut self, horde: bool) -> Self {
+        self.horde = horde;
+        self
     }
 
     /// Accumulate `might` damage, flipping a health card each time the pile crosses `toughness`
@@ -203,6 +228,14 @@ fn strike(might: u32, armor: u32) -> u32 {
     might.saturating_sub(armor)
 }
 
+/// The health a single strike of `might` costs `target`: normally `strike(might, target.armor)`, but a
+/// **horde** loses exactly **one body per penetrating strike** regardless of Might — you cut the pack down
+/// one at a time, so raw damage does not matter, only whether the blow gets through its armor.
+fn hit(target: &Combatant, might: u32) -> u32 {
+    let dmg = strike(might, target.armor);
+    if target.horde { (dmg > 0) as u32 } else { dmg }
+}
+
 // ---- the three mini-phases ------------------------------------------------------------------------
 
 /// **Catch.** Spend each attacker's bid (capped at its remaining tempo) and keep the catches that land as
@@ -220,6 +253,33 @@ pub fn resolve_catch(units: &mut [Combatant], catches: &[Catch]) -> Vec<Contact>
         // Screen backstop (spec 4.6): a strike aimed past a living front at a screened Rearguard lands
         // nothing here — no contact, no tempo spent. The candidate generators already hide these.
         if !back_access_ok(units, atk.rank, c.target) {
+            continue;
+        }
+        // Area strike (Sweep / Salvo): unevadable, hits *every* non-fallen enemy of the target's rank for one
+        // sweep of Might, for a single tempo card. It forms no Contact — there is no React to an area, and so
+        // it never reaches the extra-strikes phase: coverage bought at the price of concentration. Damage is
+        // applied right here (a horde is cleared outright; a normal body just takes the one hit).
+        if units[c.attacker].aoe {
+            if units[c.attacker].tempo == 0 {
+                continue;
+            }
+            units[c.attacker].tempo -= 1;
+            let might = units[c.attacker].might;
+            let side = units[c.attacker].side;
+            let rank = units[c.target].rank;
+            for t in 0..units.len() {
+                if units[t].fallen || units[t].side == side || units[t].rank != rank {
+                    continue;
+                }
+                if hit(&units[t], might) == 0 {
+                    continue; // bounced off armor
+                }
+                if units[t].horde {
+                    units[t].health = 0; // the area engulfs the whole pack at once
+                } else {
+                    units[t].take(strike(might, units[t].armor));
+                }
+            }
             continue;
         }
         let cards = c.cards.min(units[c.attacker].tempo);
@@ -251,7 +311,7 @@ pub fn resolve_react(
         let (atk, tgt) = (contact.attacker, contact.target);
         match *react {
             React::Eat => {
-                damage[tgt] += strike(units[atk].might, units[tgt].armor);
+                damage[tgt] += hit(&units[tgt], units[atk].might);
                 surviving.push(*contact);
             }
             React::Evade { cards } => {
@@ -260,12 +320,12 @@ pub fn resolve_react(
                 if evade_succeeds(cards, units[tgt].finesse, contact.bid) {
                     // miss + break contact: no damage, dropped from the surviving edges.
                 } else {
-                    damage[tgt] += strike(units[atk].might, units[tgt].armor); // evade failed - hit lands
+                    damage[tgt] += hit(&units[tgt], units[atk].might); // evade failed - hit lands
                     surviving.push(*contact);
                 }
             }
             React::StrikeBack => {
-                damage[tgt] += strike(units[atk].might, units[tgt].armor); // take the hit...
+                damage[tgt] += hit(&units[tgt], units[atk].might); // take the hit...
                 // ...and counter, but only **melee-vs-melee**: you strike back at a foe that *approached*
                 // you (a melee strike), and only if you carry a melee blow. Against a ranged shot, or with
                 // no melee of your own, there is nothing to answer with - you simply eat it. One Tempo card,
@@ -273,7 +333,7 @@ pub fn resolve_react(
                 let incoming_melee = !rank_is_ranged(units[atk].rank);
                 if incoming_melee && units[tgt].melee && units[tgt].tempo > 0 {
                     units[tgt].tempo -= 1;
-                    damage[atk] += strike(units[tgt].might, units[atk].armor);
+                    damage[atk] += hit(&units[atk], units[tgt].might);
                 }
                 surviving.push(*contact);
             }
@@ -290,16 +350,23 @@ pub fn resolve_extra(units: &mut [Combatant], extras: &[ExtraStrike]) {
     for e in extras {
         let cards = e.cards.min(units[e.attacker].tempo);
         units[e.attacker].tempo -= cards;
-        damage[e.target] += strike(units[e.attacker].might, units[e.target].armor) * cards; // per strike
+        damage[e.target] += hit(&units[e.target], units[e.attacker].might) * cards; // per strike
     }
     apply(units, &damage);
 }
 
-/// Apply an order-free damage vector (accumulated Might per unit).
+/// Apply an order-free damage vector to the units. For a normal body `damage` is accumulated Might (fed
+/// through the toughness pile); for a **horde** it is a **body count** (each penetrating strike already
+/// counted one body via [`hit`]), so it comes straight off health — bodies are one-Health, nothing to
+/// accumulate.
 fn apply(units: &mut [Combatant], damage: &[u32]) {
     for (unit, &dmg) in units.iter_mut().zip(damage) {
         if dmg > 0 {
-            unit.take(dmg);
+            if unit.horde {
+                unit.health = unit.health.saturating_sub(dmg);
+            } else {
+                unit.take(dmg);
+            }
         }
     }
 }
@@ -314,10 +381,12 @@ pub fn end_sub_phase(units: &mut [Combatant]) {
     }
 }
 
-/// Start a round: refresh every unit's tempo to its Cadence (leftover tempo does not carry across rounds).
+/// Start a round: refresh every unit's tempo (leftover tempo does not carry across rounds). A normal body
+/// gets its Cadence; a **horde** gets one card per living body (`health`), so a full pack swarms with many
+/// strikes and a thinned one dwindles — which is why chipping it single-file loses and an area clear wins.
 pub fn refresh_round(units: &mut [Combatant]) {
     for u in units.iter_mut() {
-        u.tempo = u.cadence;
+        u.tempo = if u.horde { u.health.max(1) } else { u.cadence };
     }
 }
 
@@ -346,6 +415,8 @@ mod tests {
             armor: 0,
             melee: true,
             ranged: false,
+            aoe: false,
+            horde: false,
             tempo: cadence,
             health,
             pending: 0,

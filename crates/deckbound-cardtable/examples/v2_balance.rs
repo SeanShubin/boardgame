@@ -22,13 +22,16 @@ fn rank_of(word: &str) -> Rank {
 /// A party kit as a combatant (rank is a placeholder — the solver enumerates formations).
 fn kit_unit(name: &str, stats: [u8; 5], ability: &str) -> Combatant {
     let (melee, ranged) = catalog::ability_reach(ability);
-    Combatant::from_stats(name, Side::Party, Rank::Vanguard, stats, 0, melee, ranged)
+    let (_ranged, aoe) = catalog::ability_shape(ability);
+    Combatant::from_stats(name, Side::Party, Rank::Vanguard, stats, 0, melee, ranged).with_aoe(aoe)
 }
 
 /// A creature as a scripted foe combatant (rank derived from its intention).
 fn creature_unit(c: &Creature) -> Combatant {
     let rank = rank_of(catalog::creature_intention(c));
     Combatant::from_stats(c.name, Side::Foe, rank, c.stats, 0, c.melee, c.ranged)
+        .with_aoe(c.aoe)
+        .as_horde(c.horde)
 }
 
 fn main() {
