@@ -1,4 +1,4 @@
-//! **Stage 2/3 — board ↔ combat.** Represent a v2 fight on the physical `Tableau` and drive it through the
+//! **Stage 2/3 — board ↔ combat.** Represent a v2 fight on the physical `Board` and drive it through the
 //! stage-1 mechanics brain ([`crate::combat`]). The *entire* fight state is physical (cards-as-truth):
 //!
 //! - **Rank is pile membership.** `[Arena]` holds a sub-pile per rank — `[Vanguard]` / `[Outrider]` /
@@ -17,7 +17,7 @@
 //! stragglers with their default rank. [`handle_tap`] edits the staged plan (and, in Marshal, cycles a hero's
 //! rank pile).
 
-use cardtable_model::{CardId, CardKind, PileId, Tableau};
+use cardtable_model::{Board, CardId, CardKind, PileId};
 use deckbound::actor::Intention as Rank;
 use deckbound::combat::{SCHEDULE, SUB_PHASE_NAMES};
 
@@ -61,7 +61,7 @@ fn stats_of(s: [u8; 5], melee: bool, ranged: bool, aoe: bool) -> (Stats, bool, b
     )
 }
 
-fn top_deck(board: &Tableau, label: &str) -> Option<PileId> {
+fn top_deck(board: &Board, label: &str) -> Option<PileId> {
     board
         .pile(board.root_id())?
         .subpiles()
@@ -70,7 +70,7 @@ fn top_deck(board: &Tableau, label: &str) -> Option<PileId> {
 }
 
 /// A sub-pile of `arena` by label (a rank pile or the pool).
-fn sub_pile(board: &Tableau, arena: PileId, label: &str) -> Option<PileId> {
+fn sub_pile(board: &Board, arena: PileId, label: &str) -> Option<PileId> {
     board
         .pile(arena)?
         .subpiles()
@@ -78,7 +78,7 @@ fn sub_pile(board: &Tableau, arena: PileId, label: &str) -> Option<PileId> {
         .find(|&p| board.pile(p).map(|p| p.label.as_str()) == Some(label))
 }
 
-fn character_deck(board: &Tableau, name: &str) -> Option<PileId> {
+fn character_deck(board: &Board, name: &str) -> Option<PileId> {
     board
         .pile(board.root_id())?
         .subpiles()
@@ -96,7 +96,7 @@ fn character_deck(board: &Tableau, name: &str) -> Option<PileId> {
 /// A combatant's stats plus its **reach** `(melee, ranged)` and **area** flag — the attack shape it carries
 /// (see `catalog::ability_reach` / `ability_shape`). Returned together so callers position + gate + display
 /// it in one read.
-fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool, bool, bool)> {
+fn hero_stats(board: &Board, name: &str) -> Option<(Stats, bool, bool, bool)> {
     let recipe = board.character_recipe(
         character_deck(board, name)?,
         &deckbound::catalog::stat_names(),
@@ -112,7 +112,7 @@ fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
 }
 
 /// The vitality (max HP) of a combatant by name and side — the health bar's full value.
-fn max_health(board: &Tableau, name: &str, side: Side) -> u32 {
+fn max_health(board: &Board, name: &str, side: Side) -> u32 {
     match side {
         Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
         Side::Foe => foe_stats(name).map(|(s, _, _, _)| s.vitality),
@@ -191,7 +191,7 @@ fn num_after(line: &str, prefix: &str) -> u32 {
 
 /// Read one combatant card into a [`Combatant`] — constant stats from the source, mutable state from detail;
 /// its `rank` is supplied by the caller (it is the rank pile the card lives in).
-fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant> {
+fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<Combatant> {
     let c = board.card(card)?;
     let name = c.front_title().to_string();
     let side = match c.card_type() {
@@ -236,7 +236,7 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
 
 /// Write a resolved combatant's mutable state back onto its card (HP / tempo). This also **clears the staged
 /// plan** (detail is reset to the two base lines).
-fn write_combatant(board: &mut Tableau, card: CardId, u: &Combatant, max: u32) {
+fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
     // Reach is a constant of the character, re-derived from the source so it survives the writeback.
     let (melee, ranged) = match u.side {
         Side::Party => hero_stats(board, &u.name).map(|(_, m, r, _)| (m, r)),
@@ -306,7 +306,7 @@ fn read_staged(d: &[String]) -> Staged {
 }
 
 /// Rewrite a unit card's detail as the two base lines followed by whatever of the plan is set.
-fn write_staged(board: &mut Tableau, card: CardId, s: &Staged) {
+fn write_staged(board: &mut Board, card: CardId, s: &Staged) {
     let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
         return;
     };
@@ -329,7 +329,7 @@ fn write_staged(board: &mut Tableau, card: CardId, s: &Staged) {
     let _ = board.set_card_detail(card, lines);
 }
 
-fn staged_of(board: &Tableau, card: CardId) -> Staged {
+fn staged_of(board: &Board, card: CardId) -> Staged {
     board
         .card(card)
         .map(|c| read_staged(c.detail()))
@@ -338,7 +338,7 @@ fn staged_of(board: &Tableau, card: CardId) -> Staged {
 
 // ---- contact scratch cards (loose in [Arena]) ---------------------------------------------------------
 
-fn write_contacts(board: &mut Tableau, arena: PileId, cards: &[CardId], contacts: &[Contact]) {
+fn write_contacts(board: &mut Board, arena: PileId, cards: &[CardId], contacts: &[Contact]) {
     for c in contacts {
         if let Ok(card) = board.add_card(
             arena,
@@ -362,7 +362,7 @@ fn write_contacts(board: &mut Tableau, arena: PileId, cards: &[CardId], contacts
 }
 
 /// Read the surviving contact cards back into [`Contact`]s (indices into `cards`).
-fn read_contacts(board: &Tableau, arena: PileId, cards: &[CardId]) -> Vec<Contact> {
+fn read_contacts(board: &Board, arena: PileId, cards: &[CardId]) -> Vec<Contact> {
     let index = |id: u64| cards.iter().position(|c| c.0 == id);
     board
         .content_cards(arena)
@@ -382,7 +382,7 @@ fn read_contacts(board: &Tableau, arena: PileId, cards: &[CardId]) -> Vec<Contac
         .collect()
 }
 
-fn clear_contacts(board: &mut Tableau, arena: PileId) {
+fn clear_contacts(board: &mut Board, arena: PileId) {
     let contacts: Vec<CardId> = board
         .content_cards(arena)
         .into_iter()
@@ -397,7 +397,7 @@ fn clear_contacts(board: &mut Tableau, arena: PileId) {
 
 /// The combatant cards (rank-pile order) and their [`Combatant`]s, plus the walk position from the phase
 /// card. Pool (unranked) heroes are not combatants yet — they are excluded until Marshal ranks them.
-fn arena_state(board: &Tableau, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, usize, u32, Step) {
+fn arena_state(board: &Board, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, usize, u32, Step) {
     let mut cards = Vec::new();
     let mut units = Vec::new();
     for (label, rank) in RANK_PILES {
@@ -415,7 +415,7 @@ fn arena_state(board: &Tableau, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, 
     (cards, units, sub, round, step)
 }
 
-fn read_phase(board: &Tableau, arena: PileId) -> (usize, u32, Step) {
+fn read_phase(board: &Board, arena: PileId) -> (usize, u32, Step) {
     let round = board
         .content_cards(arena)
         .into_iter()
@@ -441,7 +441,7 @@ fn read_phase(board: &Tableau, arena: PileId) -> (usize, u32, Step) {
 }
 
 /// The vitality (max HP) of every combatant, index-aligned with the cards.
-fn maxes_of(board: &Tableau, units: &[Combatant]) -> Vec<u32> {
+fn maxes_of(board: &Board, units: &[Combatant]) -> Vec<u32> {
     units
         .iter()
         .map(|u| max_health(board, &u.name, u.side).max(u.health))
@@ -449,7 +449,7 @@ fn maxes_of(board: &Tableau, units: &[Combatant]) -> Vec<u32> {
 }
 
 /// Heroes still in the Pool (unranked) — the formation is complete when this is empty.
-fn pool_heroes(board: &Tableau, arena: PileId) -> Vec<CardId> {
+fn pool_heroes(board: &Board, arena: PileId) -> Vec<CardId> {
     sub_pile(board, arena, POOL)
         .map(|p| board.content_cards(p))
         .unwrap_or_default()
@@ -459,7 +459,7 @@ fn pool_heroes(board: &Tableau, arena: PileId) -> Vec<CardId> {
 }
 
 /// Whether every hero has been assigned a rank (the Pool is empty) — the Start gate.
-pub fn formation_complete(board: &Tableau, arena: PileId) -> bool {
+pub fn formation_complete(board: &Board, arena: PileId) -> bool {
     pool_heroes(board, arena).is_empty()
 }
 
@@ -468,7 +468,7 @@ pub fn formation_complete(board: &Tableau, arena: PileId) -> bool {
 /// Open a fight at `place`: build the `[Arena]` zone with a `[Pool]` and a pile per rank, a combatant card
 /// per stationed hero (moved into the Pool, unranked) and per instantiated foe (drawn from the Bestiary into
 /// its default rank pile), a phase card at round 1 · Marshal, and focus it.
-pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
+pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
     let bestiary = top_deck(board, "Bestiary")?;
     let root = board.root_id();
     let arena = board.add_pile(root, ARENA).ok()?;
@@ -563,7 +563,7 @@ const STEPS: &str = "Steps";
 
 /// (Re)install the phase decks + round counter at round 1: Marshal on top of `[Phases]`, Catch on top of
 /// `[Steps]`. Each sub-phase card carries its legal rank pairs, so the renderer reads them off the top card.
-fn install_phase_decks(board: &mut Tableau, arena: PileId) {
+fn install_phase_decks(board: &mut Board, arena: PileId) {
     for label in [PHASES, STEPS] {
         if let Some(p) = sub_pile(board, arena, label) {
             let _ = board.remove_pile(p);
@@ -592,7 +592,7 @@ fn install_phase_decks(board: &mut Tableau, arena: PileId) {
 }
 
 fn add_deck_card(
-    board: &mut Tableau,
+    board: &mut Board,
     deck: PileId,
     title: &str,
     card_type: &str,
@@ -614,7 +614,7 @@ fn add_deck_card(
 }
 
 /// Write the round-counter card (`Round N`, loose in the arena).
-fn set_round(board: &mut Tableau, arena: PileId, round: u32) {
+fn set_round(board: &mut Board, arena: PileId, round: u32) {
     let title = format!("Round {round}");
     if let Some(c) = board
         .content_cards(arena)
@@ -629,14 +629,14 @@ fn set_round(board: &mut Tableau, arena: PileId, round: u32) {
 }
 
 /// The title of a phase deck's top (current) card.
-fn deck_top(board: &Tableau, arena: PileId, label: &str) -> Option<String> {
+fn deck_top(board: &Board, arena: PileId, label: &str) -> Option<String> {
     let deck = sub_pile(board, arena, label)?;
     let top = board.pile(deck)?.cards().first().copied()?;
     board.card(top).map(|c| c.front_title().to_string())
 }
 
 /// Rotate a phase deck one step: move its top card to the bottom (a phase transition).
-fn rotate_deck(board: &mut Tableau, arena: PileId, label: &str) {
+fn rotate_deck(board: &mut Board, arena: PileId, label: &str) {
     let Some(deck) = sub_pile(board, arena, label) else {
         return;
     };
@@ -668,7 +668,7 @@ fn pairs_line(sub: usize) -> String {
 // (The arena's *react* is simpler than the policy's - the greedy foe just eats; see the React step.)
 
 /// The party's staged catches (aim + bid on party units), keeping only ones the SCHEDULE permits.
-fn party_catches(board: &Tableau, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Catch> {
+fn party_catches(board: &Board, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Catch> {
     let mut catches = Vec::new();
     for (i, u) in units.iter().enumerate() {
         if u.fallen
@@ -697,7 +697,7 @@ fn party_catches(board: &Tableau, cards: &[CardId], units: &[Combatant], sub: us
 
 /// The party's staged extra strikes (bid on party units still on a surviving contact).
 fn party_extras(
-    board: &Tableau,
+    board: &Board,
     cards: &[CardId],
     units: &[Combatant],
     surviving: &[Contact],
@@ -720,7 +720,7 @@ fn party_extras(
 
 /// Whether the fight is over, and who won (`Some(true)` = party). A side loses when all its units are fallen;
 /// heroes still in the Pool (not yet ranked, during Marshal) count as living party members.
-pub fn outcome(board: &Tableau, arena: PileId) -> Option<bool> {
+pub fn outcome(board: &Board, arena: PileId) -> Option<bool> {
     let (_, units, _, _, _) = arena_state(board, arena);
     let party_alive = units.iter().any(|u| u.side == Side::Party && !u.fallen)
         || !pool_heroes(board, arena).is_empty();
@@ -732,7 +732,7 @@ pub fn outcome(board: &Tableau, arena: PileId) -> Option<bool> {
 }
 
 /// The label for the Commit control, given the current step (or the fight's decision).
-pub fn commit_label(board: &Tableau, arena: PileId) -> &'static str {
+pub fn commit_label(board: &Board, arena: PileId) -> &'static str {
     match outcome(board, arena) {
         Some(true) => "Victory - leave",
         Some(false) => "Defeat - leave",
@@ -753,7 +753,7 @@ pub fn commit_label(board: &Tableau, arena: PileId) -> &'static str {
 /// Whether the current step offers the **player** any decision. A step with nothing for the party to do —
 /// no unit that can legally catch, no incoming contact to react to, no surviving contact to strike along —
 /// can be auto-resolved (greedy foe) and skipped. Marshal always needs input (assign ranks / Start).
-pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
+pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
     let (cards, units, sub, _round, step) = arena_state(board, arena);
     let living_party = |i: usize| units[i].side == Side::Party && !units[i].fallen;
     match step {
@@ -790,7 +790,7 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
 /// (pipe-encoded so the renderer can group by sub-phase). `pairs` is the sub-phase's `attacker>target` rank
 /// codes (e.g. `"V>O"`), so the renderer can show *which targeting* was passed over without knowing the
 /// SCHEDULE itself. ASCII - it is stored on a card (so it shows in the physical log too).
-pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
+pub fn current_skip_line(board: &Board, arena: PileId) -> String {
     let (_, _, sub, _, step) = arena_state(board, arena);
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
     let (name, reason) = match step {
@@ -803,7 +803,7 @@ pub fn current_skip_line(board: &Tableau, arena: PileId) -> String {
 }
 
 /// Clear the record of auto-skipped steps (a fresh burst starts each time the player commits).
-pub fn clear_skips(board: &mut Tableau, arena: PileId) {
+pub fn clear_skips(board: &mut Board, arena: PileId) {
     let stale: Vec<CardId> = board
         .content_cards(arena)
         .into_iter()
@@ -815,7 +815,7 @@ pub fn clear_skips(board: &mut Tableau, arena: PileId) {
 }
 
 /// Append a line to the skiplog card (a loose card that accumulates the current burst's auto-skips).
-pub fn note_skip(board: &mut Tableau, arena: PileId, line: String) {
+pub fn note_skip(board: &mut Board, arena: PileId, line: String) {
     if let Some(c) = board
         .content_cards(arena)
         .into_iter()
@@ -864,7 +864,7 @@ fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, 
 
 /// Move any Pool stragglers into their default rank pile (a direct commit's safety net; the UI gates Start
 /// on an empty Pool, so this only fires for headless / auto play).
-fn autofill_pool(board: &mut Tableau, arena: PileId) {
+fn autofill_pool(board: &mut Board, arena: PileId) {
     for card in pool_heroes(board, arena) {
         let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
             continue;
@@ -882,7 +882,7 @@ fn autofill_pool(board: &mut Tableau, arena: PileId) {
 /// Resolve **one step** — Marshal / Catch / React / Extra — folding the party's staged plan (or the greedy
 /// AI when nothing is staged) with the greedy foe plan, then writing the results back and advancing the walk.
 /// Returns whether the fight is over.
-pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
+pub fn commit(board: &mut Board, arena: PileId) -> bool {
     let (_, _, _, round0, step0) = arena_state(board, arena);
     let _ = round0;
     if step0 == Step::Marshal {
@@ -902,7 +902,7 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
 
     let (cards, mut units, sub, round, step) = arena_state(board, arena);
     let maxes = maxes_of(board, &units);
-    let writeback = |board: &mut Tableau, units: &[Combatant]| {
+    let writeback = |board: &mut Board, units: &[Combatant]| {
         for (i, card) in cards.iter().enumerate() {
             write_combatant(board, *card, &units[i], maxes[i]);
         }
@@ -983,7 +983,7 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
 // ---- editing the plan by tap / drop -------------------------------------------------------------------
 
 /// The pile (Pool or a rank pile) a combatant `card` currently sits in, if it is in the arena.
-fn combatant_pile(board: &Tableau, arena: PileId, card: CardId) -> Option<PileId> {
+fn combatant_pile(board: &Board, arena: PileId, card: CardId) -> Option<PileId> {
     std::iter::once(POOL)
         .chain(RANK_PILES.iter().map(|(l, _)| *l))
         .filter_map(|label| sub_pile(board, arena, label))
@@ -991,7 +991,7 @@ fn combatant_pile(board: &Tableau, arena: PileId, card: CardId) -> Option<PileId
 }
 
 /// Whether `card` is a combatant in `arena` (in the Pool or a rank pile) — a legal tap target.
-pub fn is_combatant(board: &Tableau, arena: PileId, card: CardId) -> bool {
+pub fn is_combatant(board: &Board, arena: PileId, card: CardId) -> bool {
     matches!(
         board.card(card).map(|k| k.card_type()),
         Some("unit") | Some("foe")
@@ -999,20 +999,20 @@ pub fn is_combatant(board: &Tableau, arena: PileId, card: CardId) -> bool {
 }
 
 /// Whether `pile` is one of the arena's rank piles (a legal formation drop target).
-pub fn is_rank_pile(board: &Tableau, arena: PileId, pile: PileId) -> bool {
+pub fn is_rank_pile(board: &Board, arena: PileId, pile: PileId) -> bool {
     RANK_PILES
         .iter()
         .any(|(label, _)| sub_pile(board, arena, label) == Some(pile))
 }
 
 /// The current fight step (for the renderer / the drop rule).
-pub fn current_step(board: &Tableau, arena: PileId) -> Step {
+pub fn current_step(board: &Board, arena: PileId) -> Step {
     read_phase(board, arena).2
 }
 
 /// Assign a hero to a rank by moving its card into that rank pile (the drag / drop path). No-op unless it is
 /// a party unit and `to` is a rank pile of the arena — rank *is* pile membership.
-pub fn assign(board: &mut Tableau, unit: CardId, to: PileId) {
+pub fn assign(board: &mut Board, unit: CardId, to: PileId) {
     let Some(arena) = find_arena(board) else {
         return;
     };
@@ -1024,7 +1024,7 @@ pub fn assign(board: &mut Tableau, unit: CardId, to: PileId) {
 
 /// Move a hero to the *next* pile in the Pool → Outrider → Vanguard → Rearguard → Pool cycle (the no-drag
 /// rank assignment, and the tap fallback during Marshal).
-fn cycle_rank_pile(board: &mut Tableau, arena: PileId, card: CardId) {
+fn cycle_rank_pile(board: &mut Board, arena: PileId, card: CardId) {
     let order: Vec<&str> = std::iter::once(POOL)
         .chain(RANK_PILES.iter().map(|(l, _)| *l))
         .collect();
@@ -1040,7 +1040,7 @@ fn cycle_rank_pile(board: &mut Tableau, arena: PileId, card: CardId) {
     }
 }
 
-fn select_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], chosen: usize) {
+fn select_active(board: &mut Board, cards: &[CardId], units: &[Combatant], chosen: usize) {
     // An ineffective body (wrong reach for its position) carries no usable strike this phase, so it never
     // becomes the active attacker - there is nothing for it to aim.
     if !combat::effective_in_rank(
@@ -1061,7 +1061,7 @@ fn select_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], cho
 }
 
 /// Cycle a unit's staged bid 0 → 1 → … → remaining tempo → 0.
-fn cycle_bid(board: &mut Tableau, card: CardId, tempo: u32) {
+fn cycle_bid(board: &mut Board, card: CardId, tempo: u32) {
     let mut s = staged_of(board, card);
     s.bid = if s.bid >= tempo { 0 } else { s.bid + 1 };
     write_staged(board, card, &s);
@@ -1076,7 +1076,7 @@ fn min_to_land(attacker: &Combatant, target: &Combatant) -> u32 {
     target.finesse.div_ceil(attacker.finesse.max(1)).max(1)
 }
 
-fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: usize, foe: usize) {
+fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usize, foe: usize) {
     let Some(active) = (0..units.len())
         .find(|&i| units[i].side == Side::Party && staged_of(board, cards[i]).active)
     else {
@@ -1112,7 +1112,7 @@ fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: u
 /// Cycle the active attacker's catch bid through the *landing* range `[min_to_land, tempo]`, wrapping back to
 /// the minimum - never below it (those bids miss) and never 0 (that is just "no catch"; cancel by re-tapping
 /// the foe). A no-op if the unit has no aim.
-fn cycle_catch_bid(board: &mut Tableau, cards: &[CardId], units: &[Combatant], active: usize) {
+fn cycle_catch_bid(board: &mut Board, cards: &[CardId], units: &[Combatant], active: usize) {
     let s = staged_of(board, cards[active]);
     let Some(aim) = s.aim else {
         return;
@@ -1138,7 +1138,7 @@ fn cycle_catch_bid(board: &mut Tableau, cards: &[CardId], units: &[Combatant], a
 /// Cycle a defender's staged reaction. `strikeback_ok` gates the Strike Back option: strike-back is
 /// melee-vs-melee only (spec 3.1 / the design call), so when the incoming blow is ranged, or the defender
 /// carries no melee, the cycle skips straight over Strike Back (Eat -> Evade -> Eat).
-fn cycle_react(board: &mut Tableau, card: CardId, evade_ok: bool, strikeback_ok: bool) {
+fn cycle_react(board: &mut Board, card: CardId, evade_ok: bool, strikeback_ok: bool) {
     let mut s = staged_of(board, card);
     let mut next = s.react.unwrap_or(ReactKind::Eat);
     // Advance to the next *affordable* reaction. Eat is always available, so this terminates within a lap.
@@ -1159,7 +1159,7 @@ fn cycle_react(board: &mut Tableau, card: CardId, evade_ok: bool, strikeback_ok:
 
 /// Handle a tap on combatant `card`: in Marshal, cycle its rank pile (the no-drag assignment); in a combat
 /// step, edit the staged plan (a no-op if the tap is meaningless there). Reads the step from the phase card.
-pub fn handle_tap(board: &mut Tableau, card: CardId) {
+pub fn handle_tap(board: &mut Board, card: CardId) {
     let Some(arena) = find_arena(board) else {
         return;
     };
@@ -1215,12 +1215,12 @@ pub fn handle_tap(board: &mut Tableau, card: CardId) {
 /// `Commit` / `Cancel` / `Tap` intentions and the `affordances` it offers — gates on this, **never on the
 /// focused pile**, so drilling `focus` into a rank sub-pile can't strip the fight's controls or actions.
 /// Mirrors the renderer's `active_arena`; both find the top-level `[Arena]` by label.
-pub fn find_arena(board: &Tableau) -> Option<PileId> {
+pub fn find_arena(board: &Board) -> Option<PileId> {
     top_deck(board, ARENA)
 }
 
 /// The place a fight was opened from, remembered in the hidden meta card.
-fn place_of(board: &Tableau, arena: PileId) -> Option<PileId> {
+fn place_of(board: &Board, arena: PileId) -> Option<PileId> {
     board
         .content_cards(arena)
         .into_iter()
@@ -1230,7 +1230,7 @@ fn place_of(board: &Tableau, arena: PileId) -> Option<PileId> {
 }
 
 /// Every combatant card in the arena (across the Pool and all rank piles), by side-type.
-fn all_of_type(board: &Tableau, arena: PileId, card_type: &str) -> Vec<CardId> {
+fn all_of_type(board: &Board, arena: PileId, card_type: &str) -> Vec<CardId> {
     let mut out = Vec::new();
     for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
         if let Some(p) = sub_pile(board, arena, label) {
@@ -1248,7 +1248,7 @@ fn all_of_type(board: &Tableau, arena: PileId, card_type: &str) -> Vec<CardId> {
 /// Tear the arena down: return foe cards to the Bestiary, move the party's units back to the place as hero
 /// position cards, remove the arena, and leave it. `clear_encounter` removes the beaten encounter (a win);
 /// `spend_day` advances the day clock (a resolved fight costs a day, a cancel does not). Conservation-clean.
-fn teardown(board: &mut Tableau, arena: PileId, clear_encounter: bool, spend_day: bool) {
+fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: bool) {
     let place = place_of(board, arena);
     let bestiary = top_deck(board, "Bestiary");
 
@@ -1289,21 +1289,21 @@ fn teardown(board: &mut Tableau, arena: PileId, clear_encounter: bool, spend_day
 }
 
 /// **Fold the fight back** after a decision: on a **win** the encounter is cleared; the fight spends a day.
-pub fn fold_back(board: &mut Tableau, arena: PileId) {
+pub fn fold_back(board: &mut Board, arena: PileId) {
     let won = outcome(board, arena) == Some(true);
     teardown(board, arena, won, true);
 }
 
 /// **Cancel the fight** (retreat): tear the arena down with nothing resolved — the encounter is left intact
 /// and no day is spent. The clean inverse of [`open_fight`], for backing out of a battle.
-pub fn cancel_fight(board: &mut Tableau, arena: PileId) {
+pub fn cancel_fight(board: &mut Board, arena: PileId) {
     teardown(board, arena, false, false);
 }
 
 /// **Restart the fight**: reset every combatant to full HP and fresh tempo, drop the staged plans and any
 /// landed contacts, and return to round 1 · Marshal — **keeping the current formation** (rank-pile
 /// membership), so you can re-form or just Start again. Foes, place, and encounter are untouched.
-pub fn restart_fight(board: &mut Tableau, arena: PileId) {
+pub fn restart_fight(board: &mut Board, arena: PileId) {
     clear_contacts(board, arena);
     for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
         let Some(pile) = sub_pile(board, arena, label) else {
@@ -1390,12 +1390,12 @@ mod tests {
     }
 
     /// Set up a fight at a place with an encounter, with Vael recruited (Marksman) and marched there.
-    fn open_a_fight(board: &mut Tableau) -> PileId {
+    fn open_a_fight(board: &mut Board) -> PileId {
         open_a_fight_with(board, "Marksman")
     }
 
     /// As [`open_a_fight`], but recruit Vael with the named kit (so tests can pick the hero's attack type).
-    fn open_a_fight_with(board: &mut Tableau, kit_name: &str) -> PileId {
+    fn open_a_fight_with(board: &mut Board, kit_name: &str) -> PileId {
         use crate::CardTableGame;
         use crate::Intention;
         use cardtable_model::BoardGame;

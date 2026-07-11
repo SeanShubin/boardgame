@@ -1,6 +1,6 @@
 //! The **Board-game driver** — drives the game-agnostic renderer from a [`BoardGame`] over the
 //! *persistent* board (plan §17/§18), the cards-as-truth successor to the `contract::Game` [`GamePlugin`]
-//! (which rebuilt a `Tableau` from a snapshot each frame). Here the board is the single source of truth:
+//! (which rebuilt a `Board` from a snapshot each frame). Here the board is the single source of truth:
 //! the observers **record** a player's gesture into a request resource, and this driver interprets it
 //! through the game and mutates the board in place. The renderer never mentions the game type.
 //!

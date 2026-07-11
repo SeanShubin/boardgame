@@ -17,7 +17,7 @@ use bevy::ui::{ComputedNode, UiGlobalTransform, UiStack};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use cardtable_model::{CardId, Node as TableNode, PileId, Tableau};
+use cardtable_model::{Board, CardId, Node as TableNode, PileId};
 
 use crate::board_driver::DropTrace;
 use crate::{CardRef, Movable, PileDropZone, Table};
@@ -83,7 +83,7 @@ struct Snapshot {
     cards: HashMap<CardId, CardState>,
 }
 
-fn snapshot(table: &Tableau) -> Snapshot {
+fn snapshot(table: &Board) -> Snapshot {
     let mut tree = String::new();
     let mut cards = HashMap::new();
     walk(table, table.root_id(), 0, "", &mut tree, &mut cards);
@@ -91,7 +91,7 @@ fn snapshot(table: &Tableau) -> Snapshot {
 }
 
 fn walk(
-    table: &Tableau,
+    table: &Board,
     pid: PileId,
     depth: usize,
     parent_path: &str,
@@ -353,7 +353,7 @@ fn log_layout(
     *last_frame = snapshot;
 }
 
-fn card_name(table: &Tableau, cref: Option<&CardRef>) -> String {
+fn card_name(table: &Board, cref: Option<&CardRef>) -> String {
     cref.and_then(|c| table.card(c.0))
         .map(|c| c.front_title().to_string())
         .unwrap_or_else(|| "(control card)".into())
@@ -362,7 +362,7 @@ fn card_name(table: &Tableau, cref: Option<&CardRef>) -> String {
 /// The dragged/clicked card's name, from either a `CardRef` (table cards) or a `Movable(Card)` (bespoke tiles
 /// like the arena's formation tiles, which carry no `CardRef`). `None` if the entity is neither.
 fn interacted_card(
-    table: &Tableau,
+    table: &Board,
     entity: Entity,
     cards: &Query<&CardRef>,
     movables: &Query<&Movable>,

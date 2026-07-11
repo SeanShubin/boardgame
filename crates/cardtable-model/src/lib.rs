@@ -6,7 +6,7 @@
 //! This is presentation *state*, not game state and not rendering. Keeping it here means the
 //! behaviors unit-test in isolation — no `deckbound`, no `bevy`. The [`model`] core depends on
 //! nothing; only [`binding`] touches the [`contract`] crate, to turn a
-//! [`TableView`](contract::TableView) into a [`Tableau`]. The eventual Bevy `cardtable` renderer
+//! [`TableView`](contract::TableView) into a [`Board`]. The eventual Bevy `cardtable` renderer
 //! becomes a thin shell that drives this model and draws it.
 //!
 //! See `docs/games/deckbound/presentation/card-table-ui.md` for the design this realizes.
@@ -17,7 +17,7 @@ pub mod seam;
 
 pub use binding::from_table_view;
 pub use model::{
-    Arrangement, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe, Size,
-    Tableau, TableauError, Utility,
+    Arrangement, Board, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe,
+    Size, TableauError, Utility,
 };
 pub use seam::{BoardGame, DropTarget};

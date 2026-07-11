@@ -1,12 +1,12 @@
 //! The **UI model** — attention plus renderer-fed transient state, kept distinct from the physical
 //! card tree (plan §0/§16). The physical model knows nothing of what is focused, what is selected, or
-//! how the renderer has sized the felt; those live here. Held by [`Tableau`](super::Tableau) during the
+//! how the renderer has sized the felt; those live here. Held by [`Board`](super::Board) during the
 //! transition (its public methods delegate); a later step promotes this into the standalone UI-model
 //! layer the renderer talks to directly.
 
 use super::{CardId, PileId, Pos};
 
-/// Attention + transient presentation state for a [`Tableau`](super::Tableau): which pile is focused,
+/// Attention + transient presentation state for a [`Board`](super::Board): which pile is focused,
 /// which cards are selected, and the renderer-reported surface + pinned fixtures.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct UiModel {

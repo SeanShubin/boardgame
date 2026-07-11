@@ -413,13 +413,13 @@ pub fn encounter_rumor(e: &Encounter) -> Vec<String> {
 }
 
 /// The five stat **names** in canonical [`STATS`] order — for callers that assemble or parse a character
-/// deck (`Tableau::equip_character` / `character_recipe`), which take the names as data so the model stays
+/// deck (`Board::equip_character` / `character_recipe`), which take the names as data so the model stays
 /// game-free.
 pub fn stat_names() -> [&'static str; 5] {
     [STATS[0].0, STATS[1].0, STATS[2].0, STATS[3].0, STATS[4].0]
 }
 
-/// An encounter's foe **roster** as `(creature name, quantity)` pairs — what `Tableau::instantiate_from_bank`
+/// An encounter's foe **roster** as `(creature name, quantity)` pairs — what `Board::instantiate_from_bank`
 /// deals from the Bestiary. Empty for a location with no encounter (the inn).
 pub fn encounter_roster(place_label: &str) -> Vec<(&'static str, u32)> {
     encounter_for(place_label)

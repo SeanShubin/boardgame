@@ -1,7 +1,7 @@
 //! **v2 combat mechanics — the headless brain** (design brief §"Arena v2", locked 2026-07-09; memory
 //! `manual-combat-design`). The plan-then-commit economy, implemented *fresh* per build-decision (B) — the
 //! game layer owns combat, this module is pure logic over [`Combatant`]s (no board, no renderer). Stage 2
-//! reads the `Tableau` into these and writes the resolved state back; the unit tests here are the safety net
+//! reads the `Board` into these and writes the resolved state back; the unit tests here are the safety net
 //! (solver/balance re-validation deferred until the feel is tested).
 //!
 //! Each combat sub-phase is **three one-way mini-phases** (strict pipeline, no ping-pong):

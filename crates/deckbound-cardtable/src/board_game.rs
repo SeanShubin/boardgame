@@ -1,10 +1,10 @@
 //! Deckbound as a [`BoardGame`] — the game operating on the **persistent physical board** through the
 //! seam (plan §17/§18), the cards-as-truth successor to the retired `CardTableWorld` view-emitter. Equip /
-//! march / advance-day are conservation-clean transitions straight over the `Tableau` (PC.2: cards are
+//! march / advance-day are conservation-clean transitions straight over the `Board` (PC.2: cards are
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{Arrangement, BoardGame, CardId, DropTarget, PileId, Tableau};
+use cardtable_model::{Arrangement, Board, BoardGame, CardId, DropTarget, PileId};
 
 use crate::sample_table;
 
@@ -42,11 +42,11 @@ pub enum Intention {
 impl BoardGame for CardTableGame {
     type Intention = Intention;
 
-    fn opening(&self) -> Tableau {
+    fn opening(&self) -> Board {
         sample_table()
     }
 
-    fn apply(&self, board: &mut Tableau, intentions: &[Intention]) {
+    fn apply(&self, board: &mut Board, intentions: &[Intention]) {
         for intention in intentions {
             match *intention {
                 Intention::Equip { identity, kit } => equip(board, identity, kit),
@@ -97,7 +97,7 @@ impl BoardGame for CardTableGame {
 
     fn drop_intention(
         &self,
-        board: &Tableau,
+        board: &Board,
         dragged: CardId,
         onto: DropTarget,
     ) -> Option<Intention> {
@@ -133,13 +133,13 @@ impl BoardGame for CardTableGame {
         }
     }
 
-    fn tap_intention(&self, board: &Tableau, card: CardId) -> Option<Intention> {
+    fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
         let arena = crate::arena::find_arena(board)?;
         crate::arena::is_combatant(board, arena, card).then_some(Intention::Tap { card })
     }
 
-    fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Intention)> {
+    fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Intention)> {
         // While a fight is up it is modal: offer its controls (Commit index 0, Cancel index 1) no matter
         // which sub-zone focus has drilled into (e.g. a rank pile clicked during formation).
         if let Some(arena) = crate::arena::find_arena(board) {
@@ -166,7 +166,7 @@ impl BoardGame for CardTableGame {
 
 // ---- intention application — conservation-clean ops over the board ---------------------------------
 
-fn equip(board: &mut Tableau, identity: CardId, kit: CardId) {
+fn equip(board: &mut Board, identity: CardId, kit: CardId) {
     let Some(recipe) = board.card(kit).and_then(|c| c.recipe().cloned()) else {
         return;
     };
@@ -214,7 +214,7 @@ fn equip(board: &mut Tableau, identity: CardId, kit: CardId) {
     }
 }
 
-fn unequip(board: &mut Tableau, label: CardId) {
+fn unequip(board: &mut Board, label: CardId) {
     if !is_character_label(board, label) {
         return;
     }
@@ -232,13 +232,13 @@ fn unequip(board: &mut Tableau, label: CardId) {
     let _ = board.unequip_character(deck, heroes, stats, numbers, abilities);
 }
 
-fn march(board: &mut Tableau, position: CardId, to: PileId) {
+fn march(board: &mut Board, position: CardId, to: PileId) {
     if let Some(progress) = top_deck(board, "Progress") {
         let _ = board.move_character(position, to, progress);
     }
 }
 
-fn advance_day(board: &mut Tableau) {
+fn advance_day(board: &mut Board) {
     if let (Some(progress), Some(events)) = (top_deck(board, "Progress"), top_deck(board, "Events"))
     {
         let _ = board.advance_day(progress, events);
@@ -249,7 +249,7 @@ fn advance_day(board: &mut Tableau) {
 
 /// In a projection view (the inn), a hero identity and a kit (recipe) card pair to equip. Returns
 /// `(identity, kit)`, or `None` if the drop isn't a legal equip.
-fn equip_pair(board: &Tableau, a: CardId, b: CardId) -> Option<(CardId, CardId)> {
+fn equip_pair(board: &Board, a: CardId, b: CardId) -> Option<(CardId, CardId)> {
     if a == b
         || board
             .pile(board.focus_id())
@@ -267,7 +267,7 @@ fn equip_pair(board: &Tableau, a: CardId, b: CardId) -> Option<(CardId, CardId)>
 }
 
 /// Whether `card` is a character deck's Zone label (its home pile `reflects` it).
-fn is_character_label(board: &Tableau, card: CardId) -> bool {
+fn is_character_label(board: &Board, card: CardId) -> bool {
     let Some(deck) = board.card(card).map(|c| c.home()) else {
         return false;
     };
@@ -275,7 +275,7 @@ fn is_character_label(board: &Tableau, card: CardId) -> bool {
 }
 
 /// A hero map-position card dropped onto an orthogonally-adjacent place, while drilled into the map.
-fn can_march(board: &Tableau, dragged: CardId, dest: PileId) -> bool {
+fn can_march(board: &Board, dragged: CardId, dest: PileId) -> bool {
     if top_deck(board, "Locations") != Some(board.focus_id()) {
         return false;
     }
@@ -286,7 +286,7 @@ fn can_march(board: &Tableau, dragged: CardId, dest: PileId) -> bool {
 }
 
 /// Orthogonal (Manhattan-1) adjacency of two place piles on the Locations grid.
-fn places_adjacent(board: &Tableau, a: PileId, b: PileId) -> bool {
+fn places_adjacent(board: &Board, a: PileId, b: PileId) -> bool {
     let Some(locations) = top_deck(board, "Locations") else {
         return false;
     };
@@ -312,7 +312,7 @@ fn places_adjacent(board: &Tableau, a: PileId, b: PileId) -> bool {
 // ---- fixed-zone lookups by label ------------------------------------------------------------------
 
 /// A place is combat-ready when it holds both a stationed hero and an encounter.
-fn combat_ready(board: &Tableau, place: PileId) -> bool {
+fn combat_ready(board: &Board, place: PileId) -> bool {
     let cards = board.content_cards(place);
     let has = |t: &str| {
         cards
@@ -322,7 +322,7 @@ fn combat_ready(board: &Tableau, place: PileId) -> bool {
     has("hero") && has("encounter")
 }
 
-fn top_deck(board: &Tableau, label: &str) -> Option<PileId> {
+fn top_deck(board: &Board, label: &str) -> Option<PileId> {
     board
         .pile(board.root_id())?
         .subpiles()
@@ -330,7 +330,7 @@ fn top_deck(board: &Tableau, label: &str) -> Option<PileId> {
         .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some(label))
 }
 
-fn home_location(board: &Tableau) -> Option<PileId> {
+fn home_location(board: &Board) -> Option<PileId> {
     let locations = top_deck(board, "Locations")?;
     board
         .pile(locations)?
@@ -361,7 +361,7 @@ mod tests {
     }
 
     /// A card by front-title within a pile (test helper).
-    fn card_in(board: &Tableau, pile: PileId, name: &str) -> Option<CardId> {
+    fn card_in(board: &Board, pile: PileId, name: &str) -> Option<CardId> {
         board
             .pile(pile)?
             .cards()

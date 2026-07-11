@@ -23,7 +23,7 @@ state.** Everything partitions into three layers.
    marking zones), nested into piles. This *is* the state: the save-game, the undo
    history, the thing you serialize. If it cannot be expressed as conserved cards,
    it is not state — it is scaffolding. The rules operate **directly** on it. The
-   type is `cardtable_model::Tableau` (the physical board).
+   type is `cardtable_model::Board` (the physical board).
 2. **UI model** — everything about *regarding* the cards: focus / what takes the
    felt, selection, arrangement (grid / rows / free), and a staging buffer of
    pending intentions. Per-observer and disposable; the physical model knows
@@ -50,10 +50,10 @@ game implements over the physical board.
 ```rust
 pub trait BoardGame {
     type Intention;
-    fn opening(&self) -> Tableau;                                          // the starting board
-    fn apply(&self, board: &mut Tableau, intentions: &[Self::Intention]);  // batch, order-free
-    fn drop_intention(&self, board: &Tableau, dragged: CardId, onto: DropTarget) -> Option<Self::Intention>;
-    fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Self::Intention)>;
+    fn opening(&self) -> Board;                                          // the starting board
+    fn apply(&self, board: &mut Board, intentions: &[Self::Intention]);  // batch, order-free
+    fn drop_intention(&self, board: &Board, dragged: CardId, onto: DropTarget) -> Option<Self::Intention>;
+    fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Self::Intention)>;
     // (tap_intention for in-arena taps; DropTarget = Card | Pile.)
 }
 ```
@@ -76,7 +76,7 @@ combat decision is a staged intention resolved as an order-free batch. See the
 The older seam: a game implements `contract::Game` over its own `State` / `Action`
 and renders a flat `TableView` snapshot; `tabletop` draws it and sends legal actions
 back as buttons. `cardtable_model::from_table_view` can inflate a `TableView` into a
-`Tableau` for the `cardtable`-under-`--features cardtable` sample path. This seam is
+`Board` for the `cardtable`-under-`--features cardtable` sample path. This seam is
 **sample-only** now — the product does not use it.
 
 ## Workspace crates
@@ -85,7 +85,7 @@ back as buttons. `cardtable_model::from_table_view` can inflate a `TableView` in
 | --- | --- | --- |
 | `crates/contract` | lib | The **sample seam**: the `Game` trait + the `TableView` snapshot family. No Bevy. Used by `deckbound-sample` / `tabletop`, not the product. |
 | `crates/engine` | lib | Shared **card-game toolkit** (`Zone`, seeded `Rng`). Pure; no `contract` dep. |
-| `crates/cardtable-model` | lib | The pure **physical board** (`Tableau`) + `ui::UiModel` + conservation primitives (move / split / merge / flip / focus / layout), and the **`BoardGame` seam trait**. Also holds `from_table_view` (the sample-seam binding). No Bevy, no game. |
+| `crates/cardtable-model` | lib | The pure **physical board** (`Board`) + `ui::UiModel` + conservation primitives (move / split / merge / flip / focus / layout), and the **`BoardGame` seam trait**. Also holds `from_table_view` (the sample-seam binding). No Bevy, no game. |
 | `crates/cardtable` | lib | **The product's renderer** — the Bevy card-table renderer, generic over `BoardGame`: every zone a deck, click-to-focus, drag-to-arrange, and the interactive arena. No game words. |
 | `crates/deckbound` | lib | The **reference-sample game** (`contract::Game`) *and* the shared content used by the product: `catalog` (kits / creatures / encounters / rumors), `combat` (the `SCHEDULE`), `actor` (the V/O/R ranks). Pure, no Bevy. |
 | `crates/deckbound-cardtable` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound::{catalog, combat, actor}`. |
@@ -109,8 +109,9 @@ is what makes the seed-based tests and the exact combat solver reproducible.
 The cards-as-truth reunification is complete and shipping. A cosmetic / structural
 tail remains, tracked in `needs-merge/cardtable-deckbound-reunification-plan.md`:
 
-- **P6 — honest renames**: `Tableau → Board`, `deckbound-cardtable → deckbound-board`,
-  a `physical` module beside `ui`, and finishing `actor::Intention → Rank`.
+- **P6 — honest renames** (`Tableau → Board` done): `deckbound-cardtable →
+  deckbound-board`, a `physical` module beside `ui`, and finishing
+  `actor::Intention → Rank`.
 - **P4 — extract `deckbound-balance`**: move the *legacy sample's* balance / solver
   tooling out of `deckbound` (the product's v2 balance tooling already lives in
   `deckbound-cardtable`).

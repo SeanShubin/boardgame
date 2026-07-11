@@ -1,17 +1,17 @@
 //! The only bridge to the game side: turn a renderer-agnostic [`contract::TableView`] into a
-//! [`Tableau`]. Each [`ZoneView`](contract::ZoneView) becomes a pile under the root; each
+//! [`Board`]. Each [`ZoneView`](contract::ZoneView) becomes a pile under the root; each
 //! [`CardView`](contract::CardView) becomes a card, carrying its actionable index. This is the sole
 //! module that depends on `contract`; everything in [`model`](crate::model) stays game-agnostic.
 
 use contract::{Arrangement, CardFace, TableView, ZoneView};
 
-use crate::model::{Arrangement as ModelArrangement, Face, Layout as ModelLayout, PileId, Tableau};
+use crate::model::{Arrangement as ModelArrangement, Board, Face, Layout as ModelLayout, PileId};
 
-/// Builds a fresh [`Tableau`] from a table snapshot: a root pile holding one sub-pile per zone, in
+/// Builds a fresh [`Board`] from a table snapshot: a root pile holding one sub-pile per zone, in
 /// presentation order, each filled with the zone's cards — and, recursively, any nested sub-zones as
 /// piles inside their parent (so a card-table can drill into them).
-pub fn from_table_view(view: &TableView) -> Tableau {
-    let mut tree = Tableau::new();
+pub fn from_table_view(view: &TableView) -> Board {
+    let mut tree = Board::new();
     let root = tree.root_id();
     for (index, zone) in view.zones.iter().enumerate() {
         add_zone(&mut tree, root, zone, index);
@@ -30,7 +30,7 @@ pub fn from_table_view(view: &TableView) -> Tableau {
 /// Add one [`ZoneView`] as a pile under `parent`, fill it with the zone's cards, then recurse into its
 /// nested sub-zones. `index` positions the pile in a starting row (the renderer lets the player drag it
 /// anywhere afterwards).
-fn add_zone(tree: &mut Tableau, parent: PileId, zone: &ZoneView, index: usize) -> PileId {
+fn add_zone(tree: &mut Board, parent: PileId, zone: &ZoneView, index: usize) -> PileId {
     let pile = tree
         .add_pile(parent, zone.label.clone())
         .expect("parent pile exists");

@@ -8,7 +8,7 @@
 //! # Two layers
 //!
 //! - **The core (this module) is game-agnostic.** It draws whatever is in the [`Table`] resource (a
-//!   [`Tableau`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
+//!   [`Board`]) plus an [`ActionRail`] of loose actions and a [`StatusLine`], handles focus/zoom
 //!   itself, and reports clicks on actionable controls by pushing their index into [`ActionRequests`].
 //!   It never mentions `Game`. This is the shared code: `boardgame` and feature prototypes both drive
 //!   it. Prototype a feature with [`CardTablePlugin`] + a hand-built `Table` (see
@@ -29,8 +29,8 @@ use bevy::ui::{BoxShadow, ComputedNode, Outline, ScrollPosition, UiGlobalTransfo
 use std::collections::HashMap;
 
 use cardtable_model::{
-    Arrangement, Card, CardId, CardKind, DropTarget, Face, Layout, Node as TableNode, PileId, Pos,
-    Size, Tableau, Utility,
+    Arrangement, Board, Card, CardId, CardKind, DropTarget, Face, Layout, Node as TableNode,
+    PileId, Pos, Size, Utility,
 };
 
 #[cfg(feature = "game")]
@@ -54,7 +54,7 @@ pub use gallery::run_card_gallery;
 /// The board: the pile tree the core draws. Mutated in place for focus/zoom; replaced wholesale when
 /// the source (a game, or a prototype) rebuilds it.
 #[derive(Resource, Default)]
-pub struct Table(pub Tableau);
+pub struct Table(pub Board);
 
 /// Loose actions shown as an always-visible rail (choices not represented by a card on the table).
 /// Each carries an opaque `index` the core echoes back in [`ActionRequests`] when clicked.
@@ -87,7 +87,7 @@ pub enum CardTableSet {
     Draw,
 }
 
-/// The game-agnostic renderer. Add it, put a [`Tableau`] in [`Table`], and you have a clickable card
+/// The game-agnostic renderer. Add it, put a [`Board`] in [`Table`], and you have a clickable card
 /// table. Add [`GamePlugin`] (feature `game`) on top to drive it from a [`contract::Game`].
 pub struct CardTablePlugin;
 
@@ -198,7 +198,7 @@ struct TableContent;
 
 /// A **pinned felt fixture** — the centered zone title, the Back card — whose rectangle is fed to the
 /// model so freely-placed content settles clear of it (top priority; see [`sync_pinned`],
-/// [`Tableau::set_pinned`]). Fixed in place: it pushes cards but never moves for one.
+/// [`Board::set_pinned`]). Fixed in place: it pushes cards but never moves for one.
 #[derive(Component)]
 struct Pinned;
 
@@ -351,7 +351,7 @@ struct FanCard {
 /// — the target of **Start Over**, which discards this session *and* the loaded save. The System deck is
 /// (re)installed onto it when Start Over fires, so it need not carry one.
 #[derive(Resource, Default)]
-pub struct FactoryBase(pub Tableau);
+pub struct FactoryBase(pub Board);
 
 /// The **build stamp** the embedder supplies (e.g. `boardgame` inserts its git commit) — shown as the
 /// expandable **Version** card in the System deck so you can tell which commit is deployed and how long
@@ -381,7 +381,7 @@ fn inject_system_deck(mut table: ResMut<Table>, build: Res<BuildInfo>) {
 }
 
 /// Add one [`Utility`] action card (face-up `title`) to `pile`.
-fn add_util(table: &mut Tableau, pile: PileId, title: &str, utility: Utility) {
+fn add_util(table: &mut Board, pile: PileId, title: &str, utility: Utility) {
     if let Ok(id) = table.add_card(
         pile,
         Face::Up {
@@ -398,7 +398,7 @@ fn add_util(table: &mut Tableau, pile: PileId, title: &str, utility: Utility) {
 /// tab), and an expandable **Version** card (`build`, if a hash is known) so you can tell what's deployed.
 /// Any existing System deck (e.g. from a resumed save) is **removed and rebuilt**, so the deck is never
 /// doubled up *and* its version/actions always match the running build. Called at startup and by Start Over.
-fn install_system_deck(table: &mut Tableau, build: &BuildInfo) {
+fn install_system_deck(table: &mut Board, build: &BuildInfo) {
     let root = table.root_id();
     let stale: Vec<PileId> = table.pile(root).map_or(Vec::new(), |p| {
         p.subpiles()
@@ -748,7 +748,7 @@ fn on_drop(
 }
 
 /// A short label for a node, for the debug log.
-fn node_label(table: &Tableau, node: TableNode) -> String {
+fn node_label(table: &Board, node: TableNode) -> String {
     match node {
         TableNode::Card(cid) => {
             format!("card={:?}", table.card(cid).map(|c| c.name()).unwrap_or(""))
@@ -761,7 +761,7 @@ fn node_label(table: &Tableau, node: TableNode) -> String {
 }
 
 /// The top-level deck with `label`, if present (a lookup by name for the fixed system zones).
-fn top_deck(table: &Tableau, label: &str) -> Option<PileId> {
+fn top_deck(table: &Board, label: &str) -> Option<PileId> {
     table
         .pile(table.root_id())?
         .subpiles()
@@ -820,7 +820,7 @@ fn px(value: Val) -> f32 {
     }
 }
 
-/// Feed each **movable element's** laid-out size back into the model (logical px), so [`Tableau::separate`]
+/// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
 /// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
 fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
     for (movable, computed) in &movables {
@@ -846,7 +846,7 @@ fn sync_surface_size(content: Query<&ComputedNode, With<TableContent>>, mut tabl
 }
 
 /// Feed the **pinned fixtures'** rectangles (the centered title, the Back card) to the model, in the
-/// content region's logical coordinate space — so [`Tableau::separate`] shoves freely-placed content clear
+/// content region's logical coordinate space — so [`Board::separate`] shoves freely-placed content clear
 /// of them. In a structured (inset) zone the fixtures land above the content region and simply don't
 /// bite; in a Free / root zone they sit on the felt and push the cards. Runs each frame; there are few.
 fn sync_pinned(
@@ -981,7 +981,7 @@ fn animate_nodes(
 /// the pairings (in the view); the renderer just performs the gesture and reports the action index. This is
 /// how a game-meaningful drag (drag a hero onto a kit to equip, a character onto a location to march) flows
 /// through the seam, replacing the renderer's hardcoded equip/march rules.
-fn pairing_action(table: &Tableau, dragged: CardId, target: CardId) -> Option<usize> {
+fn pairing_action(table: &Board, dragged: CardId, target: CardId) -> Option<usize> {
     let key = table.card(target)?.pair_key()?;
     table
         .card(dragged)?
@@ -994,7 +994,7 @@ fn pairing_action(table: &Tableau, dragged: CardId, target: CardId) -> Option<us
 /// Whether the held card `dragged` may legally be dropped on the card `target` — a **pairing** (the game
 /// declared one), or the legacy **inn equip** rule: inside a projection (the inn) a kit and a hero pair,
 /// i.e. exactly one of the two carries a recipe.
-fn can_drop_on_card(table: &Tableau, dragged: CardId, target: CardId) -> bool {
+fn can_drop_on_card(table: &Board, dragged: CardId, target: CardId) -> bool {
     if pairing_action(table, dragged, target).is_some() {
         return true;
     }
@@ -1012,7 +1012,7 @@ fn can_drop_on_card(table: &Tableau, dragged: CardId, target: CardId) -> bool {
 
 /// Whether `id` is a hero's **map position** copy — a `hero` card whose home is one of the Locations
 /// grid's place piles (as opposed to a hero copy in the Heroes deck, a character deck, or Progress).
-fn is_map_position(table: &Tableau, id: CardId) -> bool {
+fn is_map_position(table: &Board, id: CardId) -> bool {
     let Some(home) = table
         .card(id)
         .filter(|c| c.card_type() == "hero")
@@ -1028,7 +1028,7 @@ fn is_map_position(table: &Tableau, id: CardId) -> bool {
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
 /// or right (Manhattan distance 1) by their row/column, read from the grid's `columns`. `false` if either
 /// isn't a place or the Locations deck isn't a grid.
-fn places_orthogonally_adjacent(table: &Tableau, a: PileId, b: PileId) -> bool {
+fn places_orthogonally_adjacent(table: &Board, a: PileId, b: PileId) -> bool {
     let Some(locations) = top_deck(table, "Locations") else {
         return false;
     };
@@ -1053,7 +1053,7 @@ fn places_orthogonally_adjacent(table: &Tableau, a: PileId, b: PileId) -> bool {
 
 /// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
 /// character's position copy moves to an **orthogonally adjacent** place (one step up/down/left/right).
-fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
+fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
     if top_deck(table, "Locations") != Some(table.focus_id()) {
         return false;
     }
@@ -1068,7 +1068,7 @@ fn can_drop_on_pile(table: &Tableau, dragged: CardId, target: PileId) -> bool {
 /// when the opposite kind (`has_kit` / `has_hero`) is on show to pair with. Everything else (repositioning
 /// a Free card, reordering a fan, dragging a deck) is presentation only — no cue.
 fn is_game_movable(
-    table: &Tableau,
+    table: &Board,
     id: CardId,
     in_projection: bool,
     has_kit: bool,
@@ -1353,7 +1353,7 @@ fn on_node_drag_end(
             TableNode::Card(cid) => cid,
         };
         // On the location **map** (the Locations grid drilled into), dragging a character's position copy
-        // onto another place card **moves** that character there (`Tableau::move_character` also spends its
+        // onto another place card **moves** that character there (`Board::move_character` also spends its
         // move by flipping its Progress marker). The day is *not* auto-advanced — ending the day is an
         // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
         // cursor-follows and occludes picking, so the destination is found by geometry — by **box overlap**,
@@ -1555,7 +1555,7 @@ fn settle_free_cards(
 /// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size, or when the
 /// window (surface) resizes — the pile counterpart of [`settle_free_cards`]. When a pile's size changes (a
 /// brand-new character-reflection deck appearing, or a deck growing), or the surface bounds move, and
-/// nothing is being dragged, re-run [`Tableau::separate`] so every pile is re-clamped inside the surface
+/// nothing is being dragged, re-run [`Board::separate`] so every pile is re-clamped inside the surface
 /// and pushed clear of its neighbours. A size-changed pile anchors the shove (the newcomer holds its
 /// spot); a bare resize anchors the first pile. This is what makes both a freshly-rendered deck and a
 /// window resize trigger the shove without hooking each site. `prev`/`prev_surface` remember last-seen
@@ -1843,7 +1843,7 @@ fn arena_divider(parent: &mut ChildSpawnerCommands) {
 /// (The renderer reaches past `cardtable-model` here only by the combat card-type / label conventions the
 /// game encodes on the board — `Arena` / `Pool` / rank labels, `unit` / `foe` / `phase` / `contact`. That
 /// string coupling is tracked as P3c; the game side's mirror of this check is `arena::find_arena`.)
-fn active_arena(tree: &Tableau) -> Option<PileId> {
+fn active_arena(tree: &Board) -> Option<PileId> {
     tree.pile(tree.root_id())?
         .subpiles()
         .into_iter()
@@ -1851,7 +1851,7 @@ fn active_arena(tree: &Tableau) -> Option<PileId> {
 }
 
 /// A sub-pile of `arena` by label (the `Pool` or a rank pile).
-fn arena_sub(tree: &Tableau, arena: PileId, label: &str) -> Option<PileId> {
+fn arena_sub(tree: &Board, arena: PileId, label: &str) -> Option<PileId> {
     tree.pile(arena)?
         .subpiles()
         .into_iter()
@@ -1859,7 +1859,7 @@ fn arena_sub(tree: &Tableau, arena: PileId, label: &str) -> Option<PileId> {
 }
 
 /// Whether `pile` is a sub-pile of the arena (a formation drop target: a rank pile or the Pool).
-fn is_arena_subpile(tree: &Tableau, arena: PileId, pile: PileId) -> bool {
+fn is_arena_subpile(tree: &Board, arena: PileId, pile: PileId) -> bool {
     tree.pile(arena)
         .map(|p| p.subpiles())
         .unwrap_or_default()
@@ -1898,7 +1898,7 @@ fn detail_num(line: &str, prefix: &str) -> u32 {
         .unwrap_or(0)
 }
 
-fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit> {
+fn read_arena_unit(tree: &Board, card: CardId, rank: char) -> Option<ArenaUnit> {
     let c = tree.card(card)?;
     let party = match c.card_type() {
         "unit" => true,
@@ -1954,7 +1954,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
 }
 
 /// The combatants in one rank pile (in order).
-fn units_in_rank(tree: &Tableau, arena: PileId, label: &str, rank: char) -> Vec<ArenaUnit> {
+fn units_in_rank(tree: &Board, arena: PileId, label: &str, rank: char) -> Vec<ArenaUnit> {
     arena_sub(tree, arena, label)
         .map(|p| tree.content_cards(p))
         .unwrap_or_default()
@@ -1964,7 +1964,7 @@ fn units_in_rank(tree: &Tableau, arena: PileId, label: &str, rank: char) -> Vec<
 }
 
 /// The card titles of a phase deck (`[Phases]` / `[Steps]`), top card first - the current phase is the top.
-fn deck_names(tree: &Tableau, arena: PileId, label: &str) -> Vec<String> {
+fn deck_names(tree: &Board, arena: PileId, label: &str) -> Vec<String> {
     arena_sub(tree, arena, label)
         .and_then(|p| tree.pile(p))
         .map(|pile| pile.cards())
@@ -2035,12 +2035,7 @@ fn spawn_phase_deck(parent: &mut ChildSpawnerCommands, title: &str, order: &[&st
 /// Build the modal **v2 combat arena** from the board: a phase banner, then either the **formation** (during
 /// Marshal — assign heroes to rank rows) or the **combat lanes** (during a fight step), then the Commit
 /// control. Everything is read from the arena's rank piles and loose phase/contact cards.
-fn build_arena_v2_ui(
-    commands: &mut Commands,
-    tree: &Tableau,
-    arena: PileId,
-    affordances: &[String],
-) {
+fn build_arena_v2_ui(commands: &mut Commands, tree: &Board, arena: PileId, affordances: &[String]) {
     let loose = tree.content_cards(arena);
     // The phase is read from the two rotating decks: the top of [Phases] is the current major phase, and (once
     // the schedule is running) the top of [Steps] is the current mini-phase. The decks' card order *is* the
@@ -2216,7 +2211,7 @@ fn build_arena_v2_ui(
 /// to the Start control, where heroes are drawn *from*). Each row is a `PileDropZone` over its rank/pool
 /// pile, so **dragging** a hero anywhere into a row moves it there (rank = pile membership); tapping a hero
 /// cycles it to the next rank (the no-drag path). Foes show in their rank row for context (not draggable).
-fn build_formation(root: &mut ChildSpawnerCommands, tree: &Tableau, arena: PileId) {
+fn build_formation(root: &mut ChildSpawnerCommands, tree: &Board, arena: PileId) {
     // One row per rank (front to back).
     for (label, rank) in RANK_ROWS {
         if let Some(pile) = arena_sub(tree, arena, label) {
@@ -2233,7 +2228,7 @@ fn build_formation(root: &mut ChildSpawnerCommands, tree: &Tableau, arena: PileI
 /// heroes as draggable [`Movable`] tiles, foes as static context tiles.
 fn formation_row(
     root: &mut ChildSpawnerCommands,
-    tree: &Tableau,
+    tree: &Board,
     pile: PileId,
     label: &str,
     rank: Option<char>,
@@ -2284,7 +2279,7 @@ enum Sel {
 
 fn build_combat_lanes(
     root: &mut ChildSpawnerCommands,
-    tree: &Tableau,
+    tree: &Board,
     arena: PileId,
     loose: &[CardId],
     step: &str,
@@ -3229,8 +3224,8 @@ const STACK_OFFSET: f32 = 2.0;
 const MAX_STACK: usize = 10;
 
 /// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
-/// so spacing is uniform everywhere it's computed (see [`Tableau::structured_positions`],
-/// [`Tableau::arrange_row`]).
+/// so spacing is uniform everywhere it's computed (see [`Board::structured_positions`],
+/// [`Board::arrange_row`]).
 const GAP: f32 = 12.0;
 /// A rendered Small card's outer size: its footprint plus the 2px border on each side. The stand-in box a
 /// not-yet-measured card gets, so the first frame of a structured layout is sane (see [`build_ui`]).
@@ -3244,7 +3239,7 @@ const OVERLAY_BAND: f32 = 52.0;
 
 fn build_ui(
     commands: &mut Commands,
-    tree: &Tableau,
+    tree: &Board,
     rail: &[RailAction],
     front: Option<CardId>,
     affordances: &[String],
@@ -3326,7 +3321,7 @@ fn build_ui(
                     } else if matches!(pile.layout().arrangement, Arrangement::Rows) {
                         // A Rows view (the inn's assignment view): a column of horizontal rows, each led by
                         // its Header card, then its cards. The Hero and Kit rows come from the projection,
-                        // the Active row from the pile's own cards (see `Tableau::row_groups`).
+                        // the Active row from the pile's own cards (see `Board::row_groups`).
                         // The fan's available width is exactly what the flexbox will give each row's
                         // container: the felt width less the column's padding on both sides, the header
                         // card, and the header→fan gap. Computing it here (not after layout) lets us seed
@@ -3495,7 +3490,7 @@ fn build_ui(
                         // on top. The cell carries an explicit height, so a place with more tokens is a taller
                         // cell and the wrap-grid pushes the rows below it down — the map stays aligned on both
                         // axes as characters gather. Drag a token onto another place card to move that character
-                        // (`on_node_drag_end` -> `Tableau::move_character`); its home stays the place pile, so
+                        // (`on_node_drag_end` -> `Board::move_character`); its home stays the place pile, so
                         // relocating it *is* the move. A place card's exposed title strip drills in (it carries
                         // `PileDropZone`). Columns come from the Locations `Grid` arrangement (a real map, not a
                         // width-responsive reflow), so the grid is sized to fit exactly that many.
@@ -3726,9 +3721,9 @@ fn build_ui(
         });
 }
 
-/// The display name of a pile/zone: "Table" for the root; otherwise its [zone card](Tableau::zone_card)'s
+/// The display name of a pile/zone: "Table" for the root; otherwise its [zone card](Board::zone_card)'s
 /// name (the card whose job is to name it), else the pile's own label.
-fn pile_display_name(tree: &Tableau, id: PileId) -> String {
+fn pile_display_name(tree: &Board, id: PileId) -> String {
     if id == tree.root_id() {
         return "Table".to_string();
     }
@@ -3739,11 +3734,11 @@ fn pile_display_name(tree: &Tableau, id: PileId) -> String {
 }
 
 /// The floating zone title with a space-efficient physical-card tally as a `(N)` **prefix**, e.g.
-/// `"(10) Location"` — the same recursive [`Tableau::physical_card_count`] the deck chips show (every
+/// `"(10) Location"` — the same recursive [`Board::physical_card_count`] the deck chips show (every
 /// physical card counted once, its own title card included), so the chip and the drilled-in title
 /// agree. The root ("Table") and a software-only deck (count 0, e.g. System) show a bare name — no
 /// tally, matching the chip.
-fn zone_title_with_count(tree: &Tableau, zone: PileId) -> String {
+fn zone_title_with_count(tree: &Board, zone: PileId) -> String {
     let name = pile_display_name(tree, zone);
     let count = tree.physical_card_count(zone);
     if zone == tree.root_id() || count == 0 {
@@ -3859,7 +3854,7 @@ fn spawn_pile_chip(
 /// piles no longer fan open in place. A pile
 /// whose top card is face-down (or that is empty) falls back to the pile's own display name, no type,
 /// so a face-down deck reveals nothing.
-fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
+fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Board, id: PileId) {
     let pile = tree.pile(id).expect("pile id from tree");
     // The recursive **physical** count (quantities counted, chrome and projections excluded) — the same
     // tally the drilled-in zone title shows, so the chip and the zone agree on "how many are in here".
@@ -3884,7 +3879,7 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Tableau, id: PileId) {
 /// character's token here moves them to this place (resolved by [`on_node_drag_end`] against its
 /// [`PileDropZone`]); clicking it drills into the place (the Inn lives inside Ashfen). It wears the card
 /// back so it reads as a fixed board square, distinct from the light-faced character tokens on it.
-fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Tableau, place: PileId) {
+fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Board, place: PileId) {
     // Carry the same `(N)` physical tally the deck chips show — here it counts the place's own location
     // card plus whatever is stacked under it (encounters, character tokens, or the inn), and updates as
     // characters move in and out. It rides in the top strip, which stays exposed above cascaded tokens.
@@ -4273,7 +4268,7 @@ mod game {
     use bevy::prelude::*;
     use std::collections::HashSet;
 
-    use cardtable_model::{Tableau, from_table_view};
+    use cardtable_model::{Board, from_table_view};
     use contract::Game;
 
     use crate::{
@@ -4361,7 +4356,7 @@ mod game {
 
     /// Build the presentation state from a game state: the board (zones → piles), the loose-action
     /// rail (legal actions not bound to a card), and the status caption.
-    fn snapshot<G: Game>(game: &G, state: &G::State) -> (Tableau, Vec<RailAction>, String) {
+    fn snapshot<G: Game>(game: &G, state: &G::State) -> (Board, Vec<RailAction>, String) {
         let view = game.view(state, None);
         let table = from_table_view(&view);
         let bound: HashSet<usize> = view

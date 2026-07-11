@@ -16,7 +16,7 @@ use crate::demo::demo_table;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::ui::ScrollPosition;
-use cardtable_model::{CardId, Tableau};
+use cardtable_model::{Board, CardId};
 
 use crate::{
     CardRef, FELT, install_ui_fonts, setup_camera, spawn_card_large, spawn_card_medium,
@@ -48,7 +48,7 @@ const THUMB_MIN: f32 = 32.0;
 
 /// The cards being shown, kept so the audit can resolve names.
 #[derive(Resource)]
-struct GalleryCards(Tableau);
+struct GalleryCards(Board);
 
 /// Whether the one-shot audit has already run.
 #[derive(Resource, Default)]
@@ -306,7 +306,7 @@ fn audit_gallery(
 
 /// Every distinct card in the table, walking all piles and sub-piles (deduped by id, since projections
 /// show the same cards in more than one place).
-fn all_cards(tree: &Tableau) -> Vec<CardId> {
+fn all_cards(tree: &Board) -> Vec<CardId> {
     let mut ids = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![tree.root_id()];

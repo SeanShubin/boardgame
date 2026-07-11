@@ -1,10 +1,10 @@
 //! **Deckbound as a card-table game** — the deckbound-side implementation of the [`BoardGame`] seam over
 //! the *persistent physical board* (plan §17/§18). [`CardTableGame`] operates directly on the conserved
-//! card `Tableau`: recruit / march / advance-day as conservation-clean transitions (PC.2 — cards are
+//! card `Board`: recruit / march / advance-day as conservation-clean transitions (PC.2 — cards are
 //! moved / split / merged / flipped, never minted). Combat folds in here at stretch A.
 //!
 //! This replaces the reunification's intermediate `CardTableWorld` view-emitter (a `contract::Game` that
-//! rebuilt a `Tableau` from an abstract snapshot each frame) — the very inversion the re-aiming discarded
+//! rebuilt a `Board` from an abstract snapshot each frame) — the very inversion the re-aiming discarded
 //! (plan §0.4): the cards are now the single source of truth and the game mutates them in place.
 //!
 //! [`BoardGame`]: cardtable_model::BoardGame

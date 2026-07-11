@@ -1,4 +1,4 @@
-//! Persist the card-table [`Tableau`] as **RON** — to the browser's `localStorage` on the web, and to a
+//! Persist the card-table [`Board`] as **RON** — to the browser's `localStorage` on the web, and to a
 //! file in the OS data directory natively (same serialization, two backends). The session **persists**
 //! across launches on both platforms; the player resets with the **Start Over** button, so a save is kept
 //! as long as it still deserializes (a fingerprint of the pristine shape is recorded for reference but no
@@ -6,7 +6,7 @@
 //! fresh table rather than crashing. [`encode`] + [`write`] are split so the caller can dedupe (only write
 //! when the RON changed), for the autosave loop.
 
-use cardtable_model::Tableau;
+use cardtable_model::Board;
 
 /// The `localStorage` key (web) and file stem (native).
 const KEY: &str = "boardgame.tableau";
@@ -15,7 +15,7 @@ const KEY: &str = "boardgame.tableau";
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Save {
     fingerprint: u64,
-    tableau: Tableau,
+    tableau: Board,
 }
 
 /// A fingerprint of the pristine [`sample_table`](cardtable_model::sample_table) shape. It changes
@@ -34,7 +34,7 @@ fn fingerprint() -> u64 {
 }
 
 /// Serialize the tableau to a RON string (stamped with the pristine fingerprint), or `None` on failure.
-pub fn encode(tableau: &Tableau) -> Option<String> {
+pub fn encode(tableau: &Board) -> Option<String> {
     ron::to_string(&Save {
         fingerprint: fingerprint(),
         tableau: tableau.clone(),
@@ -46,12 +46,12 @@ pub fn encode(tableau: &Tableau) -> Option<String> {
 /// the fingerprint is recorded but no longer gates the load, so a save is kept as long as it still
 /// deserializes — use **Start Over** to reset. A save that can't be parsed (an incompatible struct
 /// change) falls back to a fresh table rather than crashing.
-fn decode(text: &str) -> Option<Tableau> {
+fn decode(text: &str) -> Option<Board> {
     ron::from_str::<Save>(text).ok().map(|save| save.tableau)
 }
 
 /// Load the saved tableau, or `None` if there is none (or it can't be read / parsed).
-pub fn load() -> Option<Tableau> {
+pub fn load() -> Option<Board> {
     backend::read().and_then(|text| decode(&text))
 }
 

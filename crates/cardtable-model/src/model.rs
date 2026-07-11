@@ -1,6 +1,6 @@
 //! The pure pile/card model and its behaviors. Dependency-free: no `contract`, no Bevy.
 //!
-//! A [`Tableau`] is a tree of [`Pile`]s. Each pile holds an ordered list of cards and an ordered
+//! A [`Board`] is a tree of [`Pile`]s. Each pile holds an ordered list of cards and an ordered
 //! list of child piles (so a pile can contain piles — the recursive zoom of the card-table UI). A
 //! card always lives in exactly one pile (the "every card has a physical place" principle): operations
 //! preserve that invariant or return a [`TableauError`] without mutating anything.
@@ -12,13 +12,13 @@ mod ui;
 use geometry::{clamp_box, separate_boxes};
 use ui::UiModel;
 
-/// A stable handle to a card within a [`Tableau`].
+/// A stable handle to a card within a [`Board`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 pub struct CardId(pub u64);
 
-/// A stable handle to a pile within a [`Tableau`].
+/// A stable handle to a pile within a [`Board`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
@@ -26,7 +26,7 @@ pub struct PileId(pub u64);
 
 /// A **child of a pile** — one entry in its single ordered [`children`](Pile::children) list. A pile's
 /// contents are a homogeneous sequence of nodes, each either a leaf [`Card`] or a nested [`Pile`]; both
-/// are positioned, sized, movable, and shoved *uniformly* (see [`Tableau::separate`]). The card-vs-pile
+/// are positioned, sized, movable, and shoved *uniformly* (see [`Board::separate`]). The card-vs-pile
 /// distinction only decides leaf behavior — a card grows, a pile drills in — not whether it can move.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Node {
@@ -61,7 +61,7 @@ pub struct Pos {
 }
 
 impl Pos {
-    /// Squared distance to `other` — used to order [`Tableau::separate`]'s outward wavefront without a
+    /// Squared distance to `other` — used to order [`Board::separate`]'s outward wavefront without a
     /// square root (only the ordering matters).
     fn dist_sq(self, other: Pos) -> f32 {
         (self.x - other.x).powi(2) + (self.y - other.y).powi(2)
@@ -112,7 +112,7 @@ pub enum CardKind {
     Header,
     /// A **virtual** readout — a card that shows game state (e.g. a combat log) rather than being a
     /// physical tabletop card. It renders and expands like a Regular card, but is **not counted** in the
-    /// physical tally ([`Tableau::physical_card_count`]): it exists only in software.
+    /// physical tally ([`Board::physical_card_count`]): it exists only in software.
     Virtual,
 }
 
@@ -129,7 +129,7 @@ pub enum Utility {
 /// array of stat *values* (in the caller's canonical stat order) and the name of the ability the character
 /// gains. Building a character deck instantiates it — one card per stat named `"{Stat} {value}"` plus one
 /// ability card — so the kit stores only the numbers; the stat/ability *names* are the game's content,
-/// supplied to [`equip_character`](Tableau::equip_character) as data.
+/// supplied to [`equip_character`](Board::equip_character) as data.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Recipe {
     /// The stat values, in the caller's canonical stat order.
@@ -172,7 +172,7 @@ pub struct Card {
     /// **Quantity** — how many identical physical cards this one stack stands for (spec
     /// `canon/2-spec/physical-cards.md` PC.2/PC.5): a run of duplicates in the same pile is one card that
     /// carries its count (`6 ×12`). Default 1. **Conservation is on the sum** of quantities, so
-    /// [`card_count`](Tableau::card_count) totals them; splitting/merging a stack preserves that sum.
+    /// [`card_count`](Board::card_count) totals them; splitting/merging a stack preserves that sum.
     #[serde(default = "default_quantity")]
     quantity: u32,
     /// **Pairing target key** — if `Some(k)`, another card can be paired onto this one (the renderer's
@@ -284,7 +284,7 @@ impl Card {
     }
 
     /// Whether this is a **physical** tabletop card — the single source of truth for the physical tally
-    /// ([`Tableau::physical_card_count`]). Software cards are not physical: a [`Utility`](CardKind::Utility)
+    /// ([`Board::physical_card_count`]). Software cards are not physical: a [`Utility`](CardKind::Utility)
     /// control (the System deck's Start Over / Exit) and a [`Virtual`](CardKind::Virtual) readout (a combat
     /// log) both exist only in software, so neither is counted.
     pub fn is_physical(&self) -> bool {
@@ -308,13 +308,13 @@ pub enum Arrangement {
     /// and kept as cards come and go.
     Grid { columns: usize },
     /// **Unordered**: cards are freely positioned and dragged at will — order is irrelevant. Overlaps
-    /// shove apart ([`separate`](Tableau::separate)), exactly as the top-level piles do on
+    /// shove apart ([`separate`](Board::separate)), exactly as the top-level piles do on
     /// the table, whatever each card's current size. The layout the System deck uses.
     Free,
     /// **Rows**: a stack of horizontal rows. Each row is led by a [`Header`](CardKind::Header) card that
     /// names it; the rest of the row's cards follow as a horizontal **fan** — overlapped so only each
     /// card's left-edge sliver shows, with the tapped card pulled fully to the front to examine it (the
-    /// header is not part of the fan). See [`Tableau::row_groups`]. Used by the inn.
+    /// header is not part of the fan). See [`Board::row_groups`]. Used by the inn.
     Rows,
 }
 
@@ -354,13 +354,13 @@ pub struct Pile {
     size: Pos,
     layout: Layout,
     /// If non-empty, this pile is a **projection**: instead of its own contents, drilling into it shows
-    /// the [content cards](Tableau::content_cards) of these source piles (grouped, still owned by the
+    /// the [content cards](Board::content_cards) of these source piles (grouped, still owned by the
     /// sources). A projection gathers relevant cards from several decks into one view without moving them.
     projection: Vec<PileId>,
     /// If set, this pile is a **character deck** for the hero whose [`CardId`] this is (the deck's own
-    /// identity/label card). [`equip_character`](Tableau::equip_character) sets it and
-    /// [`unequip_character`](Tableau::unequip_character) removes the deck; the party reconcile
-    /// ([`sync_party`](Tableau::sync_party)) reads it to know who is active. Nothing else carries this.
+    /// identity/label card). [`equip_character`](Board::equip_character) sets it and
+    /// [`unequip_character`](Board::unequip_character) removes the deck; the party reconcile
+    /// ([`sync_party`](Board::sync_party)) reads it to know who is active. Nothing else carries this.
     reflects: Option<CardId>,
 }
 
@@ -406,7 +406,7 @@ impl Pile {
     }
 
     /// The hero this pile is a **character deck** for, or `None` for an ordinary pile. See
-    /// [`Tableau::equip_character`].
+    /// [`Board::equip_character`].
     pub fn reflects(&self) -> Option<CardId> {
         self.reflects
     }
@@ -435,7 +435,7 @@ pub enum TableauError {
 /// renderer-fed transient state. The physical tree knows nothing of attention; the two are kept in
 /// distinct structs (plan §0/§16). All behaviors are methods here; the renderer reads the result to draw.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Tableau {
+pub struct Board {
     piles: HashMap<PileId, Pile>,
     cards: HashMap<CardId, Card>,
     root: PileId,
@@ -446,18 +446,18 @@ pub struct Tableau {
 }
 
 /// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
-/// value a deserialized [`Tableau`] gets, since `surface` is not persisted.
+/// value a deserialized [`Board`] gets, since `surface` is not persisted.
 fn unbounded_surface() -> Pos {
     Pos { x: 1.0e6, y: 1.0e6 }
 }
 
-impl Default for Tableau {
+impl Default for Board {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Tableau {
+impl Board {
     /// A new tree with a single, open (fanned) root pile and nothing in it.
     pub fn new() -> Self {
         let root = PileId(0);
@@ -1125,9 +1125,9 @@ impl Tableau {
     }
 
     /// Move a character's **map position** copy to `to_location` and spend its move: flip its Progress
-    /// move marker face-down ([`mark_moved`](Tableau::mark_moved)). Returns `true` when that was the
+    /// move marker face-down ([`mark_moved`](Board::mark_moved)). Returns `true` when that was the
     /// **last** character still to move — the day is over, and the caller then
-    /// [`advance_day`](Tableau::advance_day)s. Conservation-clean (a move + a flip).
+    /// [`advance_day`](Board::advance_day)s. Conservation-clean (a move + a flip).
     pub fn move_character(
         &mut self,
         position: CardId,
@@ -1277,7 +1277,7 @@ impl Tableau {
     }
 
     /// Sets a card's [`Face`] outright — the one post-creation mutation of facing (spec
-    /// `physical-cards.md` PC.2). Prefer [`flip_down`](Tableau::flip_down) / [`flip_up`](Tableau::flip_up),
+    /// `physical-cards.md` PC.2). Prefer [`flip_down`](Board::flip_down) / [`flip_up`](Board::flip_up),
     /// which preserve the front title so the flip is reversible; this is the raw setter.
     pub fn set_face(&mut self, card: CardId, face: Face) -> Result<(), TableauError> {
         self.cards
@@ -1287,7 +1287,7 @@ impl Tableau {
         Ok(())
     }
 
-    /// Flip a card **face down**, remembering its front so [`flip_up`](Tableau::flip_up) restores it
+    /// Flip a card **face down**, remembering its front so [`flip_up`](Board::flip_up) restores it
     /// (PC.2 — damage landing on a Health card, a day-clock copy spent by a move). A no-op if already
     /// down.
     pub fn flip_down(&mut self, card: CardId) -> Result<(), TableauError> {
@@ -1322,7 +1322,7 @@ impl Tableau {
     // **Progress** is the day clock: a `Day Passed ×N` **count** stack (type `event`; its quantity is the
     // current day) plus one face-up `hero` **move marker** per active character (face-up = hasn't moved
     // today). A move flips a marker down; once every marker is down the day is over and
-    // [`advance_day`](Tableau::advance_day) stands them back up and grows the count by one. Count and
+    // [`advance_day`](Board::advance_day) stands them back up and grows the count by one. Count and
     // markers are told apart by card type. All conservation-safe: only flips and one move.
 
     /// Whether card `c` on the Progress deck is a **hero move marker** (as opposed to the `event` count).
@@ -1746,8 +1746,8 @@ mod tests {
     use super::*;
 
     /// root → hand, pile; with a couple of cards in each. Returns (tree, hand, pile, c0, c1).
-    fn fixture() -> (Tableau, PileId, PileId, CardId, CardId) {
-        let mut t = Tableau::new();
+    fn fixture() -> (Board, PileId, PileId, CardId, CardId) {
+        let mut t = Board::new();
         let root = t.root_id();
         let hand = t.add_pile(root, "Hand").unwrap();
         let pile = t.add_pile(root, "Pile").unwrap();
@@ -1774,7 +1774,7 @@ mod tests {
 
     #[test]
     fn new_tree_has_open_root_and_no_cards() {
-        let t = Tableau::new();
+        let t = Board::new();
         assert_eq!(t.focus_id(), t.root_id());
         assert!(!t.pile(t.root_id()).unwrap().collapsed);
         assert_eq!(t.card_count(), 0);
@@ -1807,7 +1807,7 @@ mod tests {
 
     #[test]
     fn select_unknown_card_errors() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         assert_eq!(
             t.select(CardId(999)),
             Err(TableauError::UnknownCard(CardId(999)))
@@ -1846,7 +1846,7 @@ mod tests {
     /// remembered front survives a RON round-trip. Flips are idempotent no-ops when already at the target.
     #[test]
     fn flip_is_reversible_and_remembers_its_front() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "P").unwrap();
         let c = t
@@ -1888,7 +1888,7 @@ mod tests {
         // A face-down card round-trips through RON with its remembered front intact (packable, PC.3).
         t.flip_down(c).unwrap();
         let text = ron::to_string(&t).expect("serialize");
-        let back: Tableau = ron::from_str(&text).expect("deserialize");
+        let back: Board = ron::from_str(&text).expect("deserialize");
         assert!(back.card(c).unwrap().is_face_down());
         assert_eq!(back.card(c).unwrap().front_title(), "Vael");
     }
@@ -1898,7 +1898,7 @@ mod tests {
     /// card count is **conserved** across every move and the advance (only flips + one draw, no mint).
     #[test]
     fn day_clock_advances_when_every_character_has_moved() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         // Progress: the day **count** (a `Day Passed` event card, quantity = the day) plus one face-up
         // `hero` move marker per active character (front = hero name).
@@ -1983,7 +1983,7 @@ mod tests {
     /// conserved throughout, and the kit spec is never consumed.
     #[test]
     fn equip_assembles_from_banks_and_unequip_returns_them_conserving_cards() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let heroes = t.add_pile(root, "Heroes").unwrap();
         let hero = t
@@ -2115,7 +2115,7 @@ mod tests {
         assert!(t.content_cards(progress).is_empty(), "move marker returned");
         // The returned cards merged back into the banks — the physical totals are restored (5 names ×2 =
         // 10, one ability), even though they now sit as fewer, larger stacks.
-        let bank_sum = |t: &Tableau, p: PileId| -> u32 {
+        let bank_sum = |t: &Board, p: PileId| -> u32 {
             t.content_cards(p)
                 .iter()
                 .map(|&c| t.card(c).unwrap().quantity())
@@ -2212,7 +2212,7 @@ mod tests {
     /// nudged clear of it, and with no pinned it keeps the spot it was dropped at.
     #[test]
     fn separate_pins_take_priority_over_the_dropped_anchor() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         t.set_surface(1000.0, 1000.0);
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
@@ -2240,7 +2240,7 @@ mod tests {
     /// Two 100×100 piles overlapping; the anchor stays, the other slides clear on the x axis.
     #[test]
     fn separate_keeps_anchor_and_clears_overlap() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(root, "B").unwrap();
@@ -2265,7 +2265,7 @@ mod tests {
     /// left/top edges and between every adjacent box — even when widths differ.
     #[test]
     fn arrange_row_places_children_at_an_exact_constant_gap() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         t.set_surface(1000.0, 800.0);
         let a = t.add_pile(root, "A").unwrap();
@@ -2288,7 +2288,7 @@ mod tests {
     /// `arrange_row` wraps to a new row (one gap below the tallest box) when a child would run past the edge.
     #[test]
     fn arrange_row_wraps_at_the_surface_edge() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         t.set_surface(300.0, 800.0); // only room for two 100-wide boxes per row
         let ids: Vec<_> = (0..3)
@@ -2311,10 +2311,10 @@ mod tests {
     /// cards after it, so expanding a card reflows the deck instead of overlapping.
     #[test]
     fn structured_positions_list_flows_by_footprint() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "D").unwrap();
         t.set_surface(1000.0, 800.0);
-        let mk = |t: &mut Tableau, name: &str, w: f32| {
+        let mk = |t: &mut Board, name: &str, w: f32| {
             let c = t
                 .add_card(deck, Face::Up { title: name.into() }, None)
                 .unwrap();
@@ -2347,7 +2347,7 @@ mod tests {
     /// `structured_positions` aligns a Grid on **both** axes: a wider card widens its whole column.
     #[test]
     fn structured_positions_grid_aligns_columns() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "G").unwrap();
         t.set_surface(1000.0, 800.0);
         let ids: Vec<_> = (0..4)
@@ -2389,7 +2389,7 @@ mod tests {
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).
     #[test]
     fn separate_resolves_chain_reactions() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let ids: Vec<_> = (0..3)
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
@@ -2419,7 +2419,7 @@ mod tests {
     /// place_pile clamps to the surface — the borders shove a pile back inside.
     #[test]
     fn place_pile_clamps_to_surface() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         t.set_pile_size(a, 100.0, 100.0).unwrap();
@@ -2438,7 +2438,7 @@ mod tests {
     /// In a bounded surface, separate keeps every pile fully inside (residual overlap is tolerated).
     #[test]
     fn separate_keeps_decks_within_bounds() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let ids: Vec<_> = (0..3)
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
@@ -2461,7 +2461,7 @@ mod tests {
     /// (here: downward) and end up clear and in bounds — not deadlocked against the wall.
     #[test]
     fn separate_routes_around_a_wall_instead_of_deadlocking() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap(); // anchor, top-left corner
         let b = t.add_pile(root, "B").unwrap();
@@ -2489,7 +2489,7 @@ mod tests {
     }
 
     /// Assert no two of `ids` overlap (each 100×100). Shared by the dense-pack cases.
-    fn assert_no_overlaps(t: &Tableau, ids: &[PileId]) {
+    fn assert_no_overlaps(t: &Board, ids: &[PileId]) {
         for i in 0..ids.len() {
             for j in (i + 1)..ids.len() {
                 let p = t.pile(ids[i]).unwrap().pos();
@@ -2508,7 +2508,7 @@ mod tests {
     /// moves could leave overlapping within the pass cap. Lock-as-you-go must fully separate all six.
     #[test]
     fn separate_fully_clears_a_dense_stack() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let ids: Vec<_> = (0..6)
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
@@ -2530,7 +2530,7 @@ mod tests {
     /// lock-as-you-go folds the walls into placement, so nothing overlaps after clamping.
     #[test]
     fn separate_no_overlap_after_wall_clamp() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let ids: Vec<_> = (0..4)
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
@@ -2554,7 +2554,7 @@ mod tests {
 
     #[test]
     fn card_size_cycles_through_supported_sizes() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "P").unwrap();
         let c = t
@@ -2593,7 +2593,7 @@ mod tests {
 
     #[test]
     fn name_runs_group_adjacent_identical_name_cards() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "Quiver").unwrap();
         let a1 = t
@@ -2653,7 +2653,7 @@ mod tests {
 
     #[test]
     fn focus_fans_path_and_collapses_the_rest() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(a, "B").unwrap();
@@ -2674,7 +2674,7 @@ mod tests {
 
     #[test]
     fn layout_defaults_to_editable_list_and_can_be_set() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "Locations").unwrap();
         // Piles start as editable 1-D lists (the original behaviour).
@@ -2697,7 +2697,7 @@ mod tests {
 
     #[test]
     fn separate_cards_clears_overlapping_cards_and_holds_anchor() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "Scatter").unwrap();
         t.set_layout(
@@ -2728,7 +2728,7 @@ mod tests {
 
     #[test]
     fn projection_shows_sources_and_equip_recruits() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let identity = t.add_pile(root, "Identity").unwrap();
         let hero = t
@@ -2854,7 +2854,7 @@ mod tests {
 
     #[test]
     fn zone_card_names_the_pile_and_is_not_content() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let p = t.add_pile(root, "Locations").unwrap();
         let a = t
@@ -2896,7 +2896,7 @@ mod tests {
 
     #[test]
     fn zoom_out_at_root_is_noop() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         t.zoom_out();
         assert_eq!(t.focus_id(), t.root_id());
     }
@@ -2918,7 +2918,7 @@ mod tests {
     /// the inn) so this stays a pure model invariant.
     #[test]
     fn projections_never_own_cards() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(root, "B").unwrap();

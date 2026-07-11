@@ -3,12 +3,12 @@
 //! driven and its text handling audited at every render size. The product supplies its own real table (the
 //! game's opening board); the renderer itself ships no world.
 
-use cardtable_model::{CardKind, Face, Tableau};
+use cardtable_model::{Board, CardKind, Face};
 
 /// A small game-free table: one deck of cards with short and long titles, detail lines, and a multi-line
 /// body panel - enough to drive and audit the renderer without any game wired in.
-pub fn demo_table() -> Tableau {
-    let mut tree = Tableau::new();
+pub fn demo_table() -> Board {
+    let mut tree = Board::new();
     let root = tree.root_id();
 
     let deck = tree.add_pile(root, "Samples").expect("root exists");

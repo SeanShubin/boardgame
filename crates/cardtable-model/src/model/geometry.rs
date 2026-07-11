@@ -83,8 +83,8 @@ fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> P
 
 /// Lock-as-you-go separation of `boxes` (`(pos, size)`) inside `surface`, pinning `anchor` and shoving
 /// the rest clear nearest-first (a wavefront outward from the anchor). Returns each box's settled
-/// position, index-aligned with `boxes`. The shared core of `Tableau::separate` (piles) and
-/// `Tableau::separate` (cards): because each box is placed clear of all already-settled boxes
+/// position, index-aligned with `boxes`. The shared core of `Board::separate` (piles) and
+/// `Board::separate` (cards): because each box is placed clear of all already-settled boxes
 /// and never disturbed afterward, no two overlap once the space allows it. Terminates in one placement
 /// per box.
 pub(super) fn separate_boxes(

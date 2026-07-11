@@ -1,13 +1,13 @@
-//! Sample [`Tableau`]s for prototyping and tests — a shared source of truth so feature prototypes
+//! Sample [`Board`]s for prototyping and tests — a shared source of truth so feature prototypes
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use cardtable_model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Recipe, Tableau};
+use cardtable_model::{Arrangement, Board, CardId, CardKind, Face, Layout, Node, PileId, Recipe};
 use deckbound::catalog;
 
 /// Add a face-up card with a name and a [`type`](cardtable_model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
-fn typed(tree: &mut Tableau, pile: PileId, title: &str, card_type: &str) -> CardId {
+fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId {
     let id = tree
         .add_card(
             pile,
@@ -24,7 +24,7 @@ fn typed(tree: &mut Tableau, pile: PileId, title: &str, card_type: &str) -> Card
 /// Add a **Kit** card: a Small card (name + type) that grows to show its five-stat line and
 /// ability. `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` — the suitless-roster order
 /// from `data/balance/generic-classes.ron`; `ability` is the derived strike card (Jab / Shot / …).
-fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
+fn starter(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
     let id = typed(tree, pile, name, "Kit");
     let [might, vitality, toughness, cadence, finesse] = stats;
     tree.set_card_detail(
@@ -37,7 +37,7 @@ fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability
     )
     .expect("starter card just added");
     // The kit's **recipe** — a reusable *spec* (never consumed): the five stat values + the ability that
-    // `Tableau::equip_character` assembles by **moving** a stat-name card, a number card, and an ability
+    // `Board::equip_character` assembles by **moving** a stat-name card, a number card, and an ability
     // card out of the banks into the character deck (PC.2, no mint).
     tree.set_card_recipe(
         id,
@@ -54,7 +54,7 @@ fn starter(tree: &mut Tableau, pile: PileId, name: &str, stats: [u8; 5], ability
 /// its derived intention and posture, its five-stat line, and its ability. Both the intention and the
 /// posture are *derived* from the stats + ability (`catalog::creature_intention` / `creature_posture`),
 /// never stored — the card reads back what the numbers already say. Mirrors [`starter`] for kits.
-fn creature_card(tree: &mut Tableau, pile: PileId, c: &catalog::Creature) -> CardId {
+fn creature_card(tree: &mut Board, pile: PileId, c: &catalog::Creature) -> CardId {
     let id = typed(tree, pile, c.name, "foe");
     let [might, vitality, toughness, cadence, finesse] = c.stats;
     tree.set_card_detail(
@@ -170,7 +170,7 @@ fn phase_detail(name: &str) -> &'static str {
 /// interleaved — so a sub-deck keeps its slot (e.g. the Rules deck's Engage `(4/6)` stays fourth instead
 /// of being pushed past the leaf cards). Saved tables restore their own positions, so this only shapes a
 /// fresh table.
-fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
+fn grid_layout(tree: &mut Board, deck: PileId, cols: usize) {
     // Kept in step with the renderer's spacing (cardtable `GAP` / `CARD_W` / `CARD_H` / `OVERLAY_BAND`) so
     // a freshly-seeded Free deck already sits at the exact constant-gap spacing the renderer would compute
     // — the cards start non-overlapping, so the overlap-shove never fires and never distorts them.
@@ -206,8 +206,8 @@ fn grid_layout(tree: &mut Tableau, deck: PileId, cols: usize) {
 /// Crossing**, is the *inn* — a projection of the Identity and Kit decks where you drag a hero
 /// onto a kit (or vice versa) to recruit them into a character deck. Every card is a physical,
 /// single-homed card; a projection only *shows* other decks' cards, it doesn't move them.
-pub fn sample_table() -> Tableau {
-    let mut tree = Tableau::new();
+pub fn sample_table() -> Board {
+    let mut tree = Board::new();
     let root = tree.root_id();
     // The table itself is a **Free** layout: its top-level decks are placed by position (auto-tidied into a
     // row by the renderer's `settle_table_piles`, draggable in between), not a structured grid. Without
@@ -225,7 +225,7 @@ pub fn sample_table() -> Tableau {
     // The "Heroes" deck: the roster, as one `hero` card per hero **stacked ×4** — the four physical copies
     // a hero needs at once when active (character-deck label, rank marker, map position, move marker). The
     // inn projects this deck (the ×4 stack shows as one recruit tile); recruiting deals the four copies out
-    // (`Tableau::equip_character`), emptying the stack — so a recruited hero can't be recruited again.
+    // (`Board::equip_character`), emptying the stack — so a recruited hero can't be recruited again.
     const HERO_COPIES: u32 = 4;
     let heroes = tree.add_pile(root, "Heroes").expect("root exists");
     for hero in HEROES {
@@ -336,7 +336,7 @@ pub fn sample_table() -> Tableau {
     // The "Locations" deck: a fixed 3×3 grid (2-D, non-editable) of place-piles from the Name Bank,
     // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the *inn*: a
     // projection of the Identity and Kit decks — drill in to see the heroes and the kits
-    // together and drag one onto the other to recruit (see the renderer's `try_equip` -> `Tableau::equip_character`).
+    // together and drag one onto the other to recruit (see the renderer's `try_equip` -> `Board::equip_character`).
     let locations = tree.add_pile(root, "Locations").expect("root exists");
     for place in LOCATIONS {
         let place_pile = tree.add_pile(locations, place).expect("locations exists");
@@ -492,12 +492,12 @@ pub fn sample_table() -> Tableau {
     // - **Progress** — the day clock proper. It starts **empty** (Day 0); each `advance_day` lays one
     //   `Day Passed` count card here, so its `event`-card count *is* the current day (no number cap). Once
     //   heroes are recruited it also holds one face-up `hero` **move marker** per active character (face-up
-    //   = hasn't moved today; a move flips it down, `Tableau::mark_moved`). Count (type `event`) and markers
+    //   = hasn't moved today; a move flips it down, `Board::mark_moved`). Count (type `event`) and markers
     //   (type `hero`) are told apart by type.
     // - **Events** — the bounded reserve of `Day Passed` cards `advance_day` draws from each time every
     //   marker has flipped down. Its size is the provisioned max game length (raise as needed).
     const DAYS_PROVISIONED: usize = 12;
-    let free = |tree: &mut Tableau, pile: PileId| {
+    let free = |tree: &mut Board, pile: PileId| {
         tree.set_layout(
             pile,
             Layout {
@@ -558,7 +558,7 @@ pub fn sample_table() -> Tableau {
     grid_layout(&mut tree, bestiary, 4);
 
     // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
-    // exact constant-gap row computed by `Tableau::arrange_row` once the chips are sized (see the
+    // exact constant-gap row computed by `Board::arrange_row` once the chips are sized (see the
     // renderer's `settle_table_piles`); these seeds only need to be non-overlapping until then.
     tree.set_pile_pos(heroes, 40.0, 40.0)
         .expect("heroes exists");
@@ -625,7 +625,7 @@ mod tests {
         let (progress, events) = (deck(&t, "Progress"), deck(&t, "Events"));
 
         // Day 0 (Progress starts empty of count cards), the full Events reserve of 12, no markers yet.
-        let events_qty = |t: &Tableau| -> u32 {
+        let events_qty = |t: &Board| -> u32 {
             t.content_cards(events)
                 .iter()
                 .map(|&c| t.card(c).unwrap().quantity())
@@ -705,7 +705,7 @@ mod tests {
     /// counts as zero physical cards, its label included: those are app controls, not tabletop cards.
     #[test]
     fn physical_card_count_skips_software_only_decks() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let system = t.add_pile(root, "System").unwrap();
         let start = t
@@ -740,7 +740,7 @@ mod tests {
     /// is not counted, so a location's tally reflects only its real tabletop cards.
     #[test]
     fn physical_card_count_skips_virtual_cards() {
-        let mut t = Tableau::new();
+        let mut t = Board::new();
         let root = t.root_id();
         let place = t.add_pile(root, "Place").unwrap();
         let zone = typed(&mut t, place, "Place", "Location");
@@ -945,7 +945,7 @@ mod tests {
     }
 
     /// Find a top-level deck by label (test helper).
-    fn deck(t: &Tableau, label: &str) -> PileId {
+    fn deck(t: &Board, label: &str) -> PileId {
         *t.pile(t.root_id())
             .unwrap()
             .subpiles()
@@ -957,7 +957,7 @@ mod tests {
     /// Recruit test helper — the conservation-clean flow: `equip` Identity's hero #`i` with `recipe`
     /// (assembled from the banks), then reconcile the party (stations its tokens). Returns the character
     /// deck and the hero's name.
-    fn recruit(t: &mut Tableau, i: usize, recipe: Recipe) -> (PileId, String) {
+    fn recruit(t: &mut Board, i: usize, recipe: Recipe) -> (PileId, String) {
         let (heroes, stats, numbers, abilities, progress) = (
             deck(t, "Heroes"),
             deck(t, "Stats"),
@@ -1048,7 +1048,7 @@ mod tests {
         assert_eq!(t.card(t.content_cards(heroes)[0]).unwrap().quantity(), 4);
 
         let (cdeck, name) = recruit(&mut t, 0, demo_kit());
-        let copies_in = |t: &Tableau, pile: PileId| -> usize {
+        let copies_in = |t: &Board, pile: PileId| -> usize {
             t.content_cards(pile)
                 .iter()
                 .filter(|&&c| {
@@ -1118,7 +1118,7 @@ mod tests {
         let (_cdeck, name) = recruit(&mut t, 0, demo_kit());
 
         // A hero copy stands at the inn town (map position); a move marker stands on Progress; Day 1.
-        let named = |t: &Tableau, pile, n: &str| {
+        let named = |t: &Board, pile, n: &str| {
             t.content_cards(pile).into_iter().find(|&c| {
                 let k = t.card(c).unwrap();
                 k.front_title() == n && k.card_type() == "hero"
@@ -1193,10 +1193,10 @@ mod tests {
     fn sample_table_round_trips_through_ron() {
         let t = sample_table();
         let text = ron::to_string(&t).expect("serialize to RON");
-        let back: Tableau = ron::from_str(&text).expect("deserialize from RON");
+        let back: Board = ron::from_str(&text).expect("deserialize from RON");
         // Structure survives the round-trip (HashMaps keyed by integer ids and all card/pile data).
         assert_eq!(back.card_count(), t.card_count());
-        let subs = |t: &Tableau| t.pile(t.root_id()).unwrap().subpiles().len();
+        let subs = |t: &Board| t.pile(t.root_id()).unwrap().subpiles().len();
         assert_eq!(subs(&back), subs(&t));
         // A known card comes back intact.
         let root = t.pile(t.root_id()).unwrap();
