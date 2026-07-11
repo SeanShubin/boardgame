@@ -12,7 +12,7 @@ use deckbound_cardtable::solver::winnable;
 
 /// A party unit from `[Might, Vitality, Toughness, Cadence, Finesse]` + reach (rank is the solver's choice).
 fn ally(name: &str, stats: [u8; 5], melee: bool, ranged: bool) -> Combatant {
-    Combatant::from_stats(name, Side::Party, Rank::Vanguard, stats, melee, ranged)
+    Combatant::from_stats(name, Side::Party, Rank::Vanguard, stats, 0, melee, ranged)
 }
 
 fn main() {
@@ -23,6 +23,7 @@ fn main() {
         Side::Foe,
         Rank::Vanguard,
         [4, 6, 3, 2, 2],
+        0,
         true,
         false,
     );

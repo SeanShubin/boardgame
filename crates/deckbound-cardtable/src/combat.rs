@@ -44,6 +44,11 @@ pub struct Combatant {
     pub cadence: u32,
     /// The health bar: accumulated damage flips a health card each `toughness` crossed.
     pub toughness: u32,
+    /// **Armor**: a flat reduction applied to *each individual strike* (`max(0, Might - armor)`). Unlike
+    /// Toughness (which scales how fast accumulated damage flips a card), armor is a *per-strike floor*: a
+    /// strike whose Might does not exceed it deals **nothing**, and no amount of Cadence (more strikes)
+    /// changes that. So armor is what makes high per-strike Might *necessary* rather than merely efficient.
+    pub armor: u32,
     /// Carries a **melee** blow (effective in the Vanguard / as an Outrider). Independent of `ranged`.
     pub melee: bool,
     /// Carries a **ranged** shot (effective in the Rearguard). Independent of `melee`.
@@ -67,6 +72,7 @@ impl Combatant {
         side: Side,
         rank: Rank,
         stats: [u8; 5],
+        armor: u32,
         melee: bool,
         ranged: bool,
     ) -> Self {
@@ -79,6 +85,7 @@ impl Combatant {
             finesse: finesse.max(1),
             cadence,
             toughness: toughness.max(1),
+            armor,
             melee,
             ranged,
             tempo: cadence,
@@ -169,6 +176,12 @@ pub fn evade_succeeds(cards: u32, f_def: u32, atk_spent: u32) -> bool {
     cards * f_def > atk_spent
 }
 
+/// The damage a single strike of `might` deals through `armor`: `max(0, might - armor)`. Per **strike** — so
+/// a Might below the armor deals nothing no matter how many strikes land (Cadence cannot penetrate armor).
+fn strike(might: u32, armor: u32) -> u32 {
+    might.saturating_sub(armor)
+}
+
 // ---- the three mini-phases ------------------------------------------------------------------------
 
 /// **Catch.** Spend each attacker's bid (capped at its remaining tempo) and keep the catches that land as
@@ -212,7 +225,7 @@ pub fn resolve_react(
         let (atk, tgt) = (contact.attacker, contact.target);
         match *react {
             React::Eat => {
-                damage[tgt] += units[atk].might;
+                damage[tgt] += strike(units[atk].might, units[tgt].armor);
                 surviving.push(*contact);
             }
             React::Evade { cards } => {
@@ -221,12 +234,12 @@ pub fn resolve_react(
                 if evade_succeeds(cards, units[tgt].finesse, contact.bid) {
                     // miss + break contact: no damage, dropped from the surviving edges.
                 } else {
-                    damage[tgt] += units[atk].might; // the evade failed — the hit still lands
+                    damage[tgt] += strike(units[atk].might, units[tgt].armor); // evade failed - hit lands
                     surviving.push(*contact);
                 }
             }
             React::StrikeBack => {
-                damage[tgt] += units[atk].might; // take the hit...
+                damage[tgt] += strike(units[atk].might, units[tgt].armor); // take the hit...
                 // ...and counter, but only **melee-vs-melee**: you strike back at a foe that *approached*
                 // you (a melee strike), and only if you carry a melee blow. Against a ranged shot, or with
                 // no melee of your own, there is nothing to answer with - you simply eat it. One Tempo card,
@@ -234,7 +247,7 @@ pub fn resolve_react(
                 let incoming_melee = !rank_is_ranged(units[atk].rank);
                 if incoming_melee && units[tgt].melee && units[tgt].tempo > 0 {
                     units[tgt].tempo -= 1;
-                    damage[atk] += units[tgt].might;
+                    damage[atk] += strike(units[tgt].might, units[atk].armor);
                 }
                 surviving.push(*contact);
             }
@@ -251,7 +264,7 @@ pub fn resolve_extra(units: &mut [Combatant], extras: &[ExtraStrike]) {
     for e in extras {
         let cards = e.cards.min(units[e.attacker].tempo);
         units[e.attacker].tempo -= cards;
-        damage[e.target] += units[e.attacker].might * cards; // 1 card = 1 strike of Might
+        damage[e.target] += strike(units[e.attacker].might, units[e.target].armor) * cards; // per strike
     }
     apply(units, &damage);
 }
@@ -304,6 +317,7 @@ mod tests {
             finesse,
             cadence,
             toughness,
+            armor: 0,
             melee: true,
             ranged: false,
             tempo: cadence,

@@ -206,6 +206,7 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         finesse: stats.finesse.max(1),
         cadence: stats.cadence,
         toughness: stats.toughness.max(1),
+        armor: 0,
         melee,
         ranged,
         tempo,

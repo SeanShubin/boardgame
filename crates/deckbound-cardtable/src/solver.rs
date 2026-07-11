@@ -308,6 +308,7 @@ mod tests {
             finesse,
             cadence,
             toughness,
+            armor: 0,
             melee,
             ranged,
             tempo: cadence,
