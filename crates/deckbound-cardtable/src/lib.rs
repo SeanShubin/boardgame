@@ -10,6 +10,7 @@
 //! [`BoardGame`]: cardtable_model::BoardGame
 
 pub mod arena;
+pub mod battle;
 mod board_game;
 pub mod combat;
 pub mod fixtures;
