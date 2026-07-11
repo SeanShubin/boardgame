@@ -108,9 +108,10 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
 }
 
 /// A **creature** — a foe stationed at an encounter, mirrored from the duel-locks balance instrument
-/// (`deckbound/data/balance/duel-locks.ron`, the source of truth for the numbers). `cardtable-model` is
-/// pure and cannot depend on `deckbound`, so the four locks are re-declared here — kept in step with the
-/// RON the same way [`ROSTER`] mirrors that file's kits. `stats` is `[Might, Vitality, Toughness,
+/// (`deckbound/data/balance/duel-locks.ron`, the source of truth for the numbers) and kept in step with it
+/// the same way [`ROSTER`] mirrors that file's kits. (This card content now lives in `deckbound` alongside
+/// that RON — a later cleanup could read the numbers from it directly instead of re-declaring.) `stats` is
+/// `[Might, Vitality, Toughness,
 /// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `hoard` marks a card
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
 /// Coil holds the front regardless of its stats). A creature's **intention** and **posture** are not
