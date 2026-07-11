@@ -2343,6 +2343,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "deckbound-balance"
+version = "0.1.0"
+dependencies = [
+ "contract",
+ "deckbound",
+ "ron 0.8.1",
+ "serde",
+]
+
+[[package]]
 name = "deckbound-board"
 version = "0.1.0"
 dependencies = [

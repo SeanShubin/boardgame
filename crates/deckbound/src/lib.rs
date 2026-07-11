@@ -11,11 +11,11 @@
 //! All numbers live in `data/booklet.ron`.
 
 pub mod actor;
-pub mod balance;
 pub mod campaign;
 pub mod cards;
 pub mod catalog;
 pub mod combat;
+pub mod combinatorics;
 pub mod currency;
 pub mod decktree;
 pub mod duel;

@@ -1,0 +1,17 @@
+# The balance / analysis layer on top of the deckbound reference sample: role-necessity, grind, and
+# role-weight checks, plus the RON-driven balance instruments (`data/balance/`). Depends on `deckbound`
+# (its solver / combat / catalog); nothing in the game depends back on it.
+[package]
+name = "deckbound-balance"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+deckbound = { workspace = true }
+serde = { workspace = true }
+# The balance harness + the `balance` / `classes` examples parse the `data/balance/*.ron` instruments.
+ron = { workspace = true }
+
+[dev-dependencies]
+# The harness tests drive Deckbound through the `contract::Game` trait.
+contract = { workspace = true }

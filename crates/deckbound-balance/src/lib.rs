@@ -20,16 +20,18 @@
 
 use serde::Deserialize;
 
-use crate::actor::Actor;
-use crate::campaign::grind_encounter;
-use crate::currency::Currency;
-use crate::encounter::EncounterCard;
-use crate::rules::Rule;
-use crate::ruleset::Ruleset;
-use crate::scenarios::build_creature;
-use crate::scenarios::{RewardId, build_character, build_encounter_foes, rewards_for};
-use crate::solver::{Solution, auto_resolve, solve_within, winnable_within, winnable_within_rules};
-use crate::world::REWARD_SUITS;
+use deckbound::actor::Actor;
+use deckbound::campaign::grind_encounter;
+use deckbound::currency::Currency;
+use deckbound::encounter::EncounterCard;
+use deckbound::rules::Rule;
+use deckbound::ruleset::Ruleset;
+use deckbound::scenarios::build_creature;
+use deckbound::scenarios::{RewardId, build_character, build_encounter_foes, rewards_for};
+use deckbound::solver::{
+    Solution, auto_resolve, solve_within, winnable_within, winnable_within_rules,
+};
+use deckbound::world::REWARD_SUITS;
 
 /// A balance property the current content fails to satisfy against the resolver-of-record.
 #[derive(Clone, Debug)]
@@ -111,8 +113,8 @@ fn lock_party(lock: Currency, n: usize, add_role: bool) -> Vec<Actor> {
 }
 
 /// A roster entry of `count` `creature`s (no level scaling — the lock is a fixed band, §8.4).
-fn lock_entry(creature: &str, count: u32) -> crate::encounter::RosterEntry {
-    crate::encounter::RosterEntry {
+fn lock_entry(creature: &str, count: u32) -> deckbound::encounter::RosterEntry {
+    deckbound::encounter::RosterEntry {
         creature: creature.into(),
         from_level: 1,
         base: count,
@@ -125,7 +127,7 @@ fn lock_entry(creature: &str, count: u32) -> crate::encounter::RosterEntry {
 /// not fiat (the other roles still act; they just can't clear it within par). Numbers are **seeds**
 /// (human-tuned). Each lock realizes the card-design-audit's per-role lock:
 fn lock_encounter(role: Currency) -> EncounterCard {
-    use crate::form::StatCard;
+    use deckbound::form::StatCard;
     let foes = match role {
         // Infiltrator — lever-gated + DECISIVE (2026-06-26): a light **Husk** screen + a **lethal Slinger
         // backline**. The trade-back-only Wall bogs on the screen while the Slingers shred the party in
@@ -343,8 +345,8 @@ impl Necessity {
 /// which the **Anchor's** protection flips winnability (every other lever is offense, where the Wall
 /// reads redundant). Foe bands reuse the §8.6 lock vocabulary. Seeds — tune against the report.
 fn balance_suite() -> Vec<(&'static str, EncounterCard)> {
-    use crate::form::StatCard;
-    let enc = |name: &'static str, foes: Vec<crate::encounter::RosterEntry>| {
+    use deckbound::form::StatCard;
+    let enc = |name: &'static str, foes: Vec<deckbound::encounter::RosterEntry>| {
         (
             name,
             EncounterCard {
@@ -518,7 +520,7 @@ fn outcome_str(s: &Solution) -> String {
 /// raw material for the ramp / niche experiments.
 #[cfg(test)]
 fn custom_encounter(name: &'static str, bands: &[(&str, u32)]) -> EncounterCard {
-    use crate::form::StatCard;
+    use deckbound::form::StatCard;
     EncounterCard {
         name: name.into(),
         currency: Currency::Gold,
@@ -611,7 +613,7 @@ pub fn build_tuned(name: &str, s: Stat5) -> Actor {
     a.offense.might = m;
     a.offense.cadence = c;
     a.offense.finesse = f;
-    a.defense = crate::stats::Defense::new(v, t);
+    a.defense = deckbound::stats::Defense::new(v, t);
     a.tempo = c as i32;
     a
 }
@@ -721,24 +723,7 @@ impl Level {
 
 /// Every composition of `n` units over `k` role bins (counts summing to `n`) — the general multiset
 /// enumerator behind [`compositions`] (which is the `k = 3` case).
-pub fn compositions_k(n: u32, k: usize) -> Vec<Vec<u32>> {
-    if k == 0 {
-        return if n == 0 { vec![vec![]] } else { vec![] };
-    }
-    if k == 1 {
-        return vec![vec![n]];
-    }
-    let mut out = Vec::new();
-    for first in 0..=n {
-        for mut rest in compositions_k(n - first, k - 1) {
-            let mut v = Vec::with_capacity(k);
-            v.push(first);
-            v.append(&mut rest);
-            out.push(v);
-        }
-    }
-    out
-}
+use deckbound::combinatorics::compositions_k;
 
 /// Label a `k`-role composition from per-role counts and a tag per role (e.g. `2F1A`; zeros omitted).
 fn comp_label_k(counts: &[u32], tags: &[String]) -> String {
@@ -969,8 +954,8 @@ fn one() -> u32 {
 
 impl DuelUnit {
     /// The authored position, parsed to an [`Intention`]. `None` = use the engine's stat-derived default.
-    fn position(&self) -> Option<crate::actor::Intention> {
-        use crate::actor::Intention::{Outrider, Rearguard, Vanguard};
+    fn position(&self) -> Option<deckbound::actor::Intention> {
+        use deckbound::actor::Intention::{Outrider, Rearguard, Vanguard};
         self.pos.as_deref().map(|s| match s {
             "Vanguard" => Vanguard,
             "Outrider" => Outrider,
@@ -998,14 +983,14 @@ pub struct DuelLocks {
 /// lock is stats / reach / area / position only (force, not fiat). Grouping / Hoard expansion is the
 /// engine's job (see [`build_duel_creatures`]); this builds one template body.
 pub fn build_duel_unit(u: &DuelUnit) -> Actor {
-    use crate::actor::Attack;
+    use deckbound::actor::Attack;
     let (m, v, t, c, f) = u.stats;
     let mut a = build_character("Novice", &[]);
     a.name = u.name.clone();
     a.offense.might = m;
     a.offense.cadence = c;
     a.offense.finesse = f;
-    a.defense = crate::stats::Defense::new(v, t);
+    a.defense = deckbound::stats::Defense::new(v, t);
     a.tempo = c as i32;
     a.attack = if u.ranged {
         Attack::Ranged
@@ -1029,7 +1014,7 @@ fn build_duel_creatures(u: &DuelUnit) -> Vec<Actor> {
         (0..bodies)
             .map(|_| {
                 let mut b = base.clone();
-                b.defense = crate::stats::Defense::new(1, toughness); // one-Health body
+                b.defense = deckbound::stats::Defense::new(1, toughness); // one-Health body
                 b.pack = Some(0); // all bound into one pack
                 b
             })
@@ -1255,9 +1240,9 @@ pub fn region_locks() -> RegionLocks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ruleset::Ruleset;
-    use crate::scenarios::build_creature;
-    use crate::solver::{auto_resolve_with, winnable_within};
+    use deckbound::ruleset::Ruleset;
+    use deckbound::scenarios::build_creature;
+    use deckbound::solver::{auto_resolve_with, winnable_within};
 
     /// The canonical level-1 balance file parses and resolves to a sane ruleset — so the data-driven
     /// runner can't silently rot (a typo'd rule name or malformed stats fails here, not at runtime).
@@ -1402,7 +1387,7 @@ mod tests {
             vec![build_creature("Assassin")],
             vec![build_creature("Fighter")],
             1,
-            crate::ruleset::Ruleset::analysis(),
+            deckbound::ruleset::Ruleset::analysis(),
             3_000_000,
         );
         println!(
@@ -1545,7 +1530,7 @@ mod tests {
             }
             // Annotate PlayCard with the card name.
             let label = match act {
-                crate::game::Action::PlayCard(i, idx) => names
+                deckbound::game::Action::PlayCard(i, idx) => names
                     .get(*i)
                     .and_then(|c| c.get(*idx))
                     .map(|n| format!("{s}  = \"{n}\""))
@@ -1723,7 +1708,7 @@ mod tests {
                 lock_entry("Slinger", sling),
                 lock_entry("Husk", husk),
             ],
-            scaling: crate::form::StatCard::default(),
+            scaling: deckbound::form::StatCard::default(),
         };
         for (b, s, h) in [
             (6, 16, 0),
@@ -1815,9 +1800,9 @@ mod tests {
     #[test]
     #[ignore]
     fn probe_duel_trace() {
-        use crate::game::{Deckbound, battle_state_with};
-        use crate::solver::greedy;
         use contract::Game;
+        use deckbound::game::{Deckbound, battle_state_with};
+        use deckbound::solver::greedy;
         const KIT: &str = "Marksman";
         const FOE: &str = "The Coil";
         let locks = duel_locks();

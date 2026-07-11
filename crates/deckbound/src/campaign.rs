@@ -598,7 +598,7 @@ pub fn reference_campaign() -> CampaignState {
 ///
 /// Counts are kept gentle so the accreting guided party (Iron fought weakest, Salt strongest) wins and
 /// yields a par to **measure**; the precise difficulty gating is the balance harness's job to tune
-/// ([`crate::balance`]). `level` names the card and drives the per-level counts.
+/// (the `deckbound-balance` crate). `level` names the card and drives the per-level counts.
 pub fn grind_encounter(suit: Currency, level: u32) -> EncounterCard {
     use crate::encounter::RosterEntry;
     let husks = |base, growth| RosterEntry {

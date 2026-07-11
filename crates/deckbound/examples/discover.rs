@@ -20,7 +20,7 @@
 //!
 //! Run: `cargo run -p deckbound --example discover`
 
-use deckbound::balance::compositions_k;
+use deckbound::combinatorics::compositions_k;
 use deckbound::sub_phase::{ClassDef, Intention, Outcome, Stat5, Unit, battle, unit_from_class};
 
 /// Single-class stat sum (an AoE class pays `K` off it). Each class spends this over 5 stats, each ≥ 1.

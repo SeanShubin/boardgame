@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use deckbound::balance::{
+use deckbound_balance::{
     DuelLocks, Level, RegionLocks, duel_locks, duel_locks_report, region_locks_report, run_level,
 };
 

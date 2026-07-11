@@ -398,7 +398,7 @@ pub fn matrix_report(triad: &Triad, max_n: u32) -> String {
     let tags = ["F", "A", "M"];
     let mut out = String::from("Sub-phase-model matrix (equal size, default vs default):\n\n");
     for n in 1..=max_n {
-        let comps = crate::balance::compositions_k(n, 3);
+        let comps = crate::combinatorics::compositions_k(n, 3);
         out.push_str(&format!("== size {n} ==\n"));
         for pc in &comps {
             let (mut w, mut l, mut d) = (0, 0, 0);

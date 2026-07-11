@@ -12,6 +12,7 @@ members = [
     "crates/deckbound-sample",
     "tools/combat-lab",
     "crates/deckbound-board",
+    "crates/deckbound-balance",
 ]
 
 [workspace.package]
