@@ -826,16 +826,21 @@ fn px(value: Val) -> f32 {
 
 /// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
 /// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
-fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (movable, computed) in &movables {
+fn sync_node_sizes(
+    cards: Query<(&CardRef, &ComputedNode)>,
+    piles: Query<(&Movable, &ComputedNode)>,
+    mut table: ResMut<Table>,
+) {
+    // Feed **every** card's footprint (via `CardRef`), movable or not - a `Virtual` readout still occupies
+    // felt and must be sized so the de-overlap can account for it. Piles (decks) come from `Movable`.
+    for (cref, computed) in &cards {
         let size = computed.size * computed.inverse_scale_factor;
-        match movable.0 {
-            TableNode::Card(cid) => {
-                let _ = table.0.set_card_footprint(cid, size.x, size.y);
-            }
-            TableNode::Pile(pid) => {
-                let _ = table.0.set_pile_size(pid, size.x, size.y);
-            }
+        let _ = table.0.set_card_footprint(cref.0, size.x, size.y);
+    }
+    for (movable, computed) in &piles {
+        if let TableNode::Pile(pid) = movable.0 {
+            let size = computed.size * computed.inverse_scale_factor;
+            let _ = table.0.set_pile_size(pid, size.x, size.y);
         }
     }
 }
@@ -897,9 +902,13 @@ fn animate_nodes(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<Dragging>,
-    // `ModalTile`s (formation tiles) are flex-positioned; the table never owns their `left/top`, so they are
-    // excluded here by construction rather than special-cased.
-    mut movables: Query<(&Movable, &mut Node), Without<ModalTile>>,
+    // Every rendered table element: a card (`CardRef`, movable or not) or a deck (`Movable` pile), so a
+    // non-movable card tracks its model position exactly like every other card. `ModalTile`s (formation
+    // tiles) are flex-positioned - the table never owns their `left/top` - so they are excluded by construction.
+    mut elements: Query<
+        (&mut Node, Option<&Movable>, Option<&CardRef>),
+        (Without<ModalTile>, Or<(With<Movable>, With<CardRef>)>),
+    >,
 ) {
     if table
         .0
@@ -937,17 +946,24 @@ fn animate_nodes(
         HashMap::new()
     };
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (movable, mut node) in &mut movables {
-        if dragging.0 == Some(movable.0) {
+    for (mut node, movable, cardref) in &mut elements {
+        // The table element this node represents: a deck / movable card by its `Movable`, else a non-movable
+        // card by its `CardRef`. (A movable card carries both; its `Movable` wins and names the same card.)
+        let element = match (movable, cardref) {
+            (Some(m), _) => m.0,
+            (None, Some(c)) => TableNode::Card(c.0),
+            (None, None) => continue,
+        };
+        if dragging.0 == Some(element) {
             continue; // free while held
         }
         let target = if structured {
-            match layout.get(&movable.0) {
+            match layout.get(&element) {
                 Some(&p) => p,
                 None => continue,
             }
         } else {
-            match movable.0 {
+            match element {
                 TableNode::Pile(pid) => match table.0.pile(pid) {
                     Some(d) => d.pos(),
                     None => continue,
@@ -1550,9 +1566,39 @@ fn settle_free_cards(
             anchor = Some(c);
         }
     }
-    if let Some(anchor) = anchor {
+    // Only shove when the just-resized card **actually overlaps** another card. `separate` is a de-overlap,
+    // not a re-pack: a resize that opens no overlap (a shrink, or any card in a clean manual layout - the
+    // System deck's seeded grid) must leave the deliberate positions untouched. This is what keeps feeding
+    // every card's footprint from disturbing zones that were laid out by hand.
+    if let Some(anchor) = anchor
+        && card_overlaps_others(&table.0, focus, anchor)
+    {
         table.0.separate(focus, TableNode::Card(anchor));
     }
+}
+
+/// Whether `card`'s box (its model position + footprint) overlaps any *other* content card of `pile`. Gates
+/// [`settle_free_cards`]'s shove so `separate` only ever *removes* an overlap and never re-packs a layout that
+/// was already clear.
+fn card_overlaps_others(table: &Board, pile: PileId, card: CardId) -> bool {
+    let Some((ap, asize)) = table.card(card).map(|c| (c.pos(), c.footprint())) else {
+        return false;
+    };
+    if asize.x < 1.0 {
+        return false;
+    }
+    table
+        .content_cards(pile)
+        .into_iter()
+        .filter(|&c| c != card)
+        .filter_map(|c| table.card(c).map(|k| (k.pos(), k.footprint())))
+        .any(|(bp, bsize)| {
+            bsize.x >= 1.0
+                && ap.x < bp.x + bsize.x
+                && bp.x < ap.x + asize.x
+                && ap.y < bp.y + bsize.y
+                && bp.y < ap.y + asize.y
+        })
 }
 
 /// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size, or when the
