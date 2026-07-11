@@ -224,7 +224,12 @@ fn log_view(table: Res<Table>, log: Res<UiLog>, mut last: Local<Option<PileId>>)
 /// Log the settled layout of the current view: each rendered card's name, position, size and zoom. Logged
 /// once the geometry stops changing (so it reflects the settled arrangement, not mid-animation frames).
 fn log_layout(
-    nodes: Query<(Entity, &Movable, &ComputedNode, &UiGlobalTransform)>,
+    // Every *rendered card* carries `CardRef` — movable or not (a `Virtual` readout like a Rumors card has no
+    // `Movable`). Logging from here captures **every** card's exact rect, so overlaps involving a non-movable
+    // card are detectable from the log alone. The `Movable` query is only for the felt's piles (decks), which
+    // are not cards.
+    cards: Query<(Entity, &CardRef, &ComputedNode, &UiGlobalTransform)>,
+    movables: Query<(Entity, &Movable, &ComputedNode, &UiGlobalTransform)>,
     zones: Query<(Entity, &PileDropZone, &ComputedNode, &UiGlobalTransform)>,
     table: Res<Table>,
     ui_stack: Res<UiStack>,
@@ -242,36 +247,48 @@ fn log_layout(
         .map(|(i, &e)| (e, i))
         .collect();
 
-    // Every positioned felt element (card *and* pile) with its settled box (top-left + size) in logical
-    // pixels and its z (render order). Position + size are exact, so any overlap or inter-element gap is
-    // computable — the layout is fully reconstructable without rendering.
+    // Every positioned felt element (every card *and* every pile) with its settled box (top-left + size) in
+    // logical pixels and its z (render order). Position + size are exact, so any overlap or inter-element gap
+    // is computable — the layout is fully reconstructable from the log without rendering.
     let mut boxes: Vec<(String, f32, f32, f32, f32, String, usize)> = Vec::new();
     let mut movable_piles: HashSet<PileId> = HashSet::new();
-    for (entity, movable, cn, gt) in nodes.iter() {
-        let (name, zoom) = match movable.0 {
-            TableNode::Card(cid) => {
-                let Some(card) = table.0.card(cid) else {
-                    continue;
-                };
-                (card.front_title().to_string(), format!("{:?}", card.size()))
-            }
-            TableNode::Pile(pid) => {
-                movable_piles.insert(pid);
-                let Some(pile) = table.0.pile(pid) else {
-                    continue;
-                };
-                (format!("[{}]", pile.label), "-".into())
-            }
+    // All cards (movable or not — includes Virtual readouts, which do not participate in the shove logic and
+    // so are exactly the cards that can silently overlap).
+    for (entity, cref, cn, gt) in cards.iter() {
+        let Some(card) = table.0.card(cref.0) else {
+            continue;
         };
         let (center, half) = crate::node_box(cn, gt);
         let (size, tl) = (half * 2.0, center - half);
         boxes.push((
-            name,
+            card.front_title().to_string(),
             tl.x,
             tl.y,
             size.x,
             size.y,
-            zoom,
+            format!("{:?}", card.size()),
+            z_of.get(&entity).copied().unwrap_or(0),
+        ));
+    }
+    // The felt's piles (decks): Movable, but not cards, so listed too. Also note which piles are movable so
+    // the drop-zone pass below doesn't double-list a deck that is both movable and a drop target.
+    for (entity, movable, cn, gt) in movables.iter() {
+        let TableNode::Pile(pid) = movable.0 else {
+            continue;
+        };
+        movable_piles.insert(pid);
+        let Some(pile) = table.0.pile(pid) else {
+            continue;
+        };
+        let (center, half) = crate::node_box(cn, gt);
+        let (size, tl) = (half * 2.0, center - half);
+        boxes.push((
+            format!("[{}]", pile.label),
+            tl.x,
+            tl.y,
+            size.x,
+            size.y,
+            "-".to_string(),
             z_of.get(&entity).copied().unwrap_or(0),
         ));
     }
@@ -285,8 +302,9 @@ fn log_layout(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Overlaps among the movable elements — the visible result of the push/shove (`separate`) logic: with
-    // it working nothing should overlap. When two do overlap, the lower z is the one hidden behind.
+    // Overlaps among **all** rendered elements (every card + pile) — the visible result of the push/shove
+    // (`separate`) logic. With it working nothing should overlap; a non-movable card (e.g. a Virtual readout)
+    // that the shove logic ignores is exactly what shows up here. When two overlap, the lower z is hidden.
     let mut overlaps = Vec::new();
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
