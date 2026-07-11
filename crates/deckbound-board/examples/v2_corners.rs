@@ -10,9 +10,9 @@
 //! Run: `cargo run --release -p deckbound-board --example v2_corners [corner_index]`
 //! (with no arg: all four corners; with 0..3: just that one, for a quick timing check.)
 
-use deckbound::actor::Intention as Rank;
 use deckbound_board::combat::{Combatant, Side};
 use deckbound_board::solver::winnable;
+use deckbound_content::rank::Intention as Rank;
 
 const KIT_NAMES: [&str; 4] = ["Jab", "Shot", "Sweep", "Salvo"];
 const KIT_STATS: [[u8; 5]; 4] = [

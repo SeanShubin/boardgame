@@ -7,10 +7,10 @@
 //!
 //! Run: `cargo run --release -p deckbound-board --example v2_encounters`
 
-use deckbound::actor::Intention as Rank;
-use deckbound::catalog::{self, Creature, Encounter};
 use deckbound_board::combat::{Combatant, Side};
 use deckbound_board::solver::winnable;
+use deckbound_content::catalog::{self, Creature, Encounter};
+use deckbound_content::rank::Intention as Rank;
 
 fn rank_of(word: &str) -> Rank {
     match word {

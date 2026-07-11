@@ -11,9 +11,9 @@
 //! Deterministic (seeded splitmix64) so the result reproduces. Run:
 //!   `cargo run --release -p deckbound-board --example v2_diagonal_search`
 
-use deckbound::actor::Intention as Rank;
 use deckbound_board::combat::{Combatant, Side};
 use deckbound_board::solver::winnable;
+use deckbound_content::rank::Intention as Rank;
 
 // The 4 kits ARE the four reach x spread combos: Jab (melee single), Shot (ranged single), Sweep (melee
 // area), Salvo (ranged area). Each should be uniquely useful along its hit type.

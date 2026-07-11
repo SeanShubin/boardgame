@@ -5,10 +5,10 @@
 //!
 //! Run: `cargo run -p deckbound-board --example v2_balance`
 
-use deckbound::actor::Intention as Rank;
-use deckbound::catalog::{self, Creature};
 use deckbound_board::combat::{Combatant, Side};
 use deckbound_board::solver::winnable;
+use deckbound_content::catalog::{self, Creature};
+use deckbound_content::rank::Intention as Rank;
 
 /// Map a creature's intention word to a rank.
 fn rank_of(word: &str) -> Rank {
