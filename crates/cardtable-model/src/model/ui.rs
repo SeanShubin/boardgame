@@ -15,7 +15,7 @@ pub(super) struct UiModel {
     /// The selected cards.
     pub(super) selection: Vec<CardId>,
     // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without them.
-    #[serde(skip, default = "super::unbounded_surface")]
+    #[serde(skip, default = "super::physical::unbounded_surface")]
     pub(super) surface: Pos,
     /// **Pinned** rectangles `(top-left, size)` — the fixed felt fixtures (the centered zone title, the
     /// Back card) that freely-placed content must settle clear of. In `separate` they take top priority:
