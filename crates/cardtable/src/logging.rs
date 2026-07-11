@@ -406,6 +406,8 @@ fn drain_drop_trace(mut trace: ResMut<DropTrace>, log: Res<UiLog>) {
 /// drag — the usual cause of a lost tap) is suppressed, and a click on an entity with **no interactive
 /// target** does nothing. Combat tiles / controls / cards are named by kind so the arena taps show up (they
 /// carry `ArenaUnitCard` / `AffordanceControl`, not `CardRef`, so the old logger missed them).
+// A Bevy system: every parameter is a scheduler-injected Query/Res, so the arg count is inherent, not a smell.
+#[allow(clippy::too_many_arguments)]
 fn log_click(
     on: On<Pointer<Click>>,
     guard: Res<crate::DragGuard>,

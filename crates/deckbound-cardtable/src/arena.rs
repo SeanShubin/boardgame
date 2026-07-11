@@ -902,7 +902,7 @@ fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, 
         return (false, false);
     }
     let incoming = || contacts.iter().filter(|c| c.target == i);
-    let evade_ok = incoming().any(|c| c.bid / u.finesse.max(1) + 1 <= u.tempo);
+    let evade_ok = incoming().any(|c| c.bid / u.finesse.max(1) < u.tempo);
     let strikeback_ok =
         u.melee && incoming().any(|c| !combat::rank_is_ranged(units[c.attacker].rank));
     (evade_ok, strikeback_ok)

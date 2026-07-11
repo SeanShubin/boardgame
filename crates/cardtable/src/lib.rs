@@ -2328,7 +2328,7 @@ fn build_combat_lanes(
             edges.iter().filter(|&&(_, to, _)| to == u.card).collect();
         let evade_ok = incoming
             .iter()
-            .any(|&&(_, _, bid)| bid / u.finesse.max(1) + 1 <= u.tempo);
+            .any(|&&(_, _, bid)| bid / u.finesse.max(1) < u.tempo);
         let strikeback_ok = u.melee
             && incoming.iter().any(|&&(from, _, _)| {
                 all.iter()

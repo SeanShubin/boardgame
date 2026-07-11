@@ -196,8 +196,8 @@ fn search_extra(
 
 // ---- the party's pruned option sets -------------------------------------------------------------------
 
-/// Each party attacker's catch options this sub-phase: `None` (don't catch), plus for each legal + reachable
-/// + affordable foe the two canonical bids — **min-to-land** and **min-to-deny-evade** (enough that the
+/// Each party attacker's catch options this sub-phase: `None` (don't catch), plus, for each legal, reachable,
+/// affordable foe, the two canonical bids — **min-to-land** and **min-to-deny-evade** (enough that the
 /// defender can't out-bid it). Intermediate bids only waste Tempo, so they are pruned.
 fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>>> {
     units
