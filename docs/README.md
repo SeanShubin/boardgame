@@ -15,8 +15,9 @@ and **design** notes.
 
 How the framework itself is built and extended — shared across every game.
 
-- [Architecture](technical/architecture.md) — the crates, the `Game` trait, and
-  the `TableView` rendering seam.
+- [Architecture](technical/architecture.md) — cards-as-truth (the physical / UI /
+  render layers), the `BoardGame` product seam, the `contract::Game` sample seam,
+  and the crate layout.
 - [Adding a game](technical/adding-a-game.md) — step-by-step.
 
 ## Layout

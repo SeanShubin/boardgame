@@ -1,5 +1,12 @@
 # Cardtable ↔ Deckbound Reunification & Reorg — Automated-Pass Plan
 
+> **FOLDED 2026-07-11.** The reunification **core is complete and shipping** — the product runs the game on
+> the persistent physical board through the `BoardGame` seam (P0–P3c, P5, P7, stretch A + v2 combat all done).
+> The settled architecture is now canonical in [`docs/technical/architecture.md`](../docs/technical/architecture.md).
+> This document is retained as the detailed **progress log** (§11) and the record of the design decisions.
+> **Remaining tail** (tracked in the architecture doc): P6 renames, P4 extract legacy balance, A1 arena-out-of-renderer;
+> **P3a.3/.4 dropped** (its motivation was resolved by the persistent board — see the architecture doc).
+
 **Status:** P0–P2 built (product runs behind the seam). **RE-AIMED 2026-07-09 — see §0:** physical
 cards are the source of truth; resuming under the three-layer model (physical / UI / render).
 **Owner:** this instance (the sole worker — no separate merge instance; folds into `docs/` when settled).

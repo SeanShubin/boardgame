@@ -1,119 +1,126 @@
 # Architecture
 
 The framework separates a game's **rules** (pure, testable, no Bevy) from its
-**presentation** (a generic Bevy renderer). Rules are plugged into a renderer;
-the renderer never knows which game it is showing.
-
-Two things are built on that seam:
+**presentation** (a generic Bevy renderer). Two things are built on that split:
 
 - **The product** — the **card-table app** (`boardgame`), the deployed binary. It
-  drives the `cardtable` renderer directly with a `Tableau`. No game is wired in
-  yet; the UI grows one feature at a time.
+  runs the *Deckbound* card-table game on a **persistent physical board**, drawn by
+  the generic `cardtable` renderer.
 - **The reference sample** — `deckbound-sample`, which wires the full *Deckbound*
-  game into a renderer end to end. Kept for reference and compatibility.
+  game into a button renderer through the older `contract::Game` / `TableView`
+  snapshot seam. Kept as a reference; it does not drive the product.
 
-## Workspace crates
+The product and the sample are two different renderers over the same rules — but
+they reach the rules through **two different seams** (below), because a card table
+and a button table want different things.
 
-| Crate                     | Kind | What it is                                                                                                                                                                                                                             |
-| ------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crates/contract`         | lib  | **The contract** — the pure rules↔presentation interface: the [`Game`](#the-game-trait) trait and the `TableView` snapshot family. No logic, no Bevy. The one thing both sides must agree on.                                          |
-| `crates/engine`           | lib  | The shared **card-game toolkit**: reusable building blocks (`Zone`, seeded `Rng`) an implementation uses internally. Pure; does **not** depend on `contract`.                                                                          |
-| `crates/deckbound`        | lib  | The game: *Deckbound*. Pure logic, fully unit-tested. Implements `contract::Game`; uses the `engine` toolkit.                                                                                                                          |
-| `crates/cardtable-model`  | lib  | The pure **card-table interaction model** — decks, cards, selection, reorder, move-between-decks, focus/zoom. No Bevy, no game, so behaviors unit-test in isolation. Touches `contract` only to ingest a `TableView`.                  |
-| `crates/cardtable`        | lib  | **The product's renderer** — the Bevy renderer drawing the **card-table metaphor**: every zone a deck, collapse-the-unattended, click-to-focus / zoom-out, drag-to-arrange. A thin shell over `cardtable-model`, fed by a `TableView`. |
-| `crates/tabletop`         | lib  | The button-based Bevy renderer used by the reference sample: draws any `contract::Game` and turns its legal actions into clickable buttons. Depends on Bevy and on a game's *shape* (not its rules).                                   |
-| `crates/boardgame`        | bin  | **The deployed product** — the card-table app. Drives the `cardtable` renderer with a starting `Tableau`; no game wired in yet. Built to WebAssembly with Trunk.                                                                       |
-| `crates/deckbound-sample` | bin  | The reference sample launcher. Wires `Deckbound` into a renderer (default `tabletop`, or `cardtable` under `--features cardtable`) and runs it.                                                                                        |
+## Cards are the source of truth (three layers)
 
-Each new game is a new pure crate that implements `contract::Game`; the renderers
-do not change. The dependency arrows form clean composition roots: each **bin**
-(`boardgame`, `deckbound-sample`) wires implementations together, while the
-implementations (`deckbound`, `tabletop`, `cardtable`, `cardtable-model`) know
-only `contract`, never each other. Two renderers against one `TableView` is the
-seam paying off — a new presentation never touches the rules, and the card-table
-product and the button-based sample share the same model of the table.
+The product is built on one principle: **the physical cards are the entire game
+state.** Everything partitions into three layers.
+
+1. **Physical model** — a conserved set of cards (with label / divider cards
+   marking zones), nested into piles. This *is* the state: the save-game, the undo
+   history, the thing you serialize. If it cannot be expressed as conserved cards,
+   it is not state — it is scaffolding. The rules operate **directly** on it. The
+   type is `cardtable_model::Tableau` (the physical board).
+2. **UI model** — everything about *regarding* the cards: focus / what takes the
+   felt, selection, arrangement (grid / rows / free), and a staging buffer of
+   pending intentions. Per-observer and disposable; the physical model knows
+   nothing of it. Held in `cardtable_model::ui::UiModel`.
+3. **Rendering / IO** — pixels, input, animation, over the UI model (`cardtable`).
+
+The rules seam is a predicate + reducer over the physical model:
+
+- `legal_intentions(board) -> [intention]`
+- `apply(board, intentions[]) -> board` — **batch, order-free**, conservation-preserving
+
+`apply` takes the whole intention set at once, so the order the player expresses
+things cannot matter (this is what lets combat hits queue and land together at a
+phase boundary). Nothing abstract survives a call: the resolver may build throwaway
+scratch inside `apply`, but the cards are the only stored truth.
 
 ## The two seams
 
-Two boundaries keep rules and presentation independent.
+### `BoardGame` — the product's seam (cards-as-truth)
 
-### The `Game` trait
+The product's rules↔renderer boundary is `cardtable_model::BoardGame`: a trait the
+game implements over the physical board.
 
-A game implements [`contract::Game`](../../crates/contract/src/game.rs) over its own
-`State` and `Action` types. It is the single source of truth for the rules, and
-it is **pure**: given a state and an action it produces the next state, with all
-randomness flowing from the seed passed to `new_game`. This keeps a game fully
-reproducible and unit-testable, and lets the same implementation drive a
-renderer, a bot, or a test harness.
-
-Key methods: `new_game`, `current_player`, `legal_actions`, `action_label`,
-`apply`, `outcome`, and `view`.
-
-### The `TableView` snapshot
-
-A game renders its private state into a
-[`TableView`](../../crates/contract/src/view.rs): a plain description of the zones
-on the table (each a list of face-up or face-down `CardView`s) plus a status
-line. The presentation layer draws a `TableView` without knowing any game's
-rules, and a game produces one without knowing how it will be drawn. This is the
-seam that lets one renderer display every game.
-
-## How a turn flows (the reference sample)
-
-This is the game-driven path, exercised end to end by `deckbound-sample`:
-
-```text
-        contract::Game  (the interface)
-          ^        \
-          |         \  view() -> TableView
-     deckbound       \
-          |           v
-        tabletop  (Bevy: draws TableView, sends legal_actions back as buttons)
-          |
-    deckbound-sample  (binary)
+```rust
+pub trait BoardGame {
+    type Intention;
+    fn opening(&self) -> Tableau;                                          // the starting board
+    fn apply(&self, board: &mut Tableau, intentions: &[Self::Intention]);  // batch, order-free
+    fn drop_intention(&self, board: &Tableau, dragged: CardId, onto: DropTarget) -> Option<Self::Intention>;
+    fn affordances(&self, board: &Tableau, focus: PileId) -> Vec<(String, Self::Intention)>;
+    // (tap_intention for in-arena taps; DropTarget = Card | Pile.)
+}
 ```
 
-1. `tabletop` asks the game for a `TableView` and draws it.
-2. It asks for `legal_actions` and renders one button per action, labelled with
-   `action_label`.
-3. A click calls `apply` with the chosen action, advancing the state.
-4. The table redraws from the new state.
+`deckbound-cardtable::CardTableGame` implements it. The generic `cardtable` renderer
+is generic over `G: BoardGame`: it turns a drag into `drop_intention` and a control
+tap into an affordance intention, then calls `apply` on the persistent board — and
+never mentions Deckbound. Because the board persists (it is not rebuilt per frame),
+focus / drag position / navigation survive every action.
 
-See [`crates/tabletop/src/lib.rs`](../../crates/tabletop/src/lib.rs) for the
-plugin, resources, and systems.
+Non-combat intentions (`Equip` / `Unequip` / `March` / `AdvanceDay`) are
+conservation-clean card moves. **Combat** is the *v2 arena*: a fight lives on the
+board as rank piles (Vanguard / Outrider / Rearguard) plus a phase deck, and each
+combat decision is a staged intention resolved as an order-free batch. See the
+`combat` (headless brain), `battle` / `solver` (analysis tooling), and `arena`
+(board ↔ combat) modules in `deckbound-cardtable`.
 
-## The product path (the card-table app)
+### `contract::Game` — the reference-sample seam (snapshot)
 
-The deployed `boardgame` bin does **not** wire a game in yet. It drives the
-`cardtable` renderer directly with a hand-built `Tableau` (see
-[`crates/cardtable-model/src/fixtures.rs`](../../crates/cardtable-model/src/fixtures.rs)),
-reporting clicks on actionable controls back to the app. The same renderer can be
-driven from a `contract::Game` through `cardtable`'s `game` feature — the path the
-sample uses under `--features cardtable` — so when the card-table UI is ready to
-host real rules, the seam is already in place.
+The older seam: a game implements `contract::Game` over its own `State` / `Action`
+and renders a flat `TableView` snapshot; `tabletop` draws it and sends legal actions
+back as buttons. `cardtable_model::from_table_view` can inflate a `TableView` into a
+`Tableau` for the `cardtable`-under-`--features cardtable` sample path. This seam is
+**sample-only** now — the product does not use it.
 
-See [`crates/cardtable/src/lib.rs`](../../crates/cardtable/src/lib.rs) for the
-renderer core and the game adapter.
+## Workspace crates
+
+| Crate | Kind | What it is |
+| --- | --- | --- |
+| `crates/contract` | lib | The **sample seam**: the `Game` trait + the `TableView` snapshot family. No Bevy. Used by `deckbound-sample` / `tabletop`, not the product. |
+| `crates/engine` | lib | Shared **card-game toolkit** (`Zone`, seeded `Rng`). Pure; no `contract` dep. |
+| `crates/cardtable-model` | lib | The pure **physical board** (`Tableau`) + `ui::UiModel` + conservation primitives (move / split / merge / flip / focus / layout), and the **`BoardGame` seam trait**. Also holds `from_table_view` (the sample-seam binding). No Bevy, no game. |
+| `crates/cardtable` | lib | **The product's renderer** — the Bevy card-table renderer, generic over `BoardGame`: every zone a deck, click-to-focus, drag-to-arrange, and the interactive arena. No game words. |
+| `crates/deckbound` | lib | The **reference-sample game** (`contract::Game`) *and* the shared content used by the product: `catalog` (kits / creatures / encounters / rumors), `combat` (the `SCHEDULE`), `actor` (the V/O/R ranks). Pure, no Bevy. |
+| `crates/deckbound-cardtable` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound::{catalog, combat, actor}`. |
+| `crates/tabletop` | lib | The button renderer for the sample (draws any `contract::Game`). |
+| `crates/boardgame` | bin | **The deployed product**: wires `CardTableGame` into the `cardtable` renderer + persistence. Built to WebAssembly with Trunk. |
+| `crates/deckbound-sample` | bin | The reference-sample launcher: wires `deckbound` into `tabletop` (or `cardtable`) through `contract::Game`. |
+| `tools/combat-lab`, `tools/gatcg` | — | Not-the-game tooling (a gear-system experiment; a Grand Archive analysis stub). Nothing depends on them. |
+
+The **bins** are the composition roots. The product path is `boardgame → CardTableGame
+(BoardGame) → cardtable`; the sample path is `deckbound-sample → deckbound
+(contract::Game) → tabletop`.
 
 ## Determinism
 
-Game logic must be deterministic given a seed. All randomness comes from
-`engine::Rng` (a seeded SplitMix64 generator), seeded once in `new_game`. Do not
-introduce wall-clock time or unseeded randomness into a game's rules — it would
-break reproducibility and the seed-based tests.
+Game logic is deterministic given a seed: all randomness flows from `engine::Rng`
+(seeded SplitMix64). No wall-clock time, no unseeded randomness in the rules — that
+is what makes the seed-based tests and the exact combat solver reproducible.
 
-## Building blocks
+## Reorg still open (from the reunification)
 
-In `contract` (the interface):
+The cards-as-truth reunification is complete and shipping. A cosmetic / structural
+tail remains, tracked in `needs-merge/cardtable-deckbound-reunification-plan.md`:
 
-- [`PlayerId`](../../crates/contract/src/player.rs) — a seat index.
-- [`view`](../../crates/contract/src/view.rs) — `TableView`, `ZoneView`,
-  `CardView`, `CardFace`, `Layout`.
-
-In `engine` (the toolkit an implementation uses):
-
-- [`Zone<C>`](../../crates/engine/src/zone.rs) — an ordered pile of cards (deck,
-  hand, discard, play area). The "top" is the end of the vector, so draw/place
-  are O(1).
-- [`Rng`](../../crates/engine/src/rng.rs) — seeded, dependency-free PRNG with a
-  Fisher-Yates `shuffle`.
+- **P6 — honest renames**: `Tableau → Board`, `deckbound-cardtable → deckbound-board`,
+  a `physical` module beside `ui`, and finishing `actor::Intention → Rank`.
+- **P4 — extract `deckbound-balance`**: move the *legacy sample's* balance / solver
+  tooling out of `deckbound` (the product's v2 balance tooling already lives in
+  `deckbound-cardtable`).
+- **A1 — arena rendering out of `cardtable`**: the generic renderer still holds the
+  arena UI and combat-affordability logic; the ideal is "the arena is just another
+  zone."
+- **P3a.3 / .4 (dropped)**: moving per-card/pile UI state (`pos` / `size` / `layout`
+  / `collapsed`) into id-keyed side-tables was deferred as high-ripple. Its
+  motivation — "focus survives rebuilds" and "many UI models per one truth" — was
+  resolved by the persistent board (single local observer), so it is **not planned**
+  for this single-player product; revisit only if shared / multi-observer boards
+  become a goal.
+</content>
