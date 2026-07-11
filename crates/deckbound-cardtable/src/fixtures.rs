@@ -809,8 +809,8 @@ mod tests {
     }
 
     /// Combat instantiates the virtual foes as **real cards** split off the Bestiary stacks, and returns
-    /// them afterward — conservation-clean both ways (PC.2). A corner fields all four with the keystone
-    /// doubled (5 cards); a solo its one keystone; the inn nothing.
+    /// them afterward — conservation-clean both ways (PC.2). A corner fields its tuned foe list; a solo its
+    /// one keystone; the inn nothing.
     #[test]
     fn manual_combat_instantiates_foes_from_the_bestiary_and_returns_them() {
         let mut t = sample_table();
@@ -819,7 +819,7 @@ mod tests {
         let total = t.card_count();
         let bestiary_before = t.physical_card_count(bestiary);
 
-        // A corner encounter fields all four creatures with the keystone (The Wall) doubled → 5 real cards.
+        // The Emberfall Hollow corner fields The Wall x2 (its tuned composition) → 2 real cards.
         let foes = t
             .instantiate_from_bank(
                 bestiary,
@@ -827,16 +827,20 @@ mod tests {
                 &deckbound::catalog::encounter_roster("Emberfall Hollow"),
             )
             .unwrap();
-        assert_eq!(foes.len(), 5, "corner = 4 creatures, keystone doubled");
+        assert_eq!(
+            foes.len(),
+            2,
+            "corner = its tuned foe list (Emberfall = Wall x2)"
+        );
         assert_eq!(
             t.content_cards(arena).len(),
-            5,
+            2,
             "real foe cards now in the arena"
         );
         assert_eq!(
             t.physical_card_count(bestiary),
-            bestiary_before - 5,
-            "the Bestiary supply dropped by exactly the five drawn"
+            bestiary_before - 2,
+            "the Bestiary supply dropped by exactly the two drawn"
         );
         assert_eq!(
             t.card_count(),

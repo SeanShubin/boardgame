@@ -263,22 +263,27 @@ pub struct Encounter {
     pub location: &'static str,
     pub title: &'static str,
     pub flavor: &'static str,
-    /// The creature name (in [`CREATURES`]) this encounter is built around — the only foe of a solo, the
-    /// doubled bulk of a party.
+    /// The creature name (in [`CREATURES`]) this encounter is built around, and the kit it leans on — the
+    /// only foe of a solo, the centrepiece of a party fight (see [`creature_counter`] for the answering kit).
     pub keystone: &'static str,
     pub party: bool,
+    /// The exact foes fielded, as `(creature name, quantity)` — tuned so a solo is beaten only by its
+    /// keystone's kit and a corner falls to the full four-kit party but to no lone kit (see the
+    /// `v2_encounters` / `v2_corner_tune` examples).
+    pub foes: &'static [(&'static str, u32)],
 }
 
 /// Every non-inn location's encounter. Solos ring the inn (adjacent cells); party fights hold the
 /// corners. Ashfen Crossing (the inn) has none, so this covers the other eight.
 pub const ENCOUNTERS: [Encounter; 8] = [
-    // --- solos: one creature, soloable by its answering kit --------------------------------------
+    // --- solos: one creature, soloable only by its answering kit ---------------------------------
     Encounter {
         location: "Cinderwatch Keep",
         title: "The Keep Duelist",
         flavor: "A blade-master holding the ruined keep, striking back at anyone who closes to melee.",
         keystone: "The Duelist",
         party: false,
+        foes: &[("The Duelist", 1)],
     },
     Encounter {
         location: "The Sundered Vault",
@@ -286,6 +291,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "An armored warden set to guard the sundered vault, unmoved by all but the heaviest blow.",
         keystone: "The Wall",
         party: false,
+        foes: &[("The Wall", 1)],
     },
     Encounter {
         location: "Thornmarch Gate",
@@ -293,6 +299,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "A boiling mass of bramble-imps loosing thorns from behind the gate.",
         keystone: "The Swarm",
         party: false,
+        foes: &[("The Swarm", 1)],
     },
     Encounter {
         location: "The Salt Barrows",
@@ -300,35 +307,40 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "A charging host of grave-risen boiling up out of the salt barrows, trampling all before them.",
         keystone: "The Storm",
         party: false,
+        foes: &[("The Storm", 1)],
     },
-    // --- corners: all four creatures, the keystone doubled ---------------------------------------
+    // --- corners: a warband the full party must break, each leaning on one kit (tuned) -----------
     Encounter {
         location: "The Hollow Rampart",
         title: "Breach of the Rampart",
-        flavor: "The rampart is breached and everything pours through at once.",
+        flavor: "The rampart is breached: two swarms boil through the gap, a warden anchoring the rubble.",
         keystone: "The Swarm",
         party: true,
+        foes: &[("The Wall", 1), ("The Swarm", 2)],
     },
     Encounter {
         location: "Greywater Ford",
         title: "Ambush at the Ford",
-        flavor: "An ambush dug in at the crossing, ready to lash back at anything that wades in.",
+        flavor: "An ambush at the crossing: a duelist lashing from the reeds, a warden and a swarm barring the ford.",
         keystone: "The Duelist",
         party: true,
+        foes: &[("The Wall", 1), ("The Duelist", 1), ("The Swarm", 1)],
     },
     Encounter {
         location: "Emberfall Hollow",
         title: "The Emberfall Bulwark",
-        flavor: "A burning hollow guarded by something that will not fall to a single hand.",
+        flavor: "Twin wardens bar the burning hollow; neither will fall to a single hand.",
         keystone: "The Wall",
         party: true,
+        foes: &[("The Wall", 2)],
     },
     Encounter {
         location: "Ninefold Deep",
         title: "Horror of the Ninefold Deep",
-        flavor: "The deep churns and charges; a stampede boils up out of the dark.",
+        flavor: "The deep churns: a charging host boils up out of the dark, screened by a warden and a swarm.",
         keystone: "The Storm",
         party: true,
+        foes: &[("The Wall", 1), ("The Swarm", 1), ("The Storm", 2)],
     },
 ];
 
@@ -338,18 +350,13 @@ pub fn encounter_for(location: &str) -> Option<&'static Encounter> {
     ENCOUNTERS.iter().find(|e| e.location == location)
 }
 
-/// The foes an encounter fields, as `(creature, quantity)` — a solo is its single keystone; a party is
-/// all four [`CREATURES`] with the keystone doubled. The order is [`CREATURES`] order (keystone first for
-/// a solo).
+/// The foes an encounter fields, as `(creature, quantity)` — read straight from its authored [`foes`]
+/// list (`Encounter::foes`), resolving each name to its [`Creature`]. Unknown names are skipped.
 pub fn encounter_foes(e: &Encounter) -> Vec<(&'static Creature, u32)> {
-    if e.party {
-        CREATURES
-            .iter()
-            .map(|c| (c, if c.name == e.keystone { 2 } else { 1 }))
-            .collect()
-    } else {
-        creature(e.keystone).map(|c| (c, 1)).into_iter().collect()
-    }
+    e.foes
+        .iter()
+        .filter_map(|&(name, q)| creature(name).map(|c| (c, q)))
+        .collect()
 }
 
 /// The five stat **names** in canonical [`STATS`] order — for callers that assemble or parse a character
