@@ -14,6 +14,7 @@ pub mod actor;
 pub mod balance;
 pub mod campaign;
 pub mod cards;
+pub mod catalog;
 pub mod combat;
 pub mod currency;
 pub mod decktree;

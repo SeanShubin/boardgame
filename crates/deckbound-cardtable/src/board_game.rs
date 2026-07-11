@@ -184,7 +184,15 @@ fn equip(board: &mut Tableau, identity: CardId, kit: CardId) {
         return;
     };
     let _ = board.equip_character(
-        &name, &recipe, heroes, stats, numbers, abilities, home, progress,
+        &name,
+        &recipe,
+        &deckbound::catalog::stat_names(),
+        heroes,
+        stats,
+        numbers,
+        abilities,
+        home,
+        progress,
     );
 }
 

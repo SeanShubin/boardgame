@@ -28,6 +28,10 @@ fn app_code_is_ascii_only() {
     for name in APP_CRATES {
         collect_rs(&crates.join(name), &mut |path| scan(path, &mut offenders));
     }
+    // `deckbound` as a whole is out of scope (balance/example tooling prints to a terminal), but its
+    // `catalog` holds user-facing **card content** (stat / ability / creature names + descriptions rendered
+    // on cards). P3c moved it here from `cardtable-model`; keep just that file ASCII-guarded.
+    scan(&crates.join("deckbound/src/catalog.rs"), &mut offenders);
     assert!(
         offenders.is_empty(),
         "non-ASCII found in code - use ASCII in strings/logs (-> -- x * ...), not typographic Unicode:\n{}",

@@ -2,8 +2,8 @@
 //! (the `cardtable` examples) and dev harnesses don't each hand-roll table data. Pure: no game, no
 //! Bevy.
 
-use cardtable_model::catalog;
 use cardtable_model::{Arrangement, CardId, CardKind, Face, Layout, Node, PileId, Recipe, Tableau};
+use deckbound::catalog;
 
 /// Add a face-up card with a name and a [`type`](cardtable_model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -821,7 +821,11 @@ mod tests {
 
         // A corner encounter fields all four creatures with the keystone (The Anvil) doubled → 5 real cards.
         let foes = t
-            .instantiate_encounter_foes(bestiary, arena, "Emberfall Hollow")
+            .instantiate_from_bank(
+                bestiary,
+                arena,
+                &deckbound::catalog::encounter_roster("Emberfall Hollow"),
+            )
             .unwrap();
         assert_eq!(foes.len(), 5, "corner = 4 creatures, keystone doubled");
         assert_eq!(
@@ -858,16 +862,24 @@ mod tests {
 
         // A solo fields just its keystone; the inn (no encounter) yields nothing.
         assert_eq!(
-            t.instantiate_encounter_foes(bestiary, arena, "The Sundered Vault")
-                .unwrap()
-                .len(),
+            t.instantiate_from_bank(
+                bestiary,
+                arena,
+                &deckbound::catalog::encounter_roster("The Sundered Vault")
+            )
+            .unwrap()
+            .len(),
             1,
             "solo = one keystone"
         );
         assert!(
-            t.instantiate_encounter_foes(bestiary, arena, "Ashfen Crossing")
-                .unwrap()
-                .is_empty(),
+            t.instantiate_from_bank(
+                bestiary,
+                arena,
+                &deckbound::catalog::encounter_roster("Ashfen Crossing")
+            )
+            .unwrap()
+            .is_empty(),
             "the inn has no encounter"
         );
     }
@@ -901,7 +913,15 @@ mod tests {
             .to_string();
         let cdeck = t
             .equip_character(
-                &name, &recipe, heroes, stats, numbers, abilities, ashfen, progress,
+                &name,
+                &recipe,
+                &deckbound::catalog::stat_names(),
+                heroes,
+                stats,
+                numbers,
+                abilities,
+                ashfen,
+                progress,
             )
             .unwrap();
         (cdeck, name)
@@ -921,11 +941,16 @@ mod tests {
     fn character_recipe_round_trips_a_recruited_build() {
         let mut t = sample_table();
         let (cdeck, _name) = recruit(&mut t, 0, executioner());
-        let recovered = t.character_recipe(cdeck).expect("a complete build");
+        let recovered = t
+            .character_recipe(cdeck, &deckbound::catalog::stat_names())
+            .expect("a complete build");
         assert_eq!(recovered.stats, [6, 3, 1, 1, 1]);
         assert_eq!(recovered.ability, "Jab");
         // An incomplete deck (no character build) yields nothing.
-        assert_eq!(t.character_recipe(deck(&t, "Heroes")), None);
+        assert_eq!(
+            t.character_recipe(deck(&t, "Heroes"), &deckbound::catalog::stat_names()),
+            None
+        );
     }
 
     /// Each generic attack's strike shape `(ranged, aoe)` — the four (reach x spread) combinations.

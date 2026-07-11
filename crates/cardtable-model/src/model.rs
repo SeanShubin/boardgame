@@ -125,16 +125,16 @@ pub enum Utility {
     StartOver,
 }
 
-/// A **recipe**: the structured content a starting kit yields when it equips a character. It carries the
-/// stat *values* (`[Might, Vitality, Toughness, Cadence, Finesse]`, the [`catalog::STATS`](crate::catalog::STATS)
-/// order) and the name of the ability the character gains. Building a character deck instantiates it —
-/// one card per stat named `"{Stat} {value}"` plus one ability card — each looking its description up in
-/// the [`catalog`](crate::catalog), so the kit stores only the numbers and everything else is authored once.
+/// A **recipe**: the structured content a starting kit yields when it equips a character. It carries an
+/// array of stat *values* (in the caller's canonical stat order) and the name of the ability the character
+/// gains. Building a character deck instantiates it — one card per stat named `"{Stat} {value}"` plus one
+/// ability card — so the kit stores only the numbers; the stat/ability *names* are the game's content,
+/// supplied to [`equip_character`](Tableau::equip_character) as data.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Recipe {
-    /// The five stat values, in `[Might, Vitality, Toughness, Cadence, Finesse]` order.
+    /// The stat values, in the caller's canonical stat order.
     pub stats: [u8; 5],
-    /// The ability the character gains — a name in [`catalog::ABILITIES`](crate::catalog::ABILITIES).
+    /// The ability the character gains — a card name the caller supplies.
     pub ability: String,
 }
 
@@ -930,6 +930,7 @@ impl Tableau {
         &mut self,
         hero_name: &str,
         recipe: &Recipe,
+        stat_names: &[&str],
         heroes: PileId,
         stats_bank: PileId,
         numbers_bank: PileId,
@@ -938,8 +939,9 @@ impl Tableau {
         progress: PileId,
     ) -> Result<PileId, TableauError> {
         let deck = self.add_pile(self.root, hero_name.to_string())?;
-        // Assemble the stats + ability from the banks (conservation-clean, no mint).
-        for (&(stat, _desc), &value) in crate::catalog::STATS.iter().zip(recipe.stats.iter()) {
+        // Assemble the stats + ability from the banks (conservation-clean, no mint). The stat *names* come
+        // from the caller (game content), so this stays a generic deck-assembly op.
+        for (&stat, &value) in stat_names.iter().zip(recipe.stats.iter()) {
             self.draw_named_from(stats_bank, deck, stat)?;
             self.draw_named_from(numbers_bank, deck, &value.to_string())?;
         }
@@ -1016,27 +1018,22 @@ impl Tableau {
         Ok(())
     }
 
-    /// **Instantiate** an encounter's foes as real cards in `arena`, split off the `bestiary` `×N` stacks —
-    /// conservation-clean (spec `physical-cards.md` PC.2): each instance is *drawn* from its Bestiary stack
-    /// (decrement + `×1` twin, via [`draw_named_from`](Self::draw_named_from)), nothing minted. Foes are
-    /// **virtual at rest** — a location holds only an `encounter` header — so the roster comes from the
-    /// catalog: `place_label` names the encounter and [`encounter_foes`](crate::catalog::encounter_foes)
-    /// gives its `(creature, quantity)` list, so a `×2` keystone fields two cards. Returns the dealt foe
-    /// card ids (in roster order). A place with no encounter (the inn) yields an empty vec. This is the
-    /// combat-time counterpart to the at-rest Bestiary supply that manual combat draws its units from.
-    pub fn instantiate_encounter_foes(
+    /// **Instantiate** a roster of named units as real cards in `arena`, split off the `bestiary` `×N`
+    /// stacks — conservation-clean (spec `physical-cards.md` PC.2): each instance is *drawn* from its stack
+    /// (decrement + `×1` twin, via [`draw_named_from`](Self::draw_named_from)), nothing minted. The roster is
+    /// `(name, quantity)` pairs supplied by the caller (game content — e.g. an encounter's foes), so a `×2`
+    /// entry fields two cards. Returns the dealt card ids (in roster order); an empty roster yields an empty
+    /// vec. Generic: it knows only "deal these named cards from that supply."
+    pub fn instantiate_from_bank(
         &mut self,
         bestiary: PileId,
         arena: PileId,
-        place_label: &str,
+        roster: &[(&str, u32)],
     ) -> Result<Vec<CardId>, TableauError> {
-        let Some(encounter) = crate::catalog::encounter_for(place_label) else {
-            return Ok(Vec::new());
-        };
         let mut dealt = Vec::new();
-        for (creature, qty) in crate::catalog::encounter_foes(encounter) {
+        for &(name, qty) in roster {
             for _ in 0..qty {
-                dealt.push(self.draw_named_from(bestiary, arena, creature.name)?);
+                dealt.push(self.draw_named_from(bestiary, arena, name)?);
             }
         }
         Ok(dealt)
@@ -1066,10 +1063,11 @@ impl Tableau {
     /// Recover a recruited character's [`Recipe`] from its `deck` — the inverse *read* of
     /// [`equip_character`]. The recipe is not stored on the deck, so this parses it back from the cards:
     /// pair each `"stat"` card with the `"number"` card that follows it (its value), placed by the stat's
-    /// index in [`catalog::STATS`](crate::catalog::STATS), and take the `"ability"` card's name. Returns
-    /// `None` unless the deck is a complete build (all five stat values + an ability). Used to turn a
-    /// party member back into `[Might, Vitality, Toughness, Cadence, Finesse]` + ability for combat.
-    pub fn character_recipe(&self, deck: PileId) -> Option<Recipe> {
+    /// index in `stat_names` (the caller's canonical stat order — game content), and take the `"ability"`
+    /// card's name. Returns `None` unless the deck is a complete build (a value for every `stat_names` entry
+    /// plus an ability). Used to turn a party member back into its stat line + ability for combat. Generic:
+    /// the stat *names* and their order are the caller's, so the model needs no game catalog.
+    pub fn character_recipe(&self, deck: PileId, stat_names: &[&str]) -> Option<Recipe> {
         let mut stats = [0u8; 5];
         let mut seen = [false; 5];
         let mut ability: Option<String> = None;
@@ -1078,9 +1076,7 @@ impl Tableau {
             let card = self.card(c)?;
             match card.card_type() {
                 "stat" => {
-                    pending = crate::catalog::STATS
-                        .iter()
-                        .position(|&(n, _)| n == card.name());
+                    pending = stat_names.iter().position(|&n| n == card.name());
                 }
                 "number" => {
                     if let Some(i) = pending.take() {
@@ -2006,7 +2002,8 @@ mod tests {
         let progress = t.add_pile(root, "Progress").unwrap();
         // Banks with many copies (PC.5): two of each stat name, four of each digit, one ability.
         let stats = t.add_pile(root, "Stats").unwrap();
-        for (name, _) in crate::catalog::STATS {
+        let stat_names = ["Might", "Vitality", "Toughness", "Cadence", "Finesse"];
+        for name in stat_names {
             for _ in 0..2 {
                 let c = t
                     .add_card(stats, Face::Up { title: name.into() }, None)
@@ -2048,7 +2045,15 @@ mod tests {
         };
         let deck = t
             .equip_character(
-                "Vael", &recipe, heroes, stats, numbers, abilities, home, progress,
+                "Vael",
+                &recipe,
+                &stat_names,
+                heroes,
+                stats,
+                numbers,
+                abilities,
+                home,
+                progress,
             )
             .unwrap();
 
@@ -2767,7 +2772,8 @@ mod tests {
 
         // Banks to assemble from, then recruit via `equip` (drag hero onto kit).
         let stats = t.add_pile(root, "Stats").unwrap();
-        for (name, _) in crate::catalog::STATS {
+        let stat_names = ["Might", "Vitality", "Toughness", "Cadence", "Finesse"];
+        for name in stat_names {
             let c = t
                 .add_card(stats, Face::Up { title: name.into() }, None)
                 .unwrap();
@@ -2803,7 +2809,15 @@ mod tests {
         let recipe = t.card(kit).unwrap().recipe().unwrap().clone();
         let character = t
             .equip_character(
-                "Vael", &recipe, identity, stats, numbers, abilities, home, progress,
+                "Vael",
+                &recipe,
+                &stat_names,
+                identity,
+                stats,
+                numbers,
+                abilities,
+                home,
+                progress,
             )
             .unwrap();
         assert!(t.content_cards(identity).is_empty()); // the x4 stack fully dealt out

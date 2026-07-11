@@ -94,13 +94,16 @@ fn character_deck(board: &Tableau, name: &str) -> Option<PileId> {
 /// A combatant's stats plus its **reach** `(melee, ranged)` — the attack types it carries (see
 /// `catalog::ability_reach`). Returned together so callers can position + gate it in one read.
 fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool, bool)> {
-    let recipe = board.character_recipe(character_deck(board, name)?)?;
-    let (melee, ranged) = cardtable_model::catalog::ability_reach(&recipe.ability);
+    let recipe = board.character_recipe(
+        character_deck(board, name)?,
+        &deckbound::catalog::stat_names(),
+    )?;
+    let (melee, ranged) = deckbound::catalog::ability_reach(&recipe.ability);
     Some(stats_of(recipe.stats, melee, ranged))
 }
 
 fn foe_stats(name: &str) -> Option<(Stats, bool, bool)> {
-    let c = cardtable_model::catalog::creature(name)?;
+    let c = deckbound::catalog::creature(name)?;
     Some(stats_of(c.stats, c.melee, c.ranged))
 }
 
@@ -496,7 +499,11 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
     // Foes: instantiate the encounter roster from the Bestiary, then move each into its default rank pile.
     let label = board.pile(place)?.label.clone();
     let foes = board
-        .instantiate_encounter_foes(bestiary, arena, &label)
+        .instantiate_from_bank(
+            bestiary,
+            arena,
+            &deckbound::catalog::encounter_roster(&label),
+        )
         .ok()?;
     for card in foes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;

@@ -3,14 +3,13 @@
 //! starter kit reads its name, description, and values from here, so the concept ("Might" and what it
 //! means) is authored once and every deck agrees.
 //!
-//! Pure and Bevy-free, like the rest of [`crate::model`]. The Stats and Abilities decks in
-//! [`crate::fixtures`] project these directly (the concept: name + description), and a recruited
-//! character deck instantiates them (the instance: "Might 2" + the same description) via
-//! [`crate::model::Recipe`].
+//! Pure and Bevy-free: plain `const` data with no dependency on the board model or renderer. The game's
+//! card-table fixtures project the Stats and Abilities decks directly (the concept: name + description), and
+//! a recruited character deck instantiates them (the instance: "Might 2" + the same description) via the
+//! card-table model's `Recipe`.
 
 /// The five stats, each `(name, description)`. The order is the canonical stat order —
-/// `[Might, Vitality, Toughness, Cadence, Finesse]` — shared with [`Recipe::stats`](crate::model::Recipe)
-/// so a recipe's values line up positionally with these entries.
+/// `[Might, Vitality, Toughness, Cadence, Finesse]` — the order a `Recipe`'s stat values line up with.
 pub const STATS: [(&str, &str); 5] = [
     (
         "Might",
@@ -353,4 +352,24 @@ pub fn encounter_foes(e: &Encounter) -> Vec<(&'static Creature, u32)> {
     } else {
         creature(e.keystone).map(|c| (c, 1)).into_iter().collect()
     }
+}
+
+/// The five stat **names** in canonical [`STATS`] order — for callers that assemble or parse a character
+/// deck (`Tableau::equip_character` / `character_recipe`), which take the names as data so the model stays
+/// game-free.
+pub fn stat_names() -> [&'static str; 5] {
+    [STATS[0].0, STATS[1].0, STATS[2].0, STATS[3].0, STATS[4].0]
+}
+
+/// An encounter's foe **roster** as `(creature name, quantity)` pairs — what `Tableau::instantiate_from_bank`
+/// deals from the Bestiary. Empty for a location with no encounter (the inn).
+pub fn encounter_roster(place_label: &str) -> Vec<(&'static str, u32)> {
+    encounter_for(place_label)
+        .map(|e| {
+            encounter_foes(e)
+                .into_iter()
+                .map(|(c, q)| (c.name, q))
+                .collect()
+        })
+        .unwrap_or_default()
 }

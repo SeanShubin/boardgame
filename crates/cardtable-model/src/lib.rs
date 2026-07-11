@@ -12,7 +12,6 @@
 //! See `docs/games/deckbound/presentation/card-table-ui.md` for the design this realizes.
 
 pub mod binding;
-pub mod catalog;
 pub mod model;
 pub mod seam;
 

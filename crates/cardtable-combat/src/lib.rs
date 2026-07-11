@@ -11,9 +11,10 @@
 //! The combatants carry only a 5-stat line and a strike shape (reach / area / hoard / stance); the ability
 //! *name* is flavour, ignored by the resolver — mechanics are all numbers, matching the duel-locks proof.
 
-use cardtable_model::{CardId, CardKind, Face, PileId, Tableau, catalog};
+use cardtable_model::{CardId, CardKind, Face, PileId, Tableau};
 use deckbound::actor::Intention;
 use deckbound::balance::{DuelUnit, Stat5, build_duel_unit};
+use deckbound::catalog;
 use deckbound::combat::{
     PendingDecision, StepOutcome, TargetAnswer, answer_pending_greedily,
     answer_pending_greedily_side,
@@ -87,7 +88,7 @@ fn hero_card_unit(table: &Tableau, card: CardId) -> Option<DuelUnit> {
         return None;
     }
     let name = c.front_title().to_string();
-    let recipe = table.character_recipe(character_deck(table, &name)?)?;
+    let recipe = table.character_recipe(character_deck(table, &name)?, &catalog::stat_names())?;
     let (ranged, aoe) = catalog::ability_shape(&recipe.ability);
     Some(DuelUnit {
         name,
@@ -207,7 +208,7 @@ pub fn begin_manual_combat(
     // Foes: instantiate the encounter's roster as real cards (nothing dealt if the place has no encounter).
     let label = table.pile(place)?.label.clone();
     let foe_cards = table
-        .instantiate_encounter_foes(bestiary, arena, &label)
+        .instantiate_from_bank(bestiary, arena, &catalog::encounter_roster(&label))
         .ok()?;
     if foe_cards.is_empty() {
         return None;
@@ -787,7 +788,15 @@ mod tests {
             .name()
             .to_string();
         t.equip_character(
-            &name, &recipe, heroes, stats, numbers, abilities, ashfen, progress,
+            &name,
+            &recipe,
+            &catalog::stat_names(),
+            heroes,
+            stats,
+            numbers,
+            abilities,
+            ashfen,
+            progress,
         )
         .unwrap();
         // The hero's position copy now rests at the inn; march it to `dest`.
