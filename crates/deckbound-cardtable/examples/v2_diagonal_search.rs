@@ -1,11 +1,12 @@
-//! **Automated co-tuning search: can the clean 4x4 identity diagonal hold with NO armor / NO riposte?**
+//! **Can a specialist at each of the 4 reach x spread settings UNIQUELY solo an encounter?** (spec 4.6
+//! mechanics: single-target spills through a group, an area strike hits every member.)
 //!
-//! Each of the four creatures should be soloable by *exactly* its designated kit (Anvil->Executioner,
-//! Swarm->Broadsider, Coil->Marksman, Mirage->Phantom) and by no other - a 16-cell identity matrix. By hand
-//! we reach 15/16 (only Mirage->Phantom resists). This searches kit + creature stat lines (and each
-//! creature's rank + reach) by coordinate descent with seeded random restarts, scoring by correct cells. If
-//! it finds 16/16, current mechanics suffice; if it plateaus at 15/16 across many restarts, the evasion gate
-//! is the one that needs a new mechanic (armor).
+//! The four kits ARE the four combos - Jab (melee single), Shot (ranged single), Sweep (melee area), Salvo
+//! (ranged area) - and each should solo exactly its matching encounter and no other (a 16-cell identity
+//! matrix). The encounters are the matching 2x2: single/safe (Jab), single/punishes-melee (Shot),
+//! horde/safe (Sweep), horde/punishes-melee (Salvo). Since AoE's edge exists only against a GROUP, the two
+//! area encounters are hordes. Coordinate descent over kit + creature stat lines (and each creature's rank +
+//! reach) with seeded restarts, scoring correct cells. 16/16 => four uniquely-soloable encounters exist.
 //!
 //! Deterministic (seeded splitmix64) so the result reproduces. Run:
 //!   `cargo run --release -p deckbound-cardtable --example v2_diagonal_search`
@@ -59,7 +60,8 @@ fn kit_unit(d: &Design, i: usize) -> Combatant {
 }
 
 fn foe_unit(d: &Design, j: usize) -> Combatant {
-    let ranged = !FOE_HORDE[j] && d.foe_ranged[j];
+    // A horde may also field from any position - a melee pack up front/flank, or a ranged pack in the back.
+    let ranged = d.foe_ranged[j];
     Combatant::from_stats(
         FOE_NAMES[j],
         Side::Foe,
@@ -144,8 +146,10 @@ fn climb(mut d: Design) -> Design {
                 }
                 d.foes[j][s] = best_v;
             }
-            // Foe rank + reach (skip the horde: Swarm stays an Outrider melee pack).
-            if !FOE_HORDE[j] {
+            // Foe rank + reach for EVERY foe, hordes included: a horde's position/reach is the lever that
+            // separates the two area kits (a back-line horde forces a simultaneous exchange only the tanky
+            // melee survives; a hard front horde lets ranged first-strike from safety).
+            {
                 let (mut best_r, mut best) = (d.foe_rank[j], score(&d));
                 for r in RANKS {
                     d.foe_rank[j] = r;
@@ -175,28 +179,30 @@ fn climb(mut d: Design) -> Design {
 }
 
 fn seed_design() -> Design {
-    // A reasonable start expressing the compensating-stats idea: Jab (worst combo) highest stats, Salvo
-    // (best combo) lowest. The search co-tunes from here.
+    // Start expressing the compensation: the melee area kit (Sweep) is TANKY (it must eat the return blow),
+    // the ranged area kit (Salvo) is fragile (it strikes first from safety). Swarm sits in the BACK line (a
+    // simultaneous exchange the tank survives, the glass cannon does not); Storm is a hard FRONT pack (ranged
+    // first-strikes it, melee is torn up in the trade). The search co-tunes from here.
     Design {
         kits: [
-            [7, 6, 1, 2, 2],
-            [5, 4, 1, 2, 2],
-            [4, 5, 2, 1, 2],
-            [2, 3, 1, 1, 2],
+            [7, 6, 1, 2, 2],  // Jab   - melee single, beefy
+            [5, 2, 1, 2, 2],  // Shot  - ranged single, fragile
+            [3, 10, 3, 1, 2], // Sweep - melee area, TANKY (takes the hit)
+            [3, 3, 1, 1, 2],  // Salvo - ranged area, fragile (safe, need not)
         ],
         foes: [
-            [1, 4, 9, 1, 2],
-            [5, 5, 1, 2, 2],
-            [1, 12, 1, 1, 1],
-            [3, 12, 1, 2, 1],
+            [1, 4, 9, 1, 2],  // Wall    - single, tough, safe
+            [5, 5, 1, 2, 2],  // Duelist - single, punishes melee
+            [1, 8, 1, 1, 1], // Swarm   - horde, back line (Sweep's: tank survives, glass cannon dies)
+            [2, 12, 1, 2, 1], // Storm   - horde, hard front (Salvo's: first-strike safety; melee is torn up)
         ],
         foe_rank: [
             Rank::Vanguard,
             Rank::Vanguard,
-            Rank::Outrider,
-            Rank::Outrider,
+            Rank::Rearguard,
+            Rank::Vanguard,
         ],
-        foe_ranged: [false, false, false, false],
+        foe_ranged: [false, false, true, false],
     }
 }
 
@@ -215,7 +221,7 @@ fn jitter(base: &Design, rng: &mut Rng) -> Design {
                 d.foes[j][s] = rng.range(STAT_LO[s], STAT_HI[s]);
             }
         }
-        if !FOE_HORDE[j] {
+        {
             d.foe_rank[j] = RANKS[(rng.next() % 3) as usize];
             d.foe_ranged[j] = rng.next() % 2 == 0;
         }
