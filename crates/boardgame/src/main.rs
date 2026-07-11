@@ -1,9 +1,9 @@
 //! The **card-table application** — the first-class entry point and the deployed product.
 //!
-//! It drives the game-agnostic card-table renderer ([`cardtable::CardTablePlugin`]) with a starting
-//! [`Tableau`]. No game is wired in yet: this is the small seed the UI grows from, one feature at a
-//! time. The full Deckbound combat game now lives as a reference scenario in the `deckbound-sample`
-//! crate.
+//! It drives the game-agnostic card-table renderer ([`cardtable::CardTablePlugin`]) with the deckbound
+//! card-table game wired in behind the [`BoardGame`](cardtable_model::BoardGame) seam
+//! ([`deckbound_cardtable::CardTableGame`]): recruit / march / advance-day and the interactive combat arena
+//! all run as intentions over the persistent board.
 //!
 //! Runs natively and on the web — Trunk builds this bin to WebAssembly (see `index.html` and
 //! `.github/workflows/deploy.yml`).
@@ -12,12 +12,9 @@ mod persistence;
 
 use bevy::prelude::*;
 use cardtable::{
-    ActionRequests, ArenaCombat, ArenaState, BoardGamePlugin, BuildInfo, CardTableSet,
-    CombatRequest, FactoryBase, LoggingPlugin, ManualCombatRequest, NeedsRebuild, StatusLine,
-    Table,
+    ActionRequests, BoardGamePlugin, BuildInfo, CardTableSet, FactoryBase, LoggingPlugin,
+    StatusLine, Table,
 };
-use cardtable_combat::{begin_manual_combat, resolve_encounter};
-use cardtable_model::Tableau;
 use deckbound_cardtable::CardTableGame;
 use deckbound_cardtable::sample_table;
 
@@ -56,102 +53,16 @@ fn main() -> AppExit {
         .insert_resource(StatusLine(
             "Click a pile to enter it | click a card to grow it | drag to arrange".into(),
         ))
-        // No game yet: drain the core's click outbox each frame so requests don't accumulate. A
-        // future feature (or a game adapter) will consume these instead of discarding them.
+        // Loose rail-action clicks aren't consumed by the board game, so drain that outbox each frame.
         .add_systems(Update, drain_requests.in_set(CardTableSet::Apply))
-        // The first bit of game wired into the product: resolve a requested fight (auto or manual).
-        .add_systems(Update, resolve_combat.in_set(CardTableSet::Apply))
-        .add_systems(Update, resolve_manual_combat.in_set(CardTableSet::Apply))
         .add_systems(Update, autosave);
 
     app.run()
 }
 
-/// Placeholder consumer of the core's action outbox until a real feature handles clicks.
+/// Drain the core's loose-action outbox (rail-item clicks the board game doesn't handle) each frame.
 fn drain_requests(mut requests: ResMut<ActionRequests>) {
     requests.0.clear();
-}
-
-/// Resolve a fight the player asked for: the [`CombatCard`](cardtable) click records the place in
-/// [`CombatRequest`]; here we resolve it against the game rules and fold the result onto the table, then
-/// request a redraw. Deterministic — the seed is the current day, so a fight varies day to day but
-/// replays identically. This is where the product reaches the combat rules.
-fn resolve_combat(
-    mut table: ResMut<Table>,
-    mut request: ResMut<CombatRequest>,
-    mut rebuild: ResMut<NeedsRebuild>,
-) {
-    let Some(place) = request.0.take() else {
-        return;
-    };
-    let seed = day_seed(&table.0);
-    let outcome = resolve_encounter(&mut table.0, place, seed);
-    info!("combat resolved: {outcome:?}");
-    rebuild.0 = true;
-}
-
-/// Open the interactive **arena** for a manual fight the player asked for: instantiate the encounter's foes
-/// as real cards (into a scratch pile) and hand the [`cardtable_combat::ManualCombat`] to the renderer via
-/// [`ArenaCombat`]. From there the renderer's `drive_arena` steps the fight (the player decides, the AI
-/// answers the foes) and folds it back on the end. Deterministic — seeded by the current day.
-fn resolve_manual_combat(
-    mut table: ResMut<Table>,
-    mut request: ResMut<ManualCombatRequest>,
-    mut arena: ResMut<ArenaCombat>,
-    mut rebuild: ResMut<NeedsRebuild>,
-) {
-    let Some(place) = request.0.take() else {
-        return;
-    };
-    if arena.0.is_some() {
-        return; // a fight is already up - don't stack another
-    }
-    let seed = day_seed(&table.0);
-    let root = table.0.root_id();
-    let Some(bestiary) = find_top(&table.0, "Bestiary") else {
-        return;
-    };
-    let Ok(scratch) = table.0.add_pile(root, "Arena") else {
-        return;
-    };
-    match begin_manual_combat(&mut table.0, place, scratch, bestiary, seed) {
-        Some(combat) => {
-            arena.0 = Some(ArenaState {
-                combat,
-                place,
-                bestiary,
-                scratch,
-            });
-            rebuild.0 = true; // switch the felt to the arena view
-        }
-        None => {
-            let _ = table.0.remove_pile(scratch);
-        }
-    }
-}
-
-/// A top-level deck by label (the game-state helpers reach a few fixed zones by name).
-fn find_top(table: &Tableau, label: &str) -> Option<cardtable_model::PileId> {
-    let root = table.root_id();
-    table
-        .pile(root)
-        .map(|r| r.subpiles())
-        .unwrap_or_default()
-        .into_iter()
-        .find(|&p| table.pile(p).is_some_and(|pile| pile.label == label))
-}
-
-/// A deterministic combat seed derived from game state: the current day count (so a fight is reproducible
-/// yet differs day to day). Falls back to `1` before the day clock exists.
-fn day_seed(table: &Tableau) -> u64 {
-    let root = table.root_id();
-    let progress = table
-        .pile(root)
-        .map(|r| r.subpiles())
-        .unwrap_or_default()
-        .into_iter()
-        .find(|&p| table.pile(p).is_some_and(|pile| pile.label == "Progress"));
-    progress.map(|p| table.current_day(p) as u64).unwrap_or(1)
 }
 
 /// Periodically persist the table — at most every [`AUTOSAVE_SECS`], and only when the serialized RON
@@ -159,17 +70,14 @@ fn day_seed(table: &Tableau) -> u64 {
 /// (sizes, obstacles), so change-detection alone would rewrite constantly. Cheap: the table is small.
 fn autosave(
     table: Res<Table>,
-    arena: Res<ArenaCombat>,
     time: Res<Time>,
     mut cooldown: Local<f32>,
     mut last: Local<Option<String>>,
 ) {
-    // Don't persist mid-fight: the table then holds the transient arena scratch pile + instantiated foes,
-    // but the fight itself isn't recoverable from the save — a reload would strand an orphan pile (and, if
-    // the card format has since changed, load stale per-combat detail). The fight folds back cleanly on its
-    // end, and the next tick saves that. Two fight kinds to skip: the old `ArenaCombat` resource, and the v2
-    // board-native `[Arena]` pile (cards-as-truth — no resource, so it needs its own check).
-    if arena.0.is_some() || deckbound_cardtable::arena::find_arena(&table.0).is_some() {
+    // Don't persist mid-fight: the board then holds the transient `[Arena]` scratch pile + instantiated
+    // foes, and the fight folds back cleanly on its end (the next tick saves that). A reload mid-fight
+    // would strand an orphan pile / load stale per-combat detail.
+    if deckbound_cardtable::arena::find_arena(&table.0).is_some() {
         return;
     }
     *cooldown += time.delta_secs();

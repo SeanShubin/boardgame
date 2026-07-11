@@ -1906,7 +1906,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "cardtable",
- "cardtable-combat",
  "cardtable-model",
  "deckbound-cardtable",
  "directories",
@@ -1990,20 +1989,10 @@ name = "cardtable"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "cardtable-combat",
  "cardtable-model",
  "contract",
  "ttf-parser",
  "web-time",
-]
-
-[[package]]
-name = "cardtable-combat"
-version = "0.1.0"
-dependencies = [
- "cardtable-model",
- "deckbound",
- "deckbound-cardtable",
 ]
 
 [[package]]

@@ -15,7 +15,6 @@ const APP_CRATES: &[&str] = &[
     "boardgame",
     "cardtable",
     "cardtable-model",
-    "cardtable-combat",
     "deckbound-cardtable",
     "contract",
     "engine",

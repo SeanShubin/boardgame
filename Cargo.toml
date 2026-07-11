@@ -5,7 +5,6 @@ members = [
     "crates/engine",
     "crates/mdtable",
     "crates/cardtable-model",
-    "crates/cardtable-combat",
     "crates/cardtable",
     "crates/tabletop",
     "crates/deckbound",
@@ -28,7 +27,6 @@ contract = { path = "crates/contract" }
 engine = { path = "crates/engine" }
 mdtable = { path = "crates/mdtable" }
 cardtable-model = { path = "crates/cardtable-model" }
-cardtable-combat = { path = "crates/cardtable-combat" }
 cardtable = { path = "crates/cardtable" }
 deckbound-cardtable = { path = "crates/deckbound-cardtable" }
 tabletop = { path = "crates/tabletop" }

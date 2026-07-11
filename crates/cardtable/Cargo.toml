@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 contract = { workspace = true }
 cardtable-model = { workspace = true }
-cardtable-combat = { workspace = true }
 bevy = { workspace = true }
 web-time = { workspace = true }
 

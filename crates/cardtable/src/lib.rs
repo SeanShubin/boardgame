@@ -32,12 +32,6 @@ use cardtable_model::{
     Arrangement, Card, CardId, CardKind, DropTarget, Face, Layout, Node as TableNode, PileId, Pos,
     Size, Tableau, Utility,
 };
-// The one place the renderer reaches past `cardtable-model`: the interactive combat **arena** reads the
-// bridge's plain-data view/answer API (never a `deckbound` type). Combat is the product's main thrust, so
-// the renderer grows to host it — the auto path still stays behind the game-agnostic request resources.
-use cardtable_combat::{
-    ArenaAnswer, DecisionView, ManualCombat, PhaseView, UnitView, finish_manual_combat,
-};
 
 #[cfg(feature = "game")]
 pub use game::GamePlugin;
@@ -108,9 +102,6 @@ impl Plugin for CardTablePlugin {
             .init_resource::<FannedFront>()
             .init_resource::<FactoryBase>()
             .init_resource::<BuildInfo>()
-            .init_resource::<CombatRequest>()
-            .init_resource::<ManualCombatRequest>()
-            .init_resource::<ArenaCombat>()
             // Board-game driver request state (always present so the observers can record even with no
             // game added; drained by `BoardGamePlugin` when a game is present).
             .init_resource::<DropRequest>()
@@ -142,8 +133,6 @@ impl Plugin for CardTablePlugin {
                     (track_card_rects, animate_target_arrows).chain(),
                 ),
             )
-            // Step the interactive combat arena (advance the fight, answer the AI foes, close on the end).
-            .add_systems(Update, drive_arena.in_set(CardTableSet::Apply))
             // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
             // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
             .add_systems(
@@ -217,40 +206,10 @@ struct Pinned;
 #[derive(Component)]
 struct BackCard;
 
-/// A utility card that starts **auto combat** — the fight plays out headlessly and the result folds onto
-/// the table. Shown (like [`BackCard`]) in a location's overlay band, beside [`ManualCombatCard`], only
-/// when that place holds both a stationed hero and an encounter (see [`location_ready_for_combat`]).
-/// Resolution is wired separately (the binary's combat system); the card is the trigger.
-#[derive(Component)]
-struct CombatCard;
-
-/// A utility card that starts **manual combat** — where the player makes every decision. Shown beside
-/// [`CombatCard`] on a combat-ready location. Records the place in [`ManualCombatRequest`]; the interactive
-/// arena that consumes it is built separately (until then the binary resolves it through the manual bridge).
-#[derive(Component)]
-struct ManualCombatCard;
-
 /// A control card that **advances the day** — shown in the Progress zone's overlay. Clicking it draws a
 /// new `Day Passed` card onto Progress (the day count ticks up) and stands every move marker back up.
 #[derive(Component)]
 struct AdvanceDayCard;
-
-/// An arena **foe tile** the player can tap to strike it (a [`DecisionView::Target`] candidate). Carries the
-/// foe's pool index.
-#[derive(Component)]
-struct ArenaTargetCard(usize);
-
-/// The arena **Hold** control — decline to strike this sub-phase (a [`DecisionView::Target`] answer).
-#[derive(Component)]
-struct ArenaHoldCard;
-
-/// An arena **Evade / Endure** control (`true` = evade the blow, paying Tempo; `false` = endure it).
-#[derive(Component)]
-struct ArenaEvadeCard(bool);
-
-/// An arena **Strike Back / Hold** control (`true` = retaliate; `false` = decline).
-#[derive(Component)]
-struct ArenaStrikeBackCard(bool);
 
 /// A **v2 board-arena combatant** the player can tap to edit the staged plan for the current step (cycle
 /// rank / select / bid / aim / react). Carries the combatant's board [`CardId`]; the tap is recorded into
@@ -358,35 +317,6 @@ const CLICK_DRAG_TOLERANCE: f32 = 8.0;
 /// combat system) can request a redraw after mutating the [`Table`].
 #[derive(Resource)]
 pub struct NeedsRebuild(pub bool);
-
-/// A pending **auto-combat request** — the place a fight was asked for (the [`CombatCard`] click records
-/// the current zone here). The renderer only records the *request*; an outer layer resolves it (so the UI
-/// shell stays game-agnostic). It is drained by the combat system, which then clears it back to `None`.
-#[derive(Resource, Default)]
-pub struct CombatRequest(pub Option<PileId>);
-
-/// A pending **manual-combat request** — the place the player asked to fight *manually* (the
-/// [`ManualCombatCard`] click records the current zone here). Mirrors [`CombatRequest`]; drained by the
-/// binary's manual-combat system (and, once built, opens the interactive arena) then cleared to `None`.
-#[derive(Resource, Default)]
-pub struct ManualCombatRequest(pub Option<PileId>);
-
-/// The **in-progress manual combat** (`None` when no fight is up). While `Some`, the renderer shows the modal
-/// [arena](build_arena_ui) instead of the normal table, and [`drive_arena`] steps the fight. The binary's
-/// manual-combat system opens it (via [`cardtable_combat::begin_manual_combat`]); `drive_arena` closes it on
-/// the fight's end. Public so the binary can insert it.
-#[derive(Resource, Default)]
-pub struct ArenaCombat(pub Option<ArenaState>);
-
-/// A manual fight being played on the table: the bridge's [`ManualCombat`] plus the `place`/`bestiary` its
-/// teardown ([`finish_manual_combat`]) needs and the `scratch` pile the foe cards were dealt into (removed
-/// when the fight closes).
-pub struct ArenaState {
-    pub combat: ManualCombat,
-    pub place: PileId,
-    pub bestiary: PileId,
-    pub scratch: PileId,
-}
 
 /// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
 /// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
@@ -662,22 +592,13 @@ fn on_click(
         Option<&CardRef>,
         Option<&PileDropZone>,
         Has<BackCard>,
-        Has<CombatCard>,
-        Has<ManualCombatCard>,
         Has<AdvanceDayCard>,
-        Option<&ArenaTargetCard>,
-        Has<ArenaHoldCard>,
-        Option<&ArenaEvadeCard>,
-        Option<&ArenaStrikeBackCard>,
         Option<&AffordanceControl>,
         Option<&ArenaUnitCard>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
-    mut combat: ResMut<CombatRequest>,
-    mut manual_combat: ResMut<ManualCombatRequest>,
-    mut arena: ResMut<ArenaCombat>,
     mut affordance_click: ResMut<AffordanceClick>,
     mut tap_request: ResMut<TapRequest>,
     mut font_sample: ResMut<FontSample>,
@@ -692,34 +613,11 @@ fn on_click(
         return; // the release that ends a *real* drag also fires Click — not an intentional click. A tap
         // that barely moved (within the tolerance) falls through and is treated as the click it is.
     }
-    let Ok((
-        action,
-        card,
-        pile,
-        is_back,
-        is_combat,
-        is_manual_combat,
-        is_advance_day,
-        arena_target,
-        is_arena_hold,
-        arena_evade,
-        arena_strikeback,
-        affordance,
-        arena_unit,
-    )) = targets.get(on.event().entity)
+    let Ok((action, card, pile, is_back, is_advance_day, affordance, arena_unit)) =
+        targets.get(on.event().entity)
     else {
         return;
     };
-    // Arena controls come first: while a fight is up the felt is the modal arena, so these are the only
-    // meaningful clicks. Each records the party's answer to the current decision and redraws.
-    if let Some(answer) = arena_answer(arena_target, is_arena_hold, arena_evade, arena_strikeback) {
-        if let Some(st) = arena.0.as_mut() {
-            st.combat.answer_current(answer);
-            rebuild.0 = true;
-        }
-        on.propagate(false);
-        return;
-    }
     // A **v2 board-arena combatant** tap: record the board card for the driver's `apply_tap`, which asks the
     // game's `tap_intention` to interpret it (cycle rank / select / bid / aim / react) against the fight step.
     if let Some(unit) = arena_unit {
@@ -746,15 +644,6 @@ fn on_click(
     if is_back {
         table.0.zoom_out(); // leave this zone for its parent
         rebuild.0 = true;
-    } else if is_combat {
-        // The auto-combat trigger: record *which* place the fight is for. An outer layer (the binary's
-        // combat system) resolves it against the game rules and clears the request — the UI shell stays
-        // game-agnostic.
-        combat.0 = Some(table.0.focus_id());
-    } else if is_manual_combat {
-        // The manual-combat trigger: record the place for the binary's manual-combat system (which, until
-        // the interactive arena exists, resolves it through the manual bridge). Same record-only pattern.
-        manual_combat.0 = Some(table.0.focus_id());
     } else if is_advance_day {
         // Advance the day: lay a new `Day Passed` card on Progress and stand every move marker back up.
         if let (Some(progress), Some(events)) =
@@ -1728,7 +1617,6 @@ fn redraw(
     table: Res<Table>,
     rail: Res<ActionRail>,
     front: Res<FannedFront>,
-    arena: Res<ArenaCombat>,
     affordances: Res<AffordanceLabels>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
@@ -1746,14 +1634,7 @@ fn redraw(
         build_font_sample(&mut commands, name, fonts);
         return;
     }
-    build_ui(
-        &mut commands,
-        &table.0,
-        &rail.0,
-        front.0,
-        arena.0.as_ref(),
-        &affordances.0,
-    );
+    build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
 }
 
 /// Build the modal **font sample**: the whole [`palette`] rendered large in the chosen font, in a neat grid,
@@ -1878,322 +1759,6 @@ fn spawn_glyph_cell(parent: &mut ChildSpawnerCommands, c: char, handle: Handle<F
 }
 
 // ---- combat arena -------------------------------------------------------
-
-/// Seconds between auto-advance steps (foe moves, boundaries, cycle resolutions) so the fight is watchable
-/// rather than instant. Player decisions never wait on this — only the automatic steps are paced.
-const ARENA_BEAT: f32 = 0.5;
-
-/// Build the modal combat **arena**: a prompt banner for the current hero decision, then three rank lanes
-/// (Vanguard / Outrider / Rearguard) with the party on the left and the foes on the right. Units are drawn
-/// from the bridge's plain [`ArenaView`](cardtable_combat::ArenaView); a foe that is a legal target for the
-/// current decision is tappable ([`ArenaTargetCard`]).
-fn build_arena_ui(commands: &mut Commands, state: &ArenaState) {
-    let view = state.combat.view();
-    let decision = state.combat.current_decision();
-    let targets: Vec<usize> = match &decision {
-        Some(DecisionView::Target { candidates, .. }) => candidates.iter().map(|c| c.ti).collect(),
-        _ => Vec::new(),
-    };
-    commands
-        .spawn((
-            CardTableRoot,
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                padding: UiRect::all(Val::Px(16.0)),
-                row_gap: Val::Px(12.0),
-                ..default()
-            },
-            BackgroundColor(FELT),
-        ))
-        .with_children(|root| {
-            let phase = state.combat.phase();
-            // The **phase pile** (round + sub-phase, the tabletop phase deck top-card-up) with the rank
-            // pairs it resolves — who may strike whom this phase — spelled out beside it.
-            root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(14.0),
-                ..default()
-            })
-            .with_children(|row| {
-                spawn_phase_pile(row, &phase);
-                row.spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(2.0),
-                    ..default()
-                })
-                .with_children(|col| {
-                    for line in &phase.pairs {
-                        col.spawn((
-                            Text::new(line.clone()),
-                            TextFont {
-                                font_size: FONT_BODY,
-                                ..default()
-                            },
-                            TextColor(MUTED),
-                        ));
-                    }
-                });
-            });
-            // Prompt banner: the current hero decision + its choice cards.
-            root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(8.0),
-                min_height: Val::Px(46.0),
-                ..default()
-            })
-            .with_children(|bar| match &decision {
-                Some(DecisionView::Target { attacker, .. }) => {
-                    arena_prompt(bar, &format!("{attacker}: tap a foe to strike, or Hold"));
-                    spawn_nav_card(bar, ArenaHoldCard, "Hold");
-                }
-                Some(DecisionView::Evade {
-                    soaker,
-                    attacker,
-                    cost,
-                    tempo,
-                }) => {
-                    arena_prompt(
-                        bar,
-                        &format!("{attacker} strikes {soaker} - evade? ({soaker} tempo {tempo})"),
-                    );
-                    spawn_nav_card(bar, ArenaEvadeCard(true), &format!("Evade (-{cost}t)"));
-                    spawn_nav_card(bar, ArenaEvadeCard(false), "Endure");
-                }
-                Some(DecisionView::StrikeBack {
-                    soaker,
-                    attacker,
-                    tempo,
-                }) => {
-                    arena_prompt(
-                        bar,
-                        &format!(
-                            "{attacker} struck {soaker} - strike back? ({soaker} tempo {tempo})"
-                        ),
-                    );
-                    spawn_nav_card(bar, ArenaStrikeBackCard(true), "Strike Back (-1t)");
-                    spawn_nav_card(bar, ArenaStrikeBackCard(false), "Hold");
-                }
-                None => arena_prompt(bar, "Resolving..."),
-            });
-            // Three rank lanes: party on the left, foes on the right of each.
-            for (rank, name) in [('V', "Vanguard"), ('O', "Outrider"), ('R', "Rearguard")] {
-                root.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(8.0),
-                    min_height: Val::Px(SMALL_H + 8.0),
-                    ..default()
-                })
-                .with_children(|lane| {
-                    arena_lane_label(lane, name);
-                    for h in view.heroes.iter().filter(|u| u.rank == rank) {
-                        spawn_arena_unit(lane, h, None);
-                    }
-                    arena_divider(lane);
-                    for f in view.foes.iter().filter(|u| u.rank == rank) {
-                        let target = targets.contains(&f.idx).then_some(f.idx);
-                        spawn_arena_unit(lane, f, target);
-                    }
-                });
-            }
-            // The running combat log (recent lines) — the play-by-play: sub-phase headers, each strike and
-            // who it hit, evades, and falls. Lets the fight be read back and followed.
-            arena_log(root, state.combat.log());
-        });
-}
-
-/// Number of recent log lines shown in the arena's log panel.
-const ARENA_LOG_LINES: usize = 12;
-
-/// A panel of the most recent combat-log lines at the foot of the arena — the play-by-play (who struck
-/// whom, evades, falls, sub-phase headers), so the fight can be followed and read back.
-fn arena_log(parent: &mut ChildSpawnerCommands, log: &[String]) {
-    let start = log.len().saturating_sub(ARENA_LOG_LINES);
-    parent
-        .spawn((
-            Node {
-                width: Val::Px(560.0),
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(10.0)),
-                margin: UiRect::top(Val::Px(6.0)),
-                row_gap: Val::Px(1.0),
-                border_radius: BorderRadius::all(Val::Px(8.0)),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            BackgroundColor(PANEL),
-        ))
-        .with_children(|panel| {
-            for line in &log[start..] {
-                panel.spawn((
-                    Text::new(line.clone()),
-                    TextFont {
-                        font_size: FONT_BODY,
-                        ..default()
-                    },
-                    TextColor(MUTED),
-                    TextLayout::no_wrap(),
-                ));
-            }
-        });
-}
-
-/// The **phase pile**: the current phase (round · name · the rank→rank pairs it resolves) drawn as the face
-/// of a small offset stack — the tabletop phase deck, top card up. Accented like an encounter (a fight
-/// marker). The stack layers behind hint the rest of the phase deck the engine rotates through.
-fn spawn_phase_pile(parent: &mut ChildSpawnerCommands, phase: &PhaseView) {
-    const PHASE_W: f32 = 150.0;
-    const PHASE_H: f32 = 84.0;
-    const STEP: f32 = 4.0;
-    let accent = type_accent("encounter");
-    let layers = phase.total.saturating_sub(1).min(3);
-    let extra = layers as f32 * STEP;
-    parent
-        .spawn(Node {
-            width: Val::Px(PHASE_W + extra),
-            height: Val::Px(PHASE_H + extra),
-            position_type: PositionType::Relative,
-            ..default()
-        })
-        .with_children(|slot| {
-            // The rest of the phase deck, stepped down-right behind the face.
-            for i in 0..layers {
-                let off = (layers - i) as f32 * STEP;
-                slot.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(off),
-                        top: Val::Px(off),
-                        width: Val::Px(PHASE_W),
-                        height: Val::Px(PHASE_H),
-                        border: UiRect::all(Val::Px(2.0)),
-                        border_radius: BorderRadius::all(Val::Px(10.0)),
-                        ..default()
-                    },
-                    BackgroundColor(CARD_BACK),
-                    BorderColor::all(CARD_EDGE),
-                ));
-            }
-            // The face: the current phase.
-            slot.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(PHASE_W),
-                    height: Val::Px(PHASE_H),
-                    padding: UiRect::all(Val::Px(8.0)),
-                    border: UiRect::all(Val::Px(2.0)),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    row_gap: Val::Px(2.0),
-                    border_radius: BorderRadius::all(Val::Px(10.0)),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                BackgroundColor(CARD_FACE),
-                BorderColor::all(accent),
-                card_shadow(),
-            ))
-            .with_children(|c| {
-                c.spawn((
-                    Text::new(format!("Round {}", phase.round)),
-                    TextFont {
-                        font_size: FONT_BODY,
-                        ..default()
-                    },
-                    TextColor(MUTED),
-                ));
-                c.spawn((
-                    Text::new(phase.name.clone()),
-                    TextFont {
-                        font_size: FONT_TITLE,
-                        ..default()
-                    },
-                    TextColor(CARD_INK),
-                    TextLayout::no_wrap(),
-                ));
-            });
-        });
-}
-
-/// A combatant tile in the arena: name over `rank · remaining/max`, side-tinted, dimmed when fallen. When
-/// `target` is `Some`, the tile is a tappable strike target (green ring + an [`ArenaTargetCard`] tag).
-fn spawn_arena_unit(parent: &mut ChildSpawnerCommands, u: &UnitView, target: Option<usize>) {
-    let accent = type_accent(if u.side == 0 { "hero" } else { "foe" });
-    let (bg, ink) = if u.fallen {
-        (CARD_BACK, MUTED)
-    } else {
-        (CARD_FACE, CARD_INK)
-    };
-    // rank · Health remaining/max · Tempo (face-up Tempo cards) — everything a strike/evade decision needs.
-    let bar = format!(
-        "{} | HP {}/{} | T{}",
-        u.rank,
-        u.health_remaining,
-        u.health_max,
-        u.tempo.max(0)
-    );
-    let mut tile = parent.spawn((
-        Node {
-            width: Val::Px(SMALL_W),
-            min_height: Val::Px(SMALL_H),
-            padding: UiRect::all(Val::Px(8.0)),
-            border: UiRect::all(Val::Px(2.0)),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            row_gap: Val::Px(3.0),
-            border_radius: BorderRadius::all(Val::Px(10.0)),
-            overflow: Overflow::clip(),
-            ..default()
-        },
-        BackgroundColor(bg),
-        BorderColor::all(if target.is_some() { TARGET_CUE } else { accent }),
-        card_shadow(),
-    ));
-    if let Some(ti) = target {
-        tile.insert(ArenaTargetCard(ti));
-    }
-    tile.with_children(|c| {
-        c.spawn((
-            Text::new(u.name.clone()),
-            TextFont {
-                font_size: title_font(&u.name, FONT_TITLE, SMALL_INNER),
-                ..default()
-            },
-            TextLayout::no_wrap(),
-            TextColor(ink),
-        ));
-        c.spawn((
-            Text::new(bar),
-            TextFont {
-                font_size: FONT_BODY,
-                ..default()
-            },
-            TextColor(if u.fallen { FACE_DOWN_EDGE } else { MUTED }),
-        ));
-    });
-}
-
-/// The prompt text at the head of the arena banner (light ink on the felt).
-fn arena_prompt(parent: &mut ChildSpawnerCommands, text: &str) {
-    parent.spawn((
-        Text::new(text.to_string()),
-        TextFont {
-            font_size: FONT_TITLE,
-            ..default()
-        },
-        TextColor(INK),
-    ));
-}
 
 /// A rank-lane label at the left of a lane.
 fn arena_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
@@ -3457,64 +3022,6 @@ fn spawn_arrow_dots(commands: &mut Commands, a: Vec2, b: Vec2, confirmed: bool, 
     }
 }
 
-/// Step the interactive combat arena each frame. When a fight is up: if it's **finished**, fold it back onto
-/// the table ([`finish_manual_combat`]) and close the arena; if the **party** owes a decision, wait (the
-/// arena shows it, answered via [`on_click`]); otherwise auto-answer the **foe** AI / advance one step,
-/// paced by [`ARENA_BEAT`] so the fight is watchable. Any advance sets [`NeedsRebuild`] so the felt reflects
-/// the new state.
-fn drive_arena(
-    time: Res<Time>,
-    mut since_beat: Local<f32>,
-    mut table: ResMut<Table>,
-    mut arena: ResMut<ArenaCombat>,
-    mut rebuild: ResMut<NeedsRebuild>,
-) {
-    // Finished → fold back and close (take the state out; `finish_manual_combat` consumes the combat).
-    if arena.0.as_ref().is_some_and(|st| st.combat.is_finished()) {
-        let st = arena.0.take().expect("just checked");
-        finish_manual_combat(&mut table.0, st.place, st.bestiary, st.combat);
-        let _ = table.0.remove_pile(st.scratch); // discard the now-empty foe scratch pile
-        rebuild.0 = true;
-        return;
-    }
-    let Some(st) = arena.0.as_mut() else {
-        return;
-    };
-    // The party owes a decision → wait for the player (the timer keeps accruing, so the resolution advances
-    // promptly once they answer rather than pausing a further beat).
-    if st.combat.current_decision().is_some() {
-        *since_beat += time.delta_secs();
-        return;
-    }
-    // Auto step (foe AI / cycle resolution / boundary), paced so it's watchable.
-    *since_beat += time.delta_secs();
-    if *since_beat < ARENA_BEAT {
-        return;
-    }
-    *since_beat = 0.0;
-    st.combat.answer_foe_side();
-    st.combat.advance();
-    rebuild.0 = true;
-}
-
-/// Map the arena-control markers on a clicked entity to the party's [`ArenaAnswer`], if it carries one.
-fn arena_answer(
-    target: Option<&ArenaTargetCard>,
-    hold: bool,
-    evade: Option<&ArenaEvadeCard>,
-    strikeback: Option<&ArenaStrikeBackCard>,
-) -> Option<ArenaAnswer> {
-    if let Some(t) = target {
-        Some(ArenaAnswer::Strike(t.0))
-    } else if hold {
-        Some(ArenaAnswer::Hold)
-    } else if let Some(e) = evade {
-        Some(ArenaAnswer::Evade(e.0))
-    } else {
-        strikeback.map(|sb| ArenaAnswer::StrikeBack(sb.0))
-    }
-}
-
 // ---- drawing ------------------------------------------------------------
 
 const FELT: Color = Color::srgb(0.06, 0.13, 0.10);
@@ -3711,16 +3218,9 @@ fn build_ui(
     tree: &Tableau,
     rail: &[RailAction],
     front: Option<CardId>,
-    arena: Option<&ArenaState>,
     affordances: &[String],
 ) {
-    // A manual fight is modal: while one is up, the whole felt is the combat arena — the normal zone view,
-    // its overlays, and the combat entry buttons are all suppressed.
-    if let Some(state) = arena {
-        build_arena_ui(commands, state);
-        return;
-    }
-    // A **v2 board fight** in progress: the `[Arena]` zone is modal — render the interactive combat board
+    // A **board fight** in progress: the `[Arena]` zone is modal — render the interactive combat board
     // straight from the cards (rank lanes, each unit's staged plan, the phase, the Commit control).
     if let Some(pile) = active_arena(tree) {
         build_arena_v2_ui(commands, tree, pile, affordances);
