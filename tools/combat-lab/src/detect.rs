@@ -1,5 +1,9 @@
 //! Balance detectors over the matchup matrix. Each maps to a named failure mode
 //! from `keeping-systems-interesting.md`.
+//!
+//! These are square-matrix passes (`m.outcome[i][j]`, `payoff(i, j)`), so `for i in 0..n` indexing is the
+//! natural, readable form - enumerate would still have to index the matrix by hand.
+#![allow(clippy::needless_range_loop)]
 
 use crate::Character;
 use crate::resolver::{Duel, Outcome, duel, margin};
@@ -186,10 +190,10 @@ pub fn analyze(m: &Matrix) -> Analysis {
             if i == j {
                 continue;
             }
-            if let Some(d) = m.duels[i][j] {
-                if d.rtk_ab.is_none() {
-                    immunities += 1;
-                }
+            if let Some(d) = m.duels[i][j]
+                && d.rtk_ab.is_none()
+            {
+                immunities += 1;
             }
         }
     }
