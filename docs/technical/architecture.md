@@ -106,25 +106,38 @@ is what makes the seed-based tests and the exact combat solver reproducible.
 
 ## Reorg still open (from the reunification)
 
-The cards-as-truth reunification is complete and shipping. A cosmetic / structural
-tail remains, tracked in `needs-merge/cardtable-deckbound-reunification-plan.md`:
+The cards-as-truth reunification is complete and shipping. The substantive tail —
+**P4** and **A1** — is now done; only small / optional items remain.
 
+- **A1 — arena rendering out of `cardtable` (done):** the generic renderer no longer
+  knows combat. The game declares a modal as a rules-blind
+  [`Scene`](../../crates/cardtable-model/src/scene.rs) (tracks / lanes / assignment
+  rows / tiles / card-to-card links / log) via `BoardGame::scene`; the renderer draws
+  it and routes input through the ordinary seam. The `Scene` vocabulary names
+  *possibilities* (a tile may be emphasized, a card may link to others), never rules —
+  the game maps its meanings (rank → lane, "melee" → a tone) onto it. All combat
+  derivation lives in `deckbound-board::scene`.
+- **P4 — extract `deckbound-balance` (done):** the legacy sample's balance / solver
+  tooling now lives in its own leaf crate depending on `deckbound`; a pure
+  `deckbound::combinatorics` helper broke the one core→balance cycle.
 - **P6 — honest renames (mostly done):** `Tableau → Board` and
   `deckbound-cardtable → deckbound-board` shipped. Left: a `physical` module beside
   `ui` (organizational, optional). `actor::Intention → Rank` is **declined** — V/O/R
   are honestly "declared intentions" in the deckbound sample's spec, and the product
   reframes them as ranks via a local `as Rank` alias, which keeps both vocabularies
   correct.
-- **P4 — extract `deckbound-balance`**: move the *legacy sample's* balance / solver
-  tooling out of `deckbound` (the product's v2 balance tooling already lives in
-  `deckbound-board`).
-- **A1 — arena rendering out of `cardtable`**: the generic renderer still holds the
-  arena UI and combat-affordability logic; the ideal is "the arena is just another
-  zone."
+- **Arena-modal code debt (optional cleanups):** position dual-ownership
+  (`Movable` ⊗ flex) and the long `on_node_drag_end` resolver could be tidied, and
+  UI positioning finished through the single `CardScreenRects` authority — quality,
+  not correctness. (A1 already resolved the string-typed renderer↔board coupling: the
+  renderer reads the `Scene`, not `Arena`/`Pool`/rank/`unit` strings off the board.)
 - **P3a.3 / .4 (dropped)**: moving per-card/pile UI state (`pos` / `size` / `layout`
   / `collapsed`) into id-keyed side-tables was deferred as high-ripple. Its
   motivation — "focus survives rebuilds" and "many UI models per one truth" — was
   resolved by the persistent board (single local observer), so it is **not planned**
   for this single-player product; revisit only if shared / multi-observer boards
   become a goal.
+- **Optional — one crate for all game logic:** `deckbound-board` leans on `deckbound`
+  for shared content (`catalog` / `combat` / `actor`); folding those in and retiring
+  `deckbound` as a sample would put all product logic in one place. Not required.
 </content>
