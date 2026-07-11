@@ -198,6 +198,20 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         .get(1)
         .map(|l| num_after(l, "Tempo "))
         .unwrap_or(stats.cadence);
+    // Area / horde are read from the source alongside reach: a hero's area comes from its equipped attack
+    // (Sweep / Salvo); a creature carries its own aoe/horde. Heroes are never hordes.
+    let (aoe, horde) = match side {
+        Side::Party => {
+            let recipe = board.character_recipe(
+                character_deck(board, &name)?,
+                &deckbound::catalog::stat_names(),
+            )?;
+            (deckbound::catalog::ability_shape(&recipe.ability).1, false)
+        }
+        Side::Foe => deckbound::catalog::creature(&name)
+            .map(|c| (c.aoe, c.horde))
+            .unwrap_or((false, false)),
+    };
     Some(Combatant {
         name,
         side,
@@ -209,11 +223,8 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         armor: 0,
         melee,
         ranged,
-        // TODO: derive `aoe` from the equipped attack (Sweep / Salvo) so those sweep in the live game, and
-        // model foe `horde`. Deferred with the rest of the frozen-combat work — the balance tooling drives
-        // AoE / horde today; the arena still resolves every strike as single-target.
-        aoe: false,
-        horde: false,
+        aoe,
+        horde,
         tempo,
         health: hp,
         pending: 0,
@@ -661,10 +672,19 @@ fn greedy_catches(units: &[Combatant], side: Side, sub: usize) -> Vec<Catch> {
             continue;
         }
         if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
-            if v.fallen || v.side == side || !combat::legal_catch(sub, u.rank, v.rank) {
+            if v.fallen
+                || v.side == side
+                || !combat::legal_catch(sub, u.rank, v.rank)
+                || !combat::back_access_ok(units, u.rank, j)
+            {
                 return None;
             }
-            let need = v.finesse.div_ceil(u.finesse.max(1));
+            // An area strike is unevadable and costs one card; a single strike bids the minimum to land.
+            let need = if u.aoe {
+                1
+            } else {
+                v.finesse.div_ceil(u.finesse.max(1)).max(1)
+            };
             (need <= u.tempo).then_some((j, need))
         }) {
             catches.push(Catch {
@@ -706,6 +726,7 @@ fn party_catches(board: &Tableau, cards: &[CardId], units: &[Combatant], sub: us
         };
         if let Some(t) = cards.iter().position(|&c| c == aim)
             && combat::legal_catch(sub, u.rank, units[t].rank)
+            && combat::back_access_ok(units, u.rank, t)
         {
             catches.push(Catch {
                 attacker: i,
@@ -784,8 +805,11 @@ pub fn step_needs_input(board: &Tableau, arena: PileId) -> bool {
             living_party(i)
                 && u.tempo > 0
                 && combat::effective_in_rank(u.rank, u.melee, u.ranged)
-                && units.iter().any(|v| {
-                    v.side == Side::Foe && !v.fallen && combat::legal_catch(sub, u.rank, v.rank)
+                && units.iter().enumerate().any(|(j, v)| {
+                    v.side == Side::Foe
+                        && !v.fallen
+                        && combat::legal_catch(sub, u.rank, v.rank)
+                        && combat::back_access_ok(&units, u.rank, j)
                 })
         }),
         Step::React => {
@@ -906,6 +930,15 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
     let _ = round0;
     if step0 == Step::Marshal {
         autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
+        // Round start: refresh every unit's tempo to its pool - Cadence, or body count for a horde (which
+        // "swarms with one card per living body"). The end-of-round refresh only covers later rounds, so the
+        // opening round is set here; idempotent for the rounds that were already refreshed.
+        let (cards, mut units, _, _, _) = arena_state(board, arena);
+        combat::refresh_round(&mut units);
+        let maxes = maxes_of(board, &units);
+        for (i, card) in cards.iter().enumerate() {
+            write_combatant(board, *card, &units[i], maxes[i]);
+        }
         rotate_deck(board, arena, PHASES); // Marshal -> the first sub-phase (Intercept); Steps stays at Catch
         return outcome(board, arena).is_some();
     }
@@ -1080,6 +1113,9 @@ fn cycle_bid(board: &mut Tableau, card: CardId, tempo: u32) {
 /// Aim the active party attacker at foe index `foe` (if the SCHEDULE permits), seeding a minimum bid.
 /// The minimum tempo the attacker must bid to *land* a catch on the target: `ceil(F_target / F_att)`.
 fn min_to_land(attacker: &Combatant, target: &Combatant) -> u32 {
+    if attacker.aoe {
+        return 1; // an area strike is unevadable - one card, no bid to raise
+    }
     target.finesse.div_ceil(attacker.finesse.max(1)).max(1)
 }
 
@@ -1094,6 +1130,7 @@ fn aim_active(board: &mut Tableau, cards: &[CardId], units: &[Combatant], sub: u
         units[active].melee,
         units[active].ranged,
     ) || !combat::legal_catch(sub, units[active].rank, units[foe].rank)
+        || !combat::back_access_ok(units, units[active].rank, foe)
     {
         return;
     }
@@ -1393,6 +1430,11 @@ mod tests {
 
     /// Set up a fight at a place with an encounter, with Vael recruited (Marksman) and marched there.
     fn open_a_fight(board: &mut Tableau) -> PileId {
+        open_a_fight_with(board, "Marksman")
+    }
+
+    /// As [`open_a_fight`], but recruit Vael with the named kit (so tests can pick the hero's attack type).
+    fn open_a_fight_with(board: &mut Tableau, kit_name: &str) -> PileId {
         use crate::CardTableGame;
         use crate::Intention;
         use cardtable_model::BoardGame;
@@ -1407,18 +1449,18 @@ mod tests {
             .into_iter()
             .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
             .unwrap();
-        let marksman = board
+        let chosen = board
             .pile(kit)
             .unwrap()
             .cards()
             .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Marksman"))
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some(kit_name))
             .unwrap();
         game.apply(
             board,
             &[Intention::Equip {
                 identity: vael,
-                kit: marksman,
+                kit: chosen,
             }],
         );
 
@@ -1461,6 +1503,36 @@ mod tests {
             !units.iter().any(|u| u.side == Side::Party),
             "no hero is ranked yet"
         );
+    }
+
+    /// The `read_combatant` plumbing carries area / horde from the source: a Reaver (Sweep) hero flags `aoe`,
+    /// and every foe faithfully mirrors its catalog `aoe`/`horde` (guards against a hardcoded-false regress).
+    #[test]
+    fn combat_reads_carry_aoe_for_a_sweep_hero_and_horde_for_foes() {
+        let mut board = sample_table();
+        let arena = open_a_fight_with(&mut board, "Reaver"); // Vael carries Sweep, an area attack
+        let vael = pool_heroes(&board, arena)
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
+            .expect("Vael is in the pool");
+        let van = sub_pile(&board, arena, "Vanguard").unwrap();
+        assign(&mut board, vael, van);
+
+        let (_, units, _, _, _) = arena_state(&board, arena);
+        let sweep = units
+            .iter()
+            .find(|u| u.name == "Vael Thornbrand")
+            .expect("the Sweep hero is ranked");
+        assert!(
+            sweep.aoe,
+            "a Reaver (Sweep) is an area attacker on its combat read"
+        );
+        assert!(!sweep.horde, "a hero is never a horde");
+        for u in units.iter().filter(|u| u.side == Side::Foe) {
+            let c = deckbound::catalog::creature(&u.name).expect("foe is a catalog creature");
+            assert_eq!(u.horde, c.horde, "{} horde flag", u.name);
+            assert_eq!(u.aoe, c.aoe, "{} aoe flag", u.name);
+        }
     }
 
     #[test]
