@@ -1566,39 +1566,38 @@ fn settle_free_cards(
             anchor = Some(c);
         }
     }
-    // Only shove when the just-resized card **actually overlaps** another card. `separate` is a de-overlap,
-    // not a re-pack: a resize that opens no overlap (a shrink, or any card in a clean manual layout - the
-    // System deck's seeded grid) must leave the deliberate positions untouched. This is what keeps feeding
-    // every card's footprint from disturbing zones that were laid out by hand.
-    if let Some(anchor) = anchor
-        && card_overlaps_others(&table.0, focus, anchor)
+    // Self-heal the never-overlap invariant: if any two of this zone's laid-out elements overlap - cards
+    // **or** the sub-decks it holds (a Fonts-style pile), checked over the same movable children `separate`
+    // lays out - shove them apart. The anchor holds its spot (the just-resized card if one changed, else the
+    // first card). `separate` is idempotent + never-overlapping, so a clean layout is untouched and any
+    // overlap always clears - which also repairs positions left bad by an earlier build.
+    if let Some(anchor) = anchor.or_else(|| cards.first().copied())
+        && zone_has_overlap(&table.0, focus)
     {
         table.0.separate(focus, TableNode::Card(anchor));
     }
 }
 
-/// Whether `card`'s box (its model position + footprint) overlaps any *other* content card of `pile`. Gates
-/// [`settle_free_cards`]'s shove so `separate` only ever *removes* an overlap and never re-packs a layout that
-/// was already clear.
-fn card_overlaps_others(table: &Board, pile: PileId, card: CardId) -> bool {
-    let Some((ap, asize)) = table.card(card).map(|c| (c.pos(), c.footprint())) else {
-        return false;
-    };
-    if asize.x < 1.0 {
-        return false;
-    }
-    table
-        .content_cards(pile)
+/// Whether any two of a zone's laid-out elements overlap in the model — its **movable children**: cards by
+/// [`footprint`](Card::footprint), sub-decks by their [`size`](Pile::size), the same set [`Board::separate`]
+/// arranges. The runtime test behind the never-overlap invariant's self-heal, so a card overlapping a
+/// *sub-deck* (not just another card) is caught too.
+fn zone_has_overlap(table: &Board, zone: PileId) -> bool {
+    let boxes: Vec<(Pos, Pos)> = table
+        .movable_children(zone)
         .into_iter()
-        .filter(|&c| c != card)
-        .filter_map(|c| table.card(c).map(|k| (k.pos(), k.footprint())))
-        .any(|(bp, bsize)| {
-            bsize.x >= 1.0
-                && ap.x < bp.x + bsize.x
-                && bp.x < ap.x + asize.x
-                && ap.y < bp.y + bsize.y
-                && bp.y < ap.y + asize.y
+        .filter_map(|n| match n {
+            TableNode::Card(c) => table.card(c).map(|k| (k.pos(), k.footprint())),
+            TableNode::Pile(p) => table.pile(p).map(|d| (d.pos(), d.size())),
         })
+        .filter(|(_, s)| s.x >= 1.0 && s.y >= 1.0)
+        .collect();
+    (0..boxes.len()).any(|i| {
+        ((i + 1)..boxes.len()).any(|j| {
+            let ((ap, asz), (bp, bsz)) = (boxes[i], boxes[j]);
+            ap.x < bp.x + bsz.x && bp.x < ap.x + asz.x && ap.y < bp.y + bsz.y && bp.y < ap.y + asz.y
+        })
+    })
 }
 
 /// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size, or when the
@@ -1654,32 +1653,20 @@ fn settle_table_piles(
     // arrangement (decks that still fit don't move). Between these events a manual drag sticks.
     if sized {
         table.0.arrange_row(root, GAP, OVERLAY_BAND);
-    } else if let Some(anchor) = piles.first().copied() {
-        // On a window resize, re-clamp the decks inside the new bounds. Otherwise, **self-heal the
-        // never-overlap invariant**: if any two decks overlap without a size/window change to trigger a
-        // re-tidy (a rebuilt System deck parked at 0,0 is the case that motivated this), separate them.
-        // `separate` is idempotent on a clean layout - it keeps every already-clear deck - so this only ever
-        // moves genuine overlaps and never disturbs a manual arrangement.
-        if resized || piles_overlap(&table.0, &piles) {
-            table.0.separate(root, TableNode::Pile(anchor));
-        }
+    } else if resized && let Some(anchor) = piles.first().copied() {
+        // A window resize re-clamps the decks inside the new bounds (preserving the manual arrangement).
+        table.0.separate(root, TableNode::Pile(anchor));
     }
-}
-
-/// Whether any two of `piles` (top-level decks) overlap, by their model box (`pos` + `size`). Used to
-/// self-heal the never-overlap invariant when no size/window change triggered a re-tidy.
-fn piles_overlap(table: &Board, piles: &[PileId]) -> bool {
-    let boxes: Vec<(Pos, Pos)> = piles
-        .iter()
-        .filter_map(|&p| table.pile(p).map(|d| (d.pos(), d.size())))
-        .filter(|(_, s)| s.x >= 1.0 && s.y >= 1.0)
-        .collect();
-    (0..boxes.len()).any(|i| {
-        ((i + 1)..boxes.len()).any(|j| {
-            let ((ap, asz), (bp, bsz)) = (boxes[i], boxes[j]);
-            ap.x < bp.x + bsz.x && bp.x < ap.x + asz.x && ap.y < bp.y + bsz.y && bp.y < ap.y + asz.y
-        })
-    })
+    // **Self-heal the never-overlap invariant, unconditionally.** After the above (or when neither fired), if
+    // any two decks still overlap - a rebuilt System deck parked at (0,0), or a deck `arrange_row` skipped
+    // because it was not yet sized that frame - separate them. Safe now that `separate` is idempotent + never
+    // -overlapping: a clean layout is untouched, only genuine overlaps move. (`root`'s movable children are
+    // its decks.)
+    if let Some(anchor) = piles.first().copied()
+        && zone_has_overlap(&table.0, root)
+    {
+        table.0.separate(root, TableNode::Pile(anchor));
+    }
 }
 
 /// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
