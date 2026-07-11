@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 
-use deckbound::actor::Intention as Rank;
-use deckbound::combat::SCHEDULE;
+use deckbound_content::rank::Intention as Rank;
+use deckbound_content::schedule::SCHEDULE;
 
 use crate::battle::{Greedy, MAX_ROUNDS, Policy};
 use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};

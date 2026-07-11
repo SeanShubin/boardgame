@@ -13,7 +13,8 @@
 pub mod actor;
 pub mod campaign;
 pub mod cards;
-pub mod catalog;
+// Card content moved to the shared `deckbound-content` leaf; re-exported so `deckbound::catalog` is unchanged.
+pub use deckbound_content::catalog;
 pub mod combat;
 pub mod combinatorics;
 pub mod currency;

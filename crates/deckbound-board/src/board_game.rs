@@ -197,7 +197,7 @@ fn equip(board: &mut Board, identity: CardId, kit: CardId) {
         .equip_character(
             &name,
             &recipe,
-            &deckbound::catalog::stat_names(),
+            &deckbound_content::catalog::stat_names(),
             heroes,
             stats,
             numbers,

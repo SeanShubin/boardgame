@@ -13,6 +13,7 @@ members = [
     "tools/combat-lab",
     "crates/deckbound-board",
     "crates/deckbound-balance",
+    "crates/deckbound-content",
 ]
 
 [workspace.package]
@@ -32,6 +33,7 @@ cardtable = { path = "crates/cardtable" }
 deckbound-board = { path = "crates/deckbound-board" }
 tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
+deckbound-content = { path = "crates/deckbound-content" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ron = "0.8"

@@ -87,8 +87,9 @@ back as buttons. `cardtable_model::from_table_view` can inflate a `TableView` in
 | `crates/engine` | lib | Shared **card-game toolkit** (`Zone`, seeded `Rng`). Pure; no `contract` dep. |
 | `crates/cardtable-model` | lib | The pure **physical board** (`Board`) + `ui::UiModel` + conservation primitives (move / split / merge / flip / focus / layout), and the **`BoardGame` seam trait**. Also holds `from_table_view` (the sample-seam binding). No Bevy, no game. |
 | `crates/cardtable` | lib | **The product's renderer** — the Bevy card-table renderer, generic over `BoardGame`: every zone a deck, click-to-focus, drag-to-arrange, and the interactive arena. No game words. |
-| `crates/deckbound` | lib | The **reference-sample game** (`contract::Game`) *and* the shared content used by the product: `catalog` (kits / creatures / encounters / rumors), `combat` (the `SCHEDULE`), `actor` (the V/O/R ranks). Pure, no Bevy. |
-| `crates/deckbound-board` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound::{catalog, combat, actor}`. |
+| `crates/deckbound-content` | lib | The **shared content leaf** both the product and the sample build on (so the product never depends on the sample): `catalog` (kits / creatures / encounters / rumors), `rank` (the V/O/R `Intention`), `schedule` (the §4.6 `SCHEDULE`). Depends on nothing in the workspace. |
+| `crates/deckbound` | lib | The **reference-sample game** (`contract::Game`). Re-exports `deckbound-content` as `catalog` / `actor::Intention` / `combat::SCHEDULE` so its API is unchanged. Pure, no Bevy. |
+| `crates/deckbound-board` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound-content` (content only) — **not** the `deckbound` sample crate. |
 | `crates/tabletop` | lib | The button renderer for the sample (draws any `contract::Game`). |
 | `crates/boardgame` | bin | **The deployed product**: wires `CardTableGame` into the `cardtable` renderer + persistence. Built to WebAssembly with Trunk. |
 | `crates/deckbound-sample` | bin | The reference-sample launcher: wires `deckbound` into `tabletop` (or `cardtable`) through `contract::Game`. |
@@ -137,7 +138,10 @@ The cards-as-truth reunification is complete and shipping. The substantive tail 
   resolved by the persistent board (single local observer), so it is **not planned**
   for this single-player product; revisit only if shared / multi-observer boards
   become a goal.
-- **Optional — one crate for all game logic:** `deckbound-board` leans on `deckbound`
-  for shared content (`catalog` / `combat` / `actor`); folding those in and retiring
-  `deckbound` as a sample would put all product logic in one place. Not required.
+- **Shared content extracted (done):** the product used to depend on the whole `deckbound`
+  sample crate for a little shared content. That content — `catalog`, the V/O/R rank, the
+  §4.6 schedule — now lives in the stable `deckbound-content` leaf that both the product and
+  the sample depend on (the sample re-exports it, so its API is unchanged). The product's
+  dependency closure (`boardgame → deckbound-board → deckbound-content`) no longer contains
+  the sample crate, so a change to the sample game never recompiles the product.
 </content>

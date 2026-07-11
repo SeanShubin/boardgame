@@ -5,6 +5,9 @@ edition.workspace = true
 
 [dependencies]
 contract = { workspace = true }
+# The shared content (card catalog, V/O/R rank, sub-phase schedule) extracted so the product doesn't depend
+# on this sample crate; re-exported here (catalog, actor::Intention, combat::SCHEDULE) so the API is unchanged.
+deckbound-content = { workspace = true }
 engine = { workspace = true }
 mdtable = { workspace = true }
 serde = { workspace = true }

@@ -1,0 +1,11 @@
+# Deckbound shared content: the stable leaf both the product (`deckbound-board`) and the reference sample
+# (`deckbound`) depend on - card catalog, the V/O/R rank/intention, and the sub-phase schedule. Depends on
+# nothing in the workspace, so it sits below both consumers in the dependency graph.
+[package]
+name = "deckbound-content"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# The rank/intention and the card catalog derive serde so saves round-trip.
+serde = { workspace = true }

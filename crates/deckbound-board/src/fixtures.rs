@@ -3,7 +3,7 @@
 //! Bevy.
 
 use cardtable_model::{Arrangement, Board, CardId, CardKind, Face, Layout, Node, PileId, Recipe};
-use deckbound::catalog;
+use deckbound_content::catalog;
 
 /// Add a face-up card with a name and a [`type`](cardtable_model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -880,7 +880,7 @@ mod tests {
             .instantiate_from_bank(
                 bestiary,
                 arena,
-                &deckbound::catalog::encounter_roster("Emberfall Hollow"),
+                &deckbound_content::catalog::encounter_roster("Emberfall Hollow"),
             )
             .unwrap();
         assert_eq!(
@@ -925,7 +925,7 @@ mod tests {
             t.instantiate_from_bank(
                 bestiary,
                 arena,
-                &deckbound::catalog::encounter_roster("The Sundered Vault")
+                &deckbound_content::catalog::encounter_roster("The Sundered Vault")
             )
             .unwrap()
             .len(),
@@ -936,7 +936,7 @@ mod tests {
             t.instantiate_from_bank(
                 bestiary,
                 arena,
-                &deckbound::catalog::encounter_roster("Ashfen Crossing")
+                &deckbound_content::catalog::encounter_roster("Ashfen Crossing")
             )
             .unwrap()
             .is_empty(),
@@ -975,7 +975,7 @@ mod tests {
             .equip_character(
                 &name,
                 &recipe,
-                &deckbound::catalog::stat_names(),
+                &deckbound_content::catalog::stat_names(),
                 heroes,
                 stats,
                 numbers,
@@ -1002,13 +1002,16 @@ mod tests {
         let mut t = sample_table();
         let (cdeck, _name) = recruit(&mut t, 0, demo_kit());
         let recovered = t
-            .character_recipe(cdeck, &deckbound::catalog::stat_names())
+            .character_recipe(cdeck, &deckbound_content::catalog::stat_names())
             .expect("a complete build");
         assert_eq!(recovered.stats, [6, 3, 1, 1, 1]);
         assert_eq!(recovered.ability, "Jab");
         // An incomplete deck (no character build) yields nothing.
         assert_eq!(
-            t.character_recipe(deck(&t, "Heroes"), &deckbound::catalog::stat_names()),
+            t.character_recipe(
+                deck(&t, "Heroes"),
+                &deckbound_content::catalog::stat_names()
+            ),
             None
         );
     }

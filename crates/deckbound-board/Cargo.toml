@@ -8,11 +8,11 @@ edition.workspace = true
 [dependencies]
 # The generic card-table model: the physical `Board`/`Tableau` + the `BoardGame` seam this crate implements.
 cardtable-model = { workspace = true }
-# deckbound PRIMITIVES only (v2 combat, build-decision B): ranks (`actor::Intention` = V/O/R) and the
-# sub-phase `combat::SCHEDULE`/`SUB_PHASE_NAMES` (rank×phase catch legality). v2's cost economy — the tempo/
-# finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module, NOT by
-# reworking deckbound's resolver. (Might→health is a small inline toughness-accumulate model, its semantics.)
-deckbound = { workspace = true }
+# Shared CONTENT only (not the sample game): the card `catalog`, the V/O/R `rank::Intention`, and the
+# sub-phase `schedule::SCHEDULE`/`SUB_PHASE_NAMES` (rank×phase catch legality). v2's cost economy — the tempo/
+# finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module. The product
+# depends on this stable leaf, never on the `deckbound` sample crate.
+deckbound-content = { workspace = true }
 
 [dev-dependencies]
 # The fixtures' tests round-trip the tableau through RON (the persistence format).

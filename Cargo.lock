@@ -2336,6 +2336,7 @@ name = "deckbound"
 version = "0.1.0"
 dependencies = [
  "contract",
+ "deckbound-content",
  "engine",
  "mdtable",
  "ron 0.8.1",
@@ -2357,8 +2358,15 @@ name = "deckbound-board"
 version = "0.1.0"
 dependencies = [
  "cardtable-model",
- "deckbound",
+ "deckbound-content",
  "ron 0.8.1",
+]
+
+[[package]]
+name = "deckbound-content"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

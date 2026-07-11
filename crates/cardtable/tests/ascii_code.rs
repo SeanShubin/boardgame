@@ -16,6 +16,9 @@ const APP_CRATES: &[&str] = &[
     "cardtable",
     "cardtable-model",
     "deckbound-board",
+    // The shared content the product renders on cards (catalog names/descriptions, ranks). Moved here out of
+    // `deckbound` so the whole crate (not just one file) is ASCII-guarded.
+    "deckbound-content",
     "contract",
     "engine",
 ];
@@ -24,13 +27,11 @@ const APP_CRATES: &[&str] = &[
 fn app_code_is_ascii_only() {
     let crates = workspace_root().join("crates");
     let mut offenders = Vec::new();
+    // (`deckbound` as a whole stays out of scope: its balance / example tooling prints to a terminal, not the
+    // app. The card content it used to hold now lives in the ASCII-guarded `deckbound-content` crate above.)
     for name in APP_CRATES {
         collect_rs(&crates.join(name), &mut |path| scan(path, &mut offenders));
     }
-    // `deckbound` as a whole is out of scope (balance/example tooling prints to a terminal), but its
-    // `catalog` holds user-facing **card content** (stat / ability / creature names + descriptions rendered
-    // on cards). P3c moved it here from `cardtable-model`; keep just that file ASCII-guarded.
-    scan(&crates.join("deckbound/src/catalog.rs"), &mut offenders);
     assert!(
         offenders.is_empty(),
         "non-ASCII found in code - use ASCII in strings/logs (-> -- x * ...), not typographic Unicode:\n{}",

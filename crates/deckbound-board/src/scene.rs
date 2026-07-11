@@ -13,8 +13,8 @@ use cardtable_model::{
     Badge, Board, CardId, Highlight, Lane, Link, PileId, Row, Scene, SceneBody, Team, Tile, Tone,
     Track, TrackItem,
 };
-use deckbound::actor::Intention as Rank;
-use deckbound::combat::{SCHEDULE, SUB_PHASE_NAMES};
+use deckbound_content::rank::Intention as Rank;
+use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 use crate::arena::{self, Staged, Step};
 use crate::combat::{self, Combatant, Contact, Side};

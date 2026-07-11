@@ -20,8 +20,8 @@
 //! card flips each time accumulated damage crosses `toughness`) — tempo *never* changes how hard a hit is,
 //! only whether it lands and how many land.
 
-use deckbound::actor::Intention as Rank;
-use deckbound::combat::SCHEDULE;
+use deckbound_content::rank::Intention as Rank;
+use deckbound_content::schedule::SCHEDULE;
 
 /// Which side a combatant fights for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

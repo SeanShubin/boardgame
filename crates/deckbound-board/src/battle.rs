@@ -10,7 +10,7 @@
 //! (The [`Greedy`] policy reimplements the arena's greedy plan so this module stays board-free; the two
 //! converge when the v2 combat brain is extracted to a shared crate — memory `combat-frozen-revisit-after-tooling`.)
 
-use deckbound::combat::SCHEDULE;
+use deckbound_content::schedule::SCHEDULE;
 
 use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
 
@@ -155,7 +155,7 @@ impl Policy for Greedy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deckbound::actor::Intention as Rank;
+    use deckbound_content::rank::Intention as Rank;
 
     fn unit(
         name: &str,

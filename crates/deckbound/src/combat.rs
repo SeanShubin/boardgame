@@ -1197,30 +1197,9 @@ pub fn step_manual(state: &mut State) -> StepOutcome {
     }
 }
 
-/// §4.6 — the fixed **sub-phase schedule**: five sub-phases, each a list of `(attacker, target)` role
-/// pairs resolved in order. This is the single source of truth shared by [`resolve_round`] and the
-/// steppable [`step`] machine — they must walk it identically.
-pub const SCHEDULE: &[&[(Intention, Intention)]] = {
-    use Intention::{Outrider, Rearguard, Vanguard};
-    &[
-        &[(Vanguard, Outrider)],                        // Intercept
-        &[(Rearguard, Outrider)],                       // Volley
-        &[(Outrider, Rearguard)],                       // Raid
-        &[(Rearguard, Vanguard), (Vanguard, Vanguard)], // Clash
-        &[
-            (Vanguard, Rearguard),
-            (Outrider, Vanguard),
-            (Outrider, Outrider),
-            // §4.6 conditional pair: a Rearguard fires on the enemy back-line, but **only once the
-            // enemy Vanguard has fallen** (the dropped screen opens the back). Gated by the back-access
-            // rule in `policy::can_reach`, so it is a no-op while the enemy front lives.
-            (Rearguard, Rearguard),
-        ], // Breach
-    ]
-};
-
-/// The §4.6 sub-phase names, indexed by [`SCHEDULE`] position.
-pub const SUB_PHASE_NAMES: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
+// The §4.6 schedule + sub-phase names moved to the shared `deckbound-content` leaf; re-exported so
+// `combat::SCHEDULE` / `combat::SUB_PHASE_NAMES` are unchanged for the sample resolver.
+pub use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 /// A log header for sub-phase `idx`: its name and the rank->rank pairs it resolves — *who is allowed to
 /// strike whom* this sub-phase, e.g. `"-- Intercept: Vanguard -> Outrider --"`. ASCII only, so it renders

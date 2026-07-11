@@ -18,8 +18,8 @@
 //! rank pile).
 
 use cardtable_model::{Board, CardId, CardKind, PileId};
-use deckbound::actor::Intention as Rank;
-use deckbound::combat::{SCHEDULE, SUB_PHASE_NAMES};
+use deckbound_content::rank::Intention as Rank;
+use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 use crate::battle::{Greedy, Policy};
 use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
@@ -99,15 +99,15 @@ fn character_deck(board: &Board, name: &str) -> Option<PileId> {
 fn hero_stats(board: &Board, name: &str) -> Option<(Stats, bool, bool, bool)> {
     let recipe = board.character_recipe(
         character_deck(board, name)?,
-        &deckbound::catalog::stat_names(),
+        &deckbound_content::catalog::stat_names(),
     )?;
-    let (melee, ranged) = deckbound::catalog::ability_reach(&recipe.ability);
-    let (_ranged, aoe) = deckbound::catalog::ability_shape(&recipe.ability);
+    let (melee, ranged) = deckbound_content::catalog::ability_reach(&recipe.ability);
+    let (_ranged, aoe) = deckbound_content::catalog::ability_shape(&recipe.ability);
     Some(stats_of(recipe.stats, melee, ranged, aoe))
 }
 
 fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
-    let c = deckbound::catalog::creature(name)?;
+    let c = deckbound_content::catalog::creature(name)?;
     Some(stats_of(c.stats, c.melee, c.ranged, c.aoe))
 }
 
@@ -213,7 +213,8 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         .map(|l| num_after(l, "Tempo "))
         .unwrap_or(stats.cadence);
     // A horde is a foe-only property (heroes are never grouped in the UI); area came from the read above.
-    let horde = side == Side::Foe && deckbound::catalog::creature(&name).is_some_and(|c| c.horde);
+    let horde =
+        side == Side::Foe && deckbound_content::catalog::creature(&name).is_some_and(|c| c.horde);
     Some(Combatant {
         name,
         side,
@@ -525,7 +526,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
         .instantiate_from_bank(
             bestiary,
             arena,
-            &deckbound::catalog::encounter_roster(&label),
+            &deckbound_content::catalog::encounter_roster(&label),
         )
         .ok()?;
     for card in foes {
@@ -1493,7 +1494,8 @@ mod tests {
         );
         assert!(!sweep.horde, "a hero is never a horde");
         for u in units.iter().filter(|u| u.side == Side::Foe) {
-            let c = deckbound::catalog::creature(&u.name).expect("foe is a catalog creature");
+            let c =
+                deckbound_content::catalog::creature(&u.name).expect("foe is a catalog creature");
             assert_eq!(u.horde, c.horde, "{} horde flag", u.name);
             assert_eq!(u.aoe, c.aoe, "{} aoe flag", u.name);
         }
