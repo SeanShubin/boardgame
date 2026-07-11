@@ -58,6 +58,36 @@ pub struct Combatant {
 }
 
 impl Combatant {
+    /// Build a fresh combatant at full Health (Vitality) and full Tempo (Cadence), pending 0, not fallen.
+    /// `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` (the catalog order); Finesse and Toughness
+    /// floor at 1 (matching how the arena reads a card). For the headless [`crate::battle`] / [`crate::solver`]
+    /// tooling, which builds units from catalog specs rather than from the board.
+    pub fn from_stats(
+        name: impl Into<String>,
+        side: Side,
+        rank: Rank,
+        stats: [u8; 5],
+        melee: bool,
+        ranged: bool,
+    ) -> Self {
+        let [might, vitality, toughness, cadence, finesse] = stats.map(u32::from);
+        Combatant {
+            name: name.into(),
+            side,
+            rank,
+            might,
+            finesse: finesse.max(1),
+            cadence,
+            toughness: toughness.max(1),
+            melee,
+            ranged,
+            tempo: cadence,
+            health: vitality,
+            pending: 0,
+            fallen: false,
+        }
+    }
+
     /// Accumulate `might` damage, flipping a health card each time the pile crosses `toughness`
     /// (deckbound's `take_with_toughness` semantics, inline). Never below zero.
     fn take(&mut self, might: u32) {
