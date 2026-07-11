@@ -220,6 +220,14 @@ struct AdvanceDayCard;
 #[derive(Component, Clone, Copy)]
 struct TileCard(CardId);
 
+/// Marks a draggable tile that belongs to a **modal scene** (a formation tile). It carries [`Movable`] so the
+/// drag pipeline picks it up, but its position is owned by flex layout, not the table's model positions — so
+/// [`animate_nodes`] excludes `ModalTile` by construction (`Without<ModalTile>`) rather than special-casing
+/// the arena. Resolves the old dual-ownership: one marker for "the table animates me", another for "I drag
+/// but flex places me".
+#[derive(Component)]
+struct ModalTile;
+
 /// One transient dot of an attention arrow (a top-level overlay node). Re-spawned each frame by
 /// [`animate_target_arrows`] so the dots flow toward the target. The *which* cards link is now decided by the
 /// game (a [`Scene`]'s links); this marker just tags a drawn dot for cleanup.
@@ -882,8 +890,9 @@ fn animate_nodes(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<Dragging>,
-    scene: Res<SceneState>,
-    mut movables: Query<(&Movable, &mut Node)>,
+    // `ModalTile`s (formation tiles) are flex-positioned; the table never owns their `left/top`, so they are
+    // excluded here by construction rather than special-cased.
+    mut movables: Query<(&Movable, &mut Node), Without<ModalTile>>,
 ) {
     if table
         .0
@@ -893,10 +902,6 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
-    // A game **scene** (a combat arena) is a bespoke flex modal: its `Movable` tiles are laid out by flex
-    // (left/top = 0), so they snap to that base rather than the stale table model-position their cards still
-    // carry. Keyed on a scene existing (not on focus), so drilling focus into a sub-pile can't strand tiles.
-    let in_scene = scene.0.is_some();
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -928,16 +933,6 @@ fn animate_nodes(
     for (movable, mut node) in &mut movables {
         if dragging.0 == Some(movable.0) {
             continue; // free while held
-        }
-        // Arena tiles are flex-positioned. Snap any drag offset straight back to base (no ease): a row-child
-        // tile can never out-z a later row, so *easing* it home would slide it visibly under the rows it
-        // passes. Only a tile actively dragged is offset, and that one floats on the held layer (HELD_Z).
-        if in_scene {
-            if px(node.left) != 0.0 || px(node.top) != 0.0 {
-                node.left = Val::Px(0.0);
-                node.top = Val::Px(0.0);
-            }
-            continue;
         }
         let target = if structured {
             match layout.get(&movable.0) {
@@ -1301,11 +1296,121 @@ fn exactly_one<T>(mut it: impl Iterator<Item = T>) -> Option<T> {
     }
 }
 
-/// On release, settle a dragged felt element. A **pile** commits its position and shoves among its
-/// parent's children — done. A **card** does the leaf-specific drop: a Rows view (the inn) may move it
-/// into the Active row; a projection view snaps it back; a **Free** deck commits the position and shoves
-/// overlapping siblings clear; any other layout reorders it into the nearest grid cell. In the non-Rows
-/// card cases the others then *slide* into place ([`animate_nodes`]) — no rebuild, which kills the slide.
+// ---- per-context drag-drop resolvers (the named branches of `on_node_drag_end`) ----------------------
+
+/// The one **valid** place a dragged hero token's box overlaps on the location map (the source place and any
+/// illegal place are excluded by [`can_drop_on_pile`]); `None` if zero or ambiguously many overlap.
+fn dropped_map_place(
+    table: &Board,
+    card: CardId,
+    drag_box: (Vec2, Vec2),
+    zones: &Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
+) -> Option<PileId> {
+    exactly_one(zones.iter().filter(|&(z, cn, gt)| {
+        can_drop_on_pile(table, card, z.0) && boxes_overlap(drag_box, node_box(cn, gt))
+    }))
+    .map(|(z, _, _)| z.0)
+}
+
+/// The scene **row** drop-pile whose centre is nearest the dragged tile's centre (source row included, so a
+/// small nudge stays put and a straddling tile lands where it is more over).
+fn nearest_row_pile(
+    rows: &[Row],
+    tile_center: Vec2,
+    zones: &Query<(&PileDropZone, &ComputedNode, &UiGlobalTransform)>,
+) -> Option<PileId> {
+    zones
+        .iter()
+        .filter(|(z, _, _)| rows.iter().any(|r| r.drop_pile == z.0))
+        .map(|(z, cn, gt)| (z.0, (node_box(cn, gt).0 - tile_center).length_squared()))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
+}
+
+/// The other projected card the release cursor landed on (the equip target), by logical-px hit-test. Needed
+/// because the dragged fan tile follows the cursor and occludes the picking hit-test.
+fn projected_card_under_cursor(
+    cursor: Vec2,
+    dragged: CardId,
+    geom: &Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
+) -> Option<CardId> {
+    geom.iter()
+        .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
+        .filter(|&(c, _, _)| c != dragged)
+        .find(|&(_, cn, gt)| {
+            let sf = cn.inverse_scale_factor; // physical -> logical, matching the cursor
+            let center = gt.translation * sf;
+            let half = cn.size() * sf * 0.5;
+            (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
+        })
+        .map(|(c, _, _)| c)
+}
+
+/// A drag that resolved to no game move: the card stays in its **home** pile — repositioned (Free) or
+/// reordered into the nearest structured slot — and the settle is traced so a silent snap-back is visible.
+fn settle_card_home(table: &mut Board, card: CardId, node: &Node, trace: &mut Vec<String>) {
+    let Some(home) = table.card(card).map(|c| c.home()) else {
+        return;
+    };
+    let card_name = table
+        .card(card)
+        .map(|c| c.front_title().to_string())
+        .unwrap_or_default();
+    let home_label = table
+        .pile(home)
+        .map(|p| p.label.clone())
+        .unwrap_or_default();
+    if matches!(
+        table.pile(home).map(|p| p.layout().arrangement),
+        Some(Arrangement::Free)
+    ) {
+        // Unordered: keep it where dropped, then shove the rest out of its way.
+        let _ = table.set_card_pos(card, px(node.left), px(node.top));
+        table.separate(home, TableNode::Card(card));
+        trace.push(format!(
+            "drag-end: {card_name} repositioned within [{home_label}] (no pile change)"
+        ));
+        return;
+    }
+    // Structured (List/Grid): reorder among the *contents* only (never above a zone card) into the nearest
+    // footprint-aware slot.
+    let drop = Pos {
+        x: px(node.left),
+        y: px(node.top),
+    };
+    let nearest = table
+        .structured_positions(
+            home,
+            GAP,
+            GAP,
+            Pos {
+                x: CARD_W,
+                y: CARD_H,
+            },
+        )
+        .into_iter()
+        .filter_map(|(n, p)| n.card().map(|c| (c, p)))
+        .min_by(|a, b| {
+            let d = |p: Pos| (p.x - drop.x).powi(2) + (p.y - drop.y).powi(2);
+            d(a.1).total_cmp(&d(b.1))
+        })
+        .map(|(c, _)| c);
+    if let (Some(from), Some(to)) = (
+        table.card_index(card),
+        nearest.and_then(|c| table.card_index(c)),
+    ) {
+        let _ = table.reorder(home, from, to);
+    }
+    trace.push(format!(
+        "drag-end: {card_name} reordered within [{home_label}] (no pile change - snapped back)"
+    ));
+}
+
+/// On release, settle a dragged felt element by dispatching to the applicable context resolver: a **pile**
+/// repositions and shoves among its siblings; a **card** is routed by context — the location map (march), a
+/// scene's assignment rows (formation), a projection (the inn equip), else it settles in its home pile. Each
+/// game-move context records a [`DropRequest`] for the driver to interpret and rebuilds; the home-settle
+/// path mutates the board directly and lets the others *slide* into place ([`animate_nodes`]).
 #[allow(clippy::too_many_arguments)]
 fn on_node_drag_end(
     mut on: On<Pointer<DragEnd>>,
@@ -1342,157 +1447,48 @@ fn on_node_drag_end(
             }
             TableNode::Card(cid) => cid,
         };
-        // On the location **map** (the Locations grid drilled into), dragging a character's position copy
-        // onto another place card **moves** that character there (`Board::move_character` also spends its
-        // move by flipping its Progress marker). The day is *not* auto-advanced — ending the day is an
-        // explicit step, so there's room to act (combat) after everyone has moved. The dragged token
-        // cursor-follows and occludes picking, so the destination is found by geometry — by **box overlap**,
-        // not the cursor point: if the dragged card's box overlaps exactly one **valid** drop target, that's
-        // the drop (snappier — any overlap counts). "Valid" uses the same [`can_drop_on_pile`] predicate the
-        // glow does, so the **source** place (which the token still overlaps at release) and any illegal
-        // place are never counted — only real destinations. Overlapping two valid places, or none, is
-        // ambiguous, so it snaps back.
-        let on_map = top_deck(&table.0, "Locations") == Some(table.0.focus_id());
-        if on_map && table.0.card(card).is_some_and(|c| c.card_type() == "hero") {
-            let drag_box = geom
-                .get(on.event().entity)
-                .ok()
-                .map(|(_, cn, gt)| node_box(cn, gt));
-            let dest = drag_box.and_then(|db| {
-                exactly_one(drop_zones.iter().filter(|&(z, cn, gt)| {
-                    can_drop_on_pile(&table.0, card, z.0) && boxes_overlap(db, node_box(cn, gt))
-                }))
-                .map(|(z, _, _)| z.0)
-            });
-            if let Some(dest) = dest {
-                // Record the march for the driver (it re-checks legality via `drop_intention`).
+        let entity = on.event().entity;
+        // Map (Locations drilled into): a hero token dropped onto a place marches there. The token
+        // cursor-follows and occludes picking, so the destination is the one valid place its **box** overlaps.
+        if top_deck(&table.0, "Locations") == Some(table.0.focus_id())
+            && table.0.card(card).is_some_and(|c| c.card_type() == "hero")
+        {
+            let drag_box = geom.get(entity).ok().map(|(_, cn, gt)| node_box(cn, gt));
+            if let Some(dest) =
+                drag_box.and_then(|db| dropped_map_place(&table.0, card, db, &drop_zones))
+            {
                 drop_request.0 = Some((card, DropTarget::Pile(dest)));
             }
             rebuild.0 = true;
             return;
         }
-        // In a scene with **assignment rows** (a formation), dropping a tile moves it into the nearest row's
-        // drop pile. Resolve by the **dragged card's centre** (not the cursor, and not box-overlap): pick the
-        // row whose centre is nearest the card's centre, source row included, so a small nudge stays put and a
-        // card straddling two rows lands in the one it's more over. `drop_intention` interprets the drop (the
-        // game turns a rank-pile drop into an `Assign`; a Pool drop is the default move). The renderer knows
-        // only "these piles are the scene's row drop zones" — never what a rank is.
+        // Scene assignment rows (a formation): drop the tile into the nearest row's pile.
         if let Some(scene) = &scene.0
             && let SceneBody::Rows(rows) = &scene.body
         {
-            let center = geom
-                .get(on.event().entity)
-                .ok()
-                .map(|(_, cn, gt)| node_box(cn, gt).0);
-            let dest = center.and_then(|cc| {
-                drop_zones
-                    .iter()
-                    .filter(|(z, _, _)| rows.iter().any(|r| r.drop_pile == z.0))
-                    .map(|(z, cn, gt)| (z.0, (node_box(cn, gt).0 - cc).length_squared()))
-                    .min_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|(id, _)| id)
-            });
-            if let Some(dest) = dest {
+            let center = geom.get(entity).ok().map(|(_, cn, gt)| node_box(cn, gt).0);
+            if let Some(dest) = center.and_then(|c| nearest_row_pile(rows, c, &drop_zones)) {
                 drop_request.0 = Some((card, DropTarget::Pile(dest)));
             }
             rebuild.0 = true;
             return;
         }
-        // In a projection view (the inn) a card drag is only ever an **equip attempt**: drag a hero onto a
-        // kit (or a kit onto a hero) to assemble a character deck from the banks. `on_drop`'s DragDrop can't
-        // carry it — the dragged fan tile follows the cursor and occludes the picking hit-test, so the drop
-        // never lands on the target card. So detect the target here by geometry: which *other* projected card
-        // did the release cursor land on? The cursor position is logical window pixels; a card's screen rect
-        // is its `UiGlobalTransform` centre ± half its `ComputedNode` size, converted to logical by the node's
-        // inverse scale factor (same convention as `sync_pinned`).
+        // Projection (the inn): a hero/kit dropped onto its counterpart equips. The target is the projected
+        // card the release cursor landed on (the dragged tile occludes the pick, so hit-test by geometry).
         if table
             .0
             .pile(table.0.focus_id())
             .is_some_and(|p| !p.projection().is_empty())
         {
             let cursor = on.event().pointer_location.position;
-            let target = geom
-                .iter()
-                .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
-                .filter(|&(c, _, _)| c != card)
-                .find(|&(_, cn, gt)| {
-                    let sf = cn.inverse_scale_factor; // physical → logical, matching the cursor
-                    let center = gt.translation * sf;
-                    let half = cn.size() * sf * 0.5;
-                    (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
-                })
-                .map(|(c, _, _)| c);
-            if let Some(target) = target {
-                // Record the equip attempt (a hero onto a kit, or vice-versa) for the driver to interpret.
+            if let Some(target) = projected_card_under_cursor(cursor, card, &geom) {
                 drop_request.0 = Some((card, DropTarget::Card(target)));
             }
-            // A projection drag never reorders the source deck. Rebuild to snap the dragged card back to its
-            // projected slot (and show the new character deck if the equip took).
-            rebuild.0 = true;
+            rebuild.0 = true; // snap the dragged card back to its projected slot (or show the new deck)
             return;
         }
-        let Some(home) = table.0.card(card).map(|c| c.home()) else {
-            return;
-        };
-        // A drag that resolves to none of the game paths above **stays in its home pile** — the card only
-        // reorders / repositions. Trace it so a silent snap-back (a drag that looked like it should move a
-        // card but didn't) is visible in the log, not invisible.
-        let card_name = table
-            .0
-            .card(card)
-            .map(|c| c.front_title().to_string())
-            .unwrap_or_default();
-        let home_label = table
-            .0
-            .pile(home)
-            .map(|p| p.label.clone())
-            .unwrap_or_default();
-        if matches!(
-            table.0.pile(home).map(|p| p.layout().arrangement),
-            Some(Arrangement::Free)
-        ) {
-            // Unordered: keep it where dropped, then shove the rest out of its way.
-            let _ = table.0.set_card_pos(card, px(node.left), px(node.top));
-            table.0.separate(home, TableNode::Card(card));
-            trace.0.push(format!(
-                "drag-end: {card_name} repositioned within [{home_label}] (no pile change)"
-            ));
-            return;
-        }
-        // Structured (List/Grid): snap into the nearest slot by reordering among the *contents* only, so a
-        // drag can never push a card above a zone card and steal its place as the pile's label. "Nearest" is
-        // measured against the footprint-aware layout (`structured_positions`), not a fixed grid.
-        let drop = Pos {
-            x: px(node.left),
-            y: px(node.top),
-        };
-        let nearest = table
-            .0
-            .structured_positions(
-                home,
-                GAP,
-                GAP,
-                Pos {
-                    x: CARD_W,
-                    y: CARD_H,
-                },
-            )
-            .into_iter()
-            .filter_map(|(n, p)| n.card().map(|c| (c, p)))
-            .min_by(|a, b| {
-                let d = |p: Pos| (p.x - drop.x).powi(2) + (p.y - drop.y).powi(2);
-                d(a.1).total_cmp(&d(b.1))
-            })
-            .map(|(c, _)| c);
-        if let (Some(from), Some(to)) = (
-            table.0.card_index(card),
-            nearest.and_then(|c| table.0.card_index(c)),
-        ) {
-            let _ = table.0.reorder(home, from, to);
-        }
-        trace.0.push(format!(
-            "drag-end: {card_name} reordered within [{home_label}] (no pile change - snapped back)"
-        ));
+        // No game path applied: the card stays in its home pile (reposition / reorder), traced.
+        settle_card_home(&mut table.0, card, node, &mut trace.0);
     }
 }
 
@@ -2206,7 +2202,9 @@ fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
         node.insert(TileCard(tile.card));
     }
     if tile.draggable {
-        node.insert(Movable(TableNode::Card(tile.card)));
+        // Movable so the drag pipeline picks it up; ModalTile so animate_nodes leaves its (flex-owned)
+        // position alone.
+        node.insert((Movable(TableNode::Card(tile.card)), ModalTile));
     }
     node.with_children(|c| {
         c.spawn((
