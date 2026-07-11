@@ -826,16 +826,23 @@ fn px(value: Val) -> f32 {
 
 /// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
 /// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
-fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
-    for (movable, computed) in &movables {
+fn sync_node_sizes(
+    cards: Query<(&CardRef, &ComputedNode)>,
+    piles: Query<(&Movable, &ComputedNode)>,
+    mut table: ResMut<Table>,
+) {
+    // Feed **every** card's footprint (via `CardRef`), movable or not. A non-movable card (a `Virtual`
+    // readout like a Rumors card) still occupies felt and must be shoved clear: without its real footprint,
+    // `separate` mis-sizes it (overlap) and `settle_free_cards` can't even see it resize (its model footprint
+    // never changes, so no shove fires). Piles (decks) come from the `Movable` query - they are not cards.
+    for (cref, computed) in &cards {
         let size = computed.size * computed.inverse_scale_factor;
-        match movable.0 {
-            TableNode::Card(cid) => {
-                let _ = table.0.set_card_footprint(cid, size.x, size.y);
-            }
-            TableNode::Pile(pid) => {
-                let _ = table.0.set_pile_size(pid, size.x, size.y);
-            }
+        let _ = table.0.set_card_footprint(cref.0, size.x, size.y);
+    }
+    for (movable, computed) in &piles {
+        if let TableNode::Pile(pid) = movable.0 {
+            let size = computed.size * computed.inverse_scale_factor;
+            let _ = table.0.set_pile_size(pid, size.x, size.y);
         }
     }
 }
@@ -888,18 +895,23 @@ fn sync_pinned(
     table.0.set_pinned(rects);
 }
 
-/// Ease each **movable element's** wrapper toward its model position, so a separation (or any reposition)
-/// *slides* into place instead of snapping — a card and a pile alike. The dragged element is left free;
-/// those at rest are skipped so the node (and its layout) isn't touched every frame. A card in an ordered
-/// zone targets its grid cell; everything else targets its own model position. A projection view lays its
-/// cards out with flexbox (not by model position), so it is left alone.
+/// Ease each **rendered table element** toward its model position, so a separation (or any reposition)
+/// *slides* into place instead of snapping — a card and a pile alike. Positioning is intrinsic to being a
+/// rendered element, **not** to being draggable: a card is targeted by its `CardRef`, a deck by its
+/// `Movable`, so a *non-movable* card (a `Virtual` readout) tracks the layout exactly like every other card
+/// instead of falling out of it (the root cause of readout cards overlapping on resize). The dragged element
+/// is left free; those at rest are skipped. A card in an ordered zone targets its grid cell; everything else
+/// targets its own model position. A projection view lays its cards out with flexbox, so it is left alone.
 fn animate_nodes(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<Dragging>,
-    // `ModalTile`s (formation tiles) are flex-positioned; the table never owns their `left/top`, so they are
-    // excluded here by construction rather than special-cased.
-    mut movables: Query<(&Movable, &mut Node), Without<ModalTile>>,
+    // Every rendered table element: a card (`CardRef`, movable or not) or a deck (`Movable` pile). `ModalTile`s
+    // (formation tiles) are flex-positioned, so the table never owns their `left/top` - excluded by construction.
+    mut elements: Query<
+        (&mut Node, Option<&Movable>, Option<&CardRef>),
+        (Without<ModalTile>, Or<(With<Movable>, With<CardRef>)>),
+    >,
 ) {
     if table
         .0
@@ -937,17 +949,24 @@ fn animate_nodes(
         HashMap::new()
     };
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (movable, mut node) in &mut movables {
-        if dragging.0 == Some(movable.0) {
+    for (mut node, movable, cardref) in &mut elements {
+        // The table element this node represents: a deck / movable card by its `Movable`, else a non-movable
+        // card by its `CardRef`. (A movable card carries both; its `Movable` wins and names the same card.)
+        let element = match (movable, cardref) {
+            (Some(m), _) => m.0,
+            (None, Some(c)) => TableNode::Card(c.0),
+            (None, None) => continue,
+        };
+        if dragging.0 == Some(element) {
             continue; // free while held
         }
         let target = if structured {
-            match layout.get(&movable.0) {
+            match layout.get(&element) {
                 Some(&p) => p,
                 None => continue,
             }
         } else {
-            match movable.0 {
+            match element {
                 TableNode::Pile(pid) => match table.0.pile(pid) {
                     Some(d) => d.pos(),
                     None => continue,
