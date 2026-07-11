@@ -4,7 +4,7 @@
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{Arrangement, Board, BoardGame, CardId, DropTarget, PileId};
+use cardtable_model::{Arrangement, Board, BoardGame, CardId, DropTarget, PileId, Scene};
 
 use crate::sample_table;
 
@@ -161,6 +161,11 @@ impl BoardGame for CardTableGame {
             return vec![("Advance Day".to_string(), Intention::AdvanceDay)];
         }
         Vec::new()
+    }
+
+    /// While a fight is up, the game draws it as a modal [`Scene`] (the arena); otherwise the felt.
+    fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
+        crate::scene::scene(board, focus)
     }
 }
 

@@ -13,11 +13,15 @@
 
 pub mod binding;
 pub mod model;
+pub mod scene;
 pub mod seam;
 
 pub use binding::from_table_view;
 pub use model::{
     Arrangement, Board, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe,
     Size, TableauError, Utility,
+};
+pub use scene::{
+    Badge, Highlight, Lane, Link, Row, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
 };
 pub use seam::{BoardGame, DropTarget};

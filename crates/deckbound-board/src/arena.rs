@@ -30,7 +30,7 @@ pub const ARENA: &str = "Arena";
 pub const POOL: &str = "Pool";
 
 /// The three rank piles, in formation display order (front to back).
-const RANK_PILES: [(&str, Rank); 3] = [
+pub(crate) const RANK_PILES: [(&str, Rank); 3] = [
     ("Outrider", Rank::Outrider),
     ("Vanguard", Rank::Vanguard),
     ("Rearguard", Rank::Rearguard),
@@ -70,7 +70,7 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
 }
 
 /// A sub-pile of `arena` by label (a rank pile or the pool).
-fn sub_pile(board: &Board, arena: PileId, label: &str) -> Option<PileId> {
+pub(crate) fn sub_pile(board: &Board, arena: PileId, label: &str) -> Option<PileId> {
     board
         .pile(arena)?
         .subpiles()
@@ -112,7 +112,7 @@ fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
 }
 
 /// The vitality (max HP) of a combatant by name and side — the health bar's full value.
-fn max_health(board: &Board, name: &str, side: Side) -> u32 {
+pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
     match side {
         Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
         Side::Foe => foe_stats(name).map(|(s, _, _, _)| s.vitality),
@@ -191,7 +191,7 @@ fn num_after(line: &str, prefix: &str) -> u32 {
 
 /// Read one combatant card into a [`Combatant`] — constant stats from the source, mutable state from detail;
 /// its `rank` is supplied by the caller (it is the rank pile the card lives in).
-fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<Combatant> {
+pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<Combatant> {
     let c = board.card(card)?;
     let name = c.front_title().to_string();
     let side = match c.card_type() {
@@ -253,14 +253,14 @@ fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
 
 /// A defender's staged reaction kind (the cards it spends are derived at commit).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ReactKind {
+pub(crate) enum ReactKind {
     Eat,
     Evade,
     StrikeBack,
 }
 
 impl ReactKind {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             ReactKind::Eat => "Eat",
             ReactKind::Evade => "Evade",
@@ -278,11 +278,11 @@ impl ReactKind {
 
 /// One party unit's staged orders for the current mini-phase (read from / written to its detail).
 #[derive(Clone, Copy, Debug, Default)]
-struct Staged {
-    active: bool,
-    aim: Option<CardId>,
-    bid: u32,
-    react: Option<ReactKind>,
+pub(crate) struct Staged {
+    pub(crate) active: bool,
+    pub(crate) aim: Option<CardId>,
+    pub(crate) bid: u32,
+    pub(crate) react: Option<ReactKind>,
 }
 
 fn read_staged(d: &[String]) -> Staged {
@@ -329,7 +329,7 @@ fn write_staged(board: &mut Board, card: CardId, s: &Staged) {
     let _ = board.set_card_detail(card, lines);
 }
 
-fn staged_of(board: &Board, card: CardId) -> Staged {
+pub(crate) fn staged_of(board: &Board, card: CardId) -> Staged {
     board
         .card(card)
         .map(|c| read_staged(c.detail()))
@@ -362,7 +362,7 @@ fn write_contacts(board: &mut Board, arena: PileId, cards: &[CardId], contacts: 
 }
 
 /// Read the surviving contact cards back into [`Contact`]s (indices into `cards`).
-fn read_contacts(board: &Board, arena: PileId, cards: &[CardId]) -> Vec<Contact> {
+pub(crate) fn read_contacts(board: &Board, arena: PileId, cards: &[CardId]) -> Vec<Contact> {
     let index = |id: u64| cards.iter().position(|c| c.0 == id);
     board
         .content_cards(arena)
@@ -397,7 +397,10 @@ fn clear_contacts(board: &mut Board, arena: PileId) {
 
 /// The combatant cards (rank-pile order) and their [`Combatant`]s, plus the walk position from the phase
 /// card. Pool (unranked) heroes are not combatants yet — they are excluded until Marshal ranks them.
-fn arena_state(board: &Board, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, usize, u32, Step) {
+pub(crate) fn arena_state(
+    board: &Board,
+    arena: PileId,
+) -> (Vec<CardId>, Vec<Combatant>, usize, u32, Step) {
     let mut cards = Vec::new();
     let mut units = Vec::new();
     for (label, rank) in RANK_PILES {
@@ -441,7 +444,7 @@ fn read_phase(board: &Board, arena: PileId) -> (usize, u32, Step) {
 }
 
 /// The vitality (max HP) of every combatant, index-aligned with the cards.
-fn maxes_of(board: &Board, units: &[Combatant]) -> Vec<u32> {
+pub(crate) fn maxes_of(board: &Board, units: &[Combatant]) -> Vec<u32> {
     units
         .iter()
         .map(|u| max_health(board, &u.name, u.side).max(u.health))
@@ -850,7 +853,7 @@ fn evade_cost(bid: u32, f_def: u32, tempo: u32) -> u32 {
 /// Tempo card *and* a melee answer to a melee blow (spec: they came to you). A defender with neither is forced
 /// to Eat, so the UI must offer no choice and the step auto-resolves - a unit with no Tempo cannot evade or
 /// strike back.
-fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, bool) {
+pub(crate) fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, bool) {
     let u = &units[i];
     if u.fallen || u.tempo == 0 {
         return (false, false);

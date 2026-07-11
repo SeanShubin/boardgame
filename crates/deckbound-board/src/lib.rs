@@ -14,6 +14,7 @@ pub mod battle;
 mod board_game;
 pub mod combat;
 pub mod fixtures;
+pub mod scene;
 pub mod solver;
 
 pub use board_game::{CardTableGame, Intention};

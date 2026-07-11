@@ -9,6 +9,7 @@
 //! so there is no snapshot to derive and nothing resets between moves.
 
 use crate::model::{Board, CardId, PileId};
+use crate::scene::Scene;
 
 /// What a dragged card was dropped onto — the target the game interprets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +62,18 @@ pub trait BoardGame {
     /// want no tap actions, so the default is `None`.
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Self::Intention> {
         let _ = (board, card);
+        None
+    }
+
+    /// A **full-screen modal scene** to draw in place of the felt for the current board, or `None` for the
+    /// ordinary table. This is how the game keeps all *presentation of a special mode* (a combat arena) on its
+    /// own side of the seam: it returns a pure [`Scene`] (tracks / tiles / rows / arrows / text) that the
+    /// renderer draws without knowing any game concept. Interaction still flows through
+    /// [`tap_intention`](BoardGame::tap_intention) / [`drop_intention`](BoardGame::drop_intention) /
+    /// [`affordances`](BoardGame::affordances). Games with no modal (the default) return `None` and render as
+    /// a normal table. `focus` is the currently-focused pile, in case the scene depends on it.
+    fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
+        let _ = (board, focus);
         None
     }
 }
