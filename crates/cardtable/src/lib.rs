@@ -460,15 +460,22 @@ fn install_system_deck(table: &mut Board, build: &BuildInfo) {
             editable: true,
         },
     );
-    // Seed a tidy grid below the overlay band: a Free deck reads each card's own position, and freshly
-    // added cards are all at (0,0) — i.e. stacked in the top-left, behind the Back button. Lay them out in
-    // rows (three across) starting one gap under the band, matching the fixtures' `grid_layout` spacing.
+    // Seed a tidy grid below the overlay band: a Free deck reads each child's own position, and freshly
+    // added children are all at (0,0) — i.e. stacked in the top-left, behind the Back button. Lay them out
+    // in rows (three across) starting one gap under the band, matching the fixtures' `grid_layout` spacing.
+    // **Both** cards and the Fonts sub-deck (a pile) are seeded: skipping the pile left it at (0,0) until the
+    // first drill-in shoved it into place, so the deck visibly jumped the first time you opened System.
     for (i, node) in table.movable_children(pile).into_iter().enumerate() {
-        if let TableNode::Card(c) = node {
-            let (col, row) = (i % 3, i / 3);
-            let x = GAP + col as f32 * (CARD_W + GAP);
-            let y = OVERLAY_BAND + GAP + row as f32 * (CARD_H + GAP);
-            let _ = table.set_card_pos(c, x, y);
+        let (col, row) = (i % 3, i / 3);
+        let x = GAP + col as f32 * (CARD_W + GAP);
+        let y = OVERLAY_BAND + GAP + row as f32 * (CARD_H + GAP);
+        match node {
+            TableNode::Card(c) => {
+                let _ = table.set_card_pos(c, x, y);
+            }
+            TableNode::Pile(p) => {
+                let _ = table.set_pile_pos(p, x, y);
+            }
         }
     }
 }
