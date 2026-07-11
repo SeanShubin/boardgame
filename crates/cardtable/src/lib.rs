@@ -1654,9 +1654,32 @@ fn settle_table_piles(
     // arrangement (decks that still fit don't move). Between these events a manual drag sticks.
     if sized {
         table.0.arrange_row(root, GAP, OVERLAY_BAND);
-    } else if resized && let Some(anchor) = piles.first().copied() {
-        table.0.separate(root, TableNode::Pile(anchor));
+    } else if let Some(anchor) = piles.first().copied() {
+        // On a window resize, re-clamp the decks inside the new bounds. Otherwise, **self-heal the
+        // never-overlap invariant**: if any two decks overlap without a size/window change to trigger a
+        // re-tidy (a rebuilt System deck parked at 0,0 is the case that motivated this), separate them.
+        // `separate` is idempotent on a clean layout - it keeps every already-clear deck - so this only ever
+        // moves genuine overlaps and never disturbs a manual arrangement.
+        if resized || piles_overlap(&table.0, &piles) {
+            table.0.separate(root, TableNode::Pile(anchor));
+        }
     }
+}
+
+/// Whether any two of `piles` (top-level decks) overlap, by their model box (`pos` + `size`). Used to
+/// self-heal the never-overlap invariant when no size/window change triggered a re-tidy.
+fn piles_overlap(table: &Board, piles: &[PileId]) -> bool {
+    let boxes: Vec<(Pos, Pos)> = piles
+        .iter()
+        .filter_map(|&p| table.pile(p).map(|d| (d.pos(), d.size())))
+        .filter(|(_, s)| s.x >= 1.0 && s.y >= 1.0)
+        .collect();
+    (0..boxes.len()).any(|i| {
+        ((i + 1)..boxes.len()).any(|j| {
+            let ((ap, asz), (bp, bsz)) = (boxes[i], boxes[j]);
+            ap.x < bp.x + bsz.x && bp.x < ap.x + asz.x && ap.y < bp.y + bsz.y && bp.y < ap.y + asz.y
+        })
+    })
 }
 
 /// Rebuild the whole UI only on a *structural* change (open/close a pile, move a card, a new game
