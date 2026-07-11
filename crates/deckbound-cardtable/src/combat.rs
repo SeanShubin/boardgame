@@ -57,11 +57,11 @@ pub struct Combatant {
     /// once and is **unevadable** — but it spends only one tempo and cannot concentrate (no extra strikes),
     /// so it trades focus for coverage. The answer to a [`horde`](Self::horde); dead weight against one wall.
     pub aoe: bool,
-    /// This combatant is a **horde**: a pack of one-Health bodies (its `health` is the body count). A single
-    /// strike kills exactly **one** body per hit no matter the Might (you cut them down one at a time); an
-    /// **area** strike clears the whole pack at once. Its offense scales with the pack — it swarms with one
-    /// tempo card per living body. The only group that appears in play (spec: groups are defined for the
-    /// solver but not fielded through the hero UI).
+    /// This combatant is a **horde** (spec 4.6 `Hoard X`): a built-in group of one-Health bodies (its
+    /// `health` is the body count). A **single** strike **spills** - the penetrating damage overflows body to
+    /// body, felling *Might-many* at once; an **area** strike hits every member at full value, clearing the
+    /// whole pack. Its offense scales with the pack - it swarms with one tempo card per living body ("loses an
+    /// attack per body killed"). The only group fielded in practice (heroes are ungrouped in the UI).
     pub horde: bool,
     /// Tempo cards left this round.
     pub tempo: u32,
@@ -228,12 +228,13 @@ fn strike(might: u32, armor: u32) -> u32 {
     might.saturating_sub(armor)
 }
 
-/// The health a single strike of `might` costs `target`: normally `strike(might, target.armor)`, but a
-/// **horde** loses exactly **one body per penetrating strike** regardless of Might — you cut the pack down
-/// one at a time, so raw damage does not matter, only whether the blow gets through its armor.
+/// The health a single strike of `might` costs `target`: `strike(might, target.armor)`. Against a **horde**
+/// (a group of one-Health bodies) this is **spillover** (spec 4.6): the penetrating damage is applied
+/// point-by-point, and since each body is one-Health it overflows to the next on every kill — so a single
+/// strike fells *penetrating-Might many* bodies, not one. (The spend-through is handled in [`apply`], which
+/// takes the horde's health — its body count — straight down by this amount.)
 fn hit(target: &Combatant, might: u32) -> u32 {
-    let dmg = strike(might, target.armor);
-    if target.horde { (dmg > 0) as u32 } else { dmg }
+    strike(might, target.armor)
 }
 
 // ---- the three mini-phases ------------------------------------------------------------------------
@@ -255,27 +256,21 @@ pub fn resolve_catch(units: &mut [Combatant], catches: &[Catch]) -> Vec<Contact>
         if !back_access_ok(units, atk.rank, c.target) {
             continue;
         }
-        // Area strike (Sweep / Salvo): unevadable, hits *every* non-fallen enemy of the target's rank for one
-        // sweep of Might, for a single tempo card. It forms no Contact — there is no React to an area, and so
-        // it never reaches the extra-strikes phase: coverage bought at the price of concentration. Damage is
-        // applied right here (a horde is cleared outright; a normal body just takes the one hit).
+        // Area strike (Sweep / Salvo): unevadable, hits the targeted **group** for one sweep of Might, for a
+        // single tempo card. Its edge is over a horde - one sweep clears the whole pack, where a single strike
+        // fells one body. Against a normal body (a group of one) it is just one unevadable hit. It forms no
+        // Contact - no React to an area, and so no extra-strikes phase: coverage bought at the price of
+        // concentration. Damage is applied right here.
         if units[c.attacker].aoe {
             if units[c.attacker].tempo == 0 {
                 continue;
             }
             units[c.attacker].tempo -= 1;
             let might = units[c.attacker].might;
-            let side = units[c.attacker].side;
-            let rank = units[c.target].rank;
-            for t in 0..units.len() {
-                if units[t].fallen || units[t].side == side || units[t].rank != rank {
-                    continue;
-                }
-                if hit(&units[t], might) == 0 {
-                    continue; // bounced off armor
-                }
+            let t = c.target;
+            if hit(&units[t], might) > 0 {
                 if units[t].horde {
-                    units[t].health = 0; // the area engulfs the whole pack at once
+                    units[t].health = 0; // clears the whole targeted group at once
                 } else {
                     units[t].take(strike(might, units[t].armor));
                 }
