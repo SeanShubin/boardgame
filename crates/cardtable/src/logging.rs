@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use cardtable_model::{Board, CardId, Node as TableNode, PileId};
 
 use crate::board_driver::DropTrace;
-use crate::{CardRef, Movable, PileDropZone, Table};
+use crate::{CardRef, Dragging, Movable, PileDropZone, Table};
 
 /// A truncate-on-launch text log (native only; a no-op sink on the web).
 struct Log(Mutex<Option<std::fs::File>>);
@@ -233,6 +233,7 @@ fn log_layout(
     zones: Query<(Entity, &PileDropZone, &ComputedNode, &UiGlobalTransform)>,
     table: Res<Table>,
     ui_stack: Res<UiStack>,
+    dragging: Res<Dragging>,
     log: Res<UiLog>,
     mut last_frame: Local<String>,
     mut last_logged: Local<String>,
@@ -315,15 +316,26 @@ fn log_layout(
             if ox > 0.5 && oy > 0.5 {
                 let (front, back) = if zi >= zj { (ni, nj) } else { (nj, ni) };
                 overlaps.push(format!(
-                    "  OVERLAP: {ni} & {nj} by ({ox:.0}x{oy:.0}) - {front} over {back}"
+                    "    ERROR overlap: {ni} & {nj} by ({ox:.0}x{oy:.0}) - {front} over {back}"
                 ));
             }
         }
     }
-    let overlap_block = if overlaps.is_empty() {
-        "  overlaps: none (push settled all clear)".to_string()
+    // The never-overlap invariant: in a **settled** layout no two elements may overlap (if space is tight
+    // they clip off the edge instead). `log_layout` only writes settled frames and skips while a drag is in
+    // progress, so any overlap that reaches here is a genuine layout bug - logged as an ERROR so the log can
+    // be audited with `grep ERROR` instead of a human spotting it. Transient overlap (mid-drag, or mid-push
+    // before it settles) is valid and never logged.
+    let overlap_block = if dragging.0.is_some() {
+        "  overlaps: (drag in progress - transient overlap allowed)".to_string()
+    } else if overlaps.is_empty() {
+        "  overlaps: none".to_string()
     } else {
-        format!("  overlaps: {}\n{}", overlaps.len(), overlaps.join("\n"))
+        format!(
+            "  ERROR: {} settled overlap(s) - cards must never overlap:\n{}",
+            overlaps.len(),
+            overlaps.join("\n")
+        )
     };
 
     // Structured drop-zones (e.g. the Locations map's place cells, the formation rows) — the targets a drop
