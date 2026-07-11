@@ -394,6 +394,13 @@ pub fn sample_table() -> Tableau {
             detail.push(format!("Foes: {}", foes.join(", ")));
             tree.set_card_detail(header, detail)
                 .expect("encounter detail");
+            // A Rumors card next to the header — app-only (a `Virtual` readout, not counted in the physical
+            // tally) — spelling out how to beat this encounter, derived from its foes so it stays in step.
+            let rumor = typed(&mut tree, place_pile, "Rumors", "rumors");
+            tree.set_card_kind(rumor, CardKind::Virtual)
+                .expect("rumor card exists");
+            tree.set_card_detail(rumor, catalog::encounter_rumor(enc))
+                .expect("rumor detail");
         }
     }
     let loc_zone = typed(&mut tree, locations, "Location", "Label");
@@ -601,7 +608,7 @@ mod tests {
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 2 + 8) // Locations: Zone + 9 places + 2 inn headers + 8 non-inn encounter headers
+                + (1 + 9 + 2 + 8 + 8) // Locations: Zone + 9 places + 2 inn headers + 8 encounter headers + 8 Rumors (app-only Utility) cards
                 + ((5 + 1) + (5 + 1))
                 + 1 // Progress: just a Zone label (starts empty - Day 0)
                 + (12 + 1) // Events: the full Day Passed reserve + a Zone label
@@ -664,9 +671,10 @@ mod tests {
     #[test]
     fn physical_card_count_sums_to_the_game_total() {
         let t = sample_table();
-        // The headline invariant: the recursive tally of the whole table is exactly `card_count`, so you
-        // can add up the deck chips on the table screen and get the real number of physical cards.
-        assert_eq!(t.physical_card_count(t.root_id()), t.card_count());
+        // The headline invariant: the recursive tally of the whole table equals `card_count` minus the
+        // software-only cards (the 8 app-only Rumors readouts, one per encounter), so adding up the deck
+        // chips on the table screen gives the real number of physical cards.
+        assert_eq!(t.physical_card_count(t.root_id()), t.card_count() - 8);
         // Inclusive of each deck's own title card, and stacks count by quantity: Heroes is 9 heroes ×4
         // copies + the "Heroes" label.
         assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 9 * 4 + 1);
@@ -806,6 +814,54 @@ mod tests {
         );
         // The Bestiary backs them with a `×4` stack per creature type (+ its Zone label).
         assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 * 4 + 1);
+    }
+
+    /// Each encounter location stations an **app-only** Rumors card (a `Virtual` readout, not counted in the
+    /// physical tally) that spells out the strategy - a solo names its one answering kit, a corner tells you
+    /// to bring the full party.
+    #[test]
+    fn every_encounter_stations_an_app_only_rumors_card() {
+        let t = sample_table();
+        let locations = deck(&t, "Locations");
+        let place = |name: &str| {
+            *t.pile(locations)
+                .unwrap()
+                .subpiles()
+                .iter()
+                .find(|&&p| t.pile(p).unwrap().label == name)
+                .unwrap()
+        };
+        let rumor = |loc: &str| {
+            t.content_cards(place(loc))
+                .into_iter()
+                .find(|&c| t.card(c).unwrap().card_type() == "rumors")
+                .expect("a Rumors card")
+        };
+        // A solo (The Sundered Vault -> The Wall) names its counter kit, and is app-only (not physical).
+        let solo = rumor("The Sundered Vault");
+        assert!(!t.card(solo).unwrap().is_physical(), "Rumors is app-only");
+        let solo_text = t.card(solo).unwrap().detail().join(" ");
+        assert!(
+            solo_text.contains("Bruiser"),
+            "the Wall's rumor names its counter: {solo_text}"
+        );
+        // A corner (Emberfall Hollow) tells you to bring the full party.
+        let corner_text = t
+            .card(rumor("Emberfall Hollow"))
+            .unwrap()
+            .detail()
+            .join(" ");
+        assert!(
+            corner_text.contains("full party"),
+            "the corner's rumor calls for the party: {corner_text}"
+        );
+        // The inn (Ashfen Crossing) has no encounter, so no Rumors card.
+        assert!(
+            t.content_cards(place("Ashfen Crossing"))
+                .into_iter()
+                .all(|c| t.card(c).unwrap().card_type() != "rumors"),
+            "the inn has no rumor"
+        );
     }
 
     /// Combat instantiates the virtual foes as **real cards** split off the Bestiary stacks, and returns

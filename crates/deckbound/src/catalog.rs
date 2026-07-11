@@ -359,6 +359,59 @@ pub fn encounter_foes(e: &Encounter) -> Vec<(&'static Creature, u32)> {
         .collect()
 }
 
+/// A **Rumor** — the strategy hint shown on an encounter's app-only card (a software `Utility` card, not a
+/// physical one): how to defeat this fight, derived from the foes it fields so it stays in step with the
+/// tuning. Returns the card's detail lines (ASCII only). A solo names the one kit that breaks it; a corner
+/// names the answer to each threat and the kit it leans on.
+pub fn encounter_rumor(e: &Encounter) -> Vec<String> {
+    let attack = |kit: &str| {
+        ROSTER
+            .iter()
+            .find(|k| k.0 == kit)
+            .map(|k| k.2)
+            .unwrap_or("")
+    };
+    if !e.party {
+        let Some(c) = creature(e.keystone) else {
+            return Vec::new();
+        };
+        let counter = creature_counter(c);
+        vec![
+            format!("{}: {}", c.name, creature_ability_description(c.ability)),
+            format!(
+                "Answer with the {counter} ({}) - the one kit that breaks it alone.",
+                attack(counter)
+            ),
+        ]
+    } else {
+        let lean = creature(e.keystone)
+            .map(creature_counter)
+            .unwrap_or("the party");
+        let foes: Vec<String> = encounter_foes(e)
+            .into_iter()
+            .map(|(c, q)| {
+                if q > 1 {
+                    format!("{} x{q}", c.name)
+                } else {
+                    c.name.to_string()
+                }
+            })
+            .collect();
+        let answers: Vec<String> = encounter_foes(e)
+            .into_iter()
+            .map(|(c, _)| format!("{} for {}", creature_counter(c), c.name))
+            .collect();
+        vec![
+            format!("A warband: {}.", foes.join(", ")),
+            format!(
+                "No lone hand breaks it - bring the full party: {}.",
+                answers.join(", ")
+            ),
+            format!("It leans on the {lean} - without it, the line holds."),
+        ]
+    }
+}
+
 /// The five stat **names** in canonical [`STATS`] order — for callers that assemble or parse a character
 /// deck (`Tableau::equip_character` / `character_recipe`), which take the names as data so the model stays
 /// game-free.
