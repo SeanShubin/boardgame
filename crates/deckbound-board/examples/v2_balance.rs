@@ -3,12 +3,12 @@
 //! combat mechanics (target / react / extra sub-phases). This is the first check of whether the numbers that
 //! balanced the OLD model survive the new one.
 //!
-//! Run: `cargo run -p deckbound-cardtable --example v2_balance`
+//! Run: `cargo run -p deckbound-board --example v2_balance`
 
 use deckbound::actor::Intention as Rank;
 use deckbound::catalog::{self, Creature};
-use deckbound_cardtable::combat::{Combatant, Side};
-use deckbound_cardtable::solver::winnable;
+use deckbound_board::combat::{Combatant, Side};
+use deckbound_board::solver::winnable;
 
 /// Map a creature's intention word to a rank.
 fn rank_of(word: &str) -> Rank {

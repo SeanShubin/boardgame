@@ -1,7 +1,7 @@
 # PROVISIONAL NAME (names are flexible per the reorg plan; §16.3 target: `deckbound-board`). Deckbound
 # as a card-table **game** — it implements `cardtable_model::BoardGame` over the persistent physical board.
 [package]
-name = "deckbound-cardtable"
+name = "deckbound-board"
 version.workspace = true
 edition.workspace = true
 

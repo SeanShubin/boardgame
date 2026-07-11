@@ -5,12 +5,12 @@
 //!   - each CORNER falls to the full four-kit party but to NO single kit (it needs the party).
 //! (Solver = optimal-play winnability; the arena shares the same combat brain + greedy foe.)
 //!
-//! Run: `cargo run --release -p deckbound-cardtable --example v2_encounters`
+//! Run: `cargo run --release -p deckbound-board --example v2_encounters`
 
 use deckbound::actor::Intention as Rank;
 use deckbound::catalog::{self, Creature, Encounter};
-use deckbound_cardtable::combat::{Combatant, Side};
-use deckbound_cardtable::solver::winnable;
+use deckbound_board::combat::{Combatant, Side};
+use deckbound_board::solver::winnable;
 
 fn rank_of(word: &str) -> Rank {
     match word {

@@ -11,7 +11,7 @@ members = [
     "crates/boardgame",
     "crates/deckbound-sample",
     "tools/combat-lab",
-    "crates/deckbound-cardtable",
+    "crates/deckbound-board",
 ]
 
 [workspace.package]
@@ -28,7 +28,7 @@ engine = { path = "crates/engine" }
 mdtable = { path = "crates/mdtable" }
 cardtable-model = { path = "crates/cardtable-model" }
 cardtable = { path = "crates/cardtable" }
-deckbound-cardtable = { path = "crates/deckbound-cardtable" }
+deckbound-board = { path = "crates/deckbound-board" }
 tabletop = { path = "crates/tabletop" }
 deckbound = { path = "crates/deckbound" }
 serde = { version = "1", features = ["derive"] }

@@ -58,7 +58,7 @@ pub trait BoardGame {
 }
 ```
 
-`deckbound-cardtable::CardTableGame` implements it. The generic `cardtable` renderer
+`deckbound-board::CardTableGame` implements it. The generic `cardtable` renderer
 is generic over `G: BoardGame`: it turns a drag into `drop_intention` and a control
 tap into an affordance intention, then calls `apply` on the persistent board — and
 never mentions Deckbound. Because the board persists (it is not rebuilt per frame),
@@ -69,7 +69,7 @@ conservation-clean card moves. **Combat** is the *v2 arena*: a fight lives on th
 board as rank piles (Vanguard / Outrider / Rearguard) plus a phase deck, and each
 combat decision is a staged intention resolved as an order-free batch. See the
 `combat` (headless brain), `battle` / `solver` (analysis tooling), and `arena`
-(board ↔ combat) modules in `deckbound-cardtable`.
+(board ↔ combat) modules in `deckbound-board`.
 
 ### `contract::Game` — the reference-sample seam (snapshot)
 
@@ -88,7 +88,7 @@ back as buttons. `cardtable_model::from_table_view` can inflate a `TableView` in
 | `crates/cardtable-model` | lib | The pure **physical board** (`Board`) + `ui::UiModel` + conservation primitives (move / split / merge / flip / focus / layout), and the **`BoardGame` seam trait**. Also holds `from_table_view` (the sample-seam binding). No Bevy, no game. |
 | `crates/cardtable` | lib | **The product's renderer** — the Bevy card-table renderer, generic over `BoardGame`: every zone a deck, click-to-focus, drag-to-arrange, and the interactive arena. No game words. |
 | `crates/deckbound` | lib | The **reference-sample game** (`contract::Game`) *and* the shared content used by the product: `catalog` (kits / creatures / encounters / rumors), `combat` (the `SCHEDULE`), `actor` (the V/O/R ranks). Pure, no Bevy. |
-| `crates/deckbound-cardtable` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound::{catalog, combat, actor}`. |
+| `crates/deckbound-board` | lib | **The product's game** — implements `BoardGame` (`CardTableGame`): equip / march / day as conservation-clean transitions, and the v2 combat arena. Owns `sample_table` (the opening board). Uses `deckbound::{catalog, combat, actor}`. |
 | `crates/tabletop` | lib | The button renderer for the sample (draws any `contract::Game`). |
 | `crates/boardgame` | bin | **The deployed product**: wires `CardTableGame` into the `cardtable` renderer + persistence. Built to WebAssembly with Trunk. |
 | `crates/deckbound-sample` | bin | The reference-sample launcher: wires `deckbound` into `tabletop` (or `cardtable`) through `contract::Game`. |
@@ -109,12 +109,15 @@ is what makes the seed-based tests and the exact combat solver reproducible.
 The cards-as-truth reunification is complete and shipping. A cosmetic / structural
 tail remains, tracked in `needs-merge/cardtable-deckbound-reunification-plan.md`:
 
-- **P6 — honest renames** (`Tableau → Board` done): `deckbound-cardtable →
-  deckbound-board`, a `physical` module beside `ui`, and finishing
-  `actor::Intention → Rank`.
+- **P6 — honest renames (mostly done):** `Tableau → Board` and
+  `deckbound-cardtable → deckbound-board` shipped. Left: a `physical` module beside
+  `ui` (organizational, optional). `actor::Intention → Rank` is **declined** — V/O/R
+  are honestly "declared intentions" in the deckbound sample's spec, and the product
+  reframes them as ranks via a local `as Rank` alias, which keeps both vocabularies
+  correct.
 - **P4 — extract `deckbound-balance`**: move the *legacy sample's* balance / solver
   tooling out of `deckbound` (the product's v2 balance tooling already lives in
-  `deckbound-cardtable`).
+  `deckbound-board`).
 - **A1 — arena rendering out of `cardtable`**: the generic renderer still holds the
   arena UI and combat-affordability logic; the ideal is "the arena is just another
   zone."

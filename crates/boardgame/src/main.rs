@@ -2,7 +2,7 @@
 //!
 //! It drives the game-agnostic card-table renderer ([`cardtable::CardTablePlugin`]) with the deckbound
 //! card-table game wired in behind the [`BoardGame`](cardtable_model::BoardGame) seam
-//! ([`deckbound_cardtable::CardTableGame`]): recruit / march / advance-day and the interactive combat arena
+//! ([`deckbound_board::CardTableGame`]): recruit / march / advance-day and the interactive combat arena
 //! all run as intentions over the persistent board.
 //!
 //! Runs natively and on the web — Trunk builds this bin to WebAssembly (see `index.html` and
@@ -15,8 +15,8 @@ use cardtable::{
     ActionRequests, BoardGamePlugin, BuildInfo, CardTableSet, FactoryBase, LoggingPlugin,
     StatusLine, Table,
 };
-use deckbound_cardtable::CardTableGame;
-use deckbound_cardtable::sample_table;
+use deckbound_board::CardTableGame;
+use deckbound_board::sample_table;
 
 /// Seconds between autosave checks; a save only writes when the RON actually changed.
 const AUTOSAVE_SECS: f32 = 2.0;
@@ -77,7 +77,7 @@ fn autosave(
     // Don't persist mid-fight: the board then holds the transient `[Arena]` scratch pile + instantiated
     // foes, and the fight folds back cleanly on its end (the next tick saves that). A reload mid-fight
     // would strand an orphan pile / load stale per-combat detail.
-    if deckbound_cardtable::arena::find_arena(&table.0).is_some() {
+    if deckbound_board::arena::find_arena(&table.0).is_some() {
         return;
     }
     *cooldown += time.delta_secs();

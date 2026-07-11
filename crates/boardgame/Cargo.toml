@@ -15,7 +15,7 @@ cardtable-model = { workspace = true }
 # table. This binary is where the game wires into the product; the renderer stays game-agnostic.
 # The game: deckbound as a `BoardGame` over the persistent physical board (the seam impl the renderer
 # drives). Provides `CardTableGame`.
-deckbound-cardtable = { workspace = true }
+deckbound-board = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
 

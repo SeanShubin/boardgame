@@ -5,12 +5,12 @@
 //!   - and, ideally, the party WITHOUT kit `i` LOSES (it visibly leans on `i`).
 //! Prefer a real lean, then fewer foes. Reports the best composition per corner (to wire into the catalog).
 //!
-//! Run: `cargo run --release -p deckbound-cardtable --example v2_corner_tune`
+//! Run: `cargo run --release -p deckbound-board --example v2_corner_tune`
 
 use deckbound::actor::Intention as Rank;
 use deckbound::catalog::{self, Creature};
-use deckbound_cardtable::combat::{Combatant, Side};
-use deckbound_cardtable::solver::winnable;
+use deckbound_board::combat::{Combatant, Side};
+use deckbound_board::solver::winnable;
 
 fn rank_of(word: &str) -> Rank {
     match word {
