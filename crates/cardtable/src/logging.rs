@@ -263,9 +263,8 @@ fn log_layout(
                 (format!("[{}]", pile.label), "-".into())
             }
         };
-        let sf = cn.inverse_scale_factor;
-        let size = cn.size() * sf;
-        let tl = gt.translation * sf - size * 0.5;
+        let (center, half) = crate::node_box(cn, gt);
+        let (size, tl) = (half * 2.0, center - half);
         boxes.push((
             name,
             tl.x,
@@ -318,9 +317,8 @@ fn log_layout(
                 return None; // a top-level deck is both movable and a drop-zone; listed once (above)
             }
             let pile = table.0.pile(zone.0)?;
-            let sf = cn.inverse_scale_factor;
-            let size = cn.size() * sf;
-            let tl = gt.translation * sf - size * 0.5;
+            let (center, half) = crate::node_box(cn, gt);
+            let (size, tl) = (half * 2.0, center - half);
             Some((
                 pile.label.clone(),
                 tl.x,

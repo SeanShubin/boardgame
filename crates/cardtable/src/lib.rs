@@ -1275,10 +1275,21 @@ fn fan_layout(
 // discarded it — a mint + destroy. Recruiting is now the conservation-clean `try_equip` / `try_unequip`.)
 
 /// A UI node's on-screen bounding box in **logical** px as `(centre, half-extents)`: its
-/// [`UiGlobalTransform`] translation and half its [`ComputedNode`] size, both scaled from physical.
+/// [`UiGlobalTransform`] translation and half its [`ComputedNode`] size, both scaled from physical. This is
+/// **the one place** the physical->logical box conversion lives; every consumer that needs a node's on-screen
+/// box (the position authority, the drop hit-tests, the layout log) routes through it or [`node_rect`], so
+/// the `inverse_scale_factor` math is written once. (The pin / size syncs deliberately use their own
+/// conversions: `sync_pinned` maps into the content coordinate space, and the size syncs need only the size.)
 fn node_box(cn: &ComputedNode, gt: &UiGlobalTransform) -> (Vec2, Vec2) {
     let sf = cn.inverse_scale_factor;
     (gt.translation * sf, cn.size() * sf * 0.5)
+}
+
+/// A UI node's on-screen [`Rect`] in **logical** px (centre + full size) — the [`Rect`] form of [`node_box`],
+/// for the position authority and other rect consumers.
+fn node_rect(cn: &ComputedNode, gt: &UiGlobalTransform) -> Rect {
+    let (center, half) = node_box(cn, gt);
+    Rect::from_center_size(center, half * 2.0)
 }
 
 /// Whether two `(centre, half)` boxes overlap (axis-aligned).
@@ -1338,9 +1349,7 @@ fn projected_card_under_cursor(
         .filter_map(|(m, cn, gt)| m.0.card().map(|c| (c, cn, gt)))
         .filter(|&(c, _, _)| c != dragged)
         .find(|&(_, cn, gt)| {
-            let sf = cn.inverse_scale_factor; // physical -> logical, matching the cursor
-            let center = gt.translation * sf;
-            let half = cn.size() * sf * 0.5;
+            let (center, half) = node_box(cn, gt); // logical px, matching the cursor
             (cursor.x - center.x).abs() <= half.x && (cursor.y - center.y).abs() <= half.y
         })
         .map(|(c, _, _)| c)
@@ -2242,11 +2251,7 @@ fn track_card_rects(
 ) {
     rects.0.clear();
     let mut put = |id: CardId, cn: &ComputedNode, gt: &UiGlobalTransform| {
-        let sf = cn.inverse_scale_factor;
-        rects.0.insert(
-            id,
-            Rect::from_center_size(gt.translation * sf, cn.size() * sf),
-        );
+        rects.0.insert(id, node_rect(cn, gt));
     };
     for (c, cn, gt) in &cards {
         put(c.0, cn, gt);
