@@ -45,7 +45,7 @@ struct Stats {
     finesse: u32,
 }
 
-fn stats_of(s: [u8; 5], melee: bool, ranged: bool) -> (Stats, bool, bool) {
+fn stats_of(s: [u8; 5], melee: bool, ranged: bool, aoe: bool) -> (Stats, bool, bool, bool) {
     (
         Stats {
             might: s[0] as u32,
@@ -56,6 +56,7 @@ fn stats_of(s: [u8; 5], melee: bool, ranged: bool) -> (Stats, bool, bool) {
         },
         melee,
         ranged,
+        aoe,
     )
 }
 
@@ -91,27 +92,29 @@ fn character_deck(board: &Tableau, name: &str) -> Option<PileId> {
         })
 }
 
-/// A combatant's stats plus its **reach** `(melee, ranged)` — the attack types it carries (see
-/// `catalog::ability_reach`). Returned together so callers can position + gate it in one read.
-fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool, bool)> {
+/// A combatant's stats plus its **reach** `(melee, ranged)` and **area** flag — the attack shape it carries
+/// (see `catalog::ability_reach` / `ability_shape`). Returned together so callers position + gate + display
+/// it in one read.
+fn hero_stats(board: &Tableau, name: &str) -> Option<(Stats, bool, bool, bool)> {
     let recipe = board.character_recipe(
         character_deck(board, name)?,
         &deckbound::catalog::stat_names(),
     )?;
     let (melee, ranged) = deckbound::catalog::ability_reach(&recipe.ability);
-    Some(stats_of(recipe.stats, melee, ranged))
+    let (_ranged, aoe) = deckbound::catalog::ability_shape(&recipe.ability);
+    Some(stats_of(recipe.stats, melee, ranged, aoe))
 }
 
-fn foe_stats(name: &str) -> Option<(Stats, bool, bool)> {
+fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
     let c = deckbound::catalog::creature(name)?;
-    Some(stats_of(c.stats, c.melee, c.ranged))
+    Some(stats_of(c.stats, c.melee, c.ranged, c.aoe))
 }
 
 /// The vitality (max HP) of a combatant by name and side — the health bar's full value.
 fn max_health(board: &Tableau, name: &str, side: Side) -> u32 {
     match side {
-        Side::Party => hero_stats(board, name).map(|(s, _, _)| s.vitality),
-        Side::Foe => foe_stats(name).map(|(s, _, _)| s.vitality),
+        Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
+        Side::Foe => foe_stats(name).map(|(s, _, _, _)| s.vitality),
     }
     .unwrap_or(0)
 }
@@ -153,17 +156,27 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
-fn detail(hp: u32, max: u32, tempo: u32, finesse: u32, melee: bool, ranged: bool) -> Vec<String> {
+fn detail(
+    hp: u32,
+    max: u32,
+    tempo: u32,
+    finesse: u32,
+    melee: bool,
+    ranged: bool,
+    area: bool,
+) -> Vec<String> {
     // Finesse rides the card (the game re-derives stats from the source, but the renderer needs it to show
-    // affordability) and the reach flags (`Melee` / `Ranged`) ride its line, so the formation can flag which
-    // positions a unit is effective in. All three are constant; the staged plan starts after these lines.
+    // affordability); the reach flags (`Melee` / `Ranged`) and the shape flag (`Area`) ride its line so the
+    // formation can flag effective positions and the renderer can style an area strike's targeting cue. All
+    // are constant; the staged plan starts after these lines.
     vec![
         format!("HP {hp}/{max}"),
         format!("Tempo {tempo}"),
         format!(
-            "Finesse {finesse}{}{}",
+            "Finesse {finesse}{}{}{}",
             if melee { " Melee" } else { "" },
-            if ranged { " Ranged" } else { "" }
+            if ranged { " Ranged" } else { "" },
+            if area { " Area" } else { "" }
         ),
     ]
 }
@@ -185,7 +198,7 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         "foe" => Side::Foe,
         _ => return None,
     };
-    let (stats, melee, ranged) = match side {
+    let (stats, melee, ranged, aoe) = match side {
         Side::Party => hero_stats(board, &name)?,
         Side::Foe => foe_stats(&name)?,
     };
@@ -198,20 +211,8 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
         .get(1)
         .map(|l| num_after(l, "Tempo "))
         .unwrap_or(stats.cadence);
-    // Area / horde are read from the source alongside reach: a hero's area comes from its equipped attack
-    // (Sweep / Salvo); a creature carries its own aoe/horde. Heroes are never hordes.
-    let (aoe, horde) = match side {
-        Side::Party => {
-            let recipe = board.character_recipe(
-                character_deck(board, &name)?,
-                &deckbound::catalog::stat_names(),
-            )?;
-            (deckbound::catalog::ability_shape(&recipe.ability).1, false)
-        }
-        Side::Foe => deckbound::catalog::creature(&name)
-            .map(|c| (c.aoe, c.horde))
-            .unwrap_or((false, false)),
-    };
+    // A horde is a foe-only property (heroes are never grouped in the UI); area came from the read above.
+    let horde = side == Side::Foe && deckbound::catalog::creature(&name).is_some_and(|c| c.horde);
     Some(Combatant {
         name,
         side,
@@ -237,13 +238,13 @@ fn read_combatant(board: &Tableau, card: CardId, rank: Rank) -> Option<Combatant
 fn write_combatant(board: &mut Tableau, card: CardId, u: &Combatant, max: u32) {
     // Reach is a constant of the character, re-derived from the source so it survives the writeback.
     let (melee, ranged) = match u.side {
-        Side::Party => hero_stats(board, &u.name).map(|(_, m, r)| (m, r)),
-        Side::Foe => foe_stats(&u.name).map(|(_, m, r)| (m, r)),
+        Side::Party => hero_stats(board, &u.name).map(|(_, m, r, _)| (m, r)),
+        Side::Foe => foe_stats(&u.name).map(|(_, m, r, _)| (m, r)),
     }
     .unwrap_or((true, false));
     let _ = board.set_card_detail(
         card,
-        detail(u.health, max, u.tempo, u.finesse, melee, ranged),
+        detail(u.health, max, u.tempo, u.finesse, melee, ranged, u.aoe),
     );
 }
 
@@ -495,7 +496,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         .collect();
     for card in heroes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, melee, ranged)) = hero_stats(board, &name) {
+        if let Some((stats, melee, ranged, aoe)) = hero_stats(board, &name) {
             let at = board.pile(pool).map_or(0, |p| p.cards().len());
             let _ = board.move_card(card, pool, at);
             let _ = board.set_card_type(card, "unit");
@@ -508,6 +509,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
                     stats.finesse,
                     melee,
                     ranged,
+                    aoe,
                 ),
             );
         }
@@ -524,7 +526,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
         .ok()?;
     for card in foes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, melee, ranged)) = foe_stats(&name) {
+        if let Some((stats, melee, ranged, aoe)) = foe_stats(&name) {
             let _ = board.set_card_type(card, "foe");
             let _ = board.set_card_detail(
                 card,
@@ -535,6 +537,7 @@ pub fn open_fight(board: &mut Tableau, place: PileId) -> Option<PileId> {
                     stats.finesse,
                     melee,
                     ranged,
+                    aoe,
                 ),
             );
             let rank = default_rank(&stats, ranged);
@@ -912,7 +915,7 @@ fn autofill_pool(board: &mut Tableau, arena: PileId) {
         let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
             continue;
         };
-        if let Some((stats, _melee, ranged)) = hero_stats(board, &name) {
+        if let Some((stats, _melee, ranged, _aoe)) = hero_stats(board, &name) {
             let rank = default_rank(&stats, ranged);
             if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
                 let at = board.pile(rp).map_or(0, |p| p.cards().len());
@@ -1364,10 +1367,12 @@ pub fn restart_fight(board: &mut Tableau, arena: PileId) {
                 "foe" => foe_stats(&name),
                 _ => None,
             };
-            if let Some((s, melee, ranged)) = stats {
+            if let Some((s, melee, ranged, aoe)) = stats {
                 let _ = board.set_card_detail(
                     card,
-                    detail(s.vitality, s.vitality, s.cadence, s.finesse, melee, ranged),
+                    detail(
+                        s.vitality, s.vitality, s.cadence, s.finesse, melee, ranged, aoe,
+                    ),
                 );
             }
         }
@@ -1410,8 +1415,9 @@ mod tests {
             }],
         );
 
-        let (stats, melee, ranged) = hero_stats(&board, &hero_name).expect("recipe resolves");
+        let (stats, melee, ranged, aoe) = hero_stats(&board, &hero_name).expect("recipe resolves");
         assert!(melee && !ranged, "Jab is melee-only");
+        assert!(!aoe, "Jab is single-target");
         let d = detail(
             stats.vitality,
             stats.vitality,
@@ -1419,13 +1425,14 @@ mod tests {
             stats.finesse,
             melee,
             ranged,
+            aoe,
         );
         assert!(
             d[2].contains("Melee"),
             "the combat card carries the Melee token: {:?}",
             d[2]
         );
-        assert!(!d[2].contains("Ranged"));
+        assert!(!d[2].contains("Ranged") && !d[2].contains("Area"));
     }
 
     /// Set up a fight at a place with an encounter, with Vael recruited (Marksman) and marched there.

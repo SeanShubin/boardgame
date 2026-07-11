@@ -218,9 +218,12 @@ struct AdvanceDayCard;
 struct ArenaUnitCard(CardId);
 
 /// The **armed hero** during Catch — the tile a targeting arrow flows *from* (rendering the attention layer:
-/// a selection in progress). Set by [`spawn_arena_v2_unit`], read by [`animate_target_arrows`].
+/// a selection in progress). Set by [`spawn_arena_v2_unit`], read by [`animate_target_arrows`]. `area` marks
+/// an area attacker so its arrow reads as a broad sweep (a fan) rather than a single thread.
 #[derive(Component)]
-struct ArrowSource;
+struct ArrowSource {
+    area: bool,
+}
 
 /// A **reachable foe** during Catch — a tile a targeting arrow flows *to*. `confirmed` marks the aimed target
 /// (solid, green) vs. a merely-possible one (dotted, amber).
@@ -1879,6 +1882,7 @@ struct ArenaUnit {
     finesse: u32,
     melee: bool,
     ranged: bool,
+    area: bool,
     fallen: bool,
     active: bool,
     aim: Option<CardId>,
@@ -1916,6 +1920,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         .max(1);
     let melee = d.get(2).is_some_and(|l| l.contains("Melee"));
     let ranged = d.get(2).is_some_and(|l| l.contains("Ranged"));
+    let area = d.get(2).is_some_and(|l| l.contains("Area"));
     let mut u = ArenaUnit {
         card,
         name: c.front_title().to_string(),
@@ -1927,6 +1932,7 @@ fn read_arena_unit(tree: &Tableau, card: CardId, rank: char) -> Option<ArenaUnit
         finesse,
         melee,
         ranged,
+        area,
         fallen: hp == 0,
         active: false,
         aim: None,
@@ -2867,7 +2873,7 @@ fn spawn_arena_v2_unit(
     if step == "Catch" && !u.fallen {
         match (sel, u.party) {
             (Sel::On, true) => {
-                tile.insert(ArrowSource);
+                tile.insert(ArrowSource { area: u.area });
             }
             (Sel::On, false) => {
                 tile.insert(ArrowTarget { confirmed: true });
@@ -2957,33 +2963,47 @@ fn animate_target_arrows(
     mut commands: Commands,
     time: Res<Time>,
     rects: Res<CardScreenRects>,
-    sources: Query<&ArenaUnitCard, With<ArrowSource>>,
+    sources: Query<(&ArenaUnitCard, &ArrowSource)>,
     targets: Query<(&ArenaUnitCard, &ArrowTarget)>,
     dots: Query<Entity, With<ArrowDot>>,
 ) {
     for e in &dots {
         commands.entity(e).despawn(); // clear last frame's flow
     }
-    let Some(src) = sources.iter().next().and_then(|c| rects.center(c.0)) else {
+    let Some((src, area)) = sources
+        .iter()
+        .next()
+        .and_then(|(c, s)| Some((rects.center(c.0)?, s.area)))
+    else {
         return; // no armed hero (or not yet laid out) -> no arrows
     };
     let phase = time.elapsed_secs();
     for (card, target) in &targets {
         if let Some(dst) = rects.center(card.0) {
-            spawn_arrow_dots(&mut commands, src, dst, target.confirmed, phase);
+            spawn_arrow_dots(&mut commands, src, dst, target.confirmed, area, phase);
         }
     }
 }
 
 /// Spawn one arrow's worth of dots from `a` to `b` (tile centers, logical px), flowing toward `b`. Confirmed
 /// arrows are denser and green; possible ones sparser and amber. Dots grow toward the target as a soft head.
-fn spawn_arrow_dots(commands: &mut Commands, a: Vec2, b: Vec2, confirmed: bool, phase: f32) {
+/// An `area` source fans three parallel threads into a broad sweep; every dot carries a dark rim so it reads
+/// even when its fill matches the card it flows over.
+fn spawn_arrow_dots(
+    commands: &mut Commands,
+    a: Vec2,
+    b: Vec2,
+    confirmed: bool,
+    area: bool,
+    phase: f32,
+) {
     let dir = b - a;
     let len = dir.length();
     if len < 72.0 {
         return; // tiles adjacent/overlapping - nothing useful to draw
     }
     let unit = dir / len;
+    let perp = Vec2::new(-unit.y, unit.x); // sideways - the offset for an area strike's fanned threads
     // Start clear of the source tile and stop short of the target so the dots read as a gap-spanning arrow.
     let start = a + unit * 36.0;
     let end = b - unit * 36.0;
@@ -2995,30 +3015,39 @@ fn spawn_arrow_dots(commands: &mut Commands, a: Vec2, b: Vec2, confirmed: bool, 
     } else {
         SELECTABLE_CUE
     };
-    let mut d = flow;
-    while d <= span {
-        let t = d / span;
-        let size = (if confirmed { 5.0 } else { 4.0 }) * (0.6 + 0.9 * t); // grow into a head near the target
-        let p = start + unit * d;
-        commands.spawn((
-            ArrowDot,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(p.x - size * 0.5),
-                top: Val::Px(p.y - size * 0.5),
-                width: Val::Px(size),
-                height: Val::Px(size),
-                border_radius: BorderRadius::all(Val::Percent(50.0)),
-                ..default()
-            },
-            BackgroundColor(color),
-            GlobalZIndex(1000),
-            Pickable {
-                should_block_lower: false,
-                is_hoverable: false,
-            },
-        ));
-        d += spacing;
+    // A dark rim keeps each dot legible on any background: where its fill matches the card the rim shows,
+    // where the card is dark the bright fill shows.
+    let rim = Color::srgba(0.0, 0.0, 0.0, 0.8);
+    // A single strike is one thread; an area strike fans three parallel threads into a broad band.
+    let lanes: &[f32] = if area { &[-7.0, 0.0, 7.0] } else { &[0.0] };
+    for &off in lanes {
+        let mut d = flow;
+        while d <= span {
+            let t = d / span;
+            let size = (if confirmed { 5.5 } else { 4.5 }) * (0.6 + 0.9 * t); // grow into a head near the target
+            let p = start + unit * d + perp * off;
+            commands.spawn((
+                ArrowDot,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(p.x - size * 0.5),
+                    top: Val::Px(p.y - size * 0.5),
+                    width: Val::Px(size),
+                    height: Val::Px(size),
+                    border: UiRect::all(Val::Px(1.0)),
+                    border_radius: BorderRadius::all(Val::Percent(50.0)),
+                    ..default()
+                },
+                BackgroundColor(color),
+                BorderColor::all(rim),
+                GlobalZIndex(1000),
+                Pickable {
+                    should_block_lower: false,
+                    is_hoverable: false,
+                },
+            ));
+            d += spacing;
+        }
     }
 }
 
