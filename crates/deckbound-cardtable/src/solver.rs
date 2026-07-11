@@ -212,7 +212,11 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
         .map(|(i, u)| {
             let mut opts = vec![None];
             for (j, v) in units.iter().enumerate() {
-                if v.fallen || v.side == Side::Party || !combat::legal_catch(sub, u.rank, v.rank) {
+                if v.fallen
+                    || v.side == Side::Party
+                    || !combat::legal_catch(sub, u.rank, v.rank)
+                    || !combat::back_access_ok(units, u.rank, j)
+                {
                     continue;
                 }
                 let min_land = v.finesse.div_ceil(u.finesse.max(1)).max(1);

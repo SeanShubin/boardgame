@@ -102,7 +102,11 @@ impl Policy for Greedy {
                 continue;
             }
             if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
-                if v.fallen || v.side == side || !combat::legal_catch(sub, u.rank, v.rank) {
+                if v.fallen
+                    || v.side == side
+                    || !combat::legal_catch(sub, u.rank, v.rank)
+                    || !combat::back_access_ok(units, u.rank, j)
+                {
                     return None;
                 }
                 let need = v.finesse.div_ceil(u.finesse.max(1)).max(1);

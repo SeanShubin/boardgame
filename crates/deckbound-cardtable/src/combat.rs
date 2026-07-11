@@ -166,6 +166,27 @@ pub fn effective_in_rank(rank: Rank, melee: bool, ranged: bool) -> bool {
     if rank_is_ranged(rank) { ranged } else { melee }
 }
 
+/// The **screen** (back-access rule, spec 4.6): a Rearguard fights from behind its own line, so it is only
+/// reachable once that line is gone. A Rearguard target may be hit by an **Outrider** (a raid slips past the
+/// screen) at any time, but by a **Vanguard or Rearguard** attacker only once the target's side has no living
+/// Vanguard — a dropped front opens the back. Non-Rearguard targets are never screened. This is what makes
+/// fire from the back safe: while your Vanguard stands, nothing but a raiding Outrider can touch your
+/// Rearguard, and that Outrider must first survive the Intercept + Volley gauntlet. Without this gate the
+/// SCHEDULE's Breach pairs (V->R, R->R) would let a body reach an enemy Rearguard through a living screen.
+pub fn back_access_ok(units: &[Combatant], attacker: Rank, target: usize) -> bool {
+    let tgt = &units[target];
+    if tgt.rank != Rank::Rearguard {
+        return true; // only the Rearguard is screened
+    }
+    if attacker == Rank::Outrider {
+        return true; // the raid bypasses the screen (paid for by the earlier sub-phases)
+    }
+    // A Vanguard / Rearguard attacker needs the target's front down first.
+    !units
+        .iter()
+        .any(|u| u.side == tgt.side && u.rank == Rank::Vanguard && !u.fallen)
+}
+
 /// A catch lands when the attacker's bid value reaches the target's finesse: `cards × F_att ≥ F_target`.
 pub fn catch_lands(cards: u32, f_att: u32, f_target: u32) -> bool {
     cards * f_att >= f_target
@@ -194,6 +215,11 @@ pub fn resolve_catch(units: &mut [Combatant], catches: &[Catch]) -> Vec<Contact>
         // nothing here — no contact, no tempo spent. The UI already hides these; this makes it a rule.
         let atk = &units[c.attacker];
         if !effective_in_rank(atk.rank, atk.melee, atk.ranged) {
+            continue;
+        }
+        // Screen backstop (spec 4.6): a strike aimed past a living front at a screened Rearguard lands
+        // nothing here — no contact, no tempo spent. The candidate generators already hide these.
+        if !back_access_ok(units, atk.rank, c.target) {
             continue;
         }
         let cards = c.cards.min(units[c.attacker].tempo);
@@ -376,6 +402,53 @@ mod tests {
             resolve_catch(&mut ranged, &[catch]).len(),
             1,
             "a ranged body fires from the back"
+        );
+    }
+
+    #[test]
+    fn screen_gates_the_back_line() {
+        // Foe side: a Vanguard screening a Rearguard. Party attackers try to reach the screened Rearguard (2).
+        let mut units = vec![
+            unit("V", Side::Party, Rank::Vanguard, 2, 2, 3, 1, 3),
+            unit("O", Side::Party, Rank::Outrider, 2, 2, 3, 1, 3),
+            unit("Screen", Side::Foe, Rank::Vanguard, 2, 2, 3, 1, 3),
+            unit("Back", Side::Foe, Rank::Rearguard, 2, 2, 3, 1, 3),
+        ];
+        // While the enemy front stands, a Vanguard / Rearguard cannot reach the enemy Rearguard...
+        assert!(
+            !back_access_ok(&units, Rank::Vanguard, 3),
+            "screened from the front"
+        );
+        assert!(
+            !back_access_ok(&units, Rank::Rearguard, 3),
+            "screened from the back"
+        );
+        // ...but a raiding Outrider slips past the screen at any time.
+        assert!(
+            back_access_ok(&units, Rank::Outrider, 3),
+            "the raid bypasses the screen"
+        );
+        // Non-Rearguard targets are never screened.
+        assert!(
+            back_access_ok(&units, Rank::Vanguard, 2),
+            "the front itself is always reachable"
+        );
+
+        // Crush the front and the back opens ("bring in the heavy guns"): R->R now lands.
+        units[2].fallen = true;
+        assert!(
+            back_access_ok(&units, Rank::Rearguard, 3),
+            "a dropped screen opens the back"
+        );
+
+        // Both sides all-Rearguard (no screens anywhere) -> a free-for-all: Rearguards fire on each other.
+        let ffa = vec![
+            unit("P", Side::Party, Rank::Rearguard, 2, 2, 3, 1, 3),
+            unit("F", Side::Foe, Rank::Rearguard, 2, 2, 3, 1, 3),
+        ];
+        assert!(
+            back_access_ok(&ffa, Rank::Rearguard, 1),
+            "no screen, no safety"
         );
     }
 
