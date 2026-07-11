@@ -54,15 +54,16 @@ pub const ABILITIES: [(&str, &str); 4] = [
     ),
 ];
 
-/// The starter roster — the four **duel-locks kits** (`deckbound/data/balance/duel-locks.ron`), each
-/// `(name, stats, ability)` where `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` — the same
-/// order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole answer to one
-/// creature lock: Executioner→the Anvil, Broadsider→the Swarm, Marksman→the Coil, Phantom→the Mirage.
+/// The starter roster — the four **reach x spread kits**, one per generic attack (Jab / Shot / Sweep /
+/// Salvo), each `(name, stats, ability)` where `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]`
+/// — the same order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole solo
+/// answer to one creature: Bruiser (melee single) answers the Wall, Marksman (ranged single) the Duelist,
+/// Reaver (melee area, tanky) the Swarm, Gunner (ranged area) the Storm (see [`creature_counter`]).
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
-    ("Executioner", [6, 3, 1, 1, 1], "Jab"),
-    ("Broadsider", [2, 3, 3, 1, 1], "Sweep"),
-    ("Marksman", [4, 4, 1, 2, 2], "Shot"),
-    ("Phantom", [4, 3, 1, 2, 3], "Jab"),
+    ("Bruiser", [7, 6, 1, 2, 2], "Jab"),   // melee single
+    ("Marksman", [5, 2, 1, 2, 2], "Shot"), // ranged single
+    ("Reaver", [1, 3, 3, 1, 2], "Sweep"),  // melee area, tanky (Toughness)
+    ("Gunner", [3, 3, 1, 1, 2], "Salvo"),  // ranged area, fragile
 ];
 
 /// The description for a stat by name (from [`STATS`]), or `""` if unknown.
@@ -107,17 +108,13 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
     (ranged, aoe)
 }
 
-/// A **creature** — a foe stationed at an encounter, mirrored from the duel-locks balance instrument
-/// (`deckbound/data/balance/duel-locks.ron`, the source of truth for the numbers) and kept in step with it
-/// the same way [`ROSTER`] mirrors that file's kits. (This card content now lives in `deckbound` alongside
-/// that RON — a later cleanup could read the numbers from it directly instead of re-declaring.) `stats` is
-/// `[Might, Vitality, Toughness,
+/// A **creature** — a foe stationed at an encounter. `stats` is `[Might, Vitality, Toughness,
 /// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `horde` marks a card
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
-/// Coil holds the front regardless of its stats). A creature's **intention** and **posture** are not
-/// stored — they derive from these fields (see [`creature_intention`] / [`creature_posture`]), so
-/// editing a stat re-derives the read-out. `melee`/`ranged` are the creature's **reach** (which attack
-/// types it carries — independent, like a kit's [`ability_reach`]); the four locks are all melee.
+/// Duelist and the Storm hold the front regardless of their stats). A creature's **intention** and
+/// **posture** are not stored — they derive from these fields (see [`creature_intention`] /
+/// [`creature_posture`]), so editing a stat re-derives the read-out. `melee`/`ranged` are the creature's
+/// **reach** (which attack types it carries — independent, like a kit's [`ability_reach`]).
 #[derive(Clone, Copy, Debug)]
 pub struct Creature {
     pub name: &'static str,
@@ -130,14 +127,14 @@ pub struct Creature {
     pub pos: Option<&'static str>,
 }
 
-/// The four duel-locks creatures, mirrored from `duel-locks.ron`. Each is beaten by exactly one kit — a
-/// clean diagonal (Anvil→Executioner, Swarm→Broadsider, Coil→Marksman, Mirage→Phantom) — and that answer
-/// is a consequence of the numbers, not a keyword (see [`creature_counter`]).
+/// The four creatures. Each is beaten by exactly one kit — a clean diagonal (Wall->Bruiser,
+/// Duelist->Marksman, Swarm->Reaver, Storm->Gunner) — and that answer is a consequence of the numbers,
+/// not a keyword (see [`creature_counter`]).
 pub const CREATURES: [Creature; 4] = [
     Creature {
-        name: "The Anvil",
-        ability: "Immovable",
-        stats: [1, 2, 5, 1, 1],
+        name: "The Wall",
+        ability: "Bulwark",
+        stats: [1, 4, 9, 1, 2],
         melee: true,
         ranged: false,
         aoe: false,
@@ -145,19 +142,9 @@ pub const CREATURES: [Creature; 4] = [
         pos: None,
     },
     Creature {
-        name: "The Swarm",
-        ability: "Overrun",
-        stats: [1, 45, 1, 1, 1],
-        melee: true,
-        ranged: false,
-        aoe: false,
-        horde: true,
-        pos: None,
-    },
-    Creature {
-        name: "The Coil",
+        name: "The Duelist",
         ability: "Riposte",
-        stats: [6, 4, 2, 2, 1],
+        stats: [5, 5, 1, 2, 2],
         melee: true,
         ranged: false,
         aoe: false,
@@ -165,14 +152,24 @@ pub const CREATURES: [Creature; 4] = [
         pos: Some("Vanguard"),
     },
     Creature {
-        name: "The Mirage",
-        ability: "Feint",
-        stats: [6, 5, 2, 1, 2],
+        name: "The Swarm",
+        ability: "Overrun",
+        stats: [1, 8, 1, 1, 1],
+        melee: false,
+        ranged: true,
+        aoe: false,
+        horde: true,
+        pos: None,
+    },
+    Creature {
+        name: "The Storm",
+        ability: "Onslaught",
+        stats: [2, 12, 1, 2, 1],
         melee: true,
         ranged: false,
         aoe: false,
-        horde: false,
-        pos: None,
+        horde: true,
+        pos: Some("Vanguard"),
     },
 ];
 
@@ -180,20 +177,20 @@ pub const CREATURES: [Creature; 4] = [
 /// in player-facing terms. Parallel to [`ABILITIES`] for kits.
 pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     (
-        "Immovable",
-        "Toughness above all but the heaviest blow - sub-bar hits are wiped, so only one overwhelming strike cracks it.",
-    ),
-    (
-        "Overrun",
-        "A horde of one-Health bodies. Single strikes kill one at a time and drown; an area attack clears the pack at once.",
+        "Bulwark",
+        "High Toughness; sub-bar blows are wiped, so only one overwhelming strike dents it.",
     ),
     (
         "Riposte",
-        "Strikes back at every melee blow it can reach, twice a round - answer it from range, where it can't reach.",
+        "Hits hard and fast in melee; close in and you trade and die - answer it from range.",
     ),
     (
-        "Feint",
-        "Never quite where it seems; low-Finesse blows whiff. Only a faster hand out-paces the feint and lands.",
+        "Overrun",
+        "A pack of one-Health bodies firing from the back line; single strikes drown, an area strike clears the group.",
+    ),
+    (
+        "Onslaught",
+        "A pack that charges the front; too fast and deadly to trade with - clear it from range with an area strike.",
     ),
 ];
 
@@ -202,10 +199,10 @@ pub fn creature(name: &str) -> Option<&'static Creature> {
     CREATURES.iter().find(|c| c.name == name)
 }
 
-/// A creature's battle **intention** — Vanguard / Outrider / Rearguard — derived exactly as the
-/// duel-locks `default_intentions` rule (`duel-locks.ron` §4): an authored [`pos`](Creature::pos) wins;
-/// otherwise a ranged creature holds the Rearguard, a creature whose Might meets its Toughness flanks as
-/// an Outrider, and the rest brace as a Vanguard. Pure derivation — no stored stance.
+/// A creature's battle **intention** — Vanguard / Outrider / Rearguard — derived by the same
+/// `default_intentions` rule: an authored [`pos`](Creature::pos) wins; otherwise a ranged creature holds
+/// the Rearguard, a creature whose Might meets its Toughness flanks as an Outrider, and the rest brace as
+/// a Vanguard. Pure derivation — no stored stance.
 pub fn creature_intention(c: &Creature) -> &'static str {
     if let Some(pos) = c.pos {
         pos
@@ -219,13 +216,13 @@ pub fn creature_intention(c: &Creature) -> &'static str {
 }
 
 /// A creature's **posture** — the one-word tell of *why* it is hard — read off its ability (itself the
-/// creature's signature mechanic): `armored`, `horde`, `ripostes`, or `evasive`.
+/// creature's signature mechanic): `armored`, `ripostes`, `swarming`, or `charging`.
 pub fn creature_posture(c: &Creature) -> &'static str {
     match c.ability {
-        "Immovable" => "armored",
-        "Overrun" => "horde",
+        "Bulwark" => "armored",
         "Riposte" => "ripostes",
-        "Feint" => "evasive",
+        "Overrun" => "swarming",
+        "Onslaught" => "charging",
         _ => "",
     }
 }
@@ -234,10 +231,10 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 /// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
-        "Immovable" => "Executioner", // armored -> one big blow (Jab, high Might)
-        "Overrun" => "Broadsider",    // horde -> area (Sweep)
-        "Riposte" => "Marksman",      // ripostes -> ranged (Shot), out of reach
-        "Feint" => "Phantom",         // evasive -> out-tempo (Jab, high Finesse)
+        "Bulwark" => "Bruiser",  // tough single -> concentrate a big blow (Jab)
+        "Riposte" => "Marksman", // hard-hitting single that mauls melee -> answer from range (Shot)
+        "Overrun" => "Reaver", // back-line horde -> a tough melee area survives the exchange (Sweep)
+        "Onslaught" => "Gunner", // front horde -> ranged area first-strikes it (Salvo)
         _ => "",
     }
 }
@@ -252,7 +249,7 @@ pub fn creature_ability_description(name: &str) -> &'static str {
 }
 
 /// A location **encounter** — the foes stationed at a place on the map. Two tiers, both keyed to the
-/// duel-locks creatures ([`CREATURES`]):
+/// four creatures ([`CREATURES`]):
 ///
 /// - A **solo** encounter (`party: false`) rings the inn: a single creature — its [`keystone`] — soloable
 ///   by the one kit that answers its lock. The four adjacent map cells.
@@ -278,30 +275,30 @@ pub const ENCOUNTERS: [Encounter; 8] = [
     // --- solos: one creature, soloable by its answering kit --------------------------------------
     Encounter {
         location: "Cinderwatch Keep",
-        title: "The Coiled Sentry",
-        flavor: "A watch-drake coiled in the ruined keep, lashing at anything within reach.",
-        keystone: "The Coil",
+        title: "The Keep Duelist",
+        flavor: "A blade-master holding the ruined keep, striking back at anyone who closes to melee.",
+        keystone: "The Duelist",
         party: false,
     },
     Encounter {
         location: "The Sundered Vault",
-        title: "The Vault Anvil",
-        flavor: "An armored warden set to guard the sundered vault, unmoved by lesser blows.",
-        keystone: "The Anvil",
+        title: "The Vault Warden",
+        flavor: "An armored warden set to guard the sundered vault, unmoved by all but the heaviest blow.",
+        keystone: "The Wall",
         party: false,
     },
     Encounter {
         location: "Thornmarch Gate",
         title: "The Thorn Swarm",
-        flavor: "A boiling mass of bramble-imps swarming the gate.",
+        flavor: "A boiling mass of bramble-imps loosing thorns from behind the gate.",
         keystone: "The Swarm",
         party: false,
     },
     Encounter {
         location: "The Salt Barrows",
-        title: "The Barrow Mirage",
-        flavor: "A grave-wraith drifting the salt barrows, never quite where it seems.",
-        keystone: "The Mirage",
+        title: "The Barrow Storm",
+        flavor: "A charging host of grave-risen boiling up out of the salt barrows, trampling all before them.",
+        keystone: "The Storm",
         party: false,
     },
     // --- corners: all four creatures, the keystone doubled ---------------------------------------
@@ -316,21 +313,21 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         location: "Greywater Ford",
         title: "Ambush at the Ford",
         flavor: "An ambush dug in at the crossing, ready to lash back at anything that wades in.",
-        keystone: "The Coil",
+        keystone: "The Duelist",
         party: true,
     },
     Encounter {
         location: "Emberfall Hollow",
-        title: "The Emberfall Beast",
+        title: "The Emberfall Bulwark",
         flavor: "A burning hollow guarded by something that will not fall to a single hand.",
-        keystone: "The Anvil",
+        keystone: "The Wall",
         party: true,
     },
     Encounter {
         location: "Ninefold Deep",
         title: "Horror of the Ninefold Deep",
-        flavor: "The deep shifts and feints; nothing down here holds still.",
-        keystone: "The Mirage",
+        flavor: "The deep churns and charges; a stampede boils up out of the dark.",
+        keystone: "The Storm",
         party: true,
     },
 ];

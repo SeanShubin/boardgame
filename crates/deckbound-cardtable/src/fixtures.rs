@@ -744,21 +744,21 @@ mod tests {
         assert_eq!(t.physical_card_count(place), 1 + 1);
     }
 
-    /// The creature read-outs are *derived*, and the derivation reproduces the duel-locks positions
-    /// (`duel-locks.ron` §4 `default_intentions`) exactly — so editing a stat re-derives the stance.
+    /// The creature read-outs are *derived*, and the derivation reproduces each creature's intended
+    /// position (the `default_intentions` rule) exactly — so editing a stat re-derives the stance.
     #[test]
-    fn creature_intention_reproduces_the_duel_locks_positions() {
+    fn creature_intention_reproduces_the_roster_positions() {
         let intent = |name: &str| catalog::creature_intention(catalog::creature(name).unwrap());
-        assert_eq!(intent("The Anvil"), "Vanguard"); // M1 < T5
-        assert_eq!(intent("The Swarm"), "Outrider"); // M1 >= T1
-        assert_eq!(intent("The Coil"), "Vanguard"); // authored pos override
-        assert_eq!(intent("The Mirage"), "Outrider"); // M6 >= T2
+        assert_eq!(intent("The Wall"), "Vanguard"); // M1 < T9
+        assert_eq!(intent("The Duelist"), "Vanguard"); // authored pos override
+        assert_eq!(intent("The Swarm"), "Rearguard"); // ranged
+        assert_eq!(intent("The Storm"), "Vanguard"); // authored pos override
         // Each creature's posture points at exactly one answering kit — the clean diagonal.
         let counter = |name: &str| catalog::creature_counter(catalog::creature(name).unwrap());
-        assert_eq!(counter("The Anvil"), "Executioner");
-        assert_eq!(counter("The Swarm"), "Broadsider");
-        assert_eq!(counter("The Coil"), "Marksman");
-        assert_eq!(counter("The Mirage"), "Phantom");
+        assert_eq!(counter("The Wall"), "Bruiser");
+        assert_eq!(counter("The Duelist"), "Marksman");
+        assert_eq!(counter("The Swarm"), "Reaver");
+        assert_eq!(counter("The Storm"), "Gunner");
     }
 
     /// Each non-inn place stations its encounter as a single **header** card — no physical foe cards. The
@@ -795,13 +795,13 @@ mod tests {
         let solo = header(place("The Sundered Vault"));
         let solo_detail = t.card(solo).unwrap().detail().join(" ");
         assert!(
-            solo_detail.contains("The Anvil"),
+            solo_detail.contains("The Wall"),
             "the solo header lists its keystone: {solo_detail}"
         );
         let corner = header(place("Emberfall Hollow"));
         let corner_detail = t.card(corner).unwrap().detail().join(" ");
         assert!(
-            corner_detail.contains("The Anvil x2"),
+            corner_detail.contains("The Wall x2"),
             "the corner header lists the doubled keystone: {corner_detail}"
         );
         // The Bestiary backs them with a `×4` stack per creature type (+ its Zone label).
@@ -819,7 +819,7 @@ mod tests {
         let total = t.card_count();
         let bestiary_before = t.physical_card_count(bestiary);
 
-        // A corner encounter fields all four creatures with the keystone (The Anvil) doubled → 5 real cards.
+        // A corner encounter fields all four creatures with the keystone (The Wall) doubled → 5 real cards.
         let foes = t
             .instantiate_from_bank(
                 bestiary,
@@ -843,12 +843,12 @@ mod tests {
             total,
             "instantiation split, minted nothing (PC.2)"
         );
-        let anvils = t
+        let walls = t
             .content_cards(arena)
             .iter()
-            .filter(|&&c| t.card(c).unwrap().name() == "The Anvil")
+            .filter(|&&c| t.card(c).unwrap().name() == "The Wall")
             .count();
-        assert_eq!(anvils, 2, "the doubled keystone fielded two");
+        assert_eq!(walls, 2, "the doubled keystone fielded two");
 
         // Return them: the Bestiary is made whole (merged back to `×4`), count conserved.
         t.return_foes_to_bestiary(&foes, bestiary).unwrap();
@@ -927,8 +927,8 @@ mod tests {
         (cdeck, name)
     }
 
-    /// A demo kit spec (the Executioner) for the recruit tests.
-    fn executioner() -> Recipe {
+    /// A demo kit spec (a Bruiser-style build) for the recruit tests.
+    fn demo_kit() -> Recipe {
         Recipe {
             stats: [6, 3, 1, 1, 1],
             ability: "Jab".into(),
@@ -940,7 +940,7 @@ mod tests {
     #[test]
     fn character_recipe_round_trips_a_recruited_build() {
         let mut t = sample_table();
-        let (cdeck, _name) = recruit(&mut t, 0, executioner());
+        let (cdeck, _name) = recruit(&mut t, 0, demo_kit());
         let recovered = t
             .character_recipe(cdeck, &deckbound::catalog::stat_names())
             .expect("a complete build");
@@ -987,7 +987,7 @@ mod tests {
         // Before: each hero is a ×4 stack in Heroes.
         assert_eq!(t.card(t.content_cards(heroes)[0]).unwrap().quantity(), 4);
 
-        let (cdeck, name) = recruit(&mut t, 0, executioner());
+        let (cdeck, name) = recruit(&mut t, 0, demo_kit());
         let copies_in = |t: &Tableau, pile: PileId| -> usize {
             t.content_cards(pile)
                 .iter()
@@ -1055,7 +1055,7 @@ mod tests {
         let places = t.pile(locations).unwrap().subpiles();
         let (ashfen, thornmarch) = (places[4], places[5]); // centre = the inn town; a neighbour
 
-        let (_cdeck, name) = recruit(&mut t, 0, executioner());
+        let (_cdeck, name) = recruit(&mut t, 0, demo_kit());
 
         // A hero copy stands at the inn town (map position); a move marker stands on Progress; Day 1.
         let named = |t: &Tableau, pile, n: &str| {
@@ -1230,16 +1230,16 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
-        assert_eq!(names, ["Executioner", "Broadsider", "Marksman", "Phantom"]);
+        assert_eq!(names, ["Bruiser", "Marksman", "Reaver", "Gunner"]);
         for &c in &starters {
             assert_eq!(t.card(c).unwrap().card_type(), "Kit");
         }
 
-        // The Executioner grows to its stat line + ability.
-        let executioner = t.card(starters[0]).unwrap();
-        assert!(executioner.detail().iter().any(|l| l.contains("Might 6")));
+        // The Bruiser grows to its stat line + ability.
+        let bruiser = t.card(starters[0]).unwrap();
+        assert!(bruiser.detail().iter().any(|l| l.contains("Might 7")));
         assert!(
-            executioner
+            bruiser
                 .detail()
                 .iter()
                 .any(|l| l.contains("Abilities: Jab"))

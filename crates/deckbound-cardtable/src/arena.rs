@@ -1343,7 +1343,7 @@ mod tests {
     use super::*;
     use crate::sample_table;
 
-    /// A recruited melee kit (Phantom carries Jab) must flag `Melee` (not `no strike`) on its combat card:
+    /// A recruited melee kit (Bruiser carries Jab) must flag `Melee` (not `no strike`) on its combat card:
     /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
     /// the "Dallen Rook shows no strike" regression - which can only occur if a card carries a stale,
     /// pre-reach detail line (a fight persisted by an older build), never from this live path.
@@ -1358,18 +1358,18 @@ mod tests {
         let kit = top_deck(&board, "Kit").unwrap();
         let hero = board.pile(heroes).unwrap().cards()[0];
         let hero_name = board.card(hero).unwrap().front_title().to_string();
-        let phantom = board
+        let bruiser = board
             .pile(kit)
             .unwrap()
             .cards()
             .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Phantom"))
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Bruiser"))
             .unwrap();
         CardTableGame.apply(
             &mut board,
             &[Intention::Equip {
                 identity: hero,
-                kit: phantom,
+                kit: bruiser,
             }],
         );
 
