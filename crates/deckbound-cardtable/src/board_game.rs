@@ -170,6 +170,11 @@ fn equip(board: &mut Tableau, identity: CardId, kit: CardId) {
     let Some(recipe) = board.card(kit).and_then(|c| c.recipe().cloned()) else {
         return;
     };
+    // The kit's name (its card title, e.g. "Bruiser") - tagged onto the hero afterward so its build shows.
+    let kit_name = board
+        .card(kit)
+        .map(|c| c.front_title().to_string())
+        .unwrap_or_default();
     let Some(name) = board.card(identity).map(|c| c.front_title().to_string()) else {
         return;
     };
@@ -183,17 +188,30 @@ fn equip(board: &mut Tableau, identity: CardId, kit: CardId) {
     ) else {
         return;
     };
-    let _ = board.equip_character(
-        &name,
-        &recipe,
-        &deckbound::catalog::stat_names(),
-        heroes,
-        stats,
-        numbers,
-        abilities,
-        home,
-        progress,
-    );
+    if board
+        .equip_character(
+            &name,
+            &recipe,
+            &deckbound::catalog::stat_names(),
+            heroes,
+            stats,
+            numbers,
+            abilities,
+            home,
+            progress,
+        )
+        .is_err()
+    {
+        return;
+    }
+    // Show the kit on the hero's map position card, so each recruited hero's build reads at a glance.
+    if let Some(pos) = board.content_cards(home).into_iter().find(|&c| {
+        board
+            .card(c)
+            .is_some_and(|k| k.card_type() == "hero" && k.front_title() == name)
+    }) {
+        let _ = board.set_card_detail(pos, vec![format!("Kit: {kit_name}")]);
+    }
 }
 
 fn unequip(board: &mut Tableau, label: CardId) {
@@ -388,6 +406,27 @@ mod tests {
         assert!(
             card_in(&board, kit, "Marksman").is_some(),
             "the kit stays in the Kit deck"
+        );
+        // The hero's map position card is tagged with the kit it took, so its build reads at a glance.
+        let home = home_location(&board).unwrap();
+        let pos = board
+            .content_cards(home)
+            .into_iter()
+            .find(|&c| {
+                board.card(c).is_some_and(|k| {
+                    k.card_type() == "hero" && k.front_title() == "Vael Thornbrand"
+                })
+            })
+            .expect("Vael's position card at the home location");
+        assert!(
+            board
+                .card(pos)
+                .unwrap()
+                .detail()
+                .iter()
+                .any(|l| l.contains("Kit: Marksman")),
+            "the hero card shows its taken kit: {:?}",
+            board.card(pos).unwrap().detail()
         );
     }
 
