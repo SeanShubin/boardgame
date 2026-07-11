@@ -21,6 +21,7 @@ use cardtable_model::{CardId, CardKind, PileId, Tableau};
 use deckbound::actor::Intention as Rank;
 use deckbound::combat::{SCHEDULE, SUB_PHASE_NAMES};
 
+use crate::battle::{Greedy, Policy};
 use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
 
 /// The top-level zone a fight lives in while it runs.
@@ -661,57 +662,10 @@ fn pairs_line(sub: usize) -> String {
 }
 
 // ---- the greedy AI (foe side always; party side when nothing is staged) --------------------------------
-
-/// Party-agnostic greedy plan for `side`'s catches in sub-phase `sub`: each living unit catches the first
-/// living enemy it may legally reach (SCHEDULE), bidding the minimum tempo to land.
-fn greedy_catches(units: &[Combatant], side: Side, sub: usize) -> Vec<Catch> {
-    let mut catches = Vec::new();
-    for (i, u) in units.iter().enumerate() {
-        if u.fallen
-            || u.side != side
-            || u.tempo == 0
-            || !combat::effective_in_rank(u.rank, u.melee, u.ranged)
-        {
-            continue;
-        }
-        if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
-            if v.fallen
-                || v.side == side
-                || !combat::legal_catch(sub, u.rank, v.rank)
-                || !combat::back_access_ok(units, u.rank, j)
-            {
-                return None;
-            }
-            // An area strike is unevadable and costs one card; a single strike bids the minimum to land.
-            let need = if u.aoe {
-                1
-            } else {
-                v.finesse.div_ceil(u.finesse.max(1)).max(1)
-            };
-            (need <= u.tempo).then_some((j, need))
-        }) {
-            catches.push(Catch {
-                attacker: i,
-                target: t,
-                cards,
-            });
-        }
-    }
-    catches
-}
-
-/// Greedy extra strikes for `side`: each still-contacted unit dumps its remaining tempo on its contact.
-fn greedy_extras(units: &[Combatant], side: Side, surviving: &[Contact]) -> Vec<ExtraStrike> {
-    surviving
-        .iter()
-        .filter(|c| units[c.attacker].side == side && units[c.attacker].tempo > 0)
-        .map(|c| ExtraStrike {
-            attacker: c.attacker,
-            target: c.target,
-            cards: units[c.attacker].tempo,
-        })
-        .collect()
-}
+//
+// The party-agnostic greedy catch / extra logic is [`battle::Greedy`] (the tooling policy); the arena reuses
+// it here for the foe (always) and the party fallback, so there is a single implementation of the greedy plan.
+// (The arena's *react* is simpler than the policy's - the greedy foe just eats; see the React step.)
 
 /// The party's staged catches (aim + bid on party units), keeping only ones the SCHEDULE permits.
 fn party_catches(board: &Tableau, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Catch> {
@@ -960,9 +914,9 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
         Step::Catch => {
             let mut catches = party_catches(board, &cards, &units, sub);
             if catches.is_empty() {
-                catches = greedy_catches(&units, Side::Party, sub);
+                catches = Greedy.catches(&units, Side::Party, sub);
             }
-            catches.extend(greedy_catches(&units, Side::Foe, sub));
+            catches.extend(Greedy.catches(&units, Side::Foe, sub));
             let contacts = combat::resolve_catch(&mut units, &catches);
             writeback(board, &units); // clears the staged catch plan
             write_contacts(board, arena, &cards, &contacts);
@@ -1001,9 +955,9 @@ pub fn commit(board: &mut Tableau, arena: PileId) -> bool {
             let surviving = read_contacts(board, arena, &cards);
             let mut extras = party_extras(board, &cards, &units, &surviving);
             if extras.is_empty() {
-                extras = greedy_extras(&units, Side::Party, &surviving);
+                extras = Greedy.extras(&units, Side::Party, &surviving);
             }
-            extras.extend(greedy_extras(&units, Side::Foe, &surviving));
+            extras.extend(Greedy.extras(&units, Side::Foe, &surviving));
             combat::resolve_extra(&mut units, &extras);
             combat::end_sub_phase(&mut units);
             clear_contacts(board, arena);
