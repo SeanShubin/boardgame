@@ -20,11 +20,11 @@
 
 2. **Volley** — The back fires on the flankers: each Rearguard shoots an enemy Outrider — before it arrives (the pre-empt). A shot spent here is a shot not fired at the enemy front later.
 
-3. **Raid** — Surviving Outriders strike the enemy Rearguard they crossed for. The breaker that got through the Intercept and Volley lands on the exposed back. This is the Outrider's ONE offensive slot, and its target is a priority, not a fixed rank: the Rearguard, else the Vanguard, else another Outrider. An Outrider that crossed for a back line the enemy never fielded does not stand idle beside the foe in front of it - it falls on the front, here, in its own slot. It has already paid for crossing (it was exposed to the Intercept and the Volley): the declaration fixes what happens TO you, the field fixes what you DO. Only the Outrider re-aims, and only it needs to - a Vanguard and a Rearguard each get a separate slot against each rank, so an empty enemy rank merely costs them an opportunity they never had, with nothing to re-aim to.
+3. **Raid** — Surviving Outriders strike the enemy Rearguard they crossed for. The breaker that got through the Intercept and Volley lands on the exposed back. This is the Outrider's EARLY slot, and the whole of what the role buys: every other role reaches the enemy back last, at the Breach. If the enemy fielded no Rearguard the pairing is simply void - as it is for any role facing an empty rank - and the Outrider strikes with its remaining two slots, at the Breach, like everyone else. A misdeclared intent is punished by timing, not silence.
 
 4. **Clash** — The lines meet: each Rearguard fires on an enemy Vanguard (the only answer to its Toughness), and each engaging Vanguard strikes an enemy Vanguard. Untyped Might banks into the per-sub-phase pile; clearing the target's Toughness flips a Health card.
 
-5. **Breach** — The deep, trailing blows land last: a Vanguard crosses to an enemy Rearguard whose own front has fallen. Nothing else. Outriders do not appear here - they re-aim in their own slot at Raid, so a Breach fallback would be a second bite, and the Outrider gets exactly one.
+5. **Breach** — The deep, trailing blows land last: a Vanguard or a Rearguard crosses to an enemy Rearguard whose own front has fallen, and the Outriders - who reached the back early - arrive here for everything else, striking the enemy front and each other.
 
 ## Cross-cutting behaviors
 

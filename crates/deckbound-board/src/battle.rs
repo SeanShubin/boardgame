@@ -104,7 +104,7 @@ impl Policy for Greedy {
             if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
                 if v.fallen
                     || v.side == side
-                    || !combat::legal_catch(units, sub, u.rank, u.side, v.rank)
+                    || !combat::legal_catch(sub, u.rank, v.rank)
                     || !combat::back_access_ok(units, u.rank, j)
                 {
                     return None;

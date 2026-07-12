@@ -820,30 +820,20 @@ fn target_candidates(
     def_int: &[Intention],
 ) -> Vec<TargetOption> {
     let is_outrider = atk_role == Intention::Outrider;
-    // A target is a **priority**, not a fixed rank: the attacker strikes the first rank in its list that has
-    // anything living and reachable in it. Only the Outrider names more than one — it crossed for the enemy
-    // Rearguard, and if there is none it falls on the front rather than standing idle. Both engines must
-    // resolve this through `schedule::target_rank`, or they stop walking the same schedule.
-    let live_and_reachable = |t: Intention| {
-        policy::can_reach(is_outrider, t, def, def_int)
-            && def
-                .iter()
-                .enumerate()
-                .any(|(j, u)| !u.is_down() && def_int.get(j) == Some(&t))
-    };
-    let Some(t) = deckbound_content::schedule::target_rank(step_idx, atk_role, live_and_reachable)
-    else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for (j, u) in def.iter().enumerate() {
-        if !u.is_down() && def_int.get(j) == Some(&t) {
-            out.push(TargetOption {
-                ti: j,
-                role: t,
-                name: u.name.clone(),
-                health: u.defense.health.remaining(),
-            });
+    for &(a, t) in SCHEDULE[step_idx] {
+        if a != atk_role || !policy::can_reach(is_outrider, t, def, def_int) {
+            continue;
+        }
+        for (j, u) in def.iter().enumerate() {
+            if !u.is_down() && def_int.get(j) == Some(&t) {
+                out.push(TargetOption {
+                    ti: j,
+                    role: t,
+                    name: u.name.clone(),
+                    health: u.defense.health.remaining(),
+                });
+            }
         }
     }
     out
@@ -1216,19 +1206,11 @@ pub use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 /// in the bundled UI font (which has no box-drawing / arrow glyphs).
 fn sub_phase_header(idx: usize) -> String {
     let name = SUB_PHASE_NAMES.get(idx).copied().unwrap_or("?");
-    // A target is a *priority*, not one rank: an attacker takes the first of them that is on the field. Only
-    // the Outrider names more than one (it crossed for the Rearguard; failing that it falls on the front), so
-    // spell that out rather than printing a bare list.
     let pairs = SCHEDULE
         .get(idx)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|(a, targets)| {
-                    let ts: Vec<String> =
-                        targets.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>();
-                    format!("{a:?} -> {}", ts.join(", else "))
-                })
+        .map(|ps| {
+            ps.iter()
+                .map(|p| format!("{:?} -> {:?}", p.0, p.1))
                 .collect::<Vec<_>>()
                 .join(", ")
         })

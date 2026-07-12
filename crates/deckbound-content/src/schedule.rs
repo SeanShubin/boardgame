@@ -4,66 +4,55 @@
 
 use crate::rank::Intention;
 
-/// §4.6 — the fixed **sub-phase schedule**: five sub-phases, each a list of `(attacker, target priority)`
-/// entries resolved in order. This is the single source of truth shared by the sample resolver and the
+/// §4.6 — the fixed **sub-phase schedule**: five sub-phases, each a list of `(attacker, target)` role
+/// pairs resolved in order. This is the single source of truth shared by the sample resolver and the
 /// steppable machine — they must walk it identically.
 ///
-/// A target is not a single rank but an **ordered preference**: an attacker strikes the first rank in its
-/// list that has anything reachable in it (see [`target_rank`]). Most entries name one rank and so are
-/// simply "attacks that rank, or nobody".
+/// **It is a complete 3x3.** Every role gets exactly **one slot against each enemy rank** — the spec's
+/// invariant that *every legal pair appears exactly once*:
 ///
-/// **The Outrider is why.** Declaring Outrider is a statement of intent — *go for the Rearguard first, then
-/// the Vanguard, then the other Outriders* — and it is the only role whose one offensive slot (Raid) can be
-/// voided by the enemy simply not fielding the rank it crossed for. A Vanguard and a Rearguard each get a
-/// separate slot against each rank (Intercept / Clash / Breach), so an empty rank costs them an opportunity
-/// they never had; there is nothing to re-aim *to*. The Outrider has one, and standing idle beside a foe
-/// because the back line it wanted does not exist is the one moment the game would say "you may not react to
-/// what you see" — which contradicts its own rule that *your declaration fixes what happens **to** you, the
-/// field fixes what you **do***.
+/// |               | -> Vanguard | -> Outrider   | -> Rearguard |
+/// |---------------|-------------|---------------|--------------|
+/// | **Vanguard**  | Clash       | **Intercept** | Breach       |
+/// | **Outrider**  | Breach      | Breach        | **Raid**     |
+/// | **Rearguard** | Clash       | **Volley**    | Breach       |
 ///
-/// So the cascade is **data, not an exception**: every entry has a priority list, the Outrider's simply has
-/// three ranks in it. And it re-aims **in its own slot** (Raid), rather than waiting for a late fallback —
-/// which is why Breach no longer carries `O->V` / `O->O`. The Outrider has exactly one offensive slot; it is
-/// never a second bite.
-pub const SCHEDULE: &[&[(Intention, &[Intention])]] = {
+/// So the schedule does not decide *who may strike whom* — everyone may eventually strike everyone. It
+/// decides **when**. That is the whole of the interception / pre-empt machinery, and it is the Outrider's
+/// signature: its **Rearguard** slot comes **early** (the Raid, 3rd) while every other role reaches the back
+/// **last** (the Breach). It pays for that with total exposure first — the enemy front screens it (Intercept)
+/// and the enemy back shoots it (Volley) before it lands. Tempo is the single budget across all three slots,
+/// so no role can actually take every opportunity it is offered.
+///
+/// **An empty target rank simply voids that pairing — for every role, with no exception.** A Vanguard facing
+/// no enemy Outriders loses its Intercept; a Rearguard facing none loses its Volley; an Outrider facing no
+/// enemy Rearguard loses its Raid — and, exactly like the others, still has its remaining two slots in the
+/// Breach. A misdeclared intent is punished by *timing*, not by silence: you crossed for a back line that was
+/// not there, you ate the Intercept for it, and your blows now land **last**.
+///
+/// (An earlier version made the Raid *re-aim* down a priority list and deleted the Outrider's Breach pairs.
+/// That was a mistake: it left the Outrider with one slot while the other roles kept three, on the false
+/// premise that it had no other slot to fall back on. The real defect was that the log made a voided pairing
+/// look like the unit had done nothing all round.)
+pub const SCHEDULE: &[&[(Intention, Intention)]] = {
     use Intention::{Outrider, Rearguard, Vanguard};
     &[
-        &[(Vanguard, &[Outrider] as &[Intention])], // Intercept — the front screens the flankers
-        &[(Rearguard, &[Outrider])],                // Volley — the back fires on the flankers
-        // Raid — the Outrider's one offensive slot. It crossed for the Rearguard; failing that it falls on
-        // the front; failing that, on whoever else crossed.
-        &[(Outrider, &[Rearguard, Vanguard, Outrider])],
-        &[(Rearguard, &[Vanguard]), (Vanguard, &[Vanguard])], // Clash — the lines meet
+        &[(Vanguard, Outrider)],  // Intercept - the front screens the crossers
+        &[(Rearguard, Outrider)], // Volley - the back shoots the crossers (pre-empt)
+        &[(Outrider, Rearguard)], // Raid - the flanker strikes the exposed back
+        &[(Rearguard, Vanguard), (Vanguard, Vanguard)], // Clash - the lines meet
         &[
-            (Vanguard, &[Rearguard]),
-            // §4.6 conditional pair: a Rearguard fires on the enemy back-line, but **only once the
-            // enemy Vanguard has fallen** (the dropped screen opens the back). Gated by the back-access
-            // rule in `policy::can_reach`, so it is a no-op while the enemy front lives.
-            (Rearguard, &[Rearguard]),
+            // The deep / trailing blows land last. `V->R` and `R->R` pour through a *broken* line: both are
+            // gated by the back-access rule (the target's Vanguard must have fallen), so they are no-ops
+            // while the enemy front stands. The Outrider's other two slots sit here — it reached the back
+            // early, and pays for that by reaching everything else late.
+            (Vanguard, Rearguard),
+            (Outrider, Vanguard),
+            (Outrider, Outrider),
+            (Rearguard, Rearguard),
         ], // Breach
     ]
 };
-
-/// The rank an attacker of rank `atk` actually strikes in sub-phase `sub`: the **first** rank in its target
-/// priority that `reachable` accepts. `None` if it has no entry this sub-phase, or nothing it wants is there.
-///
-/// `reachable(rank)` answers "is there a living enemy in that rank that this attacker can actually get at" —
-/// which includes the back-access screen, and is why it is the caller's to supply: each engine knows its own
-/// units. Both engines must resolve targets through this one function, or they stop walking the same schedule.
-pub fn target_rank(
-    sub: usize,
-    atk: Intention,
-    reachable: impl Fn(Intention) -> bool,
-) -> Option<Intention> {
-    SCHEDULE
-        .get(sub)?
-        .iter()
-        .find(|(a, _)| *a == atk)?
-        .1
-        .iter()
-        .copied()
-        .find(|&t| reachable(t))
-}
 
 /// The §4.6 sub-phase names, indexed by [`SCHEDULE`] position.
 pub const SUB_PHASE_NAMES: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
@@ -73,57 +62,53 @@ mod tests {
     use super::*;
     use Intention::{Outrider, Rearguard, Vanguard};
 
-    const RAID: usize = 2;
-    const BREACH: usize = 4;
-
-    /// The Outrider crossed for the Rearguard, so it takes one when there is one.
+    /// **The schedule is a complete 3x3: every legal pair appears exactly once.** This is the spec's own
+    /// invariant, and it is what makes the roles symmetric — each gets one slot against each enemy rank, and
+    /// only the *timing* differs. Breaking it (as an earlier cascade did, by deleting the Outrider's Breach
+    /// pairs) silently leaves one role with fewer opportunities than the others.
     #[test]
-    fn an_outrider_raids_the_rearguard_when_there_is_one() {
-        let all_there = |_r| true;
-        assert_eq!(target_rank(RAID, Outrider, all_there), Some(Rearguard));
-    }
-
-    /// With no enemy Rearguard, it does not stand idle beside the foe in front of it — it falls on the front.
-    /// This is the hole the cascade closes: the strike used to be skipped ("no legal target") and the unit
-    /// did nothing until Breach.
-    #[test]
-    fn a_stranded_outrider_falls_on_the_front_in_its_own_slot() {
-        let no_back_line = |r| r != Rearguard;
-        assert_eq!(target_rank(RAID, Outrider, no_back_line), Some(Vanguard));
-
-        // ...and failing even that, on whoever else crossed.
-        let only_outriders = |r| r == Outrider;
-        assert_eq!(target_rank(RAID, Outrider, only_outriders), Some(Outrider));
-
-        // With nothing at all left, it strikes nothing (rather than something it was never aimed at).
-        assert_eq!(target_rank(RAID, Outrider, |_| false), None);
-    }
-
-    /// **No double dip.** The Outrider re-aims in its own slot, so Breach must not hand it a second bite: its
-    /// old `O->V` / `O->O` fallback pairs are gone.
-    #[test]
-    fn breach_gives_the_outrider_no_second_strike() {
-        assert_eq!(target_rank(BREACH, Outrider, |_| true), None);
-    }
-
-    /// A Vanguard and a Rearguard need no cascade: each already has a separate slot per rank, so an empty
-    /// rank costs an opportunity they never had. Their entries name exactly one target.
-    #[test]
-    fn the_other_roles_name_exactly_one_target_each() {
-        for (sub, entries) in SCHEDULE.iter().enumerate() {
-            for (atk, targets) in entries.iter() {
-                if *atk != Outrider {
-                    assert_eq!(
-                        targets.len(),
-                        1,
-                        "sub-phase {sub}: {atk:?} should name exactly one target, got {targets:?}"
-                    );
-                }
+    fn every_legal_pair_appears_exactly_once() {
+        let mut seen: Vec<(Intention, Intention)> = Vec::new();
+        for pairs in SCHEDULE {
+            for &p in *pairs {
+                assert!(!seen.contains(&p), "{p:?} appears twice in the schedule");
+                seen.push(p);
             }
         }
-        assert_eq!(target_rank(0, Vanguard, |_| true), Some(Outrider)); // Intercept
-        assert_eq!(target_rank(1, Rearguard, |_| true), Some(Outrider)); // Volley
-        // An empty rank simply costs the opportunity - there is nothing to re-aim to.
-        assert_eq!(target_rank(0, Vanguard, |r| r != Outrider), None);
+        assert_eq!(seen.len(), 9, "3 attacker ranks x 3 target ranks");
+        for a in [Vanguard, Outrider, Rearguard] {
+            for t in [Vanguard, Outrider, Rearguard] {
+                assert!(seen.contains(&(a, t)), "{a:?} -> {t:?} is never scheduled");
+            }
+        }
+    }
+
+    /// Each role reaches the enemy **back** at a different time — and that difference *is* the Outrider.
+    #[test]
+    fn only_the_outrider_reaches_the_back_early() {
+        let slot = |a: Intention, t: Intention| {
+            SCHEDULE
+                .iter()
+                .position(|pairs| pairs.contains(&(a, t)))
+                .expect("every pair is scheduled")
+        };
+        const RAID: usize = 2;
+        const BREACH: usize = 4;
+
+        assert_eq!(
+            slot(Outrider, Rearguard),
+            RAID,
+            "the raid is early - the point of the role"
+        );
+        assert_eq!(
+            slot(Vanguard, Rearguard),
+            BREACH,
+            "everyone else reaches the back last"
+        );
+        assert_eq!(slot(Rearguard, Rearguard), BREACH);
+
+        // ...and it pays for that by reaching everything else last.
+        assert_eq!(slot(Outrider, Vanguard), BREACH);
+        assert_eq!(slot(Outrider, Outrider), BREACH);
     }
 }

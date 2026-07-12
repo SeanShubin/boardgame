@@ -214,7 +214,7 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
             for (j, v) in units.iter().enumerate() {
                 if v.fallen
                     || v.side == Side::Party
-                    || !combat::legal_catch(units, sub, u.rank, u.side, v.rank)
+                    || !combat::legal_catch(sub, u.rank, v.rank)
                     || !combat::back_access_ok(units, u.rank, j)
                 {
                     continue;

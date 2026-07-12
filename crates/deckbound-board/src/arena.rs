@@ -655,19 +655,15 @@ fn rotate_deck(board: &mut Board, arena: PileId, label: &str) {
     }
 }
 
-/// The sub-phase's legal `attacker>target` rank codes (e.g. `"V>O"`). An attacker with a target *priority*
-/// shows the whole list — the Outrider's Raid reads `O>R|V|O`: it takes the first of those that is there.
+/// The sub-phase's legal `attacker>target` rank pairs as first-letter codes (e.g. `"V>O,R>V"`).
 fn pairs_line(sub: usize) -> String {
     let letter = |r: Rank| r.label().chars().next().unwrap_or('?');
     SCHEDULE
         .get(sub)
-        .map(|entries| {
-            entries
+        .map(|pairs| {
+            pairs
                 .iter()
-                .map(|(a, targets)| {
-                    let ts: Vec<String> = targets.iter().map(|t| letter(*t).to_string()).collect();
-                    format!("{}>{}", letter(*a), ts.join("|"))
-                })
+                .map(|(a, t)| format!("{}>{}", letter(*a), letter(*t)))
                 .collect::<Vec<_>>()
                 .join(",")
         })
@@ -695,7 +691,7 @@ fn party_catches(board: &Board, cards: &[CardId], units: &[Combatant], sub: usiz
             continue;
         };
         if let Some(t) = cards.iter().position(|&c| c == aim)
-            && combat::legal_catch(units, sub, u.rank, u.side, units[t].rank)
+            && combat::legal_catch(sub, u.rank, units[t].rank)
             && combat::back_access_ok(units, u.rank, t)
         {
             catches.push(Catch {
@@ -731,24 +727,42 @@ fn party_extras(
 
 // ---- committing one step ------------------------------------------------------------------------------
 
-/// Whether the fight is over, and who won (`Some(true)` = party). A side loses when all its units are fallen;
-/// heroes still in the Pool (not yet ranked, during Marshal) count as living party members.
-pub fn outcome(board: &Board, arena: PileId) -> Option<bool> {
-    let (_, units, _, _, _) = arena_state(board, arena);
+/// How a fight ended. A battle is decided by breaking a line - or, failing that, by the clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Every foe is fallen.
+    Victory,
+    /// Every hero is fallen.
+    Defeat,
+    /// Neither line broke within the round cap: the two sides disengage.
+    Draw,
+}
+
+/// Whether the fight is over, and how. A side loses when all its units are fallen; heroes still in the Pool
+/// (not yet ranked, during Marshal) count as living party members. If both lines still stand once the
+/// **round cap** is spent, the fight is a [`Outcome::Draw`] - the same cap the batch resolver honours
+/// ([`crate::battle::MAX_ROUNDS`]), so the two engines end a stalemate at the same moment.
+pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
+    let (_, units, _, round, _) = arena_state(board, arena);
     let party_alive = units.iter().any(|u| u.side == Side::Party && !u.fallen)
         || !pool_heroes(board, arena).is_empty();
     let foes_alive = units.iter().any(|u| u.side == Side::Foe && !u.fallen);
     match (party_alive, foes_alive) {
+        (false, _) => Some(Outcome::Defeat),
+        (true, false) => Some(Outcome::Victory),
+        // The round counter is bumped as each new round opens, so it reads `MAX_ROUNDS + 1` exactly when the
+        // last permitted round has finished with both lines intact.
+        (true, true) if round as usize > crate::battle::MAX_ROUNDS => Some(Outcome::Draw),
         (true, true) => None,
-        (won, _) => Some(won),
     }
 }
 
 /// The label for the Commit control, given the current step (or the fight's decision).
 pub fn commit_label(board: &Board, arena: PileId) -> &'static str {
     match outcome(board, arena) {
-        Some(true) => "Victory - leave",
-        Some(false) => "Defeat - leave",
+        Some(Outcome::Victory) => "Victory - leave",
+        Some(Outcome::Defeat) => "Defeat - leave",
+        Some(Outcome::Draw) => "Draw - leave",
         None => match arena_state(board, arena).4 {
             Step::Marshal => {
                 if formation_complete(board, arena) {
@@ -778,7 +792,7 @@ pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
                         && !v.fallen
-                        && combat::legal_catch(&units, sub, u.rank, u.side, v.rank)
+                        && combat::legal_catch(sub, u.rank, v.rank)
                         && combat::back_access_ok(&units, u.rank, j)
                 })
         }),
@@ -1099,13 +1113,8 @@ fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usi
         units[active].rank,
         units[active].melee,
         units[active].ranged,
-    ) || !combat::legal_catch(
-        units,
-        sub,
-        units[active].rank,
-        units[active].side,
-        units[foe].rank,
-    ) || !combat::back_access_ok(units, units[active].rank, foe)
+    ) || !combat::legal_catch(sub, units[active].rank, units[foe].rank)
+        || !combat::back_access_ok(units, units[active].rank, foe)
     {
         return;
     }
@@ -1408,7 +1417,7 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
 
 /// **Fold the fight back** after a decision: on a **win** the encounter is cleared; the fight spends a day.
 pub fn fold_back(board: &mut Board, arena: PileId) {
-    let won = outcome(board, arena) == Some(true);
+    let won = outcome(board, arena) == Some(Outcome::Victory);
     teardown(board, arena, won, true);
 }
 
@@ -1613,6 +1622,24 @@ mod tests {
         );
     }
 
+    /// The five-round cap is the fight's clock: two lines that cannot break each other part as a draw. Without
+    /// it a stalemate walks forever, and the batch resolver (which does cap) would disagree with the arena.
+    #[test]
+    fn the_round_cap_ends_an_unbroken_fight_in_a_draw() {
+        let mut board = sample_table();
+        let arena = open_a_fight(&mut board);
+        commit(&mut board, arena); // leave Marshal; both lines are intact and standing
+        assert_eq!(outcome(&board, arena), None, "the fight is still live");
+
+        set_round(&mut board, arena, crate::battle::MAX_ROUNDS as u32 + 1);
+        assert_eq!(
+            outcome(&board, arena),
+            Some(Outcome::Draw),
+            "past the cap with both lines standing"
+        );
+        assert_eq!(commit_label(&board, arena), "Draw - leave");
+    }
+
     #[test]
     fn cancel_tears_the_arena_down_leaving_the_encounter_intact() {
         let mut board = sample_table();
@@ -1656,8 +1683,7 @@ mod tests {
         let (cards, units, sub, _, _) = arena_state(&board, arena);
         let pi = units.iter().position(|u| u.side == Side::Party).unwrap();
         if let Some(fi) = (0..units.len()).find(|&j| {
-            units[j].side == Side::Foe
-                && combat::legal_catch(&units, sub, units[pi].rank, units[pi].side, units[j].rank)
+            units[j].side == Side::Foe && combat::legal_catch(sub, units[pi].rank, units[j].rank)
         }) {
             handle_tap(&mut board, cards[pi]); // select active
             assert!(staged_of(&board, cards[pi]).active);
