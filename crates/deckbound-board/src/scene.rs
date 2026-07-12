@@ -224,7 +224,9 @@ fn build_lanes(
                 continue;
             }
             let sel = sel_of(cards, units, staged, contacts, active, sub, step, i);
-            let tile = lane_tile(board, cards, units, staged, maxes, i, sel);
+            let tile = lane_tile(
+                board, cards, units, staged, maxes, contacts, active, sub, step, i, sel,
+            );
             if units[i].side == Side::Party {
                 left.push(tile);
             } else {
@@ -344,12 +346,17 @@ fn sel_of(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lane_tile(
     board: &Board,
     cards: &[CardId],
     units: &[Combatant],
     staged: &[Staged],
     maxes: &[u32],
+    contacts: &[Contact],
+    active: Option<usize>,
+    sub: usize,
+    step: Step,
     i: usize,
     sel: Highlight,
 ) -> Tile {
@@ -390,7 +397,46 @@ fn lane_tile(
         highlight: sel,
         badges,
         draggable: false,
-        tappable: true,
+        // Only tiles a tap will actually *do* something to are tappable. Every tile used to invite a tap, so
+        // clicking the three heroes nobody had struck did nothing at all, silently - and an affordance that
+        // does nothing is the same lie as a choice with no reason attached (0.8): it teaches nothing and
+        // reads as a bug. At React that means only the heroes actually under fire.
+        tappable: tap_is_live(units, contacts, active, sub, step, i),
+    }
+}
+
+/// Whether tapping unit `i` right now does anything — mirrors `arena::handle_tap`, so what the screen offers
+/// and what the game accepts cannot drift apart.
+fn tap_is_live(
+    units: &[Combatant],
+    contacts: &[Contact],
+    active: Option<usize>,
+    sub: usize,
+    step: Step,
+    i: usize,
+) -> bool {
+    let u = &units[i];
+    if u.fallen {
+        return false;
+    }
+    let party = u.side == Side::Party;
+    match step {
+        Step::Marshal => party,
+        Step::Catch => {
+            if party {
+                // Select it (or raise its bid) — but only a body that carries a usable strike here.
+                u.tempo > 0 && combat::effective_in_rank(u.rank, u.melee, u.ranged)
+            } else {
+                // A foe is tappable only as something the *armed* attacker can legally aim at.
+                active.is_some_and(|a| {
+                    combat::legal_catch(units, sub, units[a].rank, units[a].side, u.rank)
+                        && combat::back_access_ok(units, units[a].rank, i)
+                })
+            }
+        }
+        // Only a hero actually struck has an answer to choose.
+        Step::React => party && contacts.iter().any(|c| c.target == i),
+        Step::Extra => party && u.tempo > 0 && contacts.iter().any(|c| c.attacker == i),
     }
 }
 
@@ -738,5 +784,52 @@ mod tests {
             s.tracks.iter().any(|t| t.title == "Step"),
             "the Step track appears once the schedule is running"
         );
+    }
+}
+
+#[cfg(test)]
+mod tap_tests {
+    use super::*;
+    use crate::combat::Side;
+    use deckbound_content::rank::Intention as Rank;
+
+    fn unit(name: &str, side: Side, rank: Rank) -> Combatant {
+        let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, true, false);
+        c.tempo = 2;
+        c
+    }
+
+    /// **A tile that will not answer a tap must not invite one.** At React only the heroes actually under
+    /// fire have an answer to choose; tapping the rest used to do nothing at all, silently — which is the same
+    /// lie as an option with no reason attached, and it is exactly what made "only Raider is selectable, but I
+    /// see no options" so baffling.
+    #[test]
+    fn at_react_only_a_struck_hero_is_tappable() {
+        let units = vec![
+            unit("Raider", Side::Party, Rank::Outrider), // 0 - struck
+            unit("Bastion", Side::Party, Rank::Vanguard), // 1 - untouched
+            unit("The Wall", Side::Foe, Rank::Vanguard), // 2 - the attacker
+        ];
+        let contacts = vec![Contact {
+            attacker: 2,
+            target: 0,
+            bid: 2,
+        }];
+        let live = |i| tap_is_live(&units, &contacts, None, 0, Step::React, i);
+
+        assert!(live(0), "the struck hero picks its answer");
+        assert!(!live(1), "a hero nobody struck has nothing to answer");
+        assert!(!live(2), "you do not tap the foe that hit you");
+    }
+
+    /// A fallen body answers nothing and aims nothing, whatever the step.
+    #[test]
+    fn a_fallen_body_is_never_tappable() {
+        let mut units = vec![unit("Raider", Side::Party, Rank::Outrider)];
+        units[0].fallen = true;
+        let contacts = vec![];
+        for step in [Step::Marshal, Step::Catch, Step::React, Step::Extra] {
+            assert!(!tap_is_live(&units, &contacts, None, 0, step, 0));
+        }
     }
 }

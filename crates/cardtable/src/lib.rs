@@ -2123,6 +2123,12 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 if !scene.prompt.is_empty() {
                     spawn_prompt_line(main, &scene.prompt);
                 }
+                // The body **takes the leftover space and clips**. Only the body: the decision and the log
+                // that explains it must never be pushed out of sight by a tall formation, which is exactly
+                // what happened when they lived in here — Bevy's `Overflow::scroll_y` only *clips*, it does
+                // not scroll (nothing drives a `ScrollPosition` on this node), so anything below the fold was
+                // not merely out of view, it was unreachable. A player could be asked a question they could
+                // not see.
                 main.spawn(Node {
                     width: Val::Percent(100.0),
                     flex_grow: 1.0,
@@ -2131,23 +2137,31 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::FlexStart,
                     row_gap: Val::Px(8.0),
-                    padding: UiRect::bottom(Val::Px(56.0)),
-                    overflow: Overflow::scroll_y(),
+                    overflow: Overflow::clip(),
                     ..default()
                 })
-                .with_children(|mid| {
-                    match &scene.body {
-                        SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
-                        SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
-                    }
-                    // The decision being asked for, immediately above the log that explains it: one small
-                    // card per option, each carrying its own consequence. The renderer draws them without
-                    // knowing what any of them mean.
+                .with_children(|mid| match &scene.body {
+                    SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
+                    SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
+                });
+
+                // The decision, and under it the log that explains it — anchored above the footer, always
+                // visible, never squeezed out by the body above (`flex_shrink: 0`).
+                main.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_shrink: 0.0,
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(8.0),
+                    padding: UiRect::bottom(Val::Px(56.0)), // clear the pinned footer bar
+                    ..default()
+                })
+                .with_children(|bottom| {
                     if !scene.choices.is_empty() {
-                        spawn_choice_row(mid, &scene.choices);
+                        spawn_choice_row(bottom, &scene.choices);
                     }
                     if !scene.log.is_empty() {
-                        spawn_log_panel(mid, &scene.log);
+                        spawn_log_panel(bottom, &scene.log);
                     }
                 });
             });
