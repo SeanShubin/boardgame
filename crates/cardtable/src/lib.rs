@@ -2827,12 +2827,13 @@ fn build_ui(
                                             tree.card(c).is_some_and(|k| k.card_type() == "hero")
                                         })
                                         .collect();
-                                    // Tall enough for the place card plus one title strip per stationed token.
-                                    let cell_h = SMALL_H + tokens.len() as f32 * TITLE_OFFSET;
+                                    // The cell is the cascade's **union box** (the model's cascade_footprint):
+                                    // the place card plus one title strip per stationed token. Because this
+                                    // whole box is the PileDropZone, its green drop-target glow wraps the full
+                                    // stack, not just the top card - dropping a token anywhere over the place
+                                    // *or its stacked tokens* moves the character here.
+                                    let cell_h = card_layout::cascade_footprint(tokens.len()).y;
                                     grid.spawn((
-                                        // The whole cascade is one drop target: dropping a token anywhere over
-                                        // the place *or its stacked tokens* moves the character here, and the
-                                        // drop-target glow wraps the full stack rather than just the top card.
                                         PileDropZone(place),
                                         Node {
                                             position_type: PositionType::Relative,
@@ -3242,9 +3243,9 @@ const INN_HEADER_GAP: f32 = 8.0;
 const MAP_PAD: f32 = 16.0;
 const MAP_CELL_GAP: f32 = 24.0;
 /// The cascade step for a map cell: each character token stationed at a place is slid this far below the
-/// card above it, so that card's top **title strip** stays visible (title-at-top). One title line plus its
-/// top padding — tuned so a stack of tokens reads as a column of names.
-const TITLE_OFFSET: f32 = 26.0;
+/// card above it, so that card's top **title strip** stays visible (title-at-top). Aliased from the model,
+/// which owns the cascade geometry (see [`cardtable_model::layout::cascade_footprint`]).
+const TITLE_OFFSET: f32 = card_layout::CASCADE_OFFSET;
 
 /// The x offset of fan card `index` (of `count`) within a fan `width` px wide, when `front_idx` — if any —
 /// is the card pulled to the front. The single source of truth for fan geometry: [`build_ui`] seeds each

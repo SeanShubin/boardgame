@@ -28,6 +28,11 @@ pub const STACK_OFFSET: f32 = 2.0;
 /// The most stack layers a deck chip draws (deeper decks stop growing, so a huge deck's chip stays bounded).
 pub const MAX_STACK: usize = 10;
 
+/// The vertical step between the cards of a **cascade** - a stack shown as overlapping cards, each below the
+/// base peeking only this tall a title strip (e.g. characters stationed on a location). The renderer draws
+/// exactly this offset.
+pub const CASCADE_OFFSET: f32 = 26.0;
+
 /// Vertical chrome: padding (top+bottom) plus border (top+bottom) around a card's content.
 const V_CHROME: f32 = 2.0 * 10.0 + 2.0 * 2.0;
 /// The gap the renderer puts **between** every stacked child in a card (`row_gap`). Each child past the
@@ -84,6 +89,17 @@ pub fn chip_footprint(count: usize) -> Pos {
     }
 }
 
+/// A **cascade's** footprint `(width, height)`: a base Small card with `count` more cards stacked below it,
+/// each peeking one `CASCADE_OFFSET` strip lower - so the box is the **union of the stacked cards**, which is
+/// the stack's drop target. This is the location-cell form of a stack, as [`chip_footprint`] is the deck
+/// form. Pure geometry from the count; no rendering.
+pub fn cascade_footprint(count: usize) -> Pos {
+    Pos {
+        x: SMALL_W,
+        y: SMALL_H + count as f32 * CASCADE_OFFSET,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +125,20 @@ mod tests {
             Pos {
                 x: 120.0 + (MAX_STACK - 1) as f32 * STACK_OFFSET,
                 y: 96.0 + (MAX_STACK - 1) as f32 * STACK_OFFSET
+            }
+        );
+    }
+
+    #[test]
+    fn cascade_grows_one_strip_per_stacked_card() {
+        // No stacked cards: just the base Small card.
+        assert_eq!(cascade_footprint(0), Pos { x: 120.0, y: 96.0 });
+        // Each stacked card adds exactly one CASCADE_OFFSET strip of height; width stays Small.
+        assert_eq!(
+            cascade_footprint(3),
+            Pos {
+                x: 120.0,
+                y: 96.0 + 3.0 * CASCADE_OFFSET
             }
         );
     }
