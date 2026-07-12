@@ -110,6 +110,49 @@ animates the flow; the deterministic rules never see it) and vanish the instant 
 
 ---
 
+## 0.7 Commit is the information boundary — and **Back** rewinds up to it
+
+Combat is a bet made blind. In **Marshal** each side declares its formation without seeing the other's; that
+secrecy is what simulates **simultaneity**, and it is the whole reason declaring is a *decision* rather than
+a calculation. Everything after **Reveal** is played in the open — which enemy you aim at, how much Tempo you
+bid, whether you Eat / Evade / Strike Back. So the split is:
+
+> **Your declaration fixes what happens *to* you. The field fixes what you *do*.**
+> You committed to crossing, and you are exposed for it. You are not obliged to be an idiot once you are
+> there — you strike whatever is actually reachable.
+
+That makes **Commit** something much more specific than a button that advances the game:
+
+> ### Commit is the moment a private decision becomes revealed. It is not friction — it is the line.
+
+Which settles the reversibility question exactly, with no special cases:
+
+- **Before your Commit, nothing has been disclosed.** Taking a decision back tells nobody anything, so it
+  costs nothing and must be free. Staging a plan is *supposed* to be fiddled with.
+- **After it, there are no take-backs** — because any "undo" now would be made *with knowledge you only have
+  because the other side revealed themselves*. You would learn what they declared, rewind, and re-declare
+  against it. That is precisely the exploit the blind declaration exists to prevent.
+
+So the reversibility window is exactly "up to your own Commit", and that is a rule about **information**, not
+about kindness. **Do not delete Commit as friction.** It is what makes the blind bet real; without it the
+declaration cannot be wrong, and Marshal becomes decoration.
+
+### The Back card (rewind)
+
+**Back** steps the whole table back one move. It is trivially possible because **the cards are the state**
+(§0): a fight's formation, every bid, every wound *is* cards on the board, so putting the previous board back
+**is** the undo — there is no separate ledger of "what the move did" to invert, and the renderer never learns
+what it undid. Keep pressing and you walk back out of the fight entirely, decision by decision, onto the
+location you opened it from — because a fight is opened by an ordinary move like any other.
+
+This is §0.5's *servant, not warden* taken to its conclusion: the table absorbs the cost of a mistake.
+
+> **Back is single-player only, and the reason is exact: it crosses Commits.** That is the one thing a
+> competitive mode must never allow. Against the AI there is nobody to leak to, so it is simply a take-back.
+> A PvP mode keeps Commit and keeps free revision *below* it — it just cannot offer Back.
+
+---
+
 ## 1. The primitives — **cards** and **decks**
 
 - **Card** — already exists (a [`CardView`]). A single face-up or face-down card.

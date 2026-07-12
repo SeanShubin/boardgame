@@ -40,7 +40,8 @@ mod board_driver;
 pub mod palette;
 use board_driver::{AffordanceClick, DropTrace, TapRequest};
 pub use board_driver::{
-    AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest, SceneState,
+    AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest, SceneState, UndoClick,
+    UndoControl,
 };
 
 mod logging;
@@ -613,11 +614,14 @@ fn on_click(
         Has<AdvanceDayCard>,
         Option<&AffordanceControl>,
         Option<&TileCard>,
+        Has<UndoControl>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut affordance_click: ResMut<AffordanceClick>,
+    mut undo_click: ResMut<UndoClick>,
+    mut history: ResMut<crate::board_driver::BoardHistory>,
     mut tap_request: ResMut<TapRequest>,
     mut font_sample: ResMut<FontSample>,
     mut front: ResMut<FannedFront>,
@@ -632,11 +636,19 @@ fn on_click(
         return; // the release that ends a *real* drag also fires Click — not an intentional click. A tap
         // that barely moved (within the tolerance) falls through and is treated as the click it is.
     }
-    let Ok((action, card, pile, is_back, is_advance_day, affordance, arena_unit)) =
+    let Ok((action, card, pile, is_back, is_advance_day, affordance, arena_unit, is_undo)) =
         targets.get(on.event().entity)
     else {
         return;
     };
+    // The scene's **Back** card: rewind one move. Recorded for the driver's `apply_undo`, which just puts the
+    // previous board back — the renderer never learns what it undid.
+    if is_undo {
+        undo_click.0 = true;
+        rebuild.0 = true;
+        on.propagate(false);
+        return;
+    }
     // A **scene tile** tap: record the board card for the driver's `apply_tap`, which asks the game's
     // `tap_intention` to interpret it (the renderer never knows what the tap means).
     if let Some(unit) = arena_unit {
@@ -708,6 +720,9 @@ fn on_click(
                     table.0 = factory.0.clone();
                     install_system_deck(&mut table.0, &build);
                     rebuild.0 = true;
+                    // The board was replaced wholesale, so every remembered step leads to a board that no
+                    // longer exists. There is nothing to go Back to.
+                    history.clear();
                     // A wholesale new board: its decks sit at the fixtures' raw seed positions, so they must
                     // be re-tidied into the row. Say so explicitly - the size-diff can't notice (same ids,
                     // same footprints).
@@ -1612,6 +1627,7 @@ fn redraw(
     front: Res<FannedFront>,
     affordances: Res<AffordanceLabels>,
     scene: Res<SceneState>,
+    history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
     roots: Query<Entity, With<CardTableRoot>>,
@@ -1630,7 +1646,7 @@ fn redraw(
     }
     // A game **scene** (a combat arena, etc.) is modal: the game declares it, the renderer draws it blind.
     if let Some(scene) = &scene.0 {
-        draw_scene(&mut commands, scene, &affordances.0);
+        draw_scene(&mut commands, scene, &affordances.0, history.can_undo());
         return;
     }
     build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
@@ -1962,7 +1978,7 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
 /// affordance controls pinned to the footer. The renderer draws this **without knowing what any of it means**
 /// — the game decided every tile, badge, highlight and link. (Links are drawn separately by
 /// [`animate_target_arrows`], which reads the same [`SceneState`].)
-fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
+fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], can_undo: bool) {
     commands
         .spawn((
             CardTableRoot,
@@ -2062,6 +2078,13 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String]) {
                 BackgroundColor(FELT),
             ))
             .with_children(|row| {
+                // **Back** — rewind one move. It sits with the scene's own controls but is the renderer's, not
+                // the game's: the board is the whole state, so stepping back is just restoring the previous
+                // board, and nothing here needs to know what the move meant. Keep pressing and you walk back
+                // out of the fight entirely, onto the location you opened it from.
+                if can_undo {
+                    spawn_nav_card(row, (UndoControl, Pinned), "Back");
+                }
                 for (i, label) in affordances.iter().enumerate() {
                     if scene.disabled_controls.contains(&i) {
                         spawn_disabled_nav(row, label);
