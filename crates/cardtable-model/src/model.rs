@@ -10,6 +10,7 @@
 //! unchanged; `ui` and `geometry` stay private to the model.
 
 mod geometry;
+pub mod layout;
 mod physical;
 mod ui;
 

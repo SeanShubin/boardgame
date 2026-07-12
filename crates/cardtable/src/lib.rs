@@ -827,15 +827,14 @@ fn px(value: Val) -> f32 {
 /// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
 /// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
 fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
+    // Only **piles** (decks) are still measured from the render. A card's footprint is now *computed* purely
+    // from its size + content ([`Card::footprint`](cardtable_model::Card::footprint)) and the renderer draws
+    // the card at exactly that size, so cards need no measurement feedback - the whole card layout is known
+    // without rendering. (Decks are a follow-up: their chip size still comes from the render for now.)
     for (movable, computed) in &movables {
-        let size = computed.size * computed.inverse_scale_factor;
-        match movable.0 {
-            TableNode::Card(cid) => {
-                let _ = table.0.set_card_footprint(cid, size.x, size.y);
-            }
-            TableNode::Pile(pid) => {
-                let _ = table.0.set_pile_size(pid, size.x, size.y);
-            }
+        if let TableNode::Pile(pid) = movable.0 {
+            let size = computed.size * computed.inverse_scale_factor;
+            let _ = table.0.set_pile_size(pid, size.x, size.y);
         }
     }
 }
@@ -2519,12 +2518,14 @@ const SLIDE_SPEED: f32 = 12.0;
 /// The three planned **card footprints** (logical px). Every card, pile, and deck draws at one of
 /// these — see [`Size`]. **Small** is the compact name+type form a deck and its contents share;
 /// **Medium** is a full individual card face (adds detail lines); **Large** is a document / log panel.
-const SMALL_W: f32 = 120.0;
-const SMALL_H: f32 = 96.0;
-const MEDIUM_W: f32 = 200.0;
-const MEDIUM_MIN_H: f32 = 132.0;
-const LARGE_W: f32 = 320.0;
-const LARGE_MAX_H: f32 = 360.0;
+// Card sizes come from the model's layout module - the single source of truth - so a card's node is drawn at
+// exactly the footprint the layout math uses. The renderer never defines its own card dimensions.
+use cardtable_model::layout as card_layout;
+const SMALL_W: f32 = card_layout::SMALL_W;
+const SMALL_H: f32 = card_layout::SMALL_H;
+const MEDIUM_W: f32 = card_layout::MEDIUM_W;
+const LARGE_W: f32 = card_layout::LARGE_W;
+const LARGE_MAX_H: f32 = card_layout::LARGE_MAX_H;
 
 /// The inner text width of a Small / Medium card — its width less the padding + border on both sides.
 /// This is the room a title has to fit on one line (see [`title_font`]): Small has 8px padding + 2px
@@ -3458,15 +3459,15 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
         CardRef(card.id),
         Node {
             width: Val::Px(MEDIUM_W),
-            min_height: Val::Px(MEDIUM_MIN_H),
+            // Sized to the model's computed footprint (width + a height per detail line) - the renderer is a
+            // pass-through, not the authority. Content clips to fit (never spills onto a neighbour).
+            height: Val::Px(card.footprint().y),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(10.0)),
             border: UiRect::all(Val::Px(2.0)),
             row_gap: Val::Px(4.0),
             border_radius: BorderRadius::all(Val::Px(12.0)),
-            // Fixed width, but height grows with the number of detail lines — so clip only horizontally
-            // (contain an over-wide token) and let it grow downward.
-            overflow: Overflow::clip_x(),
+            overflow: Overflow::clip(),
             ..default()
         },
         BackgroundColor(CARD_FACE),
@@ -3491,6 +3492,9 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
                     font_size: FONT_BODY,
                     ..default()
                 },
+                // One line per detail line (no wrap) so the rendered height matches the model's line-count
+                // footprint exactly; an over-long line clips horizontally.
+                TextLayout::no_wrap(),
                 TextColor(CARD_INK),
             ));
         }
@@ -3503,7 +3507,8 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
         CardRef(card.id),
         Node {
             width: Val::Px(LARGE_W),
-            max_height: Val::Px(LARGE_MAX_H),
+            // Sized to the model's computed footprint (capped at LARGE_MAX_H); content beyond it scrolls.
+            height: Val::Px(card.footprint().y),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(12.0)),
             row_gap: Val::Px(4.0),

@@ -17,6 +17,7 @@ pub mod scene;
 pub mod seam;
 
 pub use binding::from_table_view;
+pub use model::layout;
 pub use model::{
     Arrangement, Board, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe,
     Size, TableauError, Utility,

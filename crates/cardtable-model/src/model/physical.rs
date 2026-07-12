@@ -162,10 +162,10 @@ pub struct Card {
     card_type: String,
     size: Size,
     home: PileId,
-    /// Free position on the drilled-in surface and rendered footprint — used only by an
-    /// [`Arrangement::Free`] deck, where cards are placed and shoved like the top-level piles.
+    /// Free position on the drilled-in surface — used only by an [`Arrangement::Free`] deck, where cards are
+    /// placed and shoved like the top-level piles. (The footprint is *computed* from size + content, not
+    /// stored — see [`Card::footprint`].)
     pos: Pos,
-    footprint: Pos,
     /// This card's **recipe** — the structured content it yields when combined. A starting kit carries a
     /// [`Recipe`] (the character's stat values + ability); an ordinary card (e.g. a hero identity) has none.
     recipe: Option<Recipe>,
@@ -268,9 +268,11 @@ impl Card {
         self.pos
     }
 
-    /// The card's rendered footprint (`x` = width, `y` = height), fed back by the renderer for shoving.
+    /// The card's on-felt footprint (`x` = width, `y` = height) — **computed** purely from its size and
+    /// content by [`layout::footprint`](super::layout::footprint), not measured by the renderer. The renderer
+    /// draws the card at exactly this size, so where every card sits in 2-space is known without rendering.
     pub fn footprint(&self) -> Pos {
-        self.footprint
+        super::layout::footprint(self.size, self.detail.len(), self.panel.len())
     }
 
     /// The [`Recipe`] this card yields when combined (a kit's recipe), or `None` for an ordinary card.
@@ -555,7 +557,6 @@ impl Board {
                 size: Size::Small,
                 home: pile,
                 pos: Pos::default(),
-                footprint: Pos::default(),
                 recipe: None,
                 quantity: 1,
                 pair_key: None,
@@ -1247,15 +1248,6 @@ impl Board {
         Ok(())
     }
 
-    /// Records a card's rendered footprint (the renderer feeds this back after layout, for shoving).
-    pub fn set_card_footprint(&mut self, card: CardId, w: f32, h: f32) -> Result<(), TableauError> {
-        self.cards
-            .get_mut(&card)
-            .ok_or(TableauError::UnknownCard(card))?
-            .footprint = Pos { x: w, y: h };
-        Ok(())
-    }
-
     /// Sets a card's [`recipe`](Card::recipe) — the [`Recipe`] it yields when combined (a kit).
     pub fn set_card_recipe(&mut self, card: CardId, recipe: Recipe) -> Result<(), TableauError> {
         self.cards
@@ -1572,7 +1564,7 @@ impl Board {
     /// a pile by its rendered [`size`](Pile::size). `None` if the node is unknown.
     fn node_box(&self, node: Node) -> Option<(Pos, Pos)> {
         match node {
-            Node::Card(c) => self.cards.get(&c).map(|k| (k.pos, k.footprint)),
+            Node::Card(c) => self.cards.get(&c).map(|k| (k.pos, k.footprint())),
             Node::Pile(p) => self.piles.get(&p).map(|d| (d.pos, d.size)),
         }
     }
@@ -2314,18 +2306,16 @@ mod tests {
         let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "D").unwrap();
         t.set_surface(1000.0, 800.0);
-        let mk = |t: &mut Board, name: &str, w: f32| {
-            let c = t
-                .add_card(deck, Face::Up { title: name.into() }, None)
-                .unwrap();
-            t.set_card_footprint(c, w, 60.0).unwrap();
-            c
+        let add = |t: &mut Board, name: &str| {
+            t.add_card(deck, Face::Up { title: name.into() }, None)
+                .unwrap()
         };
-        let (a, b, c) = (
-            mk(&mut t, "a", 100.0),
-            mk(&mut t, "b", 200.0),
-            mk(&mut t, "c", 100.0),
-        );
+        // a, c are Small (120 wide); b is Medium (200 wide) - the wider card shifts the cards after it.
+        let a = add(&mut t, "a");
+        let b = add(&mut t, "b");
+        t.set_card_detail(b, vec!["d".into()]).unwrap();
+        t.cycle_card_size(b).unwrap(); // Small -> Medium (200 wide)
+        let c = add(&mut t, "c");
         t.set_layout(
             deck,
             Layout {
@@ -2340,8 +2330,8 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(pos[&Node::Card(a)], Pos { x: 10.0, y: 10.0 }); // first, at the gap
-        assert_eq!(pos[&Node::Card(b)], Pos { x: 120.0, y: 10.0 }); // after a: 10 + 100 + 10
-        assert_eq!(pos[&Node::Card(c)], Pos { x: 330.0, y: 10.0 }); // after the WIDE b: 120 + 200 + 10
+        assert_eq!(pos[&Node::Card(b)], Pos { x: 140.0, y: 10.0 }); // after a (Small 120): 10 + 120 + 10
+        assert_eq!(pos[&Node::Card(c)], Pos { x: 350.0, y: 10.0 }); // after the WIDE b (Medium 200): 140 + 200 + 10
     }
 
     /// `structured_positions` aligns a Grid on **both** axes: a wider card widens its whole column.
@@ -2352,20 +2342,19 @@ mod tests {
         t.set_surface(1000.0, 800.0);
         let ids: Vec<_> = (0..4)
             .map(|i| {
-                let c = t
-                    .add_card(
-                        deck,
-                        Face::Up {
-                            title: format!("{i}"),
-                        },
-                        None,
-                    )
-                    .unwrap();
-                t.set_card_footprint(c, 100.0, 60.0).unwrap();
-                c
+                t.add_card(
+                    deck,
+                    Face::Up {
+                        title: format!("{i}"),
+                    },
+                    None,
+                )
+                .unwrap()
             })
             .collect();
-        t.set_card_footprint(ids[2], 180.0, 60.0).unwrap(); // bottom-left card widens column 0
+        // Widen the bottom-left card (ids[2]) to Medium (200 wide); it must widen its whole column 0.
+        t.set_card_detail(ids[2], vec!["d".into()]).unwrap();
+        t.cycle_card_size(ids[2]).unwrap();
         t.set_layout(
             deck,
             Layout {
@@ -2379,11 +2368,12 @@ mod tests {
             .structured_positions(deck, 10.0, 10.0, Pos { x: 100.0, y: 100.0 })
             .into_iter()
             .collect();
-        // 2 cols [0 1 / 2 3]: col0 width = max(100,180) = 180, so col1 starts at 10 + 180 + 10 = 200.
+        // 2 cols [0 1 / 2 3]: col0 width = max(Small 120, Medium 200) = 200, so col1 starts at 10 + 200 + 10.
+        // Row 0 is two Small cards (h 96), so row 1 starts at 10 + 96 + 10 = 116.
         assert_eq!(pos[&Node::Card(ids[0])], Pos { x: 10.0, y: 10.0 });
-        assert_eq!(pos[&Node::Card(ids[1])], Pos { x: 200.0, y: 10.0 }); // pushed right by the wide col 0
-        assert_eq!(pos[&Node::Card(ids[2])], Pos { x: 10.0, y: 80.0 }); // row 1: 10 + 60 + 10
-        assert_eq!(pos[&Node::Card(ids[3])], Pos { x: 200.0, y: 80.0 });
+        assert_eq!(pos[&Node::Card(ids[1])], Pos { x: 220.0, y: 10.0 }); // pushed right by the wide col 0
+        assert_eq!(pos[&Node::Card(ids[2])], Pos { x: 10.0, y: 116.0 }); // row 1
+        assert_eq!(pos[&Node::Card(ids[3])], Pos { x: 220.0, y: 116.0 });
     }
 
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).
@@ -2711,18 +2701,16 @@ mod tests {
         t.set_surface(1000.0, 1000.0);
         let a = t.add_card(p, Face::Up { title: "A".into() }, None).unwrap();
         let b = t.add_card(p, Face::Up { title: "B".into() }, None).unwrap();
-        for c in [a, b] {
-            t.set_card_footprint(c, 100.0, 100.0).unwrap();
-        }
+        // Both are Small cards (computed footprint 120x96).
         t.set_card_pos(a, 0.0, 0.0).unwrap();
-        t.set_card_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
+        t.set_card_pos(b, 20.0, 0.0).unwrap(); // overlaps a on x
 
         t.separate(p, Node::Card(a));
 
         assert_eq!(t.card(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
         let bp = t.card(b).unwrap().pos();
-        let ox = (0.0f32 + 100.0).min(bp.x + 100.0) - 0.0f32.max(bp.x);
-        let oy = (0.0f32 + 100.0).min(bp.y + 100.0) - 0.0f32.max(bp.y);
+        let ox = (0.0f32 + 120.0).min(bp.x + 120.0) - 0.0f32.max(bp.x);
+        let oy = (0.0f32 + 96.0).min(bp.y + 96.0) - 0.0f32.max(bp.y);
         assert!(ox <= 0.02 || oy <= 0.02, "cards must not overlap: {bp:?}");
     }
 
