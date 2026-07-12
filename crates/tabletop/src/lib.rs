@@ -2384,6 +2384,7 @@ mod tests {
                 prose: Vec::new(),
                 map: None,
                 log: Vec::new(),
+                focus: None,
             }
         }
         fn session_key(&self, s: &(u64, u32)) -> u64 {
