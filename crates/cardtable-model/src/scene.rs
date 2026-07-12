@@ -139,7 +139,7 @@ pub enum Team {
 
 /// A tile's attention state this scene — drives its ring and dimming (the renderer maps each to a look).
 /// These are *emphasis* levels, not game states: the game decides which of its situations map to each.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Highlight {
     /// A normal, un-highlighted tile.
     Idle,

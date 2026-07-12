@@ -183,6 +183,7 @@ fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>) -> 
         ),
         tone: Tone::Muted,
     }];
+    badges.push(stats_badge(u));
     badges.push(reach_badge(u.melee, u.ranged));
     if !effective {
         badges.push(Badge {
@@ -376,6 +377,7 @@ fn lane_tile(
         ),
         tone: bar_tone,
     }];
+    badges.push(stats_badge(u));
     // Off-range: a living body in a position whose attack type it does not carry lands nothing (spec 4.2).
     if !u.fallen && !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
         badges.push(Badge {
@@ -499,25 +501,75 @@ fn build_log(
     }
     match step {
         Step::Catch => {
+            // Say what each hero **may** strike, not merely what it has already chosen. "(no targets chosen
+            // yet)" on its own left a player looking at a step that appeared to offer nothing, unable to tell
+            // whether that was the rules or a bug - and it read as a flat contradiction: "no targets chosen"
+            // when there seemed to be none to choose. Now the line either names what is reachable, or says
+            // why that hero cannot strike.
             log.push("Targets".to_string());
-            let mut any = false;
+            let mut any_actor = false;
             for i in 0..units.len() {
-                if units[i].side == Side::Party
-                    && let Some(aim) = staged[i].aim
-                {
-                    let aim_name = board
-                        .card(aim)
-                        .map(|c| c.front_title().to_string())
-                        .unwrap_or_default();
-                    log.push(format!(
-                        "  {} -> {}  (bid {})",
-                        units[i].name, aim_name, staged[i].bid
-                    ));
-                    any = true;
+                let u = &units[i];
+                if u.side != Side::Party || u.fallen {
+                    continue;
+                }
+                let reachable: Vec<&str> = units
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, v)| {
+                        v.side == Side::Foe
+                            && !v.fallen
+                            && combat::legal_catch(units, sub, u.rank, u.side, v.rank)
+                            && combat::back_access_ok(units, u.rank, *j)
+                    })
+                    .map(|(_, v)| v.name.as_str())
+                    .collect();
+
+                let barred = if !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
+                    Some(format!(
+                        "carries no {} strike here",
+                        rank_range_word(u.rank)
+                    ))
+                } else if u.tempo == 0 {
+                    Some("no tempo left".to_string())
+                } else if reachable.is_empty() {
+                    Some("nothing it may strike this phase".to_string())
+                } else {
+                    None
+                };
+
+                match (barred, staged[i].aim) {
+                    (Some(reason), _) => {
+                        log.push(format!("  {} - cannot strike: {reason}", u.name));
+                    }
+                    (None, Some(aim)) => {
+                        let aim_name = board
+                            .card(aim)
+                            .map(|c| c.front_title().to_string())
+                            .unwrap_or_default();
+                        log.push(format!(
+                            "  {} -> {}  (bid {})",
+                            u.name, aim_name, staged[i].bid
+                        ));
+                        any_actor = true;
+                    }
+                    (None, None) => {
+                        log.push(format!(
+                            "  {} may strike: {}  (not aimed yet)",
+                            u.name,
+                            reachable.join(", ")
+                        ));
+                        any_actor = true;
+                    }
                 }
             }
-            if !any {
-                log.push("  (no targets chosen yet)".to_string());
+            // If this fires, the step should never have stopped here at all - `step_needs_input` gates on the
+            // same conditions, so "nobody can strike" and "you are being asked to strike" cannot both be true.
+            if !any_actor {
+                log.push(
+                    "  (nobody can strike this phase - this step should have auto-resolved)"
+                        .to_string(),
+                );
             }
         }
         Step::React => {
@@ -643,6 +695,22 @@ fn rank_range_word(rank: Rank) -> &'static str {
         "ranged"
     } else {
         "melee"
+    }
+}
+
+/// The three **constant** stats a fight actually turns on, compact enough for a tile only a card wide:
+/// **M**ight (the damage each strike deals), **F**inesse (the bid multiplier — one tempo card is worth this
+/// much toward reaching a target, and toward slipping one), **T**oughness (the gate accumulated damage must
+/// cross to flip a health card). Abbreviated because the tile is 120px; the hero's own card spells all five
+/// out in full, and so does the log.
+///
+/// **Vitality and Cadence are deliberately absent** — they are already on the tile, as the *totals* of the two
+/// pools: `Health 4/6` is Vitality 6, `Tempo 2/3` is Cadence 3. Naming them again would say nothing new, and a
+/// badge has to earn its space.
+fn stats_badge(u: &Combatant) -> Badge {
+    Badge {
+        text: format!("M {}   F {}   T {}", u.might, u.finesse, u.toughness),
+        tone: Tone::Muted,
     }
 }
 

@@ -579,6 +579,37 @@ fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
     if !s.prompt.is_empty() {
         out.push_str(&format!("  prompt: {}\n", s.prompt));
     }
+    // The body: every tile with its badges, whether it is highlighted as a legal target, and whether a tap
+    // would actually do anything. Without this the log says which *phase* you are in but not what is *on the
+    // board*, so a report like "it says no targets chosen while there are none to choose" cannot be checked -
+    // whether a target existed is exactly the fact in dispute.
+    let tile_line = |t: &cardtable_model::Tile, group: &str| {
+        let badges: Vec<&str> = t.badges.iter().map(|b| b.text.as_str()).collect();
+        format!(
+            "  [{group}] {}  {:?}{}{}  | {}\n",
+            t.title,
+            t.highlight,
+            if t.tappable { " tappable" } else { "" },
+            if t.draggable { " draggable" } else { "" },
+            badges.join(" / ")
+        )
+    };
+    match &s.body {
+        cardtable_model::SceneBody::Rows(rows) => {
+            for r in rows {
+                for t in &r.tiles {
+                    out.push_str(&tile_line(t, &r.label));
+                }
+            }
+        }
+        cardtable_model::SceneBody::Lanes(lanes) => {
+            for l in lanes {
+                for t in l.left.iter().chain(l.right.iter()) {
+                    out.push_str(&tile_line(t, &l.label));
+                }
+            }
+        }
+    }
     for c in &s.choices {
         // A barred choice records *why* - the same reason the player is shown, so the screen and the log
         // cannot disagree about what was on offer.
