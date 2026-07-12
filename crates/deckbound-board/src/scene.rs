@@ -53,8 +53,9 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         (SceneBody::Lanes(lanes), links, log)
     };
 
-    // The Start / Commit control (index 0) is inert during Marshal until every hero is ranked.
-    let disabled_controls = if marshal && !arena::formation_complete(board, arena) {
+    // The Start / Commit control (index 0) is inert while the player still owes a decision - an unranked hero
+    // at Marshal, an unanswered blow at React. Its label names what is missing (see `arena::commit_label`).
+    let disabled_controls = if arena::pending_decision(board, arena).is_some() {
         vec![0]
     } else {
         Vec::new()

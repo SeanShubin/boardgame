@@ -757,22 +757,46 @@ pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
     }
 }
 
-/// The label for the Commit control, given the current step (or the fight's decision).
-pub fn commit_label(board: &Board, arena: PileId) -> &'static str {
-    match outcome(board, arena) {
-        Some(Outcome::Victory) => "Victory - leave",
-        Some(Outcome::Defeat) => "Defeat - leave",
-        Some(Outcome::Draw) => "Draw - leave",
-        None => match arena_state(board, arena).4 {
-            Step::Marshal => {
-                if formation_complete(board, arena) {
-                    "Start"
-                } else {
-                    "Assign every hero a rank"
+/// A decision the player owes before this step can be committed, named as the Commit control's label. `None`
+/// means Commit is live.
+///
+/// **Nothing is decided by default.** A hero under fire that has not answered has *not* chosen to Eat - it has
+/// chosen nothing, and committing would silently make the choice for it. So Commit is barred and *says whose
+/// answer is missing*: a disabled control that will not say why is indistinguishable from a bug, the same rule
+/// that makes a barred choice carry its reason.
+pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
+    let (cards, units, _sub, _round, step) = arena_state(board, arena);
+    match step {
+        Step::Marshal => {
+            (!formation_complete(board, arena)).then(|| "Assign every hero a rank".to_string())
+        }
+        Step::React => {
+            let contacts = read_contacts(board, arena, &cards);
+            units.iter().enumerate().find_map(|(i, u)| {
+                if u.side != Side::Party || u.fallen || staged_of(board, cards[i]).react.is_some() {
+                    return None;
                 }
-            }
+                // A hero that can only Eat is not being asked anything - let it eat.
+                let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
+                (evade_ok || strikeback_ok).then(|| format!("{} has not answered", u.name))
+            })
+        }
+        Step::Catch | Step::Extra => None,
+    }
+}
+
+/// The label for the Commit control, given the current step (or the fight's decision). When a decision is
+/// owed, the label names it and the control is barred (see [`pending_decision`]).
+pub fn commit_label(board: &Board, arena: PileId) -> String {
+    match outcome(board, arena) {
+        Some(Outcome::Victory) => "Victory - leave".to_string(),
+        Some(Outcome::Defeat) => "Defeat - leave".to_string(),
+        Some(Outcome::Draw) => "Draw - leave".to_string(),
+        None => match pending_decision(board, arena) {
+            Some(owed) => owed,
             // The Step deck already names the mini-phase (Catch/React/Extra), so the button is just "Commit".
-            Step::Catch | Step::React | Step::Extra => "Commit",
+            None if arena_state(board, arena).4 == Step::Marshal => "Start".to_string(),
+            None => "Commit".to_string(),
         },
     }
 }
@@ -1238,13 +1262,15 @@ pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
     let contacts = read_contacts(board, arena, &cards);
     let u = &units[i];
     let incoming: Vec<&Contact> = contacts.iter().filter(|c| c.target == i).collect();
-    let staged = staged_of(board, card).react.unwrap_or(ReactKind::Eat);
+    // Nothing is pre-chosen: an unanswered blow shows every card unlit, and Commit stays barred until the
+    // player says which way this hero answers. A default here would decide for them and read as their choice.
+    let staged = staged_of(board, card).react;
     let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
 
     // Eat: every incoming blow lands, at its attacker's Might.
     let might: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
     let eat = Choice::new("Eat", format!("take {}", damage_phrase(u, might)))
-        .chosen(staged == ReactKind::Eat);
+        .chosen(staged == Some(ReactKind::Eat));
 
     // Evade: beat the bid. The cheapest incoming blow is the one worth quoting.
     let need = incoming
@@ -1253,7 +1279,7 @@ pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .min()
         .unwrap_or(0);
     let evade = Choice::new("Evade", format!("spend {need} tempo to slip it"))
-        .chosen(staged == ReactKind::Evade);
+        .chosen(staged == Some(ReactKind::Evade));
     let evade = if evade_ok {
         evade
     } else if u.tempo == 0 {
@@ -1271,7 +1297,7 @@ pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         Some(foe) => format!("spend 1 tempo, deal {}", damage_phrase(foe, u.might)),
         None => format!("spend 1 tempo, deal {} back", u.might),
     };
-    let back = Choice::new("Strike Back", back_text).chosen(staged == ReactKind::StrikeBack);
+    let back = Choice::new("Strike Back", back_text).chosen(staged == Some(ReactKind::StrikeBack));
     let back = if strikeback_ok {
         back
     } else if u.tempo == 0 {
@@ -1490,6 +1516,50 @@ pub fn restart_fight(board: &mut Board, arena: PileId) {
 mod tests {
     use super::*;
     use crate::sample_table;
+
+    /// **Nothing is decided by default, and Commit says what is missing.** The Raider is struck at Intercept
+    /// and can Eat, Evade or Strike Back - so it is being *asked*. Committing before it answers would silently
+    /// enter Eat as if the player had chosen it.
+    #[test]
+    fn commit_is_barred_until_a_struck_hero_answers_and_names_who() {
+        let mut board = sample_table();
+        // The Raider marches alone: it ranks Outrider, so The Wall (an enemy Vanguard) screens it at Intercept.
+        let arena = open_a_fight_with(&mut board, "Raider");
+        commit(&mut board, arena); // Marshal -> Intercept / Catch
+        commit(&mut board, arena); // Catch -> React: The Wall's blow has landed on the Raider
+
+        let (cards, units, _, _, step) = arena_state(&board, arena);
+        assert_eq!(step, Step::React);
+        let (card, i) = struck_defender(&board, arena).expect("a hero is under fire");
+        assert!(
+            staged_of(&board, card).react.is_none(),
+            "nothing pre-chosen"
+        );
+        assert!(
+            react_choices(&board, arena).iter().all(|c| !c.chosen),
+            "no option shows as taken before the player takes one"
+        );
+
+        let who = units[i].name.clone();
+        assert_eq!(
+            pending_decision(&board, arena),
+            Some(format!("{who} has not answered"))
+        );
+        assert_eq!(
+            commit_label(&board, arena),
+            format!("{who} has not answered")
+        );
+
+        // Answer, and Commit comes live.
+        let eat = react_choices(&board, arena)
+            .iter()
+            .position(|c| c.label == "Eat")
+            .expect("Eat is always offered");
+        choose(&mut board, eat);
+        assert_eq!(pending_decision(&board, arena), None);
+        assert_eq!(commit_label(&board, arena), "Commit");
+        let _ = cards;
+    }
 
     /// **A choice must not promise damage it cannot deliver.** The Raider (Might 7) striking back at The Wall
     /// (Toughness 9) used to read "deal 7 back" - and it dealt nothing: 7 banks into the Wall's pile, never
