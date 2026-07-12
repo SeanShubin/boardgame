@@ -294,7 +294,7 @@ fn sel_of(
                 && units.iter().any(|f| {
                     f.side == Side::Foe
                         && !f.fallen
-                        && combat::legal_catch(sub, u.rank, f.rank)
+                        && combat::legal_catch(units, sub, u.rank, u.side, f.rank)
                         && can_land(u, f)
                 })
             {
@@ -308,7 +308,7 @@ fn sel_of(
             Some(a) if staged[a].aim == Some(cards[i]) => Highlight::Active,
             Some(a)
                 if combat::effective_in_rank(units[a].rank, units[a].melee, units[a].ranged)
-                    && combat::legal_catch(sub, units[a].rank, u.rank)
+                    && combat::legal_catch(units, sub, units[a].rank, units[a].side, u.rank)
                     && can_land(&units[a], u) =>
             {
                 Highlight::Available
@@ -426,13 +426,17 @@ fn build_log(
     if let Some(pairs) = SCHEDULE.get(sub)
         && !pairs.is_empty()
     {
+        // An attacker names a target *priority*, not one rank: it strikes the first of them that is actually
+        // on the field. Only the Outrider has more than one (it crossed for the Rearguard; failing that it
+        // falls on the front), so say so plainly rather than printing a bare list.
         let pretty = pairs
             .iter()
-            .map(|(a, t)| {
+            .map(|(a, targets)| {
+                let ts: Vec<&str> = targets.iter().map(|t| rank_word(*t)).collect();
                 format!(
                     "{} -> {} ({})",
                     rank_word(*a),
-                    rank_word(*t),
+                    ts.join(", else "),
                     rank_range_word(*a)
                 )
             })

@@ -21,7 +21,6 @@
 //! only whether it lands and how many land.
 
 use deckbound_content::rank::Intention as Rank;
-use deckbound_content::schedule::SCHEDULE;
 
 /// Which side a combatant fights for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,11 +169,25 @@ pub struct Contact {
 
 // ---- bid math + legality (the atoms) --------------------------------------------------------------
 
-/// Whether `atk` may catch `tgt` in sub-phase `sub` — the rank×phase [`SCHEDULE`] gate.
-pub fn legal_catch(sub: usize, atk: Rank, tgt: Rank) -> bool {
-    SCHEDULE
-        .get(sub)
-        .is_some_and(|pairs| pairs.contains(&(atk, tgt)))
+/// The rank an attacker of rank `atk` on `side` actually strikes this sub-phase: the first rank in its
+/// [`SCHEDULE`] target priority that holds a living enemy it can reach (the back-access screen included).
+/// `None` if its role does not act this sub-phase, or nothing it wants is on the field.
+///
+/// This is the **one** place a target rank is chosen, so the cascade cannot be applied inconsistently. It is
+/// what stops a stranded Outrider — one that crossed for a Rearguard the enemy never fielded — from standing
+/// idle beside the foe in front of it.
+pub fn target_rank(units: &[Combatant], sub: usize, atk: Rank, side: Side) -> Option<Rank> {
+    deckbound_content::schedule::target_rank(sub, atk, |t| {
+        units.iter().enumerate().any(|(i, u)| {
+            u.side != side && !u.fallen && u.rank == t && back_access_ok(units, atk, i)
+        })
+    })
+}
+
+/// Whether an attacker of rank `atk` on `side` may catch a target of rank `tgt` in sub-phase `sub` — the
+/// rank x phase [`SCHEDULE`] gate, after the target priority has settled on a rank ([`target_rank`]).
+pub fn legal_catch(units: &[Combatant], sub: usize, atk: Rank, side: Side, tgt: Rank) -> bool {
+    target_rank(units, sub, atk, side) == Some(tgt)
 }
 
 /// Whether a strike thrown *from* `rank` is **ranged** — a Rearguard fires over its own line; a Vanguard or
@@ -570,14 +583,79 @@ mod tests {
         assert_eq!(u[0].health, 5, "a ranged-only body has no melee counter");
     }
 
+    /// A foe side fielding every rank, so the schedule's own gate is what's under test (nothing is missing).
+    fn full_field() -> Vec<Combatant> {
+        vec![
+            unit("hero", Side::Party, Rank::Vanguard, 2, 2, 3, 1, 3),
+            unit("foe V", Side::Foe, Rank::Vanguard, 2, 2, 3, 1, 3),
+            unit("foe O", Side::Foe, Rank::Outrider, 2, 2, 3, 1, 3),
+            unit("foe R", Side::Foe, Rank::Rearguard, 2, 2, 3, 1, 3),
+        ]
+    }
+
     #[test]
     fn schedule_gates_catches() {
+        let u = full_field();
+        let can = |sub, atk, tgt| legal_catch(&u, sub, atk, Side::Party, tgt);
         // Intercept (sub-phase 0) is Vanguard -> Outrider only.
-        assert!(legal_catch(0, Rank::Vanguard, Rank::Outrider));
-        assert!(!legal_catch(0, Rank::Vanguard, Rank::Vanguard));
-        assert!(!legal_catch(0, Rank::Rearguard, Rank::Outrider));
+        assert!(can(0, Rank::Vanguard, Rank::Outrider));
+        assert!(!can(0, Rank::Vanguard, Rank::Vanguard));
+        assert!(!can(0, Rank::Rearguard, Rank::Outrider));
         // Clash (sub-phase 3) has (Rearguard,Vanguard) and (Vanguard,Vanguard).
-        assert!(legal_catch(3, Rank::Vanguard, Rank::Vanguard));
+        assert!(can(3, Rank::Vanguard, Rank::Vanguard));
+    }
+
+    /// **The Outrider re-aims.** Its one offensive slot (Raid) crossed for the enemy Rearguard; if the enemy
+    /// never fielded one it does not stand idle beside the foe in front of it — it falls on the front. The
+    /// strike used to be skipped outright ("no legal target"), leaving the unit to do nothing until Breach.
+    #[test]
+    fn a_stranded_outrider_re_aims_onto_the_front_at_raid() {
+        const RAID: usize = 2;
+
+        // With an enemy back line, the Outrider takes it - that is what it crossed for.
+        let full = full_field();
+        assert_eq!(
+            target_rank(&full, RAID, Rank::Outrider, Side::Party),
+            Some(Rank::Rearguard)
+        );
+
+        // Against a lone enemy Vanguard (no back line to raid), it strikes the Vanguard - in its own slot.
+        let lone_wall = vec![
+            unit("hero", Side::Party, Rank::Outrider, 2, 2, 3, 1, 3),
+            unit("The Wall", Side::Foe, Rank::Vanguard, 2, 2, 3, 1, 3),
+        ];
+        assert_eq!(
+            target_rank(&lone_wall, RAID, Rank::Outrider, Side::Party),
+            Some(Rank::Vanguard)
+        );
+        assert!(legal_catch(
+            &lone_wall,
+            RAID,
+            Rank::Outrider,
+            Side::Party,
+            Rank::Vanguard
+        ));
+    }
+
+    /// **No double dip.** The Outrider re-aims in its own slot, so Breach must not hand it a second strike.
+    #[test]
+    fn breach_gives_the_outrider_no_second_strike() {
+        const BREACH: usize = 4;
+        let u = full_field();
+        assert_eq!(target_rank(&u, BREACH, Rank::Outrider, Side::Party), None);
+    }
+
+    /// A dead rank is not a target: the cascade skips past it rather than aiming at corpses.
+    #[test]
+    fn the_cascade_skips_a_rank_that_has_already_fallen() {
+        const RAID: usize = 2;
+        let mut u = full_field();
+        u[3].fallen = true; // the enemy Rearguard is down
+        assert_eq!(
+            target_rank(&u, RAID, Rank::Outrider, Side::Party),
+            Some(Rank::Vanguard),
+            "with the back line dead, the raid falls on the front"
+        );
     }
 
     #[test]

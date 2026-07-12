@@ -662,15 +662,19 @@ fn rotate_deck(board: &mut Board, arena: PileId, label: &str) {
     }
 }
 
-/// The sub-phase's legal `attacker>target` rank pairs as first-letter codes (e.g. `"V>O,R>V"`).
+/// The sub-phase's legal `attacker>target` rank codes (e.g. `"V>O"`). An attacker with a target *priority*
+/// shows the whole list — the Outrider's Raid reads `O>R|V|O`: it takes the first of those that is there.
 fn pairs_line(sub: usize) -> String {
     let letter = |r: Rank| r.label().chars().next().unwrap_or('?');
     SCHEDULE
         .get(sub)
-        .map(|pairs| {
-            pairs
+        .map(|entries| {
+            entries
                 .iter()
-                .map(|(a, t)| format!("{}>{}", letter(*a), letter(*t)))
+                .map(|(a, targets)| {
+                    let ts: Vec<String> = targets.iter().map(|t| letter(*t).to_string()).collect();
+                    format!("{}>{}", letter(*a), ts.join("|"))
+                })
                 .collect::<Vec<_>>()
                 .join(",")
         })
@@ -698,7 +702,7 @@ fn party_catches(board: &Board, cards: &[CardId], units: &[Combatant], sub: usiz
             continue;
         };
         if let Some(t) = cards.iter().position(|&c| c == aim)
-            && combat::legal_catch(sub, u.rank, units[t].rank)
+            && combat::legal_catch(units, sub, u.rank, u.side, units[t].rank)
             && combat::back_access_ok(units, u.rank, t)
         {
             catches.push(Catch {
@@ -781,7 +785,7 @@ pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
                         && !v.fallen
-                        && combat::legal_catch(sub, u.rank, v.rank)
+                        && combat::legal_catch(&units, sub, u.rank, u.side, v.rank)
                         && combat::back_access_ok(&units, u.rank, j)
                 })
         }),
@@ -1102,8 +1106,13 @@ fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usi
         units[active].rank,
         units[active].melee,
         units[active].ranged,
-    ) || !combat::legal_catch(sub, units[active].rank, units[foe].rank)
-        || !combat::back_access_ok(units, units[active].rank, foe)
+    ) || !combat::legal_catch(
+        units,
+        sub,
+        units[active].rank,
+        units[active].side,
+        units[foe].rank,
+    ) || !combat::back_access_ok(units, units[active].rank, foe)
     {
         return;
     }
@@ -1549,7 +1558,8 @@ mod tests {
         let (cards, units, sub, _, _) = arena_state(&board, arena);
         let pi = units.iter().position(|u| u.side == Side::Party).unwrap();
         if let Some(fi) = (0..units.len()).find(|&j| {
-            units[j].side == Side::Foe && combat::legal_catch(sub, units[pi].rank, units[j].rank)
+            units[j].side == Side::Foe
+                && combat::legal_catch(&units, sub, units[pi].rank, units[pi].side, units[j].rank)
         }) {
             handle_tap(&mut board, cards[pi]); // select active
             assert!(staged_of(&board, cards[pi]).active);

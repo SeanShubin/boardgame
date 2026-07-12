@@ -64,9 +64,11 @@ pub fn can_reach(
 /// Can `(atk_role → tgt_role)` resolve *somewhere* in the schedule? (Reach upper-bound for the
 /// focus-fire estimate.) Mirrors `sub_phase::role_can_attack`.
 fn role_can_attack(atk_role: Intention, tgt_role: Intention) -> bool {
-    crate::combat::SCHEDULE
-        .iter()
-        .any(|pairs| pairs.iter().any(|&(a, t)| a == atk_role && t == tgt_role))
+    crate::combat::SCHEDULE.iter().any(|entries| {
+        entries
+            .iter()
+            .any(|&(a, ts)| a == atk_role && ts.contains(&tgt_role))
+    })
 }
 
 /// **Focus-fire test** (the positive-effect rule judged at the target, §4.6). A weak strike that cannot
@@ -165,9 +167,11 @@ pub fn governing_target(
 /// The schedule step index in which the pair `(atk_role → tgt_role)` resolves, or `None` if it is never
 /// a legal pair. Mirrors `sub_phase::step_of`.
 pub fn step_of(atk_role: Intention, tgt_role: Intention) -> Option<usize> {
-    crate::combat::SCHEDULE
-        .iter()
-        .position(|pairs| pairs.iter().any(|&(a, t)| a == atk_role && t == tgt_role))
+    crate::combat::SCHEDULE.iter().position(|entries| {
+        entries
+            .iter()
+            .any(|&(a, ts)| a == atk_role && ts.contains(&tgt_role))
+    })
 }
 
 /// Tempo a defender must commit to **avoid** one attack (§4.6 contest): `cards × Fd` must strictly
