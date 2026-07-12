@@ -9,8 +9,10 @@
 //!
 //! What counts as overflow depends on the size, matching how each card is allowed to grow:
 //! - **Small** — fully fixed, so *either* axis overflowing is a fault.
-//! - **Medium** — width fixed but height grows with line count, so only *horizontal* overflow is a fault.
-//! - **Large** — a scrollable panel, so again only *horizontal* overflow is a fault.
+//! - **Medium** — width *and* height fixed (the model computes the height from the line count; the renderer
+//!   clips to it), so *either* axis overflowing is a fault. This is what catches a footprint that under-sizes
+//!   the text - the height formula in `cardtable_model::layout` guessing a line too short.
+//! - **Large** — a scrollable panel, so only *horizontal* overflow is a fault (the rest scrolls).
 
 use crate::demo::demo_table;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
@@ -276,8 +278,9 @@ fn audit_gallery(
         };
         checked += 1;
         let over = descendant_overflow(card_e, gt.translation, cn.size * 0.5, &children_q, &rect_q);
-        // Vertical overflow is only a fault for the fully-fixed Small card; Medium grows and Large scrolls.
-        let tall = if s.size == "Small" { over.y } else { 0.0 };
+        // Vertical overflow is a fault for the fixed-height Small AND Medium cards (the model sizes them and
+        // the renderer clips); only Large scrolls, so its vertical is free.
+        let tall = if s.size == "Large" { 0.0 } else { over.y };
         if over.x > 1.0 || tall > 1.0 {
             flagged += 1;
             offenders.push(wrapper);
@@ -286,8 +289,11 @@ fn audit_gallery(
                 .card(s.card)
                 .map(|c| c.name().to_string())
                 .unwrap_or_default();
+            // The card box is sized to the model footprint; `content_size` is what the text actually needs.
+            // Printing both makes the miss concrete: "model 133, content 151" = the height formula is 18 short.
+            let (box_h, content_h) = (cn.size.y * scale, cn.content_size.y * scale);
             println!(
-                "  OVERFLOW [{:<6}] {name:?} +{:.0}px wide, +{:.0}px tall",
+                "  OVERFLOW [{:<6}] {name:?} +{:.0}px wide, +{:.0}px tall  (model {box_h:.0}px, content {content_h:.0}px)",
                 s.size,
                 over.x * scale,
                 tall * scale

@@ -3469,9 +3469,14 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
         CardRef(card.id),
         Node {
             width: Val::Px(MEDIUM_W),
-            // Sized to the model's computed footprint (width + a height per detail line) - the renderer is a
-            // pass-through, not the authority. Content clips to fit (never spills onto a neighbour).
-            height: Val::Px(card.footprint().y as f32),
+            // Sized to the **Medium** footprint (width + a height per detail line) - this function draws at
+            // Medium, so it boxes at Medium regardless of the card's own size field (they match in the app;
+            // the card gallery draws every size, so the box must follow the drawn size, not the stored one).
+            // The renderer is a pass-through, not the authority. Content clips to fit (never spills).
+            height: Val::Px(
+                card_layout::footprint(Size::Medium, card.detail().len(), card.panel().len()).y
+                    as f32,
+            ),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(10.0)),
             border: UiRect::all(Val::Px(2.0)),
@@ -3517,8 +3522,12 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
         CardRef(card.id),
         Node {
             width: Val::Px(LARGE_W),
-            // Sized to the model's computed footprint (capped at LARGE_MAX_H); content beyond it scrolls.
-            height: Val::Px(card.footprint().y as f32),
+            // Sized to the **Large** footprint (capped at LARGE_MAX_H); content beyond it scrolls. Boxes at
+            // Large regardless of the card's stored size, so the gallery (which draws every size) is accurate.
+            height: Val::Px(
+                card_layout::footprint(Size::Large, card.detail().len(), card.panel().len()).y
+                    as f32,
+            ),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(12.0)),
             row_gap: Val::Px(4.0),
