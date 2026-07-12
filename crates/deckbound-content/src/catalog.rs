@@ -57,13 +57,13 @@ pub const ABILITIES: [(&str, &str); 4] = [
 /// The starter roster — the four **reach x spread kits**, one per generic attack (Jab / Shot / Sweep /
 /// Salvo), each `(name, stats, ability)` where `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]`
 /// — the same order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole solo
-/// answer to one creature: Bruiser (melee single) answers the Wall, Marksman (ranged single) the Duelist,
-/// Reaver (melee area, tanky) the Swarm, Gunner (ranged area) the Storm (see [`creature_counter`]).
+/// answer to one creature: Raider (melee single) answers the Wall, Marksman (ranged single) the Duelist,
+/// Bastion (melee area, tanky) the Swarm, Bombardier (ranged area) the Storm (see [`creature_counter`]).
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
-    ("Bruiser", [7, 6, 1, 2, 2], "Jab"),   // melee single
-    ("Marksman", [5, 2, 1, 2, 2], "Shot"), // ranged single
-    ("Reaver", [1, 3, 3, 1, 2], "Sweep"),  // melee area, tanky (Toughness)
-    ("Gunner", [3, 3, 1, 1, 2], "Salvo"),  // ranged area, fragile
+    ("Raider", [7, 6, 1, 2, 2], "Jab"),       // melee single
+    ("Marksman", [5, 2, 1, 2, 2], "Shot"),    // ranged single
+    ("Bastion", [1, 3, 3, 1, 2], "Sweep"),    // melee area, tanky (Toughness)
+    ("Bombardier", [3, 3, 1, 1, 2], "Salvo"), // ranged area, fragile
 ];
 
 /// The description for a stat by name (from [`STATS`]), or `""` if unknown.
@@ -127,8 +127,8 @@ pub struct Creature {
     pub pos: Option<&'static str>,
 }
 
-/// The four creatures. Each is beaten by exactly one kit — a clean diagonal (Wall->Bruiser,
-/// Duelist->Marksman, Swarm->Reaver, Storm->Gunner) — and that answer is a consequence of the numbers,
+/// The four creatures. Each is beaten by exactly one kit — a clean diagonal (Wall->Raider,
+/// Duelist->Marksman, Swarm->Bastion, Storm->Bombardier) — and that answer is a consequence of the numbers,
 /// not a keyword (see [`creature_counter`]).
 pub const CREATURES: [Creature; 4] = [
     Creature {
@@ -231,10 +231,10 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 /// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
-        "Bulwark" => "Bruiser",  // tough single -> concentrate a big blow (Jab)
+        "Bulwark" => "Raider",       // tough single -> concentrate a big blow (Jab)
         "Riposte" => "Marksman", // hard-hitting single that mauls melee -> answer from range (Shot)
-        "Overrun" => "Reaver", // back-line horde -> a tough melee area survives the exchange (Sweep)
-        "Onslaught" => "Gunner", // front horde -> ranged area first-strikes it (Salvo)
+        "Overrun" => "Bastion", // back-line horde -> a tough melee area survives the exchange (Sweep)
+        "Onslaught" => "Bombardier", // front horde -> ranged area first-strikes it (Salvo)
         _ => "",
     }
 }

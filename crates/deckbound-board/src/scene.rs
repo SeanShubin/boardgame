@@ -596,11 +596,7 @@ mod tests {
 
     /// Open a fight from the sample board: recruit Vael (a Marksman), march to an encounter, open it.
     fn open_a_fight() -> (Board, PileId) {
-        use crate::{CardTableGame, Intention};
-        use cardtable_model::BoardGame;
-
         let mut board = sample_table();
-        let game = CardTableGame;
         let top = |b: &Board, label: &str| {
             b.pile(b.root_id())
                 .unwrap()
@@ -608,29 +604,8 @@ mod tests {
                 .into_iter()
                 .find(|&p| b.pile(p).map(|q| q.label.as_str()) == Some(label))
         };
-        let heroes = top(&board, "Heroes").unwrap();
-        let kit = top(&board, "Kit").unwrap();
-        let vael = board
-            .pile(heroes)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
-            .unwrap();
-        let marksman = board
-            .pile(kit)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Marksman"))
-            .unwrap();
-        game.apply(
-            &mut board,
-            &[Intention::Equip {
-                identity: vael,
-                kit: marksman,
-            }],
-        );
+        // The party starts assembled and stationed at the home cell (a hero *is* its kit), so there is
+        // nothing to recruit - march the Marksman out to an encounter.
         let locations = top(&board, "Locations").unwrap();
         let place = board
             .pile(locations)
@@ -647,7 +622,10 @@ mod tests {
         let position = board
             .content_cards(board.pile(locations).unwrap().subpiles()[4])
             .into_iter()
-            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+            .find(|&c| {
+                board.card(c).map(|k| (k.card_type(), k.front_title()))
+                    == Some(("hero", "Marksman"))
+            })
             .unwrap();
         let progress = top(&board, "Progress").unwrap();
         let _ = board.move_character(position, place, progress);
@@ -677,8 +655,8 @@ mod tests {
             .find(|r| r.label == "Heroes")
             .expect("a Heroes pool row");
         assert!(
-            heroes.tiles.iter().any(|t| t.title == "Vael Thornbrand"),
-            "the recruited hero is a draggable tile in the pool"
+            heroes.tiles.iter().any(|t| t.title == "Marksman"),
+            "the hero who marched here is a draggable tile in the pool"
         );
         assert!(
             heroes.tiles.iter().all(|t| t.draggable && t.tappable),

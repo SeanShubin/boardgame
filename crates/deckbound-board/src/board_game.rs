@@ -4,9 +4,7 @@
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{
-    Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Face, PileId, Scene,
-};
+use cardtable_model::{Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, PileId, Scene};
 
 use crate::sample_table;
 
@@ -15,12 +13,15 @@ use crate::sample_table;
 pub struct CardTableGame;
 
 /// A legal move over the board — transient (the cards are the state, plan §0.3). Drop-borne:
-/// `Equip`/`Unequip`/`March`. Affordance-borne: `AdvanceDay`. (`Fight`/`Arena` join at stretch A.)
+/// `Unequip`/`March`. Affordance-borne: `AdvanceDay`. (`Fight`/`Arena` join at stretch A.)
+///
+/// There is no `Equip`: the party starts assembled (a hero *is* its kit) and there is no recruit view to
+/// pair a hero with a kit in. See the Inn-removal commit — `Equip { identity, kit }` was the drop of a hero
+/// identity onto a kit card inside the Inn's projection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intention {
-    /// Recruit `identity` with `kit`'s recipe — assemble a character deck from the banks.
-    Equip { identity: CardId, kit: CardId },
-    /// Un-recruit the character deck whose Zone label is `label` — return every borrowed card.
+    /// Disband the character deck whose Zone label is `label` — return every borrowed card to its bank and
+    /// the hero's four copies to the Heroes reserve.
     Unequip { label: CardId },
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
@@ -51,7 +52,6 @@ impl BoardGame for CardTableGame {
     fn apply(&self, board: &mut Board, intentions: &[Intention]) {
         for intention in intentions {
             match *intention {
-                Intention::Equip { identity, kit } => equip(board, identity, kit),
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
                 Intention::AdvanceDay => advance_day(board),
@@ -104,9 +104,9 @@ impl BoardGame for CardTableGame {
         onto: DropTarget,
     ) -> Option<Intention> {
         match onto {
-            // Onto a card, inside a projection (the inn): a hero identity + a kit pair up to equip.
-            DropTarget::Card(target) => equip_pair(board, dragged, target)
-                .map(|(identity, kit)| Intention::Equip { identity, kit }),
+            // Dropping a card onto another card means nothing: the only rule that used it was the Inn's
+            // equip pairing (a hero identity onto a kit), and the Inn is gone.
+            DropTarget::Card(_) => None,
             DropTarget::Pile(dest) => {
                 // In the arena during Marshal, a hero dropped into a rank row takes that rank (pile membership).
                 if let Some(arena) = crate::arena::find_arena(board)
@@ -173,80 +173,6 @@ impl BoardGame for CardTableGame {
 
 // ---- intention application — conservation-clean ops over the board ---------------------------------
 
-fn equip(board: &mut Board, identity: CardId, kit: CardId) {
-    let Some(recipe) = board.card(kit).and_then(|c| c.recipe().cloned()) else {
-        return;
-    };
-    // The kit's name (its card title, e.g. "Bruiser") - tagged onto the hero afterward so its build shows.
-    let kit_name = board
-        .card(kit)
-        .map(|c| c.front_title().to_string())
-        .unwrap_or_default();
-    let Some(name) = board.card(identity).map(|c| c.front_title().to_string()) else {
-        return;
-    };
-    let (Some(heroes), Some(stats), Some(numbers), Some(abilities), Some(home), Some(progress)) = (
-        board.card(identity).map(|c| c.home()),
-        top_deck(board, "Stats"),
-        top_deck(board, "Numbers"),
-        top_deck(board, "Abilities"),
-        home_location(board),
-        top_deck(board, "Progress"),
-    ) else {
-        return;
-    };
-    if board
-        .equip_character(
-            &name,
-            &recipe,
-            &deckbound_content::catalog::stat_names(),
-            heroes,
-            stats,
-            numbers,
-            abilities,
-            home,
-            progress,
-        )
-        .is_err()
-    {
-        return;
-    }
-    // Show the kit on the hero's map position card, so each recruited hero's build reads at a glance.
-    if let Some(pos) = board.content_cards(home).into_iter().find(|&c| {
-        board
-            .card(c)
-            .is_some_and(|k| k.card_type() == "hero" && k.front_title() == name)
-    }) {
-        let _ = board.set_card_detail(pos, vec![format!("Kit: {kit_name}")]);
-    }
-    // Station an app-only **kit manifest** at the front of the assembled deck: a header that names the kit
-    // (the cardset) and lists the build it produced - the ability + the stat line - so the deck declares its
-    // own composition and is auditable at a glance. It carries no new information (the stat / ability cards
-    // are already in the deck), so it is a `Virtual` projection: not counted in `physical_card_count`, minted
-    // freely, and removed on unequip. The map card says who took what; this says what the deck is.
-    if let Some(deck) = top_deck(board, &name)
-        && let Ok(manifest) = board.add_card(
-            deck,
-            Face::Up {
-                title: kit_name.clone(),
-            },
-            None,
-        )
-    {
-        let _ = board.set_card_kind(manifest, CardKind::Virtual);
-        let _ = board.set_card_type(manifest, "kit");
-        let mut detail = vec![format!("Ability: {}", recipe.ability)];
-        for (stat, value) in deckbound_content::catalog::stat_names()
-            .iter()
-            .zip(recipe.stats.iter())
-        {
-            detail.push(format!("{stat} {value}"));
-        }
-        let _ = board.set_card_detail(manifest, detail);
-        let _ = board.move_card(manifest, deck, 0); // an audit header, above the rest of the deck
-    }
-}
-
 fn unequip(board: &mut Board, label: CardId) {
     if !is_character_label(board, label) {
         return;
@@ -286,25 +212,6 @@ fn advance_day(board: &mut Board) {
 }
 
 // ---- legality — ported from the renderer's predicates ---------------------------------------------
-
-/// In a projection view (the inn), a hero identity and a kit (recipe) card pair to equip. Returns
-/// `(identity, kit)`, or `None` if the drop isn't a legal equip.
-fn equip_pair(board: &Board, a: CardId, b: CardId) -> Option<(CardId, CardId)> {
-    if a == b
-        || board
-            .pile(board.focus_id())
-            .is_none_or(|p| p.projection().is_empty())
-    {
-        return None;
-    }
-    let a_kit = board.card(a).is_some_and(|c| c.recipe().is_some());
-    let b_kit = board.card(b).is_some_and(|c| c.recipe().is_some());
-    match (a_kit, b_kit) {
-        (true, false) => Some((b, a)), // a is the kit, b the identity
-        (false, true) => Some((a, b)), // b is the kit, a the identity
-        _ => None,                     // two kits or two heroes
-    }
-}
 
 /// Whether `card` is a character deck's Zone label (its home pile `reflects` it).
 fn is_character_label(board: &Board, card: CardId) -> bool {
@@ -370,15 +277,6 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
         .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some(label))
 }
 
-fn home_location(board: &Board) -> Option<PileId> {
-    let locations = top_deck(board, "Locations")?;
-    board
-        .pile(locations)?
-        .subpiles()
-        .into_iter()
-        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Ashfen Crossing"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,146 +307,41 @@ mod tests {
             .find(|&c| board.card(c).map(|c| c.front_title()) == Some(name))
     }
 
+    /// The party starts assembled, so the only half of the round-trip left is the teardown: **un-equipping**
+    /// disbands a character deck conservation-clean — every borrowed stat / number / ability card returns to
+    /// its bank, and the hero's four copies re-form the `×4` stack in the Heroes reserve.
     #[test]
-    fn equip_assembles_a_character_deck_conservation_clean() {
+    fn unequip_disbands_a_character_deck_conservation_clean() {
         let game = CardTableGame;
         let mut board = game.opening();
         let root = board.root_id();
         let before = board.physical_card_count(root);
 
-        let heroes = top_deck(&board, "Heroes").unwrap();
-        let kit = top_deck(&board, "Kit").unwrap();
-        let vael = card_in(&board, heroes, "Vael Thornbrand").expect("Vael is in the Heroes deck");
-        let marksman = card_in(&board, kit, "Marksman").expect("Marksman is in the Kit deck");
-
-        game.apply(
-            &mut board,
-            &[Intention::Equip {
-                identity: vael,
-                kit: marksman,
-            }],
-        );
-
-        // A character deck named for the hero now exists, its label being the hero's own card.
-        let deck =
-            top_deck(&board, "Vael Thornbrand").expect("a Vael character deck was assembled");
-        assert!(
-            board.pile(deck).unwrap().reflects().is_some(),
-            "the deck's label is the hero's own card"
-        );
-        // Conservation (PC.2): every card was moved / dealt from the banks, never minted.
-        assert_eq!(
-            board.physical_card_count(root),
-            before,
-            "physical card count is conserved through equip"
-        );
-        // The kit recipe card is a reusable spec — untouched.
-        assert!(
-            card_in(&board, kit, "Marksman").is_some(),
-            "the kit stays in the Kit deck"
-        );
-        // The hero's map position card is tagged with the kit it took, so its build reads at a glance.
-        let home = home_location(&board).unwrap();
-        let pos = board
-            .content_cards(home)
-            .into_iter()
-            .find(|&c| {
-                board.card(c).is_some_and(|k| {
-                    k.card_type() == "hero" && k.front_title() == "Vael Thornbrand"
-                })
-            })
-            .expect("Vael's position card at the home location");
-        assert!(
-            board
-                .card(pos)
-                .unwrap()
-                .detail()
-                .iter()
-                .any(|l| l.contains("Kit: Marksman")),
-            "the hero card shows its taken kit: {:?}",
-            board.card(pos).unwrap().detail()
-        );
-    }
-
-    #[test]
-    fn equip_stations_an_auditable_kit_manifest() {
-        let game = CardTableGame;
-        let mut board = game.opening();
-        let root = board.root_id();
-        let before = board.physical_card_count(root);
-
-        let heroes = top_deck(&board, "Heroes").unwrap();
-        let kit = top_deck(&board, "Kit").unwrap();
-        let vael = card_in(&board, heroes, "Vael Thornbrand").unwrap();
-        let marksman = card_in(&board, kit, "Marksman").unwrap();
-        game.apply(
-            &mut board,
-            &[Intention::Equip {
-                identity: vael,
-                kit: marksman,
-            }],
-        );
-
-        let deck = top_deck(&board, "Vael Thornbrand").expect("a character deck was assembled");
-        // The deck carries a Virtual "kit" manifest, titled for the kit, as its front (header) card - the
-        // deck declares its own composition, auditable at a glance.
-        let manifest = board
-            .content_cards(deck)
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("kit"))
-            .expect("the deck carries a kit manifest");
-        let m = board.card(manifest).unwrap();
-        assert_eq!(
-            m.kind(),
-            CardKind::Virtual,
-            "the manifest is an app-only projection, not conserved truth"
-        );
-        assert_eq!(m.front_title(), "Marksman", "it is titled for the kit");
-        assert_eq!(
-            board.content_cards(deck)[0],
-            manifest,
-            "it is the deck's header (front card)"
-        );
-        assert!(
-            m.detail().iter().any(|l| l.starts_with("Ability:")),
-            "it lists the ability: {:?}",
-            m.detail()
-        );
-        assert!(
-            m.detail().iter().any(|l| l.contains("Might")),
-            "it lists the stat line: {:?}",
-            m.detail()
-        );
-
-        // Conservation (PC.2): a Virtual readout carries no physical card, so the count is unchanged.
-        assert_eq!(
-            board.physical_card_count(root),
-            before,
-            "the manifest is not counted - equip stays conservation-clean"
-        );
-
-        // Round-trip: unequip drops the manifest cleanly, not into a bank.
+        let deck = top_deck(&board, "Marksman").expect("the Marksman starts in the party");
         let label = board
             .pile(deck)
             .unwrap()
             .reflects()
-            .expect("the deck's label");
+            .expect("the deck is labelled by the hero's own card");
+
         game.apply(&mut board, &[Intention::Unequip { label }]);
+
         assert!(
-            top_deck(&board, "Vael Thornbrand").is_none(),
-            "the deck was torn down"
+            top_deck(&board, "Marksman").is_none(),
+            "the character deck was torn down"
         );
-        assert!(
-            board
-                .content_cards(heroes)
-                .iter()
-                .all(|&c| board.card(c).map(|k| k.card_type()) != Some("kit")),
-            "the manifest was discarded, never returned to the Heroes stack"
+        let heroes = top_deck(&board, "Heroes").unwrap();
+        assert_eq!(
+            card_in(&board, heroes, "Marksman")
+                .and_then(|c| board.card(c))
+                .map(|c| c.quantity()),
+            Some(4),
+            "the hero's four copies re-formed the x4 stack in the reserve"
         );
         assert_eq!(
             board.physical_card_count(root),
             before,
-            "unequip round-trips conservation-clean"
+            "unequip is conservation-clean (PC.2)"
         );
     }
 
@@ -556,34 +349,23 @@ mod tests {
     fn march_moves_the_map_position() {
         let game = CardTableGame;
         let mut board = game.opening();
-        let heroes = top_deck(&board, "Heroes").unwrap();
-        let kit = top_deck(&board, "Kit").unwrap();
-        let vael = card_in(&board, heroes, "Vael Thornbrand").unwrap();
-        let marksman = card_in(&board, kit, "Marksman").unwrap();
-        game.apply(
-            &mut board,
-            &[Intention::Equip {
-                identity: vael,
-                kit: marksman,
-            }],
-        );
 
-        // The character's map position starts at the home town (Ashfen Crossing, the grid centre); march it
-        // to an orthogonally-adjacent place (index 1 is directly above the centre index 4).
-        let home = home_location(&board).expect("Ashfen Crossing");
-        let position =
-            card_in(&board, home, "Vael Thornbrand").expect("Vael's map position at Ashfen");
+        // The party starts stationed at the home cell (Ashfen Crossing, the grid centre); march one hero to
+        // an orthogonally-adjacent place (index 1 is directly above the centre index 4).
         let locations = top_deck(&board, "Locations").unwrap();
+        let home = board.pile(locations).unwrap().subpiles()[4];
         let dest = board.pile(locations).unwrap().subpiles()[1];
+        let position =
+            card_in(&board, home, "Marksman").expect("the Marksman is stationed at home");
 
         game.apply(&mut board, &[Intention::March { position, to: dest }]);
 
         assert!(
-            card_in(&board, home, "Vael Thornbrand").is_none(),
-            "the position left the home town"
+            card_in(&board, home, "Marksman").is_none(),
+            "the position left the home cell"
         );
         assert!(
-            card_in(&board, dest, "Vael Thornbrand").is_some(),
+            card_in(&board, dest, "Marksman").is_some(),
             "the position arrived at the destination"
         );
     }

@@ -1343,37 +1343,15 @@ mod tests {
     use super::*;
     use crate::sample_table;
 
-    /// A recruited melee kit (Bruiser carries Jab) must flag `Melee` (not `no strike`) on its combat card:
+    /// A melee kit (the Raider carries Jab) must flag `Melee` (not `no strike`) on its combat card:
     /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
-    /// the "Dallen Rook shows no strike" regression - which can only occur if a card carries a stale,
-    /// pre-reach detail line (a fight persisted by an older build), never from this live path.
+    /// the "hero shows no strike" regression - which can only occur if a card carries a stale, pre-reach
+    /// detail line (a fight persisted by an older build), never from this live path.
     #[test]
     fn a_melee_kit_flags_melee_on_its_combat_card() {
-        use crate::CardTableGame;
-        use crate::Intention;
-        use cardtable_model::BoardGame;
-
-        let mut board = sample_table();
-        let heroes = top_deck(&board, "Heroes").unwrap();
-        let kit = top_deck(&board, "Kit").unwrap();
-        let hero = board.pile(heroes).unwrap().cards()[0];
-        let hero_name = board.card(hero).unwrap().front_title().to_string();
-        let bruiser = board
-            .pile(kit)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Bruiser"))
-            .unwrap();
-        CardTableGame.apply(
-            &mut board,
-            &[Intention::Equip {
-                identity: hero,
-                kit: bruiser,
-            }],
-        );
-
-        let (stats, melee, ranged, aoe) = hero_stats(&board, &hero_name).expect("recipe resolves");
+        // The Raider starts in the party (a hero is its kit), so its build is already assembled.
+        let board = sample_table();
+        let (stats, melee, ranged, aoe) = hero_stats(&board, "Raider").expect("recipe resolves");
         assert!(melee && !ranged, "Jab is melee-only");
         assert!(!aoe, "Jab is single-target");
         let d = detail(
@@ -1393,43 +1371,17 @@ mod tests {
         assert!(!d[2].contains("Ranged") && !d[2].contains("Area"));
     }
 
-    /// Set up a fight at a place with an encounter, with Vael recruited (Marksman) and marched there.
+    /// Set up a fight at a place with an encounter, with the Marksman marched there.
     fn open_a_fight(board: &mut Board) -> PileId {
         open_a_fight_with(board, "Marksman")
     }
 
-    /// As [`open_a_fight`], but recruit Vael with the named kit (so tests can pick the hero's attack type).
+    /// As [`open_a_fight`], but march the hero of the named kit (so tests can pick the hero's attack type).
+    /// The party starts assembled and stationed at Ashfen — a hero *is* its kit — so there is nothing to
+    /// recruit: just walk the one we want out to the encounter, leaving the rest at home.
     fn open_a_fight_with(board: &mut Board, kit_name: &str) -> PileId {
-        use crate::CardTableGame;
-        use crate::Intention;
-        use cardtable_model::BoardGame;
-
-        let game = CardTableGame;
-        let heroes = top_deck(board, "Heroes").unwrap();
-        let kit = top_deck(board, "Kit").unwrap();
-        let vael = board
-            .pile(heroes)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
-            .unwrap();
-        let chosen = board
-            .pile(kit)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some(kit_name))
-            .unwrap();
-        game.apply(
-            board,
-            &[Intention::Equip {
-                identity: vael,
-                kit: chosen,
-            }],
-        );
-
         let locations = top_deck(board, "Locations").unwrap();
+        let ashfen = board.pile(locations).unwrap().subpiles()[4];
         let place = board
             .pile(locations)
             .unwrap()
@@ -1442,11 +1394,14 @@ mod tests {
                     .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
             })
             .unwrap();
+        // This kit's hero map-position card, standing at the home cell.
         let position = board
-            .content_cards(board.pile(locations).unwrap().subpiles()[4])
+            .content_cards(ashfen)
             .into_iter()
-            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-            .unwrap();
+            .find(|&c| {
+                board.card(c).map(|k| (k.card_type(), k.front_title())) == Some(("hero", kit_name))
+            })
+            .unwrap_or_else(|| panic!("{kit_name} is stationed at Ashfen"));
         let progress = top_deck(board, "Progress").unwrap();
         let _ = board.move_character(position, place, progress);
         open_fight(board, place).expect("a fight opens")
@@ -1470,27 +1425,27 @@ mod tests {
         );
     }
 
-    /// The `read_combatant` plumbing carries area / horde from the source: a Reaver (Sweep) hero flags `aoe`,
+    /// The `read_combatant` plumbing carries area / horde from the source: a Bastion (Sweep) hero flags `aoe`,
     /// and every foe faithfully mirrors its catalog `aoe`/`horde` (guards against a hardcoded-false regress).
     #[test]
     fn combat_reads_carry_aoe_for_a_sweep_hero_and_horde_for_foes() {
         let mut board = sample_table();
-        let arena = open_a_fight_with(&mut board, "Reaver"); // Vael carries Sweep, an area attack
-        let vael = pool_heroes(&board, arena)
+        let arena = open_a_fight_with(&mut board, "Bastion"); // the Bastion carries Sweep, an area attack
+        let bastion = pool_heroes(&board, arena)
             .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Vael Thornbrand"))
-            .expect("Vael is in the pool");
+            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Bastion"))
+            .expect("the Bastion is in the pool");
         let van = sub_pile(&board, arena, "Vanguard").unwrap();
-        assign(&mut board, vael, van);
+        assign(&mut board, bastion, van);
 
         let (_, units, _, _, _) = arena_state(&board, arena);
         let sweep = units
             .iter()
-            .find(|u| u.name == "Vael Thornbrand")
+            .find(|u| u.name == "Bastion")
             .expect("the Sweep hero is ranked");
         assert!(
             sweep.aoe,
-            "a Reaver (Sweep) is an area attacker on its combat read"
+            "a Bastion (Sweep) is an area attacker on its combat read"
         );
         assert!(!sweep.horde, "a hero is never a horde");
         for u in units.iter().filter(|u| u.side == Side::Foe) {

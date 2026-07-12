@@ -21,11 +21,17 @@ fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId
     id
 }
 
-/// Add a **Kit** card: a Small card (name + type) that grows to show its five-stat line and
-/// ability. `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` — the suitless-roster order
-/// from `data/balance/generic-classes.ron`; `ability` is the derived strike card (Jab / Shot / …).
-fn starter(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
-    let id = typed(tree, pile, name, "Kit");
+/// Add a **hero** card — the kit *is* the hero (they were merged; see the Inn removal). Named for its kit
+/// ("Raider", "Marksman", ...), typed `hero`, it grows to show the five-stat line and ability that kit
+/// gives, and carries that kit's **recipe**. `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` —
+/// the suitless-roster order from `data/balance/generic-classes.ron`; `ability` is the derived strike card
+/// (Jab / Shot / ...).
+///
+/// The recipe is a reusable *spec* (never consumed): the five stat values + the ability that
+/// [`Board::equip_character`] assembles by **moving** a stat-name card, a number card, and an ability card
+/// out of the banks into the character deck (PC.2, no mint).
+fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
+    let id = typed(tree, pile, name, "hero");
     let [might, vitality, toughness, cadence, finesse] = stats;
     tree.set_card_detail(
         id,
@@ -35,10 +41,7 @@ fn starter(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: 
             format!("Abilities: {ability}"),
         ],
     )
-    .expect("starter card just added");
-    // The kit's **recipe** — a reusable *spec* (never consumed): the five stat values + the ability that
-    // `Board::equip_character` assembles by **moving** a stat-name card, a number card, and an ability
-    // card out of the banks into the character deck (PC.2, no mint).
+    .expect("hero card just added");
     tree.set_card_recipe(
         id,
         Recipe {
@@ -46,14 +49,14 @@ fn starter(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: 
             ability: ability.into(),
         },
     )
-    .expect("starter card just added");
+    .expect("hero card just added");
     id
 }
 
 /// Author a **foe** card for creature `c` (typed `foe`): a Small card (name + type) that grows to show
 /// its derived intention and posture, its five-stat line, and its ability. Both the intention and the
 /// posture are *derived* from the stats + ability (`catalog::creature_intention` / `creature_posture`),
-/// never stored — the card reads back what the numbers already say. Mirrors [`starter`] for kits.
+/// never stored — the card reads back what the numbers already say. Mirrors [`hero`] for the party.
 fn creature_card(tree: &mut Board, pile: PileId, c: &catalog::Creature) -> CardId {
     let id = typed(tree, pile, c.name, "foe");
     let [might, vitality, toughness, cadence, finesse] = c.stats;
@@ -93,19 +96,8 @@ const LOCATIONS: [&str; 9] = [
     "Ninefold Deep",
 ];
 
-/// The authored adventurer names from the Deckbound Name Bank
-/// (`docs/games/deckbound/name-bank.md` § Adventurers) — the heroes stationed at Ashfen Crossing.
-const HEROES: [&str; 9] = [
-    "Vael Thornbrand",
-    "Sera of the Ninth Watch",
-    "Bram Cutter",
-    "Isolde Greymantle",
-    "Kord the Sentinel",
-    "Nyx Ashwell",
-    "Dallen Rook",
-    "Mira Tempestborne",
-    "Osric Vane",
-];
+// The authored adventurer names (Name Bank § Adventurers) are gone: a hero *is* its kit now, so the party is
+// named for the four kits in `catalog::ROSTER` (Raider / Marksman / Bastion / Bombardier). See the Inn removal.
 
 /// The round's phases in order, each with a one-line mechanical summary (condensed from
 /// `docs/games/deckbound/reference/combat-phases.md`, the canonical text). The Rules deck renders one
@@ -201,11 +193,14 @@ fn grid_layout(tree: &mut Board, deck: PileId, cols: usize) {
     }
 }
 
-/// A small, representative table for the card-table game: an **Identity** deck of unrecruited heroes, a
-/// **Kit** deck, an **Abilities** deck, and a **Locations** grid whose centre, **Ashfen
-/// Crossing**, is the *inn* — a projection of the Identity and Kit decks where you drag a hero
-/// onto a kit (or vice versa) to recruit them into a character deck. Every card is a physical,
-/// single-homed card; a projection only *shows* other decks' cards, it doesn't move them.
+/// A small, representative table for the card-table game: a **Heroes** deck (the reserve the party's cards
+/// are dealt from), the **Abilities** / **Stats** / **Numbers** banks, and a **Locations** grid. The party
+/// of four — one hero per kit — starts **already assembled** and stationed at **Ashfen Crossing** (the
+/// centre). Every card is a physical, single-homed card.
+///
+/// There is no Inn and no recruiting: a hero *is* its kit. See the Inn-removal commit if that concept is
+/// wanted back — the Inn was a `Rows` **projection** of the Heroes and Kit decks at Ashfen Crossing, where
+/// you dragged a hero identity onto a kit card to assemble a character deck from the banks.
 pub fn sample_table() -> Board {
     let mut tree = Board::new();
     let root = tree.root_id();
@@ -222,14 +217,16 @@ pub fn sample_table() -> Board {
     )
     .expect("root exists");
 
-    // The "Heroes" deck: the roster, as one `hero` card per hero **stacked ×4** — the four physical copies
-    // a hero needs at once when active (character-deck label, rank marker, map position, move marker). The
-    // inn projects this deck (the ×4 stack shows as one recruit tile); recruiting deals the four copies out
-    // (`Board::equip_character`), emptying the stack — so a recruited hero can't be recruited again.
+    // The "Heroes" deck: the party's **reserve**, one `hero` card per kit (`catalog::ROSTER`) **stacked ×4** —
+    // the four physical copies a hero needs at once when active (character-deck label, rank marker, map
+    // position, move marker). The kit *is* the hero, so each card carries that kit's stat line, ability, and
+    // recipe. The party is assembled from this deck at the bottom of this function, which deals all four
+    // copies out and empties every stack — so the Heroes deck starts the game empty, and is the home the
+    // cards return to if a character is un-equipped.
     const HERO_COPIES: u32 = 4;
     let heroes = tree.add_pile(root, "Heroes").expect("root exists");
-    for hero in HEROES {
-        let h = typed(&mut tree, heroes, hero, "hero");
+    for &(name, stats, ability) in &catalog::ROSTER {
+        let h = hero(&mut tree, heroes, name, stats, ability);
         tree.set_card_quantity(h, HERO_COPIES).expect("hero stack");
     }
     let heroes_zone = typed(&mut tree, heroes, "Heroes", "Label");
@@ -243,25 +240,6 @@ pub fn sample_table() -> Board {
         },
     )
     .expect("heroes exists");
-
-    // A "Kit" deck: one card per generic starter (the suitless roster from
-    // `data/balance/generic-classes.ron`). Each is a Small card that grows to its five-stat line and
-    // ability, and carries a **recipe** — the cards a character gains when equipped with it.
-    let starting_kit = tree.add_pile(root, "Kit").expect("root exists");
-    for &(name, stats, ability) in &catalog::ROSTER {
-        starter(&mut tree, starting_kit, name, stats, ability);
-    }
-    let kit_zone = typed(&mut tree, starting_kit, "Kit", "Label");
-    tree.set_card_kind(kit_zone, CardKind::Zone)
-        .expect("kit zone card");
-    tree.set_layout(
-        starting_kit,
-        Layout {
-            arrangement: Arrangement::Free,
-            editable: true,
-        },
-    )
-    .expect("starting kit exists");
 
     // Provisioned bank sizes (spec `canon/2-spec/physical-cards.md` PC.5 — sufficient, bounded, tunable):
     // one of each stat name / ability per party member, and enough number cards for their stat values.
@@ -334,50 +312,22 @@ pub fn sample_table() -> Board {
     .expect("numbers exists");
 
     // The "Locations" deck: a fixed 3×3 grid (2-D, non-editable) of place-piles from the Name Bank,
-    // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the *inn*: a
-    // projection of the Identity and Kit decks — drill in to see the heroes and the kits
-    // together and drag one onto the other to recruit (see the renderer's `try_equip` -> `Board::equip_character`).
+    // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the party's home:
+    // the four heroes are stationed there at the bottom of this function. It stations no encounter — it is
+    // the safe cell you march out from. (It used to hold the **Inn**, a projection you recruited in; that
+    // concept was removed, see the Inn-removal commit.)
     let locations = tree.add_pile(root, "Locations").expect("root exists");
     for place in LOCATIONS {
         let place_pile = tree.add_pile(locations, place).expect("locations exists");
         let name = typed(&mut tree, place_pile, place, "Location");
         tree.set_card_kind(name, CardKind::Zone)
             .expect("place name card");
-        if place == "Ashfen Crossing" {
-            // Ashfen holds one card, the **Inn** — drill into it to reach the recruit view: a `Rows`
-            // pile whose Hero and Kit rows **project** the Identity and Kit decks side by side. You
-            // recruit by dragging a hero onto a kit (an equip assembled from the banks — no Active row,
-            // no copies; see the renderer's `try_equip`).
-            let inn = tree.add_pile(place_pile, "Inn").expect("ashfen exists");
-            for header in ["Hero", "Kit"] {
-                let h = tree
-                    .add_card(
-                        inn,
-                        Face::Up {
-                            title: header.into(),
-                        },
-                        None,
-                    )
-                    .expect("inn exists");
-                tree.set_card_kind(h, CardKind::Header)
-                    .expect("header card");
-                // Row headers are organizational, not playable — they print the "Label" type.
-                tree.set_card_type(h, "Label").expect("header card");
-            }
-            tree.set_projection(inn, vec![heroes, starting_kit])
-                .expect("inn exists");
-            tree.set_layout(
-                inn,
-                Layout {
-                    arrangement: Arrangement::Rows,
-                    editable: false,
-                },
-            )
-            .expect("inn exists");
-        } else if let Some(enc) = catalog::encounter_for(place) {
-            // Every non-inn location stations an **encounter** card. Its foes are **virtual** — the card
-            // *lists* them (name ×qty); the real foe cards live in the Bestiary and are only instantiated
-            // into the battle arena when a fight starts. A solo (an inn-adjacent cell) fields its one
+        if place != "Ashfen Crossing"
+            && let Some(enc) = catalog::encounter_for(place)
+        {
+            // Every location but the home cell stations an **encounter** card. Its foes are **virtual** — the
+            // card *lists* them (name ×qty); the real foe cards live in the Bestiary and are only instantiated
+            // into the battle arena when a fight starts. A solo (a home-adjacent cell) fields its one
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
             let mut detail = vec![enc.flavor.to_string()];
@@ -550,7 +500,6 @@ pub fn sample_table() -> Board {
     // Lay each Free deck's cards out tidily below the overlay band, so the first render of a zone is
     // clean — the Back card sits in its own row up top with the cards beneath it, no shove required yet.
     grid_layout(&mut tree, heroes, 4);
-    grid_layout(&mut tree, starting_kit, 4);
     grid_layout(&mut tree, abilities, 4);
     grid_layout(&mut tree, stats, 4);
     grid_layout(&mut tree, numbers, 4);
@@ -561,8 +510,6 @@ pub fn sample_table() -> Board {
     // exact constant-gap row computed by `Board::arrange_row` once the chips are sized (see the
     // renderer's `settle_table_piles`); these seeds only need to be non-overlapping until then.
     tree.set_pile_pos(heroes, 40, 40).expect("heroes exists");
-    tree.set_pile_pos(starting_kit, 180, 40)
-        .expect("starting kit exists");
     tree.set_pile_pos(abilities, 320, 40)
         .expect("abilities exists");
     tree.set_pile_pos(stats, 460, 40).expect("stats exists");
@@ -577,6 +524,38 @@ pub fn sample_table() -> Board {
     tree.set_pile_pos(bestiary, 1440, 40)
         .expect("bestiary exists");
 
+    // **The starting party.** A hero *is* its kit, so the four kits in `catalog::ROSTER` are the four heroes —
+    // and they begin already assembled, rather than being recruited at an inn. Each is dealt out of the Heroes
+    // reserve into its own character deck (a stat-name card + a number card per stat, then the ability, all
+    // *moved* from the banks — conservation-clean, PC.2) and stationed at Ashfen Crossing, the home cell.
+    // Dealing all four copies of each hero empties the Heroes deck, which is then just the home those cards
+    // return to on un-equip.
+    let ashfen = tree
+        .pile(locations)
+        .expect("locations exists")
+        .subpiles()
+        .into_iter()
+        .find(|&p| tree.pile(p).map(|d| d.label.as_str()) == Some("Ashfen Crossing"))
+        .expect("Ashfen Crossing is one of the LOCATIONS");
+    for &(name, stat_values, ability) in &catalog::ROSTER {
+        let recipe = Recipe {
+            stats: stat_values,
+            ability: ability.into(),
+        };
+        tree.equip_character(
+            name,
+            &recipe,
+            &catalog::stat_names(),
+            heroes,
+            stats,
+            numbers,
+            abilities,
+            ashfen,
+            progress,
+        )
+        .expect("the banks provision the whole starting party");
+    }
+
     tree
 }
 
@@ -588,29 +567,33 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        // Identity, Kit, the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock (Day,
-        // Heroes, Kit, the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock (Progress,
-        // Events), + the Bestiary.
-        assert_eq!(root.subpiles().len(), 10);
-        // Heroes: 9 heroes ×4 copies + a Zone card. Kit: 4 starter specs + a Zone card. The banks:
-        // Abilities (4 abilities × 5 copies), Stats (5 names × 5 copies), Numbers (9 digits × 12 copies),
-        // each + a Zone label. Locations: a "Location" Zone card + 9 place names + the inn's 2 row headers
-        // + each non-inn place's encounter header (foes are *virtual* now — the header lists them, no foe
-        // cards are dealt): 8 non-inn places = 8 headers. Rules: 5 leaf phases + a Zone label; the Engage
-        // sub-deck: 5 children + a Zone label. Day clock: Progress (empty — Day 0 — + a label), Events (the
-        // Day Passed reserve + a label). Bestiary: 4 creature `foe` stacks (×4 each) + a Zone label.
+        // The nine decks — Heroes, the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock
+        // (Progress, Events), the Bestiary — plus the four character decks the starting party is assembled
+        // into (one per kit). There is no Kit deck: a hero *is* its kit.
+        assert_eq!(root.subpiles().len(), 9 + catalog::ROSTER.len());
+        // The grand total is the **provisioned** total: assembling the party only *moves* cards out of the
+        // Heroes reserve and the banks into the character decks (PC.2, no mint), so it doesn't change.
+        //   Heroes    4 kits x4 copies + a Zone label   (all 16 copies get dealt into the party)
+        //   Abilities 4 abilities x5 copies + a label
+        //   Stats     5 names x5 copies + a label
+        //   Numbers   9 digits x12 copies + a label
+        //   Locations a Zone card + 9 place names + 8 encounter headers + 8 Rumors (app-only readouts).
+        //             The party's 4 map positions come out of Heroes, so they're already counted there.
+        //   Rules     5 leaf phases + a label, and the Engage sub-deck's 5 + a label
+        //   Progress  a Zone label (Day 0; the 4 move markers also come out of Heroes)
+        //   Events    the Day Passed x12 reserve + a label
+        //   Bestiary  4 creature `foe` stacks x4 + a label
         assert_eq!(
             t.card_count(),
-            (9 * 4 + 1)
-                + (4 + 1)
+            (4 * 4 + 1)
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 2 + 8 + 8) // Locations: Zone + 9 places + 2 inn headers + 8 encounter headers + 8 Rumors (app-only Utility) cards
+                + (1 + 9 + 8 + 8)
                 + ((5 + 1) + (5 + 1))
-                + 1 // Progress: just a Zone label (starts empty - Day 0)
-                + (12 + 1) // Events: the full Day Passed reserve + a Zone label
-                + (4 * 4 + 1) // Bestiary: 4 creature `foe` stacks x4 + a Zone label
+                + 1
+                + (12 + 1)
+                + (4 * 4 + 1)
         );
     }
 
@@ -631,36 +614,34 @@ mod tests {
         };
         assert_eq!(t.current_day(progress), 0);
         assert_eq!(events_qty(&t), 12);
-        assert!(!t.day_is_over(progress), "no markers - never 'over'");
+        // The starting party laid a face-up move marker each — nobody has moved, so the day isn't over.
+        assert!(!t.day_is_over(progress), "every marker is still standing");
 
-        // A hero move marker on Progress (a setup deal), then spend its move.
+        // Spend every hero's move (each marker flips face-down); only then is the day over.
         let total = t.card_count();
-        let marker = t
-            .add_card(
-                progress,
-                Face::Up {
-                    title: "Vael".into(),
-                },
-                None,
-            )
-            .unwrap();
-        t.set_card_type(marker, "hero").unwrap();
-        t.mark_moved(progress, "Vael").unwrap();
-        assert!(t.day_is_over(progress), "the only marker has flipped down");
+        let markers: Vec<String> = catalog::ROSTER
+            .iter()
+            .map(|&(n, _, _)| n.to_string())
+            .collect();
+        for (i, name) in markers.iter().enumerate() {
+            t.mark_moved(progress, name).unwrap();
+            let last = i + 1 == markers.len();
+            assert_eq!(
+                t.day_is_over(progress),
+                last,
+                "the day is over only once the last hero has moved ({name})"
+            );
+        }
 
-        // Advance: the marker stands back up, one `Day Passed` moves Events -> Progress, day ticks to 1.
+        // Advance: the markers stand back up, one `Day Passed` moves Events -> Progress, day ticks to 1.
         t.advance_day(progress, events).unwrap();
         assert_eq!(t.current_day(progress), 1);
         assert_eq!(events_qty(&t), 11, "one drawn from the reserve stack");
-        assert!(!t.day_is_over(progress));
-        assert!(
-            !t.card(marker).unwrap().is_face_down(),
-            "marker stood back up"
-        );
+        assert!(!t.day_is_over(progress), "every marker stood back up");
         assert_eq!(
             t.card_count(),
-            total + 1,
-            "conservation: play (move + advance) minted nothing beyond the added marker"
+            total,
+            "conservation: play (move + advance) minted nothing"
         );
     }
 
@@ -673,30 +654,33 @@ mod tests {
         // software-only cards (the 8 app-only Rumors readouts, one per encounter), so adding up the deck
         // chips on the table screen gives the real number of physical cards.
         assert_eq!(t.physical_card_count(t.root_id()), t.card_count() - 8);
-        // Inclusive of each deck's own title card, and stacks count by quantity: Heroes is 9 heroes ×4
-        // copies + the "Heroes" label.
-        assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 9 * 4 + 1);
+        // Inclusive of each deck's own title card, and stacks count by quantity. The party was dealt out of
+        // Heroes, emptying it — all that is left is the "Heroes" label.
+        assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 1);
         // Events is a `Day Passed ×12` stack + the "Events" label.
         assert_eq!(t.physical_card_count(deck(&t, "Events")), 12 + 1);
-        assert_eq!(t.physical_card_count(deck(&t, "Numbers")), 9 * 12 + 1);
-        // A projection contributes only its *own* cards (the inn's 2 row headers), never the borrowed
-        // Heroes/Kit decks — those are counted at home, so nothing is double-counted.
-        let locations = deck(&t, "Locations");
-        let ashfen = t.pile(locations).unwrap().subpiles()[4];
-        let inn = t.pile(ashfen).unwrap().subpiles()[0];
+        // Numbers was provisioned 9 digits ×12, less the 5 each hero spent on its stat values.
         assert_eq!(
-            t.physical_card_count(inn),
-            2,
-            "the inn's own Hero/Kit row headers"
+            t.physical_card_count(deck(&t, "Numbers")),
+            (9 * 12 + 1) - 5 * catalog::ROSTER.len()
         );
         // A place counts its "Location" title + its encounter header. Foes are virtual (listed on the
         // header, not dealt as cards), so a corner and a solo count the same. Index 0 (The Hollow Rampart)
         // is a corner: 1 title + 1 header = 2.
+        let locations = deck(&t, "Locations");
         let a_corner = t.pile(locations).unwrap().subpiles()[0];
         assert_eq!(t.physical_card_count(a_corner), 1 + 1);
         // Index 1 (Cinderwatch Keep) is a solo: 1 title + 1 header = 2.
         let a_solo = t.pile(locations).unwrap().subpiles()[1];
         assert_eq!(t.physical_card_count(a_solo), 1 + 1);
+        // The home cell (Ashfen, index 4) stations no encounter — just its title and the party standing
+        // there, one map-position card each.
+        let ashfen = t.pile(locations).unwrap().subpiles()[4];
+        assert_eq!(
+            t.physical_card_count(ashfen),
+            1 + catalog::ROSTER.len(),
+            "the Location title plus the four heroes stationed at home"
+        );
     }
 
     /// A software-only deck — one holding [`Utility`] action cards, like the renderer's System deck —
@@ -761,10 +745,10 @@ mod tests {
         assert_eq!(intent("The Storm"), "Vanguard"); // authored pos override
         // Each creature's posture points at exactly one answering kit — the clean diagonal.
         let counter = |name: &str| catalog::creature_counter(catalog::creature(name).unwrap());
-        assert_eq!(counter("The Wall"), "Bruiser");
+        assert_eq!(counter("The Wall"), "Raider");
         assert_eq!(counter("The Duelist"), "Marksman");
-        assert_eq!(counter("The Swarm"), "Reaver");
-        assert_eq!(counter("The Storm"), "Gunner");
+        assert_eq!(counter("The Swarm"), "Bastion");
+        assert_eq!(counter("The Storm"), "Bombardier");
     }
 
     /// Each non-inn place stations its encounter as a single **header** card — no physical foe cards. The
@@ -840,7 +824,7 @@ mod tests {
         assert!(!t.card(solo).unwrap().is_physical(), "Rumors is app-only");
         let solo_text = t.card(solo).unwrap().detail().join(" ");
         assert!(
-            solo_text.contains("Bruiser"),
+            solo_text.contains("Raider"),
             "the Wall's rumor names its counter: {solo_text}"
         );
         // A corner (Emberfall Hollow) tells you to bring the full party.
@@ -952,59 +936,26 @@ mod tests {
             .unwrap()
     }
 
-    /// Recruit test helper — the conservation-clean flow: `equip` Identity's hero #`i` with `recipe`
-    /// (assembled from the banks), then reconcile the party (stations its tokens). Returns the character
-    /// deck and the hero's name.
-    fn recruit(t: &mut Board, i: usize, recipe: Recipe) -> (PileId, String) {
-        let (heroes, stats, numbers, abilities, progress) = (
-            deck(t, "Heroes"),
-            deck(t, "Stats"),
-            deck(t, "Numbers"),
-            deck(t, "Abilities"),
-            deck(t, "Progress"),
-        );
-        let ashfen = t.pile(deck(t, "Locations")).unwrap().subpiles()[4];
-        let name = t
-            .card(t.content_cards(heroes)[i])
-            .unwrap()
-            .name()
-            .to_string();
-        let cdeck = t
-            .equip_character(
-                &name,
-                &recipe,
-                &deckbound_content::catalog::stat_names(),
-                heroes,
-                stats,
-                numbers,
-                abilities,
-                ashfen,
-                progress,
-            )
-            .unwrap();
-        (cdeck, name)
+    /// The party starts **already assembled** (a hero *is* its kit), so there is nothing to recruit: this
+    /// just finds the character deck of the kit at `catalog::ROSTER[i]`, and its name.
+    fn party_member(t: &Board, i: usize) -> (PileId, String) {
+        let name = catalog::ROSTER[i].0.to_string();
+        (deck(t, &name), name)
     }
 
-    /// A demo kit spec (a Bruiser-style build) for the recruit tests.
-    fn demo_kit() -> Recipe {
-        Recipe {
-            stats: [6, 3, 1, 1, 1],
-            ability: "Jab".into(),
-        }
-    }
-
-    /// `character_recipe` reads a recruited hero's build back out of its deck cards — the stats and
-    /// ability round-trip, so combat can recover `[Might, Vitality, Toughness, Cadence, Finesse]`.
+    /// `character_recipe` reads a hero's build back out of its deck cards — the stats and ability
+    /// round-trip, so combat can recover `[Might, Vitality, Toughness, Cadence, Finesse]`.
     #[test]
     fn character_recipe_round_trips_a_recruited_build() {
-        let mut t = sample_table();
-        let (cdeck, _name) = recruit(&mut t, 0, demo_kit());
+        let t = sample_table();
+        let (cdeck, _name) = party_member(&t, 0);
+        let (_, stats, ability) = catalog::ROSTER[0];
         let recovered = t
             .character_recipe(cdeck, &deckbound_content::catalog::stat_names())
             .expect("a complete build");
-        assert_eq!(recovered.stats, [6, 3, 1, 1, 1]);
-        assert_eq!(recovered.ability, "Jab");
-        // An incomplete deck (no character build) yields nothing.
+        assert_eq!(recovered.stats, stats, "the kit's stats, spelled in cards");
+        assert_eq!(recovered.ability, ability);
+        // A deck that is not a character build yields nothing.
         assert_eq!(
             t.character_recipe(
                 deck(&t, "Heroes"),
@@ -1034,21 +985,18 @@ mod tests {
         assert_eq!(catalog::ability_reach("(unknown)"), (true, false)); // default melee
     }
 
-    /// Recruiting deals a hero's **four** copies out of the `×4` Heroes stack — two to the character deck
-    /// (Zone label + rank marker), one to the inn (map position), one onto Progress (move marker) — and
-    /// un-recruiting returns all four, re-forming the `×4`. All conservation-clean (PC.2): the total card
-    /// count is unchanged across the round-trip, and a recruited hero has no copy left to re-recruit.
+    /// Assembling the party dealt each hero's **four** copies out of its `×4` Heroes stack — two to the
+    /// character deck (Zone label + rank marker), one to the home cell (map position), one onto Progress
+    /// (move marker) — emptying the reserve. Un-equipping returns all four, re-forming the `×4`. All
+    /// conservation-clean (PC.2): the total card count is unchanged across the round-trip.
     #[test]
-    fn recruiting_deals_four_copies_and_un_recruiting_returns_them() {
+    fn the_party_was_dealt_four_copies_each_and_un_equipping_returns_them() {
         let mut t = sample_table();
         let (heroes, progress) = (deck(&t, "Heroes"), deck(&t, "Progress"));
         let ashfen = t.pile(deck(&t, "Locations")).unwrap().subpiles()[4];
         let total = t.card_count();
+        let (cdeck, name) = party_member(&t, 0);
 
-        // Before: each hero is a ×4 stack in Heroes.
-        assert_eq!(t.card(t.content_cards(heroes)[0]).unwrap().quantity(), 4);
-
-        let (cdeck, name) = recruit(&mut t, 0, demo_kit());
         let copies_in = |t: &Board, pile: PileId| -> usize {
             t.content_cards(pile)
                 .iter()
@@ -1060,7 +1008,7 @@ mod tests {
         };
 
         // Four copies dealt: the Zone label (its own reflection), a rank marker in the deck's content, a
-        // position copy at the inn, a move marker on Progress. The Heroes stack for this hero is emptied.
+        // position copy at the home cell, a move marker on Progress. The Heroes reserve is emptied.
         assert_eq!(
             t.zone_card(cdeck)
                 .and_then(|c| t.card(c))
@@ -1072,16 +1020,15 @@ mod tests {
             1,
             "the rank marker in the character deck"
         );
-        assert_eq!(copies_in(&t, ashfen), 1, "the position copy at the inn");
-        assert_eq!(copies_in(&t, progress), 1, "the move marker on Progress");
         assert_eq!(
-            copies_in(&t, heroes),
-            0,
-            "Heroes stack emptied - no re-recruit"
+            copies_in(&t, ashfen),
+            1,
+            "the position copy at the home cell"
         );
-        assert_eq!(t.card_count(), total, "recruiting minted nothing (PC.2)");
+        assert_eq!(copies_in(&t, progress), 1, "the move marker on Progress");
+        assert_eq!(copies_in(&t, heroes), 0, "the Heroes stack was emptied");
 
-        // Un-recruit: the four copies return, re-forming the ×4 Heroes stack.
+        // Un-equip: the four copies return, re-forming the ×4 Heroes stack.
         let (stats, numbers, abilities) = (
             deck(&t, "Stats"),
             deck(&t, "Numbers"),
@@ -1101,10 +1048,10 @@ mod tests {
         assert_eq!(t.card_count(), total, "conservation across the round-trip");
     }
 
-    /// The movement loop (PC.5): recruiting stations a hero's **position** copy at the home town and a
-    /// **move marker** on Progress; moving the position copy to another location spends the character's
-    /// day (`move_character` flips its marker) and — as the last to move — ends the day; advancing ticks
-    /// Day 1 → 2. All conservation-clean.
+    /// The movement loop (PC.5): the party is stationed at the home cell with a **move marker** each on
+    /// Progress; moving a position copy to another location spends that character's day (`move_character`
+    /// flips its marker), the day ends once the *last* hero has moved, and advancing ticks Day 0 → 1. All
+    /// conservation-clean.
     #[test]
     fn moving_a_stationed_character_spends_its_day_and_can_advance() {
         let mut t = sample_table();
@@ -1114,37 +1061,41 @@ mod tests {
             deck(&t, "Locations"),
         );
         let places = t.pile(locations).unwrap().subpiles();
-        let (ashfen, thornmarch) = (places[4], places[5]); // centre = the inn town; a neighbour
+        let (ashfen, thornmarch) = (places[4], places[5]); // centre = the home cell; a neighbour
 
-        let (_cdeck, name) = recruit(&mut t, 0, demo_kit());
+        let (_cdeck, name) = party_member(&t, 0);
 
-        // A hero copy stands at the inn town (map position); a move marker stands on Progress; Day 1.
+        // A hero copy stands at the home cell (map position); a move marker stands on Progress; Day 0.
         let named = |t: &Board, pile, n: &str| {
             t.content_cards(pile).into_iter().find(|&c| {
                 let k = t.card(c).unwrap();
                 k.front_title() == n && k.card_type() == "hero"
             })
         };
-        assert!(
-            named(&t, ashfen, &name).is_some(),
-            "position copy at the inn"
-        );
+        assert!(named(&t, ashfen, &name).is_some(), "position copy at home");
         assert!(
             named(&t, progress, &name).is_some(),
             "move marker on Progress"
         );
         assert_eq!(t.current_day(progress), 0);
 
-        // Move the character to a neighbouring location — the only one active, so its move ends the day.
+        // Move this character to a neighbouring location — it spends its day, but the rest of the party has
+        // not moved, so the day is not over yet.
         let position = named(&t, ashfen, &name).unwrap();
         let total = t.card_count();
         let day_over = t.move_character(position, thornmarch, progress).unwrap();
-        assert!(day_over, "the only character moved - the day is over");
+        assert!(!day_over, "the rest of the party still has moves");
         assert!(
             named(&t, thornmarch, &name).is_some(),
             "stationed at the new location"
         );
         assert!(named(&t, ashfen, &name).is_none());
+
+        // Spend every other hero's move — the last one ends the day.
+        for &(other, _, _) in catalog::ROSTER.iter().skip(1) {
+            t.mark_moved(progress, other).unwrap();
+        }
+        assert!(t.day_is_over(progress), "every hero has moved");
 
         // Advance: Day 0 -> 1, move markers stand back up, and cards are conserved through move + advance.
         t.advance_day(progress, events).unwrap();
@@ -1273,109 +1224,107 @@ mod tests {
         assert_eq!(top.kind(), CardKind::Zone);
     }
 
+    /// A hero **is** its kit: there is no Kit deck, so each hero card carries what a kit card used to — it is
+    /// named for the kit, typed `hero`, and grows to that kit's stat line and ability. The four kits are
+    /// `catalog::ROSTER` (Raider / Marksman / Bastion / Bombardier).
     #[test]
-    fn starting_kit_holds_the_four_starters() {
+    fn each_hero_carries_its_kit_build() {
         let t = sample_table();
-        let root = t.pile(t.root_id()).unwrap();
-        let kit_id = *root
-            .subpiles()
-            .iter()
-            .find(|&&id| t.pile(id).unwrap().label == "Kit")
-            .unwrap();
-        let kit = t.pile(kit_id).unwrap();
-
-        // Four starter cards under a "Kit" Zone card.
-        let starters = t.content_cards(kit.id);
-        assert_eq!(starters.len(), 4);
-        let names: Vec<&str> = starters
-            .iter()
-            .map(|&c| t.card(c).unwrap().name())
-            .collect();
-        assert_eq!(names, ["Bruiser", "Marksman", "Reaver", "Gunner"]);
-        for &c in &starters {
-            assert_eq!(t.card(c).unwrap().card_type(), "Kit");
-        }
-
-        // The Bruiser grows to its stat line + ability.
-        let bruiser = t.card(starters[0]).unwrap();
-        assert!(bruiser.detail().iter().any(|l| l.contains("Might 7")));
-        assert!(
-            bruiser
-                .detail()
-                .iter()
-                .any(|l| l.contains("Abilities: Jab"))
+        assert_eq!(
+            catalog::ROSTER.map(|(n, _, _)| n),
+            ["Raider", "Marksman", "Bastion", "Bombardier"]
         );
-
-        let top = t.card(*kit.cards().last().unwrap()).unwrap();
-        assert_eq!(top.name(), "Kit");
-        assert_eq!(top.kind(), CardKind::Zone);
+        for &(name, stats, ability) in &catalog::ROSTER {
+            // The hero's own card is its character deck's Zone label (dealt from the Heroes reserve).
+            let label = t
+                .zone_card(deck(&t, name))
+                .and_then(|c| t.card(c))
+                .unwrap_or_else(|| panic!("{name} has a Zone label"));
+            assert_eq!(label.name(), name);
+            assert_eq!(label.card_type(), "hero");
+            let might = stats[0];
+            assert!(
+                label
+                    .detail()
+                    .iter()
+                    .any(|l| l.contains(&format!("Might {might}"))),
+                "{name} shows its stat line"
+            );
+            assert!(
+                label
+                    .detail()
+                    .iter()
+                    .any(|l| l.contains(&format!("Abilities: {ability}"))),
+                "{name} shows its ability"
+            );
+        }
     }
 
+    /// The party starts **already assembled**: one character deck per kit (a hero *is* its kit), each
+    /// stationed at Ashfen Crossing. There is no Inn and no Kit deck — dealing the party out empties the
+    /// Heroes reserve, which is then only the home those cards return to on un-equip.
     #[test]
-    fn heroes_live_in_the_heroes_deck_and_ashfen_is_the_inn_projection() {
+    fn the_party_starts_assembled_and_stationed_at_ashfen() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
         let find = |label: &str| {
-            *root
-                .subpiles()
+            root.subpiles()
                 .iter()
-                .find(|&&id| t.pile(id).unwrap().label == label)
-                .unwrap()
+                .copied()
+                .find(|&id| t.pile(id).unwrap().label == label)
         };
 
-        // The nine heroes' canonical home is the Heroes deck — one `hero` card each, stacked ×4.
-        let heroes_deck = find("Heroes");
-        let heroes = t.content_cards(heroes_deck);
-        assert_eq!(heroes.len(), HEROES.len());
-        for (&cid, name) in heroes.iter().zip(HEROES) {
-            let hero = t.card(cid).unwrap();
-            assert_eq!(hero.name(), name);
-            assert_eq!(hero.card_type(), "hero");
-            assert_eq!(hero.quantity(), 4);
+        // One character deck per kit, named for it, its Zone label being the hero's own card.
+        for &(kit, _, _) in &catalog::ROSTER {
+            let deck = find(kit).unwrap_or_else(|| panic!("a {kit} character deck was assembled"));
+            assert!(
+                t.pile(deck).unwrap().reflects().is_some(),
+                "{kit}'s deck is labelled by its own hero card"
+            );
         }
 
-        // The Locations grid: 9 place-piles labelled by Location Zone cards; Ashfen (centre, index 4)
-        // holds one card — the Inn.
-        let locations = t.pile(find("Locations")).unwrap();
+        // The Inn and the Kit deck are gone.
+        assert!(
+            find("Kit").is_none(),
+            "the Kit deck was merged into the hero"
+        );
+        let locations = t.pile(find("Locations").unwrap()).unwrap();
         assert_eq!(locations.subpiles().len(), LOCATIONS.len());
         let ashfen = t.pile(locations.subpiles()[4]).unwrap();
-        assert_eq!(
-            t.card(*ashfen.cards().last().unwrap()).unwrap().name(),
-            "Ashfen Crossing"
+        assert!(
+            ashfen.subpiles().is_empty(),
+            "Ashfen no longer holds an Inn"
         );
-        let inn_id = ashfen.subpiles()[0];
-        assert_eq!(t.pile(inn_id).unwrap().label, "Inn");
 
-        // The Inn is a Rows pile projecting Identity + Kit side by side — two rows, Hero and Kit (no
-        // Active row: you recruit by dragging a hero onto a kit).
-        let inn = t.pile(inn_id).unwrap();
-        assert_eq!(inn.layout().arrangement, Arrangement::Rows);
-        assert_eq!(inn.projection(), &[heroes_deck, find("Kit")]);
-        let rows = t.row_groups(inn_id);
-        assert_eq!(rows.len(), 2);
-        let header = |i: usize| t.card(rows[i].0).unwrap().name();
-        assert_eq!((header(0), header(1)), ("Hero", "Kit"));
-        assert_eq!(rows[0].1.len(), HEROES.len()); // Hero row ← Heroes deck
-        assert_eq!(rows[1].1.len(), 4); // Kit row ← Kit deck
+        // All four heroes stand at Ashfen Crossing — one map-position card each.
+        let stationed: Vec<String> = t
+            .content_cards(locations.subpiles()[4])
+            .into_iter()
+            .filter(|&c| t.card(c).unwrap().card_type() == "hero")
+            .map(|c| t.card(c).unwrap().name().to_string())
+            .collect();
+        assert_eq!(stationed.len(), catalog::ROSTER.len());
+        for &(kit, _, _) in &catalog::ROSTER {
+            assert!(stationed.iter().any(|n| n == kit), "{kit} stands at Ashfen");
+        }
+
+        // Dealing the party out emptied the Heroes reserve (four copies each, all spent).
+        assert!(
+            t.content_cards(find("Heroes").unwrap()).is_empty(),
+            "every hero copy was dealt into the party"
+        );
     }
 
-    /// Recruiting via `equip` assembles a **real** character deck from the banks (a stat-name card then a
-    /// number card per stat, then the ability, under the hero's own identity as the deck's Zone label) —
-    /// no reflection, no mint (PC.2). Un-equipping removes the deck and returns every card, conserving the
-    /// total.
+    /// The party is assembled into **real** character decks from the banks (a stat-name card then a number
+    /// card per stat, then the ability, under the hero's own card as the deck's Zone label) — no reflection,
+    /// no mint (PC.2). Un-equipping removes the deck and returns every card, conserving the total.
     #[test]
     fn equip_assembles_a_character_deck_from_the_banks() {
         let mut t = sample_table();
         let total = t.card_count();
 
-        let (cdeck, name) = recruit(
-            &mut t,
-            0,
-            Recipe {
-                stats: [4, 3, 1, 2, 3],
-                ability: "Jab".into(),
-            },
-        );
+        // The Raider: Might 7, Vitality 6, Toughness 1, Cadence 2, Finesse 2, carrying Jab.
+        let (cdeck, name) = party_member(&t, 0);
 
         // A top-level character deck, marked as reflecting the hero, spelling its stats as name+number.
         assert!(t.pile(cdeck).unwrap().reflects().is_some());
@@ -1388,25 +1337,20 @@ mod tests {
             names,
             [
                 "Might",
-                "4",
+                "7",
                 "Vitality",
-                "3",
+                "6",
                 "Toughness",
                 "1",
                 "Cadence",
                 "2",
                 "Finesse",
-                "3",
+                "2",
                 "Jab",
                 name.as_str() // the rank marker (a hero copy) sits with the character
             ]
         );
         assert_eq!(t.card(t.zone_card(cdeck).unwrap()).unwrap().name(), name);
-        assert_eq!(
-            t.card_count(),
-            total,
-            "assembled by moving, not minting (PC.2)"
-        );
 
         // Un-equip: the deck is gone and every card is back, total conserved.
         let (heroes, stats, numbers, abilities) = (

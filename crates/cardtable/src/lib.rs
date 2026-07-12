@@ -1056,24 +1056,14 @@ fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
 }
 
 /// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
-/// the movable cue. A hero's map position copy moves places; in the inn a hero/kit is worth picking up only
-/// when the opposite kind (`has_kit` / `has_hero`) is on show to pair with. Everything else (repositioning
-/// a Free card, reordering a fan, dragging a deck) is presentation only — no cue.
-fn is_game_movable(
-    table: &Board,
-    id: CardId,
-    in_projection: bool,
-    has_kit: bool,
-    has_hero: bool,
-) -> bool {
-    if is_map_position(table, id) {
-        return true;
-    }
-    if in_projection {
-        let is_kit = table.card(id).is_some_and(|c| c.recipe().is_some());
-        return if is_kit { has_hero } else { has_kit };
-    }
-    false
+/// the movable cue. A hero's map position copy moves places. Everything else (repositioning a Free card,
+/// reordering a fan, dragging a deck) is presentation only — no cue.
+///
+/// This used to also cue the Inn's pairing (a hero card was worth picking up only while a kit was on show to
+/// pair with, and vice versa) — which meant this game-agnostic renderer knew what a "kit" was. The Inn is
+/// gone (see its removal commit) and so is that seam violation.
+fn is_game_movable(table: &Board, id: CardId) -> bool {
+    is_map_position(table, id)
 }
 
 /// Ensure entity `e` wears a cue [`Outline`] of `color`, toggling in place if it already has one (per
@@ -1116,7 +1106,7 @@ fn set_outline(
 }
 
 /// Paint the card cues each frame. An amber [`MOVABLE_CUE`] ring marks cards whose drag would trigger a
-/// **game action** (equip / move a character — not a visual re-arrange), so you can scan for what's worth
+/// **game action** (marching a character — not a visual re-arrange), so you can scan for what's worth
 /// picking up; and while a drag is held, a green [`TARGET_CUE`] glow marks every place the held card can
 /// legally land ([`can_drop_on_card`] / [`can_drop_on_pile`]) — so what glows is exactly what will accept
 /// the drop. The held card itself drops its ring; both cues share one toggled [`Outline`].
@@ -1127,24 +1117,7 @@ fn update_card_cues(
     mut movable: Query<(Entity, &Movable, Option<&mut Outline>, &mut Node)>,
     mut zones: Query<(Entity, &PileDropZone, Option<&mut Outline>, &mut Node), Without<Movable>>,
 ) {
-    let in_projection = table
-        .0
-        .pile(table.0.focus_id())
-        .is_some_and(|p| !p.projection().is_empty());
     let dragged = dragging.0.and_then(|n| n.card());
-    // In the inn a card is worth picking up only if the opposite kind is present to pair with.
-    let (mut has_kit, mut has_hero) = (false, false);
-    if in_projection {
-        for (_, m, _, _) in &movable {
-            if let Some(c) = m.0.card() {
-                if table.0.card(c).is_some_and(|k| k.recipe().is_some()) {
-                    has_kit = true;
-                } else {
-                    has_hero = true;
-                }
-            }
-        }
-    }
     for (e, m, outline, mut node) in &mut movable {
         let color = if dragging.0 == Some(m.0) {
             Color::NONE // the held card floats; its ring would just clutter the drag
@@ -1155,11 +1128,7 @@ fn update_card_cues(
                 {
                     TARGET_CUE
                 }
-                TableNode::Card(id)
-                    if is_game_movable(&table.0, id, in_projection, has_kit, has_hero) =>
-                {
-                    MOVABLE_CUE
-                }
+                TableNode::Card(id) if is_game_movable(&table.0, id) => MOVABLE_CUE,
                 TableNode::Pile(pid)
                     if dragged.is_some_and(|d| can_drop_on_pile(&table.0, d, pid)) =>
                 {
