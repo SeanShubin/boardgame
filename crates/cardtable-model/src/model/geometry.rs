@@ -42,7 +42,7 @@ fn overlap_area(pos: Pos, size: Pos, locked: &[(Pos, Pos)]) -> f32 {
 /// coordinate line: the box's own coordinate, each locked box's near/far edge in configuration space, or
 /// a wall. We test that grid of lines (straight slides *and* go-around-a-corner spots) and keep the
 /// clear one closest to where the box already is.
-fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> Pos {
+pub(super) fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> Pos {
     let max_x = (surface.x - size.x).max(0.0);
     let max_y = (surface.y - size.y).max(0.0);
     let cx = cur.x.clamp(0.0, max_x);

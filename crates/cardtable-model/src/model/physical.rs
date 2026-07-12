@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::geometry::{clamp_box, separate_boxes};
+use super::geometry::{clamp_box, place_clear_of, separate_boxes};
 use super::ui::UiModel;
 
 /// A stable handle to a card within a [`Board`].
@@ -1568,6 +1568,48 @@ impl Board {
         Ok(pos)
     }
 
+    /// A pile's box size for layout, falling back to the collapsed **deck chip** (a Small footprint) when
+    /// the renderer has not measured it yet. This is what lets a pile have a real size the *moment it is
+    /// created* - before any frame is drawn - so the model can place it without waiting on a render. The
+    /// measured [`size`](Pile::size) wins once it is known.
+    fn pile_box_size(&self, pile: PileId) -> Pos {
+        match self.piles.get(&pile) {
+            Some(d) if d.size.x >= 1.0 => d.size,
+            Some(_) => super::layout::footprint(Size::Small, 0, 0),
+            None => Pos::default(),
+        }
+    }
+
+    /// Places `pile` at the position nearest its current one that is **clear of its siblings** (the other
+    /// movable children of its parent) and inside the surface - moving only this pile, disturbing none of
+    /// the others. The prevention counterpart to [`separate`]: it gives a freshly built deck (e.g. the
+    /// renderer's System deck) a non-overlapping home *at creation*, in the model, instead of dropping it at
+    /// `(0,0)` on top of a neighbour and relying on the first rendered frame to shove it clear. Sibling boxes
+    /// use the collapsed-chip [fallback](Self::pile_box_size), so this works before anything is rendered.
+    /// Returns the settled position; a no-op returning the current position if the pile has no parent.
+    pub fn place_clear(&mut self, pile: PileId) -> Result<Pos, TableauError> {
+        let parent = self
+            .piles
+            .get(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?
+            .parent;
+        let cur = self.piles[&pile].pos;
+        let size = self.pile_box_size(pile);
+        let Some(parent) = parent else { return Ok(cur) };
+        let siblings: Vec<(Pos, Pos)> = self
+            .movable_children(parent)
+            .into_iter()
+            .filter(|&n| n != Node::Pile(pile))
+            .map(|n| match n {
+                Node::Pile(p) => (self.piles[&p].pos, self.pile_box_size(p)),
+                Node::Card(_) => self.node_box(n).unwrap_or_default(),
+            })
+            .collect();
+        let pos = place_clear_of(cur, size, &siblings, self.ui.surface);
+        self.piles.get_mut(&pile).expect("checked above").pos = pos;
+        Ok(pos)
+    }
+
     /// The movable children of `pile` — every child *except* a trailing [`zone_card`](Self::zone_card),
     /// which is the pile's label, not a thing on the felt. This is the single set that [`separate`] shoves
     /// and the renderer lays out, so a nested pile and a card are first-class alike.
@@ -2426,6 +2468,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// place_clear gives a freshly added pile a home clear of its siblings *without a render* — sibling
+    /// sizes fall back to the collapsed chip, so the new deck never sits on top of an existing one at (0,0).
+    #[test]
+    fn place_clear_moves_new_deck_off_a_sibling() {
+        let mut t = Board::new();
+        let root = t.root_id();
+        t.set_surface(2000.0, 1000.0);
+        // An existing deck with a real (rendered) size at the origin.
+        let a = t.add_pile(root, "A").unwrap();
+        t.set_pile_size(a, 120.0, 96.0).unwrap();
+        t.set_pile_pos(a, 0.0, 0.0).unwrap();
+        // A brand-new deck: no measured size, sitting at the default (0,0) right on top of A.
+        let b = t.add_pile(root, "B").unwrap();
+        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 0.0, y: 0.0 });
+
+        t.place_clear(b).unwrap();
+
+        // B moved to a spot that does not overlap A (chip fallback gives B a 120x96 box).
+        let (ap, asz) = (t.pile(a).unwrap().pos(), Pos { x: 120.0, y: 96.0 });
+        let bp = t.pile(b).unwrap().pos();
+        let bsz = Pos { x: 120.0, y: 96.0 }; // the collapsed Small chip fallback
+        let ox = (bp.x + bsz.x).min(ap.x + asz.x) - bp.x.max(ap.x);
+        let oy = (bp.y + bsz.y).min(ap.y + asz.y) - bp.y.max(ap.y);
+        assert!(
+            ox <= 0.01 || oy <= 0.01,
+            "B still overlaps A: b={bp:?} a={ap:?}"
+        );
+        assert_eq!(
+            t.pile(a).unwrap().pos(),
+            Pos { x: 0.0, y: 0.0 },
+            "A must not move"
+        );
     }
 
     /// place_pile clamps to the surface — the borders shove a pile back inside.

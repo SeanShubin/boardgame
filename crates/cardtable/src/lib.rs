@@ -460,6 +460,12 @@ fn install_system_deck(table: &mut Board, build: &BuildInfo) {
             editable: true,
         },
     );
+    // Give the freshly built deck a real chip size and a non-overlapping home *now*, in the model, before
+    // the first frame is drawn - otherwise it sits at (0,0) on top of an existing deck until the render
+    // measures it and `settle_table_piles` shoves it clear. Placing it clear at creation is prevention (the
+    // deck never overlaps); the later settle only tidies it into the row.
+    let _ = table.set_pile_size(pile, SMALL_W, SMALL_H);
+    let _ = table.place_clear(pile);
     // Seed a tidy grid below the overlay band: a Free deck reads each child's own position, and freshly
     // added children are all at (0,0) — i.e. stacked in the top-left, behind the Back button. Lay them out
     // in rows (three across) starting one gap under the band, matching the fixtures' `grid_layout` spacing.
