@@ -241,6 +241,26 @@ fn hit(target: &Combatant, might: u32) -> u32 {
     strike(might, target.armor)
 }
 
+/// What a blow of `might` would **actually do** to `target` right now: `(health cards flipped, damage left
+/// sitting in its pile, the bar it must cross)`.
+///
+/// Damage is not health. It banks into a per-sub-phase **pile** and only turns a Health card each time that
+/// pile crosses the target's Toughness; whatever is left is **wiped at the sub-phase boundary**. So a Might
+/// under the bar flips nothing on its own — and quoting the raw Might to the player ("deal 7 back") is a
+/// false promise. Quote this instead. It is still worth doing under the bar when other blows land on the same
+/// target in the same sub-phase: the pile is shared, so damage adds up across attackers.
+pub fn pile_effect(target: &Combatant, might: u32) -> (u32, u32, u32) {
+    let dmg = hit(target, might);
+    if target.horde {
+        // A horde has no bar to cross: each body is one Health and penetrating damage spills body to body.
+        return (dmg.min(target.health), 0, 1);
+    }
+    let bar = target.toughness.max(1);
+    let pile = target.pending + dmg;
+    let flips = (pile / bar).min(target.health);
+    (flips, pile - flips * bar, bar)
+}
+
 // ---- the three mini-phases ------------------------------------------------------------------------
 
 /// **Catch.** Spend each attacker's bid (capped at its remaining tempo) and keep the catches that land as

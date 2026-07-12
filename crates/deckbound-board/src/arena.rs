@@ -1209,6 +1209,27 @@ pub(crate) fn struck_defender(board: &Board, arena: PileId) -> Option<(CardId, u
 /// Strike Back was legitimately on offer, because nothing said what had hit you. A barred option is therefore
 /// still listed, with its reason ("the blow was ranged - nothing to answer"), rather than silently vanishing:
 /// an absent option teaches nothing and reads as a bug.
+/// What a blow of `might` really does to `target`, in words - for a choice card's consequence line.
+///
+/// **A Might is not a health count.** It banks into the target's per-sub-phase damage pile and only turns a
+/// Health card each time that pile crosses Toughness; the remainder is wiped at the sub-phase boundary. So
+/// "deal 7 back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it
+/// instead - including that blows *stack within the phase*, which is the whole reason to strike under the bar
+/// when someone else is hitting the same target.
+fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
+    let (flips, pile, bar) = combat::pile_effect(target, might);
+    let name = &target.name;
+    if flips > 0 {
+        format!("{might} damage: {name} loses {flips} health")
+    } else if pile == 0 {
+        format!("{might} damage: {name}'s armor stops it")
+    } else {
+        format!(
+            "{might} into {name}'s pile: {pile}/{bar} - blows this phase add up, then it is wiped"
+        )
+    }
+}
+
 pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
     let Some((card, i)) = struck_defender(board, arena) else {
         return Vec::new();
@@ -1222,7 +1243,7 @@ pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
 
     // Eat: every incoming blow lands, at its attacker's Might.
     let might: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
-    let eat = Choice::new("Eat", format!("take the hit ({might} might)"))
+    let eat = Choice::new("Eat", format!("take {}", damage_phrase(u, might)))
         .chosen(staged == ReactKind::Eat);
 
     // Evade: beat the bid. The cheapest incoming blow is the one worth quoting.
@@ -1242,11 +1263,15 @@ pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
     };
 
     // Strike Back: melee-vs-melee only - you answer a foe that *approached* you.
-    let back = Choice::new(
-        "Strike Back",
-        format!("spend 1 tempo, deal {} back", u.might),
-    )
-    .chosen(staged == ReactKind::StrikeBack);
+    let counter = incoming
+        .iter()
+        .find(|c| !combat::rank_is_ranged(units[c.attacker].rank))
+        .map(|c| &units[c.attacker]);
+    let back_text = match counter {
+        Some(foe) => format!("spend 1 tempo, deal {}", damage_phrase(foe, u.might)),
+        None => format!("spend 1 tempo, deal {} back", u.might),
+    };
+    let back = Choice::new("Strike Back", back_text).chosen(staged == ReactKind::StrikeBack);
     let back = if strikeback_ok {
         back
     } else if u.tempo == 0 {
@@ -1465,6 +1490,32 @@ pub fn restart_fight(board: &mut Board, arena: PileId) {
 mod tests {
     use super::*;
     use crate::sample_table;
+
+    /// **A choice must not promise damage it cannot deliver.** The Raider (Might 7) striking back at The Wall
+    /// (Toughness 9) used to read "deal 7 back" - and it dealt nothing: 7 banks into the Wall's pile, never
+    /// crosses 9, and is wiped at the sub-phase boundary. The card must say so, and must say that blows stack
+    /// within the phase (which is the reason to do it anyway when someone else is hitting the same target).
+    #[test]
+    fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {
+        let wall = combat::Combatant::from_stats(
+            "The Wall",
+            Side::Foe,
+            Rank::Vanguard,
+            [1, 4, 9, 1, 2],
+            0,
+            true,
+            false,
+        );
+        assert_eq!(
+            damage_phrase(&wall, 7),
+            "7 into The Wall's pile: 7/9 - blows this phase add up, then it is wiped"
+        );
+
+        // Land another 2 in the same sub-phase and the pile crosses: now the promise is real.
+        let mut wall = wall;
+        wall.pending = 7;
+        assert_eq!(damage_phrase(&wall, 2), "2 damage: The Wall loses 1 health");
+    }
 
     /// A melee kit (the Raider carries Jab) must flag `Melee` (not `no strike`) on its combat card:
     /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
