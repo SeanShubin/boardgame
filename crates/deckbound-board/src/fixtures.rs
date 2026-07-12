@@ -33,21 +33,18 @@ fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId
 fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
     let id = typed(tree, pile, name, "hero");
     let [might, vitality, toughness, cadence, finesse] = stats;
-    // The card carries its **computed** stats, not just its raw ones — the same courtesy the foe cards get
-    // (`creature_card`), so a hero reads the same way its enemies do:
-    //   - its default **intention** and attack **shape**, derived from the numbers - the "what is this hero
-    //     FOR" line, so you don't have to work out that Might 7 vs Toughness 1 means "raid the back line";
-    //   - the two **pools** its stats become in a fight: Vitality is its Health cards, Cadence its Tempo
-    //     cards. Naming them here is what connects a stat on the card to the cards you flip in combat.
-    // All derived, never stored - the card reads back what the numbers already say.
+    // The card carries its **computed** stats, not just its raw ones: the two **pools** its stats become in a
+    // fight — Vitality is its Health cards, Cadence its Tempo cards. That is what connects a stat printed on
+    // the card to the cards you actually flip in combat. Derived, never stored.
+    //
+    // It carries **no rank/intention indicator**: which position a hero is for is already obvious from
+    // context — its kit *name* says it (a Raider raids, a Bastion holds the line), and in a fight its tile
+    // sits in its rank's lane. The reach and spread likewise need no line of their own; the ability line
+    // below already reads "Jab: Melee | single target". (The derivation still exists — `catalog::kit_intention`
+    // — it just isn't printed.)
     tree.set_card_detail(
         id,
         vec![
-            format!(
-                "{} | {}",
-                catalog::kit_intention(stats, ability),
-                catalog::kit_shape(ability)
-            ),
             format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
             format!("Cadence {cadence} | Finesse {finesse}"),
             format!("Health {vitality} cards | Tempo {cadence} cards"),
@@ -1269,17 +1266,18 @@ mod tests {
             assert!(shows(&format!("Cadence {cadence} | Finesse {finesse}")));
             assert!(shows(ability), "{name} names its ability");
 
-            // ...and its **computed** stats: what position the numbers make it for, and the two card pools
-            // they become in a fight (Vitality -> Health cards, Cadence -> Tempo cards).
-            assert!(
-                shows(catalog::kit_intention(stats, ability)),
-                "{name} shows the position its build is for: {:?}",
-                label.detail()
-            );
-            assert!(shows(catalog::kit_shape(ability)), "{name} shows its shape");
+            // ...and its **computed** stats: the two card pools its stats become in a fight.
             assert!(
                 shows(&format!("Health {vitality} cards | Tempo {cadence} cards")),
                 "{name} shows the card pools its stats become: {:?}",
+                label.detail()
+            );
+
+            // But NOT a rank/intention indicator - that is obvious from the kit's name and, in a fight, from
+            // the lane its tile sits in. (The derivation still exists; it just isn't printed on the card.)
+            assert!(
+                !shows(catalog::kit_intention(stats, ability)),
+                "{name} must not print a rank indicator: {:?}",
                 label.detail()
             );
         }
