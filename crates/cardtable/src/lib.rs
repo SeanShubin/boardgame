@@ -115,6 +115,8 @@ impl Plugin for CardTablePlugin {
             .init_resource::<FontSample>()
             .init_resource::<CardScreenRects>()
             .insert_resource(NeedsRebuild(true))
+            // The opening board is a wholesale board too - tidy its decks the same way Start Over does.
+            .insert_resource(DecksNeedTidy(true))
             .insert_resource(make_debug_log())
             .configure_sets(
                 Update,
@@ -312,6 +314,14 @@ const CLICK_DRAG_TOLERANCE: f32 = 8.0;
 /// combat system) can request a redraw after mutating the [`Table`].
 #[derive(Resource)]
 pub struct NeedsRebuild(pub bool);
+
+/// Set when the [`Table`]'s board has been **replaced wholesale** (startup, Start Over, a loaded save) —
+/// the decks must be laid out from scratch rather than left wherever the new board's seed positions put
+/// them. This can't be *inferred*: a fresh board reuses the same [`PileId`]s and, since the model computes
+/// footprints up front, the same sizes, so [`settle_table_piles`]'s size-diff sees "no change" and would
+/// never tidy (Start Over left every deck at its raw fixture seed). The rebuild itself is the trigger.
+#[derive(Resource, Default)]
+struct DecksNeedTidy(bool);
 
 /// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
 /// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
@@ -611,6 +621,7 @@ fn on_click(
     mut tap_request: ResMut<TapRequest>,
     mut font_sample: ResMut<FontSample>,
     mut front: ResMut<FannedFront>,
+    mut tidy: ResMut<DecksNeedTidy>,
     factory: Res<FactoryBase>,
     build: Res<BuildInfo>,
     mut exit: MessageWriter<AppExit>,
@@ -697,6 +708,10 @@ fn on_click(
                     table.0 = factory.0.clone();
                     install_system_deck(&mut table.0, &build);
                     rebuild.0 = true;
+                    // A wholesale new board: its decks sit at the fixtures' raw seed positions, so they must
+                    // be re-tidied into the row. Say so explicitly - the size-diff can't notice (same ids,
+                    // same footprints).
+                    tidy.0 = true;
                 }
             }
         } else if table.0.card(id).is_some_and(|c| c.is_expandable()) {
@@ -1554,6 +1569,7 @@ fn settle_free_cards(
 fn settle_table_piles(
     mut table: ResMut<Table>,
     guard: Res<DragGuard>,
+    mut tidy: ResMut<DecksNeedTidy>,
     mut prev: Local<HashMap<PileId, Pos>>,
     mut prev_bounds: Local<Pos>,
 ) {
@@ -1572,6 +1588,15 @@ fn settle_table_piles(
     let bounds = table.0.bounds();
     if !(1..=100_000).contains(&bounds.x) {
         return;
+    }
+    // The board was replaced wholesale (startup / Start Over / a load): its decks sit at the fixtures' raw
+    // seed positions and must be laid out from scratch. Forget the old board's sizes so the diff below can't
+    // mistake the fresh decks for unchanged ones - a new board reuses the same ids *and*, now that footprints
+    // are computed rather than measured, the same sizes, which is exactly how Start Over used to leave every
+    // deck at its seed. Consumed here, once the bounds are real, so the tidy happens at the true width.
+    let rebuilt = std::mem::take(&mut tidy.0);
+    if rebuilt {
+        prev.clear();
     }
     let piles: Vec<PileId> = table
         .0
@@ -1595,11 +1620,11 @@ fn settle_table_piles(
     if resized {
         *prev_bounds = bounds;
     }
-    // When a deck first sizes (or its chip changes size), lay the decks out as one clean constant-gap row.
-    // A window *resize*, by contrast, does NOT re-tidy — it just **bumps decks off the new edges**:
-    // `separate` clamps any that now fall outside back inside and de-overlaps, preserving the manual
+    // A fresh board, or a deck first sizing (or its chip changing size), lays the decks out as one clean
+    // constant-gap row. A window *resize*, by contrast, does NOT re-tidy — it just **bumps decks off the new
+    // edges**: `separate` clamps any that now fall outside back inside and de-overlaps, preserving the manual
     // arrangement (decks that still fit don't move). Between these events a manual drag sticks.
-    if sized {
+    if rebuilt || sized {
         table.0.arrange_row(root, GAP, OVERLAY_BAND);
     } else if resized && let Some(anchor) = piles.first().copied() {
         table.0.separate(root, TableNode::Pile(anchor));
@@ -3713,8 +3738,84 @@ mod game {
 
 #[cfg(test)]
 mod tests {
-    use super::{TITLE_MIN, pluralize, relative_time, title_font};
+    use super::{
+        DecksNeedTidy, DragGuard, GAP, OVERLAY_BAND, TITLE_MIN, Table, pluralize, relative_time,
+        settle_table_piles, title_font,
+    };
+    use bevy::prelude::*;
     use bevy::text::FontSize;
+    use cardtable_model::Board;
+
+    /// A board of three decks parked at scattered seed positions (as the fixtures leave them), on a felt
+    /// wide enough for one row.
+    fn seeded_board() -> Board {
+        let mut t = Board::new();
+        let root = t.root_id();
+        for (i, label) in ["A", "B", "C"].iter().enumerate() {
+            let p = t.add_pile(root, *label).expect("root exists");
+            // Scattered, uneven seeds - exactly what an untidied board looks like.
+            t.set_pile_pos(p, 40 + i as i32 * 300, 40 + i as i32 * 160)
+                .expect("pile exists");
+        }
+        t.set_bounds(1600, 900);
+        t
+    }
+
+    /// The decks' x positions in child order, and their y positions.
+    fn deck_positions(table: &Board) -> Vec<(i32, i32)> {
+        let root = table.root_id();
+        table
+            .pile(root)
+            .expect("root")
+            .subpiles()
+            .into_iter()
+            .map(|p| {
+                let d = table.pile(p).expect("pile");
+                (d.pos().x, d.pos().y)
+            })
+            .collect()
+    }
+
+    /// Whether the decks sit in one tidy left-to-right row starting at the standard gap.
+    fn is_tidy_row(table: &Board) -> bool {
+        let pos = deck_positions(table);
+        pos.first() == Some(&(GAP, OVERLAY_BAND)) && pos.iter().all(|&(_, y)| y == OVERLAY_BAND)
+    }
+
+    /// **Start Over must re-tidy the decks.** It replaces the board wholesale with a fresh one whose decks
+    /// sit at their raw seed positions - but that board reuses the same `PileId`s and (since footprints are
+    /// computed, not measured) the same sizes, so a size-diff sees "no change". Without an explicit rebuild
+    /// signal the tidy never fires and Start Over leaves every deck at its seed: Heroes off to the right, a
+    /// gap between decks, Numbers stranded low. The `DecksNeedTidy` flag is what makes it fire.
+    #[test]
+    fn start_over_relays_the_decks_into_a_row() {
+        let mut app = App::new();
+        app.insert_resource(Table(seeded_board()))
+            .init_resource::<DragGuard>()
+            .insert_resource(DecksNeedTidy(true))
+            .add_systems(Update, settle_table_piles);
+
+        // The opening board tidies into a row.
+        app.update();
+        assert!(
+            is_tidy_row(&app.world().resource::<Table>().0),
+            "opening board should tidy, got {:?}",
+            deck_positions(&app.world().resource::<Table>().0)
+        );
+
+        // Start Over: the board is replaced by an identical fresh one, back at the scattered seeds.
+        app.world_mut().resource_mut::<Table>().0 = seeded_board();
+        app.world_mut().resource_mut::<DecksNeedTidy>().0 = true;
+        assert!(!is_tidy_row(&app.world().resource::<Table>().0), "seeds");
+
+        app.update();
+
+        assert!(
+            is_tidy_row(&app.world().resource::<Table>().0),
+            "Start Over must re-tidy the decks, but they were left at their seeds: {:?}",
+            deck_positions(&app.world().resource::<Table>().0)
+        );
+    }
 
     /// A title keeps the base size until it would overrun its one line, then shrinks to fit — bottoming
     /// out at the floor (past which `no_wrap` clips rather than wrapping).
