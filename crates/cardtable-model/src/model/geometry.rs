@@ -55,33 +55,19 @@ fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> P
         ys.push(lp.y - size.y); // just above it
         ys.push(lp.y + lsz.y); // just below it
     }
-    // Never-overlap invariant: candidates may run **off the right / bottom edge** (a box clips rather than
-    // overlaps when space is tight), but never off the top / left. Because "just right of the rightmost
-    // locked box" is always clear, a non-overlapping position always exists, so the least-overlap fallback
-    // below effectively never fires - the layout clips instead of overlapping.
-    xs.retain(|&x| x >= 0.0);
-    ys.retain(|&y| y >= 0.0);
+    xs.retain(|&x| x >= 0.0 && x <= max_x);
+    ys.retain(|&y| y >= 0.0 && y <= max_y);
 
-    // Ranked preference: a clear **on-surface** spot beats a clear **off-edge** (clipped) spot beats an
-    // overlapping one. On-surface is always preferred so a box only clips when it genuinely cannot fit
-    // without overlapping; the overlapping fallback effectively never fires (a clear off-edge spot always
-    // exists), which is what makes the never-overlap invariant hold.
-    let mut best_on: Option<(f32, Pos)> = None; // clear, on-surface: (dist², pos)
-    let mut best_off: Option<(f32, Pos)> = None; // clear, off right/bottom edge: (dist², pos)
-    let mut best_any: Option<(f32, f32, Pos)> = None; // overlapping fallback: (overlap area, dist², pos)
+    let mut best_clear: Option<(f32, Pos)> = None; // (dist², pos)
+    let mut best_any: Option<(f32, f32, Pos)> = None; // (overlap area, dist², pos)
     for &x in &xs {
         for &y in &ys {
             let pos = Pos { x, y };
             let overlap = overlap_area(pos, size, locked);
             let dist_sq = (x - cur.x).powi(2) + (y - cur.y).powi(2);
             if overlap <= 0.0 {
-                let target = if x <= max_x + 0.01 && y <= max_y + 0.01 {
-                    &mut best_on
-                } else {
-                    &mut best_off
-                };
-                if target.is_none_or(|(d, _)| dist_sq < d) {
-                    *target = Some((dist_sq, pos));
+                if best_clear.is_none_or(|(d, _)| dist_sq < d) {
+                    best_clear = Some((dist_sq, pos));
                 }
             } else if best_any.is_none_or(|(o, d, _)| overlap < o || (overlap == o && dist_sq < d))
             {
@@ -89,8 +75,7 @@ fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], surface: Pos) -> P
             }
         }
     }
-    best_on
-        .or(best_off)
+    best_clear
         .map(|(_, p)| p)
         .or(best_any.map(|(_, _, p)| p))
         .unwrap_or(Pos { x: cx, y: cy })

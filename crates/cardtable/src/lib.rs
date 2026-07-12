@@ -826,21 +826,16 @@ fn px(value: Val) -> f32 {
 
 /// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
 /// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
-fn sync_node_sizes(
-    cards: Query<(&CardRef, &ComputedNode)>,
-    piles: Query<(&Movable, &ComputedNode)>,
-    mut table: ResMut<Table>,
-) {
-    // Feed **every** card's footprint (via `CardRef`), movable or not - a `Virtual` readout still occupies
-    // felt and must be sized so the de-overlap can account for it. Piles (decks) come from `Movable`.
-    for (cref, computed) in &cards {
+fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
+    for (movable, computed) in &movables {
         let size = computed.size * computed.inverse_scale_factor;
-        let _ = table.0.set_card_footprint(cref.0, size.x, size.y);
-    }
-    for (movable, computed) in &piles {
-        if let TableNode::Pile(pid) = movable.0 {
-            let size = computed.size * computed.inverse_scale_factor;
-            let _ = table.0.set_pile_size(pid, size.x, size.y);
+        match movable.0 {
+            TableNode::Card(cid) => {
+                let _ = table.0.set_card_footprint(cid, size.x, size.y);
+            }
+            TableNode::Pile(pid) => {
+                let _ = table.0.set_pile_size(pid, size.x, size.y);
+            }
         }
     }
 }
@@ -902,13 +897,9 @@ fn animate_nodes(
     time: Res<Time>,
     table: Res<Table>,
     dragging: Res<Dragging>,
-    // Every rendered table element: a card (`CardRef`, movable or not) or a deck (`Movable` pile), so a
-    // non-movable card tracks its model position exactly like every other card. `ModalTile`s (formation
-    // tiles) are flex-positioned - the table never owns their `left/top` - so they are excluded by construction.
-    mut elements: Query<
-        (&mut Node, Option<&Movable>, Option<&CardRef>),
-        (Without<ModalTile>, Or<(With<Movable>, With<CardRef>)>),
-    >,
+    // `ModalTile`s (formation tiles) are flex-positioned; the table never owns their `left/top`, so they are
+    // excluded here by construction rather than special-cased.
+    mut movables: Query<(&Movable, &mut Node), Without<ModalTile>>,
 ) {
     if table
         .0
@@ -946,24 +937,17 @@ fn animate_nodes(
         HashMap::new()
     };
     let t = (SLIDE_SPEED * time.delta_secs()).min(1.0);
-    for (mut node, movable, cardref) in &mut elements {
-        // The table element this node represents: a deck / movable card by its `Movable`, else a non-movable
-        // card by its `CardRef`. (A movable card carries both; its `Movable` wins and names the same card.)
-        let element = match (movable, cardref) {
-            (Some(m), _) => m.0,
-            (None, Some(c)) => TableNode::Card(c.0),
-            (None, None) => continue,
-        };
-        if dragging.0 == Some(element) {
+    for (movable, mut node) in &mut movables {
+        if dragging.0 == Some(movable.0) {
             continue; // free while held
         }
         let target = if structured {
-            match layout.get(&element) {
+            match layout.get(&movable.0) {
                 Some(&p) => p,
                 None => continue,
             }
         } else {
-            match element {
+            match movable.0 {
                 TableNode::Pile(pid) => match table.0.pile(pid) {
                     Some(d) => d.pos(),
                     None => continue,
@@ -1566,38 +1550,9 @@ fn settle_free_cards(
             anchor = Some(c);
         }
     }
-    // Self-heal the never-overlap invariant: if any two of this zone's laid-out elements overlap - cards
-    // **or** the sub-decks it holds (a Fonts-style pile), checked over the same movable children `separate`
-    // lays out - shove them apart. The anchor holds its spot (the just-resized card if one changed, else the
-    // first card). `separate` is idempotent + never-overlapping, so a clean layout is untouched and any
-    // overlap always clears - which also repairs positions left bad by an earlier build.
-    if let Some(anchor) = anchor.or_else(|| cards.first().copied())
-        && zone_has_overlap(&table.0, focus)
-    {
+    if let Some(anchor) = anchor {
         table.0.separate(focus, TableNode::Card(anchor));
     }
-}
-
-/// Whether any two of a zone's laid-out elements overlap in the model — its **movable children**: cards by
-/// [`footprint`](Card::footprint), sub-decks by their [`size`](Pile::size), the same set [`Board::separate`]
-/// arranges. The runtime test behind the never-overlap invariant's self-heal, so a card overlapping a
-/// *sub-deck* (not just another card) is caught too.
-fn zone_has_overlap(table: &Board, zone: PileId) -> bool {
-    let boxes: Vec<(Pos, Pos)> = table
-        .movable_children(zone)
-        .into_iter()
-        .filter_map(|n| match n {
-            TableNode::Card(c) => table.card(c).map(|k| (k.pos(), k.footprint())),
-            TableNode::Pile(p) => table.pile(p).map(|d| (d.pos(), d.size())),
-        })
-        .filter(|(_, s)| s.x >= 1.0 && s.y >= 1.0)
-        .collect();
-    (0..boxes.len()).any(|i| {
-        ((i + 1)..boxes.len()).any(|j| {
-            let ((ap, asz), (bp, bsz)) = (boxes[i], boxes[j]);
-            ap.x < bp.x + bsz.x && bp.x < ap.x + asz.x && ap.y < bp.y + bsz.y && bp.y < ap.y + asz.y
-        })
-    })
 }
 
 /// Keep the **Table's top-level piles** shoved apart when one first lays out or changes size, or when the
@@ -1654,17 +1609,6 @@ fn settle_table_piles(
     if sized {
         table.0.arrange_row(root, GAP, OVERLAY_BAND);
     } else if resized && let Some(anchor) = piles.first().copied() {
-        // A window resize re-clamps the decks inside the new bounds (preserving the manual arrangement).
-        table.0.separate(root, TableNode::Pile(anchor));
-    }
-    // **Self-heal the never-overlap invariant, unconditionally.** After the above (or when neither fired), if
-    // any two decks still overlap - a rebuilt System deck parked at (0,0), or a deck `arrange_row` skipped
-    // because it was not yet sized that frame - separate them. Safe now that `separate` is idempotent + never
-    // -overlapping: a clean layout is untouched, only genuine overlaps move. (`root`'s movable children are
-    // its decks.)
-    if let Some(anchor) = piles.first().copied()
-        && zone_has_overlap(&table.0, root)
-    {
         table.0.separate(root, TableNode::Pile(anchor));
     }
 }
