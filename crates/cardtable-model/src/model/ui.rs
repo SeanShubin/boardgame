@@ -7,7 +7,7 @@
 use super::{CardId, PileId, Pos};
 
 /// Attention + transient presentation state for a [`Board`](super::Board): which pile is focused,
-/// which cards are selected, and the renderer-reported surface + pinned fixtures.
+/// which cards are selected, and the renderer-reported bounds + pinned fixtures.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct UiModel {
     /// The currently focused (drilled-into) pile.
@@ -15,8 +15,8 @@ pub(super) struct UiModel {
     /// The selected cards.
     pub(super) selection: Vec<CardId>,
     // Renderer-fed, transient: not persisted — re-reported every frame, so a save round-trips without them.
-    #[serde(skip, default = "super::physical::unbounded_surface")]
-    pub(super) surface: Pos,
+    #[serde(skip, default = "super::physical::default_bounds")]
+    pub(super) bounds: Pos,
     /// **Pinned** rectangles `(top-left, size)` — the fixed felt fixtures (the centered zone title, the
     /// Back card) that freely-placed content must settle clear of. In `separate` they take top priority:
     /// placed first, so nothing overrides them; they never move for a card. Fed by the renderer each frame.

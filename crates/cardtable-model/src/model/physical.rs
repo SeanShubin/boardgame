@@ -52,7 +52,7 @@ impl Node {
     }
 }
 
-/// A 2-D position on the table surface, in pixels from its top-left. The card-table is a physical
+/// A 2-D position on the table bounds, in pixels from its top-left. The card-table is a physical
 /// space, so a pile has a *place*; the renderer draws it there and drag-to-place updates it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pos {
@@ -162,7 +162,7 @@ pub struct Card {
     card_type: String,
     size: Size,
     home: PileId,
-    /// Free position on the drilled-in surface — used only by an [`Arrangement::Free`] deck, where cards are
+    /// Free position on the drilled-in bounds — used only by an [`Arrangement::Free`] deck, where cards are
     /// placed and shoved like the top-level piles. (The footprint is *computed* from size + content, not
     /// stored — see [`Card::footprint`].)
     pos: Pos,
@@ -263,7 +263,7 @@ impl Card {
         self.size
     }
 
-    /// The card's free position on the drilled-in surface (an [`Arrangement::Free`] deck only).
+    /// The card's free position on the drilled-in bounds (an [`Arrangement::Free`] deck only).
     pub fn pos(&self) -> Pos {
         self.pos
     }
@@ -387,7 +387,7 @@ impl Pile {
         self.children.iter().filter_map(|n| n.pile()).collect()
     }
 
-    /// This pile's position on the table surface.
+    /// This pile's position on the table bounds.
     pub fn pos(&self) -> Pos {
         self.pos
     }
@@ -447,9 +447,9 @@ pub struct Board {
     ui: UiModel,
 }
 
-/// The starting (effectively unbounded) surface used until the renderer reports the real size — also the
-/// value a deserialized [`Board`] gets, since `surface` is not persisted.
-pub(crate) fn unbounded_surface() -> Pos {
+/// The starting (effectively unbounded) bounds used until the renderer reports the real size — also the
+/// value a deserialized [`Board`] gets, since `bounds` is not persisted.
+pub(crate) fn default_bounds() -> Pos {
     Pos { x: 1.0e6, y: 1.0e6 }
 }
 
@@ -490,7 +490,7 @@ impl Board {
                 selection: Vec::new(),
                 // Effectively unbounded until the renderer reports the real table size, so piles aren't
                 // jammed to the origin before the first layout.
-                surface: unbounded_surface(),
+                bounds: default_bounds(),
                 pinned: Vec::new(),
             },
         }
@@ -1169,7 +1169,7 @@ impl Board {
         Ok(())
     }
 
-    /// Sets `pile`'s position on the table surface (drag-to-place commits here).
+    /// Sets `pile`'s position on the table bounds (drag-to-place commits here).
     pub fn set_pile_pos(&mut self, pile: PileId, x: f32, y: f32) -> Result<(), TableauError> {
         self.piles
             .get_mut(&pile)
@@ -1255,7 +1255,7 @@ impl Board {
         Ok(())
     }
 
-    /// Sets a card's free position on the drilled-in surface (an [`Arrangement::Free`] deck).
+    /// Sets a card's free position on the drilled-in bounds (an [`Arrangement::Free`] deck).
     pub fn set_card_pos(&mut self, card: CardId, x: f32, y: f32) -> Result<(), TableauError> {
         self.cards
             .get_mut(&card)
@@ -1452,10 +1452,10 @@ impl Board {
         runs
     }
 
-    /// Records the table surface size (the renderer feeds this back after layout). Decks are kept
-    /// within `0..=surface-size` — the borders act as walls. See [`place_pile`] and [`separate`].
-    pub fn set_surface(&mut self, w: f32, h: f32) {
-        self.ui.surface = Pos { x: w, y: h };
+    /// Records the table bounds size (the renderer feeds this back after layout). Decks are kept
+    /// within `0..=bounds-size` — the borders act as walls. See [`place_pile`] and [`separate`].
+    pub fn set_bounds(&mut self, w: f32, h: f32) {
+        self.ui.bounds = Pos { x: w, y: h };
     }
 
     /// Set the felt's **pinned** rectangles — the fixed fixtures (centered title, Back) that content is
@@ -1464,10 +1464,10 @@ impl Board {
         self.ui.pinned = pinned;
     }
 
-    /// The current table surface size (as last reported by the renderer). Used to lay cards out into a
+    /// The current table bounds size (as last reported by the renderer). Used to lay cards out into a
     /// grid of as many columns as fit.
-    pub fn surface(&self) -> Pos {
-        self.ui.surface
+    pub fn bounds(&self) -> Pos {
+        self.ui.bounds
     }
 
     /// The index of a card within its home pile's [`children`](Pile::children) (0 = bottom), if it
@@ -1559,7 +1559,7 @@ impl Board {
             .sum()
     }
 
-    /// Places `pile` at `(x, y)`, clamped inside the surface (the borders shove it back in), returning
+    /// Places `pile` at `(x, y)`, clamped inside the bounds (the borders shove it back in), returning
     /// the position actually used. Drag-to-place calls this each move.
     pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {
         let size = self
@@ -1567,7 +1567,7 @@ impl Board {
             .get(&pile)
             .ok_or(TableauError::UnknownPile(pile))?
             .size;
-        let pos = clamp_box(Pos { x, y }, size, self.ui.surface);
+        let pos = clamp_box(Pos { x, y }, size, self.ui.bounds);
         self.piles.get_mut(&pile).expect("checked above").pos = pos;
         Ok(pos)
     }
@@ -1587,7 +1587,7 @@ impl Board {
     }
 
     /// Places `pile` at the position nearest its current one that is **clear of its siblings** (the other
-    /// movable children of its parent) and inside the surface - moving only this pile, disturbing none of
+    /// movable children of its parent) and inside the bounds - moving only this pile, disturbing none of
     /// the others. The prevention counterpart to [`separate`]: it gives a freshly built deck (e.g. the
     /// renderer's System deck) a non-overlapping home *at creation*, in the model, instead of dropping it at
     /// `(0,0)` on top of a neighbour and relying on the first rendered frame to shove it clear. Every box is
@@ -1609,7 +1609,7 @@ impl Board {
             .filter(|&n| n != Node::Pile(pile))
             .filter_map(|n| self.node_box(n))
             .collect();
-        let pos = place_clear_of(cur, size, &siblings, self.ui.surface);
+        let pos = place_clear_of(cur, size, &siblings, self.ui.bounds);
         self.piles.get_mut(&pile).expect("checked above").pos = pos;
         Ok(pos)
     }
@@ -1659,7 +1659,7 @@ impl Board {
     /// and nested piles *alike*, since both are [`movable_children`](Self::movable_children). Priority order
     /// (see `separate_boxes`): the felt's [pinned](Self::set_pinned) fixtures first, then the dropped
     /// `anchor`, then the rest fanning outward — each settling clear of everyone above it, all kept inside
-    /// the surface. No-op if the pile or anchor is unknown. This is the one shove — the root and any drilled
+    /// the bounds. No-op if the pile or anchor is unknown. This is the one shove — the root and any drilled
     /// zone are just piles whose children get separated.
     pub fn separate(&mut self, pile: PileId, anchor: Node) {
         let nodes = self.movable_children(pile);
@@ -1670,7 +1670,7 @@ impl Board {
             .iter()
             .map(|&n| self.node_box(n).unwrap_or_default())
             .collect();
-        let settled = separate_boxes(&boxes, anchor_idx, self.ui.surface, &self.ui.pinned);
+        let settled = separate_boxes(&boxes, anchor_idx, self.ui.bounds, &self.ui.pinned);
         for (&n, pos) in nodes.iter().zip(settled) {
             self.set_node_pos(n, pos);
         }
@@ -1690,7 +1690,7 @@ impl Board {
                 continue; // not laid out yet
             }
             // Wrap to the next row when this child would run past the right edge.
-            if x > gap && x + size.x + gap > self.ui.surface.x {
+            if x > gap && x + size.x + gap > self.ui.bounds.x {
                 x = gap;
                 y += row_h + gap;
                 row_h = 0.0;
@@ -1703,7 +1703,7 @@ impl Board {
 
     /// Footprint-aware layout positions for a **structured** deck's movable children, in child order — the
     /// size-aware replacement for a fixed grid, and the reason `List`/`Grid` decks reflow when a card
-    /// grows. `List` flows left-to-right, wrapping at the surface width, each child one `gap` after the
+    /// grows. `List` flows left-to-right, wrapping at the bounds width, each child one `gap` after the
     /// previous by its *actual* box; a row is as tall as its tallest child. `Grid { columns }` aligns
     /// **both** axes: a column is as wide as its widest child, a row as tall as its tallest, so a grown
     /// card pushes its whole column and row. Because it reads live sizes, re-running it (the renderer does,
@@ -1731,7 +1731,7 @@ impl Board {
                 let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
                 for n in nodes {
                     let s = size(n);
-                    if x > gap && x + s.x + gap > self.ui.surface.x {
+                    if x > gap && x + s.x + gap > self.ui.bounds.x {
                         x = gap;
                         y += row_h + gap;
                         row_h = 0.0;
@@ -2275,7 +2275,7 @@ mod tests {
     #[test]
     fn separate_pins_take_priority_over_the_dropped_anchor() {
         let mut t = Board::new();
-        t.set_surface(1000.0, 1000.0);
+        t.set_bounds(1000.0, 1000.0);
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         t.set_pile_size(a, 100.0, 100.0).unwrap();
@@ -2329,7 +2329,7 @@ mod tests {
     fn arrange_row_places_children_at_an_exact_constant_gap() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_surface(1000.0, 800.0);
+        t.set_bounds(1000.0, 800.0);
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(root, "B").unwrap();
         let c = t.add_pile(root, "C").unwrap();
@@ -2349,10 +2349,10 @@ mod tests {
 
     /// `arrange_row` wraps to a new row (one gap below the tallest box) when a child would run past the edge.
     #[test]
-    fn arrange_row_wraps_at_the_surface_edge() {
+    fn arrange_row_wraps_at_the_bounds_edge() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_surface(300.0, 800.0); // only room for two 100-wide boxes per row
+        t.set_bounds(300.0, 800.0); // only room for two 100-wide boxes per row
         let ids: Vec<_> = (0..3)
             .map(|i| {
                 let p = t.add_pile(root, format!("D{i}")).unwrap();
@@ -2375,7 +2375,7 @@ mod tests {
     fn structured_positions_list_flows_by_footprint() {
         let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "D").unwrap();
-        t.set_surface(1000.0, 800.0);
+        t.set_bounds(1000.0, 800.0);
         let add = |t: &mut Board, name: &str| {
             t.add_card(deck, Face::Up { title: name.into() }, None)
                 .unwrap()
@@ -2409,7 +2409,7 @@ mod tests {
     fn structured_positions_grid_aligns_columns() {
         let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "G").unwrap();
-        t.set_surface(1000.0, 800.0);
+        t.set_bounds(1000.0, 800.0);
         let ids: Vec<_> = (0..4)
             .map(|i| {
                 t.add_card(
@@ -2482,7 +2482,7 @@ mod tests {
     fn place_clear_moves_new_deck_off_a_sibling() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_surface(2000.0, 1000.0);
+        t.set_bounds(2000.0, 1000.0);
         // An existing deck with a real (rendered) size at the origin.
         let a = t.add_pile(root, "A").unwrap();
         t.set_pile_size(a, 120.0, 96.0).unwrap();
@@ -2510,14 +2510,14 @@ mod tests {
         );
     }
 
-    /// place_pile clamps to the surface — the borders shove a pile back inside.
+    /// place_pile clamps to the bounds — the borders shove a pile back inside.
     #[test]
-    fn place_pile_clamps_to_surface() {
+    fn place_pile_clamps_to_bounds() {
         let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
         t.set_pile_size(a, 100.0, 100.0).unwrap();
-        t.set_surface(300.0, 200.0);
+        t.set_bounds(300.0, 200.0);
 
         assert_eq!(
             t.place_pile(a, 500.0, 500.0).unwrap(),
@@ -2529,7 +2529,7 @@ mod tests {
         );
     }
 
-    /// In a bounded surface, separate keeps every pile fully inside (residual overlap is tolerated).
+    /// In a bounded bounds, separate keeps every pile fully inside (residual overlap is tolerated).
     #[test]
     fn separate_keeps_decks_within_bounds() {
         let mut t = Board::new();
@@ -2541,7 +2541,7 @@ mod tests {
             t.set_pile_size(d, 100.0, 100.0).unwrap();
             t.set_pile_pos(d, 250.0, 0.0).unwrap(); // stacked near the right wall
         }
-        t.set_surface(300.0, 200.0);
+        t.set_bounds(300.0, 200.0);
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
@@ -2561,7 +2561,7 @@ mod tests {
         let b = t.add_pile(root, "B").unwrap();
         t.set_pile_size(a, 100.0, 100.0).unwrap();
         t.set_pile_size(b, 100.0, 100.0).unwrap();
-        t.set_surface(150.0, 300.0); // only 50px right of A - B (100 wide) can't slide right
+        t.set_bounds(150.0, 300.0); // only 50px right of A - B (100 wide) can't slide right
         t.set_pile_pos(a, 0.0, 0.0).unwrap();
         t.set_pile_pos(b, 10.0, 0.0).unwrap(); // overlapping A, pinned near the right wall
 
@@ -2612,7 +2612,7 @@ mod tests {
             // Tightly clustered so every pile overlaps several others.
             t.set_pile_pos(d, i as f32 * 12.0, i as f32 * 9.0).unwrap();
         }
-        t.set_surface(1000.0, 1000.0);
+        t.set_bounds(1000.0, 1000.0);
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
@@ -2620,7 +2620,7 @@ mod tests {
     }
 
     /// Regression for the old terminal wall-clamp, which could shove a pile onto another with no pass
-    /// left to fix it. Here the surface is exactly two piles wide/tall, so the clamp path is exercised;
+    /// left to fix it. Here the bounds is exactly two piles wide/tall, so the clamp path is exercised;
     /// lock-as-you-go folds the walls into placement, so nothing overlaps after clamping.
     #[test]
     fn separate_no_overlap_after_wall_clamp() {
@@ -2631,9 +2631,9 @@ mod tests {
             .collect();
         for &d in &ids {
             t.set_pile_size(d, 100.0, 100.0).unwrap();
-            t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the surface's center
+            t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the bounds's center
         }
-        t.set_surface(200.0, 200.0); // a 2x2 grid of 100x100 cells is the only clear packing
+        t.set_bounds(200.0, 200.0); // a 2x2 grid of 100x100 cells is the only clear packing
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
@@ -2802,7 +2802,7 @@ mod tests {
             },
         )
         .unwrap();
-        t.set_surface(1000.0, 1000.0);
+        t.set_bounds(1000.0, 1000.0);
         let a = t.add_card(p, Face::Up { title: "A".into() }, None).unwrap();
         let b = t.add_card(p, Face::Up { title: "B".into() }, None).unwrap();
         // Both are Small cards (computed footprint 120x96).

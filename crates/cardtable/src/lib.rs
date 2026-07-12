@@ -830,7 +830,7 @@ fn px(value: Val) -> f32 {
 fn sync_surface_size(content: Query<&ComputedNode, With<TableContent>>, mut table: ResMut<Table>) {
     if let Ok(computed) = content.single() {
         let size = computed.size * computed.inverse_scale_factor;
-        table.0.set_surface(size.x, size.y);
+        table.0.set_bounds(size.x, size.y);
     }
 }
 
@@ -1546,13 +1546,13 @@ fn settle_free_cards(
 /// nothing is being dragged, re-run [`Board::separate`] so every pile is re-clamped inside the surface
 /// and pushed clear of its neighbours. A size-changed pile anchors the shove (the newcomer holds its
 /// spot); a bare resize anchors the first pile. This is what makes both a freshly-rendered deck and a
-/// window resize trigger the shove without hooking each site. `prev`/`prev_surface` remember last-seen
+/// window resize trigger the shove without hooking each site. `prev`/`prev_bounds` remember last-seen
 /// sizes; only runs at the Table (root), where these piles are shown and sized.
 fn settle_table_piles(
     mut table: ResMut<Table>,
     guard: Res<DragGuard>,
     mut prev: Local<HashMap<PileId, Pos>>,
-    mut prev_surface: Local<Pos>,
+    mut prev_bounds: Local<Pos>,
 ) {
     if guard.0.is_some() {
         return; // a drag is in progress — don't fight it
@@ -1579,10 +1579,10 @@ fn settle_table_piles(
     // Track a **width** change only — the surface *height* also flips as you enter/leave a zone's
     // overlay-band inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on
     // height would mistake every navigation back to the Table for a resize.
-    let surface = table.0.surface();
-    let resized = (surface.x - prev_surface.x).abs() > 0.5;
+    let bounds = table.0.bounds();
+    let resized = (bounds.x - prev_bounds.x).abs() > 0.5;
     if resized {
-        *prev_surface = surface;
+        *prev_bounds = bounds;
     }
     // When a deck first sizes (or its chip changes size), lay the decks out as one clean constant-gap row.
     // A window *resize*, by contrast, does NOT re-tidy — it just **bumps decks off the new edges**:
@@ -2619,7 +2619,7 @@ fn build_ui(
                         // card, and the header→fan gap. Computing it here (not after layout) lets us seed
                         // each card's spread position so the very first frame is already right.
                         let fan_width =
-                            (tree.surface().x - 2.0 * INN_PAD - CARD_W - INN_HEADER_GAP).max(1.0);
+                            (tree.bounds().x - 2.0 * INN_PAD - CARD_W - INN_HEADER_GAP).max(1.0);
                         surface
                             .spawn(Node {
                                 flex_direction: FlexDirection::Column,
