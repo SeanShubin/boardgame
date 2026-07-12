@@ -28,6 +28,15 @@ use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
 pub const ARENA: &str = "Arena";
 /// The holding pile for heroes who have not been assigned a rank yet (Marshal).
 pub const POOL: &str = "Pool";
+/// The foes' holding pile: they stand here, face up and fully readable, but **out of formation**, for as long
+/// as the player is declaring theirs.
+///
+/// Combat is a bet made blind - Marshal declares a formation without seeing the enemy's, and that secrecy is
+/// what simulates simultaneity. But you are entitled to know *who* you are fighting; only *where they stand*
+/// is withheld. So the foes muster here, and [`reveal`] moves them into their rank piles when you commit.
+/// Their formation cannot leak during your declaration because it is not on the table yet - which is a
+/// stronger guarantee than a renderer that merely declines to draw it.
+pub const MUSTER: &str = "Foes";
 
 /// The three rank piles, in formation display order (front to back).
 pub(crate) const RANK_PILES: [(&str, Rank); 3] = [
@@ -465,6 +474,34 @@ pub(crate) fn maxes_of(board: &Board, units: &[Combatant]) -> Vec<u32> {
 }
 
 /// Heroes still in the Pool (unranked) — the formation is complete when this is empty.
+/// The foes still standing in the muster - on the table but not yet in formation (see [`MUSTER`]).
+fn muster_foes(board: &Board, arena: PileId) -> Vec<CardId> {
+    sub_pile(board, arena, MUSTER)
+        .map(|p| board.content_cards(p))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("foe"))
+        .collect()
+}
+
+/// **Reveal**: both formations go down at once. The player's is already placed; the foes now step out of the
+/// muster into their rank piles. Called on the Marshal commit, which is the moment the blind bet is settled -
+/// after this, everything resolves in the open.
+fn reveal(board: &mut Board, arena: PileId) {
+    for card in muster_foes(board, arena) {
+        let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
+            continue;
+        };
+        let Some((stats, _melee, ranged, _aoe)) = foe_stats(&name) else {
+            continue;
+        };
+        if let Some(rp) = sub_pile(board, arena, rank_label(default_rank(&stats, ranged))) {
+            let at = board.pile(rp).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, rp, at);
+        }
+    }
+}
+
 fn pool_heroes(board: &Board, arena: PileId) -> Vec<CardId> {
     sub_pile(board, arena, POOL)
         .map(|p| board.content_cards(p))
@@ -489,6 +526,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
     let root = board.root_id();
     let arena = board.add_pile(root, ARENA).ok()?;
     let pool = board.add_pile(arena, POOL).ok()?;
+    let muster = board.add_pile(arena, MUSTER).ok()?;
     for (label, _) in RANK_PILES {
         let _ = board.add_pile(arena, label);
     }
@@ -533,7 +571,8 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
         }
     }
 
-    // Foes: instantiate the encounter roster from the Bestiary, then move each into its default rank pile.
+    // Foes: instantiate the encounter roster from the Bestiary into the **muster** - on the table, face up,
+    // fully readable, but not yet in formation. `reveal` ranks them when the player commits their own.
     let label = board.pile(place)?.label.clone();
     let foes = board
         .instantiate_from_bank(
@@ -559,11 +598,8 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
                     aoe,
                 ),
             );
-            let rank = default_rank(&stats, ranged);
-            if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
-                let at = board.pile(rp).map_or(0, |p| p.cards().len());
-                let _ = board.move_card(card, rp, at);
-            }
+            let at = board.pile(muster).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, muster, at);
         }
     }
 
@@ -766,9 +802,13 @@ pub enum Outcome {
 /// ([`crate::battle::MAX_ROUNDS`]), so the two engines end a stalemate at the same moment.
 pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
     let (_, units, _, round, _) = arena_state(board, arena);
+    // Heroes still in the Pool and foes still in the muster are on the table but not yet ranked (Marshal), so
+    // they are not combatants - they are very much alive, though, and a fight must not read as won because
+    // the enemy has not stepped forward yet.
     let party_alive = units.iter().any(|u| u.side == Side::Party && !u.fallen)
         || !pool_heroes(board, arena).is_empty();
-    let foes_alive = units.iter().any(|u| u.side == Side::Foe && !u.fallen);
+    let foes_alive = units.iter().any(|u| u.side == Side::Foe && !u.fallen)
+        || !muster_foes(board, arena).is_empty();
     match (party_alive, foes_alive) {
         (false, _) => Some(Outcome::Defeat),
         (true, false) => Some(Outcome::Victory),
@@ -995,6 +1035,7 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
     let _ = round0;
     if step0 == Step::Marshal {
         autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
+        reveal(board, arena); // both formations go down at once: the foes leave the muster and take their ranks
         // Round start: refresh every unit's tempo to its pool - Cadence, or body count for a horde (which
         // "swarms with one card per living body"). The end-of-round refresh only covers later rounds, so the
         // opening round is set here; idempotent for the rounds that were already refreshed.
@@ -1709,6 +1750,14 @@ pub fn restart_fight(board: &mut Board, arena: PileId) {
                     ),
                 );
             }
+            // The foes go back into the muster: a restart returns to the moment *before* the Reveal, so their
+            // formation must be off the table again while the player re-declares theirs.
+            if ctype == "foe"
+                && let Some(m) = sub_pile(board, arena, MUSTER)
+            {
+                let at = board.pile(m).map_or(0, |p| p.cards().len());
+                let _ = board.move_card(card, m, at);
+            }
         }
     }
     install_phase_decks(board, arena);
@@ -1915,8 +1964,12 @@ mod tests {
         open_fight(board, place).expect("a fight opens")
     }
 
+    /// **You may read the foes; you may not read their formation.** Marshal is a blind bet - the secrecy of the
+    /// two declarations is what simulates simultaneity - so the enemy stands in the muster, fully legible, and
+    /// only takes its ranks at the Reveal, when the player commits. The formation cannot leak because it is not
+    /// on the table yet: a stronger guarantee than a renderer that merely declines to draw it.
     #[test]
-    fn a_fight_opens_with_heroes_in_the_pool_and_foes_ranked() {
+    fn foes_muster_unranked_at_marshal_and_take_the_field_at_reveal() {
         let mut board = sample_table();
         let arena = open_a_fight(&mut board);
         assert_eq!(current_step(&board, arena), Step::Marshal);
@@ -1924,13 +1977,25 @@ mod tests {
             !formation_complete(&board, arena),
             "heroes start unranked in the Pool"
         );
-        // Foes are already ranked (arena_state only sees ranked combatants).
+
+        // On the table and readable, but in no rank - so `arena_state` (which reads the ranks) sees no foe.
+        assert!(
+            !muster_foes(&board, arena).is_empty(),
+            "the foes are present"
+        );
+        let (_, units, _, _, _) = arena_state(&board, arena);
+        assert!(
+            units.is_empty(),
+            "nobody is in formation yet - neither side"
+        );
+        // ...and the fight must not read as already won just because the enemy has not stepped forward.
+        assert_eq!(outcome(&board, arena), None);
+
+        commit(&mut board, arena); // Start: the Reveal - both formations go down at once
+        assert!(muster_foes(&board, arena).is_empty(), "the muster empties");
         let (_, units, _, _, _) = arena_state(&board, arena);
         assert!(units.iter().any(|u| u.side == Side::Foe), "foes are ranked");
-        assert!(
-            !units.iter().any(|u| u.side == Side::Party),
-            "no hero is ranked yet"
-        );
+        assert!(units.iter().any(|u| u.side == Side::Party), "so are we");
     }
 
     /// The `read_combatant` plumbing carries area / horde from the source: a Bastion (Sweep) hero flags `aoe`,

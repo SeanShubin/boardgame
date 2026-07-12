@@ -134,7 +134,7 @@ fn prompt_for(step: Step) -> &'static str {
             "Extra strikes - tap a hero that landed a blow, then press it or Hold. Its blows bank into the same pile."
         }
         Step::Marshal => {
-            "Formation - drag each hero into a rank row (or tap to cycle), then Start."
+            "Formation - you can read every foe, but not where it will stand. Drag each hero into a rank, then Start."
         }
     }
 }
@@ -142,32 +142,42 @@ fn prompt_for(step: Step) -> &'static str {
 // ---- the formation (Marshal): assignment rows of party tiles -------------------------------------------
 
 fn build_formation(board: &Board, arena: PileId) -> SceneBody {
+    // The foes you face, at the top - every stat readable, and **no rank**: you are entitled to know who you
+    // are fighting, but their formation is not on the table until you commit yours (see `arena::MUSTER`).
     let mut rows = Vec::new();
+    if let Some(muster) = arena::sub_pile(board, arena, arena::MUSTER) {
+        let row = formation_row(board, muster, arena::MUSTER, None, Side::Foe);
+        if !row.tiles.is_empty() {
+            rows.push(row);
+        }
+    }
     for (label, rank) in arena::RANK_PILES {
         if let Some(pile) = arena::sub_pile(board, arena, label) {
-            rows.push(formation_row(board, pile, label, Some(rank)));
+            rows.push(formation_row(board, pile, label, Some(rank), Side::Party));
         }
     }
     // The Pool of unranked heroes sits at the bottom, where they are dragged up from.
     if let Some(pool) = arena::sub_pile(board, arena, arena::POOL) {
-        rows.push(formation_row(board, pool, "Heroes", None));
+        rows.push(formation_row(board, pool, "Heroes", None, Side::Party));
     }
     SceneBody::Rows(rows)
 }
 
-/// One assignment row: its party heroes as draggable tiles (foes, pre-ranked, are not shown in formation).
-fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>) -> Row {
+/// One formation row: the party's ranks are assignment rows you drag heroes into; the foes' muster is a
+/// reading row - you can study every card in it, but you cannot move it and it has no rank to read off.
+fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>, side: Side) -> Row {
+    let want = if side == Side::Party { "unit" } else { "foe" };
     let mut tiles = Vec::new();
     for card in board.content_cards(pile) {
-        if board.card(card).map(|k| k.card_type()) != Some("unit") {
+        if board.card(card).map(|k| k.card_type()) != Some(want) {
             continue;
         }
-        // The rank is only needed to flag an ineffective placement; the Pool (unranked) never flags.
+        // The rank is only needed to flag an ineffective placement; the Pool and the muster never flag.
         let Some(u) = arena::read_combatant(board, card, rank.unwrap_or(Rank::Vanguard)) else {
             continue;
         };
-        let max = arena::max_health(board, &u.name, Side::Party).max(u.health);
-        tiles.push(formation_tile(&u, card, max, rank));
+        let max = arena::max_health(board, &u.name, side).max(u.health);
+        tiles.push(formation_tile(&u, card, max, rank, side));
     }
     Row {
         label: label.to_string(),
@@ -176,7 +186,8 @@ fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>) -
     }
 }
 
-fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>) -> Tile {
+fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>, side: Side) -> Tile {
+    let party = side == Side::Party;
     let effective = rank.is_none_or(|r| combat::effective_in_rank(r, u.melee, u.ranged));
     // Health and Tempo are both card stacks you flip, so both read `up / total` — showing only the tempo
     // remainder hid how much of the pool was already spent, which is the whole decision in a bid.
@@ -198,11 +209,12 @@ fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>) -> 
     Tile {
         card,
         title: u.name.clone(),
-        team: Team::Left,
+        team: if party { Team::Left } else { Team::Right },
         highlight: Highlight::Idle,
         badges,
-        draggable: true,
-        tappable: true,
+        // A mustered foe is there to be read, not handled: you cannot drag it, and tapping it does nothing.
+        draggable: party,
+        tappable: party,
     }
 }
 
