@@ -147,6 +147,17 @@ location you opened it from — because a fight is opened by an ordinary move li
 
 This is §0.5's *servant, not warden* taken to its conclusion: the table absorbs the cost of a mistake.
 
+**Back returns you to commits, not to every fiddle.** The steps it records are exactly the points of no
+return. *Staging* — cycling a rank, toggling a reaction between Eat / Evade / Strike Back, moving an aim,
+raising a bid — is **not** a step to come back to, because it is **already** revisable in place: you simply
+choose again. Recording it would give you nothing and cost you plenty, forcing you to walk back through your
+own indecision one tap at a time. So the history skips it, and Back jumps to *before the choice was even on
+offer* — which puts you at that decision again **with your plan still staged**, ready to change.
+
+That falls straight out of the boundary above: **the checkpoints *are* the commits.** The game says which is
+which (`BoardGame::is_checkpoint`); the renderer, which cannot know what a move meant, just records the ones
+it is told to.
+
 > **Back is single-player only, and the reason is exact: it crosses Commits.** That is the one thing a
 > competitive mode must never allow. Against the AI there is nobody to leak to, so it is simply a take-back.
 > A PvP mode keeps Commit and keeps free revision *below* it — it just cannot offer Back.

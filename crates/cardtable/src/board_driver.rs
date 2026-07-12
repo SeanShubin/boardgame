@@ -148,7 +148,6 @@ fn apply_drop<G>(
     let Some((dragged, onto)) = request.0.take() else {
         return;
     };
-    history.push(&table.0); // remember where we were, so Back can come here
     // Describe the drop before applying it (the cards move on apply). The target is the *resolved*
     // DropTarget (e.g. the map place a march landed on), which the raw pointer event can't report.
     let dragged_name = table
@@ -171,9 +170,13 @@ fn apply_drop<G>(
         ),
     };
     let outcome = if let Some(intention) = game.0.drop_intention(&table.0, dragged, onto) {
+        if game.0.is_checkpoint(&intention) {
+            history.push(&table.0);
+        }
         game.0.apply(&mut table.0, &[intention]);
         "applied a game move"
     } else if let DropTarget::Pile(dest) = onto {
+        history.push(&table.0); // a plain card move rearranges the board - always worth coming back to
         let at = table.0.pile(dest).map_or(0, |p| p.cards().len());
         let _ = table.0.move_card(dragged, dest, at);
         "default move into pile"
@@ -202,7 +205,9 @@ fn apply_tap<G>(
         return;
     };
     if let Some(intention) = game.0.tap_intention(&table.0, card) {
-        history.push(&table.0);
+        if game.0.is_checkpoint(&intention) {
+            history.push(&table.0);
+        }
         game.0.apply(&mut table.0, &[intention]);
         rebuild.0 = true;
     }
@@ -224,7 +229,9 @@ fn apply_affordance<G>(
         return;
     };
     if let Some(intention) = affordances.0.get(index).cloned() {
-        history.push(&table.0);
+        if game.0.is_checkpoint(&intention) {
+            history.push(&table.0);
+        }
         game.0.apply(&mut table.0, &[intention]);
         rebuild.0 = true;
     }

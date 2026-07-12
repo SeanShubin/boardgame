@@ -135,6 +135,21 @@ impl BoardGame for CardTableGame {
         }
     }
 
+    /// Which steps **Back** can return you to: the points of no return, not every fiddle.
+    ///
+    /// `Assign` and `Tap` are **staging** — arranging the formation, cycling a rank, toggling a reaction
+    /// between Eat / Evade / Strike Back, moving an aim, raising a bid. None of it has been revealed, and all
+    /// of it is already revisable in place by simply choosing again, so there is nothing an undo could give
+    /// you. Recording it would only make Back walk you back through your own indecision one tap at a time.
+    ///
+    /// Everything else is a **commit** — `Commit` above all, the moment a staged plan is revealed and
+    /// resolved, and after which there are no take-backs. Going Back to one puts you at that decision again
+    /// with your plan still staged, ready to change. Rewinding past the `Fight` that opened the arena walks
+    /// you out of the fight entirely, onto the location you started it from.
+    fn is_checkpoint(&self, intention: &Intention) -> bool {
+        !matches!(intention, Intention::Assign { .. } | Intention::Tap { .. })
+    }
+
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
         let arena = crate::arena::find_arena(board)?;
@@ -280,6 +295,32 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Back returns you to commits, not to every fiddle.** Staging a plan — cycling a rank, toggling a
+    /// reaction, moving an aim — is already revisable in place by choosing again, so it is not a step to come
+    /// back to; recording it would make Back walk you back through your own indecision one tap at a time.
+    #[test]
+    fn staging_is_not_a_step_you_can_go_back_to_but_committing_is() {
+        let game = CardTableGame;
+        let card = CardId(1);
+        let pile = PileId(1);
+
+        // Staging: freely revisable in place, nothing revealed.
+        assert!(!game.is_checkpoint(&Intention::Tap { card }));
+        assert!(!game.is_checkpoint(&Intention::Assign {
+            unit: card,
+            to: pile
+        }));
+
+        // Commits: the points of no return.
+        assert!(game.is_checkpoint(&Intention::Commit));
+        assert!(game.is_checkpoint(&Intention::Fight { place: pile }));
+        assert!(game.is_checkpoint(&Intention::March {
+            position: card,
+            to: pile
+        }));
+        assert!(game.is_checkpoint(&Intention::AdvanceDay));
+    }
 
     #[test]
     fn advance_day_is_offered_in_the_day_track_and_advances_it() {

@@ -54,6 +54,23 @@ pub trait BoardGame {
     /// injection + `location_ready_for_combat`-style predicates. Empty = the zone offers no game action.
     fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Self::Intention)>;
 
+    /// Whether applying this intention is a **point of no return** — a step the player should be able to come
+    /// **Back** to. This is what the rewind history records; everything else is passed over.
+    ///
+    /// The distinction is not "big move vs small move", it is **committed vs staged**. A staged decision (a
+    /// reaction toggled between Eat / Evade / Strike Back, a rank cycled, an aim moved) is *already* freely
+    /// revisable — you simply choose again, in place — so there is nothing for an undo to give you, and
+    /// recording it would only force the player to walk back through their own indecision one tap at a time.
+    /// A **commit** is different: it is the moment a decision stops being private and is revealed, and after
+    /// it there are no take-backs. Those are exactly the steps worth being able to return to — and returning
+    /// to one puts you back at the decision with your plan still staged, ready to change it.
+    ///
+    /// Default: **every** intention is a checkpoint, which is right for a game with no staging layer.
+    fn is_checkpoint(&self, intention: &Self::Intention) -> bool {
+        let _ = intention;
+        true
+    }
+
     /// Interpret a **tap** (single click) on the board card `card`: `Some(intention)` if tapping it is a
     /// legal move, `None` to let the renderer handle the click normally (focus / zoom). This is the third
     /// input verb beside drag ([`drop_intention`](BoardGame::drop_intention)) and zone control
