@@ -250,7 +250,13 @@ fn hit(target: &Combatant, might: u32) -> u32 {
 /// false promise. Quote this instead. It is still worth doing under the bar when other blows land on the same
 /// target in the same sub-phase: the pile is shared, so damage adds up across attackers.
 pub fn pile_effect(target: &Combatant, might: u32) -> (u32, u32, u32) {
-    let dmg = hit(target, might);
+    pile_effect_strikes(target, might, 1)
+}
+
+/// [`pile_effect`] for `strikes` blows of `might` landing together (Extra strikes: armor bites **per strike**,
+/// and all of them bank into the one pile).
+pub fn pile_effect_strikes(target: &Combatant, might: u32, strikes: u32) -> (u32, u32, u32) {
+    let dmg = hit(target, might) * strikes;
     if target.horde {
         // A horde has no bar to cross: each body is one Health and penetrating damage spills body to body.
         return (dmg.min(target.health), 0, 1);
@@ -592,16 +598,6 @@ mod tests {
         };
         resolve_react(&mut u, &[contact], &[React::StrikeBack]);
         assert_eq!(u[0].health, 5, "a ranged-only body has no melee counter");
-    }
-
-    /// A foe side fielding every rank, so the schedule's own gate is what's under test (nothing is missing).
-    fn full_field() -> Vec<Combatant> {
-        vec![
-            unit("hero", Side::Party, Rank::Vanguard, 2, 2, 3, 1, 3),
-            unit("foe V", Side::Foe, Rank::Vanguard, 2, 2, 3, 1, 3),
-            unit("foe O", Side::Foe, Rank::Outrider, 2, 2, 3, 1, 3),
-            unit("foe R", Side::Foe, Rank::Rearguard, 2, 2, 3, 1, 3),
-        ]
     }
 
     #[test]

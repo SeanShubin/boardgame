@@ -61,10 +61,11 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         Vec::new()
     };
 
-    // The decision being asked for right now. Only React asks one: which way a struck hero answers the blow.
-    // Each option carries what it costs and does, and a barred one says why - so "may I strike back?" is
-    // answerable from the screen rather than from the rules.
-    let choices = arena::react_choices(board, arena);
+    // Every decision on offer right now, as cards: React's answers, Catch's targets and bids, Extra's follow-up
+    // strikes. Each carries what it costs and does, and a barred one says why - so "may I strike back?" is
+    // answerable from the screen rather than from the rules. A tap on the table only says *which* hero or foe
+    // we mean; the order itself is always one of these.
+    let choices = arena::scene_choices(board, arena);
 
     Some(Scene {
         tracks,
@@ -124,12 +125,14 @@ fn step_name(step: Step) -> &'static str {
 fn prompt_for(step: Step) -> &'static str {
     match step {
         Step::Catch => {
-            "Catch - tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
+            "Catch - tap a hero, then give it an order below. Every hero that can strike must aim or Hold."
         }
         Step::React => {
             "React - the log says what struck you and how. Pick a hero's answer below; each card says what it costs."
         }
-        Step::Extra => "Extra strikes - tap a hero in contact to spend its remaining tempo.",
+        Step::Extra => {
+            "Extra strikes - tap a hero that landed a blow, then press it or Hold. Its blows bank into the same pile."
+        }
         Step::Marshal => {
             "Formation - drag each hero into a rank row (or tap to cycle), then Start."
         }
@@ -294,25 +297,31 @@ fn sel_of(
         return Highlight::Spent;
     }
     let party = u.side == Side::Party;
-    match step {
-        // A party unit is selectable only if it has a foe it can legally reach AND afford to land on.
-        Step::Catch if party => {
-            if staged[i].active {
-                Highlight::Active
-            } else if u.tempo > 0
-                && combat::effective_in_rank(u.rank, u.melee, u.ranged)
-                && units.iter().any(|f| {
-                    f.side == Side::Foe
-                        && !f.fallen
-                        && combat::legal_catch(sub, u.rank, f.rank)
-                        && can_land(u, f)
-                })
-            {
-                Highlight::Available
-            } else {
-                Highlight::Dim
-            }
+
+    // A hero reads in one of four states, the same in every step: **Active** = the one you are commanding (the
+    // choice cards below are its orders); **Available** = it still owes you an order; **Idle** = it has given
+    // one; **Dim** = there is nothing being asked of it. That is exactly the state the Commit gate reads, so
+    // the board and the barred Commit can never disagree about who is holding things up.
+    if party && step != Step::Marshal {
+        if staged[i].active {
+            return Highlight::Active;
         }
+        if arena::owes_order(units, contacts, staged, sub, step, i) {
+            return Highlight::Available;
+        }
+        let asked = match step {
+            Step::Catch => u.tempo > 0 && combat::effective_in_rank(u.rank, u.melee, u.ranged),
+            Step::React => contacts.iter().any(|c| c.target == i),
+            _ => contacts.iter().any(|c| c.attacker == i),
+        };
+        return if asked {
+            Highlight::Idle
+        } else {
+            Highlight::Dim
+        };
+    }
+
+    match step {
         // A foe is a target only when the active attacker is effective and can legally reach + afford it.
         Step::Catch => match active {
             Some(a) if staged[a].aim == Some(cards[i]) => Highlight::Active,
@@ -325,25 +334,6 @@ fn sel_of(
             }
             _ => Highlight::Dim,
         },
-        Step::React if party => {
-            let (evade_ok, strikeback_ok) = arena::react_options(units, contacts, i);
-            if evade_ok || strikeback_ok {
-                if staged[i].react.is_some() {
-                    Highlight::Active
-                } else {
-                    Highlight::Available
-                }
-            } else {
-                Highlight::Dim
-            }
-        }
-        Step::Extra if party && u.tempo > 0 && contacts.iter().any(|c| c.attacker == i) => {
-            if staged[i].bid > 0 {
-                Highlight::Active
-            } else {
-                Highlight::Available
-            }
-        }
         _ => Highlight::Dim,
     }
 }
@@ -427,7 +417,8 @@ fn tap_is_live(
         Step::Marshal => party,
         Step::Catch => {
             if party {
-                // Select it (or raise its bid) — but only a body that carries a usable strike here.
+                // Select it - but only a body that carries a usable strike here. The order itself comes from
+                // a choice card; the tap only says which hero we are giving it to.
                 u.tempo > 0 && combat::effective_in_rank(u.rank, u.melee, u.ranged)
             } else {
                 // A foe is tappable only as something the *armed* attacker can legally aim at.
@@ -458,6 +449,9 @@ fn plan_text(board: &Board, s: &Staged) -> String {
     }
     if s.bid > 0 {
         plan.push_str(&format!("bid {} ", s.bid));
+    }
+    if s.hold {
+        plan.push_str("Hold ");
     }
     if let Some(r) = s.react {
         plan.push_str(r.label());
