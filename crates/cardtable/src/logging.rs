@@ -251,10 +251,10 @@ fn log_layout(
     // Every positioned felt element (every card *and* every pile) with its settled box (top-left + size) in
     // logical pixels and its z (render order). Position + size are exact, so any overlap or inter-element gap
     // is computable — the layout is fully reconstructable from the log without rendering.
-    let mut boxes: Vec<(String, f32, f32, f32, f32, String, usize)> = Vec::new();
+    // Each box also carries the **pile it belongs to** (a card's stack; `None` for a deck), so the overlap
+    // check can tell an intentional stack from a spill.
+    let mut boxes: Vec<(String, f32, f32, f32, f32, String, usize, Option<PileId>)> = Vec::new();
     let mut movable_piles: HashSet<PileId> = HashSet::new();
-    // All cards (movable or not — includes Virtual readouts, which do not participate in the shove logic and
-    // so are exactly the cards that can silently overlap).
     for (entity, cref, cn, gt) in cards.iter() {
         let Some(card) = table.0.card(cref.0) else {
             continue;
@@ -269,10 +269,9 @@ fn log_layout(
             size.y,
             format!("{:?}", card.size()),
             z_of.get(&entity).copied().unwrap_or(0),
+            table.0.pile_of(cref.0), // the stack this card belongs to
         ));
     }
-    // The felt's piles (decks): Movable, but not cards, so listed too. Also note which piles are movable so
-    // the drop-zone pass below doesn't double-list a deck that is both movable and a drop target.
     for (entity, movable, cn, gt) in movables.iter() {
         let TableNode::Pile(pid) = movable.0 else {
             continue;
@@ -291,26 +290,31 @@ fn log_layout(
             size.y,
             "-".to_string(),
             z_of.get(&entity).copied().unwrap_or(0),
+            None, // a deck is its own unit, not part of a card stack
         ));
     }
     boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
 
     let cards_block: String = boxes
         .iter()
-        .map(|(name, x, y, w, h, zoom, z)| {
+        .map(|(name, x, y, w, h, zoom, z, _)| {
             format!("  {name} @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0}) zoom {zoom} z{z}")
         })
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Overlaps among **all** rendered elements (every card + pile) — the visible result of the push/shove
-    // (`separate`) logic. With it working nothing should overlap; a non-movable card (e.g. a Virtual readout)
-    // that the shove logic ignores is exactly what shows up here. When two overlap, the lower z is hidden.
+    // Overlaps between elements of **different** stacks - the real errors (a spill). Two cards in the *same*
+    // pile are an intentional stack (a location's characters, a deck's cards): the drop target surrounds the
+    // whole stack, so their overlap is expected and is NOT logged. Everything else that overlaps - a card
+    // spilling onto another stack, or two decks colliding - is a genuine bug.
     let mut overlaps = Vec::new();
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
-            let (ni, ax, ay, aw, ah, _, zi) = &boxes[i];
-            let (nj, bx, by, bw, bh, _, zj) = &boxes[j];
+            let (ni, ax, ay, aw, ah, _, zi, pi) = &boxes[i];
+            let (nj, bx, by, bw, bh, _, zj, pj) = &boxes[j];
+            if pi.is_some() && pi == pj {
+                continue; // same-pile stack: intentional overlap, not an error
+            }
             let ox = (ax + aw).min(bx + bw) - ax.max(*bx);
             let oy = (ay + ah).min(by + bh) - ay.max(*by);
             if ox > 0.5 && oy > 0.5 {

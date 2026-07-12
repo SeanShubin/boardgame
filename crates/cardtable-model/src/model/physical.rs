@@ -1493,6 +1493,16 @@ impl Board {
         }
     }
 
+    /// The pile that currently holds `card` (every card lives in exactly one pile), or `None` if unknown.
+    /// Used to tell an **intentional stack** (two cards in the same pile - e.g. characters on one location)
+    /// from a **spill** (a card overlapping something in a *different* pile), so only the spill is an error.
+    pub fn pile_of(&self, card: CardId) -> Option<PileId> {
+        self.piles
+            .iter()
+            .find(|(_, p)| p.children.iter().any(|n| n.card() == Some(card)))
+            .map(|(&id, _)| id)
+    }
+
     /// The number of **physical** cards `pile` holds — the count you'd get holding the deck at a
     /// tabletop — counted recursively through its nested sub-piles and shown in a zone's `(N)` title
     /// prefix. Every card physically *here* counts once, by its [`quantity`](Card::quantity): the pile's

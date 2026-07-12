@@ -2525,7 +2525,6 @@ const SMALL_W: f32 = card_layout::SMALL_W;
 const SMALL_H: f32 = card_layout::SMALL_H;
 const MEDIUM_W: f32 = card_layout::MEDIUM_W;
 const LARGE_W: f32 = card_layout::LARGE_W;
-const LARGE_MAX_H: f32 = card_layout::LARGE_MAX_H;
 
 /// The inner text width of a Small / Medium card — its width less the padding + border on both sides.
 /// This is the room a title has to fit on one line (see [`title_font`]): Small has 8px padding + 2px
