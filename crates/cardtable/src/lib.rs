@@ -49,7 +49,7 @@ pub use logging::LoggingPlugin;
 mod demo;
 mod gallery;
 pub use demo::demo_table;
-pub use gallery::run_card_gallery;
+pub use gallery::{TextOverflow, audit_card_text, run_card_gallery};
 
 // ---- public presentation state (the shared inputs) ----------------------
 

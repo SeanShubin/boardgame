@@ -52,9 +52,95 @@ const THUMB_MIN: f32 = 32.0;
 #[derive(Resource)]
 struct GalleryCards(Board);
 
-/// Whether the one-shot audit has already run.
+/// One rendered card whose text spilled past the box the model computed for it — i.e. text that would be
+/// clipped. This is the thing the build-time guard fails on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextOverflow {
+    /// The card's name.
+    pub card: String,
+    /// Which render size overflowed: `Small`, `Medium` or `Large`.
+    pub size: &'static str,
+    /// How far the content spills past the card's box, in logical px (0 on an axis that fits).
+    pub over_x: f32,
+    pub over_y: f32,
+}
+
+/// The audit's outcome, filled once (after the layout settles).
 #[derive(Resource, Default)]
-struct Audited(bool);
+struct Audit {
+    done: bool,
+    overflows: Vec<TextOverflow>,
+    /// The offending sample wrappers, so the windowed gallery can frame them in red.
+    offenders: Vec<Entity>,
+}
+
+/// **The text-fit check.** Render every card in `board` at all three sizes, with no window, and return the
+/// ones whose text overflows the footprint the model computed for them. An empty result means every card's
+/// text fits.
+///
+/// This is the guard [`run_card_gallery`] shows you visually — the same measurement, headless — so it can run
+/// as an ordinary test on every build (see `boardgame`'s `card_text_fits`). The model computes a card's box
+/// from a *line count*, which cannot know a font's true metrics; this renders the text and checks.
+pub fn audit_card_text(board: &Board) -> Vec<TextOverflow> {
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: None, // no window: lay the text out and measure it, draw nothing
+                exit_condition: bevy::window::ExitCondition::DontExit,
+                ..default()
+            })
+            // No GPU either. `backends: None` is Bevy's headless recipe: the render app initializes no
+            // device and renders nothing, while the main app still runs UI layout and the text pipeline -
+            // which is all we measure. Keeps this a plain `cargo test` with no display and no adapter.
+            .set(bevy::render::RenderPlugin {
+                render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
+                    bevy::render::settings::WgpuSettings {
+                        backends: None,
+                        ..default()
+                    },
+                )),
+                ..default()
+            })
+            .build()
+            // No winit: it insists on the main thread, and a test runs on a worker. We drive the schedule
+            // by hand (`app.update()`) and need no event loop.
+            .disable::<bevy::winit::WinitPlugin>(),
+    )
+    .insert_resource(GalleryCards(board.clone()))
+    .init_resource::<Audit>()
+    .add_systems(
+        Startup,
+        (headless_camera, install_ui_fonts, build_gallery).chain(),
+    )
+    .add_systems(Update, audit_cards);
+    // A few frames: the font loads, the UI lays out, then the audit reads the settled geometry.
+    for _ in 0..8 {
+        app.update();
+        if app.world().resource::<Audit>().done {
+            break;
+        }
+    }
+    app.world().resource::<Audit>().overflows.clone()
+}
+
+/// A camera for the headless audit. UI is only laid out *for a camera*, and with no window there is no
+/// window to target — so use [`RenderTarget::None`], a camera that has a viewport (which is all the UI
+/// layout needs) but renders to no color target (which is all we don't need). No window, no image, no GPU
+/// surface: just enough for the text to be laid out and measured.
+fn headless_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        bevy::camera::RenderTarget::None {
+            size: UVec2::new(GALLERY_W, GALLERY_H),
+        },
+    ));
+}
+
+/// The off-screen viewport the headless audit lays the cards out in — wide and tall enough that no card is
+/// ever squeezed by the viewport itself (which would read as a false overflow).
+const GALLERY_W: u32 = 1100;
+const GALLERY_H: u32 = 8000;
 
 /// Build and run the gallery app. Blocks until the window is closed.
 pub fn run_card_gallery() {
@@ -69,12 +155,19 @@ pub fn run_card_gallery() {
         }))
         .insert_resource(ClearColor(FELT))
         .insert_resource(GalleryCards(demo_table()))
-        .init_resource::<Audited>()
+        .init_resource::<Audit>()
         .add_systems(
             Startup,
             (setup_camera, install_ui_fonts, build_gallery).chain(),
         )
-        .add_systems(Update, (audit_gallery, scroll_gallery, update_scrollbar))
+        .add_systems(
+            Update,
+            (
+                (audit_cards, report_gallery).chain(),
+                scroll_gallery,
+                update_scrollbar,
+            ),
+        )
         .run();
 }
 
@@ -242,32 +335,28 @@ fn sample(
     .with_children(face);
 }
 
-/// After a few frames (so text has laid out), measure every sample once, print the overflow report, and
-/// frame the offenders in red.
-#[allow(clippy::too_many_arguments)]
-fn audit_gallery(
-    mut audited: ResMut<Audited>,
+/// After a few frames (so the font has loaded and the text has laid out), measure every sample **once** and
+/// record which ones overflow. Shared by the windowed gallery and the headless build-time check — the
+/// measurement is the same either way; only the reporting differs (see [`report_gallery`]).
+fn audit_cards(
+    mut audit: ResMut<Audit>,
     mut frames: Local<u32>,
     cards: Res<GalleryCards>,
     samples: Query<(Entity, &Sample, &Children)>,
     boxes: Query<(&ComputedNode, &UiGlobalTransform), With<CardRef>>,
     children_q: Query<&Children>,
     rect_q: Query<(&ComputedNode, &UiGlobalTransform)>,
-    mut sample_bg: Query<&mut BackgroundColor, With<Sample>>,
 ) {
-    if audited.0 {
+    if audit.done {
         return;
     }
     *frames += 1;
     if *frames < 3 {
         return; // let the font load and the layout settle first
     }
-    audited.0 = true;
+    audit.done = true;
 
     let tree = &cards.0;
-    let (mut checked, mut flagged) = (0usize, 0usize);
-    let mut offenders: Vec<Entity> = Vec::new();
-    println!("CARD GALLERY TEXT AUDIT ----------------------------------------");
     for (wrapper, s, children) in &samples {
         // The card's fixed-size box is the wrapper's single card child.
         let Some(card_e) = children.iter().find(|&e| boxes.contains(e)) else {
@@ -276,35 +365,53 @@ fn audit_gallery(
         let Ok((cn, gt)) = boxes.get(card_e) else {
             continue;
         };
-        checked += 1;
         let over = descendant_overflow(card_e, gt.translation, cn.size * 0.5, &children_q, &rect_q);
         // Vertical overflow is a fault for the fixed-height Small AND Medium cards (the model sizes them and
         // the renderer clips); only Large scrolls, so its vertical is free.
         let tall = if s.size == "Large" { 0.0 } else { over.y };
         if over.x > 1.0 || tall > 1.0 {
-            flagged += 1;
-            offenders.push(wrapper);
             let scale = cn.inverse_scale_factor; // physical → logical px
-            let name = tree
-                .card(s.card)
-                .map(|c| c.name().to_string())
-                .unwrap_or_default();
-            // The card box is sized to the model footprint; `content_size` is what the text actually needs.
-            // Printing both makes the miss concrete: "model 133, content 151" = the height formula is 18 short.
-            let (box_h, content_h) = (cn.size.y * scale, cn.content_size.y * scale);
-            println!(
-                "  OVERFLOW [{:<6}] {name:?} +{:.0}px wide, +{:.0}px tall  (model {box_h:.0}px, content {content_h:.0}px)",
-                s.size,
-                over.x * scale,
-                tall * scale
-            );
+            audit.offenders.push(wrapper);
+            audit.overflows.push(TextOverflow {
+                card: tree
+                    .card(s.card)
+                    .map(|c| c.name().to_string())
+                    .unwrap_or_default(),
+                size: s.size,
+                over_x: over.x * scale,
+                over_y: tall * scale,
+            });
         }
     }
-    println!("CARD GALLERY: {flagged} of {checked} (card x size) samples overflow their footprint");
+}
+
+/// Windowed gallery only: print the audit and frame the offenders in red, once.
+fn report_gallery(
+    audit: Res<Audit>,
+    mut reported: Local<bool>,
+    samples: Query<(), With<Sample>>,
+    mut sample_bg: Query<&mut BackgroundColor, With<Sample>>,
+) {
+    if !audit.done || *reported {
+        return;
+    }
+    *reported = true;
+    println!("CARD GALLERY TEXT AUDIT ----------------------------------------");
+    for o in &audit.overflows {
+        println!(
+            "  OVERFLOW [{:<6}] {:?} +{:.0}px wide, +{:.0}px tall",
+            o.size, o.card, o.over_x, o.over_y
+        );
+    }
+    println!(
+        "CARD GALLERY: {} of {} (card x size) samples overflow their footprint",
+        audit.overflows.len(),
+        samples.iter().count()
+    );
 
     let red = Color::srgb(0.80, 0.20, 0.20);
-    for wrapper in offenders {
-        if let Ok(mut bg) = sample_bg.get_mut(wrapper) {
+    for &e in &audit.offenders {
+        if let Ok(mut bg) = sample_bg.get_mut(e) {
             bg.0 = red;
         }
     }
