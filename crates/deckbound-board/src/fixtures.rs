@@ -33,12 +33,25 @@ fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId
 fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
     let id = typed(tree, pile, name, "hero");
     let [might, vitality, toughness, cadence, finesse] = stats;
+    // The card carries its **computed** stats, not just its raw ones — the same courtesy the foe cards get
+    // (`creature_card`), so a hero reads the same way its enemies do:
+    //   - its default **intention** and attack **shape**, derived from the numbers - the "what is this hero
+    //     FOR" line, so you don't have to work out that Might 7 vs Toughness 1 means "raid the back line";
+    //   - the two **pools** its stats become in a fight: Vitality is its Health cards, Cadence its Tempo
+    //     cards. Naming them here is what connects a stat on the card to the cards you flip in combat.
+    // All derived, never stored - the card reads back what the numbers already say.
     tree.set_card_detail(
         id,
         vec![
+            format!(
+                "{} | {}",
+                catalog::kit_intention(stats, ability),
+                catalog::kit_shape(ability)
+            ),
             format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
             format!("Cadence {cadence} | Finesse {finesse}"),
-            format!("Abilities: {ability}"),
+            format!("Health {vitality} cards | Tempo {cadence} cards"),
+            format!("{ability}: {}", catalog::ability_description(ability)),
         ],
     )
     .expect("hero card just added");
@@ -1242,22 +1255,55 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} has a Zone label"));
             assert_eq!(label.name(), name);
             assert_eq!(label.card_type(), "hero");
-            let might = stats[0];
+            let shows = |needle: &str| label.detail().iter().any(|l| l.contains(needle));
+
+            // Its raw stats...
+            let [might, vitality, toughness, cadence, finesse] = stats;
             assert!(
-                label
-                    .detail()
-                    .iter()
-                    .any(|l| l.contains(&format!("Might {might}"))),
-                "{name} shows its stat line"
+                shows(&format!(
+                    "Might {might} | Vitality {vitality} | Toughness {toughness}"
+                )),
+                "{name} shows its stat line: {:?}",
+                label.detail()
             );
+            assert!(shows(&format!("Cadence {cadence} | Finesse {finesse}")));
+            assert!(shows(ability), "{name} names its ability");
+
+            // ...and its **computed** stats: what position the numbers make it for, and the two card pools
+            // they become in a fight (Vitality -> Health cards, Cadence -> Tempo cards).
             assert!(
-                label
-                    .detail()
-                    .iter()
-                    .any(|l| l.contains(&format!("Abilities: {ability}"))),
-                "{name} shows its ability"
+                shows(catalog::kit_intention(stats, ability)),
+                "{name} shows the position its build is for: {:?}",
+                label.detail()
+            );
+            assert!(shows(catalog::kit_shape(ability)), "{name} shows its shape");
+            assert!(
+                shows(&format!("Health {vitality} cards | Tempo {cadence} cards")),
+                "{name} shows the card pools its stats become: {:?}",
+                label.detail()
             );
         }
+    }
+
+    /// The kits' derived intentions — the roster is one Outrider, one Vanguard and two Rearguards, and the
+    /// names say so (Raider raids, Bastion holds, Marksman and Bombardier shoot from the back).
+    #[test]
+    fn each_kit_is_shaped_for_a_position() {
+        let by = |name: &str| {
+            let &(_, stats, ability) = catalog::ROSTER
+                .iter()
+                .find(|&&(n, _, _)| n == name)
+                .expect("a roster kit");
+            catalog::kit_intention(stats, ability)
+        };
+        assert_eq!(by("Raider"), "Outrider", "Might 7 vs Toughness 1: it raids");
+        assert_eq!(
+            by("Bastion"),
+            "Vanguard",
+            "Toughness outweighs Might: it holds"
+        );
+        assert_eq!(by("Marksman"), "Rearguard");
+        assert_eq!(by("Bombardier"), "Rearguard");
     }
 
     /// The party starts **already assembled**: one character deck per kit (a hero *is* its kit), each

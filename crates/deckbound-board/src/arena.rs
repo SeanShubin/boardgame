@@ -157,22 +157,29 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn detail(
     hp: u32,
-    max: u32,
+    max_hp: u32,
     tempo: u32,
+    max_tempo: u32,
     finesse: u32,
     melee: bool,
     ranged: bool,
     area: bool,
 ) -> Vec<String> {
+    // Health and Tempo are both **stacks of cards** you flip, so both read the same way: `up / total`. Health
+    // is Vitality-many cards (damage flips them down); Tempo is Cadence-many (bidding and striking flip them
+    // down, and they all stand back up each round). Showing only the remainder - as Tempo used to - hides how
+    // much of the pool is already spent, which is the whole decision in a bid.
+    //
     // Finesse rides the card (the game re-derives stats from the source, but the renderer needs it to show
     // affordability); the reach flags (`Melee` / `Ranged`) and the shape flag (`Area`) ride its line so the
     // formation can flag effective positions and the renderer can style an area strike's targeting cue. All
     // are constant; the staged plan starts after these lines.
     vec![
-        format!("HP {hp}/{max}"),
-        format!("Tempo {tempo}"),
+        format!("Health {hp}/{max_hp}"),
+        format!("Tempo {tempo}/{max_tempo}"),
         format!(
             "Finesse {finesse}{}{}{}",
             if melee { " Melee" } else { "" },
@@ -204,9 +211,10 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         Side::Foe => foe_stats(&name)?,
     };
     let d = c.detail();
+    // Both lines read `up / total`; `num_after` stops at the `/`, so it reads the *up* count - what's left.
     let hp = d
         .first()
-        .map(|l| num_after(l, "HP "))
+        .map(|l| num_after(l, "Health "))
         .unwrap_or(stats.vitality);
     let tempo = d
         .get(1)
@@ -246,7 +254,9 @@ fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
     .unwrap_or((true, false));
     let _ = board.set_card_detail(
         card,
-        detail(u.health, max, u.tempo, u.finesse, melee, ranged, u.aoe),
+        detail(
+            u.health, max, u.tempo, u.cadence, u.finesse, melee, ranged, u.aoe,
+        ),
     );
 }
 
@@ -511,6 +521,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
                     stats.vitality,
                     stats.vitality,
                     stats.cadence,
+                    stats.cadence,
                     stats.finesse,
                     melee,
                     ranged,
@@ -538,6 +549,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
                 detail(
                     stats.vitality,
                     stats.vitality,
+                    stats.cadence,
                     stats.cadence,
                     stats.finesse,
                     melee,
@@ -1329,7 +1341,7 @@ pub fn restart_fight(board: &mut Board, arena: PileId) {
                 let _ = board.set_card_detail(
                     card,
                     detail(
-                        s.vitality, s.vitality, s.cadence, s.finesse, melee, ranged, aoe,
+                        s.vitality, s.vitality, s.cadence, s.cadence, s.finesse, melee, ranged, aoe,
                     ),
                 );
             }
@@ -1357,6 +1369,7 @@ mod tests {
         let d = detail(
             stats.vitality,
             stats.vitality,
+            stats.cadence,
             stats.cadence,
             stats.finesse,
             melee,

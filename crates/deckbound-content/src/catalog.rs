@@ -108,6 +108,38 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
     (ranged, aoe)
 }
 
+/// A kit's default battle **intention** — Vanguard / Outrider / Rearguard — derived by exactly the rule the
+/// engine uses (`default_intentions`) and that [`creature_intention`] applies to foes: a ranged body holds
+/// the Rearguard, a body whose Might meets its Toughness flanks as an Outrider, and the rest brace as a
+/// Vanguard. Pure derivation from the numbers, never stored.
+///
+/// This is what the build is **for** — the player still *declares* a hero's intention each round in Marshal,
+/// so any kit can take any position; this is the one the numbers are shaped for. Putting it on the card is
+/// what makes "which position is this hero for?" answerable at a glance.
+pub fn kit_intention(stats: [u8; 5], ability: &str) -> &'static str {
+    let (_melee, ranged) = ability_reach(ability);
+    if ranged {
+        "Rearguard"
+    } else if stats[0] >= stats[2] {
+        // Might >= Toughness: it hits harder than it holds, so it crosses to raid rather than brace.
+        "Outrider"
+    } else {
+        "Vanguard"
+    }
+}
+
+/// A kit's attack **shape** in words — the reach and spread its ability carries. Derived from the ability
+/// ([`ability_reach`] / [`ability_shape`]), never stored.
+pub fn kit_shape(ability: &str) -> &'static str {
+    let (ranged, aoe) = ability_shape(ability);
+    match (ranged, aoe) {
+        (false, false) => "melee single",
+        (false, true) => "melee area",
+        (true, false) => "ranged single",
+        (true, true) => "ranged area",
+    }
+}
+
 /// A **creature** — a foe stationed at an encounter. `stats` is `[Might, Vitality, Toughness,
 /// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `horde` marks a card
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the

@@ -168,8 +168,13 @@ fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>) -
 
 fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>) -> Tile {
     let effective = rank.is_none_or(|r| combat::effective_in_rank(r, u.melee, u.ranged));
+    // Health and Tempo are both card stacks you flip, so both read `up / total` — showing only the tempo
+    // remainder hid how much of the pool was already spent, which is the whole decision in a bid.
     let mut badges = vec![Badge {
-        text: format!("HP {}/{}  T{}", u.health, max, u.tempo),
+        text: format!(
+            "Health {}/{}  Tempo {}/{}",
+            u.health, max, u.tempo, u.cadence
+        ),
         tone: Tone::Muted,
     }];
     badges.push(reach_badge(u.melee, u.ranged));
@@ -351,7 +356,10 @@ fn lane_tile(
     let letter = rank_letter(u.rank);
     let bar_tone = if u.fallen { Tone::Faded } else { Tone::Muted };
     let mut badges = vec![Badge {
-        text: format!("{letter}  HP {}/{}  T{}", u.health, maxes[i], u.tempo),
+        text: format!(
+            "{letter}  Health {}/{}  Tempo {}/{}",
+            u.health, maxes[i], u.tempo, u.cadence
+        ),
         tone: bar_tone,
     }];
     // Off-range: a living body in a position whose attack type it does not carry lands nothing (spec 4.2).
