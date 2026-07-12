@@ -1568,14 +1568,16 @@ impl Board {
         Ok(pos)
     }
 
-    /// A pile's box size for layout, falling back to the collapsed **deck chip** (a Small footprint) when
-    /// the renderer has not measured it yet. This is what lets a pile have a real size the *moment it is
-    /// created* - before any frame is drawn - so the model can place it without waiting on a render. The
-    /// measured [`size`](Pile::size) wins once it is known.
-    fn pile_box_size(&self, pile: PileId) -> Pos {
+    /// A pile's **footprint** on the felt `(width, height)` - the box it occupies as a drillable deck chip,
+    /// which is the union of its stacked cards and thus its drop target. Computed purely from the pile's
+    /// physical card count ([`chip_footprint`](super::layout::chip_footprint)): a Small card wearing a stack
+    /// that grows with the count. The model owns this - no rendering, no measurement feedback - so a pile has
+    /// a real size the moment it is created. A test may pin an explicit [`size`](Pile::size) as an override
+    /// (a `>= 1` width wins); real piles leave it unset and use the computed chip.
+    pub fn pile_footprint(&self, pile: PileId) -> Pos {
         match self.piles.get(&pile) {
             Some(d) if d.size.x >= 1.0 => d.size,
-            Some(_) => super::layout::footprint(Size::Small, 0, 0),
+            Some(_) => super::layout::chip_footprint(self.physical_card_count(pile)),
             None => Pos::default(),
         }
     }
@@ -1584,9 +1586,10 @@ impl Board {
     /// movable children of its parent) and inside the surface - moving only this pile, disturbing none of
     /// the others. The prevention counterpart to [`separate`]: it gives a freshly built deck (e.g. the
     /// renderer's System deck) a non-overlapping home *at creation*, in the model, instead of dropping it at
-    /// `(0,0)` on top of a neighbour and relying on the first rendered frame to shove it clear. Sibling boxes
-    /// use the collapsed-chip [fallback](Self::pile_box_size), so this works before anything is rendered.
-    /// Returns the settled position; a no-op returning the current position if the pile has no parent.
+    /// `(0,0)` on top of a neighbour and relying on the first rendered frame to shove it clear. Every box is
+    /// the model-computed [`pile_footprint`](Self::pile_footprint) / [`footprint`](Card::footprint), so this
+    /// works before anything is rendered. Returns the settled position; a no-op returning the current
+    /// position if the pile has no parent.
     pub fn place_clear(&mut self, pile: PileId) -> Result<Pos, TableauError> {
         let parent = self
             .piles
@@ -1594,16 +1597,13 @@ impl Board {
             .ok_or(TableauError::UnknownPile(pile))?
             .parent;
         let cur = self.piles[&pile].pos;
-        let size = self.pile_box_size(pile);
+        let size = self.pile_footprint(pile);
         let Some(parent) = parent else { return Ok(cur) };
         let siblings: Vec<(Pos, Pos)> = self
             .movable_children(parent)
             .into_iter()
             .filter(|&n| n != Node::Pile(pile))
-            .map(|n| match n {
-                Node::Pile(p) => (self.piles[&p].pos, self.pile_box_size(p)),
-                Node::Card(_) => self.node_box(n).unwrap_or_default(),
-            })
+            .filter_map(|n| self.node_box(n))
             .collect();
         let pos = place_clear_of(cur, size, &siblings, self.ui.surface);
         self.piles.get_mut(&pile).expect("checked above").pos = pos;
@@ -1625,11 +1625,13 @@ impl Board {
     }
 
     /// The box (`pos`, `size`) a node occupies on the felt: a card by its [`footprint`](Card::footprint),
-    /// a pile by its rendered [`size`](Pile::size). `None` if the node is unknown.
+    /// a pile by its model [`footprint`](Self::pile_footprint) (the deck chip). Both are *computed* - no
+    /// rendered size is read - so a node's box is known before any frame is drawn. `None` if the node is
+    /// unknown.
     fn node_box(&self, node: Node) -> Option<(Pos, Pos)> {
         match node {
             Node::Card(c) => self.cards.get(&c).map(|k| (k.pos, k.footprint())),
-            Node::Pile(p) => self.piles.get(&p).map(|d| (d.pos, d.size)),
+            Node::Pile(p) => self.piles.get(&p).map(|d| (d.pos, self.pile_footprint(p))),
         }
     }
 

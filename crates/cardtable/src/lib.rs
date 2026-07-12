@@ -136,17 +136,12 @@ impl Plugin for CardTablePlugin {
                     (track_card_rects, animate_target_arrows).chain(),
                 ),
             )
-            // Shove: feed surface + every movable element's size + overlay obstacles, then re-settle the
-            // Table's piles (new/resized deck, window resize, moved title) and, in a Free zone, its cards.
+            // Shove: feed surface + overlay obstacles, then re-settle the Table's piles (new/resized deck,
+            // window resize, moved title) and, in a Free zone, its cards. Element sizes are no longer fed
+            // back from the render - the model computes every footprint (card and deck chip) itself.
             .add_systems(
                 Update,
-                (
-                    sync_surface_size,
-                    sync_node_sizes,
-                    sync_pinned,
-                    settle_table_piles,
-                )
-                    .chain(),
+                (sync_surface_size, sync_pinned, settle_table_piles).chain(),
             )
             .add_systems(Update, settle_free_cards.after(sync_pinned))
             .add_systems(Update, redraw.in_set(CardTableSet::Draw))
@@ -460,11 +455,11 @@ fn install_system_deck(table: &mut Board, build: &BuildInfo) {
             editable: true,
         },
     );
-    // Give the freshly built deck a real chip size and a non-overlapping home *now*, in the model, before
-    // the first frame is drawn - otherwise it sits at (0,0) on top of an existing deck until the render
-    // measures it and `settle_table_piles` shoves it clear. Placing it clear at creation is prevention (the
-    // deck never overlaps); the later settle only tidies it into the row.
-    let _ = table.set_pile_size(pile, SMALL_W, SMALL_H);
+    // Give the freshly built deck a non-overlapping home *now*, in the model, before the first frame is
+    // drawn - otherwise it sits at (0,0) on top of an existing deck until `settle_table_piles` shoves it
+    // clear. The model computes the deck's chip footprint itself (from its card count), so placement needs
+    // no render. Placing it clear at creation is prevention (the deck never overlaps); the later settle only
+    // tidies it into the row.
     let _ = table.place_clear(pile);
     // Seed a tidy grid below the overlay band: a Free deck reads each child's own position, and freshly
     // added children are all at (0,0) — i.e. stacked in the top-left, behind the Back button. Lay them out
@@ -827,21 +822,6 @@ fn px(value: Val) -> f32 {
     match value {
         Val::Px(p) => p,
         _ => 0.0,
-    }
-}
-
-/// Feed each **movable element's** laid-out size back into the model (logical px), so [`Board::separate`]
-/// works on real AABBs — a card's footprint, a pile's size, one system for both. Cheap; runs each frame.
-fn sync_node_sizes(movables: Query<(&Movable, &ComputedNode)>, mut table: ResMut<Table>) {
-    // Only **piles** (decks) are still measured from the render. A card's footprint is now *computed* purely
-    // from its size + content ([`Card::footprint`](cardtable_model::Card::footprint)) and the renderer draws
-    // the card at exactly that size, so cards need no measurement feedback - the whole card layout is known
-    // without rendering. (Decks are a follow-up: their chip size still comes from the render for now.)
-    for (movable, computed) in &movables {
-        if let TableNode::Pile(pid) = movable.0 {
-            let size = computed.size * computed.inverse_scale_factor;
-            let _ = table.0.set_pile_size(pid, size.x, size.y);
-        }
     }
 }
 
@@ -1588,12 +1568,9 @@ fn settle_table_piles(
         .unwrap_or_default();
     let mut sized = false;
     for &p in &piles {
-        let Some(size) = table.0.pile(p).map(|d| d.size()) else {
-            continue;
-        };
-        if size.x < 1.0 {
-            continue; // not laid out yet
-        }
+        // The model computes each deck-chip footprint (from its card count), so a pile's size is known
+        // without a render - a new/grown deck changes this immediately, which is what triggers the re-tidy.
+        let size = table.0.pile_footprint(p);
         let was = prev.insert(p, size).unwrap_or_default();
         if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
             sized = true;
@@ -2540,9 +2517,9 @@ const MEDIUM_INNER: f32 = MEDIUM_W - 2.0 * (10.0 + 2.0);
 const LARGE_INNER: f32 = LARGE_W - 2.0 * 12.0;
 
 /// The per-card stack step (offset along two edges) and the visual depth cap, so a deck reads as a
-/// stack of Small cards without growing without bound.
-const STACK_OFFSET: f32 = 2.0;
-const MAX_STACK: usize = 10;
+/// stack of Small cards without growing without bound. Aliased from the model, which owns the chip geometry.
+const STACK_OFFSET: f32 = card_layout::STACK_OFFSET;
+const MAX_STACK: usize = card_layout::MAX_STACK;
 
 /// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
 /// so spacing is uniform everywhere it's computed (see [`Board::structured_positions`],
@@ -3103,12 +3080,15 @@ fn spawn_pile_chip(
 ) {
     let depth = count.clamp(1, MAX_STACK);
     let spread = (depth - 1) as f32 * STACK_OFFSET;
+    // The chip's overall box is the model's `chip_footprint` - one source of truth, so the drawn chip and the
+    // model's drop-target/layout box are identical by construction.
+    let chip = card_layout::chip_footprint(count);
     parent
         .spawn((
             PileDropZone(id),
             Node {
-                width: Val::Px(SMALL_W + spread),
-                height: Val::Px(SMALL_H + spread),
+                width: Val::Px(chip.x),
+                height: Val::Px(chip.y),
                 ..default()
             },
         ))
