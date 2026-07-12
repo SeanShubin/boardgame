@@ -359,11 +359,12 @@ fn lane_tile(
     } else {
         Team::Right
     };
-    let letter = rank_letter(u.rank);
+    // No rank letter: the tile is *in* its rank's lane, so printing "O" on an Outrider says nothing the
+    // position has not already said. A badge has to earn its space.
     let bar_tone = if u.fallen { Tone::Faded } else { Tone::Muted };
     let mut badges = vec![Badge {
         text: format!(
-            "{letter}  Health {}/{}  Tempo {}/{}",
+            "Health {}/{}  Tempo {}/{}",
             u.health, maxes[i], u.tempo, u.cadence
         ),
         tone: bar_tone,
@@ -530,41 +531,53 @@ fn build_log(
     log
 }
 
-/// Condense the auto-skip notes (`"phase|step|reason|pairs"`) into one `Skipped: {phase} ({targeting})` line
-/// per auto-passed sub-phase (the targeting we did not get to, spelled out).
+/// Report the auto-passed **steps** (notes of the form `"phase|step|reason|pairs"`).
+///
+/// It used to collapse these to `Skipped: Intercept`, which was wrong in a way that read as a contradiction:
+/// it named the **phase** when what was passed was a **step**, dropped the reason, and implied nothing had
+/// happened. But a step is only auto-passed when *you* have no decision to make in it — the enemy still acts.
+/// So the screen could say "Skipped: Intercept" while the phase card sat on Intercept and the schedule line
+/// said Vanguards may strike Outriders, and all three were true at once: your Catch had no legal target, the
+/// enemy's Catch landed a blow, and you are now answering it in that same phase's React.
+///
+/// So say exactly that: which **step**, why *you* had nothing to decide, and that it resolved on its own.
 fn condense_skips(skips: &[String]) -> Vec<String> {
-    let mut seen: Vec<&str> = Vec::new();
+    let mut seen: Vec<(String, String)> = Vec::new();
     let mut out = Vec::new();
     for s in skips {
         let mut it = s.split('|');
-        let phase = it.next().unwrap_or("");
-        let (_step, _reason) = (it.next(), it.next());
+        let phase = it.next().unwrap_or("").to_string();
+        let step = it.next().unwrap_or("").to_string();
+        let reason = it.next().unwrap_or("");
         let pairs = it.next().unwrap_or("");
-        if phase.is_empty() || seen.contains(&phase) {
+        let key = (phase.clone(), step.clone());
+        if phase.is_empty() || seen.contains(&key) {
             continue;
         }
-        seen.push(phase);
+        seen.push(key);
         let targeting = pairs
             .split(',')
             .filter(|p| !p.is_empty())
             .filter_map(|p| {
                 let mut c = p.split('>');
                 let a = c.next()?.chars().next()?;
+                // A target is a priority list now (`O>R|V|O`); the first is what it wants most.
                 let t = c.next()?.chars().next()?;
                 Some(format!("{} -> {}", rank_word_of(a), rank_word_of(t)))
             })
             .collect::<Vec<_>>()
             .join(", ");
-        out.push(format!("Skipped: {phase} ({targeting})"));
+        if out.is_empty() {
+            out.push("Resolved without you (no decision to make)".to_string());
+        }
+        out.push(format!(
+            "  {phase} - {step}: you had {reason} ({targeting}). The enemy still acted."
+        ));
     }
     out
 }
 
 // ---- rank / reach words --------------------------------------------------------------------------------
-
-fn rank_letter(rank: Rank) -> char {
-    rank.label().chars().next().unwrap_or('?')
-}
 
 fn rank_word(rank: Rank) -> &'static str {
     rank.label()

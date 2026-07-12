@@ -20,7 +20,7 @@ use std::sync::Mutex;
 
 use cardtable_model::{Board, CardId, Node as TableNode, PileId};
 
-use crate::board_driver::DropTrace;
+use crate::board_driver::{DropTrace, SceneState};
 use crate::{CardRef, Dragging, Movable, PileDropZone, Table};
 
 /// A truncate-on-launch text log (native only; a no-op sink on the web).
@@ -58,7 +58,13 @@ impl Plugin for LoggingPlugin {
             .insert_resource(UiLog(Log::create("ui-state.log")))
             .add_systems(
                 Update,
-                (log_physical, log_view, log_layout, drain_drop_trace),
+                (
+                    log_physical,
+                    log_view,
+                    log_layout,
+                    log_scene,
+                    drain_drop_trace,
+                ),
             )
             .add_observer(log_pickup)
             .add_observer(log_click);
@@ -542,4 +548,55 @@ fn log_click(
         "click: {what} at ({:.0},{:.0}){outcome}\n",
         p.x, p.y
     ));
+}
+
+/// Log the **modal scene** — the combat screen — whenever its text changes.
+///
+/// Without this the debug log records the *cards* but not the *screen*, so a complaint like "the log says the
+/// phase was skipped, but the phase card still says Intercept" could not be checked against what the player
+/// actually saw; it had to be inferred from the arena's cards. Everything the screen says is written here:
+/// which phase and step each track is on, the prompt, the decision being asked for (with each option's
+/// consequence, or the reason it is barred), and the combat log lines themselves.
+fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
+    let Some(s) = &scene.0 else {
+        if !last.is_empty() {
+            log.0
+                .write("scene: (none - the fight is over; back on the felt)\n");
+            last.clear();
+        }
+        return;
+    };
+    let mut out = format!("\nscene: {}\n", s.heading);
+    for track in &s.tracks {
+        let current = track
+            .items
+            .iter()
+            .find(|i| i.current)
+            .map(|i| i.label.as_str())
+            .unwrap_or("(none)");
+        out.push_str(&format!("  {}: {current}\n", track.title));
+    }
+    if !s.prompt.is_empty() {
+        out.push_str(&format!("  prompt: {}\n", s.prompt));
+    }
+    for c in &s.choices {
+        // A barred choice records *why* - the same reason the player is shown, so the screen and the log
+        // cannot disagree about what was on offer.
+        let state = if !c.enabled() {
+            format!("BARRED: {}", c.why_not)
+        } else if c.chosen {
+            format!("CHOSEN: {}", c.consequence)
+        } else {
+            c.consequence.clone()
+        };
+        out.push_str(&format!("  choice [{}] {state}\n", c.label));
+    }
+    for line in &s.log {
+        out.push_str(&format!("  | {line}\n"));
+    }
+    if out == *last {
+        return; // unchanged - log the screen once per distinct state, not once per frame
+    }
+    *last = out.clone();
+    log.0.write(&out);
 }
