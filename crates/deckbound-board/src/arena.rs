@@ -8,9 +8,9 @@
 //!   mutable state (HP / tempo on detail 0–1) and the player's *staged plan* (active / aim / bid / reaction on
 //!   detail 2+) ride its card, edited by taps, consumed on commit, cleared at each mini-phase boundary.
 //! - The **phase card** (loose in `[Arena]`) carries the walk position `(round, sub-phase, step)` where step
-//!   is Marshal → Catch → React → Extra. A round is Marshal then five sub-phases, each three one-way steps.
-//! - **Contacts** (a landed catch: attacker→target at a bid) are scratch `contact` cards (loose in `[Arena]`),
-//!   written at Catch so React and Extra can read what landed, and torn down at the sub-phase boundary.
+//!   is Marshal → Strike → React → Extra. A round is Marshal then five sub-phases, each three one-way steps.
+//! - **Contacts** (a landed strike: attacker→target at a bid) are scratch `contact` cards (loose in `[Arena]`),
+//!   written at Strike so React and Extra can read what landed, and torn down at the sub-phase boundary.
 //!
 //! One [`commit`] advances **one step**, folding the party's staged plan (greedy fallback) with the greedy
 //! foe. Marshal gates on an empty `[Pool]` (the renderer disables Start until then); a direct commit fills any
@@ -22,7 +22,7 @@ use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 use crate::battle::{Greedy, Policy};
-use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
+use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
 
 /// The top-level zone a fight lives in while it runs.
 pub const ARENA: &str = "Arena";
@@ -157,7 +157,7 @@ pub enum Step {
     /// Assign / re-assign ranks before the schedule runs (round start).
     Marshal,
     /// Attackers bid tempo to reach targets.
-    Catch,
+    Strike,
     /// Defenders eat / evade / strike back per incoming contact.
     React,
     /// Units on a surviving contact flip remaining tempo for extra strikes.
@@ -166,7 +166,6 @@ pub enum Step {
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn detail(
     hp: u32,
@@ -190,7 +189,7 @@ fn detail(
     // are constant; the staged plan starts after these lines.
     //
     // **The damage pile rides the card too**, and it must: it is the one piece of mutable combat state that
-    // spans the three mini-phases of a sub-phase (a Catch's blow and an Extra's blow bank into the same pile
+    // spans the three mini-phases of a sub-phase (a Strike's blow and an Extra's blow bank into the same pile
     // and only flip a Health card together). It used to live nowhere - rebuilt as 0 on every read - so it was
     // silently wiped at every *step* boundary instead of the sub-phase boundary, and two 7s against a
     // Toughness 9 never added up. The cards are the state; anything that survives a step has to be on one.
@@ -259,7 +258,7 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         horde,
         tempo,
         health: hp,
-        // The sub-phase damage pile, carried on the card so it survives from Catch through React to Extra.
+        // The sub-phase damage pile, carried on the card so it survives from Strike through React to Extra.
         pending: d.get(3).map(|l| num_after(l, "Pile ")).unwrap_or(0),
         fallen: hp == 0,
     })
@@ -305,7 +304,7 @@ impl ReactKind {
 /// One party unit's staged orders for the current mini-phase (read from / written to its detail).
 ///
 /// `hold` is the **explicit** "this hero does nothing here" - distinct from having decided nothing yet. Both
-/// produce no catch, but only one of them means the player has answered, and Commit gates on the difference.
+/// produce no strike, but only one of them means the player has answered, and Commit gates on the difference.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Staged {
     pub(crate) active: bool,
@@ -470,7 +469,7 @@ fn read_phase(board: &Board, arena: PileId) -> (usize, u32, Step) {
             let step = match deck_top(board, arena, STEPS).as_deref() {
                 Some("React") => Step::React,
                 Some("Extra") => Step::Extra,
-                _ => Step::Catch,
+                _ => Step::Strike,
             };
             (sub, round, step)
         }
@@ -644,12 +643,12 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
 
 /// The two rotating **phase decks**, sub-piles of the arena, so the phase is encoded in the physical card
 /// ordering (packing up the deck tells you the phase). `[Phases]` holds the six major phases (Marshal + the
-/// five sub-phases); `[Steps]` holds the three mini-phases (Catch/React/Extra). The **top** card of each is
+/// five sub-phases); `[Steps]` holds the three mini-phases (Strike/React/Extra). The **top** card of each is
 /// the current one; a transition moves the top card to the bottom. A loose `round` card counts the rounds.
 const PHASES: &str = "Phases";
 const STEPS: &str = "Steps";
 
-/// (Re)install the phase decks + round counter at round 1: Marshal on top of `[Phases]`, Catch on top of
+/// (Re)install the phase decks + round counter at round 1: Marshal on top of `[Phases]`, Strike on top of
 /// `[Steps]`. Each sub-phase card carries its legal rank pairs, so the renderer reads them off the top card.
 fn install_phase_decks(board: &mut Board, arena: PileId) {
     for label in [PHASES, STEPS] {
@@ -672,7 +671,7 @@ fn install_phase_decks(board: &mut Board, arena: PileId) {
         }
     }
     if let Ok(steps) = board.add_pile(arena, STEPS) {
-        for name in ["Catch", "React", "Extra"] {
+        for name in ["Strike", "React", "Extra"] {
             add_deck_card(board, steps, name, "phase-mini", None);
         }
     }
@@ -751,13 +750,13 @@ fn pairs_line(sub: usize) -> String {
 
 // ---- the greedy AI (foe side always; party side when nothing is staged) --------------------------------
 //
-// The party-agnostic greedy catch / extra logic is [`battle::Greedy`] (the tooling policy); the arena reuses
+// The party-agnostic greedy strike / extra logic is [`battle::Greedy`] (the tooling policy); the arena reuses
 // it here for the foe (always) and the party fallback, so there is a single implementation of the greedy plan.
 // (The arena's *react* is simpler than the policy's - the greedy foe just eats; see the React step.)
 
-/// The party's staged catches (aim + bid on party units), keeping only ones the SCHEDULE permits.
-fn party_catches(board: &Board, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Catch> {
-    let mut catches = Vec::new();
+/// The party's staged strikes (aim + bid on party units), keeping only ones the SCHEDULE permits.
+fn party_strikes(board: &Board, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Strike> {
+    let mut strikes = Vec::new();
     for (i, u) in units.iter().enumerate() {
         if u.fallen
             || u.side != Side::Party
@@ -770,17 +769,17 @@ fn party_catches(board: &Board, cards: &[CardId], units: &[Combatant], sub: usiz
             continue;
         };
         if let Some(t) = cards.iter().position(|&c| c == aim)
-            && combat::legal_catch(sub, u.rank, units[t].rank)
+            && combat::legal_strike(sub, u.rank, units[t].rank)
             && combat::back_access_ok(units, u.rank, t)
         {
-            catches.push(Catch {
+            strikes.push(Strike {
                 attacker: i,
                 target: t,
                 cards: s.bid,
             });
         }
     }
-    catches
+    strikes
 }
 
 /// The party's staged extra strikes (bid on party units still on a surviving contact).
@@ -901,12 +900,12 @@ pub(crate) fn can_act(
         }
         // Reach alone is not enough: the schedule must actually pair this rank against a living, reachable
         // enemy rank *this sub-phase*. Omitting that was the bug - an Outrider at the Clash looked ready.
-        Step::Catch => {
+        Step::Strike => {
             combat::effective_in_rank(u.rank, u.melee, u.ranged)
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
                         && !v.fallen
-                        && combat::legal_catch(sub, u.rank, v.rank)
+                        && combat::legal_strike(sub, u.rank, v.rank)
                         && combat::back_access_ok(units, u.rank, j)
                 })
         }
@@ -935,7 +934,7 @@ pub(crate) fn owes_order(
     match step {
         Step::Marshal => false,
         Step::React => s.react.is_none(),
-        Step::Catch => !s.hold && s.aim.is_none(),
+        Step::Strike => !s.hold && s.aim.is_none(),
         Step::Extra => !s.hold && s.bid == 0,
     }
 }
@@ -949,7 +948,7 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
         Some(Outcome::Draw) => "Draw - leave".to_string(),
         None => match pending_decision(board, arena) {
             Some(owed) => owed,
-            // The Step deck already names the mini-phase (Catch/React/Extra), so the button is just "Commit".
+            // The Step deck already names the mini-phase (Strike/React/Extra), so the button is just "Commit".
             None if arena_state(board, arena).4 == Step::Marshal => "Start".to_string(),
             None => "Commit".to_string(),
         },
@@ -957,21 +956,21 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
 }
 
 /// Whether the current step offers the **player** any decision. A step with nothing for the party to do —
-/// no unit that can legally catch, no incoming contact to react to, no surviving contact to strike along —
+/// no unit that can legally strike, no incoming contact to react to, no surviving contact to strike along —
 /// can be auto-resolved (greedy foe) and skipped. Marshal always needs input (assign ranks / Start).
 pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
     let (cards, units, sub, _round, step) = arena_state(board, arena);
     let living_party = |i: usize| units[i].side == Side::Party && !units[i].fallen;
     match step {
         Step::Marshal => true,
-        Step::Catch => units.iter().enumerate().any(|(i, u)| {
+        Step::Strike => units.iter().enumerate().any(|(i, u)| {
             living_party(i)
                 && u.tempo > 0
                 && combat::effective_in_rank(u.rank, u.melee, u.ranged)
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
                         && !v.fallen
-                        && combat::legal_catch(sub, u.rank, v.rank)
+                        && combat::legal_strike(sub, u.rank, v.rank)
                         && combat::back_access_ok(&units, u.rank, j)
                 })
         }),
@@ -1000,7 +999,7 @@ pub fn current_skip_line(board: &Board, arena: PileId) -> String {
     let (_, _, sub, _, step) = arena_state(board, arena);
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
     let (name, reason) = match step {
-        Step::Catch => ("Catch", "no legal target"),
+        Step::Strike => ("Strike", "no legal target"),
         Step::React => ("React", "no reaction available"),
         Step::Extra => ("Extra", "no surviving contact"),
         Step::Marshal => ("Marshal", ""),
@@ -1085,7 +1084,7 @@ fn autofill_pool(board: &mut Board, arena: PileId) {
     }
 }
 
-/// Resolve **one step** — Marshal / Catch / React / Extra — folding the party's staged plan (or the greedy
+/// Resolve **one step** — Marshal / Strike / React / Extra — folding the party's staged plan (or the greedy
 /// AI when nothing is staged) with the greedy foe plan, then writing the results back and advancing the walk.
 /// Returns whether the fight is over.
 pub fn commit(board: &mut Board, arena: PileId) -> bool {
@@ -1103,7 +1102,7 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
         for (i, card) in cards.iter().enumerate() {
             write_combatant(board, *card, &units[i], maxes[i]);
         }
-        rotate_deck(board, arena, PHASES); // Marshal -> the first sub-phase (Intercept); Steps stays at Catch
+        rotate_deck(board, arena, PHASES); // Marshal -> the first sub-phase (Intercept); Steps stays at Strike
         return outcome(board, arena).is_some();
     }
 
@@ -1118,19 +1117,19 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
     match step {
         Step::Marshal => unreachable!("handled above"),
 
-        Step::Catch => {
-            let mut catches = party_catches(board, &cards, &units, sub);
+        Step::Strike => {
+            let mut strikes = party_strikes(board, &cards, &units, sub);
             // The greedy fallback is for headless play (tests, the solver), where nobody gave orders. It must
-            // NOT fire when the player deliberately Held: an empty catch list is then their decision, not an
+            // NOT fire when the player deliberately Held: an empty strike list is then their decision, not an
             // absent one.
-            if catches.is_empty() && !party_has_orders(board, &cards, &units) {
-                catches = Greedy.catches(&units, Side::Party, sub);
+            if strikes.is_empty() && !party_has_orders(board, &cards, &units) {
+                strikes = Greedy.strikes(&units, Side::Party, sub);
             }
-            catches.extend(Greedy.catches(&units, Side::Foe, sub));
-            let contacts = combat::resolve_catch(&mut units, &catches);
-            writeback(board, &units); // clears the staged catch plan
+            strikes.extend(Greedy.strikes(&units, Side::Foe, sub));
+            let contacts = combat::resolve_strike(&mut units, &strikes);
+            writeback(board, &units); // clears the staged strike plan
             write_contacts(board, arena, &cards, &contacts);
-            rotate_deck(board, arena, STEPS); // Catch -> React
+            rotate_deck(board, arena, STEPS); // Strike -> React
         }
 
         Step::React => {
@@ -1172,7 +1171,7 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
             combat::end_sub_phase(&mut units);
             clear_contacts(board, arena);
 
-            // Advance both decks: Steps back to Catch, Phases on to the next sub-phase. If Phases wraps back
+            // Advance both decks: Steps back to Strike, Phases on to the next sub-phase. If Phases wraps back
             // to Marshal, a new round has begun - refresh tempo and bump the round counter.
             rotate_deck(board, arena, STEPS);
             rotate_deck(board, arena, PHASES);
@@ -1275,7 +1274,7 @@ fn select_active(board: &mut Board, cards: &[CardId], units: &[Combatant], chose
 }
 
 /// Aim the active party attacker at foe index `foe` (if the SCHEDULE permits), seeding a minimum bid.
-/// The minimum tempo the attacker must bid to *land* a catch on the target: `ceil(F_target / F_att)`.
+/// The minimum tempo the attacker must bid to *land* a strike on the target: `ceil(F_target / F_att)`.
 fn min_to_land(attacker: &Combatant, target: &Combatant) -> u32 {
     if attacker.aoe {
         return 1; // an area strike is unevadable - one card, no bid to raise
@@ -1293,13 +1292,13 @@ fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usi
         units[active].rank,
         units[active].melee,
         units[active].ranged,
-    ) || !combat::legal_catch(sub, units[active].rank, units[foe].rank)
+    ) || !combat::legal_strike(sub, units[active].rank, units[foe].rank)
         || !combat::back_access_ok(units, units[active].rank, foe)
     {
         return;
     }
     let mut s = staged_of(board, cards[active]);
-    // Re-tapping the already-aimed foe cancels the catch (there is no bid-0 "no catch" state to cycle to).
+    // Re-tapping the already-aimed foe cancels the strike (there is no bid-0 "no strike" state to cycle to).
     if s.aim == Some(cards[foe]) {
         s.aim = None;
         s.bid = 0;
@@ -1317,7 +1316,7 @@ fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usi
 }
 
 /// Select the defender the React choices apply to (clearing any other selection). Unlike the *attacker*
-/// selection at Catch, there is no effectiveness gate: you are being hit whether or not you can hit back.
+/// selection at Strike, there is no effectiveness gate: you are being hit whether or not you can hit back.
 fn select_defender(board: &mut Board, cards: &[CardId], chosen: usize) {
     for (i, &c) in cards.iter().enumerate() {
         let mut s = staged_of(board, c);
@@ -1388,18 +1387,18 @@ fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
 pub(crate) enum ChoiceAction {
     /// React: how the struck defender answers.
     React(ReactKind),
-    /// Catch: aim the selected hero at this foe's card (seeding the minimum bid that can land).
+    /// Strike: aim the selected hero at this foe's card (seeding the minimum bid that can land).
     Aim(CardId),
-    /// Catch: drop the aim and pick a target again.
+    /// Strike: drop the aim and pick a target again.
     Unaim,
-    /// Catch / Extra: spend this many tempo cards.
+    /// Strike / Extra: spend this many tempo cards.
     Bid(u32),
-    /// Catch / Extra: this hero deliberately does nothing here. **Not** the same as having decided nothing.
+    /// Strike / Extra: this hero deliberately does nothing here. **Not** the same as having decided nothing.
     Hold,
 }
 
 /// **Every decision on offer right now, as cards** - each carrying what it costs and does, and, when it cannot
-/// be taken, why not. This is the whole decision surface of a fight: React's answers, Catch's targets and
+/// be taken, why not. This is the whole decision surface of a fight: React's answers, Strike's targets and
 /// bids, Extra's follow-up strikes.
 ///
 /// The rule it encodes: *a tap on a card says **which**; a choice card says **what***. Tapping used to decide
@@ -1410,7 +1409,7 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
     match step {
         Step::Marshal => Vec::new(),
         Step::React => react_choices_inner(board, arena),
-        Step::Catch => catch_choices(board, arena),
+        Step::Strike => strike_choices(board, arena),
         Step::Extra => extra_choices(board, arena),
     }
 }
@@ -1423,10 +1422,10 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .collect()
 }
 
-/// Catch: the selected hero's orders. With no aim yet these are the **targets** (one card each, quoting what
+/// Strike: the selected hero's orders. With no aim yet these are the **targets** (one card each, quoting what
 /// the blow would do to that foe's pile); once aimed they become the **bid** (how much tempo to commit, and
 /// what the target can still slip).
-fn catch_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
+fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     let (cards, units, sub, _round, _step) = arena_state(board, arena);
     let Some(i) = active_party(board, &cards, &units) else {
         return Vec::new();
@@ -1473,7 +1472,7 @@ fn catch_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
             for (j, foe) in units.iter().enumerate() {
                 if foe.side != Side::Foe
                     || foe.fallen
-                    || !combat::legal_catch(sub, u.rank, foe.rank)
+                    || !combat::legal_strike(sub, u.rank, foe.rank)
                     || !combat::back_access_ok(&units, u.rank, j)
                 {
                     continue;
@@ -1670,7 +1669,7 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
     // Tapping used to cycle a bid, a rank or a reaction in place - naming an option but never its consequence.
     match step {
         Step::Marshal => unreachable!("handled above"),
-        Step::Catch => match side {
+        Step::Strike => match side {
             Side::Party => select_active(board, &cards, &units, i),
             Side::Foe => aim_active(board, &cards, &units, sub, i),
         },
@@ -1839,8 +1838,8 @@ mod tests {
         let mut board = sample_table();
         // The Raider marches alone: it ranks Outrider, so The Wall (an enemy Vanguard) screens it at Intercept.
         let arena = open_a_fight_with(&mut board, "Raider");
-        commit(&mut board, arena); // Marshal -> Intercept / Catch
-        commit(&mut board, arena); // Catch -> React: The Wall's blow has landed on the Raider
+        commit(&mut board, arena); // Marshal -> Intercept / Strike
+        commit(&mut board, arena); // Strike -> React: The Wall's blow has landed on the Raider
 
         let (cards, units, _, _, step) = arena_state(&board, arena);
         assert_eq!(step, Step::React);
@@ -1875,7 +1874,7 @@ mod tests {
         let _ = cards;
     }
 
-    /// **The damage pile spans the whole sub-phase.** A Raider (Might 7) that catches The Wall (Toughness 9)
+    /// **The damage pile spans the whole sub-phase.** A Raider (Might 7) that strikes The Wall (Toughness 9)
     /// and then presses with an Extra strike banks 7 + 7 = 14 into one pile, which crosses 9 and flips a Health
     /// card. That is the only way anything cracks a Wall, and it is the whole reason to strike under the bar.
     ///
@@ -1902,7 +1901,7 @@ mod tests {
         };
         let hp0 = wall(&board).health;
 
-        // Catch: aim at The Wall and bid 1 tempo (the blow's damage is Might, never the bid).
+        // Strike: aim at The Wall and bid 1 tempo (the blow's damage is Might, never the bid).
         let me = |b: &Board| {
             let (cards, units, _, _, _) = arena_state(b, arena);
             (0..units.len())
@@ -1917,7 +1916,7 @@ mod tests {
             .position(|c| c.label.starts_with("Strike The Wall"))
             .expect("a Vanguard may strike the enemy Vanguard at Clash");
         choose(&mut board, strike);
-        commit(&mut board, arena); // Catch -> React: contact is made (damage lands when the defender answers)
+        commit(&mut board, arena); // Strike -> React: contact is made (damage lands when the defender answers)
 
         // React: eat the counter-blow, keeping tempo for the Extra. The Wall soaks ours: 7 into its pile.
         if pending_decision(&board, arena).is_some() {
@@ -1957,14 +1956,14 @@ mod tests {
         );
     }
 
-    /// **At Catch the choice row IS the target list, then the bid.** Tapping only says *which* hero; the order
+    /// **At Strike the choice row IS the target list, then the bid.** Tapping only says *which* hero; the order
     /// is always a card that states what it does. And Hold is a real order - a hero that could strike must say
     /// it is not striking, so "no aim" never has to mean two different things.
     #[test]
     fn catch_offers_targets_then_bids_and_hold_is_a_real_order() {
         let mut board = sample_table();
         let arena = open_a_fight_with(&mut board, "Bastion"); // a Vanguard, so it meets The Wall at Clash
-        commit(&mut board, arena); // Marshal -> Intercept / Catch
+        commit(&mut board, arena); // Marshal -> Intercept / Strike
 
         // Nothing selected: nothing to decide yet, and the tap is what selects.
         assert!(scene_choices(&board, arena).is_empty());
@@ -2293,13 +2292,13 @@ mod tests {
     fn taps_stage_a_plan_and_catch_persists_a_contact() {
         let mut board = sample_table();
         let arena = open_a_fight(&mut board);
-        commit(&mut board, arena); // Marshal -> Catch (auto-ranks the hero)
-        assert_eq!(current_step(&board, arena), Step::Catch);
+        commit(&mut board, arena); // Marshal -> Strike (auto-ranks the hero)
+        assert_eq!(current_step(&board, arena), Step::Strike);
 
         let (cards, units, sub, _, _) = arena_state(&board, arena);
         let pi = units.iter().position(|u| u.side == Side::Party).unwrap();
         if let Some(fi) = (0..units.len()).find(|&j| {
-            units[j].side == Side::Foe && combat::legal_catch(sub, units[pi].rank, units[j].rank)
+            units[j].side == Side::Foe && combat::legal_strike(sub, units[pi].rank, units[j].rank)
         }) {
             handle_tap(&mut board, cards[pi]); // select active
             assert!(staged_of(&board, cards[pi]).active);
@@ -2308,12 +2307,12 @@ mod tests {
             assert_eq!(staged.aim, Some(cards[fi]));
             assert!(staged.bid >= 1, "aiming seeds at least one card of bid");
 
-            commit(&mut board, arena); // resolve Catch
+            commit(&mut board, arena); // resolve Strike
             assert_eq!(current_step(&board, arena), Step::React);
             let contacts = read_contacts(&board, arena, &arena_state(&board, arena).0);
             assert!(
                 contacts.iter().any(|c| c.attacker == pi),
-                "the staged catch landed as a persisted contact"
+                "the staged strike landed as a persisted contact"
             );
         }
     }

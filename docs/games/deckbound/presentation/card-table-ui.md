@@ -102,7 +102,7 @@ Two guard-rails keep this honest:
 2. **Only relationships the player is forming.** An attention mark must correspond to a decision in play —
    never ambient decoration. When the gesture ends (confirm or abort), the mark ends.
 
-Realised today: during **Catch**, arming a hero flows a **dotted amber** line of dots to each reachable
+Realised today: during **Strike**, arming a hero flows a **dotted amber** line of dots to each reachable
 foe (possible) and a **denser green** line to the aimed foe (confirmed); the colour language is the same
 as the tiles (green = confirm/target, amber = switch/possible). The arrows add only what colour cannot —
 *which* foe belongs to *this* hero, and the direction of the blow. They are presentation-only (wall-clock

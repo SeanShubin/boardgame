@@ -1,6 +1,6 @@
 //! **Headless v2 battle simulator** — a pure driver that plays a whole fight over [`Combatant`]s (no board,
 //! no renderer), the foundation the exact solver and the balance harness build on. It walks the same
-//! SCHEDULE the arena does (up to five rounds, each five sub-phases of Catch -> React -> Extra), folding two
+//! SCHEDULE the arena does (up to five rounds, each five sub-phases of Strike -> React -> Extra), folding two
 //! [`Policy`]s (party + foe) through the [`crate::combat`] resolvers.
 //!
 //! Deterministic: given the starting units + both policies, the outcome is fixed (no RNG in v2 resolution).
@@ -12,7 +12,7 @@
 
 use deckbound_content::schedule::SCHEDULE;
 
-use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
+use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
 
 /// The most rounds a battle runs before it is called a draw (Spec §0.4 — an unresolved fight is a draw).
 pub const MAX_ROUNDS: usize = 5;
@@ -21,8 +21,8 @@ pub const MAX_ROUNDS: usize = 5;
 /// for party units and the foe's for foe units, so a solver can swap in an optimal party policy while the
 /// foe stays scripted.
 pub trait Policy {
-    /// The side's catches (attacker -> target bids) in sub-phase `sub`.
-    fn catches(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Catch>;
+    /// The side's strikes (attacker -> target bids) in sub-phase `sub`.
+    fn strikes(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Strike>;
     /// How a unit of this side reacts to one incoming `contact` (its target is on this side).
     fn react(&self, units: &[Combatant], contact: &Contact) -> React;
     /// The side's extra strikes along its still-surviving contacts.
@@ -51,10 +51,10 @@ pub fn play_battle(
     for _round in 0..MAX_ROUNDS {
         combat::refresh_round(&mut units);
         for sub in 0..SCHEDULE.len() {
-            // Catch: both sides bid; landed catches become contacts.
-            let mut catches = party.catches(&units, Side::Party, sub);
-            catches.extend(foe.catches(&units, Side::Foe, sub));
-            let contacts = combat::resolve_catch(&mut units, &catches);
+            // Strike: both sides bid; landed strikes become contacts.
+            let mut strikes = party.strikes(&units, Side::Party, sub);
+            strikes.extend(foe.strikes(&units, Side::Foe, sub));
+            let contacts = combat::resolve_strike(&mut units, &strikes);
 
             // React: each incoming contact is answered by its target's side.
             let reactions: Vec<React> = contacts
@@ -85,14 +85,14 @@ pub fn play_battle(
 }
 
 /// The **greedy** policy (the scripted default for both sides, and the foe's fixed strategy the solver plays
-/// against): each effective unit catches the first enemy it can legally reach and afford, at the minimum
+/// against): each effective unit strikes the first enemy it can legally reach and afford, at the minimum
 /// landing bid; a struck unit evades when the blow threatens a flip and it can afford to beat the bid, else
 /// eats; every still-contacted unit dumps its remaining Tempo as extra strikes.
 pub struct Greedy;
 
 impl Policy for Greedy {
-    fn catches(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Catch> {
-        let mut catches = Vec::new();
+    fn strikes(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Strike> {
+        let mut strikes = Vec::new();
         for (i, u) in units.iter().enumerate() {
             if u.fallen
                 || u.side != side
@@ -104,7 +104,7 @@ impl Policy for Greedy {
             if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
                 if v.fallen
                     || v.side == side
-                    || !combat::legal_catch(sub, u.rank, v.rank)
+                    || !combat::legal_strike(sub, u.rank, v.rank)
                     || !combat::back_access_ok(units, u.rank, j)
                 {
                     return None;
@@ -117,14 +117,14 @@ impl Policy for Greedy {
                 };
                 (need <= u.tempo).then_some((j, need))
             }) {
-                catches.push(Catch {
+                strikes.push(Strike {
                     attacker: i,
                     target: t,
                     cards,
                 });
             }
         }
-        catches
+        strikes
     }
 
     fn react(&self, units: &[Combatant], contact: &Contact) -> React {
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn unresolvable_fight_is_a_draw() {
         // Ranged-less Rearguards: rank_is_ranged wants `ranged`, which these lack, so neither is effective and
-        // no catch ever forms.
+        // no strike ever forms.
         let units = vec![
             unit("Hero", Side::Party, Rank::Rearguard, 3, 2, 3, 1, 3),
             unit("Foe", Side::Foe, Rank::Rearguard, 3, 2, 3, 1, 3),

@@ -61,7 +61,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         Vec::new()
     };
 
-    // Every decision on offer right now, as cards: React's answers, Catch's targets and bids, Extra's follow-up
+    // Every decision on offer right now, as cards: React's answers, Strike's targets and bids, Extra's follow-up
     // strikes. Each carries what it costs and does, and a barred one says why - so "may I strike back?" is
     // answerable from the screen rather than from the rules. A tap on the table only says *which* hero or foe
     // we mean; the order itself is always one of these.
@@ -98,7 +98,7 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
     }];
     if !marshal {
         let cur = step_name(step);
-        let items = ["Catch", "React", "Extra"]
+        let items = ["Strike", "React", "Extra"]
             .into_iter()
             .map(|n| TrackItem {
                 label: n.to_string(),
@@ -116,7 +116,7 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
 fn step_name(step: Step) -> &'static str {
     match step {
         Step::Marshal => "Marshal",
-        Step::Catch => "Catch",
+        Step::Strike => "Strike",
         Step::React => "React",
         Step::Extra => "Extra",
     }
@@ -124,8 +124,8 @@ fn step_name(step: Step) -> &'static str {
 
 fn prompt_for(step: Step) -> &'static str {
     match step {
-        Step::Catch => {
-            "Catch - tap a hero, then give it an order below. Every hero that can strike must aim or Hold."
+        Step::Strike => {
+            "Strike - tap a hero, then give it an order below. Every hero that can strike must aim or Hold."
         }
         Step::React => {
             "React - the log says what struck you and how. Pick a hero's answer below; each card says what it costs."
@@ -218,7 +218,7 @@ fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>, sid
     }
 }
 
-// ---- the combat lanes (Catch / React / Extra): two-sided rows + attention arrows -----------------------
+// ---- the combat lanes (Strike / React / Extra): two-sided rows + attention arrows -----------------------
 
 #[allow(clippy::too_many_arguments)]
 fn build_lanes(
@@ -257,9 +257,9 @@ fn build_lanes(
         });
     }
 
-    // Catch targeting arrows: from the armed hero to each foe it lights up (confirmed = its aimed target).
+    // Strike targeting arrows: from the armed hero to each foe it lights up (confirmed = its aimed target).
     let mut links = Vec::new();
-    if step == Step::Catch
+    if step == Step::Strike
         && let Some(a) = active
     {
         for i in 0..units.len() {
@@ -333,11 +333,11 @@ fn sel_of(
 
     match step {
         // A foe is a target only when the active attacker is effective and can legally reach + afford it.
-        Step::Catch => match active {
+        Step::Strike => match active {
             Some(a) if staged[a].aim == Some(cards[i]) => Highlight::Active,
             Some(a)
                 if combat::effective_in_rank(units[a].rank, units[a].melee, units[a].ranged)
-                    && combat::legal_catch(sub, units[a].rank, u.rank)
+                    && combat::legal_strike(sub, units[a].rank, u.rank)
                     && can_land(&units[a], u) =>
             {
                 Highlight::Available
@@ -395,7 +395,7 @@ fn lane_tile(
             Some(format!("x off-range ({})", reach_word(u.melee, u.ranged)))
         } else if u.tempo == 0 {
             Some("x no tempo left".to_string())
-        } else if step == Step::Catch {
+        } else if step == Step::Strike {
             Some(format!(
                 "x nothing to strike in the {}",
                 SUB_PHASE_NAMES[sub]
@@ -449,7 +449,7 @@ fn tap_is_live(
     let party = u.side == Side::Party;
     match step {
         Step::Marshal => party,
-        Step::Catch => {
+        Step::Strike => {
             if party {
                 // Select it - but only a hero that actually has a move here (the same `can_act` the rules and
                 // the highlight use). The order itself comes from a choice card; the tap only says which hero
@@ -458,7 +458,7 @@ fn tap_is_live(
             } else {
                 // A foe is tappable only as something the *armed* attacker can legally aim at.
                 active.is_some_and(|a| {
-                    combat::legal_catch(sub, units[a].rank, u.rank)
+                    combat::legal_strike(sub, units[a].rank, u.rank)
                         && combat::back_access_ok(units, units[a].rank, i)
                 })
             }
@@ -526,7 +526,7 @@ fn build_log(
         log.push(format!("This phase, may strike:  {pretty}"));
     }
     match step {
-        Step::Catch => {
+        Step::Strike => {
             // Say what each hero **may** strike, not merely what it has already chosen. "(no targets chosen
             // yet)" on its own left a player looking at a step that appeared to offer nothing, unable to tell
             // whether that was the rules or a bug - and it read as a flat contradiction: "no targets chosen"
@@ -545,7 +545,7 @@ fn build_log(
                     .filter(|(j, v)| {
                         v.side == Side::Foe
                             && !v.fallen
-                            && combat::legal_catch(sub, u.rank, v.rank)
+                            && combat::legal_strike(sub, u.rank, v.rank)
                             && combat::back_access_ok(units, u.rank, *j)
                     })
                     .map(|(_, v)| v.name.as_str())
@@ -661,8 +661,8 @@ fn build_log(
 /// it named the **phase** when what was passed was a **step**, dropped the reason, and implied nothing had
 /// happened. But a step is only auto-passed when *you* have no decision to make in it — the enemy still acts.
 /// So the screen could say "Skipped: Intercept" while the phase card sat on Intercept and the schedule line
-/// said Vanguards may strike Outriders, and all three were true at once: your Catch had no legal target, the
-/// enemy's Catch landed a blow, and you are now answering it in that same phase's React.
+/// said Vanguards may strike Outriders, and all three were true at once: your Strike had no legal target, the
+/// enemy's Strike landed a blow, and you are now answering it in that same phase's React.
 ///
 /// So say exactly that: which **step**, why *you* had nothing to decide, and that it resolved on its own.
 fn condense_skips(skips: &[String]) -> Vec<String> {
@@ -922,7 +922,7 @@ mod tap_tests {
         let mut units = vec![unit("Raider", Side::Party, Rank::Outrider)];
         units[0].fallen = true;
         let contacts = vec![];
-        for step in [Step::Marshal, Step::Catch, Step::React, Step::Extra] {
+        for step in [Step::Marshal, Step::Strike, Step::React, Step::Extra] {
             assert!(!tap_is_live(&units, &contacts, None, 0, step, 0));
         }
     }

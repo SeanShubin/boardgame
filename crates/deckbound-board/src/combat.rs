@@ -5,10 +5,10 @@
 //! (solver/balance re-validation deferred until the feel is tested).
 //!
 //! Each combat sub-phase is **three one-way mini-phases** (strict pipeline, no ping-pong):
-//! 1. **Catch** — an attacker bids tempo to reach a target; the catch lands when `cards × F_att ≥ F_target`
-//!    (may over-flip to raise the bar an evade must clear). Which ranks may catch which is the [`SCHEDULE`]
-//!    gate. A landed catch is a [`Contact`] edge.
-//! 2. **React** — per incoming catch the defender **eats** (free, default), **evades** (`cards × F_def >` the
+//! 1. **Strike** — an attacker bids tempo to reach a target; the strike lands when `cards × F_att ≥ F_target`
+//!    (may over-flip to raise the bar an evade must clear). Which ranks may strike which is the [`SCHEDULE`]
+//!    gate. A landed strike is a [`Contact`] edge.
+//! 2. **React** — per incoming strike the defender **eats** (free, default), **evades** (`cards × F_def >` the
 //!    attacker's *spent* bid → the hit misses and the edge breaks), or **strikes back** (1 card, unevadable —
 //!    take the hit *and* counter). Resolved as one **order-free, commit-based batch**: a committed strike
 //!    lands even if its unit dies, and a doomed soaker still ripostes.
@@ -52,7 +52,7 @@ pub struct Combatant {
     pub melee: bool,
     /// Carries a **ranged** shot (effective in the Rearguard). Independent of `melee`.
     pub ranged: bool,
-    /// Carries an **area** strike (Sweep / Salvo): its catch hits *every* legal enemy in the target rank at
+    /// Carries an **area** strike (Sweep / Salvo): its strike hits *every* legal enemy in the target rank at
     /// once and is **unevadable** — but it spends only one tempo and cannot concentrate (no extra strikes),
     /// so it trades focus for coverage. The answer to a [`horde`](Self::horde); dead weight against one wall.
     pub aoe: bool,
@@ -131,9 +131,9 @@ impl Combatant {
     }
 }
 
-/// A catch declaration: `attacker` bids `cards` tempo to reach `target` (indices into the combatant slice).
+/// A strike declaration: `attacker` bids `cards` tempo to reach `target` (indices into the combatant slice).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Catch {
+pub struct Strike {
     pub attacker: usize,
     pub target: usize,
     pub cards: u32,
@@ -169,13 +169,13 @@ pub struct Contact {
 
 // ---- bid math + legality (the atoms) --------------------------------------------------------------
 
-/// Whether `atk` may catch `tgt` in sub-phase `sub` — the rank x phase [`SCHEDULE`] gate.
+/// Whether `atk` may strike `tgt` in sub-phase `sub` — the rank x phase [`SCHEDULE`] gate.
 ///
 /// There is no re-aiming: the schedule is a complete 3x3 (every role has one slot against each enemy rank),
 /// and **an empty target rank simply voids that pairing, for every role**. An Outrider facing no enemy
 /// Rearguard loses its Raid exactly as a Vanguard facing no enemy Outriders loses its Intercept — and, like
 /// the others, it still has its remaining slots in the Breach. See `schedule::SCHEDULE`.
-pub fn legal_catch(sub: usize, atk: Rank, tgt: Rank) -> bool {
+pub fn legal_strike(sub: usize, atk: Rank, tgt: Rank) -> bool {
     deckbound_content::schedule::SCHEDULE
         .get(sub)
         .is_some_and(|pairs| pairs.contains(&(atk, tgt)))
@@ -216,7 +216,7 @@ pub fn back_access_ok(units: &[Combatant], attacker: Rank, target: usize) -> boo
         .any(|u| u.side == tgt.side && u.rank == Rank::Vanguard && !u.fallen)
 }
 
-/// A catch lands when the attacker's bid value reaches the target's finesse: `cards × F_att ≥ F_target`.
+/// A strike lands when the attacker's bid value reaches the target's finesse: `cards × F_att ≥ F_target`.
 pub fn catch_lands(cards: u32, f_att: u32, f_target: u32) -> bool {
     cards * f_att >= f_target
 }
@@ -269,12 +269,12 @@ pub fn pile_effect_strikes(target: &Combatant, might: u32, strikes: u32) -> (u32
 
 // ---- the three mini-phases ------------------------------------------------------------------------
 
-/// **Catch.** Spend each attacker's bid (capped at its remaining tempo) and keep the catches that land as
+/// **Strike.** Spend each attacker's bid (capped at its remaining tempo) and keep the strikes that land as
 /// [`Contact`] edges (`bid = cards × F_att`, the value an evade must beat). The caller (UI) has already
-/// gated legality via [`legal_catch`].
-pub fn resolve_catch(units: &mut [Combatant], catches: &[Catch]) -> Vec<Contact> {
+/// gated legality via [`legal_strike`].
+pub fn resolve_strike(units: &mut [Combatant], strikes: &[Strike]) -> Vec<Contact> {
     let mut contacts = Vec::new();
-    for c in catches {
+    for c in strikes {
         // Range gate (mechanics backstop, spec 4.2): a body whose reach does not match its position lands
         // nothing here — no contact, no tempo spent. The UI already hides these; this makes it a rule.
         let atk = &units[c.attacker];
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn bid_math() {
-        // Catch: F2 catching F3 needs 2 cards (2×2=4 ≥ 3); 1 card (1×2=2) falls short.
+        // Strike: F2 striking F3 needs 2 cards (2×2=4 ≥ 3); 1 card (1×2=2) falls short.
         assert!(!catch_lands(1, 2, 3));
         assert!(catch_lands(2, 2, 3));
         // Evade must STRICTLY exceed the attacker's spent value.
@@ -477,13 +477,13 @@ mod tests {
             unit("A", Side::Party, Rank::Rearguard, 2, 2, 3, 1, 3), // melee-only (helper default)
             unit("D", Side::Foe, Rank::Rearguard, 1, 1, 2, 1, 3),
         ];
-        let catch = Catch {
+        let strike = Strike {
             attacker: 0,
             target: 1,
             cards: 2,
         };
         assert!(
-            resolve_catch(&mut mismatch, &[catch]).is_empty(),
+            resolve_strike(&mut mismatch, &[strike]).is_empty(),
             "melee body fires nothing from the back"
         );
         assert_eq!(
@@ -495,7 +495,7 @@ mod tests {
         let mut ranged = mismatch.clone();
         ranged[0].ranged = true;
         assert_eq!(
-            resolve_catch(&mut ranged, &[catch]).len(),
+            resolve_strike(&mut ranged, &[strike]).len(),
             1,
             "a ranged body fires from the back"
         );
@@ -603,11 +603,11 @@ mod tests {
     #[test]
     fn schedule_gates_catches() {
         // Intercept (sub-phase 0) is Vanguard -> Outrider only.
-        assert!(legal_catch(0, Rank::Vanguard, Rank::Outrider));
-        assert!(!legal_catch(0, Rank::Vanguard, Rank::Vanguard));
-        assert!(!legal_catch(0, Rank::Rearguard, Rank::Outrider));
+        assert!(legal_strike(0, Rank::Vanguard, Rank::Outrider));
+        assert!(!legal_strike(0, Rank::Vanguard, Rank::Vanguard));
+        assert!(!legal_strike(0, Rank::Rearguard, Rank::Outrider));
         // Clash (sub-phase 3) has (Rearguard,Vanguard) and (Vanguard,Vanguard).
-        assert!(legal_catch(3, Rank::Vanguard, Rank::Vanguard));
+        assert!(legal_strike(3, Rank::Vanguard, Rank::Vanguard));
     }
 
     /// **The Outrider's slots are the same three everyone gets - only the timing differs.** Its Rearguard slot
@@ -618,10 +618,10 @@ mod tests {
     fn the_outrider_raids_early_and_breaches_late() {
         const RAID: usize = 2;
         const BREACH: usize = 4;
-        assert!(legal_catch(RAID, Rank::Outrider, Rank::Rearguard));
-        assert!(!legal_catch(RAID, Rank::Outrider, Rank::Vanguard));
-        assert!(legal_catch(BREACH, Rank::Outrider, Rank::Vanguard));
-        assert!(legal_catch(BREACH, Rank::Outrider, Rank::Outrider));
+        assert!(legal_strike(RAID, Rank::Outrider, Rank::Rearguard));
+        assert!(!legal_strike(RAID, Rank::Outrider, Rank::Vanguard));
+        assert!(legal_strike(BREACH, Rank::Outrider, Rank::Vanguard));
+        assert!(legal_strike(BREACH, Rank::Outrider, Rank::Outrider));
     }
 
     #[test]
@@ -631,9 +631,9 @@ mod tests {
             unit("D", Side::Foe, Rank::Outrider, 1, 3, 2, 1, 3),
         ];
         // A bids 2 cards at F2 vs D's F3 -> lands (4 ≥ 3), spent value 4.
-        let contacts = resolve_catch(
+        let contacts = resolve_strike(
             &mut units,
-            &[Catch {
+            &[Strike {
                 attacker: 0,
                 target: 1,
                 cards: 2,
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn react_eat_evade_strikeback_are_commit_based() {
-        // A (Might 3) catches D on one edge; D reacts three ways across three runs.
+        // A (Might 3) strikes D on one edge; D reacts three ways across three runs.
         let base = || {
             vec![
                 unit("A", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 3),

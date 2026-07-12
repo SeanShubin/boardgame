@@ -5,7 +5,7 @@
 //!
 //! Tractability rests on the v2 structure (memory `combat-frozen-revisit-after-tooling`): resolution is
 //! order-free and deterministic, targets are SCHEDULE-gated, and bids are **threshold contests** — so the
-//! only catch bids worth trying are `min-to-land` and `min-to-deny-evade`, not the whole `0..tempo` range.
+//! only strike bids worth trying are `min-to-land` and `min-to-deny-evade`, not the whole `0..tempo` range.
 //! States are memoized at sub-phase boundaries. Exponential in party size in the worst case; trivial for the
 //! solo duel-locks matchups, which is what the diagonal balance property needs.
 
@@ -15,7 +15,7 @@ use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::SCHEDULE;
 
 use crate::battle::{Greedy, MAX_ROUNDS, Policy};
-use crate::combat::{self, Catch, Combatant, Contact, ExtraStrike, React, Side};
+use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
 
 /// The three ranks a party unit may be assigned (the formation search space).
 const RANKS: [Rank; 3] = [Rank::Vanguard, Rank::Outrider, Rank::Rearguard];
@@ -102,7 +102,7 @@ fn next(round: usize, sub: usize) -> (usize, usize) {
     }
 }
 
-/// Catch step: try every party catch plan (joint over attackers), fold in the greedy foe, resolve, recurse
+/// Strike step: try every party strike plan (joint over attackers), fold in the greedy foe, resolve, recurse
 /// into React.
 fn search_catch(
     units: &[Combatant],
@@ -110,13 +110,13 @@ fn search_catch(
     sub: usize,
     memo: &mut HashMap<Key, bool>,
 ) -> bool {
-    let foe_catches = Greedy.catches(units, Side::Foe, sub);
+    let foe_catches = Greedy.strikes(units, Side::Foe, sub);
     let options = party_catch_options(units, sub);
     any_combo(&options, &mut |chosen| {
         let mut u = units.to_vec();
-        let mut all: Vec<Catch> = chosen.iter().flatten().copied().collect();
+        let mut all: Vec<Strike> = chosen.iter().flatten().copied().collect();
         all.extend(foe_catches.iter().copied());
-        let contacts = combat::resolve_catch(&mut u, &all);
+        let contacts = combat::resolve_strike(&mut u, &all);
         search_react(&u, &contacts, round, sub, memo)
     })
 }
@@ -196,10 +196,10 @@ fn search_extra(
 
 // ---- the party's pruned option sets -------------------------------------------------------------------
 
-/// Each party attacker's catch options this sub-phase: `None` (don't catch), plus, for each legal, reachable,
+/// Each party attacker's strike options this sub-phase: `None` (don't strike), plus, for each legal, reachable,
 /// affordable foe, the two canonical bids — **min-to-land** and **min-to-deny-evade** (enough that the
 /// defender can't out-bid it). Intermediate bids only waste Tempo, so they are pruned.
-fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>>> {
+fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Strike>>> {
     units
         .iter()
         .enumerate()
@@ -214,7 +214,7 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
             for (j, v) in units.iter().enumerate() {
                 if v.fallen
                     || v.side == Side::Party
-                    || !combat::legal_catch(sub, u.rank, v.rank)
+                    || !combat::legal_strike(sub, u.rank, v.rank)
                     || !combat::back_access_ok(units, u.rank, j)
                 {
                     continue;
@@ -222,7 +222,7 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
                 if u.aoe {
                     // An area strike is one unevadable sweep of the target's rank — no bid to tune, one card.
                     if u.tempo > 0 {
-                        opts.push(Some(Catch {
+                        opts.push(Some(Strike {
                             attacker: i,
                             target: j,
                             cards: 1,
@@ -241,7 +241,7 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Catch>
                     .max(min_land);
                 for cards in [min_land, deny] {
                     if cards <= u.tempo {
-                        opts.push(Some(Catch {
+                        opts.push(Some(Strike {
                             attacker: i,
                             target: j,
                             cards,
@@ -270,7 +270,7 @@ fn react_options(units: &[Combatant], contact: &Contact) -> Vec<React> {
     opts
 }
 
-fn dedup(mut v: Vec<Option<Catch>>) -> Vec<Option<Catch>> {
+fn dedup(mut v: Vec<Option<Strike>>) -> Vec<Option<Strike>> {
     v.sort_by_key(|o| o.map(|c| (c.target, c.cards)));
     v.dedup();
     v
