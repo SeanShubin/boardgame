@@ -167,6 +167,7 @@ pub enum Step {
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn detail(
     hp: u32,
     max_hp: u32,
@@ -176,6 +177,7 @@ fn detail(
     melee: bool,
     ranged: bool,
     area: bool,
+    pile: u32,
 ) -> Vec<String> {
     // Health and Tempo are both **stacks of cards** you flip, so both read the same way: `up / total`. Health
     // is Vitality-many cards (damage flips them down); Tempo is Cadence-many (bidding and striking flip them
@@ -186,6 +188,12 @@ fn detail(
     // affordability); the reach flags (`Melee` / `Ranged`) and the shape flag (`Area`) ride its line so the
     // formation can flag effective positions and the renderer can style an area strike's targeting cue. All
     // are constant; the staged plan starts after these lines.
+    //
+    // **The damage pile rides the card too**, and it must: it is the one piece of mutable combat state that
+    // spans the three mini-phases of a sub-phase (a Catch's blow and an Extra's blow bank into the same pile
+    // and only flip a Health card together). It used to live nowhere - rebuilt as 0 on every read - so it was
+    // silently wiped at every *step* boundary instead of the sub-phase boundary, and two 7s against a
+    // Toughness 9 never added up. The cards are the state; anything that survives a step has to be on one.
     vec![
         format!("Health {hp}/{max_hp}"),
         format!("Tempo {tempo}/{max_tempo}"),
@@ -195,8 +203,12 @@ fn detail(
             if ranged { " Ranged" } else { "" },
             if area { " Area" } else { "" }
         ),
+        format!("Pile {pile}"),
     ]
 }
+
+/// The number of leading detail lines that are the unit's *state*. The staged plan starts after them.
+const BASE_LINES: usize = 4;
 
 fn num_after(line: &str, prefix: &str) -> u32 {
     line.strip_prefix(prefix)
@@ -247,7 +259,8 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         horde,
         tempo,
         health: hp,
-        pending: 0,
+        // The sub-phase damage pile, carried on the card so it survives from Catch through React to Extra.
+        pending: d.get(3).map(|l| num_after(l, "Pile ")).unwrap_or(0),
         fallen: hp == 0,
     })
 }
@@ -264,7 +277,7 @@ fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
     let _ = board.set_card_detail(
         card,
         detail(
-            u.health, max, u.tempo, u.cadence, u.finesse, melee, ranged, u.aoe,
+            u.health, max, u.tempo, u.cadence, u.finesse, melee, ranged, u.aoe, u.pending,
         ),
     );
 }
@@ -304,7 +317,7 @@ pub(crate) struct Staged {
 
 fn read_staged(d: &[String]) -> Staged {
     let mut s = Staged::default();
-    for line in d.iter().skip(3) {
+    for line in d.iter().skip(BASE_LINES) {
         if line == "active" {
             s.active = true;
         } else if line == "hold" {
@@ -329,8 +342,8 @@ fn write_staged(board: &mut Board, card: CardId, s: &Staged) {
     let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
         return;
     };
-    let mut lines: Vec<String> = d.into_iter().take(3).collect();
-    while lines.len() < 3 {
+    let mut lines: Vec<String> = d.into_iter().take(BASE_LINES).collect();
+    while lines.len() < BASE_LINES {
         lines.push(String::new());
     }
     if s.active {
@@ -484,6 +497,25 @@ fn muster_foes(board: &Board, arena: PileId) -> Vec<CardId> {
         .collect()
 }
 
+/// The inverse of [`reveal`]: the **living** foes step back out of formation into the muster, at the top of
+/// each new round. Intentions are re-declared every round, so each Marshal is a fresh blind bet - and the
+/// player must be able to see who is still standing while making it.
+///
+/// The fallen stay where they fell (a corpse is not "remaining"), which also keeps [`outcome`]'s reading of
+/// the muster honest: anything in it is alive.
+fn unrank_foes(board: &mut Board, arena: PileId) {
+    let Some(muster) = sub_pile(board, arena, MUSTER) else {
+        return;
+    };
+    let (cards, units, _, _, _) = arena_state(board, arena);
+    for (i, u) in units.iter().enumerate() {
+        if u.side == Side::Foe && !u.fallen {
+            let at = board.pile(muster).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(cards[i], muster, at);
+        }
+    }
+}
+
 /// **Reveal**: both formations go down at once. The player's is already placed; the foes now step out of the
 /// muster into their rank piles. Called on the Marshal commit, which is the moment the blind bet is settled -
 /// after this, everything resolves in the open.
@@ -566,6 +598,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
                     melee,
                     ranged,
                     aoe,
+                    0,
                 ),
             );
         }
@@ -596,6 +629,7 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
                     melee,
                     ranged,
                     aoe,
+                    0,
                 ),
             );
             let at = board.pile(muster).map_or(0, |p| p.cards().len());
@@ -1125,6 +1159,10 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
             writeback(board, &units);
             if new_round {
                 set_round(board, arena, round + 1);
+                // The lines break and re-form: intentions are declared afresh every round, so the surviving
+                // foes step back out of formation into the muster. You go into each Marshal seeing exactly who
+                // is left and what they carry - and, as on the first round, not where they will stand.
+                unrank_foes(board, arena);
             }
         }
     }
@@ -1746,7 +1784,8 @@ pub fn restart_fight(board: &mut Board, arena: PileId) {
                 let _ = board.set_card_detail(
                     card,
                     detail(
-                        s.vitality, s.vitality, s.cadence, s.cadence, s.finesse, melee, ranged, aoe,
+                        s.vitality, s.vitality, s.cadence, s.cadence, s.finesse, melee, ranged,
+                        aoe, 0,
                     ),
                 );
             }
@@ -1810,6 +1849,88 @@ mod tests {
         assert_eq!(pending_decision(&board, arena), None);
         assert_eq!(commit_label(&board, arena), "Commit");
         let _ = cards;
+    }
+
+    /// **The damage pile spans the whole sub-phase.** A Raider (Might 7) that catches The Wall (Toughness 9)
+    /// and then presses with an Extra strike banks 7 + 7 = 14 into one pile, which crosses 9 and flips a Health
+    /// card. That is the only way anything cracks a Wall, and it is the whole reason to strike under the bar.
+    ///
+    /// It did not work: `pending` was rebuilt as 0 on every read of a card, so the pile was wiped at each
+    /// *step* boundary rather than the sub-phase boundary, and the two 7s never met. The cards are the state -
+    /// anything that has to survive a step has to be written on one.
+    #[test]
+    fn a_catch_and_an_extra_bank_into_the_same_pile_and_crack_the_wall() {
+        let mut board = sample_table();
+        let arena = open_a_fight_with(&mut board, "Raider");
+        // Rank the Raider as a Vanguard, so it meets The Wall in the Clash (Vanguard -> Vanguard).
+        let raider = pool_heroes(&board, arena)[0];
+        let van = sub_pile(&board, arena, "Vanguard").unwrap();
+        let _ = board.move_card(raider, van, 0);
+        commit(&mut board, arena); // Start / Reveal
+
+        let clash = 3;
+        while arena_state(&board, arena).2 != clash {
+            commit(&mut board, arena);
+        }
+        let wall = |b: &Board| {
+            let (_, units, _, _, _) = arena_state(b, arena);
+            units.iter().find(|u| u.side == Side::Foe).cloned().unwrap()
+        };
+        let hp0 = wall(&board).health;
+
+        // Catch: aim at The Wall and bid 1 tempo (the blow's damage is Might, never the bid).
+        let me = |b: &Board| {
+            let (cards, units, _, _, _) = arena_state(b, arena);
+            (0..units.len())
+                .find(|&i| units[i].side == Side::Party)
+                .map(|i| cards[i])
+                .unwrap()
+        };
+        let c = me(&board);
+        handle_tap(&mut board, c);
+        let strike = scene_choices(&board, arena)
+            .iter()
+            .position(|c| c.label.starts_with("Strike The Wall"))
+            .expect("a Vanguard may strike the enemy Vanguard at Clash");
+        choose(&mut board, strike);
+        commit(&mut board, arena); // Catch -> React: contact is made (damage lands when the defender answers)
+
+        // React: eat the counter-blow, keeping tempo for the Extra. The Wall soaks ours: 7 into its pile.
+        if pending_decision(&board, arena).is_some() {
+            let eat = scene_choices(&board, arena)
+                .iter()
+                .position(|c| c.label == "Eat")
+                .unwrap();
+            choose(&mut board, eat);
+        }
+        commit(&mut board, arena); // React -> Extra
+        assert_eq!(
+            wall(&board).pending,
+            7,
+            "the blow banked 7, and the pile survives the step boundary"
+        );
+        assert_eq!(wall(&board).health, hp0, "7 alone cannot crack Toughness 9");
+
+        // Extra: press once more. 7 + 7 = 14 >= 9, and a Health card turns.
+        let c = me(&board);
+        handle_tap(&mut board, c);
+        let more = scene_choices(&board, arena)
+            .iter()
+            .position(|c| c.label == "Strike 1 more")
+            .expect("a surviving contact may be pressed");
+        choose(&mut board, more);
+        commit(&mut board, arena); // Extra -> the next sub-phase (the pile wipes here, as it should)
+
+        assert_eq!(
+            wall(&board).health,
+            hp0 - 1,
+            "14 in one pile crosses Toughness 9 - The Wall loses a Health card"
+        );
+        assert_eq!(
+            wall(&board).pending,
+            0,
+            "and the sub-phase boundary wipes it"
+        );
     }
 
     /// **At Catch the choice row IS the target list, then the bid.** Tapping only says *which* hero; the order
@@ -1914,6 +2035,7 @@ mod tests {
             melee,
             ranged,
             aoe,
+            0,
         );
         assert!(
             d[2].contains("Melee"),
@@ -1937,6 +2059,13 @@ mod tests {
     /// The party starts assembled and stationed at Ashfen — a hero *is* its kit — so there is nothing to
     /// recruit: just walk the one we want out to the encounter, leaving the rest at home.
     fn open_a_fight_with(board: &mut Board, kit_name: &str) -> PileId {
+        open_a_fight_at(board, kit_name, None)
+    }
+
+    /// March one kit's hero to `place_name` (or the first place with an encounter) and open the fight. Naming
+    /// the place matters: the first encounter cell is a **corner**, which fields four creatures and kills any
+    /// lone hero inside a round - useless for testing anything that has to survive to round 2.
+    fn open_a_fight_at(board: &mut Board, kit_name: &str, place_name: Option<&str>) -> PileId {
         let locations = top_deck(board, "Locations").unwrap();
         let ashfen = board.pile(locations).unwrap().subpiles()[4];
         let place = board
@@ -1945,10 +2074,13 @@ mod tests {
             .subpiles()
             .into_iter()
             .find(|&p| {
-                board
-                    .content_cards(p)
-                    .iter()
-                    .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
+                let named = place_name
+                    .is_none_or(|want| board.pile(p).map(|k| k.label.as_str()) == Some(want));
+                named
+                    && board
+                        .content_cards(p)
+                        .iter()
+                        .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
             })
             .unwrap();
         // This kit's hero map-position card, standing at the home cell.
@@ -1971,7 +2103,8 @@ mod tests {
     #[test]
     fn foes_muster_unranked_at_marshal_and_take_the_field_at_reveal() {
         let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
+        // The Raider against the lone Wall: the fight it is designed to solo, and it takes several rounds.
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
         assert_eq!(current_step(&board, arena), Step::Marshal);
         assert!(
             !formation_complete(&board, arena),
@@ -1996,6 +2129,21 @@ mod tests {
         let (_, units, _, _, _) = arena_state(&board, arena);
         assert!(units.iter().any(|u| u.side == Side::Foe), "foes are ranked");
         assert!(units.iter().any(|u| u.side == Side::Party), "so are we");
+
+        // **Every round is a fresh blind bet.** Intentions are re-declared each round, so at the next Marshal
+        // the surviving foes have stepped back out of formation - you can see who is left, but not where they
+        // will stand. Without this the enemy simply vanished from every Marshal after the first.
+        let mut guard = 0;
+        while arena_state(&board, arena).4 != Step::Marshal && outcome(&board, arena).is_none() {
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 100, "the round must come back round to Marshal");
+        }
+        assert_eq!(arena_state(&board, arena).3, 2, "round 2");
+        assert!(
+            !muster_foes(&board, arena).is_empty(),
+            "the survivors are back in the muster, readable and unranked"
+        );
     }
 
     /// The `read_combatant` plumbing carries area / horde from the source: a Bastion (Sweep) hero flags `aoe`,

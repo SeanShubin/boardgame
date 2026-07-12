@@ -381,6 +381,14 @@ fn lane_tile(
         tone: bar_tone,
     }];
     badges.push(stats_badge(u));
+    // The damage pile, whenever it holds anything: it is what makes a second blow this phase worth striking,
+    // and its silence is what made 7 + 7 against Toughness 9 look like a bug. It wipes at the phase boundary.
+    if u.pending > 0 && !u.fallen {
+        badges.push(Badge {
+            text: format!("Pile {}/{}", u.pending, u.toughness),
+            tone: Tone::Warn,
+        });
+    }
     // Off-range: a living body in a position whose attack type it does not carry lands nothing (spec 4.2).
     if !u.fallen && !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
         badges.push(Badge {
