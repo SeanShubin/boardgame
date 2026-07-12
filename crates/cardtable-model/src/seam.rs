@@ -54,6 +54,14 @@ pub trait BoardGame {
     /// injection + `location_ready_for_combat`-style predicates. Empty = the zone offers no game action.
     fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Self::Intention)>;
 
+    /// Interpret a click on the [`Scene`]'s choice at `index` (into [`Scene::choices`](crate::Scene::choices))
+    /// — the decision the game is currently asking for. `None` if it means nothing (a barred option). Most
+    /// games ask for no such decisions, so the default is `None`.
+    fn choice_intention(&self, board: &Board, index: usize) -> Option<Self::Intention> {
+        let _ = (board, index);
+        None
+    }
+
     /// Whether applying this intention is a **point of no return** — a step the player should be able to come
     /// **Back** to. This is what the rewind history records; everything else is passed over.
     ///

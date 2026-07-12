@@ -29,7 +29,7 @@ use bevy::ui::{BoxShadow, ComputedNode, Outline, ScrollPosition, UiGlobalTransfo
 use std::collections::HashMap;
 
 use cardtable_model::{
-    Arrangement, Board, Card, CardId, CardKind, DropTarget, Face, Highlight, Lane, Layout,
+    Arrangement, Board, Card, CardId, CardKind, Choice, DropTarget, Face, Highlight, Lane, Layout,
     Node as TableNode, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone, Utility,
 };
 
@@ -40,8 +40,8 @@ mod board_driver;
 pub mod palette;
 use board_driver::{AffordanceClick, DropTrace, TapRequest};
 pub use board_driver::{
-    AffordanceControl, AffordanceLabels, BoardGamePlugin, DropRequest, SceneState, UndoClick,
-    UndoControl,
+    AffordanceControl, AffordanceLabels, BoardGamePlugin, ChoiceClick, ChoiceControl, DropRequest,
+    SceneState, UndoClick, UndoControl,
 };
 
 mod logging;
@@ -615,12 +615,14 @@ fn on_click(
         Option<&AffordanceControl>,
         Option<&TileCard>,
         Has<UndoControl>,
+        Option<&ChoiceControl>,
     )>,
     mut table: ResMut<Table>,
     mut requests: ResMut<ActionRequests>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut affordance_click: ResMut<AffordanceClick>,
     mut undo_click: ResMut<UndoClick>,
+    mut choice_click: ResMut<ChoiceClick>,
     mut history: ResMut<crate::board_driver::BoardHistory>,
     mut tap_request: ResMut<TapRequest>,
     mut font_sample: ResMut<FontSample>,
@@ -636,11 +638,19 @@ fn on_click(
         return; // the release that ends a *real* drag also fires Click — not an intentional click. A tap
         // that barely moved (within the tolerance) falls through and is treated as the click it is.
     }
-    let Ok((action, card, pile, is_back, is_advance_day, affordance, arena_unit, is_undo)) =
+    let Ok((action, card, pile, is_back, is_advance_day, affordance, arena_unit, is_undo, choice)) =
         targets.get(on.event().entity)
     else {
         return;
     };
+    // A scene **choice** card: the decision the game is asking for. Recorded for the driver, which asks the
+    // game what it means (`choice_intention`) - the renderer never learns what any option does.
+    if let Some(c) = choice {
+        choice_click.0 = Some(c.0);
+        rebuild.0 = true;
+        on.propagate(false);
+        return;
+    }
     // The scene's **Back** card: rewind one move. Recorded for the driver's `apply_undo`, which just puts the
     // previous board back — the renderer never learns what it undid.
     if is_undo {
@@ -1894,6 +1904,81 @@ fn spawn_track(parent: &mut ChildSpawnerCommands, title: &str, order: &[&str], c
 
 /// A **text log panel**: a large card under the body listing the scene's log lines. Un-indented lines are
 /// section headers (bright); leading-space lines are entries (muted). The game supplies every line.
+/// The **decision row**: one small card per [`Choice`], sitting just above the log that explains it.
+///
+/// Each card carries its own consequence, because a bare label ("Strike Back") names an action while what the
+/// player needs is what it will *do to them* ("spend 1 tempo, deal 7 back"). A **barred** option is still
+/// drawn — inert, and showing *why* it cannot be taken — so "why can I not do that?" is answerable by looking.
+/// Silently omitting it teaches nothing and reads as a bug. The staged option wears a bright ring.
+fn spawn_choice_row(parent: &mut ChildSpawnerCommands, choices: &[Choice]) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::Center,
+            column_gap: Val::Px(10.0),
+            margin: UiRect::top(Val::Px(8.0)),
+            ..default()
+        })
+        .with_children(|row| {
+            for (i, choice) in choices.iter().enumerate() {
+                let enabled = choice.enabled();
+                let (bg, ink) = if enabled {
+                    (BUTTON, INK)
+                } else {
+                    (PANEL, MUTED) // barred: present, inert, and explaining itself
+                };
+                let mut card = row.spawn((
+                    Node {
+                        width: Val::Px(190.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(10.0)),
+                        row_gap: Val::Px(4.0),
+                        border: UiRect::all(Val::Px(2.0)),
+                        border_radius: BorderRadius::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    BackgroundColor(bg),
+                    // The staged option is ringed, so what will happen on Commit is visible at a glance.
+                    BorderColor::all(if choice.chosen {
+                        TARGET_CUE
+                    } else {
+                        Color::NONE
+                    }),
+                    card_shadow(),
+                ));
+                if enabled {
+                    card.insert(ChoiceControl(i));
+                }
+                card.with_children(|c| {
+                    c.spawn((
+                        Text::new(choice.label.clone()),
+                        TextFont {
+                            font_size: FONT_TITLE,
+                            ..default()
+                        },
+                        TextColor(ink),
+                    ));
+                    // The consequence when it can be taken; the reason when it cannot.
+                    let line = if enabled {
+                        choice.consequence.clone()
+                    } else {
+                        choice.why_not.clone()
+                    };
+                    if !line.is_empty() {
+                        c.spawn((
+                            Text::new(line),
+                            TextFont {
+                                font_size: FONT_BODY,
+                                ..default()
+                            },
+                            TextColor(if enabled { INK } else { WARN_CUE }),
+                        ));
+                    }
+                });
+            }
+        });
+}
+
 fn spawn_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
     parent
         .spawn((
@@ -2054,6 +2139,12 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     match &scene.body {
                         SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
                         SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
+                    }
+                    // The decision being asked for, immediately above the log that explains it: one small
+                    // card per option, each carrying its own consequence. The renderer draws them without
+                    // knowing what any of them mean.
+                    if !scene.choices.is_empty() {
+                        spawn_choice_row(mid, &scene.choices);
                     }
                     if !scene.log.is_empty() {
                         spawn_log_panel(mid, &scene.log);

@@ -158,6 +158,28 @@ That falls straight out of the boundary above: **the checkpoints *are* the commi
 which (`BoardGame::is_checkpoint`); the renderer, which cannot know what a move meant, just records the ones
 it is told to.
 
+## 0.8 A choice carries its consequence — and a barred one carries its reason
+
+The decision the game is asking for is drawn as **small cards above the log** (`Scene::choices`), one per
+option. Two rules, both learned the hard way from a player staring at "Eat / Evade / Strike Back" with no way
+to tell whether Strike Back was even legal:
+
+1. **A choice states what it will do to you, not just its name.** "Strike Back" *names* an action; what a
+   player actually needs is *"spend 1 tempo, deal 7 back"*. The consequence is the decision — so it goes on
+   the card, and the choice can be made from the screen rather than from the rules.
+
+2. **An option you cannot take is still shown, saying why.** *"the blow was ranged — nothing to answer."*
+   Silently omitting it teaches nothing, and a missing option is indistinguishable from a bug — which is
+   exactly how the real confusion arose. Show it inert, with its reason, and *"why can't I do that?"* becomes
+   answerable by looking.
+
+The log carries the other half: **what happened to you**, including the facts the rules turn on (who struck,
+*melee or ranged*, at what bid, for how much). A consequence promised on a card must be the consequence read
+back in the log.
+
+Choices are **staging** (§0.7): picking one changes what will happen on Commit, and nothing is revealed until
+then — so you may change your mind freely, and Back does not record the fiddling.
+
 > **Back is single-player only, and the reason is exact: it crosses Commits.** That is the one thing a
 > competitive mode must never allow. Against the AI there is nobody to leak to, so it is simply a take-back.
 > A PvP mode keeps Commit and keeps free revision *below* it — it just cannot offer Back.

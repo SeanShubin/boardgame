@@ -60,12 +60,18 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         Vec::new()
     };
 
+    // The decision being asked for right now. Only React asks one: which way a struck hero answers the blow.
+    // Each option carries what it costs and does, and a barred one says why - so "may I strike back?" is
+    // answerable from the screen rather than from the rules.
+    let choices = arena::react_choices(board, arena);
+
     Some(Scene {
         tracks,
         heading,
         prompt,
         body,
         links,
+        choices,
         log,
         disabled_controls,
     })
@@ -120,7 +126,7 @@ fn prompt_for(step: Step) -> &'static str {
             "Catch - tap a hero to select it, tap a foe to aim, tap the hero again to raise its bid."
         }
         Step::React => {
-            "React - tap a struck hero to cycle Eat / Evade / Strike Back (Strike Back answers a melee blow only)."
+            "React - the log says what struck you and how. Pick a hero's answer below; each card says what it costs."
         }
         Step::Extra => "Extra strikes - tap a hero in contact to spend its remaining tempo.",
         Step::Marshal => {
@@ -481,9 +487,22 @@ fn build_log(
                 } else {
                     "Eat".to_string()
                 };
+                // Say whether the blow was **melee or ranged**. It decides whether Strike Back is even legal
+                // (you answer a foe that approached you; there is nothing to answer a shot with), and it used
+                // to be nowhere on the screen - so "may I strike back?" was unanswerable by looking. Reach is
+                // position-determined: a Rearguard fires, a Vanguard or Outrider strikes.
+                let reach = if combat::rank_is_ranged(units[c.attacker].rank) {
+                    "ranged"
+                } else {
+                    "melee"
+                };
                 log.push(format!(
-                    "  {} struck {}  (bid {}) - {}",
-                    units[c.attacker].name, units[c.target].name, c.bid, react
+                    "  {} struck {}  ({reach}, bid {}, {} might) - {}",
+                    units[c.attacker].name,
+                    units[c.target].name,
+                    c.bid,
+                    units[c.attacker].might,
+                    react
                 ));
             }
         }

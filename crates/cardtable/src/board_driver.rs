@@ -81,6 +81,15 @@ impl BoardHistory {
 #[derive(Resource, Default)]
 pub struct UndoClick(pub bool);
 
+/// A recorded click on the scene's **choice** card at this index (into `Scene::choices`) — the decision the
+/// game is currently asking for. Drained by [`apply_choice`].
+#[derive(Resource, Default)]
+pub struct ChoiceClick(pub Option<usize>);
+
+/// Marks a scene **choice** card with its index (into `Scene::choices`); clicking it records [`ChoiceClick`].
+#[derive(Component, Clone, Copy)]
+pub struct ChoiceControl(pub usize);
+
 /// Marks the **Back** control card that rewinds one move.
 #[derive(Component, Clone, Copy)]
 pub struct UndoControl;
@@ -237,6 +246,28 @@ fn apply_affordance<G>(
     }
 }
 
+/// Apply the game action behind a clicked **choice** card — the decision the scene is asking for.
+fn apply_choice<G>(
+    mut click: ResMut<ChoiceClick>,
+    mut table: ResMut<Table>,
+    game: Res<GameRes<G>>,
+    mut rebuild: ResMut<NeedsRebuild>,
+    mut history: ResMut<BoardHistory>,
+) where
+    G: BoardGame + Send + Sync + 'static,
+{
+    let Some(index) = click.0.take() else {
+        return;
+    };
+    if let Some(intention) = game.0.choice_intention(&table.0, index) {
+        if game.0.is_checkpoint(&intention) {
+            history.push(&table.0);
+        }
+        game.0.apply(&mut table.0, &[intention]);
+        rebuild.0 = true;
+    }
+}
+
 /// **Back** — rewind one move: restore the board exactly as it was before it. Nothing here knows what the
 /// move meant; the board *is* the state, so putting the old board back is the entire undo.
 fn apply_undo(
@@ -298,12 +329,14 @@ where
             .init_resource::<Affordances<G>>()
             .init_resource::<BoardHistory>()
             .init_resource::<UndoClick>()
+            .init_resource::<ChoiceClick>()
             .add_systems(
                 Update,
                 (
                     apply_drop::<G>,
                     apply_tap::<G>,
                     apply_affordance::<G>,
+                    apply_choice::<G>,
                     apply_undo,
                     sync_affordances::<G>,
                 )

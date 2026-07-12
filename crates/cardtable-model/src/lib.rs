@@ -23,6 +23,6 @@ pub use model::{
     Size, TableauError, Utility,
 };
 pub use scene::{
-    Badge, Highlight, Lane, Link, Row, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
+    Badge, Choice, Highlight, Lane, Link, Row, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
 };
 pub use seam::{BoardGame, DropTarget};

@@ -31,6 +31,9 @@ pub enum Intention {
     Fight { place: PileId },
     /// Assign `unit` a rank by moving it into rank pile `to` (the formation drag / drop).
     Assign { unit: CardId, to: PileId },
+    /// Take the scene's choice at `index` - the decision the arena is asking for (a struck hero's
+    /// reaction). Staging, like `Tap`: nothing is revealed until Commit.
+    Choose { index: usize },
     /// Tap a combatant in the arena — edit the staged plan for the current step (cycle rank / select /
     /// bid / aim / react). What it does is read from the fight's step; see [`crate::arena::handle_tap`].
     Tap { card: CardId },
@@ -60,6 +63,7 @@ impl BoardGame for CardTableGame {
                 }
                 Intention::Assign { unit, to } => crate::arena::assign(board, unit, to),
                 Intention::Tap { card } => crate::arena::handle_tap(board, card),
+                Intention::Choose { index } => crate::arena::choose(board, index),
                 Intention::Commit => {
                     if let Some(a) = crate::arena::find_arena(board) {
                         if crate::arena::outcome(board, a).is_some() {
@@ -137,17 +141,27 @@ impl BoardGame for CardTableGame {
 
     /// Which steps **Back** can return you to: the points of no return, not every fiddle.
     ///
-    /// `Assign` and `Tap` are **staging** — arranging the formation, cycling a rank, toggling a reaction
-    /// between Eat / Evade / Strike Back, moving an aim, raising a bid. None of it has been revealed, and all
-    /// of it is already revisable in place by simply choosing again, so there is nothing an undo could give
-    /// you. Recording it would only make Back walk you back through your own indecision one tap at a time.
+    /// `Assign`, `Tap` and `Choose` are **staging** — arranging the formation, selecting a hero, picking a
+    /// reaction, moving an aim, raising a bid. None of it has been revealed, and all of it is already
+    /// revisable in place by simply choosing again, so there is nothing an undo could give you. Recording it
+    /// would only make Back walk you back through your own indecision one tap at a time.
     ///
     /// Everything else is a **commit** — `Commit` above all, the moment a staged plan is revealed and
     /// resolved, and after which there are no take-backs. Going Back to one puts you at that decision again
     /// with your plan still staged, ready to change. Rewinding past the `Fight` that opened the arena walks
     /// you out of the fight entirely, onto the location you started it from.
     fn is_checkpoint(&self, intention: &Intention) -> bool {
-        !matches!(intention, Intention::Assign { .. } | Intention::Tap { .. })
+        !matches!(
+            intention,
+            Intention::Assign { .. } | Intention::Tap { .. } | Intention::Choose { .. }
+        )
+    }
+
+    /// The arena's choice cards (a struck hero's reaction). Staging — it changes what will happen on Commit,
+    /// and nothing is revealed until then.
+    fn choice_intention(&self, board: &Board, index: usize) -> Option<Intention> {
+        crate::arena::find_arena(board)?;
+        Some(Intention::Choose { index })
     }
 
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {

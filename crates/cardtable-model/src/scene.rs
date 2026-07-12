@@ -27,12 +27,70 @@ pub struct Scene {
     /// arrows. What the association *means* (a target, a link, a pairing) is the game's business, not the
     /// renderer's.
     pub links: Vec<Link>,
+    /// The **decision the game is asking for right now** — its options, drawn as small cards just above the
+    /// [`log`](Scene::log), each carrying its own consequence. Empty = the game is asking nothing.
+    ///
+    /// Clicking one is sent back through
+    /// [`choice_intention`](crate::BoardGame::choice_intention). The renderer draws them and does not know
+    /// what any of them *mean*; everything a player needs to choose is in the [`Choice`] itself.
+    pub choices: Vec<Choice>,
     /// A text panel under the body: un-indented lines are section headers, leading-space lines are entries.
     /// Empty = draw no panel.
     pub log: Vec<String>,
     /// Indices (into the focused zone's affordance list) of footer controls that render **disabled** —
     /// present but inert (e.g. a "Start" that is not yet legal).
     pub disabled_controls: Vec<usize>,
+}
+
+/// One option in the decision the game is currently asking for — a small card the player can take.
+///
+/// A choice **carries its own consequence**. A label alone ("Strike Back") only names an action; what a
+/// player actually needs is what it will *do to them* ("spend 1 tempo, deal 7 back"). Put that on the card
+/// and the decision can be made from the screen, without knowing the rules.
+///
+/// The same applies to an option that is **not** available: it is still shown, with `why_not` saying what
+/// stops it. "Why can I not strike back?" must be answerable by looking, not by reading the source — an
+/// absent option teaches nothing, and a silently-missing one reads as a bug.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    /// The action's name, e.g. `"Strike Back"`.
+    pub label: String,
+    /// What taking it costs and does, e.g. `"spend 1 tempo, deal 7 back"`. Empty = nothing to add.
+    pub consequence: String,
+    /// Why it cannot be taken, e.g. `"the blow was ranged - nothing to answer"`. Empty = it can be taken.
+    /// A choice with a reason is drawn inert, *and shows the reason*.
+    pub why_not: String,
+    /// This is the option currently staged — what will happen if the player commits as things stand.
+    pub chosen: bool,
+}
+
+impl Choice {
+    /// A choice the player can take.
+    pub fn new(label: impl Into<String>, consequence: impl Into<String>) -> Self {
+        Choice {
+            label: label.into(),
+            consequence: consequence.into(),
+            why_not: String::new(),
+            chosen: false,
+        }
+    }
+
+    /// Mark this the staged option.
+    pub fn chosen(mut self, chosen: bool) -> Self {
+        self.chosen = chosen;
+        self
+    }
+
+    /// Bar this option, saying **why**. It is still shown — inert, with the reason.
+    pub fn barred(mut self, why_not: impl Into<String>) -> Self {
+        self.why_not = why_not.into();
+        self
+    }
+
+    /// Whether the player may take it.
+    pub fn enabled(&self) -> bool {
+        self.why_not.is_empty()
+    }
 }
 
 /// A left-sidebar progress track: a titled list of steps with the current one highlighted.

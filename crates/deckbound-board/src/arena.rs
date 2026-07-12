@@ -17,7 +17,7 @@
 //! stragglers with their default rank. [`handle_tap`] edits the staged plan (and, in Marshal, cycles a hero's
 //! rank pile).
 
-use cardtable_model::{Board, CardId, CardKind, PileId};
+use cardtable_model::{Board, CardId, CardKind, Choice, PileId};
 use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
@@ -276,13 +276,6 @@ impl ReactKind {
             ReactKind::Eat => "Eat",
             ReactKind::Evade => "Evade",
             ReactKind::StrikeBack => "Strike Back",
-        }
-    }
-    fn next(self) -> ReactKind {
-        match self {
-            ReactKind::Eat => ReactKind::Evade,
-            ReactKind::Evade => ReactKind::StrikeBack,
-            ReactKind::StrikeBack => ReactKind::Eat,
         }
     }
 }
@@ -1163,22 +1156,122 @@ fn cycle_catch_bid(board: &mut Board, cards: &[CardId], units: &[Combatant], act
 /// Cycle a defender's staged reaction. `strikeback_ok` gates the Strike Back option: strike-back is
 /// melee-vs-melee only (spec 3.1 / the design call), so when the incoming blow is ranged, or the defender
 /// carries no melee, the cycle skips straight over Strike Back (Eat -> Evade -> Eat).
-fn cycle_react(board: &mut Board, card: CardId, evade_ok: bool, strikeback_ok: bool) {
-    let mut s = staged_of(board, card);
-    let mut next = s.react.unwrap_or(ReactKind::Eat);
-    // Advance to the next *affordable* reaction. Eat is always available, so this terminates within a lap.
-    for _ in 0..3 {
-        next = next.next();
-        let available = match next {
-            ReactKind::Eat => true,
-            ReactKind::Evade => evade_ok,
-            ReactKind::StrikeBack => strikeback_ok,
-        };
-        if available {
-            break;
+/// Select the defender the React choices apply to (clearing any other selection). Unlike the *attacker*
+/// selection at Catch, there is no effectiveness gate: you are being hit whether or not you can hit back.
+fn select_defender(board: &mut Board, cards: &[CardId], chosen: usize) {
+    for (i, &c) in cards.iter().enumerate() {
+        let mut s = staged_of(board, c);
+        let want = i == chosen;
+        if s.active != want {
+            s.active = want;
+            write_staged(board, c, &s);
         }
     }
-    s.react = Some(next);
+}
+
+/// The struck party defender the React decision is *about*: the one the player selected, or — when only one
+/// hero is under fire — that one, so a lone defender needs no selecting first. `None` outside React, or when
+/// nobody the player controls was hit.
+pub(crate) fn struck_defender(board: &Board, arena: PileId) -> Option<(CardId, usize)> {
+    let (cards, units, _sub, _round, step) = arena_state(board, arena);
+    if step != Step::React {
+        return None;
+    }
+    let contacts = read_contacts(board, arena, &cards);
+    let struck: Vec<usize> = (0..units.len())
+        .filter(|&i| {
+            units[i].side == Side::Party
+                && !units[i].fallen
+                && contacts.iter().any(|c| c.target == i)
+        })
+        .collect();
+    let i = struck
+        .iter()
+        .copied()
+        .find(|&i| staged_of(board, cards[i]).active)
+        .or_else(|| (struck.len() == 1).then(|| struck[0]))?;
+    Some((cards[i], i))
+}
+
+/// The reactions on offer to the struck defender — **each carrying what it will cost and do**, and, when it
+/// cannot be taken, *why not*.
+///
+/// This is the answer to the question that started all this: looking at the screen, you could not tell whether
+/// Strike Back was legitimately on offer, because nothing said what had hit you. A barred option is therefore
+/// still listed, with its reason ("the blow was ranged - nothing to answer"), rather than silently vanishing:
+/// an absent option teaches nothing and reads as a bug.
+pub fn react_choices(board: &Board, arena: PileId) -> Vec<Choice> {
+    let Some((card, i)) = struck_defender(board, arena) else {
+        return Vec::new();
+    };
+    let (cards, units, _sub, _round, _step) = arena_state(board, arena);
+    let contacts = read_contacts(board, arena, &cards);
+    let u = &units[i];
+    let incoming: Vec<&Contact> = contacts.iter().filter(|c| c.target == i).collect();
+    let staged = staged_of(board, card).react.unwrap_or(ReactKind::Eat);
+    let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
+
+    // Eat: every incoming blow lands, at its attacker's Might.
+    let might: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
+    let eat = Choice::new("Eat", format!("take the hit ({might} might)"))
+        .chosen(staged == ReactKind::Eat);
+
+    // Evade: beat the bid. The cheapest incoming blow is the one worth quoting.
+    let need = incoming
+        .iter()
+        .map(|c| c.bid / u.finesse.max(1) + 1)
+        .min()
+        .unwrap_or(0);
+    let evade = Choice::new("Evade", format!("spend {need} tempo to slip it"))
+        .chosen(staged == ReactKind::Evade);
+    let evade = if evade_ok {
+        evade
+    } else if u.tempo == 0 {
+        evade.barred("no tempo left")
+    } else {
+        evade.barred(format!("needs {need} tempo, you have {}", u.tempo))
+    };
+
+    // Strike Back: melee-vs-melee only - you answer a foe that *approached* you.
+    let back = Choice::new(
+        "Strike Back",
+        format!("spend 1 tempo, deal {} back", u.might),
+    )
+    .chosen(staged == ReactKind::StrikeBack);
+    let back = if strikeback_ok {
+        back
+    } else if u.tempo == 0 {
+        back.barred("no tempo left")
+    } else if !u.melee {
+        back.barred("you carry no melee blow")
+    } else {
+        back.barred("the blow was ranged - nothing to answer")
+    };
+
+    vec![eat, evade, back]
+}
+
+/// Take the React choice at `index` (into [`react_choices`]) for the struck defender. A barred option does
+/// nothing.
+pub fn choose(board: &mut Board, index: usize) {
+    let Some(arena) = find_arena(board) else {
+        return;
+    };
+    let choices = react_choices(board, arena);
+    if !choices.get(index).is_some_and(|c| c.enabled()) {
+        return;
+    }
+    let Some((card, _)) = struck_defender(board, arena) else {
+        return;
+    };
+    let kind = match index {
+        0 => ReactKind::Eat,
+        1 => ReactKind::Evade,
+        2 => ReactKind::StrikeBack,
+        _ => return,
+    };
+    let mut s = staged_of(board, card);
+    s.react = Some(kind);
     write_staged(board, card, &s);
 }
 
@@ -1215,11 +1308,11 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
         Step::React => {
             let contacts = read_contacts(board, arena, &cards);
             if side == Side::Party && contacts.iter().any(|c| c.target == i) {
-                // Cycle only through reactions this defender can afford - Evade / Strike Back both cost a
-                // Tempo card (and Strike Back needs a melee answer to a melee blow), so a spent unit stays on
-                // Eat.
-                let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
-                cycle_react(board, card, evade_ok, strikeback_ok);
+                // Tapping a struck hero **selects** it; the reaction itself is then picked from the choice
+                // cards, which say what each option costs and does. (It used to cycle Eat -> Evade -> Strike
+                // Back in place, which named the options but never their consequences - and silently skipped
+                // the ones you couldn't afford, so a missing option was indistinguishable from a bug.)
+                select_defender(board, &cards, i);
             }
         }
         Step::Extra => {
@@ -1396,6 +1489,11 @@ mod tests {
     /// Set up a fight at a place with an encounter, with the Marksman marched there.
     fn open_a_fight(board: &mut Board) -> PileId {
         open_a_fight_with(board, "Marksman")
+    }
+
+    /// The same fight setup, reachable from the sibling `choice_tests` module.
+    pub(super) fn open_a_fight_for_tests(board: &mut Board) -> PileId {
+        open_a_fight(board)
     }
 
     /// As [`open_a_fight`], but march the hero of the named kit (so tests can pick the hero's attack type).
@@ -1576,5 +1674,117 @@ mod tests {
                 "the staged catch landed as a persisted contact"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::*;
+    use crate::sample_table;
+
+    /// Drive a fight to React with the Marksman (ranged) struck by... nothing yet - we build the state we need
+    /// directly, because what is under test is what the *choices say*, not how the fight got here.
+    fn defender_choices(defender: Combatant, attacker: Combatant, bid: u32) -> Vec<Choice> {
+        // A tiny stand-in for the arena read: react_choices' logic is react_options + the consequence text, so
+        // exercise them together through the same predicate the UI uses.
+        let units = vec![defender, attacker];
+        let contacts = vec![Contact {
+            attacker: 1,
+            target: 0,
+            bid,
+        }];
+        let (evade_ok, strikeback_ok) = react_options(&units, &contacts, 0);
+        let u = &units[0];
+        let might: u32 = units[1].might;
+        let need = bid / u.finesse.max(1) + 1;
+        let eat = Choice::new("Eat", format!("take the hit ({might} might)"));
+        let evade = Choice::new("Evade", format!("spend {need} tempo to slip it"));
+        let evade = if evade_ok {
+            evade
+        } else if u.tempo == 0 {
+            evade.barred("no tempo left")
+        } else {
+            evade.barred(format!("needs {need} tempo, you have {}", u.tempo))
+        };
+        let back = Choice::new(
+            "Strike Back",
+            format!("spend 1 tempo, deal {} back", u.might),
+        );
+        let back = if strikeback_ok {
+            back
+        } else if u.tempo == 0 {
+            back.barred("no tempo left")
+        } else if !u.melee {
+            back.barred("you carry no melee blow")
+        } else {
+            back.barred("the blow was ranged - nothing to answer")
+        };
+        vec![eat, evade, back]
+    }
+
+    fn combatant(name: &str, side: Side, rank: Rank, melee: bool, ranged: bool) -> Combatant {
+        let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, melee, ranged);
+        c.tempo = 2;
+        c
+    }
+
+    /// **The question that started this.** A ranged blow cannot be answered — you strike back at a foe that
+    /// *approached* you. The option must still be shown, saying so, rather than silently vanishing: an absent
+    /// option teaches nothing and is indistinguishable from a bug.
+    #[test]
+    fn strike_back_is_barred_against_a_ranged_blow_and_says_why() {
+        let hero = combatant("hero", Side::Party, Rank::Outrider, true, false); // carries melee
+        let shooter = combatant("shooter", Side::Foe, Rank::Rearguard, false, true); // fires from the back
+        let choices = defender_choices(hero, shooter, 2);
+
+        let back = &choices[2];
+        assert_eq!(back.label, "Strike Back");
+        assert!(!back.enabled(), "a ranged shot cannot be struck back at");
+        assert_eq!(back.why_not, "the blow was ranged - nothing to answer");
+    }
+
+    /// The Wall's case: a melee Vanguard intercepting the crossing Outrider. Strike Back **is** legitimate,
+    /// and the card says what it will do.
+    #[test]
+    fn strike_back_is_offered_against_a_melee_blow_with_its_consequence() {
+        let hero = combatant("Raider", Side::Party, Rank::Outrider, true, false);
+        let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
+        let choices = defender_choices(hero, wall, 2);
+
+        let back = &choices[2];
+        assert!(back.enabled(), "a melee blow can be answered");
+        assert_eq!(back.consequence, "spend 1 tempo, deal 3 back");
+
+        // ...and eating it says what it costs, rather than just naming the action.
+        assert_eq!(choices[0].consequence, "take the hit (3 might)");
+    }
+
+    /// A spent unit cannot buy its way out: both paid options are barred, and both say so.
+    #[test]
+    fn a_unit_with_no_tempo_is_told_why_it_can_only_eat() {
+        let mut hero = combatant("hero", Side::Party, Rank::Vanguard, true, false);
+        hero.tempo = 0;
+        let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
+        let choices = defender_choices(hero, wall, 2);
+
+        assert!(choices[0].enabled(), "Eat is always free");
+        assert!(!choices[1].enabled());
+        assert_eq!(choices[1].why_not, "no tempo left");
+        assert!(!choices[2].enabled());
+        assert_eq!(choices[2].why_not, "no tempo left");
+    }
+
+    /// The React choices exist only at React, and only for a hero who was actually hit. A fresh fight opens at
+    /// Marshal, where nothing has struck anyone, so the game asks for no decision — the choice row is empty
+    /// rather than showing three inert cards.
+    #[test]
+    fn no_decision_is_asked_for_when_nobody_is_under_fire() {
+        let mut board = sample_table();
+        let arena = super::tests::open_a_fight_for_tests(&mut board);
+        assert_eq!(current_step(&board, arena), Step::Marshal);
+        assert!(
+            react_choices(&board, arena).is_empty(),
+            "at Marshal nothing has struck anyone - there is no reaction to choose"
+        );
     }
 }
