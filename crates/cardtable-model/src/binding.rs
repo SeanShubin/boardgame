@@ -34,7 +34,7 @@ fn add_zone(tree: &mut Board, parent: PileId, zone: &ZoneView, index: usize) -> 
     let pile = tree
         .add_pile(parent, zone.label.clone())
         .expect("parent pile exists");
-    tree.set_pile_pos(pile, 24.0 + index as f32 * 180.0, 24.0)
+    tree.set_pile_pos(pile, 24 + index as i32 * 180, 24)
         .expect("just-created pile exists");
     // Honour the card-table arrangement (grid / rows / free). `List` is the model default that
     // `add_pile` already sets, so only override otherwise; preserve the pile's `editable` flag (the seam

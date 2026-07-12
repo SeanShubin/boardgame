@@ -468,8 +468,8 @@ fn install_system_deck(table: &mut Board, build: &BuildInfo) {
     // first drill-in shoved it into place, so the deck visibly jumped the first time you opened System.
     for (i, node) in table.movable_children(pile).into_iter().enumerate() {
         let (col, row) = (i % 3, i / 3);
-        let x = GAP + col as f32 * (CARD_W + GAP);
-        let y = OVERLAY_BAND + GAP + row as f32 * (CARD_H + GAP);
+        let x = GAP + col as i32 * (CARD_W + GAP);
+        let y = OVERLAY_BAND + GAP + row as i32 * (CARD_H + GAP);
         match node {
             TableNode::Card(c) => {
                 let _ = table.set_card_pos(c, x, y);
@@ -806,10 +806,10 @@ fn on_node_drag(
         node.top = Val::Px(y);
         match movable.0 {
             TableNode::Card(cid) => {
-                let _ = table.0.set_card_pos(cid, x, y);
+                let _ = table.0.set_card_pos(cid, x as i32, y as i32);
             }
             TableNode::Pile(pid) => {
-                let _ = table.0.set_pile_pos(pid, x, y);
+                let _ = table.0.set_pile_pos(pid, x as i32, y as i32);
             }
         }
         dragging.0 = Some(movable.0);
@@ -830,7 +830,7 @@ fn px(value: Val) -> f32 {
 fn sync_surface_size(content: Query<&ComputedNode, With<TableContent>>, mut table: ResMut<Table>) {
     if let Ok(computed) = content.single() {
         let size = computed.size * computed.inverse_scale_factor;
-        table.0.set_bounds(size.x, size.y);
+        table.0.set_bounds(size.x as i32, size.y as i32);
     }
 }
 
@@ -860,12 +860,12 @@ fn sync_pinned(
             let top_left = (gt.translation - size * 0.5 - origin) * sf;
             (
                 Pos {
-                    x: top_left.x,
-                    y: top_left.y,
+                    x: top_left.x as i32,
+                    y: top_left.y as i32,
                 },
                 Pos {
-                    x: size.x * sf,
-                    y: size.y * sf,
+                    x: (size.x * sf) as i32,
+                    y: (size.y * sf) as i32,
                 },
             )
         })
@@ -944,11 +944,12 @@ fn animate_nodes(
             }
         };
         let (cx, cy) = (px(node.left), px(node.top));
-        if (target.x - cx).abs() < 0.5 && (target.y - cy).abs() < 0.5 {
+        let (tx, ty) = (target.x as f32, target.y as f32);
+        if (tx - cx).abs() < 0.5 && (ty - cy).abs() < 0.5 {
             continue; // at rest
         }
-        node.left = Val::Px(cx + (target.x - cx) * t);
-        node.top = Val::Px(cy + (target.y - cy) * t);
+        node.left = Val::Px(cx + (tx - cx) * t);
+        node.top = Val::Px(cy + (ty - cy) * t);
     }
 }
 
@@ -1366,7 +1367,7 @@ fn settle_card_home(table: &mut Board, card: CardId, node: &Node, trace: &mut Ve
         Some(Arrangement::Free)
     ) {
         // Unordered: keep it where dropped, then shove the rest out of its way.
-        let _ = table.set_card_pos(card, px(node.left), px(node.top));
+        let _ = table.set_card_pos(card, px(node.left) as i32, px(node.top) as i32);
         table.separate(home, TableNode::Card(card));
         trace.push(format!(
             "drag-end: {card_name} repositioned within [{home_label}] (no pile change)"
@@ -1376,8 +1377,8 @@ fn settle_card_home(table: &mut Board, card: CardId, node: &Node, trace: &mut Ve
     // Structured (List/Grid): reorder among the *contents* only (never above a zone card) into the nearest
     // footprint-aware slot.
     let drop = Pos {
-        x: px(node.left),
-        y: px(node.top),
+        x: px(node.left) as i32,
+        y: px(node.top) as i32,
     };
     let nearest = table
         .structured_positions(
@@ -1391,9 +1392,9 @@ fn settle_card_home(table: &mut Board, card: CardId, node: &Node, trace: &mut Ve
         )
         .into_iter()
         .filter_map(|(n, p)| n.card().map(|c| (c, p)))
-        .min_by(|a, b| {
-            let d = |p: Pos| (p.x - drop.x).powi(2) + (p.y - drop.y).powi(2);
-            d(a.1).total_cmp(&d(b.1))
+        .min_by_key(|(_, p)| {
+            let (dx, dy) = ((p.x - drop.x) as i64, (p.y - drop.y) as i64);
+            dx * dx + dy * dy
         })
         .map(|(c, _)| c);
     if let (Some(from), Some(to)) = (
@@ -1437,7 +1438,9 @@ fn on_node_drag_end(
         // A pile just repositions and shoves among its siblings; the rest is card-only leaf behaviour.
         let card = match movable.0 {
             TableNode::Pile(pid) => {
-                let _ = table.0.set_pile_pos(pid, px(node.left), px(node.top));
+                let _ = table
+                    .0
+                    .set_pile_pos(pid, px(node.left) as i32, px(node.top) as i32);
                 let parent = table
                     .0
                     .pile(pid)
@@ -1527,11 +1530,11 @@ fn settle_free_cards(
         let Some(footprint) = table.0.card(c).map(|k| k.footprint()) else {
             continue;
         };
-        if footprint.x < 1.0 {
+        if footprint.x < 1 {
             continue; // not laid out yet
         }
         let was = prev.insert(c, footprint).unwrap_or_default();
-        if (was.x - footprint.x).abs() > 0.5 || (was.y - footprint.y).abs() > 0.5 {
+        if was.x != footprint.x || was.y != footprint.y {
             anchor = Some(c);
         }
     }
@@ -1567,7 +1570,7 @@ fn settle_table_piles(
     // pile. Skipping until the width is a plausible screen size means the *first* tidy happens at the true
     // width, so `arrange_row` wraps the decks to fit from the start instead of correcting after the fact.
     let bounds = table.0.bounds();
-    if !(1.0..=100_000.0).contains(&bounds.x) {
+    if !(1..=100_000).contains(&bounds.x) {
         return;
     }
     let piles: Vec<PileId> = table
@@ -1581,14 +1584,14 @@ fn settle_table_piles(
         // without a render - a new/grown deck changes this immediately, which is what triggers the re-tidy.
         let size = table.0.pile_footprint(p);
         let was = prev.insert(p, size).unwrap_or_default();
-        if (was.x - size.x).abs() > 0.5 || (was.y - size.y).abs() > 0.5 {
+        if was.x != size.x || was.y != size.y {
             sized = true;
         }
     }
     // Track a **width** change only — the bounds *height* also flips as you enter/leave a zone's
     // overlay-band inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on
     // height would mistake every navigation back to the Table for a resize.
-    let resized = (bounds.x - prev_bounds.x).abs() > 0.5;
+    let resized = bounds.x != prev_bounds.x;
     if resized {
         *prev_bounds = bounds;
     }
@@ -2511,11 +2514,14 @@ const SLIDE_SPEED: f32 = 12.0;
 /// **Medium** is a full individual card face (adds detail lines); **Large** is a document / log panel.
 // Card sizes come from the model's layout module - the single source of truth - so a card's node is drawn at
 // exactly the footprint the layout math uses. The renderer never defines its own card dimensions.
+// The model carries integer coordinates; the renderer converts to f32 here, at the graphics boundary, since
+// Bevy's `Val::Px` wants floats. These pixel-drawing aliases are f32; the layout constants that *feed* the
+// model (GAP, CARD_W, ...) stay i32.
 use cardtable_model::layout as card_layout;
-const SMALL_W: f32 = card_layout::SMALL_W;
-const SMALL_H: f32 = card_layout::SMALL_H;
-const MEDIUM_W: f32 = card_layout::MEDIUM_W;
-const LARGE_W: f32 = card_layout::LARGE_W;
+const SMALL_W: f32 = card_layout::SMALL_W as f32;
+const SMALL_H: f32 = card_layout::SMALL_H as f32;
+const MEDIUM_W: f32 = card_layout::MEDIUM_W as f32;
+const LARGE_W: f32 = card_layout::LARGE_W as f32;
 
 /// The inner text width of a Small / Medium card — its width less the padding + border on both sides.
 /// This is the room a title has to fit on one line (see [`title_font`]): Small has 8px padding + 2px
@@ -2526,22 +2532,23 @@ const LARGE_INNER: f32 = LARGE_W - 2.0 * 12.0;
 
 /// The per-card stack step (offset along two edges) and the visual depth cap, so a deck reads as a
 /// stack of Small cards without growing without bound. Aliased from the model, which owns the chip geometry.
-const STACK_OFFSET: f32 = card_layout::STACK_OFFSET;
+const STACK_OFFSET: f32 = card_layout::STACK_OFFSET as f32;
 const MAX_STACK: usize = card_layout::MAX_STACK;
 
 /// The one constant **gap** between anything on the felt — adjacent cards, piles, and the surface edges —
 /// so spacing is uniform everywhere it's computed (see [`Board::structured_positions`],
-/// [`Board::arrange_row`]).
-const GAP: f32 = 12.0;
+/// [`Board::arrange_row`]). Integer, because it feeds the model's (integer) layout math.
+const GAP: i32 = 12;
 /// A rendered Small card's outer size: its footprint plus the 2px border on each side. The stand-in box a
-/// not-yet-measured card gets, so the first frame of a structured layout is sane (see [`build_ui`]).
-const CARD_W: f32 = SMALL_W + 4.0;
-const CARD_H: f32 = SMALL_H + 4.0;
+/// not-yet-measured card gets, so the first frame of a structured layout is sane (see [`build_ui`]). Integer,
+/// feeding the model's layout math.
+const CARD_W: i32 = card_layout::SMALL_W + 4;
+const CARD_H: i32 = card_layout::SMALL_H + 4;
 /// Height of the **overlay band** at the top of a zone — the strip the floating title / Back / rail
 /// occupy. A **structured** zone (grid / list / rows), whose cards can't be shoved, insets its content
 /// region by this so nothing lands under an overlay. A **freely-placed** zone (Free / root) uses no
 /// inset — its cards share the felt and the [`Pinned`] fixtures shove them clear instead. See [`build_ui`].
-const OVERLAY_BAND: f32 = 52.0;
+const OVERLAY_BAND: i32 = 52;
 
 fn build_ui(
     commands: &mut Commands,
@@ -2581,7 +2588,11 @@ fn build_ui(
                     tree.pile(zone).map(|p| p.layout().arrangement),
                     Some(Arrangement::Free)
                 );
-            let content_inset = if freely_placed { 0.0 } else { OVERLAY_BAND };
+            let content_inset = if freely_placed {
+                0.0
+            } else {
+                OVERLAY_BAND as f32
+            };
             root.spawn((
                 TableSurface,
                 Node {
@@ -2611,8 +2622,8 @@ fn build_ui(
                                     Movable(TableNode::Pile(id)),
                                     Node {
                                         position_type: PositionType::Absolute,
-                                        left: Val::Px(pos.x),
-                                        top: Val::Px(pos.y),
+                                        left: Val::Px(pos.x as f32),
+                                        top: Val::Px(pos.y as f32),
                                         ..default()
                                     },
                                 ))
@@ -2626,8 +2637,11 @@ fn build_ui(
                         // container: the felt width less the column's padding on both sides, the header
                         // card, and the header→fan gap. Computing it here (not after layout) lets us seed
                         // each card's spread position so the very first frame is already right.
-                        let fan_width =
-                            (tree.bounds().x - 2.0 * INN_PAD - CARD_W - INN_HEADER_GAP).max(1.0);
+                        let fan_width = (tree.bounds().x as f32
+                            - 2.0 * INN_PAD
+                            - CARD_W as f32
+                            - INN_HEADER_GAP)
+                            .max(1.0);
                         surface
                             .spawn(Node {
                                 flex_direction: FlexDirection::Column,
@@ -2662,7 +2676,7 @@ fn build_ui(
                                                 position_type: PositionType::Relative,
                                                 flex_grow: 1.0,
                                                 min_width: Val::Px(0.0),
-                                                height: Val::Px(CARD_H),
+                                                height: Val::Px(CARD_H as f32),
                                                 ..default()
                                             },
                                         ))
@@ -2832,7 +2846,8 @@ fn build_ui(
                                     // whole box is the PileDropZone, its green drop-target glow wraps the full
                                     // stack, not just the top card - dropping a token anywhere over the place
                                     // *or its stacked tokens* moves the character here.
-                                    let cell_h = card_layout::cascade_footprint(tokens.len()).y;
+                                    let cell_h =
+                                        card_layout::cascade_footprint(tokens.len()).y as f32;
                                     grid.spawn((
                                         PileDropZone(place),
                                         Node {
@@ -2903,10 +2918,10 @@ fn build_ui(
                                     TableNode::Pile(pid) => tree.pile(pid).map(|d| d.pos()),
                                 }
                                 .unwrap_or_default();
-                                (p.x, p.y)
+                                (p.x as f32, p.y as f32)
                             } else {
                                 let p = placed.get(index).map(|&(_, p)| p).unwrap_or_default();
-                                (p.x, p.y)
+                                (p.x as f32, p.y as f32)
                             };
                             let mut tile = surface.spawn(Node {
                                 position_type: PositionType::Absolute,
@@ -3096,8 +3111,8 @@ fn spawn_pile_chip(
         .spawn((
             PileDropZone(id),
             Node {
-                width: Val::Px(chip.x),
-                height: Val::Px(chip.y),
+                width: Val::Px(chip.x as f32),
+                height: Val::Px(chip.y as f32),
                 ..default()
             },
         ))
@@ -3245,7 +3260,7 @@ const MAP_CELL_GAP: f32 = 24.0;
 /// The cascade step for a map cell: each character token stationed at a place is slid this far below the
 /// card above it, so that card's top **title strip** stays visible (title-at-top). Aliased from the model,
 /// which owns the cascade geometry (see [`cardtable_model::layout::cascade_footprint`]).
-const TITLE_OFFSET: f32 = card_layout::CASCADE_OFFSET;
+const TITLE_OFFSET: f32 = card_layout::CASCADE_OFFSET as f32;
 
 /// The x offset of fan card `index` (of `count`) within a fan `width` px wide, when `front_idx` — if any —
 /// is the card pulled to the front. The single source of truth for fan geometry: [`build_ui`] seeds each
@@ -3258,14 +3273,15 @@ const TITLE_OFFSET: f32 = card_layout::CASCADE_OFFSET;
 /// card needs no adjustment. See the call sites for the fuller rationale.
 fn fan_left(width: f32, count: usize, front_idx: Option<usize>, index: usize) -> f32 {
     let pitch = if count > 1 {
-        ((width - CARD_W) / (count - 1) as f32).clamp(FAN_SLIVER, CARD_W + GAP)
+        ((width - CARD_W as f32) / (count - 1) as f32).clamp(FAN_SLIVER, (CARD_W + GAP) as f32)
     } else {
         0.0
     };
     match front_idx {
         // Only a card that isn't the last one opens the fan (the last shows fully at baseline).
         Some(fi) if fi + 1 < count => {
-            let front_left = ((fi + 1) as f32 * pitch - CARD_W).clamp(0.0, fi as f32 * pitch);
+            let front_left =
+                ((fi + 1) as f32 * pitch - CARD_W as f32).clamp(0.0, fi as f32 * pitch);
             if index < fi {
                 let pitch_left = if fi > 0 { front_left / fi as f32 } else { 0.0 };
                 index as f32 * pitch_left
@@ -3455,7 +3471,7 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
             width: Val::Px(MEDIUM_W),
             // Sized to the model's computed footprint (width + a height per detail line) - the renderer is a
             // pass-through, not the authority. Content clips to fit (never spills onto a neighbour).
-            height: Val::Px(card.footprint().y),
+            height: Val::Px(card.footprint().y as f32),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(10.0)),
             border: UiRect::all(Val::Px(2.0)),
@@ -3502,7 +3518,7 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
         Node {
             width: Val::Px(LARGE_W),
             // Sized to the model's computed footprint (capped at LARGE_MAX_H); content beyond it scrolls.
-            height: Val::Px(card.footprint().y),
+            height: Val::Px(card.footprint().y as f32),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(12.0)),
             row_gap: Val::Px(4.0),

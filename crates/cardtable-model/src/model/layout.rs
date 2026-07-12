@@ -12,40 +12,40 @@
 use super::{Pos, Size};
 
 /// Card width for the compact (name-only) form and for decks / location cards.
-pub const SMALL_W: f32 = 120.0;
+pub const SMALL_W: i32 = 120;
 /// Card height for the compact form (fixed; the name strip clips a long title).
-pub const SMALL_H: f32 = 96.0;
+pub const SMALL_H: i32 = 96;
 /// Card width for a full card face (name + detail lines).
-pub const MEDIUM_W: f32 = 200.0;
+pub const MEDIUM_W: i32 = 200;
 /// Card width for a document-sized panel (a combat log, docs).
-pub const LARGE_W: f32 = 320.0;
+pub const LARGE_W: i32 = 320;
 /// A large panel caps here and scrolls; its footprint never exceeds this height.
-pub const LARGE_MAX_H: f32 = 360.0;
+pub const LARGE_MAX_H: i32 = 360;
 
 /// The diagonal step between the layers of a deck chip's stack - each deeper card peeks out this far along
 /// the left and bottom edges, hinting at depth. The renderer draws exactly this offset.
-pub const STACK_OFFSET: f32 = 2.0;
+pub const STACK_OFFSET: i32 = 2;
 /// The most stack layers a deck chip draws (deeper decks stop growing, so a huge deck's chip stays bounded).
 pub const MAX_STACK: usize = 10;
 
 /// The vertical step between the cards of a **cascade** - a stack shown as overlapping cards, each below the
 /// base peeking only this tall a title strip (e.g. characters stationed on a location). The renderer draws
 /// exactly this offset.
-pub const CASCADE_OFFSET: f32 = 26.0;
+pub const CASCADE_OFFSET: i32 = 26;
 
 /// Vertical chrome: padding (top+bottom) plus border (top+bottom) around a card's content.
-const V_CHROME: f32 = 2.0 * 10.0 + 2.0 * 2.0;
+const V_CHROME: i32 = 2 * 10 + 2 * 2;
 /// The gap the renderer puts **between** every stacked child in a card (`row_gap`). Each child past the
 /// first adds one of these, so the height must budget for them or the last line clips.
-const ROW_GAP: f32 = 4.0;
+const ROW_GAP: i32 = 4;
 /// The name/title line's height (the `FONT_HEAD` line). Held a little above the raw font line box so text
 /// never clips against a rounding-down of the renderer's metrics.
-const TITLE_H: f32 = 24.0;
+const TITLE_H: i32 = 24;
 /// The **type badge** row Medium cards carry under the title (its padding + `FONT_BADGE` line). A Medium
 /// card is assumed to have one; a card with no type just wears the extra slack (better than clipping).
-const BADGE_H: f32 = 18.0;
+const BADGE_H: i32 = 18;
 /// One content line (a detail or panel line, `FONT_BODY`), drawn no-wrap so it is exactly one line tall.
-const BODY_LINE_H: f32 = 17.0;
+const BODY_LINE_H: i32 = 17;
 
 /// A card's on-felt footprint `(width, height)` in logical px, from its size and content line counts. The
 /// renderer draws the card at exactly this size (content clips to fit), so this is authoritative for layout.
@@ -66,12 +66,12 @@ pub fn footprint(size: Size, detail_lines: usize, panel_lines: usize) -> Pos {
                 + TITLE_H
                 + ROW_GAP
                 + BADGE_H
-                + detail_lines as f32 * (BODY_LINE_H + ROW_GAP),
+                + detail_lines as i32 * (BODY_LINE_H + ROW_GAP),
         },
         // Large: title then the panel lines (no badge), capped - the overflow scrolls in the renderer.
         Size::Large => Pos {
             x: LARGE_W,
-            y: (V_CHROME + TITLE_H + panel_lines as f32 * (BODY_LINE_H + ROW_GAP)).min(LARGE_MAX_H),
+            y: (V_CHROME + TITLE_H + panel_lines as i32 * (BODY_LINE_H + ROW_GAP)).min(LARGE_MAX_H),
         },
     }
 }
@@ -82,7 +82,7 @@ pub fn footprint(size: Size, detail_lines: usize, panel_lines: usize) -> Pos {
 /// empty deck (count 0) is a single Small card. Computed purely from the physical card count; no rendering.
 pub fn chip_footprint(count: usize) -> Pos {
     let depth = count.clamp(1, MAX_STACK);
-    let spread = (depth - 1) as f32 * STACK_OFFSET;
+    let spread = (depth - 1) as i32 * STACK_OFFSET;
     Pos {
         x: SMALL_W + spread,
         y: SMALL_H + spread,
@@ -96,7 +96,7 @@ pub fn chip_footprint(count: usize) -> Pos {
 pub fn cascade_footprint(count: usize) -> Pos {
     Pos {
         x: SMALL_W,
-        y: SMALL_H + count as f32 * CASCADE_OFFSET,
+        y: SMALL_H + count as i32 * CASCADE_OFFSET,
     }
 }
 
@@ -107,14 +107,14 @@ mod tests {
     #[test]
     fn chip_grows_with_the_stack_then_caps() {
         // Empty / single-card decks are a bare Small card.
-        assert_eq!(chip_footprint(0), Pos { x: 120.0, y: 96.0 });
-        assert_eq!(chip_footprint(1), Pos { x: 120.0, y: 96.0 });
+        assert_eq!(chip_footprint(0), Pos { x: 120, y: 96 });
+        assert_eq!(chip_footprint(1), Pos { x: 120, y: 96 });
         // Each extra card steps the box out by STACK_OFFSET on both axes...
         assert_eq!(
             chip_footprint(4),
             Pos {
-                x: 120.0 + 3.0 * STACK_OFFSET,
-                y: 96.0 + 3.0 * STACK_OFFSET
+                x: 120 + 3 * STACK_OFFSET,
+                y: 96 + 3 * STACK_OFFSET
             }
         );
         // ...until MAX_STACK, past which the chip stops growing.
@@ -123,8 +123,8 @@ mod tests {
         assert_eq!(
             capped,
             Pos {
-                x: 120.0 + (MAX_STACK - 1) as f32 * STACK_OFFSET,
-                y: 96.0 + (MAX_STACK - 1) as f32 * STACK_OFFSET
+                x: 120 + (MAX_STACK - 1) as i32 * STACK_OFFSET,
+                y: 96 + (MAX_STACK - 1) as i32 * STACK_OFFSET
             }
         );
     }
@@ -132,13 +132,13 @@ mod tests {
     #[test]
     fn cascade_grows_one_strip_per_stacked_card() {
         // No stacked cards: just the base Small card.
-        assert_eq!(cascade_footprint(0), Pos { x: 120.0, y: 96.0 });
+        assert_eq!(cascade_footprint(0), Pos { x: 120, y: 96 });
         // Each stacked card adds exactly one CASCADE_OFFSET strip of height; width stays Small.
         assert_eq!(
             cascade_footprint(3),
             Pos {
-                x: 120.0,
-                y: 96.0 + 3.0 * CASCADE_OFFSET
+                x: 120,
+                y: 96 + 3 * CASCADE_OFFSET
             }
         );
     }
@@ -146,19 +146,19 @@ mod tests {
     #[test]
     fn small_is_a_fixed_box_regardless_of_content() {
         // A small card is name-only; its box never depends on detail/panel counts.
-        assert_eq!(footprint(Size::Small, 0, 0), Pos { x: 120.0, y: 96.0 });
-        assert_eq!(footprint(Size::Small, 9, 9), Pos { x: 120.0, y: 96.0 });
+        assert_eq!(footprint(Size::Small, 0, 0), Pos { x: 120, y: 96 });
+        assert_eq!(footprint(Size::Small, 9, 9), Pos { x: 120, y: 96 });
     }
 
     #[test]
     fn medium_grows_one_line_at_a_time_deterministically() {
         let zero = footprint(Size::Medium, 0, 0);
         let three = footprint(Size::Medium, 3, 0);
-        assert_eq!(zero.x, 200.0, "medium width is fixed");
-        assert_eq!(three.x, 200.0);
+        assert_eq!(zero.x, 200, "medium width is fixed");
+        assert_eq!(three.x, 200);
         assert_eq!(
             three.y - zero.y,
-            3.0 * (BODY_LINE_H + ROW_GAP),
+            3 * (BODY_LINE_H + ROW_GAP),
             "each detail line adds exactly one line plus its gap"
         );
     }
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn large_caps_and_reads_panel_lines() {
-        assert_eq!(footprint(Size::Large, 0, 2).x, 320.0);
+        assert_eq!(footprint(Size::Large, 0, 2).x, 320);
         // A very long panel is capped (it scrolls in the renderer), never taller than the cap.
         assert_eq!(footprint(Size::Large, 0, 1000).y, LARGE_MAX_H);
     }

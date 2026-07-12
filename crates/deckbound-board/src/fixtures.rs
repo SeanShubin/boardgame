@@ -192,10 +192,10 @@ fn grid_layout(tree: &mut Board, deck: PileId, cols: usize) {
         let (x, y) = spot(i);
         match node {
             Node::Card(c) => {
-                let _ = tree.set_card_pos(c, x, y);
+                let _ = tree.set_card_pos(c, x as i32, y as i32);
             }
             Node::Pile(p) => {
-                let _ = tree.set_pile_pos(p, x, y);
+                let _ = tree.set_pile_pos(p, x as i32, y as i32);
             }
         }
     }
@@ -560,23 +560,21 @@ pub fn sample_table() -> Board {
     // Seed the top-level piles un-stacked so the very first frame is sane. Their real positions are an
     // exact constant-gap row computed by `Board::arrange_row` once the chips are sized (see the
     // renderer's `settle_table_piles`); these seeds only need to be non-overlapping until then.
-    tree.set_pile_pos(heroes, 40.0, 40.0)
-        .expect("heroes exists");
-    tree.set_pile_pos(starting_kit, 180.0, 40.0)
+    tree.set_pile_pos(heroes, 40, 40).expect("heroes exists");
+    tree.set_pile_pos(starting_kit, 180, 40)
         .expect("starting kit exists");
-    tree.set_pile_pos(abilities, 320.0, 40.0)
+    tree.set_pile_pos(abilities, 320, 40)
         .expect("abilities exists");
-    tree.set_pile_pos(stats, 460.0, 40.0).expect("stats exists");
-    tree.set_pile_pos(numbers, 460.0, 200.0)
+    tree.set_pile_pos(stats, 460, 40).expect("stats exists");
+    tree.set_pile_pos(numbers, 460, 200)
         .expect("numbers exists");
-    tree.set_pile_pos(locations, 600.0, 40.0)
+    tree.set_pile_pos(locations, 600, 40)
         .expect("locations exists");
-    tree.set_pile_pos(rules, 740.0, 40.0).expect("rules exists");
-    tree.set_pile_pos(progress, 1020.0, 40.0)
+    tree.set_pile_pos(rules, 740, 40).expect("rules exists");
+    tree.set_pile_pos(progress, 1020, 40)
         .expect("progress exists");
-    tree.set_pile_pos(events, 1160.0, 40.0)
-        .expect("events exists");
-    tree.set_pile_pos(bestiary, 1440.0, 40.0)
+    tree.set_pile_pos(events, 1160, 40).expect("events exists");
+    tree.set_pile_pos(bestiary, 1440, 40)
         .expect("bestiary exists");
 
     tree

@@ -52,19 +52,26 @@ impl Node {
     }
 }
 
-/// A 2-D position on the table bounds, in pixels from its top-left. The card-table is a physical
+/// A 2-D position on the table bounds, in **integer** pixels from its top-left. The model carries no
+/// floats: geometry is exact, overlap is exact, and the only place a coordinate becomes a float is the Bevy
+/// side, which converts at the boundary because the graphics card wants floats. The card-table is a physical
 /// space, so a pile has a *place*; the renderer draws it there and drag-to-place updates it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Pos {
-    pub x: f32,
-    pub y: f32,
+    pub x: i32,
+    pub y: i32,
 }
 
 impl Pos {
     /// Squared distance to `other` — used to order [`Board::separate`]'s outward wavefront without a
-    /// square root (only the ordering matters).
-    pub(crate) fn dist_sq(self, other: Pos) -> f32 {
-        (self.x - other.x).powi(2) + (self.y - other.y).powi(2)
+    /// square root (only the ordering matters). Widened to `i64`: a coordinate difference can be the full
+    /// bounds span, and its square overflows `i32`.
+    pub(crate) fn dist_sq(self, other: Pos) -> i64 {
+        let dx = (self.x - other.x) as i64;
+        let dy = (self.y - other.y) as i64;
+        dx * dx + dy * dy
     }
 }
 
@@ -450,7 +457,10 @@ pub struct Board {
 /// The starting (effectively unbounded) bounds used until the renderer reports the real size — also the
 /// value a deserialized [`Board`] gets, since `bounds` is not persisted.
 pub(crate) fn default_bounds() -> Pos {
-    Pos { x: 1.0e6, y: 1.0e6 }
+    Pos {
+        x: 1_000_000,
+        y: 1_000_000,
+    }
 }
 
 impl Default for Board {
@@ -965,7 +975,7 @@ impl Board {
         // groups together and reads left-to-right in recruit order. The column is the count of character decks
         // already present (root subpiles that reflect a hero); this deck's `reflects` isn't set yet, so it is
         // not counted. One slot is a card width plus chrome + gap.
-        let slot = super::layout::SMALL_W + 30.0;
+        let slot = super::layout::SMALL_W + 30;
         let column = self
             .pile(self.root)
             .map(|r| r.subpiles())
@@ -973,7 +983,7 @@ impl Board {
             .into_iter()
             .filter(|&p| self.piles.get(&p).is_some_and(|d| d.reflects.is_some()))
             .count();
-        self.set_pile_pos(deck, 40.0 + column as f32 * slot, 320.0)?;
+        self.set_pile_pos(deck, 40 + column as i32 * slot, 320)?;
         // Then guarantee it is **clear** of every sibling (banks included), in the model, before any frame is
         // drawn - the row is only the preferred spot; `place_clear` is the non-overlap guarantee that holds
         // even if the party row would run into a bank or off the edge. Prevention, not a later shove.
@@ -1170,7 +1180,7 @@ impl Board {
     }
 
     /// Sets `pile`'s position on the table bounds (drag-to-place commits here).
-    pub fn set_pile_pos(&mut self, pile: PileId, x: f32, y: f32) -> Result<(), TableauError> {
+    pub fn set_pile_pos(&mut self, pile: PileId, x: i32, y: i32) -> Result<(), TableauError> {
         self.piles
             .get_mut(&pile)
             .ok_or(TableauError::UnknownPile(pile))?
@@ -1178,8 +1188,9 @@ impl Board {
         Ok(())
     }
 
-    /// Records `pile`'s rendered size (the renderer feeds this back after layout, for [`separate`]).
-    pub fn set_pile_size(&mut self, pile: PileId, w: f32, h: f32) -> Result<(), TableauError> {
+    /// Pins `pile`'s box size as an explicit override (a `>= 1` width wins over the computed chip footprint).
+    /// Tests use it to set up controlled geometry; real piles leave it unset and use [`pile_footprint`].
+    pub fn set_pile_size(&mut self, pile: PileId, w: i32, h: i32) -> Result<(), TableauError> {
         self.piles
             .get_mut(&pile)
             .ok_or(TableauError::UnknownPile(pile))?
@@ -1256,7 +1267,7 @@ impl Board {
     }
 
     /// Sets a card's free position on the drilled-in bounds (an [`Arrangement::Free`] deck).
-    pub fn set_card_pos(&mut self, card: CardId, x: f32, y: f32) -> Result<(), TableauError> {
+    pub fn set_card_pos(&mut self, card: CardId, x: i32, y: i32) -> Result<(), TableauError> {
         self.cards
             .get_mut(&card)
             .ok_or(TableauError::UnknownCard(card))?
@@ -1454,7 +1465,7 @@ impl Board {
 
     /// Records the table bounds size (the renderer feeds this back after layout). Decks are kept
     /// within `0..=bounds-size` — the borders act as walls. See [`place_pile`] and [`separate`].
-    pub fn set_bounds(&mut self, w: f32, h: f32) {
+    pub fn set_bounds(&mut self, w: i32, h: i32) {
         self.ui.bounds = Pos { x: w, y: h };
     }
 
@@ -1561,7 +1572,7 @@ impl Board {
 
     /// Places `pile` at `(x, y)`, clamped inside the bounds (the borders shove it back in), returning
     /// the position actually used. Drag-to-place calls this each move.
-    pub fn place_pile(&mut self, pile: PileId, x: f32, y: f32) -> Result<Pos, TableauError> {
+    pub fn place_pile(&mut self, pile: PileId, x: i32, y: i32) -> Result<Pos, TableauError> {
         let size = self
             .piles
             .get(&pile)
@@ -1580,7 +1591,7 @@ impl Board {
     /// (a `>= 1` width wins); real piles leave it unset and use the computed chip.
     pub fn pile_footprint(&self, pile: PileId) -> Pos {
         match self.piles.get(&pile) {
-            Some(d) if d.size.x >= 1.0 => d.size,
+            Some(d) if d.size.x >= 1 => d.size,
             Some(_) => super::layout::chip_footprint(self.physical_card_count(pile)),
             None => Pos::default(),
         }
@@ -1681,19 +1692,19 @@ impl Board {
     /// box — a pile's [`size`](Pile::size), a card's [`footprint`](Card::footprint) — so the gaps are
     /// identical even when widths differ (which fixed pitches can't guarantee). The tidy default layout.
     /// Children not yet sized (box width `< 1`) are skipped so they don't collapse the row before layout.
-    pub fn arrange_row(&mut self, pile: PileId, gap: f32, top: f32) {
+    pub fn arrange_row(&mut self, pile: PileId, gap: i32, top: i32) {
         let nodes = self.movable_children(pile);
-        let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
+        let (mut x, mut y, mut row_h) = (gap, top, 0);
         for node in nodes {
             let (_, size) = self.node_box(node).unwrap_or_default();
-            if size.x < 1.0 {
+            if size.x < 1 {
                 continue; // not laid out yet
             }
             // Wrap to the next row when this child would run past the right edge.
             if x > gap && x + size.x + gap > self.ui.bounds.x {
                 x = gap;
                 y += row_h + gap;
-                row_h = 0.0;
+                row_h = 0;
             }
             self.set_node_pos(node, Pos { x, y });
             x += size.x + gap;
@@ -1713,8 +1724,8 @@ impl Board {
     pub fn structured_positions(
         &self,
         pile: PileId,
-        gap: f32,
-        top: f32,
+        gap: i32,
+        top: i32,
         default: Pos,
     ) -> Vec<(Node, Pos)> {
         let nodes = self.movable_children(pile);
@@ -1723,18 +1734,18 @@ impl Board {
         }
         let size = |n: Node| -> Pos {
             let (_, s) = self.node_box(n).unwrap_or_default();
-            if s.x < 1.0 || s.y < 1.0 { default } else { s }
+            if s.x < 1 || s.y < 1 { default } else { s }
         };
         match self.pile(pile).map(|p| p.layout().arrangement) {
             Some(Arrangement::List) => {
                 let mut out = Vec::with_capacity(nodes.len());
-                let (mut x, mut y, mut row_h) = (gap, top, 0.0_f32);
+                let (mut x, mut y, mut row_h) = (gap, top, 0);
                 for n in nodes {
                     let s = size(n);
                     if x > gap && x + s.x + gap > self.ui.bounds.x {
                         x = gap;
                         y += row_h + gap;
-                        row_h = 0.0;
+                        row_h = 0;
                     }
                     out.push((n, Pos { x, y }));
                     x += s.x + gap;
@@ -1746,8 +1757,8 @@ impl Board {
                 let cols = columns.max(1);
                 let rows = nodes.len().div_ceil(cols);
                 // Column widths and row heights are the max box in that column / row (so both axes align).
-                let mut col_w = vec![0.0_f32; cols];
-                let mut row_h = vec![0.0_f32; rows];
+                let mut col_w = vec![0; cols];
+                let mut row_h = vec![0; rows];
                 for (i, &n) in nodes.iter().enumerate() {
                     let s = size(n);
                     col_w[i % cols] = col_w[i % cols].max(s.x);
@@ -2275,28 +2286,28 @@ mod tests {
     #[test]
     fn separate_pins_take_priority_over_the_dropped_anchor() {
         let mut t = Board::new();
-        t.set_bounds(1000.0, 1000.0);
+        t.set_bounds(1000, 1000);
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
-        t.set_pile_size(a, 100.0, 100.0).unwrap();
-        t.set_pile_pos(a, 200.0, 40.0).unwrap();
+        t.set_pile_size(a, 100, 100).unwrap();
+        t.set_pile_pos(a, 200, 40).unwrap();
         // A pinned fixture (the centered title) right where the pile was dropped.
-        t.set_pinned(vec![(Pos { x: 180.0, y: 20.0 }, Pos { x: 160.0, y: 60.0 })]);
+        t.set_pinned(vec![(Pos { x: 180, y: 20 }, Pos { x: 160, y: 60 })]);
 
         t.separate(root, Node::Pile(a));
         let p = t.pile(a).unwrap().pos();
-        let ox = (p.x + 100.0).min(180.0 + 160.0) - p.x.max(180.0);
-        let oy = (p.y + 100.0).min(20.0 + 60.0) - p.y.max(20.0);
+        let ox = (p.x + 100).min(180 + 160) - p.x.max(180);
+        let oy = (p.y + 100).min(20 + 60) - p.y.max(20);
         assert!(
-            ox <= 0.02 || oy <= 0.02,
+            ox <= 0 || oy <= 0,
             "the dropped pile must yield to the pinned fixture, got {p:?}"
         );
 
         // No pinned → the dropped pile keeps its spot (nothing outranks it).
         t.set_pinned(vec![]);
-        t.set_pile_pos(a, 200.0, 40.0).unwrap();
+        t.set_pile_pos(a, 200, 40).unwrap();
         t.separate(root, Node::Pile(a));
-        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 200.0, y: 40.0 });
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 200, y: 40 });
     }
 
     /// Two 100×100 piles overlapping; the anchor stays, the other slides clear on the x axis.
@@ -2307,20 +2318,17 @@ mod tests {
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(root, "B").unwrap();
         for d in [a, b] {
-            t.set_pile_size(d, 100.0, 100.0).unwrap();
+            t.set_pile_size(d, 100, 100).unwrap();
         }
-        t.set_pile_pos(a, 0.0, 0.0).unwrap();
-        t.set_pile_pos(b, 20.0, 0.0).unwrap(); // overlaps a by 80px on x
+        t.set_pile_pos(a, 0, 0).unwrap();
+        t.set_pile_pos(b, 20, 0).unwrap(); // overlaps a by 80px on x
 
         t.separate(t.root_id(), Node::Pile(a));
 
-        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor unmoved
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0, y: 0 }); // anchor unmoved
         let bp = t.pile(b).unwrap().pos();
-        assert!(bp.x >= 100.0 - 0.02, "b should clear a on x, got {bp:?}");
-        assert!(
-            (bp.y - 0.0).abs() < 0.02,
-            "b should not drift on y, got {bp:?}"
-        );
+        assert!(bp.x >= 100, "b should clear a on x, got {bp:?}");
+        assert!(bp.y == 0, "b should not drift on y, got {bp:?}");
     }
 
     /// `arrange_row` lays movable children in a left-to-right row with the exact constant gap from the
@@ -2329,22 +2337,22 @@ mod tests {
     fn arrange_row_places_children_at_an_exact_constant_gap() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_bounds(1000.0, 800.0);
+        t.set_bounds(1000, 800);
         let a = t.add_pile(root, "A").unwrap();
         let b = t.add_pile(root, "B").unwrap();
         let c = t.add_pile(root, "C").unwrap();
-        t.set_pile_size(a, 100.0, 60.0).unwrap();
-        t.set_pile_size(b, 140.0, 60.0).unwrap(); // wider than the others
-        t.set_pile_size(c, 100.0, 60.0).unwrap();
+        t.set_pile_size(a, 100, 60).unwrap();
+        t.set_pile_size(b, 140, 60).unwrap(); // wider than the others
+        t.set_pile_size(c, 100, 60).unwrap();
 
-        t.arrange_row(root, 12.0, 52.0);
+        t.arrange_row(root, 12, 52);
 
         // First box: one gap in from the left, at the given top.
-        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 12.0, y: 52.0 });
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 12, y: 52 });
         // Next box: previous left + previous width + gap = 12 + 100 + 12 = 124 (exact, despite widths).
-        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 124.0, y: 52.0 });
+        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 124, y: 52 });
         // And past the *wider* B: 124 + 140 + 12 = 276.
-        assert_eq!(t.pile(c).unwrap().pos(), Pos { x: 276.0, y: 52.0 });
+        assert_eq!(t.pile(c).unwrap().pos(), Pos { x: 276, y: 52 });
     }
 
     /// `arrange_row` wraps to a new row (one gap below the tallest box) when a child would run past the edge.
@@ -2352,21 +2360,21 @@ mod tests {
     fn arrange_row_wraps_at_the_bounds_edge() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_bounds(300.0, 800.0); // only room for two 100-wide boxes per row
+        t.set_bounds(300, 800); // only room for two 100-wide boxes per row
         let ids: Vec<_> = (0..3)
             .map(|i| {
                 let p = t.add_pile(root, format!("D{i}")).unwrap();
-                t.set_pile_size(p, 100.0, 60.0).unwrap();
+                t.set_pile_size(p, 100, 60).unwrap();
                 p
             })
             .collect();
 
-        t.arrange_row(root, 12.0, 52.0);
+        t.arrange_row(root, 12, 52);
 
-        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 12.0, y: 52.0 });
-        assert_eq!(t.pile(ids[1]).unwrap().pos(), Pos { x: 124.0, y: 52.0 });
+        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 12, y: 52 });
+        assert_eq!(t.pile(ids[1]).unwrap().pos(), Pos { x: 124, y: 52 });
         // Third wraps: back to the left gap, one row down (52 + 60 + 12 = 124).
-        assert_eq!(t.pile(ids[2]).unwrap().pos(), Pos { x: 12.0, y: 124.0 });
+        assert_eq!(t.pile(ids[2]).unwrap().pos(), Pos { x: 12, y: 124 });
     }
 
     /// `structured_positions` lays a List out **footprint-aware**: a wider (e.g. grown) card shifts the
@@ -2375,7 +2383,7 @@ mod tests {
     fn structured_positions_list_flows_by_footprint() {
         let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "D").unwrap();
-        t.set_bounds(1000.0, 800.0);
+        t.set_bounds(1000, 800);
         let add = |t: &mut Board, name: &str| {
             t.add_card(deck, Face::Up { title: name.into() }, None)
                 .unwrap()
@@ -2396,12 +2404,12 @@ mod tests {
         .unwrap();
 
         let pos: std::collections::HashMap<_, _> = t
-            .structured_positions(deck, 10.0, 10.0, Pos { x: 100.0, y: 100.0 })
+            .structured_positions(deck, 10, 10, Pos { x: 100, y: 100 })
             .into_iter()
             .collect();
-        assert_eq!(pos[&Node::Card(a)], Pos { x: 10.0, y: 10.0 }); // first, at the gap
-        assert_eq!(pos[&Node::Card(b)], Pos { x: 140.0, y: 10.0 }); // after a (Small 120): 10 + 120 + 10
-        assert_eq!(pos[&Node::Card(c)], Pos { x: 350.0, y: 10.0 }); // after the WIDE b (Medium 200): 140 + 200 + 10
+        assert_eq!(pos[&Node::Card(a)], Pos { x: 10, y: 10 }); // first, at the gap
+        assert_eq!(pos[&Node::Card(b)], Pos { x: 140, y: 10 }); // after a (Small 120): 10 + 120 + 10
+        assert_eq!(pos[&Node::Card(c)], Pos { x: 350, y: 10 }); // after the WIDE b (Medium 200): 140 + 200 + 10
     }
 
     /// `structured_positions` aligns a Grid on **both** axes: a wider card widens its whole column.
@@ -2409,7 +2417,7 @@ mod tests {
     fn structured_positions_grid_aligns_columns() {
         let mut t = Board::new();
         let deck = t.add_pile(t.root_id(), "G").unwrap();
-        t.set_bounds(1000.0, 800.0);
+        t.set_bounds(1000, 800);
         let ids: Vec<_> = (0..4)
             .map(|i| {
                 t.add_card(
@@ -2435,15 +2443,15 @@ mod tests {
         .unwrap();
 
         let pos: std::collections::HashMap<_, _> = t
-            .structured_positions(deck, 10.0, 10.0, Pos { x: 100.0, y: 100.0 })
+            .structured_positions(deck, 10, 10, Pos { x: 100, y: 100 })
             .into_iter()
             .collect();
         // 2 cols [0 1 / 2 3]: col0 width = max(Small 120, Medium 200) = 200, so col1 starts at 10 + 200 + 10.
         // Row 0 is two Small cards (h 96), so row 1 starts at 10 + 96 + 10 = 116.
-        assert_eq!(pos[&Node::Card(ids[0])], Pos { x: 10.0, y: 10.0 });
-        assert_eq!(pos[&Node::Card(ids[1])], Pos { x: 220.0, y: 10.0 }); // pushed right by the wide col 0
-        assert_eq!(pos[&Node::Card(ids[2])], Pos { x: 10.0, y: 116.0 }); // row 1
-        assert_eq!(pos[&Node::Card(ids[3])], Pos { x: 220.0, y: 116.0 });
+        assert_eq!(pos[&Node::Card(ids[0])], Pos { x: 10, y: 10 });
+        assert_eq!(pos[&Node::Card(ids[1])], Pos { x: 220, y: 10 }); // pushed right by the wide col 0
+        assert_eq!(pos[&Node::Card(ids[2])], Pos { x: 10, y: 116 }); // row 1
+        assert_eq!(pos[&Node::Card(ids[3])], Pos { x: 220, y: 116 });
     }
 
     /// Three stacked piles: the anchor holds and the chain pushes the rest apart (no pair overlaps).
@@ -2455,21 +2463,21 @@ mod tests {
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
             .collect();
         for &d in &ids {
-            t.set_pile_size(d, 100.0, 100.0).unwrap();
-            t.set_pile_pos(d, 0.0, 0.0).unwrap(); // all stacked at the origin
+            t.set_pile_size(d, 100, 100).unwrap();
+            t.set_pile_pos(d, 0, 0).unwrap(); // all stacked at the origin
         }
         let anchor = ids[0];
         t.separate(t.root_id(), Node::Pile(anchor));
 
-        assert_eq!(t.pile(anchor).unwrap().pos(), Pos { x: 0.0, y: 0.0 });
+        assert_eq!(t.pile(anchor).unwrap().pos(), Pos { x: 0, y: 0 });
         for i in 0..ids.len() {
             for j in (i + 1)..ids.len() {
                 let p = t.pile(ids[i]).unwrap().pos();
                 let q = t.pile(ids[j]).unwrap().pos();
-                let ox = (p.x + 100.0).min(q.x + 100.0) - p.x.max(q.x);
-                let oy = (p.y + 100.0).min(q.y + 100.0) - p.y.max(q.y);
+                let ox = (p.x + 100).min(q.x + 100) - p.x.max(q.x);
+                let oy = (p.y + 100).min(q.y + 100) - p.y.max(q.y);
                 assert!(
-                    ox <= 0.02 || oy <= 0.02,
+                    ox <= 0 || oy <= 0,
                     "piles {i},{j} still overlap: {p:?} {q:?}"
                 );
             }
@@ -2482,30 +2490,27 @@ mod tests {
     fn place_clear_moves_new_deck_off_a_sibling() {
         let mut t = Board::new();
         let root = t.root_id();
-        t.set_bounds(2000.0, 1000.0);
+        t.set_bounds(2000, 1000);
         // An existing deck with a real (rendered) size at the origin.
         let a = t.add_pile(root, "A").unwrap();
-        t.set_pile_size(a, 120.0, 96.0).unwrap();
-        t.set_pile_pos(a, 0.0, 0.0).unwrap();
+        t.set_pile_size(a, 120, 96).unwrap();
+        t.set_pile_pos(a, 0, 0).unwrap();
         // A brand-new deck: no measured size, sitting at the default (0,0) right on top of A.
         let b = t.add_pile(root, "B").unwrap();
-        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 0.0, y: 0.0 });
+        assert_eq!(t.pile(b).unwrap().pos(), Pos { x: 0, y: 0 });
 
         t.place_clear(b).unwrap();
 
         // B moved to a spot that does not overlap A (chip fallback gives B a 120x96 box).
-        let (ap, asz) = (t.pile(a).unwrap().pos(), Pos { x: 120.0, y: 96.0 });
+        let (ap, asz) = (t.pile(a).unwrap().pos(), Pos { x: 120, y: 96 });
         let bp = t.pile(b).unwrap().pos();
-        let bsz = Pos { x: 120.0, y: 96.0 }; // the collapsed Small chip fallback
+        let bsz = Pos { x: 120, y: 96 }; // the collapsed Small chip fallback
         let ox = (bp.x + bsz.x).min(ap.x + asz.x) - bp.x.max(ap.x);
         let oy = (bp.y + bsz.y).min(ap.y + asz.y) - bp.y.max(ap.y);
-        assert!(
-            ox <= 0.01 || oy <= 0.01,
-            "B still overlaps A: b={bp:?} a={ap:?}"
-        );
+        assert!(ox <= 0 || oy <= 0, "B still overlaps A: b={bp:?} a={ap:?}");
         assert_eq!(
             t.pile(a).unwrap().pos(),
-            Pos { x: 0.0, y: 0.0 },
+            Pos { x: 0, y: 0 },
             "A must not move"
         );
     }
@@ -2516,17 +2521,11 @@ mod tests {
         let mut t = Board::new();
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap();
-        t.set_pile_size(a, 100.0, 100.0).unwrap();
-        t.set_bounds(300.0, 200.0);
+        t.set_pile_size(a, 100, 100).unwrap();
+        t.set_bounds(300, 200);
 
-        assert_eq!(
-            t.place_pile(a, 500.0, 500.0).unwrap(),
-            Pos { x: 200.0, y: 100.0 }
-        );
-        assert_eq!(
-            t.place_pile(a, -50.0, -50.0).unwrap(),
-            Pos { x: 0.0, y: 0.0 }
-        );
+        assert_eq!(t.place_pile(a, 500, 500).unwrap(), Pos { x: 200, y: 100 });
+        assert_eq!(t.place_pile(a, -50, -50).unwrap(), Pos { x: 0, y: 0 });
     }
 
     /// In a bounded bounds, separate keeps every pile fully inside (residual overlap is tolerated).
@@ -2538,16 +2537,16 @@ mod tests {
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
             .collect();
         for &d in &ids {
-            t.set_pile_size(d, 100.0, 100.0).unwrap();
-            t.set_pile_pos(d, 250.0, 0.0).unwrap(); // stacked near the right wall
+            t.set_pile_size(d, 100, 100).unwrap();
+            t.set_pile_pos(d, 250, 0).unwrap(); // stacked near the right wall
         }
-        t.set_bounds(300.0, 200.0);
+        t.set_bounds(300, 200);
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
             let p = t.pile(d).unwrap().pos();
-            assert!(p.x >= -0.02 && p.x <= 200.02, "x out of bounds: {p:?}");
-            assert!(p.y >= -0.02 && p.y <= 100.02, "y out of bounds: {p:?}");
+            assert!(p.x >= 0 && p.x <= 200, "x out of bounds: {p:?}");
+            assert!(p.y >= 0 && p.y <= 100, "y out of bounds: {p:?}");
         }
     }
 
@@ -2559,25 +2558,25 @@ mod tests {
         let root = t.root_id();
         let a = t.add_pile(root, "A").unwrap(); // anchor, top-left corner
         let b = t.add_pile(root, "B").unwrap();
-        t.set_pile_size(a, 100.0, 100.0).unwrap();
-        t.set_pile_size(b, 100.0, 100.0).unwrap();
-        t.set_bounds(150.0, 300.0); // only 50px right of A - B (100 wide) can't slide right
-        t.set_pile_pos(a, 0.0, 0.0).unwrap();
-        t.set_pile_pos(b, 10.0, 0.0).unwrap(); // overlapping A, pinned near the right wall
+        t.set_pile_size(a, 100, 100).unwrap();
+        t.set_pile_size(b, 100, 100).unwrap();
+        t.set_bounds(150, 300); // only 50px right of A - B (100 wide) can't slide right
+        t.set_pile_pos(a, 0, 0).unwrap();
+        t.set_pile_pos(b, 10, 0).unwrap(); // overlapping A, pinned near the right wall
 
         t.separate(t.root_id(), Node::Pile(a));
 
-        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        assert_eq!(t.pile(a).unwrap().pos(), Pos { x: 0, y: 0 }); // anchor held
         let (ap, asz) = (t.pile(a).unwrap().pos(), t.pile(a).unwrap().size());
         let (bp, bsz) = (t.pile(b).unwrap().pos(), t.pile(b).unwrap().size());
         assert!(
-            bp.x >= -0.02 && bp.x <= 50.02 && bp.y >= -0.02,
+            bp.x >= 0 && bp.x <= 50 && bp.y >= 0,
             "b out of bounds: {bp:?}"
         );
         let ox = (ap.x + asz.x).min(bp.x + bsz.x) - ap.x.max(bp.x);
         let oy = (ap.y + asz.y).min(bp.y + bsz.y) - ap.y.max(bp.y);
         assert!(
-            ox <= 0.02 || oy <= 0.02,
+            ox <= 0 || oy <= 0,
             "a and b must not overlap: {ap:?} {bp:?}"
         );
     }
@@ -2588,12 +2587,9 @@ mod tests {
             for j in (i + 1)..ids.len() {
                 let p = t.pile(ids[i]).unwrap().pos();
                 let q = t.pile(ids[j]).unwrap().pos();
-                let ox = (p.x + 100.0).min(q.x + 100.0) - p.x.max(q.x);
-                let oy = (p.y + 100.0).min(q.y + 100.0) - p.y.max(q.y);
-                assert!(
-                    ox <= 0.02 || oy <= 0.02,
-                    "piles {i},{j} overlap: {p:?} {q:?}"
-                );
+                let ox = (p.x + 100).min(q.x + 100) - p.x.max(q.x);
+                let oy = (p.y + 100).min(q.y + 100) - p.y.max(q.y);
+                assert!(ox <= 0 || oy <= 0, "piles {i},{j} overlap: {p:?} {q:?}");
             }
         }
     }
@@ -2608,14 +2604,14 @@ mod tests {
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
             .collect();
         for (i, &d) in ids.iter().enumerate() {
-            t.set_pile_size(d, 100.0, 100.0).unwrap();
+            t.set_pile_size(d, 100, 100).unwrap();
             // Tightly clustered so every pile overlaps several others.
-            t.set_pile_pos(d, i as f32 * 12.0, i as f32 * 9.0).unwrap();
+            t.set_pile_pos(d, i as i32 * 12, i as i32 * 9).unwrap();
         }
-        t.set_bounds(1000.0, 1000.0);
+        t.set_bounds(1000, 1000);
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
-        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        assert_eq!(t.pile(ids[0]).unwrap().pos(), Pos { x: 0, y: 0 }); // anchor held
         assert_no_overlaps(&t, &ids);
     }
 
@@ -2630,16 +2626,16 @@ mod tests {
             .map(|i| t.add_pile(root, format!("D{i}")).unwrap())
             .collect();
         for &d in &ids {
-            t.set_pile_size(d, 100.0, 100.0).unwrap();
-            t.set_pile_pos(d, 150.0, 150.0).unwrap(); // all stacked at the bounds's center
+            t.set_pile_size(d, 100, 100).unwrap();
+            t.set_pile_pos(d, 150, 150).unwrap(); // all stacked at the bounds's center
         }
-        t.set_bounds(200.0, 200.0); // a 2x2 grid of 100x100 cells is the only clear packing
+        t.set_bounds(200, 200); // a 2x2 grid of 100x100 cells is the only clear packing
         t.separate(t.root_id(), Node::Pile(ids[0]));
 
         for &d in &ids {
             let p = t.pile(d).unwrap().pos();
             assert!(
-                p.x >= -0.02 && p.x <= 100.02 && p.y >= -0.02 && p.y <= 100.02,
+                p.x >= 0 && p.x <= 100 && p.y >= 0 && p.y <= 100,
                 "pile out of bounds: {p:?}"
             );
         }
@@ -2802,20 +2798,20 @@ mod tests {
             },
         )
         .unwrap();
-        t.set_bounds(1000.0, 1000.0);
+        t.set_bounds(1000, 1000);
         let a = t.add_card(p, Face::Up { title: "A".into() }, None).unwrap();
         let b = t.add_card(p, Face::Up { title: "B".into() }, None).unwrap();
         // Both are Small cards (computed footprint 120x96).
-        t.set_card_pos(a, 0.0, 0.0).unwrap();
-        t.set_card_pos(b, 20.0, 0.0).unwrap(); // overlaps a on x
+        t.set_card_pos(a, 0, 0).unwrap();
+        t.set_card_pos(b, 20, 0).unwrap(); // overlaps a on x
 
         t.separate(p, Node::Card(a));
 
-        assert_eq!(t.card(a).unwrap().pos(), Pos { x: 0.0, y: 0.0 }); // anchor held
+        assert_eq!(t.card(a).unwrap().pos(), Pos { x: 0, y: 0 }); // anchor held
         let bp = t.card(b).unwrap().pos();
-        let ox = (0.0f32 + 120.0).min(bp.x + 120.0) - 0.0f32.max(bp.x);
-        let oy = (0.0f32 + 96.0).min(bp.y + 96.0) - 0.0f32.max(bp.y);
-        assert!(ox <= 0.02 || oy <= 0.02, "cards must not overlap: {bp:?}");
+        let ox = (0 + 120).min(bp.x + 120) - 0.max(bp.x);
+        let oy = (0 + 96).min(bp.y + 96) - 0.max(bp.y);
+        assert!(ox <= 0 || oy <= 0, "cards must not overlap: {bp:?}");
     }
 
     #[test]

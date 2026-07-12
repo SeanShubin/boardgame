@@ -4,33 +4,35 @@
 
 use super::Pos;
 
-/// The centre point of a box `(pos, size)`.
+/// The centre point of a box `(pos, size)`. Integer division truncates, which is fine: the centre only
+/// orders [`separate_boxes`]'s wavefront, and a half-pixel never changes that order.
 fn box_center(pos: Pos, size: Pos) -> Pos {
     Pos {
-        x: pos.x + size.x * 0.5,
-        y: pos.y + size.y * 0.5,
+        x: pos.x + size.x / 2,
+        y: pos.y + size.y / 2,
     }
 }
 
 /// Clamp a box of `size` at `pos` fully inside `bounds` (top-left origin). A box larger than the
 /// bounds pins to the top-left.
 pub(super) fn clamp_box(pos: Pos, size: Pos, bounds: Pos) -> Pos {
-    let max_x = (bounds.x - size.x).max(0.0);
-    let max_y = (bounds.y - size.y).max(0.0);
+    let max_x = (bounds.x - size.x).max(0);
+    let max_y = (bounds.y - size.y).max(0);
     Pos {
-        x: pos.x.clamp(0.0, max_x),
-        y: pos.y.clamp(0.0, max_y),
+        x: pos.x.clamp(0, max_x),
+        y: pos.y.clamp(0, max_y),
     }
 }
 
-/// Total area by which a box `(pos, size)` overlaps the `locked` boxes.
-fn overlap_area(pos: Pos, size: Pos, locked: &[(Pos, Pos)]) -> f32 {
-    let mut total = 0.0;
+/// Total area by which a box `(pos, size)` overlaps the `locked` boxes. Widened to `i64`: at the large
+/// default bounds an overlap's `width * height` can exceed `i32`.
+fn overlap_area(pos: Pos, size: Pos, locked: &[(Pos, Pos)]) -> i64 {
+    let mut total = 0i64;
     for &(lp, lsz) in locked {
         let ox = (pos.x + size.x).min(lp.x + lsz.x) - pos.x.max(lp.x);
         let oy = (pos.y + size.y).min(lp.y + lsz.y) - pos.y.max(lp.y);
-        if ox > 0.01 && oy > 0.01 {
-            total += ox * oy;
+        if ox > 0 && oy > 0 {
+            total += ox as i64 * oy as i64;
         }
     }
     total
@@ -43,12 +45,12 @@ fn overlap_area(pos: Pos, size: Pos, locked: &[(Pos, Pos)]) -> f32 {
 /// a wall. We test that grid of lines (straight slides *and* go-around-a-corner spots) and keep the
 /// clear one closest to where the box already is.
 pub(super) fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], bounds: Pos) -> Pos {
-    let max_x = (bounds.x - size.x).max(0.0);
-    let max_y = (bounds.y - size.y).max(0.0);
-    let cx = cur.x.clamp(0.0, max_x);
-    let cy = cur.y.clamp(0.0, max_y);
-    let mut xs = vec![cx, 0.0, max_x];
-    let mut ys = vec![cy, 0.0, max_y];
+    let max_x = (bounds.x - size.x).max(0);
+    let max_y = (bounds.y - size.y).max(0);
+    let cx = cur.x.clamp(0, max_x);
+    let cy = cur.y.clamp(0, max_y);
+    let mut xs = vec![cx, 0, max_x];
+    let mut ys = vec![cy, 0, max_y];
     for &(lp, lsz) in locked {
         xs.push(lp.x - size.x); // just left of the locked box
         xs.push(lp.x + lsz.x); // just right of it
@@ -58,22 +60,22 @@ pub(super) fn place_clear_of(cur: Pos, size: Pos, locked: &[(Pos, Pos)], bounds:
     // Never-overlap invariant: candidates may run **off the right / bottom edge** (a box clips rather than
     // overlaps when space is tight), but never off the top / left. Because "just right of the rightmost
     // locked box" is always clear, a non-overlapping position always exists.
-    xs.retain(|&x| x >= 0.0);
-    ys.retain(|&y| y >= 0.0);
+    xs.retain(|&x| x >= 0);
+    ys.retain(|&y| y >= 0);
 
     // Ranked preference: a clear **on-bounds** spot beats a clear **off-edge** (clipped) spot beats an
     // overlapping one. On-bounds is always preferred, so a box only clips when it genuinely cannot fit
     // without overlapping; the overlapping fallback then never fires - the layout clips, it does not overlap.
-    let mut best_on: Option<(f32, Pos)> = None; // clear, on-bounds: (dist², pos)
-    let mut best_off: Option<(f32, Pos)> = None; // clear, off right/bottom edge: (dist², pos)
-    let mut best_any: Option<(f32, f32, Pos)> = None; // overlapping fallback: (overlap area, dist², pos)
+    let mut best_on: Option<(i64, Pos)> = None; // clear, on-bounds: (dist², pos)
+    let mut best_off: Option<(i64, Pos)> = None; // clear, off right/bottom edge: (dist², pos)
+    let mut best_any: Option<(i64, i64, Pos)> = None; // overlapping fallback: (overlap area, dist², pos)
     for &x in &xs {
         for &y in &ys {
             let pos = Pos { x, y };
             let overlap = overlap_area(pos, size, locked);
-            let dist_sq = (x - cur.x).powi(2) + (y - cur.y).powi(2);
-            if overlap <= 0.0 {
-                let target = if x <= max_x + 0.01 && y <= max_y + 0.01 {
+            let dist_sq = pos.dist_sq(cur);
+            if overlap <= 0 {
+                let target = if x <= max_x && y <= max_y {
                     &mut best_on
                 } else {
                     &mut best_off
@@ -129,9 +131,7 @@ pub(super) fn separate_boxes(
     order.sort_by(|&i, &j| {
         let di = box_center(boxes[i].0, boxes[i].1).dist_sq(anchor_center);
         let dj = box_center(boxes[j].0, boxes[j].1).dist_sq(anchor_center);
-        di.partial_cmp(&dj)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(i.cmp(&j))
+        di.cmp(&dj).then(i.cmp(&j))
     });
     for i in order {
         let pos = place_clear_of(boxes[i].0, boxes[i].1, &locked, bounds);
