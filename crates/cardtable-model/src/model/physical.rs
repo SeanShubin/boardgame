@@ -961,8 +961,8 @@ impl Board {
                 editable: true,
             },
         )?;
-        // Place the new deck **clear** of any already-recruited ones - a tidy party row, one slot per deck -
-        // so the decks never stack (prevention, not a later shove). The column is the count of character decks
+        // Seed the new deck in a tidy party row - one slot per character deck, below the banks - so the party
+        // groups together and reads left-to-right in recruit order. The column is the count of character decks
         // already present (root subpiles that reflect a hero); this deck's `reflects` isn't set yet, so it is
         // not counted. One slot is a card width plus chrome + gap.
         let slot = super::layout::SMALL_W + 30.0;
@@ -974,6 +974,10 @@ impl Board {
             .filter(|&p| self.piles.get(&p).is_some_and(|d| d.reflects.is_some()))
             .count();
         self.set_pile_pos(deck, 40.0 + column as f32 * slot, 320.0)?;
+        // Then guarantee it is **clear** of every sibling (banks included), in the model, before any frame is
+        // drawn - the row is only the preferred spot; `place_clear` is the non-overlap guarantee that holds
+        // even if the party row would run into a bank or off the edge. Prevention, not a later shove.
+        self.place_clear(deck)?;
         self.piles.get_mut(&deck).expect("just created").reflects = Some(label);
         // Station on the board: copy 3 stands at the home location (map position), copy 4 is a face-up
         // move marker on Progress (face-up = hasn't moved today). `draw_named_from` mints face-up copies.
