@@ -11,6 +11,7 @@
 //! Added by the product via [`LoggingPlugin`]; a pure observer/system side-channel that never mutates
 //! the board or the UI.
 
+use bevy::ecs::system::SystemParam;
 use bevy::picking::events::{Click, DragStart, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform, UiStack};
@@ -221,16 +222,63 @@ fn log_view(table: Res<Table>, log: Res<UiLog>, mut last: Local<Option<PileId>>)
     log.0.write(&format!("\n=== view: [{label}] ===\n"));
 }
 
+/// One rendered element's settled box: top-left (`x`,`y`) and size (`w`,`h`) in logical pixels, its zoom
+/// label, its render order (`z`; higher = drawn in front), and the pile it belongs to. `pile` is `None` for a
+/// deck or a drop-zone, which are their own unit rather than part of a card stack.
+struct LayoutBox {
+    name: String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    zoom: String,
+    z: usize,
+    pile: Option<PileId>,
+}
+
+/// The rendered elements `log_layout` reads.
+#[derive(SystemParam)]
+struct LayoutQuery<'w, 's> {
+    /// Every *rendered card* carries `CardRef` — movable or not (a `Virtual` readout like a Rumors card has no
+    /// `Movable`). Logging from here captures **every** card's exact rect, so overlaps involving a non-movable
+    /// card are detectable from the log alone.
+    cards: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static CardRef,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+    /// The felt's piles (decks), which are not cards.
+    movables: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Movable,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+    zones: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static PileDropZone,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+}
+
 /// Log the settled layout of the current view: each rendered card's name, position, size and zoom. Logged
 /// once the geometry stops changing (so it reflects the settled arrangement, not mid-animation frames).
 fn log_layout(
-    // Every *rendered card* carries `CardRef` — movable or not (a `Virtual` readout like a Rumors card has no
-    // `Movable`). Logging from here captures **every** card's exact rect, so overlaps involving a non-movable
-    // card are detectable from the log alone. The `Movable` query is only for the felt's piles (decks), which
-    // are not cards.
-    cards: Query<(Entity, &CardRef, &ComputedNode, &UiGlobalTransform)>,
-    movables: Query<(Entity, &Movable, &ComputedNode, &UiGlobalTransform)>,
-    zones: Query<(Entity, &PileDropZone, &ComputedNode, &UiGlobalTransform)>,
+    q: LayoutQuery,
     table: Res<Table>,
     ui_stack: Res<UiStack>,
     dragging: Res<Dragging>,
@@ -253,26 +301,26 @@ fn log_layout(
     // is computable — the layout is fully reconstructable from the log without rendering.
     // Each box also carries the **pile it belongs to** (a card's stack; `None` for a deck), so the overlap
     // check can tell an intentional stack from a spill.
-    let mut boxes: Vec<(String, f32, f32, f32, f32, String, usize, Option<PileId>)> = Vec::new();
+    let mut boxes: Vec<LayoutBox> = Vec::new();
     let mut movable_piles: HashSet<PileId> = HashSet::new();
-    for (entity, cref, cn, gt) in cards.iter() {
+    for (entity, cref, cn, gt) in q.cards.iter() {
         let Some(card) = table.0.card(cref.0) else {
             continue;
         };
         let (center, half) = crate::node_box(cn, gt);
         let (size, tl) = (half * 2.0, center - half);
-        boxes.push((
-            card.front_title().to_string(),
-            tl.x,
-            tl.y,
-            size.x,
-            size.y,
-            format!("{:?}", card.size()),
-            z_of.get(&entity).copied().unwrap_or(0),
-            table.0.pile_of(cref.0), // the stack this card belongs to
-        ));
+        boxes.push(LayoutBox {
+            name: card.front_title().to_string(),
+            x: tl.x,
+            y: tl.y,
+            w: size.x,
+            h: size.y,
+            zoom: format!("{:?}", card.size()),
+            z: z_of.get(&entity).copied().unwrap_or(0),
+            pile: table.0.pile_of(cref.0), // the stack this card belongs to
+        });
     }
-    for (entity, movable, cn, gt) in movables.iter() {
+    for (entity, movable, cn, gt) in q.movables.iter() {
         let TableNode::Pile(pid) = movable.0 else {
             continue;
         };
@@ -282,22 +330,23 @@ fn log_layout(
         };
         let (center, half) = crate::node_box(cn, gt);
         let (size, tl) = (half * 2.0, center - half);
-        boxes.push((
-            format!("[{}]", pile.label),
-            tl.x,
-            tl.y,
-            size.x,
-            size.y,
-            "-".to_string(),
-            z_of.get(&entity).copied().unwrap_or(0),
-            None, // a deck is its own unit, not part of a card stack
-        ));
+        boxes.push(LayoutBox {
+            name: format!("[{}]", pile.label),
+            x: tl.x,
+            y: tl.y,
+            w: size.x,
+            h: size.y,
+            zoom: "-".to_string(),
+            z: z_of.get(&entity).copied().unwrap_or(0),
+            pile: None, // a deck is its own unit, not part of a card stack
+        });
     }
-    boxes.sort_by_key(|b| (b.2 as i32, b.1 as i32));
+    boxes.sort_by_key(|b| (b.y as i32, b.x as i32));
 
     let cards_block: String = boxes
         .iter()
-        .map(|(name, x, y, w, h, zoom, z, _)| {
+        .map(|b| {
+            let (name, x, y, w, h, zoom, z) = (&b.name, b.x, b.y, b.w, b.h, &b.zoom, b.z);
             format!("  {name} @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0}) zoom {zoom} z{z}")
         })
         .collect::<Vec<_>>()
@@ -310,15 +359,15 @@ fn log_layout(
     let mut overlaps = Vec::new();
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
-            let (ni, ax, ay, aw, ah, _, zi, pi) = &boxes[i];
-            let (nj, bx, by, bw, bh, _, zj, pj) = &boxes[j];
-            if pi.is_some() && pi == pj {
+            let (a, b) = (&boxes[i], &boxes[j]);
+            if a.pile.is_some() && a.pile == b.pile {
                 continue; // same-pile stack: intentional overlap, not an error
             }
-            let ox = (ax + aw).min(bx + bw) - ax.max(*bx);
-            let oy = (ay + ah).min(by + bh) - ay.max(*by);
+            let ox = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
+            let oy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
             if ox > 0.5 && oy > 0.5 {
-                let (front, back) = if zi >= zj { (ni, nj) } else { (nj, ni) };
+                let (ni, nj) = (&a.name, &b.name);
+                let (front, back) = if a.z >= b.z { (ni, nj) } else { (nj, ni) };
                 overlaps.push(format!(
                     "    ERROR overlap: {ni} & {nj} by ({ox:.0}x{oy:.0}) - {front} over {back}"
                 ));
@@ -344,7 +393,8 @@ fn log_layout(
 
     // Structured drop-zones (e.g. the Locations map's place cells, the formation rows) — the targets a drop
     // can land on. Not Movable, so listed separately, with their z so a card-behind-zone is spottable.
-    let mut zone_boxes: Vec<(String, f32, f32, f32, f32, usize)> = zones
+    let mut zone_boxes: Vec<(String, f32, f32, f32, f32, usize)> = q
+        .zones
         .iter()
         .filter_map(|(entity, zone, cn, gt)| {
             if movable_piles.contains(&zone.0) {
