@@ -1561,6 +1561,15 @@ fn settle_table_piles(
     if table.0.focus_id() != root {
         return; // top-level piles are only shown (and sized) at the Table
     }
+    // Wait for a real, finite bounds before laying anything out. Until the renderer reports the felt size the
+    // model holds an effectively-unbounded default (a huge sentinel width), and laying out against it puts
+    // every deck in one un-wrappable row - which the first real bounds then has to shove off its edges into a
+    // pile. Skipping until the width is a plausible screen size means the *first* tidy happens at the true
+    // width, so `arrange_row` wraps the decks to fit from the start instead of correcting after the fact.
+    let bounds = table.0.bounds();
+    if !(1.0..=100_000.0).contains(&bounds.x) {
+        return;
+    }
     let piles: Vec<PileId> = table
         .0
         .pile(root)
@@ -1576,10 +1585,9 @@ fn settle_table_piles(
             sized = true;
         }
     }
-    // Track a **width** change only — the surface *height* also flips as you enter/leave a zone's
+    // Track a **width** change only — the bounds *height* also flips as you enter/leave a zone's
     // overlay-band inset (the root has none; a structured zone insets by `OVERLAY_BAND`), so keying on
     // height would mistake every navigation back to the Table for a resize.
-    let bounds = table.0.bounds();
     let resized = (bounds.x - prev_bounds.x).abs() > 0.5;
     if resized {
         *prev_bounds = bounds;

@@ -30,26 +30,43 @@ pub const MAX_STACK: usize = 10;
 
 /// Vertical chrome: padding (top+bottom) plus border (top+bottom) around a card's content.
 const V_CHROME: f32 = 2.0 * 10.0 + 2.0 * 2.0;
-/// The name/header strip above the content lines.
-const HEADER_H: f32 = 24.0;
-/// One content line (a detail or panel line), drawn no-wrap so it is exactly one line tall.
-const LINE_H: f32 = 18.0;
+/// The gap the renderer puts **between** every stacked child in a card (`row_gap`). Each child past the
+/// first adds one of these, so the height must budget for them or the last line clips.
+const ROW_GAP: f32 = 4.0;
+/// The name/title line's height (the `FONT_HEAD` line). Held a little above the raw font line box so text
+/// never clips against a rounding-down of the renderer's metrics.
+const TITLE_H: f32 = 24.0;
+/// The **type badge** row Medium cards carry under the title (its padding + `FONT_BADGE` line). A Medium
+/// card is assumed to have one; a card with no type just wears the extra slack (better than clipping).
+const BADGE_H: f32 = 18.0;
+/// One content line (a detail or panel line, `FONT_BODY`), drawn no-wrap so it is exactly one line tall.
+const BODY_LINE_H: f32 = 17.0;
 
 /// A card's on-felt footprint `(width, height)` in logical px, from its size and content line counts. The
 /// renderer draws the card at exactly this size (content clips to fit), so this is authoritative for layout.
+///
+/// The height mirrors the renderer's column exactly: outer chrome, then each stacked child (title, the
+/// Medium type badge, then one line per content line) plus the `row_gap` **between** them. Miss the badge or
+/// the gaps and the last line clips - which is the whole point of computing it here rather than guessing.
 pub fn footprint(size: Size, detail_lines: usize, panel_lines: usize) -> Pos {
     match size {
         Size::Small => Pos {
             x: SMALL_W,
             y: SMALL_H,
         },
+        // Medium: title, type badge, then the detail lines - each child after the title preceded by a gap.
         Size::Medium => Pos {
             x: MEDIUM_W,
-            y: V_CHROME + HEADER_H + detail_lines as f32 * LINE_H,
+            y: V_CHROME
+                + TITLE_H
+                + ROW_GAP
+                + BADGE_H
+                + detail_lines as f32 * (BODY_LINE_H + ROW_GAP),
         },
+        // Large: title then the panel lines (no badge), capped - the overflow scrolls in the renderer.
         Size::Large => Pos {
             x: LARGE_W,
-            y: (V_CHROME + HEADER_H + panel_lines as f32 * LINE_H).min(LARGE_MAX_H),
+            y: (V_CHROME + TITLE_H + panel_lines as f32 * (BODY_LINE_H + ROW_GAP)).min(LARGE_MAX_H),
         },
     }
 }
@@ -111,8 +128,18 @@ mod tests {
         assert_eq!(three.x, 200.0);
         assert_eq!(
             three.y - zero.y,
-            3.0 * LINE_H,
-            "each detail line adds exactly one line of height"
+            3.0 * (BODY_LINE_H + ROW_GAP),
+            "each detail line adds exactly one line plus its gap"
+        );
+    }
+
+    #[test]
+    fn medium_budgets_for_title_badge_and_gaps() {
+        // A zero-detail Medium card is still tall enough for the title, its gap, and the type badge - so a
+        // one-line card never clips its badge.
+        assert_eq!(
+            footprint(Size::Medium, 0, 0).y,
+            V_CHROME + TITLE_H + ROW_GAP + BADGE_H
         );
     }
 
