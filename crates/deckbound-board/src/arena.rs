@@ -875,17 +875,16 @@ pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
     })
 }
 
-/// Whether party unit `i` still **owes the player's order** this step: it has something it may do, and has not
-/// said what. The one authority for that question - the Commit gate reads it to know whether to bar itself,
-/// and the board reads it to know which hero to light up as still waiting on you.
+/// Whether **anything is being asked of** party unit `i` this step - it has some legal move here, whether or
+/// not it has chosen one yet. A hero with no tempo, no legal target this sub-phase, or nothing to answer with
+/// is simply not in this step's conversation.
 ///
-/// A hero with nothing it may do (no tempo, no legal target, nothing to answer with) is not being asked
-/// anything and owes nothing. But a hero that *could* act must say so, **including deliberately doing nothing**
-/// - "no aim" cannot mean both "I chose to keep my tempo" and "I have not looked yet".
-pub(crate) fn owes_order(
+/// This is the single authority for "can this hero act right now", and the board must read the *same* thing
+/// the rules do. A Raider standing in the Outrider rank during the Clash has no schedule slot at all - and it
+/// has to look as unusable as a foe you cannot select, not merely a touch dimmer than one you can.
+pub(crate) fn can_act(
     units: &[Combatant],
     contacts: &[Contact],
-    staged: &[Staged],
     sub: usize,
     step: Step,
     i: usize,
@@ -894,17 +893,16 @@ pub(crate) fn owes_order(
     if u.side != Side::Party || u.fallen || u.tempo == 0 {
         return false;
     }
-    let s = staged[i];
     match step {
         Step::Marshal => false,
         Step::React => {
             let (evade_ok, strikeback_ok) = react_options(units, contacts, i);
-            s.react.is_none() && (evade_ok || strikeback_ok)
+            evade_ok || strikeback_ok
         }
+        // Reach alone is not enough: the schedule must actually pair this rank against a living, reachable
+        // enemy rank *this sub-phase*. Omitting that was the bug - an Outrider at the Clash looked ready.
         Step::Catch => {
-            !s.hold
-                && s.aim.is_none()
-                && combat::effective_in_rank(u.rank, u.melee, u.ranged)
+            combat::effective_in_rank(u.rank, u.melee, u.ranged)
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
                         && !v.fallen
@@ -912,7 +910,33 @@ pub(crate) fn owes_order(
                         && combat::back_access_ok(units, u.rank, j)
                 })
         }
-        Step::Extra => !s.hold && s.bid == 0 && contacts.iter().any(|c| c.attacker == i),
+        Step::Extra => contacts.iter().any(|c| c.attacker == i),
+    }
+}
+
+/// Whether party unit `i` still **owes the player's order** this step: something is being asked of it
+/// ([`can_act`]) and it has not said what. The Commit gate bars itself on this, and the board lights the hero
+/// on it, so the two can never disagree about who is holding things up.
+///
+/// A hero that *could* act must say so, **including deliberately doing nothing** - "no aim" cannot mean both
+/// "I chose to keep my tempo" and "I have not looked yet".
+pub(crate) fn owes_order(
+    units: &[Combatant],
+    contacts: &[Contact],
+    staged: &[Staged],
+    sub: usize,
+    step: Step,
+    i: usize,
+) -> bool {
+    if !can_act(units, contacts, sub, step, i) {
+        return false;
+    }
+    let s = staged[i];
+    match step {
+        Step::Marshal => false,
+        Step::React => s.react.is_none(),
+        Step::Catch => !s.hold && s.aim.is_none(),
+        Step::Extra => !s.hold && s.bid == 0,
     }
 }
 

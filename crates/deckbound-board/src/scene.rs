@@ -310,27 +310,25 @@ fn sel_of(
     }
     let party = u.side == Side::Party;
 
-    // A hero reads in one of four states, the same in every step: **Active** = the one you are commanding (the
-    // choice cards below are its orders); **Available** = it still owes you an order; **Idle** = it has given
-    // one; **Dim** = there is nothing being asked of it. That is exactly the state the Commit gate reads, so
-    // the board and the barred Commit can never disagree about who is holding things up.
+    // A hero reads in one of four states, the same in every step: **Dim** = nothing is being asked of it;
+    // **Available** = it owes you an order; **Active** = it is the one you are commanding (the choice cards
+    // below are its orders); **Idle** = it has given one. All four come off the rules' own `can_act` /
+    // `owes_order`, so the board, the barred Commit and the schedule cannot disagree.
+    //
+    // Dim comes FIRST and is unconditional: a hero with no move here - a Raider in the Outrider rank during
+    // the Clash, a pairing the schedule simply does not contain - must read as plainly unusable as a foe you
+    // cannot select. A warning border on an otherwise normal-looking card reads as "usable, with a caveat".
     if party && step != Step::Marshal {
+        if !arena::can_act(units, contacts, sub, step, i) {
+            return Highlight::Dim;
+        }
         if staged[i].active {
             return Highlight::Active;
         }
         if arena::owes_order(units, contacts, staged, sub, step, i) {
             return Highlight::Available;
         }
-        let asked = match step {
-            Step::Catch => u.tempo > 0 && combat::effective_in_rank(u.rank, u.melee, u.ranged),
-            Step::React => contacts.iter().any(|c| c.target == i),
-            _ => contacts.iter().any(|c| c.attacker == i),
-        };
-        return if asked {
-            Highlight::Idle
-        } else {
-            Highlight::Dim
-        };
+        return Highlight::Idle;
     }
 
     match step {
@@ -389,12 +387,28 @@ fn lane_tile(
             tone: Tone::Warn,
         });
     }
-    // Off-range: a living body in a position whose attack type it does not carry lands nothing (spec 4.2).
-    if !u.fallen && !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
-        badges.push(Badge {
-            text: format!("x off-range ({})", reach_word(u.melee, u.ranged)),
-            tone: Tone::Warn,
-        });
+    // Why a hero cannot act, said on the card. Drawing it dim answers "can I use this?"; only the words answer
+    // "why not?", and without them a rank with no slot this sub-phase looks like a bug in the schedule.
+    if !u.fallen && u.side == Side::Party && sel == Highlight::Dim {
+        let reason = if !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
+            // Off-range: a body in a position whose attack type it does not carry lands nothing (spec 4.2).
+            Some(format!("x off-range ({})", reach_word(u.melee, u.ranged)))
+        } else if u.tempo == 0 {
+            Some("x no tempo left".to_string())
+        } else if step == Step::Catch {
+            Some(format!(
+                "x nothing to strike in the {}",
+                SUB_PHASE_NAMES[sub]
+            ))
+        } else {
+            None // React/Extra: it simply is not in this step's conversation (nobody hit it, it hit nobody).
+        };
+        if let Some(text) = reason {
+            badges.push(Badge {
+                text,
+                tone: Tone::Warn,
+            });
+        }
     }
     let plan = plan_text(board, &staged[i]);
     if !plan.is_empty() {
@@ -437,9 +451,10 @@ fn tap_is_live(
         Step::Marshal => party,
         Step::Catch => {
             if party {
-                // Select it - but only a body that carries a usable strike here. The order itself comes from
-                // a choice card; the tap only says which hero we are giving it to.
-                u.tempo > 0 && combat::effective_in_rank(u.rank, u.melee, u.ranged)
+                // Select it - but only a hero that actually has a move here (the same `can_act` the rules and
+                // the highlight use). The order itself comes from a choice card; the tap only says which hero
+                // we are giving it to.
+                arena::can_act(units, contacts, sub, step, i)
             } else {
                 // A foe is tappable only as something the *armed* attacker can legally aim at.
                 active.is_some_and(|a| {
