@@ -1361,11 +1361,11 @@ pub(crate) fn struck_defender(board: &Board, arena: PileId) -> Option<(CardId, u
 /// an absent option teaches nothing and reads as a bug.
 /// What a blow of `might` really does to `target`, in words - for a choice card's consequence line.
 ///
-/// **A Might is not a health count.** It banks into the target's per-sub-phase damage pile and only turns a
-/// Health card each time that pile crosses Toughness; the remainder is wiped at the sub-phase boundary. So
-/// "deal 7 back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it
-/// instead - including that blows *stack within the phase*, which is the whole reason to strike under the bar
-/// when someone else is hitting the same target.
+/// **A Might is not a health count.** It banks into the target's damage pile and only turns a Health card each
+/// time that pile crosses Toughness; whatever is left **closes at the Lull**, the round boundary. So "deal 7
+/// back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
+/// including that the wound *keeps* for the rest of the round, which is what makes a blow under the bar worth
+/// striking at all.
 fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
     let (flips, pile, bar) = combat::pile_effect(target, might);
     let name = &target.name;
@@ -1374,9 +1374,7 @@ fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
     } else if pile == 0 {
         format!("{might} damage: {name}'s armor stops it")
     } else {
-        format!(
-            "{might} into {name}'s pile: {pile}/{bar} - blows this phase add up, then it is wiped"
-        )
+        format!("{might} into {name}'s pile: {pile}/{bar} - it keeps until the Lull")
     }
 }
 
@@ -1884,7 +1882,9 @@ mod tests {
     #[test]
     fn a_catch_and_an_extra_bank_into_the_same_pile_and_crack_the_wall() {
         let mut board = sample_table();
-        let arena = open_a_fight_with(&mut board, "Raider");
+        // The lone Wall - the fight the Raider is built to solo. (Against the corner it dies inside a round,
+        // which would end the fight before the Lull we are here to test.)
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
         // Rank the Raider as a Vanguard, so it meets The Wall in the Clash (Vanguard -> Vanguard).
         let raider = pool_heroes(&board, arena)[0];
         let van = sub_pile(&board, arena, "Vanguard").unwrap();
@@ -1895,10 +1895,13 @@ mod tests {
         while arena_state(&board, arena).2 != clash {
             commit(&mut board, arena);
         }
-        let wall = |b: &Board| {
-            let (_, units, _, _, _) = arena_state(b, arena);
-            units.iter().find(|u| u.side == Side::Foe).cloned().unwrap()
+        // Read The Wall off its card, not out of `arena_state`: at the Lull it has stepped back into the
+        // muster, so it is no longer a ranked combatant - but it is the same card, wounds and all.
+        let wall_card = {
+            let (cards, units, _, _, _) = arena_state(&board, arena);
+            cards[units.iter().position(|u| u.side == Side::Foe).unwrap()]
         };
+        let wall = |b: &Board| read_combatant(b, wall_card, Rank::Vanguard).unwrap();
         let hp0 = wall(&board).health;
 
         // Strike: aim at The Wall and bid 1 tempo (the blow's damage is Might, never the bid).
@@ -1942,17 +1945,32 @@ mod tests {
             .position(|c| c.label == "Strike 1 more")
             .expect("a surviving contact may be pressed");
         choose(&mut board, more);
-        commit(&mut board, arena); // Extra -> the next sub-phase (the pile wipes here, as it should)
+        commit(&mut board, arena); // Extra -> the next sub-phase
 
         assert_eq!(
             wall(&board).health,
             hp0 - 1,
             "14 in one pile crosses Toughness 9 - The Wall loses a Health card"
         );
+        // The 5 left over is a real, open wound: it carries into the next sub-phase, and only closes at the
+        // Lull. (It used to be wiped here, which is what made a blow under the bar a blow into the void.)
+        assert_eq!(
+            wall(&board).pending,
+            5,
+            "the remainder carries across the sub-phase boundary"
+        );
+
+        // ...and the Lull closes it. Walk to the top of the next round.
+        let mut guard = 0;
+        while arena_state(&board, arena).4 != Step::Marshal && outcome(&board, arena).is_none() {
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 100, "the round must come back round to Marshal");
+        }
         assert_eq!(
             wall(&board).pending,
             0,
-            "and the sub-phase boundary wipes it"
+            "the Lull closes every unfinished wound - the one deadline in a fight"
         );
     }
 
@@ -2013,9 +2031,9 @@ mod tests {
     }
 
     /// **A choice must not promise damage it cannot deliver.** The Raider (Might 7) striking back at The Wall
-    /// (Toughness 9) used to read "deal 7 back" - and it dealt nothing: 7 banks into the Wall's pile, never
-    /// crosses 9, and is wiped at the sub-phase boundary. The card must say so, and must say that blows stack
-    /// within the phase (which is the reason to do it anyway when someone else is hitting the same target).
+    /// (Toughness 9) used to read "deal 7 back" - and it flipped nothing: 7 banks into the Wall's pile and
+    /// never crosses 9 on its own. The card has to say where the blow actually goes, and how long it keeps
+    /// (until the Lull), because that is the whole reason to strike under the bar.
     #[test]
     fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {
         let wall = combat::Combatant::from_stats(
@@ -2029,7 +2047,7 @@ mod tests {
         );
         assert_eq!(
             damage_phrase(&wall, 7),
-            "7 into The Wall's pile: 7/9 - blows this phase add up, then it is wiped"
+            "7 into The Wall's pile: 7/9 - it keeps until the Lull"
         );
 
         // Land another 2 in the same sub-phase and the pile crosses: now the promise is real.

@@ -92,6 +92,14 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
             current: !marshal && i == sub,
         });
     }
+    // The Lull closes the round: tempo stands back up and every unfinished wound closes with it. It is never
+    // "current" - you do not stop there - but it has to be ON the track, because a wound you cannot finish
+    // before it is a wound you did not inflict. That deadline is the whole shape of a round now, and a
+    // deadline the player cannot see is the same bug as damage that vanishes unremarked.
+    phase_items.push(TrackItem {
+        label: "Lull".to_string(),
+        current: false,
+    });
     let mut tracks = vec![Track {
         title: "Phase".to_string(),
         items: phase_items,

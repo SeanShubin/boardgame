@@ -396,22 +396,37 @@ fn apply(units: &mut [Combatant], damage: &[u32]) {
     }
 }
 
-/// End a sub-phase: wipe the accumulated (sub-threshold) damage pile and mark units at zero health fallen.
+/// End a sub-phase: mark units at zero health fallen. **That is all it does now** — the sub-phase boundary is
+/// where the dead stop fighting, not where wounds close.
+///
+/// The damage pile used to be wiped here, which made Toughness a *per-sub-phase concentration gate*: land less
+/// than T in one sub-phase and you accomplished literally nothing, and there was no way to see that you had
+/// accomplished nothing. Wounds now carry across the sub-phases of a round and close at the [Lull](refresh_round).
+///
+/// Death is still settled here, and that matters: it keeps the order-free, commit-based batch intact - a
+/// committed blow lands even if its striker dies in the same sub-phase, and mutual deaths resolve cleanly.
 pub fn end_sub_phase(units: &mut [Combatant]) {
     for u in units.iter_mut() {
-        u.pending = 0;
         if u.health == 0 {
             u.fallen = true;
         }
     }
 }
 
-/// Start a round: refresh every unit's tempo (leftover tempo does not carry across rounds). A normal body
-/// gets its Cadence; a **horde** gets one card per living body (`health`), so a full pack swarms with many
-/// strikes and a thinned one dwindles — which is why chipping it single-file loses and an area clear wins.
+/// **The Lull** — the round boundary. Tempo stands back up (leftover tempo does not carry across rounds), and
+/// the accumulated damage pile **closes**: sub-threshold damage that never turned a Health card is gone.
+///
+/// A normal body gets its Cadence back; a **horde** gets one card per living body (`health`), so a full pack
+/// swarms with many strikes and a thinned one dwindles — which is why chipping it single-file loses and an area
+/// clear wins.
+///
+/// This is the one deadline in a fight: a wound you cannot finish *this round* is a wound you did not inflict.
+/// So Toughness still demands concentration - but over a whole round's five sub-phases, a grain the player can
+/// actually plan at, rather than within a single sub-phase where a blow could vanish unremarked.
 pub fn refresh_round(units: &mut [Combatant]) {
     for u in units.iter_mut() {
         u.tempo = if u.horde { u.health.max(1) } else { u.cadence };
+        u.pending = 0;
     }
 }
 

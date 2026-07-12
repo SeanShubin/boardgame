@@ -44,14 +44,21 @@ pub fn winnable(party: &[Combatant], foes: &[Combatant]) -> bool {
     false
 }
 
-/// A memo key: the mutable state (per unit health/tempo/fallen) plus the walk position.
-type Key = (Vec<(u32, u32, bool)>, usize, usize);
+/// A memo key: the mutable state (per unit health/tempo/fallen/**pile**) plus the walk position.
+///
+/// The pile has to be in here. It used to be safe to omit it only because the pile was wiped at every
+/// sub-phase boundary - i.e. it was *always zero* at exactly the points we memoize. Now that wounds carry
+/// across a round's sub-phases, two positions with identical health and tempo but different accumulated
+/// damage are genuinely different positions, and conflating them would make the solver return confidently
+/// wrong answers rather than fail. It costs state space (a wound counter in `[0, toughness)` per unit), which
+/// is the price of the rule.
+type Key = (Vec<(u32, u32, bool, u32)>, usize, usize);
 
 fn key_of(units: &[Combatant], round: usize, sub: usize) -> Key {
     (
         units
             .iter()
-            .map(|u| (u.health, u.tempo, u.fallen))
+            .map(|u| (u.health, u.tempo, u.fallen, u.pending))
             .collect(),
         round,
         sub,
