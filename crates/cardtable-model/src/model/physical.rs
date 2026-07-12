@@ -961,7 +961,19 @@ impl Board {
                 editable: true,
             },
         )?;
-        self.set_pile_pos(deck, 40.0, 320.0)?;
+        // Place the new deck **clear** of any already-recruited ones - a tidy party row, one slot per deck -
+        // so the decks never stack (prevention, not a later shove). The column is the count of character decks
+        // already present (root subpiles that reflect a hero); this deck's `reflects` isn't set yet, so it is
+        // not counted. One slot is a card width plus chrome + gap.
+        let slot = super::layout::SMALL_W + 30.0;
+        let column = self
+            .pile(self.root)
+            .map(|r| r.subpiles())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|&p| self.piles.get(&p).is_some_and(|d| d.reflects.is_some()))
+            .count();
+        self.set_pile_pos(deck, 40.0 + column as f32 * slot, 320.0)?;
         self.piles.get_mut(&deck).expect("just created").reflects = Some(label);
         // Station on the board: copy 3 stands at the home location (map position), copy 4 is a face-up
         // move marker on Progress (face-up = hasn't moved today). `draw_named_from` mints face-up copies.
