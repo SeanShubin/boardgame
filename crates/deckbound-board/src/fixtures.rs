@@ -151,7 +151,7 @@ const PHASES: [(&str, &str); 10] = [
     ),
     (
         "Refresh",
-        "Round end (the Lull): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
+        "Round end (the Reset): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
     ),
 ];
 

@@ -75,8 +75,29 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         links,
         choices,
         log,
+        legend: stat_legend(),
         disabled_controls,
     })
+}
+
+/// **What the letters on the tiles mean.** A tile has no room for words, so it says "M 7  F 2  T 1" - and an
+/// abbreviation the player cannot expand is just noise. The meaning belongs on the table, beside the thing it
+/// explains, not in a manual.
+///
+/// Grouped to show the shape of the game, which is a symmetry worth seeing: **health is Vitality-many cards,
+/// each Toughness strong; tempo is Cadence-many cards, each Finesse strong.** Might stands alone because it is
+/// the only stat that is damage - Finesse buys reach and escape and never touches it.
+fn stat_legend() -> Vec<String> {
+    vec![
+        "Stats".to_string(),
+        "  M  Might - how hard you hit".to_string(),
+        "Health".to_string(),
+        "  V  Vitality - how many health cards".to_string(),
+        "  T  Toughness - strength of each one".to_string(),
+        "Tempo".to_string(),
+        "  C  Cadence - how many tempo cards".to_string(),
+        "  F  Finesse - strength of each one".to_string(),
+    ]
 }
 
 // ---- the two progress tracks (fixed display order; the physical decks rotate) --------------------------
@@ -92,12 +113,12 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
             current: !marshal && i == sub,
         });
     }
-    // The Lull closes the round: tempo stands back up and every unfinished wound closes with it. It is never
+    // The Reset closes the round: tempo stands back up and every unfinished wound closes with it. It is never
     // "current" - you do not stop there - but it has to be ON the track, because a wound you cannot finish
     // before it is a wound you did not inflict. That deadline is the whole shape of a round now, and a
     // deadline the player cannot see is the same bug as damage that vanishes unremarked.
     phase_items.push(TrackItem {
-        label: "Lull".to_string(),
+        label: "Reset".to_string(),
         current: false,
     });
     let mut tracks = vec![Track {
@@ -189,8 +210,45 @@ fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>, s
     }
     Row {
         label: label.to_string(),
+        hint: rank_hint(rank, side),
         drop_pile: pile,
         tiles,
+    }
+}
+
+/// **What putting a hero in this rank is FOR** — read straight off the schedule, in the second person, so the
+/// formation screen teaches the plan instead of merely naming three boxes.
+///
+/// Marshal is the one decision made blind, and it is the decision the whole round hangs on. A row labelled
+/// "Outrider" tells a new player nothing about *why* they would ever want one; these lines say what the rank
+/// buys and what it costs, which is exactly the schedule (`deckbound_content::schedule::SCHEDULE`) put into
+/// words. If the schedule ever changes, these are wrong and must move with it.
+fn rank_hint(rank: Option<Rank>, side: Side) -> String {
+    if side == Side::Foe {
+        return "Who you face. Where they will stand is theirs to decide, as yours is yours."
+            .into();
+    }
+    match rank {
+        // Raid (3rd) is the Outrider's whole point: it reaches the enemy back line before anyone else can.
+        // It pays for that with the Intercept and the Volley, in that order, before it ever lands a blow.
+        Some(Rank::Outrider) => {
+            "Slip past their front to kill their Rearguard before it fires. You pay for it: their Vanguard \
+             screens you first, then their Rearguard shoots you."
+                .into()
+        }
+        // Intercept (1st) + Clash (4th). And while it stands, back_access_ok screens your own Rearguard.
+        Some(Rank::Vanguard) => {
+            "Screen your Rearguard from their Outriders, and break their Vanguard - a fallen front is what \
+             opens their back line to everyone."
+                .into()
+        }
+        // Volley (2nd) + Clash (4th), fired from behind a screen it does not have to earn.
+        Some(Rank::Rearguard) => {
+            "Kill from range, safe while your own Vanguard stands. Shoot their crossing Outriders, then \
+             pound their Vanguard."
+                .into()
+        }
+        None => "Drag a hero into a rank. They fight nowhere until you place them.".into(),
     }
 }
 
@@ -910,6 +968,28 @@ mod tap_tests {
         let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, true, false);
         c.tempo = 2;
         c
+    }
+
+    /// **A rank row has to say what putting a hero there is FOR.** Marshal is the one blind decision, and it is
+    /// the one the whole round hangs on - but a row labelled "Outrider" tells a new player nothing about why
+    /// they would ever want one. The hints are the schedule, in words, in the second person.
+    #[test]
+    fn every_rank_row_says_what_it_is_for() {
+        for (rank, must_mention) in [
+            (Rank::Outrider, "Rearguard"), // it crosses to kill the enemy back line - that IS the role
+            (Rank::Vanguard, "Outriders"), // it screens your own back line from exactly them
+            (Rank::Rearguard, "range"),    // it kills from safety
+        ] {
+            let hint = rank_hint(Some(rank), Side::Party);
+            assert!(
+                hint.contains(must_mention),
+                "the {rank:?} hint must say what it is for: {hint}"
+            );
+            assert!(hint.len() > 40, "a hint that says nothing is not a hint");
+        }
+        // The Pool and the muster are not ranks, but they still owe the player an explanation.
+        assert!(!rank_hint(None, Side::Party).is_empty());
+        assert!(!rank_hint(None, Side::Foe).is_empty());
     }
 
     /// **A tile that will not answer a tap must not invite one.** At Evade only a hero that can actually

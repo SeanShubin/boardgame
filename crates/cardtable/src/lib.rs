@@ -1785,11 +1785,16 @@ fn spawn_glyph_cell(parent: &mut ChildSpawnerCommands, c: char, handle: Handle<F
 
 // ---- generic scene drawers (labels, tracks, dividers, panels) -----------
 
-/// A small muted text label at the left of a row.
-fn spawn_row_label(parent: &mut ChildSpawnerCommands, name: &str) {
+/// A small muted text label at the left of a row, over its hint (what the row is *for*) if it carries one.
+/// The hint gets the width — a row you drag things into has to say what dragging them there is *good for*, and
+/// a name alone ("Outrider") cannot.
+fn spawn_row_label(parent: &mut ChildSpawnerCommands, name: &str, hint: &str) {
+    let width = if hint.is_empty() { 84.0 } else { 240.0 };
     parent
         .spawn(Node {
-            width: Val::Px(84.0),
+            width: Val::Px(width),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(2.0),
             ..default()
         })
         .with_children(|c| {
@@ -1799,8 +1804,18 @@ fn spawn_row_label(parent: &mut ChildSpawnerCommands, name: &str) {
                     font_size: FONT_BODY,
                     ..default()
                 },
-                TextColor(MUTED),
+                TextColor(INK),
             ));
+            if !hint.is_empty() {
+                c.spawn((
+                    Text::new(hint.to_string()),
+                    TextFont {
+                        font_size: FONT_BADGE,
+                        ..default()
+                    },
+                    TextColor(MUTED),
+                ));
+            }
         });
 }
 
@@ -2018,6 +2033,37 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
         });
 }
 
+/// The **legend card** — a standing reference in the sidebar for the abbreviations the tiles are forced to
+/// use. Same text convention as the log: un-indented lines are headers, leading-space lines are entries.
+fn spawn_legend_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+    parent
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
+                row_gap: Val::Px(2.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED),
+        ))
+        .with_children(|panel| {
+            for line in lines {
+                let header = !line.starts_with(' ');
+                panel.spawn((
+                    Text::new(line.clone()),
+                    TextFont {
+                        font_size: if header { FONT_BODY } else { FONT_BADGE },
+                        ..default()
+                    },
+                    TextColor(if header { INK } else { MUTED }),
+                ));
+            }
+        });
+}
+
 /// A muted instruction line on the felt (per-step prompt / contacts summary).
 fn spawn_prompt_line(parent: &mut ChildSpawnerCommands, text: &str) {
     parent.spawn((
@@ -2095,6 +2141,11 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                         .map(|i| i.label.as_str())
                         .unwrap_or("");
                     spawn_track(side, &track.title, &labels, current);
+                }
+                // The legend sits under the tracks: always on screen, and never competing for room with the
+                // body, the decision or the log.
+                if !scene.legend.is_empty() {
+                    spawn_legend_panel(side, &scene.legend);
                 }
             });
 
@@ -2223,7 +2274,7 @@ fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
             BorderColor::all(MUTED),
         ))
         .with_children(|r| {
-            spawn_row_label(r, &row.label);
+            spawn_row_label(r, &row.label, &row.hint);
             for tile in &row.tiles {
                 draw_scene_tile(r, tile);
             }

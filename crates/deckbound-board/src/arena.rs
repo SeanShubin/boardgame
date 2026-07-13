@@ -1281,7 +1281,7 @@ pub(crate) fn focused_party(board: &Board, arena: PileId) -> Option<(CardId, usi
 /// What `n` blows of `might` really do to `target`, in words - for a choice card's consequence line.
 ///
 /// **A Might is not a health count.** It banks into the target's damage pile and only turns a Health card each
-/// time that pile crosses Toughness; whatever is left **closes at the Lull**, the round boundary. So "deal 7
+/// time that pile crosses Toughness; whatever is left **closes at the Reset**, the round boundary. So "deal 7
 /// back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
 /// including that the wound *keeps* for the rest of the round, which is what makes a blow under the bar worth
 /// striking at all.
@@ -1294,7 +1294,7 @@ fn blows_phrase(target: &combat::Combatant, might: u32, n: u32) -> String {
     } else if pile == 0 {
         format!("{total} damage: {name}'s armor stops it")
     } else {
-        format!("{total} into {name}'s pile: {pile}/{bar} - it keeps until the Lull")
+        format!("{total} into {name}'s pile: {pile}/{bar} - it keeps until the Reset")
     }
 }
 
@@ -1846,7 +1846,7 @@ mod tests {
         assert_eq!(
             wall(&board).pending,
             5,
-            "the remainder is an open wound - it keeps until the Lull"
+            "the remainder is an open wound - it keeps until the Reset"
         );
     }
 
@@ -1975,7 +1975,7 @@ mod tests {
     }
 
     /// **A choice must not promise damage it cannot deliver.** The Raider's blow (Might 7) on The Wall
-    /// (Toughness 9) flips nothing on its own: it banks into the pile and keeps until the Lull. The card has to
+    /// (Toughness 9) flips nothing on its own: it banks into the pile and keeps until the Reset. The card has to
     /// say where the blow goes and how long it lasts, because that is the whole reason to strike under the bar.
     #[test]
     fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {
@@ -1990,7 +1990,7 @@ mod tests {
         );
         assert_eq!(
             blows_phrase(&wall, 7, 1),
-            "7 into The Wall's pile: 7/9 - it keeps until the Lull"
+            "7 into The Wall's pile: 7/9 - it keeps until the Reset"
         );
         // Two blows in one go DO cross it - which is exactly what makes keeping tempo back worth it.
         assert_eq!(
@@ -2032,11 +2032,6 @@ mod tests {
     /// Set up a fight at a place with an encounter, with the Marksman marched there.
     fn open_a_fight(board: &mut Board) -> PileId {
         open_a_fight_with(board, "Marksman")
-    }
-
-    /// The same fight setup, reachable from the sibling `choice_tests` module.
-    pub(super) fn open_a_fight_for_tests(board: &mut Board) -> PileId {
-        open_a_fight(board)
     }
 
     /// As [`open_a_fight`], but march the hero of the named kit (so tests can pick the hero's attack type).

@@ -37,6 +37,14 @@ pub struct Scene {
     /// A text panel under the body: un-indented lines are section headers, leading-space lines are entries.
     /// Empty = draw no panel.
     pub log: Vec<String>,
+    /// A standing **legend** card in the sidebar: what the abbreviations on the tiles actually mean. Same text
+    /// convention as [`log`](Scene::log) — un-indented lines are headers, leading-space lines are entries.
+    /// Empty = draw none.
+    ///
+    /// Tiles are cramped, so they abbreviate ("M 7  F 2  T 1"). An abbreviation the player cannot expand is
+    /// just noise, and it does not belong in a manual: the meaning has to be *on the table*, next to the thing
+    /// it explains.
+    pub legend: Vec<String>,
     /// Indices (into the focused zone's affordance list) of footer controls that render **disabled** —
     /// present but inert (e.g. a "Start" that is not yet legal).
     pub disabled_controls: Vec<usize>,
@@ -119,6 +127,10 @@ pub enum SceneBody {
 /// One assignment row: a labeled drop zone over `drop_pile`, holding its tiles.
 pub struct Row {
     pub label: String,
+    /// What this row is *for*, in the game's own words — drawn under the label. The renderer knows only that
+    /// it is text belonging to the row; the game decides whether that is a tactic, a rule, or nothing at all.
+    /// Empty = no hint.
+    pub hint: String,
     pub drop_pile: PileId,
     pub tiles: Vec<Tile>,
 }

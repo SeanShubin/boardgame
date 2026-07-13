@@ -449,7 +449,7 @@ fn apply(units: &mut [Combatant], damage: &[u32]) {
 ///
 /// The damage pile used to be wiped here, which made Toughness a *per-sub-phase concentration gate*: land less
 /// than T in one sub-phase and you accomplished literally nothing, and there was no way to see that you had
-/// accomplished nothing. Wounds now carry across the sub-phases of a round and close at the [Lull](refresh_round).
+/// accomplished nothing. Wounds now carry across the sub-phases of a round and close at the [Reset](refresh_round).
 ///
 /// Death is still settled here, and that matters: it keeps the order-free, commit-based batch intact - a
 /// committed blow lands even if its striker dies in the same sub-phase, and mutual deaths resolve cleanly.
@@ -461,7 +461,7 @@ pub fn end_sub_phase(units: &mut [Combatant]) {
     }
 }
 
-/// **The Lull** — the round boundary. Tempo stands back up (leftover tempo does not carry across rounds), and
+/// **The Reset** — the round boundary. Tempo stands back up (leftover tempo does not carry across rounds), and
 /// the accumulated damage pile **closes**: sub-threshold damage that never turned a Health card is gone.
 ///
 /// A normal body gets its Cadence back; a **horde** gets one card per living body (`health`), so a full pack
