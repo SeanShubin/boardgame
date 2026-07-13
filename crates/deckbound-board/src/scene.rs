@@ -45,14 +45,20 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     // The log is the **record**, not a guide: only what actually changed the table. What you *may* do is the
     // prompt's job and the choice cards' job, and saying it twice made the log a wall of speculation you had to
     // read past to find the one line that mattered.
-    let log = build_log(board, arena);
-    let log_title = if marshal {
-        format!("Round {round} - Marshal")
+    // **No log at Marshal.** The record it would show is the round that just ended, and nothing in it bears on
+    // the one decision Marshal asks: where your heroes stand. Tempo has stood back up and open wounds have
+    // closed - the Reset wiped the state that record described. A panel that cannot inform the decision in
+    // front of you is furniture.
+    let (log, log_title) = if marshal {
+        (Vec::new(), String::new())
     } else {
-        format!(
-            "Round {round} - {} - {}",
-            SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?"),
-            step_name(step)
+        (
+            build_log(board, arena),
+            format!(
+                "Round {round} - {} - {}",
+                SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?"),
+                step_name(step)
+            ),
         )
     };
 
@@ -189,9 +195,14 @@ fn build_formation(board: &Board, arena: PileId) -> SceneBody {
             rows.push(formation_row(board, pile, label, Some(rank), Side::Party));
         }
     }
-    // The Pool of unranked heroes sits at the bottom, where they are dragged up from.
+    // The Pool of unranked heroes, where they are dragged up from - **only while anyone is still in it.** That
+    // is the first Marshal and no other: from round two on, a hero holds the rank you last gave it, so the row
+    // is empty, and an empty row you can never fill again is just a stripe of nothing to read past.
     if let Some(pool) = arena::sub_pile(board, arena, arena::POOL) {
-        rows.push(formation_row(board, pool, "Heroes", None, Side::Party));
+        let row = formation_row(board, pool, "Heroes", None, Side::Party);
+        if !row.tiles.is_empty() {
+            rows.push(row);
+        }
     }
     SceneBody::Rows(rows)
 }

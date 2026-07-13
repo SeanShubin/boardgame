@@ -2180,9 +2180,14 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 // not scroll (nothing drives a `ScrollPosition` on this node), so anything below the fold was
                 // not merely out of view, it was unreachable. A player could be asked a question they could
                 // not see.
+                // The body takes only the room it needs, and clips if it needs more. It used to *grow* to fill
+                // the column, which shoved everything after it to the bottom of the screen - so the reading
+                // order ran top, then a gulf, then bottom, and the log and the decision were as far from the
+                // board as the layout could put them.
                 main.spawn(Node {
                     width: Val::Percent(100.0),
-                    flex_grow: 1.0,
+                    flex_grow: 0.0,
+                    flex_shrink: 1.0,
                     min_height: Val::Px(0.0),
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
@@ -2196,58 +2201,53 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
                 });
 
-                // The decision, and under it the log that explains it — anchored above the footer, always
-                // visible, never squeezed out by the body above (`flex_shrink: 0`).
+                // **The log, then the decision, then the controls** - the order you read them in. The log is
+                // what the decision is *about* ("The Wall reaches you, slipping costs 2"), so it cannot come
+                // second: you would be choosing before reading the thing that tells you how. And the controls
+                // sit with them rather than pinned to the far bottom of the viewport, because Commit is the
+                // last step of that same thought, not a separate piece of furniture.
                 main.spawn(Node {
                     width: Val::Percent(100.0),
                     flex_shrink: 0.0,
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
                     row_gap: Val::Px(8.0),
-                    padding: UiRect::bottom(Val::Px(56.0)), // clear the pinned footer bar
                     ..default()
                 })
-                .with_children(|bottom| {
+                .with_children(|panel| {
+                    if !scene.log.is_empty() {
+                        spawn_log_panel(panel, &scene.log_title, &scene.log);
+                    }
                     if !scene.choices.is_empty() {
-                        spawn_choice_row(bottom, &scene.choices);
+                        spawn_choice_row(panel, &scene.choices);
                     }
-                    if !scene.log.is_empty() || !scene.log_title.is_empty() {
-                        spawn_log_panel(bottom, &scene.log_title, &scene.log);
-                    }
+                    // The zone's affordances. A control the scene marks disabled is drawn inert.
+                    panel
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Row,
+                            justify_content: JustifyContent::Center,
+                            column_gap: Val::Px(10.0),
+                            padding: UiRect::vertical(Val::Px(6.0)),
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            // **Back** - rewind one move. It sits with the scene's own controls but is the
+                            // renderer's, not the game's: the board is the whole state, so stepping back is
+                            // just restoring the previous board, and nothing here needs to know what the move
+                            // meant. Keep pressing and you walk back out of the fight entirely, onto the
+                            // location you opened it from.
+                            if can_undo {
+                                spawn_nav_card(row, (UndoControl, Pinned), "Back");
+                            }
+                            for (i, label) in affordances.iter().enumerate() {
+                                if scene.disabled_controls.contains(&i) {
+                                    spawn_disabled_nav(row, label);
+                                } else {
+                                    spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
+                                }
+                            }
+                        });
                 });
-            });
-
-            // Footer controls — the zone's affordances, pinned to the viewport bottom so they stay visible.
-            // A control the scene marks disabled is drawn inert.
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    bottom: Val::Px(8.0),
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::Center,
-                    column_gap: Val::Px(10.0),
-                    padding: UiRect::vertical(Val::Px(6.0)),
-                    ..default()
-                },
-                BackgroundColor(FELT),
-            ))
-            .with_children(|row| {
-                // **Back** — rewind one move. It sits with the scene's own controls but is the renderer's, not
-                // the game's: the board is the whole state, so stepping back is just restoring the previous
-                // board, and nothing here needs to know what the move meant. Keep pressing and you walk back
-                // out of the fight entirely, onto the location you opened it from.
-                if can_undo {
-                    spawn_nav_card(row, (UndoControl, Pinned), "Back");
-                }
-                for (i, label) in affordances.iter().enumerate() {
-                    if scene.disabled_controls.contains(&i) {
-                        spawn_disabled_nav(row, label);
-                    } else {
-                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
-                    }
-                }
             });
         });
 }
