@@ -4,13 +4,49 @@
 //! moved / split / merged / flipped, never minted). Combat stays on the renderer's request path for now;
 //! stretch A folds it in here as rank×phase intentions.
 
-use cardtable_model::{Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, PileId, Scene};
+use std::sync::{Arc, Mutex};
+
+use cardtable_model::{
+    Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Outlook, PileId, Scene,
+};
 
 use crate::sample_table;
+use crate::solver::Oracle;
+
+/// Nodes the oracle may visit per frame. Sized so a frame stays comfortably inside its 16ms budget even in the
+/// worst position measured (the full party at Ninefold Deep), and so a big tree simply takes a few frames -
+/// which is what `Evaluating` is *for*. Raise it and the app stutters; lower it and the badge takes longer to
+/// land. Nothing is ever wrong, only later.
+const NODE_BUDGET: u64 = 20_000;
+
+/// The doom oracle's per-fight state: the memo (so the first look walks the tree and every later one is a
+/// lookup) and the timing it has cost so far.
+///
+/// It hangs off the game rather than the board because it is **not part of the game state**: it is a *belief
+/// about* the state, derived and disposable. Putting it on the board would make Back rewind it, snapshot it,
+/// and log it as a physical change - none of which it is.
+#[derive(Default)]
+pub struct DoomOracle {
+    oracle: Oracle,
+    /// The fight it is about. A new arena is a new tree, and a stale memo would be an answer about a battle
+    /// that is not happening.
+    fight: Option<PileId>,
+    /// Wall-clock spent searching, and the frames it took to settle - the timing you asked to be able to see.
+    pub elapsed_ms: f64,
+    pub frames: u32,
+    /// Whether the row has settled (nothing left Evaluating). Once true, the cost is paid and every later look
+    /// is free.
+    pub settled: bool,
+}
 
 /// The deckbound card-table game, played on a persistent physical board.
-#[derive(Clone, Copy)]
-pub struct CardTableGame;
+///
+/// Holds the doom oracle behind a `Mutex` because the seam hands the game to the renderer by shared reference
+/// (`scene(&self, ..)`) - the verdict is *derived from* the board, not part of it, so it cannot ride along on
+/// the board and must live here instead. A Mutex rather than a RefCell because Bevy requires the game to be
+/// `Send + Sync`; it is uncontended (one thread on native, and WebAssembly has only one anyway).
+#[derive(Clone, Default)]
+pub struct CardTableGame(pub Arc<Mutex<DoomOracle>>);
 
 /// A legal move over the board — transient (the cards are the state, plan §0.3). Drop-borne:
 /// `Unequip`/`March`. Affordance-borne: `AdvanceDay`. (`Fight`/`Arena` join at stretch A.)
@@ -198,7 +234,49 @@ impl BoardGame for CardTableGame {
 
     /// While a fight is up, the game draws it as a modal [`Scene`] (the arena); otherwise the felt.
     fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
-        crate::scene::scene(board, focus)
+        let mut scene = crate::scene::scene(board, focus)?;
+        if let Some(arena) = crate::arena::find_arena(board)
+            && let Ok(mut doom) = self.0.lock()
+        {
+            // A new fight is a new tree. A memo carried over from the last one would be an answer about a
+            // battle that is not happening.
+            if doom.fight != Some(arena) {
+                *doom = DoomOracle {
+                    fight: Some(arena),
+                    ..Default::default()
+                };
+            }
+            // **Not `Instant` unguarded**: on `wasm32-unknown-unknown` - which is where this ships - it
+            // compiles and then *panics* at run time. Time it on native, and simply do not on the web; the
+            // number is telemetry, and telemetry may never be the thing that takes the app down.
+            let t0 = (!cfg!(target_arch = "wasm32")).then(std::time::Instant::now);
+            let outlooks =
+                crate::arena::choice_outlooks(board, arena, &mut doom.oracle, NODE_BUDGET);
+            if let Some(t0) = t0 {
+                doom.elapsed_ms += t0.elapsed().as_secs_f64() * 1000.0;
+            }
+            doom.frames += 1;
+
+            let was_settled = doom.settled;
+            doom.settled = !outlooks.contains(&Outlook::Evaluating);
+            // Log the cost the moment it settles, once - the honest answer to "how long did exploring this
+            // formation take?", which is a number you only get to see if something writes it down.
+            if doom.settled && !was_settled {
+                let (ms, frames, nodes, known) = (
+                    doom.elapsed_ms,
+                    doom.frames,
+                    doom.oracle.nodes,
+                    doom.oracle.known(),
+                );
+                eprintln!(
+                    "doom oracle settled: {ms:.1} ms over {frames} frame(s), {nodes} nodes, {known} positions known"
+                );
+            }
+            for (c, o) in scene.choices.iter_mut().zip(outlooks) {
+                c.outlook = o;
+            }
+        }
+        Some(scene)
     }
 }
 
@@ -317,7 +395,7 @@ mod tests {
     /// back to; recording it would make Back walk you back through your own indecision one tap at a time.
     #[test]
     fn staging_is_not_a_step_you_can_go_back_to_but_committing_is() {
-        let game = CardTableGame;
+        let game = CardTableGame::default();
         let card = CardId(1);
         let pile = PileId(1);
 
@@ -340,7 +418,7 @@ mod tests {
 
     #[test]
     fn advance_day_is_offered_in_the_day_track_and_advances_it() {
-        let game = CardTableGame;
+        let game = CardTableGame::default();
         let mut board = game.opening();
         let progress = top_deck(&board, "Progress").expect("the opening board has a Progress zone");
 
@@ -369,7 +447,7 @@ mod tests {
     /// its bank, and the hero's four copies re-form the `×4` stack in the Heroes reserve.
     #[test]
     fn unequip_disbands_a_character_deck_conservation_clean() {
-        let game = CardTableGame;
+        let game = CardTableGame::default();
         let mut board = game.opening();
         let root = board.root_id();
         let before = board.physical_card_count(root);
@@ -404,7 +482,7 @@ mod tests {
 
     #[test]
     fn march_moves_the_map_position() {
-        let game = CardTableGame;
+        let game = CardTableGame::default();
         let mut board = game.opening();
 
         // The party starts stationed at the home cell (Ashfen Crossing, the grid centre); march one hero to

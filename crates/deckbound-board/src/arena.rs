@@ -17,12 +17,13 @@
 //! stragglers with their default rank. [`handle_tap`] edits the staged plan (and, in Marshal, cycles a hero's
 //! rank pile).
 
-use cardtable_model::{Board, CardId, CardKind, Choice, PileId};
+use cardtable_model::{Board, CardId, CardKind, Choice, Outlook, PileId};
 use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 use crate::battle::{Greedy, Policy};
 use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
+use crate::solver::{At, Fixed, Oracle, Verdict};
 
 /// The top-level zone a fight lives in while it runs.
 pub const ARENA: &str = "Arena";
@@ -1529,6 +1530,158 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .collect()
 }
 
+// ---- the doom oracle: where each choice leads --------------------------------------------------------
+
+/// Where each choice on offer **leads** - `Winnable`, `Evaluating`, or `Doomed` - index-aligned with
+/// [`scene_choices`].
+///
+/// Taking a choice only *stages* it; the step does not resolve until Commit, and other heroes may still be
+/// undecided. So the question a verdict answers is not "does this move win?" but the one the player is actually
+/// asking: **"if I take this, is there still some way to play the rest that wins?"** The search therefore
+/// honours every order already staged as a constraint, folds in the candidate, and is free over everything
+/// else.
+///
+/// It **marks, never bars**. A doomed move stays fully playable, and it has to: a position may have *no*
+/// un-doomed option (a bad formation is a bad formation), and barring them all would deadlock the fight. More
+/// to the point, a player who cannot make the losing move can never find out why it loses.
+///
+/// `budget` is a node allowance. Running out is not "no" - it is [`Outlook::Evaluating`], and the next call
+/// picks up with the memo warm.
+pub fn choice_outlooks(
+    board: &Board,
+    arena: PileId,
+    oracle: &mut Oracle,
+    budget: u64,
+) -> Vec<Outlook> {
+    let (cards, units, sub, round, step) = arena_state(board, arena);
+    let at = match step {
+        Step::Marshal => return Vec::new(), // not yet: the formation search is a different, larger question
+        Step::Engage => At::Engage,
+        Step::Evade => At::Evade,
+        Step::Strike => At::Strike,
+    };
+    let contacts = read_contacts(board, arena, &cards);
+    let choices = step_choices(board, arena);
+    let Some((_, focus)) = focused_party(board, arena) else {
+        return vec![Outlook::Unknown; choices.len()];
+    };
+
+    // One allowance, shared across the whole row: the choices sit in one another's subtrees, so the first is
+    // expensive and the rest are nearly free. Splitting the budget per card would starve the first and waste
+    // the others'.
+    let mut left = budget;
+    let mut out = Vec::with_capacity(choices.len());
+    for (choice, action) in &choices {
+        if !choice.enabled() {
+            out.push(Outlook::Unknown); // it cannot be taken, so where it leads is not a question
+            continue;
+        }
+        let fixed = staged_as_fixed(board, &cards, &units, &contacts, sub, step, focus, *action);
+        let before = oracle.nodes;
+        let verdict = oracle.score(&units, round as usize - 1, sub, at, &contacts, &fixed, left);
+        left = left.saturating_sub(oracle.nodes - before);
+        out.push(match verdict {
+            Verdict::Winnable => Outlook::Winnable,
+            Verdict::Doomed => Outlook::Doomed,
+            Verdict::Evaluating => Outlook::Evaluating,
+        });
+    }
+    out
+}
+
+/// The party's staged orders as solver constraints, with `candidate` folded in for the hero being commanded.
+///
+/// This is the join that makes a per-choice verdict mean anything: the heroes you have already ordered are
+/// *pinned*, the one you are ordering takes the candidate, and everything you have not decided yet is left free
+/// for the search to optimise. Anything else would answer a question you did not ask - either ignoring the plan
+/// you have built, or assuming the rest of it.
+#[allow(clippy::too_many_arguments)]
+fn staged_as_fixed(
+    board: &Board,
+    cards: &[CardId],
+    units: &[Combatant],
+    contacts: &[Contact],
+    sub: usize,
+    step: Step,
+    focus: usize,
+    candidate: ChoiceAction,
+) -> Fixed {
+    let mut fixed = Fixed::empty(units.len());
+    for i in 0..units.len() {
+        if units[i].side != Side::Party || units[i].fallen {
+            continue;
+        }
+        let s = staged_of(board, cards[i]);
+        // The hero being commanded takes the candidate; the others take whatever they have already been given.
+        let s = if i == focus {
+            apply_action(s, cards, units, i, candidate)
+        } else {
+            s
+        };
+        match step {
+            Step::Engage => {
+                if s.hold {
+                    fixed.engage[i] = Some(None);
+                } else if let (Some(aim), true) = (s.aim, s.bid > 0)
+                    && let Some(t) = cards.iter().position(|&c| c == aim)
+                    && combat::legal_strike(sub, units[i].rank, units[t].rank)
+                    && combat::back_access_ok(units, units[i].rank, t)
+                {
+                    fixed.engage[i] = Some(Some(Engage {
+                        attacker: i,
+                        target: t,
+                        cards: s.bid,
+                    }));
+                }
+            }
+            Step::Evade => fixed.dodge[i] = s.dodge,
+            Step::Strike => {
+                if s.hold {
+                    fixed.blows[i] = Some(0);
+                } else if s.bid > 0 && combat::strike_target(units, contacts, i).is_some() {
+                    fixed.blows[i] = Some(s.bid);
+                }
+            }
+            Step::Marshal => {}
+        }
+    }
+    fixed
+}
+
+/// The staged plan a hero would have **if it took this choice** - the same transition [`choose`] applies, but
+/// to a value rather than to the board. One rule, two callers: if these ever disagreed, the verdict would be
+/// about a move the player cannot make.
+fn apply_action(
+    mut s: Staged,
+    _cards: &[CardId],
+    _units: &[Combatant],
+    _i: usize,
+    action: ChoiceAction,
+) -> Staged {
+    match action {
+        ChoiceAction::Aim(foe) => {
+            s.aim = Some(foe);
+            s.bid = 1;
+            s.hold = false;
+        }
+        ChoiceAction::Unaim => {
+            s.aim = None;
+            s.bid = 0;
+        }
+        ChoiceAction::Bid(n) => {
+            s.bid = n;
+            s.hold = false;
+        }
+        ChoiceAction::Dodge(d) => s.dodge = Some(d),
+        ChoiceAction::Hold => {
+            s.hold = true;
+            s.aim = None;
+            s.bid = 0;
+        }
+    }
+    s
+}
+
 /// What committing `n` tempo to reach `foe` actually buys - **the whole attack decision, in one line.**
 ///
 /// Two numbers, and they pull against each other: what it now costs the target to escape you, and how many
@@ -2643,6 +2796,81 @@ mod tests {
             board.physical_card_count(record),
             0,
             "a log is software, not cardboard"
+        );
+    }
+
+    /// **The oracle marks, it never bars - and it must be able to say "doomed" about every option at once.**
+    /// A bad formation is a bad formation: a position may have no un-doomed move, and if the indicator barred
+    /// them the fight would deadlock. It is also the whole tutorial value - a player who cannot make the losing
+    /// move can never find out why it loses.
+    ///
+    /// The Bombardier alone against The Wall is exactly that fight: Might 3 against Grit 9, one tempo card a
+    /// round, and no line anywhere in the tree that wins.
+    #[test]
+    fn every_choice_can_be_doomed_and_none_of_them_is_barred() {
+        let mut board = sample_table();
+        // A ranged kit sent at the Wall: it cannot crack Grit 9, and it never will.
+        let arena = open_a_fight_at(&mut board, "Bombardier", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Start / Reveal
+        let mut oracle = crate::solver::Oracle::new();
+
+        // Walk to a step that asks something, answering nothing.
+        let mut guard = 0;
+        while pending_decision(&board, arena).is_none() && outcome(&board, arena).is_none() {
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 40, "some step must ask us something");
+        }
+
+        // A generous budget: we want the settled answer, not the in-progress one.
+        let outlooks = choice_outlooks(&board, arena, &mut oracle, 5_000_000);
+        let choices = scene_choices(&board, arena);
+        assert_eq!(outlooks.len(), choices.len(), "one verdict per choice");
+        assert!(
+            !outlooks.is_empty(),
+            "the step is asking something, so there is something to score"
+        );
+
+        // Doomed, all of them - and every one still playable.
+        for (c, o) in choices.iter().zip(&outlooks) {
+            assert_eq!(
+                *o,
+                Outlook::Doomed,
+                "the Bombardier cannot crack a Grit 9 Wall by any line: {}",
+                c.label
+            );
+            assert!(
+                c.enabled(),
+                "a doomed choice is MARKED, never barred: {}",
+                c.label
+            );
+        }
+        assert!(oracle.known() > 0, "and it remembers what it worked out");
+    }
+
+    /// **A winnable fight reads winnable** - the indicator is not simply pessimism. The Raider against the lone
+    /// Wall is the fight it is built for, and the solver knows it.
+    #[test]
+    fn a_winnable_fight_offers_a_winnable_choice() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Start / Reveal
+        let mut oracle = crate::solver::Oracle::new();
+
+        let mut guard = 0;
+        while pending_decision(&board, arena).is_none() && outcome(&board, arena).is_none() {
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 40, "some step must ask us something");
+        }
+        let outlooks = choice_outlooks(&board, arena, &mut oracle, 5_000_000);
+        assert!(
+            outlooks.contains(&Outlook::Winnable),
+            "some line from here wins: {outlooks:?}"
+        );
+        assert!(
+            !outlooks.contains(&Outlook::Evaluating),
+            "given the budget it must reach an answer, not sit thinking"
         );
     }
 

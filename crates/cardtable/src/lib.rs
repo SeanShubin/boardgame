@@ -30,7 +30,8 @@ use std::collections::HashMap;
 
 use cardtable_model::{
     Arrangement, Board, Card, CardId, CardKind, Choice, DropTarget, Face, Highlight, Lane, Layout,
-    Node as TableNode, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone, Utility,
+    Node as TableNode, Outlook, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone,
+    Utility,
 };
 
 #[cfg(feature = "game")]
@@ -1971,9 +1972,35 @@ fn spawn_choice_row(parent: &mut ChildSpawnerCommands, choices: &[Choice]) {
                             TextColor(if enabled { INK } else { WARN_CUE }),
                         ));
                     }
+                    // **Where it leads** — a badge, never a bar. The game may know that taking this loses; it
+                    // says so and lets you take it anyway. It has to: a position can have no un-doomed option
+                    // at all, and a player who cannot make the losing move can never find out why it loses.
+                    if let Some((text, colour)) = outlook_badge(choice.outlook) {
+                        c.spawn((
+                            Text::new(text),
+                            TextFont {
+                                font_size: FONT_BADGE,
+                                ..default()
+                            },
+                            TextColor(colour),
+                        ));
+                    }
                 });
             }
         });
+}
+
+/// A [`Outlook`] as its badge: the word and the colour. `None` when the game is not saying — the common case
+/// for a game that has no foresight to offer, and for a choice that cannot be taken anyway.
+fn outlook_badge(outlook: Outlook) -> Option<(&'static str, Color)> {
+    match outlook {
+        Outlook::Unknown => None,
+        Outlook::Winnable => Some(("winnable", TARGET_CUE)),
+        // Amber, not red: "I do not know yet" is a state of the *search*, not of the game. Red here would read
+        // as a warning about the move, which is exactly what it is not.
+        Outlook::Evaluating => Some(("evaluating...", SELECTABLE_CUE)),
+        Outlook::Doomed => Some(("DOOMED", WARN_CUE)),
+    }
 }
 
 fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[String]) {

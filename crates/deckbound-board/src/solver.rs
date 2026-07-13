@@ -17,6 +17,357 @@ use deckbound_content::schedule::SCHEDULE;
 use crate::battle::{Greedy, MAX_ROUNDS, Policy};
 use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
 
+// ---- the oracle: a budgeted, resumable search a frame can afford ----------------------------------------
+
+/// What the solver says about a position - the three states, exactly as named.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    /// Some line from here wins.
+    Winnable,
+    /// The search ran out of budget. Not an answer - an answer *in progress*.
+    Evaluating,
+    /// The tree is exhausted and no line wins.
+    Doomed,
+}
+
+/// The party's already-staged orders at the current step. The search must **honour them**: taking a choice
+/// only stages it, so "does this choice still win?" means "is there some completion of the orders I have not
+/// given yet that wins, given the ones I have?"
+#[derive(Clone, Debug, Default)]
+pub struct Fixed {
+    /// Per unit: `Some(order)` pins that unit's engagement (`Some(None)` = it Holds); `None` = free to choose.
+    pub engage: Vec<Option<Option<Engage>>>,
+    /// Per unit: its dodge, if the player has answered for it.
+    pub dodge: Vec<Option<Dodge>>,
+    /// Per unit: how many blows it pours in, if the player has said.
+    pub blows: Vec<Option<u32>>,
+}
+
+impl Fixed {
+    pub fn empty(n: usize) -> Self {
+        Fixed {
+            engage: vec![None; n],
+            dodge: vec![None; n],
+            blows: vec![None; n],
+        }
+    }
+}
+
+/// Which mini-phase the position is at - the arena's `Step`, without the arena.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum At {
+    Engage,
+    Evade,
+    Strike,
+}
+
+/// **The doom oracle.** One per fight: it holds the memo, so the first evaluation walks the tree and every
+/// later one is a lookup - which is the whole reason this is affordable at all.
+///
+/// The search is **budgeted and restartable** rather than incremental: give it a node budget, and if it runs
+/// out it answers [`Verdict::Evaluating`] and abandons the walk. Next call it starts again - but the memo
+/// survives, so it gets much further, and it converges in a handful of frames. That buys a resumable search
+/// without an explicit stack, and it runs identically on native and WebAssembly (no threads, no shared memory,
+/// no COOP/COEP headers on the deploy).
+///
+/// The one rule it must never break: an aborted subtree is **not** memoized. A "no win found" that was really
+/// "no win found *yet*" would poison the table permanently, and the indicator would say doomed forever.
+#[derive(Default)]
+pub struct Oracle {
+    memo: HashMap<Key, bool>,
+    /// Nodes visited over the fight - the honest measure of what this costs.
+    pub nodes: u64,
+}
+
+impl Oracle {
+    pub fn new() -> Self {
+        Oracle::default()
+    }
+
+    /// How many positions it has scored and remembered.
+    pub fn known(&self) -> usize {
+        self.memo.len()
+    }
+
+    /// Can the party still force a win from here, honouring `fixed`? `budget` is a node allowance, decremented
+    /// as it searches; [`Verdict::Evaluating`] means it ran out.
+    #[allow(clippy::too_many_arguments)] // a position IS this many things; bundling them would only hide it
+    pub fn score(
+        &mut self,
+        units: &[Combatant],
+        round: usize,
+        sub: usize,
+        at: At,
+        contacts: &[Contact],
+        fixed: &Fixed,
+        budget: u64,
+    ) -> Verdict {
+        let mut b = Budget {
+            left: budget,
+            spent: 0,
+        };
+        let r = match at {
+            At::Engage => search_engage_c(units, round, sub, &mut self.memo, fixed, &mut b),
+            At::Evade => search_evade_c(units, contacts, round, sub, &mut self.memo, fixed, &mut b),
+            At::Strike => {
+                search_strike_c(units, contacts, round, sub, &mut self.memo, fixed, &mut b)
+            }
+        };
+        self.nodes += b.spent;
+        match r {
+            Some(true) => Verdict::Winnable,
+            Some(false) => Verdict::Doomed,
+            None => Verdict::Evaluating,
+        }
+    }
+}
+
+/// A node allowance. `None` from any search means it was exhausted - **not** that no win exists.
+struct Budget {
+    left: u64,
+    spent: u64,
+}
+
+impl Budget {
+    /// Charge one node. `false` once the allowance is gone.
+    fn tick(&mut self) -> bool {
+        if self.left == 0 {
+            return false;
+        }
+        self.left -= 1;
+        self.spent += 1;
+        true
+    }
+}
+
+/// Fold the per-unit options with the orders the player has already staged: a pinned unit gets exactly its
+/// order, a free one gets everything it could do.
+fn constrain<T: Clone>(free: Vec<Vec<T>>, idx: &[usize], fixed: &[Option<T>]) -> Vec<Vec<T>> {
+    free.into_iter()
+        .enumerate()
+        .map(|(k, opts)| match idx.get(k).and_then(|&i| fixed.get(i)) {
+            Some(Some(pinned)) => vec![pinned.clone()],
+            _ => opts,
+        })
+        .collect()
+}
+
+/// `any_combo`, budgeted. `Some(true)` = a winning line; `Some(false)` = every line loses (exhaustive);
+/// `None` = the budget ran out with no win found, so nothing is known.
+fn any_combo_b<T: Clone>(
+    options: &[Vec<T>],
+    b: &mut Budget,
+    f: &mut dyn FnMut(&[T], &mut Budget) -> Option<bool>,
+) -> Option<bool> {
+    fn go<T: Clone>(
+        options: &[Vec<T>],
+        i: usize,
+        acc: &mut Vec<T>,
+        b: &mut Budget,
+        f: &mut dyn FnMut(&[T], &mut Budget) -> Option<bool>,
+        unknown: &mut bool,
+    ) -> bool {
+        if i == options.len() {
+            match f(acc, b) {
+                Some(true) => return true,
+                Some(false) => {}
+                None => *unknown = true,
+            }
+            return false;
+        }
+        for opt in &options[i] {
+            acc.push(opt.clone());
+            let win = go(options, i + 1, acc, b, f, unknown);
+            acc.pop();
+            if win {
+                return true;
+            }
+        }
+        false
+    }
+    let mut unknown = false;
+    let mut acc = Vec::new();
+    if go(options, 0, &mut acc, b, f, &mut unknown) {
+        return Some(true);
+    }
+    if unknown { None } else { Some(false) }
+}
+
+/// [`forces_win`], budgeted, with the memo shared across the whole fight.
+fn forces_win_b(
+    units: &[Combatant],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    b: &mut Budget,
+) -> Option<bool> {
+    if let Some(done) = party_won(units) {
+        return Some(done);
+    }
+    if round >= MAX_ROUNDS {
+        return Some(false); // the round cap, undecided = a draw, not a win
+    }
+    let key = key_of(units, round, sub);
+    if let Some(&r) = memo.get(&key) {
+        return Some(r);
+    }
+    if !b.tick() {
+        return None; // out of budget - the caller must not treat this as "no win"
+    }
+    let mut u = units.to_vec();
+    if sub == 0 {
+        combat::refresh_round(&mut u);
+    }
+    let win = search_engage_c(&u, round, sub, memo, &Fixed::empty(u.len()), b)?;
+    // Only a DEFINITE answer is remembered. Memoizing an aborted subtree as `false` would poison the table
+    // permanently, and the indicator would read doomed forever.
+    memo.insert(key, win);
+    Some(win)
+}
+
+fn search_engage_c(
+    units: &[Combatant],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    fixed: &Fixed,
+    b: &mut Budget,
+) -> Option<bool> {
+    let foe = Greedy.engagements(units, Side::Foe, sub);
+    let idx: Vec<usize> = party_engage_idx(units);
+    let options = constrain(party_engage_options(units, sub), &idx, &fixed.engage);
+    any_combo_b(&options, b, &mut |chosen, b| {
+        let mut u = units.to_vec();
+        let mut all: Vec<Engage> = chosen.iter().flatten().copied().collect();
+        all.extend(foe.iter().copied());
+        let reaching = combat::resolve_engage(&mut u, &all);
+        // Only the CURRENT step is constrained by what the player has staged; everything after is free.
+        search_evade_c(
+            &u,
+            &reaching,
+            round,
+            sub,
+            memo,
+            &Fixed {
+                engage: vec![None; u.len()],
+                dodge: fixed.dodge.clone(),
+                blows: fixed.blows.clone(),
+            },
+            b,
+        )
+    })
+}
+
+fn search_evade_c(
+    units: &[Combatant],
+    reaching: &[Contact],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    fixed: &Fixed,
+    b: &mut Budget,
+) -> Option<bool> {
+    let reached: Vec<usize> = (0..units.len())
+        .filter(|&i| {
+            units[i].side == Side::Party
+                && !units[i].fallen
+                && combat::slip_cost(units, reaching, i).is_some_and(|c| c <= units[i].tempo)
+        })
+        .collect();
+    let free: Vec<Vec<Dodge>> = reached
+        .iter()
+        .map(|_| vec![Dodge::Stand, Dodge::Slip])
+        .collect();
+    let options = constrain(free, &reached, &fixed.dodge);
+    any_combo_b(&options, b, &mut |chosen, b| {
+        let dodges: Vec<Dodge> = (0..units.len())
+            .map(|i| match reached.iter().position(|&r| r == i) {
+                Some(pos) => chosen[pos],
+                None if units[i].side == Side::Foe => Greedy.dodge(units, reaching, i),
+                None => Dodge::Stand,
+            })
+            .collect();
+        let mut u = units.to_vec();
+        let contacts = combat::resolve_evade(&mut u, reaching, &dodges);
+        search_strike_c(
+            &u,
+            &contacts,
+            round,
+            sub,
+            memo,
+            &Fixed {
+                engage: vec![None; u.len()],
+                dodge: vec![None; u.len()],
+                blows: fixed.blows.clone(),
+            },
+            b,
+        )
+    })
+}
+
+fn search_strike_c(
+    units: &[Combatant],
+    contacts: &[Contact],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    fixed: &Fixed,
+    b: &mut Budget,
+) -> Option<bool> {
+    let foe = Greedy.blows(units, Side::Foe, contacts);
+    let edges: Vec<(usize, usize)> = (0..units.len())
+        .filter(|&i| units[i].side == Side::Party && !units[i].fallen && units[i].tempo > 0)
+        .filter_map(|i| combat::strike_target(units, contacts, i).map(|t| (i, t)))
+        .collect();
+    let idx: Vec<usize> = edges.iter().map(|&(i, _)| i).collect();
+    let free: Vec<Vec<Blows>> = edges
+        .iter()
+        .map(|&(i, target)| {
+            (0..=units[i].tempo)
+                .map(|cards| Blows {
+                    unit: i,
+                    target,
+                    cards,
+                })
+                .collect()
+        })
+        .collect();
+    // The staged blow count, turned into the one option that unit is allowed.
+    let pinned: Vec<Option<Blows>> = (0..units.len())
+        .map(|i| {
+            let cards = fixed.blows.get(i).copied().flatten()?;
+            let (_, target) = edges.iter().find(|&&(u, _)| u == i)?;
+            Some(Blows {
+                unit: i,
+                target: *target,
+                cards,
+            })
+        })
+        .collect();
+    let options = constrain(free, &idx, &pinned);
+    let (nr, ns) = next(round, sub);
+    any_combo_b(&options, b, &mut |chosen, b| {
+        let mut u = units.to_vec();
+        let mut blows: Vec<Blows> = chosen.iter().filter(|x| x.cards > 0).copied().collect();
+        blows.extend(foe.iter().copied());
+        combat::resolve_strike(&mut u, contacts, &blows);
+        combat::end_sub_phase(&mut u);
+        forces_win_b(&u, nr, ns, memo, b)
+    })
+}
+
+/// The party units `party_engage_options` produces an option list for, in the same order.
+fn party_engage_idx(units: &[Combatant]) -> Vec<usize> {
+    (0..units.len())
+        .filter(|&i| {
+            units[i].side == Side::Party
+                && !units[i].fallen
+                && units[i].tempo > 0
+                && combat::effective_in_rank(units[i].rank, units[i].melee, units[i].ranged)
+        })
+        .collect()
+}
+
 /// The three ranks a party unit may be assigned (the formation search space).
 const RANKS: [Rank; 3] = [Rank::Vanguard, Rank::Outrider, Rank::Rearguard];
 

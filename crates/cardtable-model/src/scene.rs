@@ -82,6 +82,29 @@ pub struct Choice {
     pub why_not: String,
     /// This is the option currently staged — what will happen if the player commits as things stand.
     pub chosen: bool,
+    /// Where this choice **leads** — the game's own foresight about it, drawn as a badge.
+    ///
+    /// Rules-blind: the renderer knows only that there are three states and draws three looks. What makes an
+    /// option "doomed" — a solver, a heuristic, a scripted lesson — is entirely the game's business.
+    pub outlook: Outlook,
+}
+
+/// How a [`Choice`] is expected to turn out. Three states, and the middle one is not a fudge: a game that has
+/// to *compute* this cannot always have the answer ready, and saying "I do not know yet" is more honest than
+/// guessing or than blocking the frame until it does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Outlook {
+    /// The game is not saying (the default — it may have no opinion at all).
+    #[default]
+    Unknown,
+    /// Taking this leaves the game still winnable.
+    Winnable,
+    /// The game is still working it out.
+    Evaluating,
+    /// Taking this loses. **A marker, never a bar** — the move stays fully playable. It has to: a position may
+    /// have *no* un-doomed option, and barring them all would deadlock the game. And a player who cannot make
+    /// the losing move cannot find out why it loses.
+    Doomed,
 }
 
 impl Choice {
@@ -92,7 +115,14 @@ impl Choice {
             consequence: consequence.into(),
             why_not: String::new(),
             chosen: false,
+            outlook: Outlook::Unknown,
         }
+    }
+
+    /// Say where this choice leads.
+    pub fn outlook(mut self, outlook: Outlook) -> Self {
+        self.outlook = outlook;
+        self
     }
 
     /// Mark this the staged option.
