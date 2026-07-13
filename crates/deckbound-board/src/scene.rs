@@ -239,9 +239,11 @@ fn formation_row(board: &Board, pile: PileId, label: &str, rank: Option<Rank>, s
 /// buys and what it costs, which is exactly the schedule (`deckbound_content::schedule::SCHEDULE`) put into
 /// words. If the schedule ever changes, these are wrong and must move with it.
 fn rank_hint(rank: Option<Rank>, side: Side) -> String {
+    // The muster gets none. A hint is *printed on the drop zone's felt*, to be covered by the cards you place
+    // there - and nothing is ever placed in the muster, so text there could only sit in the open forever,
+    // saying what the row of foe cards already says.
     if side == Side::Foe {
-        return "Who you face. Where they will stand is theirs to decide, as yours is yours."
-            .into();
+        return String::new();
     }
     match rank {
         // Raid (3rd) is the Outrider's whole point: it reaches the enemy back line before anyone else can.
@@ -780,7 +782,9 @@ mod tap_tests {
         }
         // The Pool and the muster are not ranks, but they still owe the player an explanation.
         assert!(!rank_hint(None, Side::Party).is_empty());
-        assert!(!rank_hint(None, Side::Foe).is_empty());
+        // ...but the muster gets none: a hint is printed on the felt to be *covered* by the cards you place
+        // there, and nothing is ever placed in the muster.
+        assert!(rank_hint(None, Side::Foe).is_empty());
     }
 
     /// **A tile that will not answer a tap must not invite one.** At Evade only a hero that can actually

@@ -1314,15 +1314,21 @@ pub fn assign(board: &mut Board, unit: CardId, to: PileId) {
 /// Move a hero to the *next* pile in the Pool → Outrider → Vanguard → Rearguard → Pool cycle (the no-drag
 /// rank assignment, and the tap fallback during Marshal).
 fn cycle_rank_pile(board: &mut Board, arena: PileId, card: CardId) {
-    let order: Vec<&str> = std::iter::once(POOL)
-        .chain(RANK_PILES.iter().map(|(l, _)| *l))
-        .collect();
+    // **A tap never puts a hero back in the Pool.** The Pool is not a rank - it is the *absence* of one, the
+    // state you are here to leave. Cycling into it would un-rank a hero and re-bar the Start you had just
+    // earned, so it is a destination the tap simply does not have: a tap ranks an unranked hero, and after that
+    // only moves it between ranks. (Dragging it back to the Heroes row still works, on the first Marshal, while
+    // that row exists - deliberately: permit the input, then settle. What is barred is doing it *by accident*,
+    // which is all a tap-cycle through the Pool was ever going to achieve.)
+    let ranks: Vec<&str> = RANK_PILES.iter().map(|(l, _)| *l).collect();
     let here = combatant_pile(board, arena, card);
-    let cur = order
+    let next = match ranks
         .iter()
         .position(|&l| sub_pile(board, arena, l) == here)
-        .unwrap_or(0);
-    let next = order[(cur + 1) % order.len()];
+    {
+        Some(i) => ranks[(i + 1) % ranks.len()],
+        None => ranks[0], // in the Pool: the first tap ranks it
+    };
     if let Some(dest) = sub_pile(board, arena, next) {
         let at = board.pile(dest).map_or(0, |p| p.cards().len());
         let _ = board.move_card(card, dest, at);
@@ -2352,6 +2358,42 @@ mod tests {
                 .any(|u| u.side == Side::Party && u.rank == Rank::Outrider),
             "the hero is a combatant in the Outrider rank"
         );
+    }
+
+    /// **A tap never puts a hero back in the Pool.** The Pool is not a rank - it is the *absence* of one, the
+    /// state Marshal exists to leave. Cycling into it would un-rank a hero and re-bar the Start you had just
+    /// earned, which is not a thing anyone taps a card intending to do.
+    #[test]
+    fn tapping_a_hero_cycles_the_ranks_and_never_returns_it_to_the_pool() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        let hero = pool_heroes(&board, arena)[0];
+        let pool = sub_pile(&board, arena, POOL).unwrap();
+        let rank_of = |b: &Board| {
+            RANK_PILES
+                .iter()
+                .find(|(l, _)| sub_pile(b, arena, l) == combatant_pile(b, arena, hero))
+                .map(|(l, _)| *l)
+        };
+
+        assert_eq!(rank_of(&board), None, "it starts unranked, in the Pool");
+        handle_tap(&mut board, hero);
+        assert_eq!(
+            rank_of(&board),
+            Some(RANK_PILES[0].0),
+            "the first tap ranks it"
+        );
+
+        // Keep tapping: it walks the three ranks, round and round, and never lands back in the Pool.
+        for _ in 0..8 {
+            handle_tap(&mut board, hero);
+            assert!(rank_of(&board).is_some(), "still ranked");
+            assert!(
+                combatant_pile(&board, arena, hero) != Some(pool),
+                "a tap must never un-rank a hero"
+            );
+        }
+        assert!(formation_complete(&board, arena), "so Start stays live");
     }
 
     /// **The log is the record: only what changed the table, said once and in full.** It used to be a snapshot

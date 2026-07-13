@@ -1785,40 +1785,6 @@ fn spawn_glyph_cell(parent: &mut ChildSpawnerCommands, c: char, handle: Handle<F
 
 // ---- generic scene drawers (labels, tracks, dividers, panels) -----------
 
-/// A small muted text label at the left of a row, over its hint (what the row is *for*) if it carries one.
-/// The hint gets the width — a row you drag things into has to say what dragging them there is *good for*, and
-/// a name alone ("Outrider") cannot.
-fn spawn_row_label(parent: &mut ChildSpawnerCommands, name: &str, hint: &str) {
-    let width = if hint.is_empty() { 84.0 } else { 240.0 };
-    parent
-        .spawn(Node {
-            width: Val::Px(width),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(2.0),
-            ..default()
-        })
-        .with_children(|c| {
-            c.spawn((
-                Text::new(name.to_string()),
-                TextFont {
-                    font_size: FONT_BODY,
-                    ..default()
-                },
-                TextColor(INK),
-            ));
-            if !hint.is_empty() {
-                c.spawn((
-                    Text::new(hint.to_string()),
-                    TextFont {
-                        font_size: FONT_BADGE,
-                        ..default()
-                    },
-                    TextColor(MUTED),
-                ));
-            }
-        });
-}
-
 /// A **row-header card** — a fixed-width labeled card anchoring the left of a lane, so lanes read as neat
 /// left-aligned cards with their tiles laid out to the right (mirroring a labeled pile on the table).
 fn spawn_lane_label(parent: &mut ChildSpawnerCommands, name: &str) {
@@ -2256,28 +2222,62 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
 /// label, then its tiles. Dragging a `draggable` tile into any row's drop zone moves the card there.
 fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
     for row in rows {
-        root.spawn((
-            PileDropZone(row.drop_pile),
-            Node {
-                position_type: PositionType::Relative,
-                width: Val::Px(720.0),
-                min_height: Val::Px(SMALL_H + 12.0),
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(8.0),
-                padding: UiRect::all(Val::Px(6.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(PANEL),
-            BorderColor::all(MUTED),
-        ))
+        // Outer row: a **header card** naming the pile, then the drop zone itself. Only the zone is the drop
+        // target — dropping onto the name card would be dropping onto the label, not into the pile.
+        root.spawn(Node {
+            width: Val::Px(760.0),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Stretch,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
         .with_children(|r| {
-            spawn_row_label(r, &row.label, &row.hint);
-            for tile in &row.tiles {
-                draw_scene_tile(r, tile);
-            }
+            let hint = row.hint.as_str();
+            spawn_lane_label(r, &row.label);
+            r.spawn((
+                PileDropZone(row.drop_pile),
+                Node {
+                    position_type: PositionType::Relative,
+                    flex_grow: 1.0,
+                    min_height: Val::Px(SMALL_H + 12.0),
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    padding: UiRect::all(Val::Px(6.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    border_radius: BorderRadius::all(Val::Px(8.0)),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+                BorderColor::all(MUTED),
+            ))
+            .with_children(|zone| {
+                // The hint is **printed on the felt of the zone**, and the cards you drop cover it — spawned
+                // first, so the tiles paint over it. It costs no width at all, and it is legible exactly when
+                // the row is *empty*, which is exactly when you have not decided yet. Once you have placed your
+                // heroes it is under them, where a drag lifts it back into view (and by then you know it).
+                if !hint.is_empty() {
+                    zone.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(10.0),
+                            right: Val::Px(10.0),
+                            top: Val::Px(8.0),
+                            ..default()
+                        },
+                        Text::new(hint.to_string()),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextColor(MUTED),
+                    ));
+                }
+                for tile in &row.tiles {
+                    draw_scene_tile(zone, tile);
+                }
+            });
         });
     }
 }
