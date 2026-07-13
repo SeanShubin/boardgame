@@ -287,10 +287,22 @@ fn search_strike(
 
 // ---- the party's pruned option sets -------------------------------------------------------------------
 
-/// Each party attacker's engagement options this sub-phase: `None` (do not reach), plus, for each legal and
-/// reachable foe, the two canonical commitments — **one card** (cheapest reach, most tempo kept back for
-/// blows) and **the fewest cards they cannot afford to slip** (landing guaranteed). Everything in between is
-/// strictly worse than one of those two: it neither saves tempo nor denies the escape.
+/// Each party attacker's engagement options this sub-phase: `None` (Hold), plus, for each legal and reachable
+/// foe, **every commitment from one card up to the pin** — the pin being the fewest cards the target cannot
+/// afford to slip.
+///
+/// **The search must offer exactly what the interface offers, and it used to offer less.** It gave only `{1,
+/// pin}`, on the claim that everything between was dominated. That claim was wrong: an intermediate commitment
+/// does not deny the escape, but it *taxes* it — the target pays more tempo to slip, and that tempo is blows it
+/// will not throw. Fewer blows for you, a heavier toll on them: a genuine trade, and one the player can make.
+///
+/// Pruning it made the solver search a strictly smaller move set than the game allows, so a "lose" verdict was
+/// never exhaustive — it could miss a winning line that needed an intermediate commit. For a balance harness
+/// that is a false negative. For a **doomed** indicator it is the one thing it may never do: tell you to give
+/// up a fight you could still win.
+///
+/// Above the pin *is* dominated (same contact, one fewer blow), which is why the UI bars it and this stops
+/// there. Search space and offered moves now coincide exactly.
 fn party_engage_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Engage>>> {
     units
         .iter()
@@ -320,10 +332,11 @@ fn party_engage_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Engag
                     }));
                     continue;
                 }
-                // Deny the slip: the fewest cards whose value they cannot out-spend at their Finesse.
-                let deny = (1..=u.tempo)
+                // The pin: the fewest cards whose value they cannot out-spend at their Finesse. Past it, more
+                // commitment buys nothing (the UI bars it); up to it, every card is a real choice.
+                let pin = (1..=u.tempo)
                     .find(|&c| (c * u.finesse.max(1)) / v.finesse.max(1) + 1 > v.tempo);
-                for cards in [Some(1), deny].into_iter().flatten() {
+                for cards in 1..=pin.unwrap_or(u.tempo) {
                     opts.push(Some(Engage {
                         attacker: i,
                         target: j,
