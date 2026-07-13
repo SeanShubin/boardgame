@@ -1487,7 +1487,7 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
 /// one, and if the two ever said different things one of them would be lying.
 fn commit_text(u: &Combatant, foe: &Combatant, n: u32) -> String {
     let value = n * u.finesse.max(1);
-    let price = value / foe.finesse.max(1) + 1; // what it costs them to slip this
+    let price = slip_price(u, foe, n);
     let blows = 1 + (u.tempo - n); // the opening blow is paid for, however much you committed
     if price > foe.tempo {
         format!(
@@ -1500,6 +1500,18 @@ fn commit_text(u: &Combatant, foe: &Combatant, n: u32) -> String {
             foe.name
         )
     }
+}
+
+/// What it would cost `foe` to slip a reach of `n` cards from `u` — the number the whole Engage decision turns
+/// on. Committing more raises it; that is the *only* thing committing more does.
+fn slip_price(u: &Combatant, foe: &Combatant, n: u32) -> u32 {
+    (n * u.finesse.max(1)) / foe.finesse.max(1) + 1
+}
+
+/// The fewest cards that put escape **out of `foe`'s reach entirely** — after which no further commitment buys
+/// anything at all. `None` if nothing you can afford prices them out.
+fn pins(u: &Combatant, foe: &Combatant) -> Option<u32> {
+    (1..=u.tempo).find(|&n| slip_price(u, foe, n) > foe.tempo)
 }
 
 /// **Engage.** With no target yet, the cards are the targets. Once reaching, they are the *commitment* - and
@@ -1517,12 +1529,28 @@ fn engage_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     match s.aim.and_then(|a| cards.iter().position(|&c| c == a)) {
         Some(t) => {
             let foe = &units[t];
+            // **Once they cannot escape, committing more is strictly worse** - the same contact, and one fewer
+            // blow, because reaching buys exactly one blow however much it cost. That is a dominated move, and
+            // a dominated move should be impossible rather than merely bad: the identical reasoning that
+            // deleted the partial slip. So it is barred, and it says why - a player who wonders "should I push
+            // harder?" gets the answer from the card instead of from a wasted round.
+            //
+            // (This is why the Clash feels like it has no Engage decision, and rightly: The Wall holds ONE
+            // tempo card, so it cannot afford any dodge at all, so the contest is void before it starts. Two
+            // Vanguards toe to toe are not manoeuvring. The commitment lever is for catching something that
+            // does not want to be caught - a slippery Outrider - not for shoving a wall harder.)
+            let pin = pins(u, foe);
             for n in 1..=u.tempo {
-                out.push((
-                    Choice::new(format!("Commit {n} tempo"), commit_text(u, foe, n))
-                        .chosen(s.bid == n),
-                    ChoiceAction::Bid(n),
-                ));
+                let choice = Choice::new(format!("Commit {n} tempo"), commit_text(u, foe, n))
+                    .chosen(s.bid == n);
+                let choice = match pin {
+                    Some(p) if n > p => choice.barred(format!(
+                        "{} already cannot escape {p} - this only costs you a blow",
+                        foe.name
+                    )),
+                    _ => choice,
+                };
+                out.push((choice, ChoiceAction::Bid(n)));
             }
             out.push((
                 Choice::new("Reach elsewhere", "pick another target"),
@@ -2357,6 +2385,83 @@ mod tests {
                 .iter()
                 .any(|u| u.side == Side::Party && u.rank == Rank::Outrider),
             "the hero is a combatant in the Outrider rank"
+        );
+    }
+
+    /// **Committing past the pin is a dominated move, so it is barred.** Reaching buys exactly one blow however
+    /// much it cost, so once the target cannot escape *at all*, another card buys the same contact and one
+    /// fewer swing. Strictly worse. The same reasoning that deleted the partial slip: a dominated move should
+    /// be impossible, not merely bad - and it says why, so a player who wonders "should I push harder?" gets
+    /// the answer from the card instead of from a wasted round.
+    ///
+    /// This is also why the Clash offers no real Engage decision, and rightly. The Wall holds ONE tempo card,
+    /// so it cannot afford any dodge; the contest is void before it starts. Two Vanguards toe to toe are not
+    /// manoeuvring. The commitment lever exists for catching something that does not want to be caught.
+    #[test]
+    fn committing_past_the_pin_is_barred_and_says_why() {
+        let raider = combat::Combatant::from_stats(
+            "Raider",
+            Side::Party,
+            Rank::Vanguard,
+            [7, 6, 1, 3, 2], // Cadence 3 - room to over-commit
+            0,
+            true,
+            false,
+        );
+        // The Wall: Finesse 2, Cadence 1. One card of reach is value 2, which costs it 2 tempo to slip - and
+        // it holds one. It is pinned by the very first card, so there is nothing whatever to buy after that.
+        let wall = combat::Combatant::from_stats(
+            "The Wall",
+            Side::Foe,
+            Rank::Vanguard,
+            [1, 4, 9, 1, 2],
+            0,
+            true,
+            false,
+        );
+        assert_eq!(pins(&raider, &wall), Some(1), "pinned by one card");
+        assert_eq!(
+            slip_price(&raider, &wall, 1),
+            2,
+            "and it holds only 1 tempo"
+        );
+
+        // ...but a **slippery** target is a real decision: it can afford to slip a light reach, so paying more
+        // genuinely pins it. That is what the extra card is for, and it is the only thing it is for.
+        let quick = combat::Combatant::from_stats(
+            "Duelist",
+            Side::Foe,
+            Rank::Outrider,
+            [5, 5, 1, 3, 2], // Cadence 3: it can pay to escape a light reach
+            0,
+            true,
+            false,
+        );
+        assert_eq!(
+            slip_price(&raider, &quick, 1),
+            2,
+            "one card, it escapes for 2"
+        );
+        assert_eq!(
+            pins(&raider, &quick),
+            Some(3),
+            "three cards price it out - and that costs you two blows, so it is a real trade"
+        );
+
+        // And one too quick to pin at all bars nothing: every card you add still taxes its escape.
+        let quicker = combat::Combatant::from_stats(
+            "Duelist",
+            Side::Foe,
+            Rank::Outrider,
+            [5, 5, 1, 5, 2], // Cadence 5: three tempo cannot price it out
+            0,
+            true,
+            false,
+        );
+        assert_eq!(
+            pins(&raider, &quicker),
+            None,
+            "nothing you can afford pins it - so nothing is dominated, and nothing is barred"
         );
     }
 
