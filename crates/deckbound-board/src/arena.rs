@@ -1338,6 +1338,32 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .collect()
 }
 
+/// What committing `n` tempo to reach `foe` actually buys - **the whole attack decision, in one line.**
+///
+/// Two numbers, and they pull against each other: what it now costs the target to escape you, and how many
+/// blows you will have left if it cannot. Reaching buys exactly one blow however much it cost, so every extra
+/// card here is a card that will never be swung. Committing nothing is not an option; committing everything is
+/// a guaranteed hit you arrive at with nothing to hit with.
+///
+/// One builder, used by both the target cards and the commitment cards - the target card *is* a commitment of
+/// one, and if the two ever said different things one of them would be lying.
+fn commit_text(u: &Combatant, foe: &Combatant, n: u32) -> String {
+    let value = n * u.finesse.max(1);
+    let price = value / foe.finesse.max(1) + 1; // what it costs them to slip this
+    let blows = 1 + (u.tempo - n); // the opening blow is paid for, however much you committed
+    if price > foe.tempo {
+        format!(
+            "value {value} - {} cannot escape ({price} tempo, has {}); then {blows} blows",
+            foe.name, foe.tempo
+        )
+    } else {
+        format!(
+            "value {value} - {} escapes for {price} tempo; else {blows} blows",
+            foe.name
+        )
+    }
+}
+
 /// **Engage.** With no target yet, the cards are the targets. Once reaching, they are the *commitment* - and
 /// each says the thing that makes this a decision: what it costs the target to slip you, and how many blows
 /// you will have left if they cannot. Every card you sink into reaching them is a card you cannot swing with.
@@ -1354,22 +1380,9 @@ fn engage_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
         Some(t) => {
             let foe = &units[t];
             for n in 1..=u.tempo {
-                let value = n * u.finesse.max(1);
-                let price = value / foe.finesse.max(1) + 1; // what it costs them to slip this
-                let blows = 1 + (u.tempo - n); // the opening blow is paid for, however much you committed
-                let text = if price > foe.tempo {
-                    format!(
-                        "value {value} - {} cannot escape ({price} tempo, has {}); then {blows} blows",
-                        foe.name, foe.tempo
-                    )
-                } else {
-                    format!(
-                        "value {value} - {} escapes for {price} tempo; else {blows} blows",
-                        foe.name
-                    )
-                };
                 out.push((
-                    Choice::new(format!("Commit {n} tempo"), text).chosen(s.bid == n),
+                    Choice::new(format!("Commit {n} tempo"), commit_text(u, foe, n))
+                        .chosen(s.bid == n),
                     ChoiceAction::Bid(n),
                 ));
             }
@@ -1387,10 +1400,14 @@ fn engage_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
                 {
                     continue;
                 }
+                // **Say what taking THIS card does, not what might happen two steps later.** It is not a
+                // target you are merely naming: taking it commits one tempo - the cheapest reach - right now.
+                // So it must carry the same consequence the "Commit 1 tempo" card carries, or it is a choice
+                // card in name only, describing a step it does not belong to.
                 out.push((
                     Choice::new(
                         format!("Reach for {}", foe.name),
-                        format!("Might {} a blow, once you have them", u.might),
+                        format!("commit 1 tempo: {}", commit_text(u, foe, 1)),
                     ),
                     ChoiceAction::Aim(cards[j]),
                 ));
@@ -1896,6 +1913,35 @@ mod tests {
                 .collect()
         };
         assert_eq!(labels(&board), vec!["Reach for The Wall", "Hold"]);
+
+        // **The target card must say what TAKING IT does.** It is not a name you are merely pointing at: it
+        // commits one tempo, right now. It used to read "Might 1 a blow, once you have them" - describing the
+        // Strike step, two commits away, and saying nothing whatever about the choice being made.
+        let reach = scene_choices(&board, arena);
+        let reach = &reach[0];
+        assert!(
+            reach.consequence.starts_with("commit 1 tempo:"),
+            "the target card states its own cost: {}",
+            reach.consequence
+        );
+        // ...and it is the SAME sentence the "Commit 1 tempo" card carries - a reach IS a commitment of one.
+        choose(&mut board, 0);
+        let commits = scene_choices(&board, arena);
+        let one = commits
+            .iter()
+            .find(|c| c.label == "Commit 1 tempo")
+            .unwrap();
+        assert!(
+            reach.consequence.ends_with(&one.consequence),
+            "the two must not be able to say different things:\n  {}\n  {}",
+            reach.consequence,
+            one.consequence
+        );
+        let back = labels(&board)
+            .iter()
+            .position(|l| l == "Reach elsewhere")
+            .unwrap();
+        choose(&mut board, back);
 
         // Reach: the row becomes the commitment, and the hero no longer owes an order.
         assert!(
