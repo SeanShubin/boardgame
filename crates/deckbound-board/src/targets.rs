@@ -141,18 +141,42 @@ pub fn schedule_card() -> Vec<String> {
             .unwrap_or_else(|| "-".into())
     };
 
+    const RANKS: [Rank; 3] = [Rank::Vanguard, Rank::Outrider, Rank::Rearguard];
+
+    // **Each column is as wide as its own widest cell**, and no wider. A fixed width does not align anything:
+    // `{:<6}` is a *minimum*, so one long cell ("Intercept", 9) simply shoves every column after it along, and
+    // the table is only a table by accident. Measure the content and lay the columns out to it.
+    let cell = |a: Rank, t: Rank| when(a, t);
+    let widths: Vec<usize> = RANKS
+        .iter()
+        .map(|&t| {
+            RANKS
+                .iter()
+                .map(|&a| cell(a, t).len())
+                .chain(std::iter::once(3)) // the "->V" header
+                .max()
+                .unwrap_or(3)
+        })
+        .collect();
+
+    let mut header = "     ".to_string(); // clears the "  V  " row label
+    for (i, &t) in RANKS.iter().enumerate() {
+        header.push_str(&format!(
+            "{:<w$} ",
+            format!("->{}", letter(t)),
+            w = widths[i]
+        ));
+    }
     let mut out = vec![
         "Who reaches whom".to_string(),
-        "       ->V    ->O    ->R".to_string(),
+        header.trim_end().to_string(),
     ];
-    for a in [Rank::Vanguard, Rank::Outrider, Rank::Rearguard] {
-        out.push(format!(
-            "  {}  {:<6} {:<6} {:<6}",
-            letter(a),
-            when(a, Rank::Vanguard),
-            when(a, Rank::Outrider),
-            when(a, Rank::Rearguard),
-        ));
+    for &a in &RANKS {
+        let mut row = format!("  {}  ", letter(a));
+        for (i, &t) in RANKS.iter().enumerate() {
+            row.push_str(&format!("{:<w$} ", cell(a, t), w = widths[i]));
+        }
+        out.push(row.trim_end().to_string());
     }
     out.push("  * needs their Vanguard down".to_string());
     out
@@ -172,6 +196,52 @@ mod tests {
             norm(&table_md()),
             norm(want),
             "combat-targets.md drifted - regenerate with `cargo run -p deckbound-board --example targets`"
+        );
+    }
+
+    /// **The card is a table, so its columns must actually line up.** They are aligned with spaces in a
+    /// monospace face, which means alignment is a property of the *string* - and `{:<6}` does not give it to
+    /// you, because a fixed width is a MINIMUM: one long cell ("Intercept", 9 chars) shoves every column after
+    /// it along, and the table becomes a table only by accident.
+    ///
+    /// So assert what the eye asserts: every cell in a column starts at the same offset, on every row.
+    #[test]
+    fn the_schedule_card_columns_line_up() {
+        let card = schedule_card();
+        let rows: Vec<&String> = card
+            .iter()
+            .filter(|l| l.starts_with("  V") || l.starts_with("  O") || l.starts_with("  R"))
+            .collect();
+        assert_eq!(rows.len(), 3, "one row per attacker rank");
+
+        // The column starts of a line: the index of each run of non-space that follows a space.
+        let starts = |l: &str| -> Vec<usize> {
+            let b = l.as_bytes();
+            (1..b.len())
+                .filter(|&i| b[i] != b' ' && b[i - 1] == b' ')
+                .collect()
+        };
+        let want = starts(rows[0]);
+        assert_eq!(want.len(), 4, "a row label and three cells: {}", rows[0]);
+        for r in &rows[1..] {
+            assert_eq!(
+                starts(r),
+                want,
+                "every column must start at the same offset on every row:\n  {}\n  {}",
+                rows[0],
+                r
+            );
+        }
+        // ...and the header's arrows sit over the cells they head.
+        let header = card
+            .iter()
+            .find(|l| l.contains("->V"))
+            .expect("the card has a header");
+        assert_eq!(
+            starts(header),
+            want[1..].to_vec(),
+            "the ->V/->O/->R headers must sit over their columns:\n  {header}\n  {}",
+            rows[0]
         );
     }
 
