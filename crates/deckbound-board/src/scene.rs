@@ -113,10 +113,16 @@ fn stat_legend() -> Vec<String> {
 // ---- the two progress tracks (fixed display order; the physical decks rotate) --------------------------
 
 fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
-    let mut phase_items = vec![TrackItem {
-        label: "Marshal".to_string(),
-        current: marshal,
-    }];
+    // **Marshal happens once**, so it is on the track only while it is happening. Leaving a step you can never
+    // return to sitting at the top of the track for the rest of the fight would say the round still contains
+    // it - and the round no longer does.
+    let mut phase_items = Vec::new();
+    if marshal {
+        phase_items.push(TrackItem {
+            label: "Marshal".to_string(),
+            current: true,
+        });
+    }
     for (i, name) in SUB_PHASE_NAMES.iter().enumerate() {
         phase_items.push(TrackItem {
             label: (*name).to_string(),

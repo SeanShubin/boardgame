@@ -487,22 +487,24 @@ fn muster_foes(board: &Board, arena: PileId) -> Vec<CardId> {
         .collect()
 }
 
-/// The inverse of [`reveal`]: the **living** foes step back out of formation into the muster, at the top of
-/// each new round. Intentions are re-declared every round, so each Marshal is a fresh blind bet - and the
-/// player must be able to see who is still standing while making it.
+/// Spend the Marshal card: the formation is declared once, and the deck that remains is the five sub-phases.
 ///
-/// The fallen stay where they fell (a corpse is not "remaining"), which also keeps [`outcome`]'s reading of
-/// the muster honest: anything in it is alive.
-fn unrank_foes(board: &mut Board, arena: PileId) {
-    let Some(muster) = sub_pile(board, arena, MUSTER) else {
+/// The card is *removed*, not rotated under - so the phase deck physically becomes the round, and "is it
+/// Marshal?" stays a question you answer by looking at the top card. Nothing else needs to know the rule.
+fn discard_marshal(board: &mut Board, arena: PileId) {
+    let Some(deck) = sub_pile(board, arena, PHASES) else {
         return;
     };
-    let (cards, units, _, _, _) = arena_state(board, arena);
-    for (i, u) in units.iter().enumerate() {
-        if u.side == Side::Foe && !u.fallen {
-            let at = board.pile(muster).map_or(0, |p| p.cards().len());
-            let _ = board.move_card(cards[i], muster, at);
+    let marshal = board
+        .pile(deck)
+        .and_then(|p| p.cards().first().copied())
+        .filter(|&c| board.card(c).map(|k| k.front_title()) == Some("Marshal"));
+    match marshal {
+        Some(c) => {
+            let _ = board.remove_card(c);
         }
+        // Already spent (a headless double-commit, or a restart mid-fight): just advance.
+        None => rotate_deck(board, arena, PHASES),
     }
 }
 
@@ -1139,7 +1141,18 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
         for (i, card) in cards.iter().enumerate() {
             write_combatant(board, *card, &units[i], maxes[i]);
         }
-        rotate_deck(board, arena, PHASES); // Marshal -> the first sub-phase (Intercept); Steps stays at Strike
+        // **Marshal happens ONCE.** Its card is discarded, not rotated to the bottom - so the deck that
+        // remains is the five sub-phases, and a round now wraps Breach -> Intercept with no formation step in
+        // between.
+        //
+        // We proved re-Marshalling is decoration: across every kit and the full party against all eight
+        // encounters, there is no position where a mid-fight re-rank turns a loss into a win (and the LOSSES
+        // are exhaustive searches, so that is not an artefact of pruning). It cost 24x to model and bought
+        // nothing - see `examples/v2_remarshal`. What it *did* buy was a solver that could be wrong about the
+        // game: a fixed-formation search would have called you doomed in positions a re-rank might have saved.
+        // A certainty indicator may be silent, but it may never be wrong. So the rule goes, and the search
+        // becomes correct by construction.
+        discard_marshal(board, arena);
         return outcome(board, arena).is_some();
     }
 
@@ -1274,7 +1287,10 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
             // to Marshal, a new round has begun - refresh tempo and bump the round counter.
             rotate_deck(board, arena, STEPS);
             rotate_deck(board, arena, PHASES);
-            let new_round = deck_top(board, arena, PHASES).as_deref() == Some("Marshal");
+            // The round wraps when the phase deck comes back round to its first sub-phase. (It used to wrap to
+            // Marshal; Marshal is gone after the first one.)
+            let new_round =
+                deck_top(board, arena, PHASES).as_deref() == SUB_PHASE_NAMES.first().copied();
             if new_round {
                 // The Reset closes the round: it is a real change to every card on the table, and the last
                 // thing the player sees before the journal is wiped for the new one.
@@ -1296,10 +1312,9 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
             writeback(board, &units);
             if new_round {
                 set_round(board, arena, round + 1);
-                // The lines break and re-form: intentions are declared afresh every round, so the surviving
-                // foes step back out of formation into the muster. You go into each Marshal seeing exactly who
-                // is left and what they carry - and, as on the first round, not where they will stand.
-                unrank_foes(board, arena);
+                // The foes stay in their ranks. They used to step back into the muster each round, to keep
+                // their formation off the table while you re-declared yours - but nobody re-declares anything
+                // now, so there is nothing left to hide and nothing left to hide it from.
             }
         }
     }
@@ -2418,19 +2433,24 @@ mod tests {
         assert!(units.iter().any(|u| u.side == Side::Foe), "foes are ranked");
         assert!(units.iter().any(|u| u.side == Side::Party), "so are we");
 
-        // **Every round is a fresh blind bet.** Intentions are re-declared each round, so at the next Marshal
-        // the surviving foes have stepped back out of formation - you can see who is left, but not where they
-        // will stand. Without this the enemy simply vanished from every Marshal after the first.
+        // **And Marshal never comes again.** The formation is declared once, so the round wraps Breach ->
+        // Intercept with no formation step between, and the foes stay standing in their ranks - there is no
+        // blind declaration left to keep them off the table for. (Re-Marshalling was decoration: no position
+        // exists where a mid-fight re-rank turns a loss into a win. See examples/v2_remarshal.)
         let mut guard = 0;
-        while arena_state(&board, arena).4 != Step::Marshal && outcome(&board, arena).is_none() {
+        while arena_state(&board, arena).3 < 3 && outcome(&board, arena).is_none() {
+            assert_ne!(
+                arena_state(&board, arena).4,
+                Step::Marshal,
+                "Marshal happens exactly once, at the top of the battle"
+            );
             commit(&mut board, arena);
             guard += 1;
-            assert!(guard < 100, "the round must come back round to Marshal");
+            assert!(guard < 200, "the rounds must advance");
         }
-        assert_eq!(arena_state(&board, arena).3, 2, "round 2");
         assert!(
-            !muster_foes(&board, arena).is_empty(),
-            "the survivors are back in the muster, readable and unranked"
+            muster_foes(&board, arena).is_empty(),
+            "the foes hold their ranks - nothing left to hide, and nobody to hide it from"
         );
     }
 
