@@ -18,9 +18,17 @@ pub const SMALL_H: i32 = 96;
 /// Card width for a full card face (name + detail lines).
 pub const MEDIUM_W: i32 = 200;
 /// Card width for a document-sized panel (a combat log, docs).
-pub const LARGE_W: i32 = 320;
+///
+/// Wide enough that a combat-log line lands in **one or two** wrapped rows rather than three. A panel that is
+/// narrower than its content does not lose anything - it scrolls - but every wrap costs a row of the visible
+/// window, so a too-narrow panel makes you scroll to read what would otherwise be on screen.
+pub const LARGE_W: i32 = 440;
 /// A large panel caps here and scrolls; its footprint never exceeds this height.
-pub const LARGE_MAX_H: i32 = 360;
+///
+/// The cap is what keeps the *layout* sound: `place_clear` / `separate` / `arrange_row` all reason over
+/// bounded footprints, so a card that grew without limit would break the geometry rather than merely look bad.
+/// Everything past the cap is still reachable - it scrolls (by drag, so PC and iPad read the same).
+pub const LARGE_MAX_H: i32 = 480;
 
 /// The diagonal step between the layers of a deck chip's stack - each deeper card peeks out this far along
 /// the left and bottom edges, hinting at depth. The renderer draws exactly this offset.
@@ -173,9 +181,22 @@ mod tests {
         );
     }
 
+    /// A Large panel is the widest card and grows with its **panel** lines (not its detail), and it is capped -
+    /// which is what keeps the layout sound, since every placement rule reasons over bounded footprints.
+    ///
+    /// Asserted as *behaviour*, not as the numbers: pinning `x == 320` made this test fail the moment the panel
+    /// was widened, while saying nothing about whether the panel still worked. A test that breaks on a tuning
+    /// change it does not care about is a test that trains you to ignore it.
     #[test]
     fn large_caps_and_reads_panel_lines() {
-        assert_eq!(footprint(Size::Large, 0, 2).x, 320);
+        assert_eq!(footprint(Size::Large, 0, 2).x, LARGE_W);
+        assert!(LARGE_W > MEDIUM_W, "a document panel is the widest card");
+        // It reads the PANEL lines, and ignores detail (which is Medium's).
+        assert!(footprint(Size::Large, 0, 4).y > footprint(Size::Large, 0, 2).y);
+        assert_eq!(
+            footprint(Size::Large, 99, 2).y,
+            footprint(Size::Large, 0, 2).y
+        );
         // A very long panel is capped (it scrolls in the renderer), never taller than the cap.
         assert_eq!(footprint(Size::Large, 0, 1000).y, LARGE_MAX_H);
     }
