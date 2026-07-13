@@ -149,16 +149,7 @@ pub fn map_out(party: &[Combatant], foes: &[Combatant]) -> MapCost {
     let mut winnable = false;
     let formations = 3usize.pow(n as u32);
     for f in 0..formations {
-        let mut units: Vec<Combatant> = party
-            .iter()
-            .enumerate()
-            .map(|(k, p)| {
-                let mut u = p.clone();
-                u.rank = RANKS[(f / 3usize.pow(k as u32)) % 3];
-                u
-            })
-            .collect();
-        units.extend(foes.iter().cloned());
+        let units = formed(party, foes, f);
         // No `||=` short-circuit: `explore` must run for every formation, or it is not a map.
         let win = explore(&units, 0, 0, &mut memo, &mut nodes);
         winnable |= win;
@@ -169,6 +160,47 @@ pub fn map_out(party: &[Combatant], foes: &[Combatant]) -> MapCost {
         formations,
         winnable,
     }
+}
+
+/// Map out **one** formation, from a fresh memo — so it stands alone.
+///
+/// The whole-fight [`map_out`] shares one memo across all the formations, which makes the first expensive and
+/// the rest look cheap. That flatters whichever one happens to go first, and it hides the number you actually
+/// need: *how long does the **worst** formation take, on its own?* That is the frame-hitch risk, and it is what
+/// a Marshal-screen indicator would pay per formation it evaluates.
+pub fn map_out_formation(party: &[Combatant], foes: &[Combatant], formation: usize) -> MapCost {
+    let units = formed(party, foes, formation);
+    let mut memo: HashMap<Key, bool> = HashMap::new();
+    let mut nodes = 0u64;
+    let winnable = explore(&units, 0, 0, &mut memo, &mut nodes);
+    MapCost {
+        nodes,
+        states: memo.len(),
+        formations: 1,
+        winnable,
+    }
+}
+
+/// The party ranked by formation index `f` (base-3 over the heroes), plus the foes.
+fn formed(party: &[Combatant], foes: &[Combatant], f: usize) -> Vec<Combatant> {
+    let mut units: Vec<Combatant> = party
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            let mut u = p.clone();
+            u.rank = RANKS[(f / 3usize.pow(k as u32)) % 3];
+            u
+        })
+        .collect();
+    units.extend(foes.iter().cloned());
+    units
+}
+
+/// How the party is ranked in formation `f` — so a probe can *name* the worst one rather than just number it.
+pub fn formation_ranks(party_len: usize, f: usize) -> Vec<Rank> {
+    (0..party_len)
+        .map(|k| RANKS[(f / 3usize.pow(k as u32)) % 3])
+        .collect()
 }
 
 /// [`forces_win`] with **every** branch visited - it never returns early on a win. The verdict is the same; the

@@ -20,7 +20,7 @@
 use std::time::Instant;
 
 use deckbound_board::combat::{Combatant, Side};
-use deckbound_board::solver::map_out;
+use deckbound_board::solver::{formation_ranks, map_out, map_out_formation};
 use deckbound_content::catalog::{self, Creature, Encounter};
 use deckbound_content::rank::Intention as Rank;
 
@@ -68,24 +68,51 @@ fn kit(name: &str) -> Combatant {
 /// the real one, not a hypothetical.
 const NODE_BUDGET: u64 = 2_500;
 
-fn probe(place: &str, who: &str, party: &[Combatant], foes: &[Combatant]) {
+fn letter(r: Rank) -> char {
+    match r {
+        Rank::Vanguard => 'V',
+        Rank::Outrider => 'O',
+        Rank::Rearguard => 'R',
+    }
+}
+
+fn probe(place: &str, who: &str, party: &[Combatant], foes: &[Combatant]) -> f64 {
+    // The whole map, one shared memo - the total cost of knowing everything about this fight.
     let t0 = Instant::now();
-    let cost = map_out(party, foes);
+    let all = map_out(party, foes);
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-    let per_node_us = if cost.nodes > 0 {
-        ms * 1000.0 / cost.nodes as f64
-    } else {
-        0.0
-    };
-    let frames = cost.nodes.div_ceil(NODE_BUDGET);
+    // ...and every formation ALONE, from a fresh memo. The shared-memo total flatters whichever formation went
+    // first; this is the number a Marshal-screen indicator would actually pay, per formation, and the worst of
+    // them is the frame-hitch risk.
+    let mut worst = (0usize, 0f64, 0u64);
+    let mut total_alone = 0.0;
+    for f in 0..all.formations {
+        let t = Instant::now();
+        let one = map_out_formation(party, foes, f);
+        let one_ms = t.elapsed().as_secs_f64() * 1000.0;
+        total_alone += one_ms;
+        if one_ms > worst.1 {
+            worst = (f, one_ms, one.nodes);
+        }
+    }
+    let ranks: String = formation_ranks(party.len(), worst.0)
+        .into_iter()
+        .map(letter)
+        .collect();
+    let frames = worst.2.div_ceil(NODE_BUDGET);
+
     println!(
-        "  {place:20} {who:24} {:>9} nodes  {:>8} states  {:>3} formations  {ms:>9.1} ms  ({per_node_us:.2} us/node, {frames} frames @ {NODE_BUDGET})  {}",
-        cost.nodes,
-        cost.states,
-        cost.formations,
-        if cost.winnable { "WIN" } else { "lose" },
+        "  {place:20} {who:24} {:>9} nodes  {:>8} states  {:>3} forms  {ms:>8.1} ms   |  worst single formation: {ranks:<4} {:>8} nodes {:>8.1} ms ({frames} frames)  {}",
+        all.nodes,
+        all.states,
+        all.formations,
+        worst.2,
+        worst.1,
+        if all.winnable { "WIN" } else { "lose" },
     );
+    let _ = total_alone;
+    ms
 }
 
 fn main() {
@@ -101,9 +128,7 @@ fn main() {
         let foes = encounter_units(e);
         let counter = catalog::creature_counter(catalog::creature(e.keystone).expect("keystone"));
         let party = vec![kit(counter)];
-        let t = Instant::now();
-        probe(e.location, counter, &party, &foes);
-        solo_ms += t.elapsed().as_secs_f64() * 1000.0;
+        solo_ms += probe(e.location, counter, &party, &foes);
     }
 
     println!("\nCORNERS - the full party:");
@@ -111,9 +136,7 @@ fn main() {
     let mut corner_ms = 0.0;
     for e in catalog::ENCOUNTERS.iter().filter(|e| e.party) {
         let foes = encounter_units(e);
-        let t = Instant::now();
-        probe(e.location, "the full party", &party, &foes);
-        corner_ms += t.elapsed().as_secs_f64() * 1000.0;
+        corner_ms += probe(e.location, "the full party", &party, &foes);
     }
 
     println!("\n---------------------------------------------------------------");
