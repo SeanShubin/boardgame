@@ -24,7 +24,34 @@ const RANKS: [Rank; 3] = [Rank::Vanguard, Rank::Outrider, Rank::Rearguard];
 /// overwrites their `rank`); `foes` keep their scripted ranks. The party picks one formation for the battle
 /// (round-0 ranks, held — a sufficient condition: if some fixed formation wins, the party wins).
 pub fn winnable(party: &[Combatant], foes: &[Combatant]) -> bool {
+    winnable_traced(party, foes, false).0
+}
+
+/// Whether the party can force a win **when it may re-Marshal every round** — the rule the *game* actually
+/// plays, as against [`winnable`]'s fixed-formation assumption.
+///
+/// The game unranks the foes at each Reset and lets you move your heroes, so a position a fixed-formation
+/// search calls lost may be winnable by re-ranking next round. If the two ever disagree, the fixed search is
+/// **wrong about the game** - and a "doomed" verdict built on it would tell you to abandon a fight you could
+/// still win, which is the one failure mode a certainty indicator may never have.
+pub fn winnable_remarshal(party: &[Combatant], foes: &[Combatant]) -> bool {
+    winnable_traced(party, foes, true).0
+}
+
+/// [`winnable`] / [`winnable_remarshal`], reporting the size of the memo table it built — the honest measure
+/// of what an in-app solver would have to hold.
+pub fn winnable_traced(party: &[Combatant], foes: &[Combatant], remarshal: bool) -> (bool, usize) {
+    // Re-marshalling branches every formation at the top of each round anyway, so the opening ranks are
+    // whatever: round 0 will overwrite them. A fixed search must enumerate them itself.
+    if remarshal {
+        let mut units: Vec<Combatant> = party.to_vec();
+        units.extend(foes.iter().cloned());
+        let mut memo = HashMap::new();
+        let win = forces_win_with(&units, 0, 0, &mut memo, true);
+        return (win, memo.len());
+    }
     let n = party.len();
+    let mut states = 0;
     for f in 0..3usize.pow(n as u32) {
         let mut units: Vec<Combatant> = party
             .iter()
@@ -37,11 +64,31 @@ pub fn winnable(party: &[Combatant], foes: &[Combatant]) -> bool {
             .collect();
         units.extend(foes.iter().cloned());
         let mut memo = HashMap::new();
-        if forces_win(&units, 0, 0, &mut memo) {
-            return true;
+        let win = forces_win(&units, 0, 0, &mut memo);
+        states += memo.len();
+        if win {
+            return (true, states);
         }
     }
-    false
+    (false, states)
+}
+
+/// Every way to rank the party's **living** heroes (the fallen have no formation). One entry per hero index.
+fn formations(units: &[Combatant]) -> Vec<Vec<(usize, Rank)>> {
+    let living: Vec<usize> = (0..units.len())
+        .filter(|&i| units[i].side == Side::Party && !units[i].fallen)
+        .collect();
+    let mut out = Vec::new();
+    for f in 0..3usize.pow(living.len() as u32) {
+        out.push(
+            living
+                .iter()
+                .enumerate()
+                .map(|(k, &i)| (i, RANKS[(f / 3usize.pow(k as u32)) % 3]))
+                .collect(),
+        );
+    }
+    out
 }
 
 /// A memo key: the mutable state (per unit health/tempo/fallen/**pile**) plus the walk position.
@@ -52,13 +99,22 @@ pub fn winnable(party: &[Combatant], foes: &[Combatant]) -> bool {
 /// damage are genuinely different positions, and conflating them would make the solver return confidently
 /// wrong answers rather than fail. It costs state space (a wound counter in `[0, grit)` per unit), which
 /// is the price of the rule.
-type Key = (Vec<(u32, u32, bool, u32)>, usize, usize);
+/// The **rank is in the key too**, and it has to be: once the party may re-Marshal, the formation is part of
+/// the mutable state, not a constant of the battle. Leaving it out would conflate two genuinely different
+/// positions and hand back a confidently wrong answer. (For a fixed-formation search it is a constant, so it
+/// costs nothing but a few bytes.)
+type Key = (Vec<(u32, u32, bool, u32, u8)>, usize, usize);
 
 fn key_of(units: &[Combatant], round: usize, sub: usize) -> Key {
+    let rank = |r: Rank| match r {
+        Rank::Vanguard => 0u8,
+        Rank::Outrider => 1,
+        Rank::Rearguard => 2,
+    };
     (
         units
             .iter()
-            .map(|u| (u.health, u.tempo, u.fallen, u.pending))
+            .map(|u| (u.health, u.tempo, u.fallen, u.pending, rank(u.rank)))
             .collect(),
         round,
         sub,
@@ -81,6 +137,16 @@ fn forces_win(
     sub: usize,
     memo: &mut HashMap<Key, bool>,
 ) -> bool {
+    forces_win_with(units, round, sub, memo, false)
+}
+
+fn forces_win_with(
+    units: &[Combatant],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    remarshal: bool,
+) -> bool {
     if let Some(done) = party_won(units) {
         return done;
     }
@@ -95,7 +161,19 @@ fn forces_win(
     if sub == 0 {
         combat::refresh_round(&mut units); // Tempo refreshes to Cadence each round
     }
-    let win = search_engage(&units, round, sub, memo);
+    // **Marshal.** With re-marshalling the party re-declares its formation at the top of every round - which is
+    // what the game actually lets you do. Without it, the ranks it walked in with are the ranks it fights with.
+    let win = if remarshal && sub == 0 {
+        formations(&units).into_iter().any(|f| {
+            let mut u = units.clone();
+            for (i, r) in f {
+                u[i].rank = r;
+            }
+            search_engage_with(&u, round, sub, memo, remarshal)
+        })
+    } else {
+        search_engage_with(&units, round, sub, memo, remarshal)
+    };
     memo.insert(key, win);
     win
 }
@@ -111,11 +189,12 @@ fn next(round: usize, sub: usize) -> (usize, usize) {
 
 /// Engage step: try every party engagement plan (joint over attackers), fold in the greedy foe, resolve,
 /// recurse into Evade.
-fn search_engage(
+fn search_engage_with(
     units: &[Combatant],
     round: usize,
     sub: usize,
     memo: &mut HashMap<Key, bool>,
+    rm: bool,
 ) -> bool {
     let foe_engagements = Greedy.engagements(units, Side::Foe, sub);
     let options = party_engage_options(units, sub);
@@ -124,7 +203,7 @@ fn search_engage(
         let mut all: Vec<Engage> = chosen.iter().flatten().copied().collect();
         all.extend(foe_engagements.iter().copied());
         let reaching = combat::resolve_engage(&mut u, &all);
-        search_evade(&u, &reaching, round, sub, memo)
+        search_evade(&u, &reaching, round, sub, memo, rm)
     })
 }
 
@@ -139,6 +218,7 @@ fn search_evade(
     round: usize,
     sub: usize,
     memo: &mut HashMap<Key, bool>,
+    rm: bool,
 ) -> bool {
     // Party units that something is reaching for, and that can actually afford to escape it.
     let reached: Vec<usize> = (0..units.len())
@@ -162,7 +242,7 @@ fn search_evade(
             .collect();
         let mut u = units.to_vec();
         let contacts = combat::resolve_evade(&mut u, reaching, &dodges);
-        search_strike(&u, &contacts, round, sub, memo)
+        search_strike(&u, &contacts, round, sub, memo, rm)
     })
 }
 
@@ -174,6 +254,7 @@ fn search_strike(
     round: usize,
     sub: usize,
     memo: &mut HashMap<Key, bool>,
+    rm: bool,
 ) -> bool {
     let foe_blows = Greedy.blows(units, Side::Foe, contacts);
     // Every party unit on an edge it may swing along - as the engager, or answering along a melee edge.
@@ -200,7 +281,7 @@ fn search_strike(
         blows.extend(foe_blows.iter().copied());
         combat::resolve_strike(&mut u, contacts, &blows);
         combat::end_sub_phase(&mut u);
-        forces_win(&u, nr, ns, memo)
+        forces_win_with(&u, nr, ns, memo, rm)
     })
 }
 
