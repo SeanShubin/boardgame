@@ -13,11 +13,16 @@ use cardtable_model::{
 use crate::sample_table;
 use crate::solver::Oracle;
 
-/// Nodes the oracle may visit per frame. Sized so a frame stays comfortably inside its 16ms budget even in the
-/// worst position measured (the full party at Ninefold Deep), and so a big tree simply takes a few frames -
-/// which is what `Evaluating` is *for*. Raise it and the app stutters; lower it and the badge takes longer to
-/// land. Nothing is ever wrong, only later.
-const NODE_BUDGET: u64 = 20_000;
+/// Nodes the oracle may visit per frame.
+///
+/// **Derived, not guessed.** The probe measured the worst full search at 27,270 nodes in 117 ms - about 4.3 us
+/// a node - so a frame's 16 ms buys roughly 3,700. Take 2,500 and leave headroom for everything else the frame
+/// has to do. The worst position in the game therefore settles in about a dozen frames: a fifth of a second of
+/// "evaluating", once, and then the memo is warm and every later look is free.
+///
+/// This is the *whole* safety mechanism. Raise it and the app hitches; lower it and the badge takes longer to
+/// land. Nothing is ever **wrong**, only later - which is exactly what `Evaluating` is for.
+const NODE_BUDGET: u64 = 2_500;
 
 /// The doom oracle's per-fight state: the memo (so the first look walks the tree and every later one is a
 /// lookup) and the timing it has cost so far.

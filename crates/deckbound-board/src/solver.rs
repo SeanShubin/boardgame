@@ -122,6 +122,159 @@ impl Oracle {
     }
 }
 
+/// What it cost to map a fight out completely.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MapCost {
+    /// Positions actually *evaluated* (a memo hit costs nothing).
+    pub nodes: u64,
+    /// Distinct positions the memo now holds - the memory an in-app oracle would carry.
+    pub states: usize,
+    /// Formations enumerated at the Marshal.
+    pub formations: usize,
+    /// Whether any line at all wins.
+    pub winnable: bool,
+}
+
+/// **Map the whole fight out, from the initial Marshal.** Every formation, every allocation, every line, to the
+/// end of every branch - and *no short-circuit anywhere*, even after a win is found.
+///
+/// This is the ceiling, not the working cost. The doom oracle stops a subtree the moment it finds a win, and it
+/// starts *after* the formation is chosen. This starts at the Marshal, so the 3^heroes formation fan-out is in
+/// the tree - which is precisely the cost a Marshal-screen indicator would have to pay, and the reason that one
+/// was deferred rather than built.
+pub fn map_out(party: &[Combatant], foes: &[Combatant]) -> MapCost {
+    let n = party.len();
+    let mut memo: HashMap<Key, bool> = HashMap::new();
+    let mut nodes = 0u64;
+    let mut winnable = false;
+    let formations = 3usize.pow(n as u32);
+    for f in 0..formations {
+        let mut units: Vec<Combatant> = party
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let mut u = p.clone();
+                u.rank = RANKS[(f / 3usize.pow(k as u32)) % 3];
+                u
+            })
+            .collect();
+        units.extend(foes.iter().cloned());
+        // No `||=` short-circuit: `explore` must run for every formation, or it is not a map.
+        let win = explore(&units, 0, 0, &mut memo, &mut nodes);
+        winnable |= win;
+    }
+    MapCost {
+        nodes,
+        states: memo.len(),
+        formations,
+        winnable,
+    }
+}
+
+/// [`forces_win`] with **every** branch visited - it never returns early on a win. The verdict is the same; the
+/// difference is that the memo comes out *complete*, which is what "mapped out" means.
+fn explore(
+    units: &[Combatant],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+    nodes: &mut u64,
+) -> bool {
+    if let Some(done) = party_won(units) {
+        return done;
+    }
+    if round >= MAX_ROUNDS {
+        return false;
+    }
+    let key = key_of(units, round, sub);
+    if let Some(&r) = memo.get(&key) {
+        return r; // already mapped - the whole point
+    }
+    *nodes += 1;
+    let mut u = units.to_vec();
+    if sub == 0 {
+        combat::refresh_round(&mut u);
+    }
+
+    let foe_eng = Greedy.engagements(&u, Side::Foe, sub);
+    let mut win = false;
+    for_each_combo(&party_engage_options(&u, sub), &mut |chosen| {
+        let mut a = u.to_vec();
+        let mut all: Vec<Engage> = chosen.iter().flatten().copied().collect();
+        all.extend(foe_eng.iter().copied());
+        let reaching = combat::resolve_engage(&mut a, &all);
+
+        let reached: Vec<usize> = (0..a.len())
+            .filter(|&i| {
+                a[i].side == Side::Party
+                    && !a[i].fallen
+                    && combat::slip_cost(&a, &reaching, i).is_some_and(|c| c <= a[i].tempo)
+            })
+            .collect();
+        let dodge_opts: Vec<Vec<Dodge>> = reached
+            .iter()
+            .map(|_| vec![Dodge::Stand, Dodge::Slip])
+            .collect();
+        for_each_combo(&dodge_opts, &mut |picks| {
+            let dodges: Vec<Dodge> = (0..a.len())
+                .map(|i| match reached.iter().position(|&r| r == i) {
+                    Some(pos) => picks[pos],
+                    None if a[i].side == Side::Foe => Greedy.dodge(&a, &reaching, i),
+                    None => Dodge::Stand,
+                })
+                .collect();
+            let mut b = a.to_vec();
+            let contacts = combat::resolve_evade(&mut b, &reaching, &dodges);
+
+            let foe_blows = Greedy.blows(&b, Side::Foe, &contacts);
+            let edges: Vec<(usize, usize)> = (0..b.len())
+                .filter(|&i| b[i].side == Side::Party && !b[i].fallen && b[i].tempo > 0)
+                .filter_map(|i| combat::strike_target(&b, &contacts, i).map(|t| (i, t)))
+                .collect();
+            let blow_opts: Vec<Vec<Blows>> = edges
+                .iter()
+                .map(|&(i, target)| {
+                    (0..=b[i].tempo)
+                        .map(|cards| Blows {
+                            unit: i,
+                            target,
+                            cards,
+                        })
+                        .collect()
+                })
+                .collect();
+            let (nr, ns) = next(round, sub);
+            for_each_combo(&blow_opts, &mut |bs| {
+                let mut c = b.to_vec();
+                let mut blows: Vec<Blows> = bs.iter().filter(|x| x.cards > 0).copied().collect();
+                blows.extend(foe_blows.iter().copied());
+                combat::resolve_strike(&mut c, &contacts, &blows);
+                combat::end_sub_phase(&mut c);
+                win |= explore(&c, nr, ns, memo, nodes);
+            });
+        });
+    });
+    memo.insert(key, win);
+    win
+}
+
+/// Visit **every** combination. The deliberate opposite of [`any_combo`], which stops at the first that wins.
+fn for_each_combo<T: Clone>(options: &[Vec<T>], f: &mut dyn FnMut(&[T])) {
+    fn go<T: Clone>(options: &[Vec<T>], i: usize, acc: &mut Vec<T>, f: &mut dyn FnMut(&[T])) {
+        if i == options.len() {
+            f(acc);
+            return;
+        }
+        for opt in &options[i] {
+            acc.push(opt.clone());
+            go(options, i + 1, acc, f);
+            acc.pop();
+        }
+    }
+    let mut acc = Vec::new();
+    go(options, 0, &mut acc, f);
+}
+
 /// A node allowance. `None` from any search means it was exhausted - **not** that no win exists.
 struct Budget {
     left: u64,
