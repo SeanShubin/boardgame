@@ -1994,7 +1994,7 @@ fn spawn_choice_row(parent: &mut ChildSpawnerCommands, choices: &[Choice]) {
         });
 }
 
-fn spawn_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[String]) {
     parent
         .spawn((
             Node {
@@ -2012,7 +2012,7 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
         ))
         .with_children(|panel| {
             panel.spawn((
-                Text::new("Log"),
+                Text::new(if title.is_empty() { "Log" } else { title }.to_string()),
                 TextFont {
                     font_size: FONT_TITLE,
                     ..default()
@@ -2211,8 +2211,8 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     if !scene.choices.is_empty() {
                         spawn_choice_row(bottom, &scene.choices);
                     }
-                    if !scene.log.is_empty() {
-                        spawn_log_panel(bottom, &scene.log);
+                    if !scene.log.is_empty() || !scene.log_title.is_empty() {
+                        spawn_log_panel(bottom, &scene.log_title, &scene.log);
                     }
                 });
             });

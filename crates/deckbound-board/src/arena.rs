@@ -965,40 +965,22 @@ pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
     (0..units.len()).any(|i| can_act(&units, &contacts, sub, step, i))
 }
 
-/// A compact note for the current step when it is being auto-skipped: `"{Phase}|{Step}|{why}|{pairs}"`
-/// (pipe-encoded so the renderer can group by sub-phase). `pairs` is the sub-phase's `attacker>target` rank
-/// codes (e.g. `"V>O"`), so the renderer can show *which targeting* was passed over without knowing the
-/// SCHEDULE itself. ASCII - it is stored on a card (so it shows in the physical log too).
-pub fn current_skip_line(board: &Board, arena: PileId) -> String {
-    let (_, _, sub, _, step) = arena_state(board, arena);
+// ---- the event journal: what actually HAPPENED -----------------------------------------------------------
+
+/// Append one **event** — a thing that changed the state of the table: a card flipped, damage banked, a body
+/// fell. Stored on a loose card, so it is part of the board like everything else (and so Back rewinds it for
+/// free, and the physical log shows it).
+///
+/// The combat log used to be a *snapshot* of the current step, rebuilt from the board every frame: it could
+/// tell you what you *may* do but never what just happened, because the board does not remember. Guidance is
+/// the prompt's job and the choice cards' job. **The log's job is the record.**
+fn note_event(board: &mut Board, arena: PileId, sub: usize, line: String) {
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
-    let (name, reason) = match step {
-        Step::Engage => ("Engage", "no legal target"),
-        Step::Evade => ("Evade", "nothing reaching you"),
-        Step::Strike => ("Strike", "no contact to strike along"),
-        Step::Marshal => ("Marshal", ""),
-    };
-    format!("{phase}|{name}|{reason}|{}", pairs_line(sub))
-}
-
-/// Clear the record of auto-skipped steps (a fresh burst starts each time the player commits).
-pub fn clear_skips(board: &mut Board, arena: PileId) {
-    let stale: Vec<CardId> = board
-        .content_cards(arena)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("skiplog"))
-        .collect();
-    for c in stale {
-        let _ = board.remove_card(c);
-    }
-}
-
-/// Append a line to the skiplog card (a loose card that accumulates the current burst's auto-skips).
-pub fn note_skip(board: &mut Board, arena: PileId, line: String) {
+    let line = format!("{phase}|{line}");
     if let Some(c) = board
         .content_cards(arena)
         .into_iter()
-        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("skiplog"))
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("eventlog"))
     {
         let mut d = board
             .card(c)
@@ -1009,14 +991,75 @@ pub fn note_skip(board: &mut Board, arena: PileId, line: String) {
     } else if let Ok(c) = board.add_card(
         arena,
         cardtable_model::Face::Down {
-            title: "skipped".into(),
+            title: "events".into(),
         },
         None,
     ) {
         let _ = board.set_card_kind(c, CardKind::Virtual);
-        let _ = board.set_card_type(c, "skiplog");
+        let _ = board.set_card_type(c, "eventlog");
         let _ = board.set_card_detail(c, vec![line]);
     }
+}
+
+/// Every event this round, in order (`"Phase|line"`).
+pub(crate) fn read_events(board: &Board, arena: PileId) -> Vec<String> {
+    board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("eventlog"))
+        .flat_map(|c| {
+            board
+                .card(c)
+                .map(|k| k.detail().to_vec())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Wipe the journal. Called at the Reset: the log shows **this round**, which is the span a decision is made
+/// over (tempo refreshes and open wounds close, so nothing before it still bears on what you do next).
+fn clear_events(board: &mut Board, arena: PileId) {
+    let stale: Vec<CardId> = board
+        .content_cards(arena)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("eventlog"))
+        .collect();
+    for c in stale {
+        let _ = board.remove_card(c);
+    }
+}
+
+/// Report what a resolution did to the units, by diffing them — **only real changes**, each said once and in
+/// full. Damage is not health, so a blow reports both what it banked and whether that turned a card.
+fn note_damage(
+    board: &mut Board,
+    arena: PileId,
+    sub: usize,
+    before: &[Combatant],
+    after: &[Combatant],
+) {
+    for (b, a) in before.iter().zip(after) {
+        let flips = b.health.saturating_sub(a.health);
+        let banked = (a.pending + flips * a.grit).saturating_sub(b.pending);
+        if banked == 0 && flips == 0 {
+            continue;
+        }
+        let mut line = format!("{} takes {banked} damage", a.name);
+        if flips > 0 {
+            line.push_str(&format!(" - {flips} Health card{} turn", plural(flips)));
+        }
+        if a.pending > 0 {
+            line.push_str(&format!(" - {}/{} in its pile", a.pending, a.grit));
+        }
+        if a.health == 0 {
+            line.push_str(" - IT FALLS");
+        }
+        note_event(board, arena, sub, line);
+    }
+}
+
+fn plural(n: u32) -> &'static str {
+    if n == 1 { "" } else { "s" }
 }
 
 /// Move any Pool stragglers into their default rank pile (a direct commit's safety net; the UI gates Start
@@ -1045,6 +1088,10 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
     if step0 == Step::Marshal {
         autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
         reveal(board, arena); // both formations go down at once: the foes leave the muster and take their ranks
+        // A fresh round, a fresh journal. The log covers **this round** - the span a decision is actually made
+        // over, since tempo refreshes and open wounds close at the Reset, so nothing before it still bears on
+        // what you do next. (Committing Marshal is the last moment the previous round's record is on screen.)
+        clear_events(board, arena);
         // Round start: refresh every unit's tempo to its pool - Cadence, or body count for a horde (which
         // "swarms with one card per living body"). The end-of-round refresh only covers later rounds, so the
         // opening round is set here; idempotent for the rounds that were already refreshed.
@@ -1078,7 +1125,24 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
                 engagements = Greedy.engagements(&units, Side::Party, sub);
             }
             engagements.extend(Greedy.engagements(&units, Side::Foe, sub));
+            let before = units.clone();
             let reaching = combat::resolve_engage(&mut units, &engagements);
+            for c in &reaching {
+                note_event(
+                    board,
+                    arena,
+                    sub,
+                    format!(
+                        "{} spends {} tempo reaching {} (value {}) - slipping it costs {}",
+                        units[c.attacker].name,
+                        combat::reach_cards(&units, c),
+                        units[c.target].name,
+                        c.bid,
+                        c.bid / units[c.target].finesse.max(1) + 1
+                    ),
+                );
+            }
+            note_damage(board, arena, sub, &before, &units); // an area strike lands here and forms no contact
             writeback(board, &units); // clears the staged engagement plan
             write_contacts(board, arena, &cards, &reaching);
             rotate_deck(board, arena, STEPS); // Engage -> Evade
@@ -1097,7 +1161,24 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
                     }
                 })
                 .collect();
+            let before = units.clone();
             let contacts = combat::resolve_evade(&mut units, &reaching, &dodges);
+            // Only a slip changes anything: it flips tempo and breaks the edge. Standing spends nothing, and
+            // what standing *cost* you shows up as the blow that lands in the Strike step.
+            for (i, b) in before.iter().enumerate() {
+                let paid = b.tempo - units[i].tempo;
+                if paid > 0 {
+                    note_event(
+                        board,
+                        arena,
+                        sub,
+                        format!(
+                            "{} spends {paid} tempo and slips away - nothing reaches it",
+                            b.name
+                        ),
+                    );
+                }
+            }
             writeback(board, &units); // clears the staged dodges
             clear_contacts(board, arena);
             write_contacts(board, arena, &cards, &contacts);
@@ -1111,7 +1192,43 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
                 blows = Greedy.blows(&units, Side::Party, &contacts);
             }
             blows.extend(Greedy.blows(&units, Side::Foe, &contacts));
+            let before = units.clone();
             combat::resolve_strike(&mut units, &contacts, &blows);
+
+            // Who hit whom, how hard, and what it cost them - one line per striker. The opening blow is free
+            // (the Engage tempo already bought it), so the count and the spend are different numbers and both
+            // have to be said.
+            for i in 0..units.len() {
+                let opening = u32::from(contacts.iter().any(|c| c.attacker == i));
+                let spent = blows
+                    .iter()
+                    .filter(|b| b.unit == i)
+                    .map(|b| b.cards.min(before[i].tempo))
+                    .sum::<u32>();
+                let n = opening + spent;
+                if n == 0 {
+                    continue;
+                }
+                let Some(t) = combat::strike_target(&before, &contacts, i) else {
+                    continue;
+                };
+                let dealt = n * before[i].might;
+                let cost = if spent > 0 {
+                    format!(", spending {spent} tempo")
+                } else {
+                    " (the opening blow, already paid for)".to_string()
+                };
+                note_event(
+                    board,
+                    arena,
+                    sub,
+                    format!(
+                        "{} strikes {} {n}x for {dealt} damage{cost}",
+                        before[i].name, before[t].name
+                    ),
+                );
+            }
+            note_damage(board, arena, sub, &before, &units);
             combat::end_sub_phase(&mut units);
             clear_contacts(board, arena);
 
@@ -1121,6 +1238,21 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
             rotate_deck(board, arena, PHASES);
             let new_round = deck_top(board, arena, PHASES).as_deref() == Some("Marshal");
             if new_round {
+                // The Reset closes the round: it is a real change to every card on the table, and the last
+                // thing the player sees before the journal is wiped for the new one.
+                let unfinished: Vec<String> = units
+                    .iter()
+                    .filter(|u| u.pending > 0 && !u.fallen)
+                    .map(|u| format!("{} ({}/{})", u.name, u.pending, u.grit))
+                    .collect();
+                let mut line = "Reset: every tempo card stands back up".to_string();
+                if !unfinished.is_empty() {
+                    line.push_str(&format!(
+                        "; unfinished wounds close - {}",
+                        unfinished.join(", ")
+                    ));
+                }
+                note_event(board, arena, sub, line);
                 combat::refresh_round(&mut units);
             }
             writeback(board, &units);
@@ -2220,6 +2352,57 @@ mod tests {
                 .any(|u| u.side == Side::Party && u.rank == Rank::Outrider),
             "the hero is a combatant in the Outrider rank"
         );
+    }
+
+    /// **The log is the record: only what changed the table, said once and in full.** It used to be a snapshot
+    /// of the current step that mostly re-stated what you *may* do - which the prompt and the choice cards
+    /// already say, in more detail, right beside it - so the one line that mattered (the blow that landed) was
+    /// buried in speculation. Events are written to the board as they resolve, because the scene is rebuilt
+    /// from state every frame and state does not remember its own history.
+    #[test]
+    fn the_log_records_what_happened_not_what_might() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Start: the Reveal
+        commit(&mut board, arena); // Intercept / Engage: The Wall reaches for the crossing Raider
+
+        let events = read_events(&board, arena);
+        assert!(
+            events
+                .iter()
+                .any(|e| e.starts_with("Intercept|The Wall spends 1 tempo reaching Raider")),
+            "the reach is a state change - tempo flipped: {events:?}"
+        );
+
+        // Stand, and let the blow land. THAT is what the log owes you.
+        let stand = scene_choices(&board, arena)
+            .iter()
+            .position(|c| c.label == "Stand")
+            .unwrap();
+        choose(&mut board, stand);
+        commit(&mut board, arena); // Evade -> Strike
+        commit(&mut board, arena); // Strike resolves
+
+        let events = read_events(&board, arena);
+        assert!(
+            events
+                .iter()
+                .any(|e| e.contains("The Wall strikes Raider 1x for 1 damage")),
+            "who hit whom, how hard: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| e.contains("Raider takes 1 damage") && e.contains("Health card")),
+            "damage is not health - say what it banked AND whether a card turned: {events:?}"
+        );
+        // Nothing speculative: no line describes what anyone *may* do.
+        for e in &events {
+            assert!(
+                !e.contains(" may ") && !e.contains("no target yet"),
+                "the log is a record, not a guide: {e}"
+            );
+        }
     }
 
     #[test]

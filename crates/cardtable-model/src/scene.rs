@@ -34,6 +34,11 @@ pub struct Scene {
     /// [`choice_intention`](crate::BoardGame::choice_intention). The renderer draws them and does not know
     /// what any of them *mean*; everything a player needs to choose is in the [`Choice`] itself.
     pub choices: Vec<Choice>,
+    /// The log panel's **title** — where the game stands right now (e.g. "Round 1 - Clash - Strike"). The
+    /// panel used to be headed "Log", which said nothing: the position had to be read off the sidebar tracks,
+    /// and an on-disk copy had to re-state it. Put it here and the file can be a literal transcript of what the
+    /// player saw. Empty = "Log".
+    pub log_title: String,
     /// A text panel under the body: un-indented lines are section headers, leading-space lines are entries.
     /// Empty = draw no panel.
     pub log: Vec<String>,

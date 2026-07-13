@@ -14,7 +14,7 @@ use cardtable_model::{
     Track, TrackItem,
 };
 use deckbound_content::rank::Intention as Rank;
-use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
+use deckbound_content::schedule::SUB_PHASE_NAMES;
 
 use crate::arena::{self, Staged, Step};
 use crate::combat::{self, Combatant, Contact, Side};
@@ -31,8 +31,8 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     let heading = format!("Round {round}");
     let prompt = prompt_for(step).to_string();
 
-    let (body, links, log) = if marshal {
-        (build_formation(board, arena), Vec::new(), Vec::new())
+    let (body, links) = if marshal {
+        (build_formation(board, arena), Vec::new())
     } else {
         let contacts = arena::read_contacts(board, arena, &cards);
         let active = (0..units.len())
@@ -40,17 +40,20 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         let (lanes, links) = build_lanes(
             board, &cards, &units, &maxes, &staged, &contacts, active, sub, step,
         );
-        let log = build_log(
-            board,
-            &cards,
-            &units,
-            &staged,
-            &contacts,
-            sub,
-            step,
-            &read_skips(board, arena),
-        );
-        (SceneBody::Lanes(lanes), links, log)
+        (SceneBody::Lanes(lanes), links)
+    };
+    // The log is the **record**, not a guide: only what actually changed the table. What you *may* do is the
+    // prompt's job and the choice cards' job, and saying it twice made the log a wall of speculation you had to
+    // read past to find the one line that mattered.
+    let log = build_log(board, arena);
+    let log_title = if marshal {
+        format!("Round {round} - Marshal")
+    } else {
+        format!(
+            "Round {round} - {} - {}",
+            SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?"),
+            step_name(step)
+        )
     };
 
     // The Start / Commit control (index 0) is inert while the player still owes a decision - an unranked hero
@@ -74,6 +77,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         body,
         links,
         choices,
+        log_title,
         log,
         legend: stat_legend(),
         disabled_controls,
@@ -557,248 +561,30 @@ fn plan_text(board: &Board, s: &Staged) -> String {
 
 // ---- the combat log ------------------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
-fn build_log(
-    board: &Board,
-    _cards: &[CardId],
-    units: &[Combatant],
-    staged: &[Staged],
-    contacts: &[Contact],
-    sub: usize,
-    step: Step,
-    skips: &[String],
-) -> Vec<String> {
-    let mut log = condense_skips(skips);
-    if let Some(pairs) = SCHEDULE.get(sub)
-        && !pairs.is_empty()
-    {
-        let pretty = pairs
-            .iter()
-            .map(|(a, t)| {
-                format!(
-                    "{} -> {} ({})",
-                    rank_word(*a),
-                    rank_word(*t),
-                    rank_range_word(*a)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",  ");
-        log.push(format!("This phase, may reach:  {pretty}"));
-    }
-    match step {
-        // Who may reach whom, and what it would cost - not merely who has already chosen. A hero that cannot
-        // act says why, rather than sitting silently unusable (which reads as a bug in the schedule).
-        Step::Engage => {
-            log.push("Reach".to_string());
-            for i in 0..units.len() {
-                let u = &units[i];
-                if u.side != Side::Party || u.fallen {
-                    continue;
-                }
-                let reachable: Vec<&str> = units
-                    .iter()
-                    .enumerate()
-                    .filter(|(j, v)| {
-                        v.side == Side::Foe
-                            && !v.fallen
-                            && combat::legal_strike(sub, u.rank, v.rank)
-                            && combat::back_access_ok(units, u.rank, *j)
-                    })
-                    .map(|(_, v)| v.name.as_str())
-                    .collect();
-
-                let barred = if !combat::effective_in_rank(u.rank, u.melee, u.ranged) {
-                    Some(format!(
-                        "carries no {} strike here",
-                        rank_range_word(u.rank)
-                    ))
-                } else if u.tempo == 0 {
-                    Some("no tempo left".to_string())
-                } else if reachable.is_empty() {
-                    Some("nothing it may reach this phase".to_string())
-                } else {
-                    None
-                };
-
-                match (barred, staged[i].aim) {
-                    (Some(reason), _) => {
-                        log.push(format!("  {} - cannot reach: {reason}", u.name));
-                    }
-                    (None, Some(aim)) => {
-                        let aim_name = board
-                            .card(aim)
-                            .map(|c| c.front_title().to_string())
-                            .unwrap_or_default();
-                        log.push(format!(
-                            "  {} reaches for {}  (committing {} tempo)",
-                            u.name, aim_name, staged[i].bid
-                        ));
-                    }
-                    (None, None) if staged[i].hold => {
-                        log.push(format!("  {} holds", u.name));
-                    }
-                    (None, None) => {
-                        log.push(format!(
-                            "  {} may reach: {}  (no target yet)",
-                            u.name,
-                            reachable.join(", ")
-                        ));
-                    }
-                }
-            }
+/// **The combat log: what happened, and nothing else.**
+///
+/// Every line is a change to the state of the table - a tempo card flipped, damage banked, a Health card
+/// turned, a body fallen. It used to be a snapshot of the current step that mostly re-stated what you *may* do
+/// ("Raider may reach: The Wall (no target yet)"), which the prompt and the choice cards already say, in more
+/// detail, right next to it. So the log said nothing the screen did not, and the one line that mattered - the
+/// blow that actually landed - was buried in it.
+///
+/// The events are recorded on the board as they resolve (`arena::note_event`), which is the only way a log can
+/// remember: the scene is rebuilt from state every frame, and the state does not know its own history. Grouped
+/// under the sub-phase they happened in; a sub-phase where nothing happened does not appear, because nothing
+/// happened.
+fn build_log(board: &Board, arena: PileId) -> Vec<String> {
+    let mut log = Vec::new();
+    let mut current = String::new();
+    for e in arena::read_events(board, arena) {
+        let (phase, line) = e.split_once('|').unwrap_or(("", e.as_str()));
+        if phase != current {
+            log.push(phase.to_string());
+            current = phase.to_string();
         }
-        // What is reaching for whom, what it committed, and therefore what escaping costs. This is the whole
-        // input to the decision: it is on the table precisely so the price is exact.
-        Step::Evade => {
-            log.push("Reaching you".to_string());
-            if contacts.is_empty() {
-                log.push("  (nobody was reached)".to_string());
-            }
-            for c in contacts {
-                // Melee or ranged decides whether standing buys you anything: you can answer a body that came
-                // to you, but nothing answers a shot from the back line.
-                let reach = if combat::rank_is_ranged(units[c.attacker].rank) {
-                    "ranged"
-                } else {
-                    "melee"
-                };
-                let d = &units[c.target];
-                let price = c.bid / d.finesse.max(1) + 1;
-                let answer = if d.side == Side::Party {
-                    match staged[c.target].dodge {
-                        Some(combat::Dodge::Slip) => " - Slip",
-                        Some(combat::Dodge::Stand) => " - Stand",
-                        None => "",
-                    }
-                } else {
-                    ""
-                };
-                // Say what they SPENT, not only the value it came to. The player watches tempo cards flip, and
-                // the spend is the thing that tells them how heavily this was committed - the value is derived.
-                log.push(format!(
-                    "  {} reaches {}  ({reach}, spent {} tempo -> value {}, Might {}) - slipping costs {price}{answer}",
-                    units[c.attacker].name,
-                    d.name,
-                    combat::reach_cards(units, c),
-                    c.bid,
-                    units[c.attacker].might
-                ));
-            }
-        }
-        // Contact is made. Each engager's opening blow is already paid for; everything after is one card, one
-        // blow - and on a melee edge, the body that was reached may answer along it.
-        Step::Strike => {
-            log.push("Contact".to_string());
-            if contacts.is_empty() {
-                log.push("  (nothing was reached - everyone slipped or held)".to_string());
-            }
-            for c in contacts {
-                log.push(format!(
-                    "  {} has {} - one opening blow ({} might), already paid for",
-                    units[c.attacker].name, units[c.target].name, units[c.attacker].might
-                ));
-            }
-            for i in 0..units.len() {
-                let u = &units[i];
-                if u.side != Side::Party || u.fallen {
-                    continue;
-                }
-                let Some(t) = combat::strike_target(units, contacts, i) else {
-                    continue;
-                };
-                let answering = !contacts.iter().any(|c| c.attacker == i);
-                let plan = if staged[i].bid > 0 {
-                    format!(
-                        "{} blows ({} damage)",
-                        staged[i].bid,
-                        staged[i].bid * u.might
-                    )
-                } else if staged[i].hold {
-                    "holding".to_string()
-                } else {
-                    format!("{} tempo to spend", u.tempo)
-                };
-                log.push(format!(
-                    "  {} {} {} - {plan}",
-                    u.name,
-                    if answering { "answers" } else { "presses" },
-                    units[t].name
-                ));
-            }
-        }
-        Step::Marshal => {}
+        log.push(format!("  {line}"));
     }
     log
-}
-
-/// Report the auto-passed **steps** (notes of the form `"phase|step|reason|pairs"`).
-///
-/// It used to collapse these to `Skipped: Intercept`, which was wrong in a way that read as a contradiction:
-/// it named the **phase** when what was passed was a **step**, dropped the reason, and implied nothing had
-/// happened. But a step is only auto-passed when *you* have no decision to make in it — the enemy still acts.
-/// So the screen could say "Skipped: Intercept" while the phase card sat on Intercept and the schedule line
-/// said Vanguards may strike Outriders, and all three were true at once: your Strike had no legal target, the
-/// enemy's Strike landed a blow, and you are now answering it in that same phase's React.
-///
-/// So say exactly that: which **step**, why *you* had nothing to decide, and that it resolved on its own.
-fn condense_skips(skips: &[String]) -> Vec<String> {
-    let mut seen: Vec<(String, String)> = Vec::new();
-    let mut out = Vec::new();
-    for s in skips {
-        let mut it = s.split('|');
-        let phase = it.next().unwrap_or("").to_string();
-        let step = it.next().unwrap_or("").to_string();
-        let reason = it.next().unwrap_or("");
-        let pairs = it.next().unwrap_or("");
-        let key = (phase.clone(), step.clone());
-        if phase.is_empty() || seen.contains(&key) {
-            continue;
-        }
-        seen.push(key);
-        let targeting = pairs
-            .split(',')
-            .filter(|p| !p.is_empty())
-            .filter_map(|p| {
-                let mut c = p.split('>');
-                let a = c.next()?.chars().next()?;
-                // A target is a priority list now (`O>R|V|O`); the first is what it wants most.
-                let t = c.next()?.chars().next()?;
-                Some(format!("{} -> {}", rank_word_of(a), rank_word_of(t)))
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        if out.is_empty() {
-            out.push("Resolved without you (no decision to make)".to_string());
-        }
-        out.push(format!(
-            "  {phase} - {step}: you had {reason} ({targeting}). The enemy still acted."
-        ));
-    }
-    out
-}
-
-// ---- rank / reach words --------------------------------------------------------------------------------
-
-fn rank_word(rank: Rank) -> &'static str {
-    rank.label()
-}
-
-/// The full rank name for a one-letter code (from the skiplog's `V>O` codes).
-fn rank_word_of(c: char) -> &'static str {
-    match c {
-        'O' => "Outrider",
-        'R' => "Rearguard",
-        _ => "Vanguard",
-    }
-}
-
-fn rank_range_word(rank: Rank) -> &'static str {
-    if combat::rank_is_ranged(rank) {
-        "ranged"
-    } else {
-        "melee"
-    }
 }
 
 /// The three **constant** stats a fight actually turns on, compact enough for a tile only a card wide:
@@ -842,16 +628,6 @@ fn reach_word(melee: bool, ranged: bool) -> &'static str {
         (false, true) => "ranged",
         (false, false) => "no strike",
     }
-}
-
-fn read_skips(board: &Board, arena: PileId) -> Vec<String> {
-    board
-        .content_cards(arena)
-        .into_iter()
-        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("skiplog"))
-        .and_then(|c| board.card(c))
-        .map(|c| c.detail().to_vec())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

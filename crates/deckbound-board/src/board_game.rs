@@ -70,18 +70,20 @@ impl BoardGame for CardTableGame {
                             crate::arena::fold_back(board, a);
                         } else {
                             crate::arena::commit(board, a);
-                            // Skip straight past any following steps the player has no decision in (they
-                            // resolve greedily), stopping at the next real choice or the fight's end. Record
-                            // each skipped step so the combat log can report what was auto-resolved and why.
-                            crate::arena::clear_skips(board, a);
+                            // Walk straight past any following step the player has no decision in - it
+                            // resolves greedily - and stop at the next real choice, or the fight's end.
+                            //
+                            // Nothing needs recording here any more. A skipped step is not a silent one: the
+                            // enemy still acts in it, and everything it *does* lands in the event journal like
+                            // any other change. The old skip-notes existed only because the log could not
+                            // remember what happened; now it can, so "you had no legal target" is answered by
+                            // the log simply not mentioning you.
                             let mut guard = 0;
                             while crate::arena::outcome(board, a).is_none()
                                 && !crate::arena::step_needs_input(board, a)
                                 && guard < 100
                             {
-                                let note = crate::arena::current_skip_line(board, a);
                                 crate::arena::commit(board, a);
-                                crate::arena::note_skip(board, a, note);
                                 guard += 1;
                             }
                         }

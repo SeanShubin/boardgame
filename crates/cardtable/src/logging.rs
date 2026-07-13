@@ -697,25 +697,19 @@ fn log_combat(
         last.clear();
     }
 
-    // Where the fight stands: round + the current item of each track. It changes only on a Commit (or a Back,
-    // which rewinds one) - never on staging a plan.
-    let where_ = s
-        .tracks
-        .iter()
-        .filter_map(|t| t.items.iter().find(|i| i.current))
-        .map(|i| i.label.clone())
-        .collect::<Vec<_>>()
-        .join(" / ");
-    let position = format!("{} | {where_}", s.heading);
-    if position == *last {
+    // Where the fight stands. The panel's own title now says it ("Round 1 - Clash - Strike"), so this file is
+    // a **literal transcript of what the player read** - no re-stating the position in a different format that
+    // could disagree with the screen. It changes only on a Commit (or a Back, which rewinds one), never on
+    // staging a plan.
+    if s.log_title == *last {
         return;
     }
-    *last = position.clone();
+    *last = s.log_title.clone();
 
     if s.log.is_empty() {
-        return; // e.g. Marshal - the combat-log area is empty, so there is nothing the player read
+        return; // nothing happened here - so the log area is empty, and so is this
     }
-    let mut out = format!("\n-- {position} --\n");
+    let mut out = format!("\n{}\n", s.log_title);
     for line in &s.log {
         out.push_str(&format!("{line}\n"));
     }
