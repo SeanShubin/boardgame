@@ -1649,6 +1649,7 @@ fn redraw(
     history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
+    mono: Option<Res<MonoFont>>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
@@ -1665,7 +1666,13 @@ fn redraw(
     }
     // A game **scene** (a combat arena, etc.) is modal: the game declares it, the renderer draws it blind.
     if let Some(scene) = &scene.0 {
-        draw_scene(&mut commands, scene, &affordances.0, history.can_undo());
+        draw_scene(
+            &mut commands,
+            scene,
+            &affordances.0,
+            history.can_undo(),
+            mono.as_deref(),
+        );
         return;
     }
     build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
@@ -2011,7 +2018,11 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
 
 /// The **legend card** — a standing reference in the sidebar for the abbreviations the tiles are forced to
 /// use. Same text convention as the log: un-indented lines are headers, leading-space lines are entries.
-fn spawn_legend_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
+fn spawn_legend_panel(
+    parent: &mut ChildSpawnerCommands,
+    lines: &[String],
+    mono: Option<&MonoFont>,
+) {
     parent
         .spawn((
             SceneRegion("legend"),
@@ -2029,12 +2040,19 @@ fn spawn_legend_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
         .with_children(|panel| {
             for line in lines {
                 let header = !line.starts_with(' ');
+                let font = TextFont {
+                    font_size: if header { FONT_BODY } else { FONT_BADGE },
+                    // A table's columns are aligned with spaces. In a proportional face that alignment does not
+                    // survive at all, so a panel that IS a table gets the monospace one.
+                    font: match mono {
+                        Some(m) => FontSource::Handle(m.0.clone()),
+                        None => default(),
+                    },
+                    ..default()
+                };
                 panel.spawn((
                     Text::new(line.clone()),
-                    TextFont {
-                        font_size: if header { FONT_BODY } else { FONT_BADGE },
-                        ..default()
-                    },
+                    font,
                     TextColor(if header { INK } else { MUTED }),
                 ));
             }
@@ -2086,7 +2104,13 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
 /// affordance controls pinned to the footer. The renderer draws this **without knowing what any of it means**
 /// — the game decided every tile, badge, highlight and link. (Links are drawn separately by
 /// [`animate_target_arrows`], which reads the same [`SceneState`].)
-fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], can_undo: bool) {
+fn draw_scene(
+    commands: &mut Commands,
+    scene: &Scene,
+    affordances: &[String],
+    can_undo: bool,
+    mono: Option<&MonoFont>,
+) {
     commands
         .spawn((
             CardTableRoot,
@@ -2125,7 +2149,14 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 // The legend sits under the tracks: always on screen, and never competing for room with the
                 // body, the decision or the log.
                 if !scene.legend.is_empty() {
-                    spawn_legend_panel(side, &scene.legend);
+                    spawn_legend_panel(side, &scene.legend, None);
+                }
+                // The schedule card, under the legend. The sidebar had 213 x 512 of free space below the legend
+                // and this needs about 190 x 90 of it - measured, not guessed (the `scene regions` block in
+                // ui-state.log). **Monospaced**, because it is a table: its columns are aligned with spaces,
+                // and in a proportional face that alignment is not merely ugly, it is gone.
+                if !scene.reference.is_empty() {
+                    spawn_legend_panel(side, &scene.reference, mono);
                 }
             });
 

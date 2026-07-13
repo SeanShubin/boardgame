@@ -50,6 +50,13 @@ pub struct Scene {
     /// just noise, and it does not belong in a manual: the meaning has to be *on the table*, next to the thing
     /// it explains.
     pub legend: Vec<String>,
+    /// A second standing reference card in the sidebar, under the [`legend`](Scene::legend). Same text
+    /// convention. Empty = draw none.
+    ///
+    /// Whatever the player would otherwise have to hold in their head to read the board — a schedule, a
+    /// pairing table, a turn order. It belongs beside the board, not in a manual, for the same reason the
+    /// legend does.
+    pub reference: Vec<String>,
     /// Indices (into the focused zone's affordance list) of footer controls that render **disabled** —
     /// present but inert (e.g. a "Start" that is not yet legal).
     pub disabled_controls: Vec<usize>,

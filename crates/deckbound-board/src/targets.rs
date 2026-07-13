@@ -116,6 +116,48 @@ pub fn table_md() -> String {
     md
 }
 
+/// **The 3x3, as a card for the sidebar** — who reaches whom, and *when*. Same [`rows`] the reference doc is
+/// built from, so the card on the table and the doc on disk cannot tell different stories.
+///
+/// The full table does not fit: the Condition column alone wants ~400px and the sidebar has 213. But the full
+/// table is not what you need mid-fight - you need the one thing the schedule actually decides, which is
+/// **when** each rank reaches each rank. Everything else on the card is a footnote to that.
+pub fn schedule_card() -> Vec<String> {
+    let letter = |r: Rank| match r {
+        Rank::Vanguard => "V",
+        Rank::Outrider => "O",
+        Rank::Rearguard => "R",
+    };
+    let rows = rows();
+    let when = |a: Rank, t: Rank| {
+        rows.iter()
+            .find(|r| r.attacker == a && r.target == t)
+            .map(|r| {
+                // Mark the pairings the screen gates - they are no-ops while the enemy front stands, and a
+                // player who does not know that reads an empty Breach as a bug.
+                let star = if r.condition.is_empty() { "" } else { "*" };
+                format!("{}{star}", r.phase)
+            })
+            .unwrap_or_else(|| "-".into())
+    };
+
+    let mut out = vec![
+        "Who reaches whom".to_string(),
+        "       ->V    ->O    ->R".to_string(),
+    ];
+    for a in [Rank::Vanguard, Rank::Outrider, Rank::Rearguard] {
+        out.push(format!(
+            "  {}  {:<6} {:<6} {:<6}",
+            letter(a),
+            when(a, Rank::Vanguard),
+            when(a, Rank::Outrider),
+            when(a, Rank::Rearguard),
+        ));
+    }
+    out.push("  * needs their Vanguard down".to_string());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

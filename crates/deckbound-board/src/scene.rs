@@ -86,6 +86,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         log_title,
         log,
         legend: stat_legend(),
+        reference: crate::targets::schedule_card(),
         disabled_controls,
     })
 }
