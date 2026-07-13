@@ -24,7 +24,7 @@ use std::sync::Mutex;
 use cardtable_model::{Board, CardId, Node as TableNode, PileId};
 
 use crate::board_driver::{DropTrace, SceneState};
-use crate::{CardRef, Dragging, Movable, PileDropZone, Table};
+use crate::{CardRef, Dragging, Movable, PileDropZone, SceneRegion, Table};
 
 /// A truncate-on-launch text log (native only; a no-op sink on the web).
 struct Log(Mutex<Option<std::fs::File>>);
@@ -311,6 +311,17 @@ struct LayoutQuery<'w, 's> {
             &'static UiGlobalTransform,
         ),
     >,
+    /// The modal scene's regions. Not cards, not decks, not drop-zones - so until now, invisible to the very
+    /// log built to answer "is there room for this?".
+    regions: Query<
+        'w,
+        's,
+        (
+            &'static SceneRegion,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
 }
 
 /// Log the settled layout of the current view: each rendered card's name, position, size and zoom. Logged
@@ -380,6 +391,24 @@ fn log_layout(
         });
     }
     boxes.sort_by_key(|b| (b.y as i32, b.x as i32));
+
+    // The scene's regions, with the room each has left. `free` is the slack INSIDE the region below its last
+    // child - which is the number the question "can another panel fit here?" actually turns on.
+    let mut regions: Vec<(String, f32, f32, f32, f32)> = q
+        .regions
+        .iter()
+        .map(|(r, cn, gt)| {
+            let (center, half) = crate::node_box(cn, gt);
+            let (size, tl) = (half * 2.0, center - half);
+            (r.0.to_string(), tl.x, tl.y, size.x, size.y)
+        })
+        .collect();
+    regions.sort_by_key(|r| (r.2 as i32, r.1 as i32));
+    let regions_block: String = regions
+        .iter()
+        .map(|(n, x, y, w, h)| format!("  {n} @ ({x:.0},{y:.0}) size ({w:.0}x{h:.0})"))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let cards_block: String = boxes
         .iter()
@@ -464,7 +493,14 @@ fn log_layout(
         format!("\n  drop-zones:\n{}", lines.join("\n"))
     };
 
-    let snapshot = format!("{cards_block}\n{overlap_block}{zones_block}");
+    // The scene's regions come FIRST: on the combat screen they *are* the layout, and none of the felt's cards
+    // are even on it. "Is there room for another panel?" is a question about these boxes and nothing else.
+    let scene_block = if regions_block.is_empty() {
+        String::new()
+    } else {
+        format!("  scene regions:\n{regions_block}\n")
+    };
+    let snapshot = format!("{scene_block}{cards_block}\n{overlap_block}{zones_block}");
     // Only log once the layout has settled (this frame equals the last) and differs from what was logged.
     if snapshot == *last_frame && snapshot != *last_logged && !snapshot.is_empty() {
         log.0.write(&format!("layout:\n{snapshot}\n"));

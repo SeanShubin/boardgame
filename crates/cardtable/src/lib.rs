@@ -203,6 +203,15 @@ struct TableContent;
 #[derive(Component)]
 struct Pinned;
 
+/// A named region of the modal [`Scene`], **purely so the layout log can measure it**.
+///
+/// The layout log only ever saw the *felt*: cards, decks and drop-zones. The combat screen is none of those,
+/// so the one tool built to answer "is there room for this?" was blind to the one screen we kept asking it
+/// about, and every layout change to it went in unverified. A region that cannot be measured cannot be
+/// reasoned about - it can only be guessed at.
+#[derive(Component)]
+pub(crate) struct SceneRegion(pub(crate) &'static str);
+
 /// A utility card that navigates up one zone level when clicked.
 #[derive(Component)]
 struct BackCard;
@@ -1963,6 +1972,7 @@ fn spawn_choice_row(parent: &mut ChildSpawnerCommands, choices: &[Choice]) {
 fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[String]) {
     parent
         .spawn((
+            SceneRegion("log"),
             Node {
                 width: Val::Px(720.0),
                 flex_direction: FlexDirection::Column,
@@ -2004,6 +2014,7 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
 fn spawn_legend_panel(parent: &mut ChildSpawnerCommands, lines: &[String]) {
     parent
         .spawn((
+            SceneRegion("legend"),
             Node {
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(10.0)),
@@ -2090,13 +2101,16 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
         ))
         .with_children(|root| {
             // Left sidebar: the progress tracks, stacked (fixed order, current highlighted).
-            root.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::FlexStart,
-                padding: UiRect::all(Val::Px(12.0)),
-                row_gap: Val::Px(10.0),
-                ..default()
-            })
+            root.spawn((
+                SceneRegion("sidebar"),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect::all(Val::Px(12.0)),
+                    row_gap: Val::Px(10.0),
+                    ..default()
+                },
+            ))
             .with_children(|side| {
                 for track in &scene.tracks {
                     let labels: Vec<&str> = track.items.iter().map(|i| i.label.as_str()).collect();
@@ -2117,15 +2131,18 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
 
             // Main column: heading, prompt, then the body + log (fill + scroll). Bottom padding keeps the
             // last row clear of the pinned footer bar.
-            root.spawn(Node {
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(12.0)),
-                row_gap: Val::Px(8.0),
-                ..default()
-            })
+            root.spawn((
+                SceneRegion("main"),
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(12.0)),
+                    row_gap: Val::Px(8.0),
+                    ..default()
+                },
+            ))
             .with_children(|main| {
                 if !scene.heading.is_empty() {
                     main.spawn((
@@ -2150,18 +2167,21 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 // the column, which shoved everything after it to the bottom of the screen - so the reading
                 // order ran top, then a gulf, then bottom, and the log and the decision were as far from the
                 // board as the layout could put them.
-                main.spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 0.0,
-                    flex_shrink: 1.0,
-                    min_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::FlexStart,
-                    row_gap: Val::Px(8.0),
-                    overflow: Overflow::clip(),
-                    ..default()
-                })
+                main.spawn((
+                    SceneRegion("body"),
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 0.0,
+                        flex_shrink: 1.0,
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::FlexStart,
+                        row_gap: Val::Px(8.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                ))
                 .with_children(|mid| match &scene.body {
                     SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
                     SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
@@ -2172,14 +2192,17 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 // second: you would be choosing before reading the thing that tells you how. And the controls
                 // sit with them rather than pinned to the far bottom of the viewport, because Commit is the
                 // last step of that same thought, not a separate piece of furniture.
-                main.spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_shrink: 0.0,
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    row_gap: Val::Px(8.0),
-                    ..default()
-                })
+                main.spawn((
+                    SceneRegion("decision"),
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_shrink: 0.0,
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(8.0),
+                        ..default()
+                    },
+                ))
                 .with_children(|panel| {
                     if !scene.log.is_empty() {
                         spawn_log_panel(panel, &scene.log_title, &scene.log);
