@@ -2246,7 +2246,10 @@ fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
                     padding: UiRect::all(Val::Px(6.0)),
                     border: UiRect::all(Val::Px(1.0)),
                     border_radius: BorderRadius::all(Val::Px(8.0)),
-                    overflow: Overflow::clip(),
+                    // **The zone must NOT clip.** Overflow clips *descendants*, and a hero card being dragged
+                    // out of this row is still a descendant of it - so clipping here shears the card off at the
+                    // row's edge, and it reads as sliding *under* the rows around it. (GlobalZIndex cannot save
+                    // it: clipping is independent of stacking.) The hint does its own clipping, below.
                     ..default()
                 },
                 BackgroundColor(PANEL),
@@ -2257,22 +2260,29 @@ fn draw_scene_rows(root: &mut ChildSpawnerCommands, rows: &[Row]) {
                 // first, so the tiles paint over it. It costs no width at all, and it is legible exactly when
                 // the row is *empty*, which is exactly when you have not decided yet. Once you have placed your
                 // heroes it is under them, where a drag lifts it back into view (and by then you know it).
+                //
+                // It clips itself, in its own box, so long text cannot spill out of the row - without the row
+                // clipping the cards you drag across it.
                 if !hint.is_empty() {
-                    zone.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(10.0),
-                            right: Val::Px(10.0),
-                            top: Val::Px(8.0),
-                            ..default()
-                        },
-                        Text::new(hint.to_string()),
-                        TextFont {
-                            font_size: FONT_BODY,
-                            ..default()
-                        },
-                        TextColor(MUTED),
-                    ));
+                    zone.spawn(Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(10.0),
+                        right: Val::Px(10.0),
+                        top: Val::Px(6.0),
+                        bottom: Val::Px(6.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    })
+                    .with_children(|felt| {
+                        felt.spawn((
+                            Text::new(hint.to_string()),
+                            TextFont {
+                                font_size: FONT_BODY,
+                                ..default()
+                            },
+                            TextColor(MUTED),
+                        ));
+                    });
                 }
                 for tile in &row.tiles {
                     draw_scene_tile(zone, tile);

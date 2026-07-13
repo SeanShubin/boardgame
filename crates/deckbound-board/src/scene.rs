@@ -265,7 +265,10 @@ fn rank_hint(rank: Option<Rank>, side: Side) -> String {
              pound their Vanguard."
                 .into()
         }
-        None => "Drag a hero into a rank. They fight nowhere until you place them.".into(),
+        // The Pool gets none either. It is the one row whose cards *leave* rather than arrive, so its text
+        // would be uncovered exactly while it is full - and by the time the row empties, and the text would be
+        // readable, the row is gone. It could only ever be in the way.
+        None => String::new(),
     }
 }
 
@@ -780,8 +783,11 @@ mod tap_tests {
             );
             assert!(hint.len() > 40, "a hint that says nothing is not a hint");
         }
-        // The Pool and the muster are not ranks, but they still owe the player an explanation.
-        assert!(!rank_hint(None, Side::Party).is_empty());
+        // **Only a rank gets a hint.** A hint is printed on the drop zone's felt to be *covered* by the cards
+        // placed there - so it belongs only where cards arrive and the row starts empty. The muster is never
+        // dropped into, and the Pool is the one row whose cards *leave*: its text would sit uncovered exactly
+        // while it is full, and by the time it emptied the row would be gone.
+        assert!(rank_hint(None, Side::Party).is_empty());
         // ...but the muster gets none: a hint is printed on the felt to be *covered* by the cards you place
         // there, and nothing is ever placed in the muster.
         assert!(rank_hint(None, Side::Foe).is_empty());
