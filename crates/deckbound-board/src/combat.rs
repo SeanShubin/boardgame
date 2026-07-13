@@ -5,20 +5,29 @@
 //! (solver/balance re-validation deferred until the feel is tested).
 //!
 //! Each combat sub-phase is **three one-way mini-phases** (strict pipeline, no ping-pong):
-//! 1. **Strike** — an attacker bids tempo to reach a target; the strike lands when `cards × F_att ≥ F_target`
-//!    (may over-flip to raise the bar an evade must clear). Which ranks may strike which is the [`SCHEDULE`]
-//!    gate. A landed strike is a [`Contact`] edge.
-//! 2. **React** — per incoming strike the defender **eats** (free, default), **evades** (`cards × F_def >` the
-//!    attacker's *spent* bid → the hit misses and the edge breaks), or **strikes back** (1 card, unevadable —
-//!    take the hit *and* counter). Resolved as one **order-free, commit-based batch**: a committed strike
-//!    lands even if its unit dies, and a doomed soaker still ripostes.
-//! 3. **Extra strikes** — finesse-free: units still on an un-evaded [`Contact`] flip **remaining** tempo for
-//!    extra hits (1 card = 1 strike of Might, unevadable).
+//! 1. **Engage** — an attacker commits tempo to *reach* a target ([`Engage`]). Which ranks may reach which is
+//!    the [`SCHEDULE`] gate. Committing more does not hit harder; it makes you harder to slip. The reach is a
+//!    [`Contact`] edge, not yet established.
+//! 2. **Evade** — the target now *sees what was committed*, so the price of escaping is exact. It either pays
+//!    [`slip_cost`] in full and breaks every engagement reaching it, or it [`Dodge::Stand`]s and spends
+//!    nothing. There is no partial slip: underpaying is never a gamble, only a waste, so it is impossible
+//!    rather than merely bad.
+//! 3. **Strike** — Finesse is done. Each established contact gives its engager **one** opening blow (paid for
+//!    by the tempo it already committed, however much that was), and then either end of a **melee** edge may
+//!    spend further tempo, one card per strike of Might. A **ranged** edge is one-way. Resolved as one
+//!    **order-free, commit-based batch**: a committed blow lands even if its striker dies.
 //!
-//! Economy: **Tempo = Cadence** (a per-round pool, refreshed each round); **Finesse** is the bid multiplier
-//! (bid value = `cards × finesse`); **Might = damage**, applied via a toughness-accumulate model (a health
-//! card flips each time accumulated damage crosses `toughness`) — tempo *never* changes how hard a hit is,
-//! only whether it lands and how many land.
+//! The attack decision is therefore a single tension: every card you sink into *reaching* someone is a card
+//! you cannot convert into a *blow*. Reach cheaply and they slip you; reach heavily and you arrive with
+//! nothing left to swing.
+//!
+//! And a melee contact is **mutual** — the body you engaged may answer, even in a sub-phase the schedule never
+//! paired it against you. It did not choose the fight. You could have let it pass; forcing the issue early is
+//! what you pay for.
+//!
+//! Economy: **Tempo = Cadence** (a per-round pool, refreshed each round); **Finesse** decides *reach and
+//! escape* only (`value = cards × finesse`) and never touches damage; **Might = damage**, applied via a
+//! toughness-accumulate model (a health card flips each time accumulated damage crosses `toughness`).
 
 use deckbound_content::rank::Intention as Rank;
 
@@ -131,35 +140,47 @@ impl Combatant {
     }
 }
 
-/// A strike declaration: `attacker` bids `cards` tempo to reach `target` (indices into the combatant slice).
+/// An **engagement** declaration (mini-phase 1): `attacker` commits `cards` tempo to reach `target`.
+///
+/// The tempo is spent whatever happens. Committing more makes the target more expensive to slip - but it buys
+/// **no extra damage**: however much you commit, contact yields exactly *one* opening strike. So every card
+/// sunk into reaching them is a card you cannot convert into a blow, and that is the whole attack decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Strike {
+pub struct Engage {
     pub attacker: usize,
     pub target: usize,
     pub cards: u32,
 }
 
-/// A defender's reaction to one incoming [`Contact`] (the React mini-phase).
+/// A target's answer to everything reaching for it (mini-phase 2).
+///
+/// **There is no partial slip.** By this point the attacker's commitment is on the table, so the price of
+/// slipping is known exactly - which means underpaying is never a gamble, it is knowingly burning tempo. The
+/// rational alternative is always to stand still, let them come, and spend that tempo hitting back instead. So
+/// a dominated move is not priced, it is made *impossible*: you either pay [`slip_cost`] in full, or you stand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum React {
-    /// Take the hit, free. The default.
-    Eat,
-    /// Flip `cards` tempo; if `cards × F_def >` the attacker's spent bid the hit misses and the edge breaks.
-    Evade { cards: u32 },
-    /// 1 card, unevadable: take the hit *and* land a counter.
-    StrikeBack,
+pub enum Dodge {
+    /// Spend nothing. They reach you - and on a melee edge you may answer, because *they came to you*.
+    Stand,
+    /// Pay [`slip_cost`] and break **every** engagement reaching you: one dodge covers your body.
+    Slip,
 }
 
-/// An extra-strike allocation (mini-phase 3): `attacker` flips `cards` tempo, each a Might strike on `target`.
+/// A strike allocation (mini-phase 3): `unit` spends `cards` tempo for `cards` strikes of Might on `target`,
+/// along an established [`Contact`]. Finesse is irrelevant here — contact is already made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExtraStrike {
-    pub attacker: usize,
+pub struct Blows {
+    pub unit: usize,
     pub target: usize,
     pub cards: u32,
 }
 
-/// A landed contact edge: `attacker` connected on `target`, having spent `bid` value (`cards × F_att`) —
-/// the value an evade must strictly exceed.
+/// A **contact** edge: `attacker` reached `target`, having committed `bid` value (`cards × F_att`) to do it —
+/// the value a slip must strictly exceed.
+///
+/// A **melee** contact is *mutual*: both ends may spend tempo striking along it. That is how a unit can hurt a
+/// rank the schedule has not yet paired it against — it did not choose the fight, the fight came to it, and the
+/// engager could have let it pass. A **ranged** contact is one-way: you cannot punch an archer at range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Contact {
     pub attacker: usize,
@@ -216,14 +237,39 @@ pub fn back_access_ok(units: &[Combatant], attacker: Rank, target: usize) -> boo
         .any(|u| u.side == tgt.side && u.rank == Rank::Vanguard && !u.fallen)
 }
 
-/// A strike lands when the attacker's bid value reaches the target's finesse: `cards × F_att ≥ F_target`.
-pub fn catch_lands(cards: u32, f_att: u32, f_target: u32) -> bool {
-    cards * f_att >= f_target
+/// The tempo `defender` must spend to **slip** — to break every engagement currently reaching it.
+///
+/// One dodge covers your body, so the price is set by the *largest* commitment against you: enough cards that
+/// `cards × F_def` strictly exceeds it. `None` when nothing is reaching you (there is nothing to slip).
+///
+/// This is why Finesse defends without ever touching damage: a high-Finesse body is **cheap to slip with**,
+/// hence expensive to catch, which forces attackers to commit more tempo — and every card they commit is a
+/// card they cannot convert into a strike.
+pub fn slip_cost(units: &[Combatant], contacts: &[Contact], defender: usize) -> Option<u32> {
+    let worst = contacts
+        .iter()
+        .filter(|c| c.target == defender)
+        .map(|c| c.bid)
+        .max()?;
+    Some(worst / units[defender].finesse.max(1) + 1)
 }
 
-/// An evade succeeds when the defender's bid **strictly exceeds** the attacker's spent value.
-pub fn evade_succeeds(cards: u32, f_def: u32, atk_spent: u32) -> bool {
-    cards * f_def > atk_spent
+/// The one enemy `unit` may pour strikes into this sub-phase, if any — the whole legality of the Strike step.
+///
+/// It is whoever it is in contact with: the target it engaged, or, on a **melee** edge, the attacker that
+/// engaged *it*. The second case is the mutual-melee rule, and it is what lets a body hurt a rank the schedule
+/// has not yet paired it against: it did not pick the fight. The engager could have let it pass, and chose not
+/// to — that is the price of forcing the issue early.
+pub fn strike_target(units: &[Combatant], contacts: &[Contact], unit: usize) -> Option<usize> {
+    if let Some(c) = contacts.iter().find(|c| c.attacker == unit) {
+        return Some(c.target);
+    }
+    // Answering along an edge someone else opened: you need a melee blow of your own, and their reach must have
+    // been melee too - an archer shooting you from the back line never came within your reach.
+    contacts
+        .iter()
+        .find(|c| c.target == unit && units[unit].melee && !rank_is_ranged(units[c.attacker].rank))
+        .map(|c| c.attacker)
 }
 
 /// The damage a single strike of `might` deals through `armor`: `max(0, might - armor)`. Per **strike** — so
@@ -269,12 +315,14 @@ pub fn pile_effect_strikes(target: &Combatant, might: u32, strikes: u32) -> (u32
 
 // ---- the three mini-phases ------------------------------------------------------------------------
 
-/// **Strike.** Spend each attacker's bid (capped at its remaining tempo) and keep the strikes that land as
-/// [`Contact`] edges (`bid = cards × F_att`, the value an evade must beat). The caller (UI) has already
-/// gated legality via [`legal_strike`].
-pub fn resolve_strike(units: &mut [Combatant], strikes: &[Strike]) -> Vec<Contact> {
+/// **Engage.** Spend each attacker's committed tempo and record the reach as a [`Contact`].
+///
+/// The contact is not yet *established* — the target may pay [`slip_cost`] to break it at the Evade step. The
+/// caller (UI) has already gated legality via [`legal_strike`]; the range and screen gates below are the
+/// mechanical backstop.
+pub fn resolve_engage(units: &mut [Combatant], engagements: &[Engage]) -> Vec<Contact> {
     let mut contacts = Vec::new();
-    for c in strikes {
+    for c in engagements {
         // Range gate (mechanics backstop, spec 4.2): a body whose reach does not match its position lands
         // nothing here — no contact, no tempo spent. The UI already hides these; this makes it a rule.
         let atk = &units[c.attacker];
@@ -286,10 +334,10 @@ pub fn resolve_strike(units: &mut [Combatant], strikes: &[Strike]) -> Vec<Contac
         if !back_access_ok(units, atk.rank, c.target) {
             continue;
         }
-        // Area strike (Sweep / Salvo): unevadable, hits the targeted **group** for one sweep of Might, for a
+        // Area strike (Sweep / Salvo): unslippable, hits the targeted **group** for one sweep of Might, for a
         // single tempo card. Its edge is over a horde - one sweep clears the whole pack, where a single strike
-        // fells one body. Against a normal body (a group of one) it is just one unevadable hit. It forms no
-        // Contact - no React to an area, and so no extra-strikes phase: coverage bought at the price of
+        // fells one body. Against a normal body (a group of one) it is just one unslippable hit. It forms no
+        // Contact - so it cannot be slipped, and cannot be poured into either: coverage bought at the price of
         // concentration. Damage is applied right here.
         if units[c.attacker].aoe {
             if units[c.attacker].tempo == 0 {
@@ -308,74 +356,67 @@ pub fn resolve_strike(units: &mut [Combatant], strikes: &[Strike]) -> Vec<Contac
             continue;
         }
         let cards = c.cards.min(units[c.attacker].tempo);
-        units[c.attacker].tempo -= cards;
-        let f_att = units[c.attacker].finesse;
-        let f_tgt = units[c.target].finesse;
-        if cards > 0 && catch_lands(cards, f_att, f_tgt) {
-            contacts.push(Contact {
-                attacker: c.attacker,
-                target: c.target,
-                bid: cards * f_att,
-            });
+        if cards == 0 {
+            continue; // you cannot reach for someone without committing to it
         }
+        units[c.attacker].tempo -= cards;
+        contacts.push(Contact {
+            attacker: c.attacker,
+            target: c.target,
+            bid: cards * units[c.attacker].finesse,
+        });
     }
     contacts
 }
 
-/// **React.** `reactions` is index-aligned with `contacts`. Resolve as one order-free, commit-based batch:
-/// collect every strike + counter first (a committed strike lands even if its unit dies), then apply. Returns
-/// the surviving (un-evaded) contact edges — the ones the Extra-strikes phase runs along.
-pub fn resolve_react(
+/// **Evade.** `dodges` is index-aligned with `units`. A [`Dodge::Slip`] pays [`slip_cost`] and breaks **every**
+/// engagement reaching that unit; a [`Dodge::Stand`] spends nothing. Returns the *established* contacts.
+///
+/// A slip the unit cannot afford is not a failed slip - it is not a slip at all. The UI bars it and quotes the
+/// price; this is the backstop, and it stands rather than burning tempo for nothing.
+pub fn resolve_evade(
     units: &mut [Combatant],
     contacts: &[Contact],
-    reactions: &[React],
+    dodges: &[Dodge],
 ) -> Vec<Contact> {
-    let mut damage = vec![0u32; units.len()];
-    let mut surviving = Vec::new();
-    for (contact, react) in contacts.iter().zip(reactions) {
-        let (atk, tgt) = (contact.attacker, contact.target);
-        match *react {
-            React::Eat => {
-                damage[tgt] += hit(&units[tgt], units[atk].might);
-                surviving.push(*contact);
-            }
-            React::Evade { cards } => {
-                let cards = cards.min(units[tgt].tempo);
-                units[tgt].tempo -= cards;
-                if evade_succeeds(cards, units[tgt].finesse, contact.bid) {
-                    // miss + break contact: no damage, dropped from the surviving edges.
-                } else {
-                    damage[tgt] += hit(&units[tgt], units[atk].might); // evade failed - hit lands
-                    surviving.push(*contact);
-                }
-            }
-            React::StrikeBack => {
-                damage[tgt] += hit(&units[tgt], units[atk].might); // take the hit...
-                // ...and counter, but only **melee-vs-melee**: you strike back at a foe that *approached*
-                // you (a melee strike), and only if you carry a melee blow. Against a ranged shot, or with
-                // no melee of your own, there is nothing to answer with - you simply eat it. One Tempo card,
-                // Finesse-irrelevant; commit-based (the counter lands even if the soaker dies).
-                let incoming_melee = !rank_is_ranged(units[atk].rank);
-                if incoming_melee && units[tgt].melee && units[tgt].tempo > 0 {
-                    units[tgt].tempo -= 1;
-                    damage[atk] += hit(&units[atk], units[tgt].might);
-                }
-                surviving.push(*contact);
-            }
+    let mut slipped = vec![false; units.len()];
+    for (i, dodge) in dodges.iter().enumerate() {
+        if *dodge != Dodge::Slip {
+            continue;
         }
+        let Some(cost) = slip_cost(units, contacts, i) else {
+            continue; // nothing reaching you
+        };
+        if cost > units[i].tempo {
+            continue; // cannot afford it: you stand (and keep your tempo for the Strike step)
+        }
+        units[i].tempo -= cost;
+        slipped[i] = true;
     }
-    apply(units, &damage);
-    surviving
+    contacts
+        .iter()
+        .filter(|c| !slipped[c.target])
+        .copied()
+        .collect()
 }
 
-/// **Extra strikes.** Each allocation flips `cards` tempo for `cards` Might strikes on `target`, unevadable.
-/// One order-free batch. The caller (UI) constrains allocations to units still on a surviving [`Contact`].
-pub fn resolve_extra(units: &mut [Combatant], extras: &[ExtraStrike]) {
+/// **Strike.** Every established contact gives its **engager** one opening blow — paid for by the tempo it
+/// already committed, however much that was. Then `blows` spends *further* tempo, one card per strike of Might,
+/// from either end of a **melee** edge (a ranged edge is one-way; see [`strike_target`]).
+///
+/// One order-free, commit-based batch: every blow is collected before any is applied, so a committed strike
+/// lands even if its striker dies to a simultaneous one, and mutual deaths resolve cleanly.
+pub fn resolve_strike(units: &mut [Combatant], contacts: &[Contact], blows: &[Blows]) {
     let mut damage = vec![0u32; units.len()];
-    for e in extras {
-        let cards = e.cards.min(units[e.attacker].tempo);
-        units[e.attacker].tempo -= cards;
-        damage[e.target] += hit(&units[e.target], units[e.attacker].might) * cards; // per strike
+    // The opening blow: one strike, however much tempo bought the reach. This is what makes over-committing
+    // cost you - the tempo is gone and it bought exactly one hit.
+    for c in contacts {
+        damage[c.target] += hit(&units[c.target], units[c.attacker].might);
+    }
+    for b in blows {
+        let cards = b.cards.min(units[b.unit].tempo);
+        units[b.unit].tempo -= cards;
+        damage[b.target] += hit(&units[b.target], units[b.unit].might) * cards; // per strike
     }
     apply(units, &damage);
 }
@@ -464,14 +505,33 @@ mod tests {
         }
     }
 
+    /// **The price of escape is exact, and it is set by the largest reach against you.** One dodge covers your
+    /// body, so ganging up does not multiply the cost - but the heaviest commitment does raise it.
     #[test]
-    fn bid_math() {
-        // Strike: F2 striking F3 needs 2 cards (2×2=4 ≥ 3); 1 card (1×2=2) falls short.
-        assert!(!catch_lands(1, 2, 3));
-        assert!(catch_lands(2, 2, 3));
-        // Evade must STRICTLY exceed the attacker's spent value.
-        assert!(!evade_succeeds(2, 2, 4)); // 4 is not > 4
-        assert!(evade_succeeds(3, 2, 4)); // 6 > 4
+    fn slipping_is_priced_off_the_heaviest_reach() {
+        let u = vec![
+            unit("A", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
+            unit("B", Side::Foe, Rank::Vanguard, 2, 1, 4, 1, 5),
+            unit("D", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 5), // Finesse 2
+        ];
+        let reach = |bid| Contact {
+            attacker: 0,
+            target: 2,
+            bid,
+        };
+        // Value 4 vs Finesse 2: 2 cards is only 4, which does not STRICTLY exceed it. 3 cards does.
+        assert_eq!(slip_cost(&u, &[reach(4)], 2), Some(3));
+        // A second, lighter reach changes nothing - you dodge once.
+        let two = vec![
+            reach(4),
+            Contact {
+                attacker: 1,
+                target: 2,
+                bid: 1,
+            },
+        ];
+        assert_eq!(slip_cost(&u, &two, 2), Some(3));
+        assert_eq!(slip_cost(&u, &[], 2), None, "nothing to slip");
     }
 
     #[test]
@@ -492,13 +552,13 @@ mod tests {
             unit("A", Side::Party, Rank::Rearguard, 2, 2, 3, 1, 3), // melee-only (helper default)
             unit("D", Side::Foe, Rank::Rearguard, 1, 1, 2, 1, 3),
         ];
-        let strike = Strike {
+        let strike = Engage {
             attacker: 0,
             target: 1,
             cards: 2,
         };
         assert!(
-            resolve_strike(&mut mismatch, &[strike]).is_empty(),
+            resolve_engage(&mut mismatch, &[strike]).is_empty(),
             "melee body fires nothing from the back"
         );
         assert_eq!(
@@ -510,7 +570,7 @@ mod tests {
         let mut ranged = mismatch.clone();
         ranged[0].ranged = true;
         assert_eq!(
-            resolve_strike(&mut ranged, &[strike]).len(),
+            resolve_engage(&mut ranged, &[strike]).len(),
             1,
             "a ranged body fires from the back"
         );
@@ -563,56 +623,43 @@ mod tests {
         );
     }
 
+    /// **A melee contact is mutual; a ranged one is not.** The body you engaged may answer along the edge -
+    /// even in a sub-phase the schedule never paired it against you. It did not choose the fight, and you could
+    /// have let it pass. But you cannot punch an archer that is shooting you from the back line.
     #[test]
-    fn strikeback_is_melee_versus_melee_only() {
-        // Incoming melee (attacker is a Vanguard), defender carries melee -> counters.
-        let mut u = vec![
-            unit("A", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
-            unit("D", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 5),
+    fn melee_contact_is_mutual_and_ranged_contact_is_one_way() {
+        let u = vec![
+            unit("Wall", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5), // melee reach (a Vanguard)
+            unit("Raider", Side::Party, Rank::Outrider, 3, 2, 4, 1, 5),
+            unit("Archer", Side::Foe, Rank::Rearguard, 2, 2, 4, 1, 5), // ranged reach
         ];
-        let contact = Contact {
+        let melee = Contact {
             attacker: 0,
             target: 1,
             bid: 4,
         };
-        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
-        assert_eq!(
-            u[0].health, 2,
-            "melee counter landed (5 -> 2 at might 3, toughness 1)"
-        );
-        assert_eq!(u[1].tempo, 3, "spent 1 Tempo on the strike-back");
+        // The engager may always pour into its own edge...
+        assert_eq!(strike_target(&u, &[melee], 0), Some(1));
+        // ...and the body it reached may answer, because the reach was melee.
+        assert_eq!(strike_target(&u, &[melee], 1), Some(0));
 
-        // Incoming ranged (attacker is a Rearguard): no strike-back, just take the hit.
-        let mut u = vec![
-            unit("A", Side::Foe, Rank::Rearguard, 2, 2, 4, 1, 5),
-            unit("D", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 5),
-        ];
-        let contact = Contact {
-            attacker: 0,
+        let shot = Contact {
+            attacker: 2,
             target: 1,
             bid: 4,
         };
-        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
-        assert_eq!(u[0].health, 5, "no counter against a ranged shot");
+        assert_eq!(strike_target(&u, &[shot], 2), Some(1), "the archer shoots");
         assert_eq!(
-            u[1].tempo, 4,
-            "no Tempo spent - nothing to strike back with"
+            strike_target(&u, &[shot], 1),
+            None,
+            "nothing answers a shot from the back line"
         );
 
-        // Incoming melee but the defender is ranged-only: nothing to answer with.
-        let mut u = vec![
-            unit("A", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
-            unit("D", Side::Party, Rank::Rearguard, 3, 2, 4, 1, 5),
-        ];
-        u[1].melee = false;
-        u[1].ranged = true;
-        let contact = Contact {
-            attacker: 0,
-            target: 1,
-            bid: 4,
-        };
-        resolve_react(&mut u, &[contact], &[React::StrikeBack]);
-        assert_eq!(u[0].health, 5, "a ranged-only body has no melee counter");
+        // ...and a body with no melee blow of its own has nothing to answer with either.
+        let mut no_melee = u.clone();
+        no_melee[1].melee = false;
+        no_melee[1].ranged = true;
+        assert_eq!(strike_target(&no_melee, &[melee], 1), None);
     }
 
     #[test]
@@ -640,95 +687,120 @@ mod tests {
     }
 
     #[test]
-    fn catch_spends_tempo_and_records_contact() {
+    fn engaging_spends_tempo_and_records_the_reach() {
         let mut units = vec![
             unit("A", Side::Party, Rank::Vanguard, 2, 2, 3, 1, 3),
             unit("D", Side::Foe, Rank::Outrider, 1, 3, 2, 1, 3),
         ];
-        // A bids 2 cards at F2 vs D's F3 -> lands (4 ≥ 3), spent value 4.
-        let contacts = resolve_strike(
+        // A commits 2 cards at F2 -> a reach worth 4. It lands unless D pays to escape it.
+        let reaching = resolve_engage(
             &mut units,
-            &[Strike {
+            &[Engage {
                 attacker: 0,
                 target: 1,
                 cards: 2,
             }],
         );
-        assert_eq!(contacts.len(), 1);
-        assert_eq!(contacts[0].bid, 4);
-        assert_eq!(units[0].tempo, 1, "spent 2 of 3 tempo");
+        assert_eq!(reaching.len(), 1);
+        assert_eq!(reaching[0].bid, 4, "value = cards x Finesse");
+        assert_eq!(units[0].tempo, 1, "spent 2 of 3 tempo reaching");
     }
 
+    /// **Slip or stand - there is no third answer.** A slip pays the exact price and breaks *everything*
+    /// reaching you; standing spends nothing. A slip you cannot afford is not a failed slip, it is not a slip:
+    /// you stand, and you keep the tempo.
     #[test]
-    fn react_eat_evade_strikeback_are_commit_based() {
-        // A (Might 3) strikes D on one edge; D reacts three ways across three runs.
+    fn a_slip_is_paid_in_full_or_not_at_all() {
         let base = || {
             vec![
                 unit("A", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 3),
-                unit("D", Side::Foe, Rank::Outrider, 2, 3, 4, 1, 3),
+                unit("D", Side::Foe, Rank::Outrider, 2, 3, 4, 1, 3), // Finesse 3, tempo 4
             ]
         };
-        let contact = Contact {
+        let reach = Contact {
             attacker: 0,
             target: 1,
             bid: 4,
         };
 
-        // Eat: D takes 3 (toughness 1 -> 3 cards flip); A untouched.
+        // Slip: 4 / 3 + 1 = 2 cards. The edge is gone, and no blow can land along it.
         let mut u = base();
-        resolve_react(&mut u, &[contact], &[React::Eat]);
-        assert_eq!(u[1].health, 0);
-        assert_eq!(u[0].health, 3);
+        let kept = resolve_evade(&mut u, &[reach], &[Dodge::Stand, Dodge::Slip]);
+        assert!(kept.is_empty(), "the slipped edge is gone");
+        assert_eq!(u[1].tempo, 2, "paid 2 tempo to escape");
 
-        // Evade: D flips 2 (2×3=6 > 4) -> misses, no damage, tempo spent.
+        // Stand: nothing spent, the edge stands.
         let mut u = base();
-        resolve_react(&mut u, &[contact], &[React::Evade { cards: 2 }]);
-        assert_eq!(u[1].health, 3, "evaded - no damage");
-        assert_eq!(u[1].tempo, 2, "spent 2 tempo evading");
+        let kept = resolve_evade(&mut u, &[reach], &[Dodge::Stand, Dodge::Stand]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(u[1].tempo, 4, "standing costs nothing");
 
-        // Strike-back: D takes 3 AND counters for 2; both land even though D is doomed (commit-based).
+        // Cannot afford it: you stand and keep every card. There is no half-slip to burn tempo on.
         let mut u = base();
-        let surviving = resolve_react(&mut u, &[contact], &[React::StrikeBack]);
-        assert_eq!(u[1].health, 0, "D took the hit");
-        assert_eq!(
-            u[0].health, 1,
-            "A took the 2-Might counter (3 -> 1 card flips: 2/1)"
-        );
-        assert_eq!(surviving.len(), 1, "still in contact for extra strikes");
+        u[1].tempo = 1; // needs 2
+        let kept = resolve_evade(&mut u, &[reach], &[Dodge::Stand, Dodge::Slip]);
+        assert_eq!(kept.len(), 1, "it still reaches you");
+        assert_eq!(u[1].tempo, 1, "and you did NOT burn the tempo trying");
     }
 
+    /// **Reaching buys exactly one blow, however much it cost - and then every further card is a blow.** This
+    /// is the whole attack tension: tempo sunk into reaching them is tempo you cannot swing with.
     #[test]
-    fn evade_breaks_contact_so_no_extra_strikes() {
-        let mut u = vec![
-            unit("A", Side::Party, Rank::Vanguard, 3, 2, 4, 1, 3),
-            unit("D", Side::Foe, Rank::Outrider, 2, 3, 4, 1, 3),
-        ];
-        let contact = Contact {
-            attacker: 0,
-            target: 1,
-            bid: 4,
-        };
-        let surviving = resolve_react(&mut u, &[contact], &[React::Evade { cards: 2 }]);
-        assert!(surviving.is_empty(), "the evaded edge is gone from phase 3");
-    }
-
-    #[test]
-    fn extra_strikes_are_one_might_per_card() {
+    fn contact_gives_one_opening_blow_then_one_blow_per_card() {
         let mut u = vec![
             unit("A", Side::Party, Rank::Vanguard, 2, 2, 3, 1, 5),
             unit("D", Side::Foe, Rank::Outrider, 1, 3, 2, 1, 5),
         ];
-        // A has 3 tempo; flip all 3 -> 3 strikes × Might 2 = 6 damage; toughness 1 -> 5 cards flip (capped).
-        resolve_extra(
+        let contact = Contact {
+            attacker: 0,
+            target: 1,
+            bid: 2,
+        };
+        // The opening blow alone: Might 2, Toughness 1 -> 2 health cards.
+        resolve_strike(&mut u, &[contact], &[]);
+        assert_eq!(u[1].health, 3, "one opening blow, free");
+        assert_eq!(u[0].tempo, 3, "and it cost nothing further");
+
+        // Pour 3 more cards in: 3 blows x Might 2 = 6 more damage.
+        resolve_strike(
             &mut u,
-            &[ExtraStrike {
-                attacker: 0,
+            &[],
+            &[Blows {
+                unit: 0,
                 target: 1,
                 cards: 3,
             }],
         );
         assert_eq!(u[0].tempo, 0);
-        assert_eq!(u[1].health, 0, "6 damage at toughness 1 flips all 5");
+        assert_eq!(u[1].health, 0, "6 more damage at toughness 1");
+    }
+
+    /// The Strike step is one **order-free, commit-based batch**: a blow lands even if its striker dies to a
+    /// simultaneous one, so a doomed body still answers.
+    #[test]
+    fn strikes_are_a_commit_based_batch() {
+        let mut u = vec![
+            unit("A", Side::Foe, Rank::Vanguard, 3, 2, 4, 1, 3),
+            unit("D", Side::Party, Rank::Vanguard, 2, 2, 4, 1, 3),
+        ];
+        let contact = Contact {
+            attacker: 0,
+            target: 1,
+            bid: 4,
+        };
+        // A's opening blow kills D (3 might, toughness 1, 3 health); D answers along the mutual melee edge
+        // with its last card, and the answer still lands.
+        resolve_strike(
+            &mut u,
+            &[contact],
+            &[Blows {
+                unit: 1,
+                target: 0,
+                cards: 2,
+            }],
+        );
+        assert_eq!(u[1].health, 0, "D is dead");
+        assert_eq!(u[0].health, 0, "and it took D with it - 2 blows x Might 2");
     }
 
     #[test]

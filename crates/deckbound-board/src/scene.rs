@@ -106,7 +106,7 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
     }];
     if !marshal {
         let cur = step_name(step);
-        let items = ["Strike", "React", "Extra"]
+        let items = ["Engage", "Evade", "Strike"]
             .into_iter()
             .map(|n| TrackItem {
                 label: n.to_string(),
@@ -124,22 +124,22 @@ fn build_tracks(sub: usize, step: Step, marshal: bool) -> Vec<Track> {
 fn step_name(step: Step) -> &'static str {
     match step {
         Step::Marshal => "Marshal",
+        Step::Engage => "Engage",
+        Step::Evade => "Evade",
         Step::Strike => "Strike",
-        Step::React => "React",
-        Step::Extra => "Extra",
     }
 }
 
 fn prompt_for(step: Step) -> &'static str {
     match step {
+        Step::Engage => {
+            "Engage - commit tempo to REACH a foe. More makes you harder to slip, but buys no damage: reaching wins one blow, whatever it cost."
+        }
+        Step::Evade => {
+            "Evade - you can see what they committed, so the price is exact. Pay it, or stand and keep the tempo to hit back."
+        }
         Step::Strike => {
-            "Strike - tap a hero, then give it an order below. Every hero that can strike must aim or Hold."
-        }
-        Step::React => {
-            "React - the log says what struck you and how. Pick a hero's answer below; each card says what it costs."
-        }
-        Step::Extra => {
-            "Extra strikes - tap a hero that landed a blow, then press it or Hold. Its blows bank into the same pile."
+            "Strike - contact is made and Finesse is done. One tempo card = one blow of Might."
         }
         Step::Marshal => {
             "Formation - you can read every foe, but not where it will stand. Drag each hero into a rank, then Start."
@@ -457,23 +457,15 @@ fn tap_is_live(
     let party = u.side == Side::Party;
     match step {
         Step::Marshal => party,
-        Step::Strike => {
-            if party {
-                // Select it - but only a hero that actually has a move here (the same `can_act` the rules and
-                // the highlight use). The order itself comes from a choice card; the tap only says which hero
-                // we are giving it to.
-                arena::can_act(units, contacts, sub, step, i)
-            } else {
-                // A foe is tappable only as something the *armed* attacker can legally aim at.
-                active.is_some_and(|a| {
-                    combat::legal_strike(sub, units[a].rank, u.rank)
-                        && combat::back_access_ok(units, units[a].rank, i)
-                })
-            }
-        }
-        // Only a hero actually struck has an answer to choose.
-        Step::React => party && contacts.iter().any(|c| c.target == i),
-        Step::Extra => party && u.tempo > 0 && contacts.iter().any(|c| c.attacker == i),
+        // A hero is tappable exactly when the step is asking it something - the same `can_act` the choice
+        // cards and the Commit gate read, so what the screen offers and what the game accepts cannot drift.
+        _ if party => arena::can_act(units, contacts, sub, step, i),
+        // A foe is tappable only while reaching, as something the selected attacker may legally reach.
+        Step::Engage => active.is_some_and(|a| {
+            combat::legal_strike(sub, units[a].rank, u.rank)
+                && combat::back_access_ok(units, units[a].rank, i)
+        }),
+        _ => false,
     }
 }
 
@@ -496,8 +488,11 @@ fn plan_text(board: &Board, s: &Staged) -> String {
     if s.hold {
         plan.push_str("Hold ");
     }
-    if let Some(r) = s.react {
-        plan.push_str(r.label());
+    if let Some(d) = s.dodge {
+        plan.push_str(match d {
+            combat::Dodge::Slip => "Slip",
+            combat::Dodge::Stand => "Stand",
+        });
     }
     plan.trim().to_string()
 }
@@ -531,17 +526,13 @@ fn build_log(
             })
             .collect::<Vec<_>>()
             .join(",  ");
-        log.push(format!("This phase, may strike:  {pretty}"));
+        log.push(format!("This phase, may reach:  {pretty}"));
     }
     match step {
-        Step::Strike => {
-            // Say what each hero **may** strike, not merely what it has already chosen. "(no targets chosen
-            // yet)" on its own left a player looking at a step that appeared to offer nothing, unable to tell
-            // whether that was the rules or a bug - and it read as a flat contradiction: "no targets chosen"
-            // when there seemed to be none to choose. Now the line either names what is reachable, or says
-            // why that hero cannot strike.
-            log.push("Targets".to_string());
-            let mut any_actor = false;
+        // Who may reach whom, and what it would cost - not merely who has already chosen. A hero that cannot
+        // act says why, rather than sitting silently unusable (which reads as a bug in the schedule).
+        Step::Engage => {
+            log.push("Reach".to_string());
             for i in 0..units.len() {
                 let u = &units[i];
                 if u.side != Side::Party || u.fallen {
@@ -567,14 +558,14 @@ fn build_log(
                 } else if u.tempo == 0 {
                     Some("no tempo left".to_string())
                 } else if reachable.is_empty() {
-                    Some("nothing it may strike this phase".to_string())
+                    Some("nothing it may reach this phase".to_string())
                 } else {
                     None
                 };
 
                 match (barred, staged[i].aim) {
                     (Some(reason), _) => {
-                        log.push(format!("  {} - cannot strike: {reason}", u.name));
+                        log.push(format!("  {} - cannot reach: {reason}", u.name));
                     }
                     (None, Some(aim)) => {
                         let aim_name = board
@@ -582,79 +573,93 @@ fn build_log(
                             .map(|c| c.front_title().to_string())
                             .unwrap_or_default();
                         log.push(format!(
-                            "  {} -> {}  (bid {})",
+                            "  {} reaches for {}  (committing {} tempo)",
                             u.name, aim_name, staged[i].bid
                         ));
-                        any_actor = true;
+                    }
+                    (None, None) if staged[i].hold => {
+                        log.push(format!("  {} holds", u.name));
                     }
                     (None, None) => {
                         log.push(format!(
-                            "  {} may strike: {}  (not aimed yet)",
+                            "  {} may reach: {}  (no target yet)",
                             u.name,
                             reachable.join(", ")
                         ));
-                        any_actor = true;
                     }
                 }
             }
-            // If this fires, the step should never have stopped here at all - `step_needs_input` gates on the
-            // same conditions, so "nobody can strike" and "you are being asked to strike" cannot both be true.
-            if !any_actor {
-                log.push(
-                    "  (nobody can strike this phase - this step should have auto-resolved)"
-                        .to_string(),
-                );
-            }
         }
-        Step::React => {
-            log.push("Strikes landed & reactions".to_string());
+        // What is reaching for whom, what it committed, and therefore what escaping costs. This is the whole
+        // input to the decision: it is on the table precisely so the price is exact.
+        Step::Evade => {
+            log.push("Reaching you".to_string());
             if contacts.is_empty() {
-                log.push("  (nobody was caught)".to_string());
+                log.push("  (nobody was reached)".to_string());
             }
             for c in contacts {
-                let react = if units[c.target].side == Side::Party {
-                    staged[c.target]
-                        .react
-                        .map(|r| r.label().to_string())
-                        .unwrap_or_else(|| "Eat".to_string())
-                } else {
-                    "Eat".to_string()
-                };
-                // Say whether the blow was **melee or ranged**. It decides whether Strike Back is even legal
-                // (you answer a foe that approached you; there is nothing to answer a shot with), and it used
-                // to be nowhere on the screen - so "may I strike back?" was unanswerable by looking. Reach is
-                // position-determined: a Rearguard fires, a Vanguard or Outrider strikes.
+                // Melee or ranged decides whether standing buys you anything: you can answer a body that came
+                // to you, but nothing answers a shot from the back line.
                 let reach = if combat::rank_is_ranged(units[c.attacker].rank) {
                     "ranged"
                 } else {
                     "melee"
                 };
+                let d = &units[c.target];
+                let price = c.bid / d.finesse.max(1) + 1;
+                let answer = if d.side == Side::Party {
+                    match staged[c.target].dodge {
+                        Some(combat::Dodge::Slip) => " - Slip",
+                        Some(combat::Dodge::Stand) => " - Stand",
+                        None => "",
+                    }
+                } else {
+                    ""
+                };
                 log.push(format!(
-                    "  {} struck {}  ({reach}, bid {}, {} might) - {}",
-                    units[c.attacker].name,
-                    units[c.target].name,
-                    c.bid,
-                    units[c.attacker].might,
-                    react
+                    "  {} reaches {}  ({reach}, value {}, Might {}) - slipping costs {price}{answer}",
+                    units[c.attacker].name, d.name, c.bid, units[c.attacker].might
                 ));
             }
         }
-        Step::Extra => {
-            log.push("Surviving contacts & extra strikes".to_string());
+        // Contact is made. Each engager's opening blow is already paid for; everything after is one card, one
+        // blow - and on a melee edge, the body that was reached may answer along it.
+        Step::Strike => {
+            log.push("Contact".to_string());
             if contacts.is_empty() {
-                log.push("  (no contacts survived)".to_string());
+                log.push("  (nothing was reached - everyone slipped or held)".to_string());
             }
             for c in contacts {
-                let act = if units[c.attacker].side != Side::Party {
-                    "extra strike (foe)".to_string()
-                } else if staged[c.attacker].bid > 0 {
-                    format!("extra strike x{}", staged[c.attacker].bid)
-                } else {
+                log.push(format!(
+                    "  {} has {} - one opening blow ({} might), already paid for",
+                    units[c.attacker].name, units[c.target].name, units[c.attacker].might
+                ));
+            }
+            for i in 0..units.len() {
+                let u = &units[i];
+                if u.side != Side::Party || u.fallen {
+                    continue;
+                }
+                let Some(t) = combat::strike_target(units, contacts, i) else {
+                    continue;
+                };
+                let answering = !contacts.iter().any(|c| c.attacker == i);
+                let plan = if staged[i].bid > 0 {
+                    format!(
+                        "{} blows ({} damage)",
+                        staged[i].bid,
+                        staged[i].bid * u.might
+                    )
+                } else if staged[i].hold {
                     "holding".to_string()
+                } else {
+                    format!("{} tempo to spend", u.tempo)
                 };
                 log.push(format!(
-                    "  {} on {} - {}",
-                    units[c.attacker].name, units[c.target].name, act
+                    "  {} {} {} - {plan}",
+                    u.name,
+                    if answering { "answers" } else { "presses" },
+                    units[t].name
                 ));
             }
         }
@@ -901,12 +906,11 @@ mod tap_tests {
         c
     }
 
-    /// **A tile that will not answer a tap must not invite one.** At React only the heroes actually under
-    /// fire have an answer to choose; tapping the rest used to do nothing at all, silently — which is the same
-    /// lie as an option with no reason attached, and it is exactly what made "only Raider is selectable, but I
-    /// see no options" so baffling.
+    /// **A tile that will not answer a tap must not invite one.** At Evade only a hero that can actually
+    /// afford to escape is being asked anything; tapping the rest used to do nothing at all, silently - which is
+    /// the same lie as an option with no reason attached.
     #[test]
-    fn at_react_only_a_struck_hero_is_tappable() {
+    fn at_evade_only_a_hero_that_can_escape_is_tappable() {
         let units = vec![
             unit("Raider", Side::Party, Rank::Outrider), // 0 - struck
             unit("Bastion", Side::Party, Rank::Vanguard), // 1 - untouched
@@ -917,11 +921,11 @@ mod tap_tests {
             target: 0,
             bid: 2,
         }];
-        let live = |i| tap_is_live(&units, &contacts, None, 0, Step::React, i);
+        let live = |i| tap_is_live(&units, &contacts, None, 0, Step::Evade, i);
 
-        assert!(live(0), "the struck hero picks its answer");
-        assert!(!live(1), "a hero nobody struck has nothing to answer");
-        assert!(!live(2), "you do not tap the foe that hit you");
+        assert!(live(0), "the reached hero picks its answer");
+        assert!(!live(1), "a hero nobody reached for has nothing to answer");
+        assert!(!live(2), "you do not tap the foe reaching for you");
     }
 
     /// A fallen body answers nothing and aims nothing, whatever the step.
@@ -930,7 +934,7 @@ mod tap_tests {
         let mut units = vec![unit("Raider", Side::Party, Rank::Outrider)];
         units[0].fallen = true;
         let contacts = vec![];
-        for step in [Step::Marshal, Step::Strike, Step::React, Step::Extra] {
+        for step in [Step::Marshal, Step::Engage, Step::Evade, Step::Strike] {
             assert!(!tap_is_live(&units, &contacts, None, 0, step, 0));
         }
     }

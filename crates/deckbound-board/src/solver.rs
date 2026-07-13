@@ -15,7 +15,7 @@ use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::SCHEDULE;
 
 use crate::battle::{Greedy, MAX_ROUNDS, Policy};
-use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
+use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
 
 /// The three ranks a party unit may be assigned (the formation search space).
 const RANKS: [Rank; 3] = [Rank::Vanguard, Rank::Outrider, Rank::Rearguard];
@@ -95,7 +95,7 @@ fn forces_win(
     if sub == 0 {
         combat::refresh_round(&mut units); // Tempo refreshes to Cadence each round
     }
-    let win = search_catch(&units, round, sub, memo);
+    let win = search_engage(&units, round, sub, memo);
     memo.insert(key, win);
     win
 }
@@ -109,82 +109,85 @@ fn next(round: usize, sub: usize) -> (usize, usize) {
     }
 }
 
-/// Strike step: try every party strike plan (joint over attackers), fold in the greedy foe, resolve, recurse
-/// into React.
-fn search_catch(
+/// Engage step: try every party engagement plan (joint over attackers), fold in the greedy foe, resolve,
+/// recurse into Evade.
+fn search_engage(
     units: &[Combatant],
     round: usize,
     sub: usize,
     memo: &mut HashMap<Key, bool>,
 ) -> bool {
-    let foe_catches = Greedy.strikes(units, Side::Foe, sub);
-    let options = party_catch_options(units, sub);
+    let foe_engagements = Greedy.engagements(units, Side::Foe, sub);
+    let options = party_engage_options(units, sub);
     any_combo(&options, &mut |chosen| {
         let mut u = units.to_vec();
-        let mut all: Vec<Strike> = chosen.iter().flatten().copied().collect();
-        all.extend(foe_catches.iter().copied());
-        let contacts = combat::resolve_strike(&mut u, &all);
-        search_react(&u, &contacts, round, sub, memo)
+        let mut all: Vec<Engage> = chosen.iter().flatten().copied().collect();
+        all.extend(foe_engagements.iter().copied());
+        let reaching = combat::resolve_engage(&mut u, &all);
+        search_evade(&u, &reaching, round, sub, memo)
     })
 }
 
-/// React step: try every party reaction plan (one per party-targeted contact), fold in the greedy foe
-/// reactions, resolve, recurse into Extra.
-fn search_react(
+/// Evade step: try every party dodge plan (Slip or Stand, per reached party unit), fold in the greedy foe,
+/// resolve, recurse into Strike.
+///
+/// This is where the "no partial slip" rule pays for itself in the search: the branch is **binary** per unit,
+/// not `0..tempo` wide. The dominated option was not merely bad play, it was a whole dimension of the tree.
+fn search_evade(
+    units: &[Combatant],
+    reaching: &[Contact],
+    round: usize,
+    sub: usize,
+    memo: &mut HashMap<Key, bool>,
+) -> bool {
+    // Party units that something is reaching for, and that can actually afford to escape it.
+    let reached: Vec<usize> = (0..units.len())
+        .filter(|&i| {
+            units[i].side == Side::Party
+                && !units[i].fallen
+                && combat::slip_cost(units, reaching, i).is_some_and(|c| c <= units[i].tempo)
+        })
+        .collect();
+    let options: Vec<Vec<Dodge>> = reached
+        .iter()
+        .map(|_| vec![Dodge::Stand, Dodge::Slip])
+        .collect();
+    any_combo(&options, &mut |chosen| {
+        let dodges: Vec<Dodge> = (0..units.len())
+            .map(|i| match reached.iter().position(|&r| r == i) {
+                Some(pos) => chosen[pos],
+                None if units[i].side == Side::Foe => Greedy.dodge(units, reaching, i),
+                None => Dodge::Stand, // cannot afford to slip: standing is the only thing on offer
+            })
+            .collect();
+        let mut u = units.to_vec();
+        let contacts = combat::resolve_evade(&mut u, reaching, &dodges);
+        search_strike(&u, &contacts, round, sub, memo)
+    })
+}
+
+/// Strike step: try every party blow plan (how many cards each contacted party unit pours in), fold in the
+/// greedy foe, resolve, close the sub-phase, recurse to the next.
+fn search_strike(
     units: &[Combatant],
     contacts: &[Contact],
     round: usize,
     sub: usize,
     memo: &mut HashMap<Key, bool>,
 ) -> bool {
-    // Which contacts hit a party unit (the party chooses their reactions); foe-targeted ones are greedy.
-    let party_hits: Vec<usize> = (0..contacts.len())
-        .filter(|&i| units[contacts[i].target].side == Side::Party)
+    let foe_blows = Greedy.blows(units, Side::Foe, contacts);
+    // Every party unit on an edge it may swing along - as the engager, or answering along a melee edge.
+    let party_edges: Vec<(usize, usize)> = (0..units.len())
+        .filter(|&i| units[i].side == Side::Party && !units[i].fallen && units[i].tempo > 0)
+        .filter_map(|i| combat::strike_target(units, contacts, i).map(|t| (i, t)))
         .collect();
-    let options: Vec<Vec<React>> = party_hits
+    let options: Vec<Vec<Blows>> = party_edges
         .iter()
-        .map(|&i| react_options(units, &contacts[i]))
-        .collect();
-    any_combo(&options, &mut |chosen| {
-        let reactions: Vec<React> = contacts
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                if let Some(pos) = party_hits.iter().position(|&h| h == i) {
-                    chosen[pos]
-                } else {
-                    Greedy.react(units, c)
-                }
-            })
-            .collect();
-        let mut u = units.to_vec();
-        let surviving = combat::resolve_react(&mut u, contacts, &reactions);
-        search_extra(&u, &surviving, round, sub, memo)
-    })
-}
-
-/// Extra step: try every party extra-strike plan (how many cards each still-contacted party unit flips),
-/// fold in the greedy foe, resolve, close the sub-phase, recurse to the next sub-phase.
-fn search_extra(
-    units: &[Combatant],
-    surviving: &[Contact],
-    round: usize,
-    sub: usize,
-    memo: &mut HashMap<Key, bool>,
-) -> bool {
-    let foe_extras = Greedy.extras(units, Side::Foe, surviving);
-    // Party units still on a surviving contact may flip 0..tempo cards each.
-    let party_edges: Vec<&Contact> = surviving
-        .iter()
-        .filter(|c| units[c.attacker].side == Side::Party && units[c.attacker].tempo > 0)
-        .collect();
-    let options: Vec<Vec<ExtraStrike>> = party_edges
-        .iter()
-        .map(|c| {
-            (0..=units[c.attacker].tempo)
-                .map(|cards| ExtraStrike {
-                    attacker: c.attacker,
-                    target: c.target,
+        .map(|&(i, target)| {
+            (0..=units[i].tempo)
+                .map(|cards| Blows {
+                    unit: i,
+                    target,
                     cards,
                 })
                 .collect()
@@ -193,9 +196,9 @@ fn search_extra(
     let (nr, ns) = next(round, sub);
     any_combo(&options, &mut |chosen| {
         let mut u = units.to_vec();
-        let mut extras: Vec<ExtraStrike> = chosen.iter().filter(|e| e.cards > 0).copied().collect();
-        extras.extend(foe_extras.iter().copied());
-        combat::resolve_extra(&mut u, &extras);
+        let mut blows: Vec<Blows> = chosen.iter().filter(|b| b.cards > 0).copied().collect();
+        blows.extend(foe_blows.iter().copied());
+        combat::resolve_strike(&mut u, contacts, &blows);
         combat::end_sub_phase(&mut u);
         forces_win(&u, nr, ns, memo)
     })
@@ -203,10 +206,11 @@ fn search_extra(
 
 // ---- the party's pruned option sets -------------------------------------------------------------------
 
-/// Each party attacker's strike options this sub-phase: `None` (don't strike), plus, for each legal, reachable,
-/// affordable foe, the two canonical bids — **min-to-land** and **min-to-deny-evade** (enough that the
-/// defender can't out-bid it). Intermediate bids only waste Tempo, so they are pruned.
-fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Strike>>> {
+/// Each party attacker's engagement options this sub-phase: `None` (do not reach), plus, for each legal and
+/// reachable foe, the two canonical commitments — **one card** (cheapest reach, most tempo kept back for
+/// blows) and **the fewest cards they cannot afford to slip** (landing guaranteed). Everything in between is
+/// strictly worse than one of those two: it neither saves tempo nor denies the escape.
+fn party_engage_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Engage>>> {
     units
         .iter()
         .enumerate()
@@ -227,33 +231,23 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Strike
                     continue;
                 }
                 if u.aoe {
-                    // An area strike is one unevadable sweep of the target's rank — no bid to tune, one card.
-                    if u.tempo > 0 {
-                        opts.push(Some(Strike {
-                            attacker: i,
-                            target: j,
-                            cards: 1,
-                        }));
-                    }
+                    // An area strike cannot be slipped - no commitment to tune, one card, no follow-up.
+                    opts.push(Some(Engage {
+                        attacker: i,
+                        target: j,
+                        cards: 1,
+                    }));
                     continue;
                 }
-                let min_land = v.finesse.div_ceil(u.finesse.max(1)).max(1);
-                if min_land > u.tempo {
-                    continue; // can't even land
-                }
-                // Deny-evade: bid value must reach the defender's whole Tempo-at-Finesse, so cards such that
-                // cards * F_att >= tempo_def * F_def.
-                let deny = (v.tempo * v.finesse)
-                    .div_ceil(u.finesse.max(1))
-                    .max(min_land);
-                for cards in [min_land, deny] {
-                    if cards <= u.tempo {
-                        opts.push(Some(Strike {
-                            attacker: i,
-                            target: j,
-                            cards,
-                        }));
-                    }
+                // Deny the slip: the fewest cards whose value they cannot out-spend at their Finesse.
+                let deny = (1..=u.tempo)
+                    .find(|&c| (c * u.finesse.max(1)) / v.finesse.max(1) + 1 > v.tempo);
+                for cards in [Some(1), deny].into_iter().flatten() {
+                    opts.push(Some(Engage {
+                        attacker: i,
+                        target: j,
+                        cards,
+                    }));
                 }
             }
             dedup(opts)
@@ -261,23 +255,7 @@ fn party_catch_options(units: &[Combatant], sub: usize) -> Vec<Vec<Option<Strike
         .collect()
 }
 
-/// A party defender's reactions to one incoming `contact`: Eat (free); Evade (min cards to strictly beat the
-/// bid, if affordable); Strike Back (if the blow is melee and the defender carries a melee answer + Tempo).
-fn react_options(units: &[Combatant], contact: &Contact) -> Vec<React> {
-    let d = &units[contact.target];
-    let mut opts = vec![React::Eat];
-    let need = contact.bid / d.finesse.max(1) + 1;
-    if need > 0 && need <= d.tempo {
-        opts.push(React::Evade { cards: need });
-    }
-    let incoming_melee = !combat::rank_is_ranged(units[contact.attacker].rank);
-    if incoming_melee && d.melee && d.tempo > 0 {
-        opts.push(React::StrikeBack);
-    }
-    opts
-}
-
-fn dedup(mut v: Vec<Option<Strike>>) -> Vec<Option<Strike>> {
+fn dedup(mut v: Vec<Option<Engage>>) -> Vec<Option<Engage>> {
     v.sort_by_key(|o| o.map(|c| (c.target, c.cards)));
     v.dedup();
     v

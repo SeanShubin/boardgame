@@ -22,7 +22,7 @@ use deckbound_content::rank::Intention as Rank;
 use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
 
 use crate::battle::{Greedy, Policy};
-use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
+use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
 
 /// The top-level zone a fight lives in while it runs.
 pub const ARENA: &str = "Arena";
@@ -156,12 +156,12 @@ fn rank_label(rank: Rank) -> &'static str {
 pub enum Step {
     /// Assign / re-assign ranks before the schedule runs (round start).
     Marshal,
-    /// Attackers bid tempo to reach targets.
+    /// Attackers commit tempo to **reach** a target. More tempo makes them harder to slip; it buys no damage.
+    Engage,
+    /// Each target - seeing exactly what was committed - pays the exact price to slip, or stands.
+    Evade,
+    /// Each engager's one free opening blow, then either end of a melee contact pours in tempo, 1 card = 1 hit.
     Strike,
-    /// Defenders eat / evade / strike back per incoming contact.
-    React,
-    /// Units on a surviving contact flip remaining tempo for extra strikes.
-    Extra,
 }
 
 // ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
@@ -283,35 +283,26 @@ fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
 
 // ---- the staged plan (detail lines after the base two) ------------------------------------------------
 
-/// A defender's staged reaction kind (the cards it spends are derived at commit).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ReactKind {
-    Eat,
-    Evade,
-    StrikeBack,
-}
-
-impl ReactKind {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            ReactKind::Eat => "Eat",
-            ReactKind::Evade => "Evade",
-            ReactKind::StrikeBack => "Strike Back",
-        }
-    }
-}
-
 /// One party unit's staged orders for the current mini-phase (read from / written to its detail).
 ///
 /// `hold` is the **explicit** "this hero does nothing here" - distinct from having decided nothing yet. Both
 /// produce no strike, but only one of them means the player has answered, and Commit gates on the difference.
+///
+/// `aim`/`bid` are the Engage commitment; `dodge` is the Evade answer; at Strike, `bid` is the number of blows.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Staged {
     pub(crate) active: bool,
     pub(crate) aim: Option<CardId>,
     pub(crate) bid: u32,
     pub(crate) hold: bool,
-    pub(crate) react: Option<ReactKind>,
+    pub(crate) dodge: Option<Dodge>,
+}
+
+fn dodge_label(d: Dodge) -> &'static str {
+    match d {
+        Dodge::Slip => "Slip",
+        Dodge::Stand => "Stand",
+    }
 }
 
 fn read_staged(d: &[String]) -> Staged {
@@ -325,11 +316,11 @@ fn read_staged(d: &[String]) -> Staged {
             s.aim = id.trim().parse().ok().map(CardId);
         } else if let Some(n) = line.strip_prefix("bid ") {
             s.bid = n.trim().parse().unwrap_or(0);
-        } else if let Some(k) = line.strip_prefix("react ") {
-            s.react = Some(match k {
-                "Evade" => ReactKind::Evade,
-                "Strike Back" => ReactKind::StrikeBack,
-                _ => ReactKind::Eat,
+        } else if let Some(k) = line.strip_prefix("dodge ") {
+            s.dodge = Some(if k == "Slip" {
+                Dodge::Slip
+            } else {
+                Dodge::Stand
             });
         }
     }
@@ -357,8 +348,8 @@ fn write_staged(board: &mut Board, card: CardId, s: &Staged) {
     if s.hold {
         lines.push("hold".into());
     }
-    if let Some(r) = s.react {
-        lines.push(format!("react {}", r.label()));
+    if let Some(d) = s.dodge {
+        lines.push(format!("dodge {}", dodge_label(d)));
     }
     let _ = board.set_card_detail(card, lines);
 }
@@ -467,9 +458,9 @@ fn read_phase(board: &Board, arena: PileId) -> (usize, u32, Step) {
         Some(name) if name != "Marshal" => {
             let sub = SUB_PHASE_NAMES.iter().position(|&n| n == name).unwrap_or(0);
             let step = match deck_top(board, arena, STEPS).as_deref() {
-                Some("React") => Step::React,
-                Some("Extra") => Step::Extra,
-                _ => Step::Strike,
+                Some("Evade") => Step::Evade,
+                Some("Strike") => Step::Strike,
+                _ => Step::Engage,
             };
             (sub, round, step)
         }
@@ -671,7 +662,7 @@ fn install_phase_decks(board: &mut Board, arena: PileId) {
         }
     }
     if let Ok(steps) = board.add_pile(arena, STEPS) {
-        for name in ["Strike", "React", "Extra"] {
+        for name in ["Engage", "Evade", "Strike"] {
             add_deck_card(board, steps, name, "phase-mini", None);
         }
     }
@@ -754,9 +745,14 @@ fn pairs_line(sub: usize) -> String {
 // it here for the foe (always) and the party fallback, so there is a single implementation of the greedy plan.
 // (The arena's *react* is simpler than the policy's - the greedy foe just eats; see the React step.)
 
-/// The party's staged strikes (aim + bid on party units), keeping only ones the SCHEDULE permits.
-fn party_strikes(board: &Board, cards: &[CardId], units: &[Combatant], sub: usize) -> Vec<Strike> {
-    let mut strikes = Vec::new();
+/// The party's staged engagements (aim + committed tempo), keeping only ones the SCHEDULE permits.
+fn party_engagements(
+    board: &Board,
+    cards: &[CardId],
+    units: &[Combatant],
+    sub: usize,
+) -> Vec<Engage> {
+    let mut out = Vec::new();
     for (i, u) in units.iter().enumerate() {
         if u.fallen
             || u.side != Side::Party
@@ -772,31 +768,31 @@ fn party_strikes(board: &Board, cards: &[CardId], units: &[Combatant], sub: usiz
             && combat::legal_strike(sub, u.rank, units[t].rank)
             && combat::back_access_ok(units, u.rank, t)
         {
-            strikes.push(Strike {
+            out.push(Engage {
                 attacker: i,
                 target: t,
                 cards: s.bid,
             });
         }
     }
-    strikes
+    out
 }
 
-/// The party's staged extra strikes (bid on party units still on a surviving contact).
-fn party_extras(
+/// The party's staged blows: tempo poured into an established contact, by either end of a melee edge.
+fn party_blows(
     board: &Board,
     cards: &[CardId],
     units: &[Combatant],
-    surviving: &[Contact],
-) -> Vec<ExtraStrike> {
-    surviving
-        .iter()
-        .filter(|c| units[c.attacker].side == Side::Party)
-        .filter_map(|c| {
-            let bid = staged_of(board, cards[c.attacker]).bid;
-            (bid > 0).then_some(ExtraStrike {
-                attacker: c.attacker,
-                target: c.target,
+    contacts: &[Contact],
+) -> Vec<Blows> {
+    (0..units.len())
+        .filter(|&i| units[i].side == Side::Party && !units[i].fallen)
+        .filter_map(|i| {
+            let bid = staged_of(board, cards[i]).bid;
+            let target = combat::strike_target(units, contacts, i)?;
+            (bid > 0).then_some(Blows {
+                unit: i,
+                target,
                 cards: bid,
             })
         })
@@ -868,7 +864,7 @@ pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
     let staged: Vec<Staged> = cards.iter().map(|&c| staged_of(board, c)).collect();
     units.iter().enumerate().find_map(|(i, u)| {
         owes_order(&units, &contacts, &staged, sub, step, i).then(|| match step {
-            Step::React => format!("{} has not answered", u.name),
+            Step::Evade => format!("{} has not answered", u.name),
             _ => format!("{} has no orders", u.name),
         })
     })
@@ -894,13 +890,9 @@ pub(crate) fn can_act(
     }
     match step {
         Step::Marshal => false,
-        Step::React => {
-            let (evade_ok, strikeback_ok) = react_options(units, contacts, i);
-            evade_ok || strikeback_ok
-        }
         // Reach alone is not enough: the schedule must actually pair this rank against a living, reachable
         // enemy rank *this sub-phase*. Omitting that was the bug - an Outrider at the Clash looked ready.
-        Step::Strike => {
+        Step::Engage => {
             combat::effective_in_rank(u.rank, u.melee, u.ranged)
                 && units.iter().enumerate().any(|(j, v)| {
                     v.side == Side::Foe
@@ -909,7 +901,11 @@ pub(crate) fn can_act(
                         && combat::back_access_ok(units, u.rank, j)
                 })
         }
-        Step::Extra => contacts.iter().any(|c| c.attacker == i),
+        // You are only asked to answer if something is reaching you AND you could actually afford to escape it.
+        // A slip you cannot pay for is not a choice you are being offered.
+        Step::Evade => combat::slip_cost(units, contacts, i).is_some_and(|cost| cost <= u.tempo),
+        // You may pour tempo into any edge you are on - the one you opened, or a melee one opened on you.
+        Step::Strike => combat::strike_target(units, contacts, i).is_some(),
     }
 }
 
@@ -933,9 +929,9 @@ pub(crate) fn owes_order(
     let s = staged[i];
     match step {
         Step::Marshal => false,
-        Step::React => s.react.is_none(),
-        Step::Strike => !s.hold && s.aim.is_none(),
-        Step::Extra => !s.hold && s.bid == 0,
+        Step::Engage => !s.hold && s.aim.is_none(),
+        Step::Evade => s.dodge.is_none(),
+        Step::Strike => !s.hold && s.bid == 0,
     }
 }
 
@@ -960,35 +956,13 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
 /// can be auto-resolved (greedy foe) and skipped. Marshal always needs input (assign ranks / Start).
 pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
     let (cards, units, sub, _round, step) = arena_state(board, arena);
-    let living_party = |i: usize| units[i].side == Side::Party && !units[i].fallen;
-    match step {
-        Step::Marshal => true,
-        Step::Strike => units.iter().enumerate().any(|(i, u)| {
-            living_party(i)
-                && u.tempo > 0
-                && combat::effective_in_rank(u.rank, u.melee, u.ranged)
-                && units.iter().enumerate().any(|(j, v)| {
-                    v.side == Side::Foe
-                        && !v.fallen
-                        && combat::legal_strike(sub, u.rank, v.rank)
-                        && combat::back_access_ok(&units, u.rank, j)
-                })
-        }),
-        Step::React => {
-            let contacts = read_contacts(board, arena, &cards);
-            // Only a real choice needs input: a struck unit that can afford to evade or strike back. One that
-            // can only Eat (e.g. no Tempo) auto-resolves.
-            units.iter().enumerate().any(|(i, _)| {
-                living_party(i) && {
-                    let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
-                    evade_ok || strikeback_ok
-                }
-            })
-        }
-        Step::Extra => read_contacts(board, arena, &cards)
-            .iter()
-            .any(|c| living_party(c.attacker) && units[c.attacker].tempo > 0),
+    if step == Step::Marshal {
+        return true; // assign ranks / Start
     }
+    // The same authority the board and the Commit gate read: if nothing is being asked of any hero, there is
+    // nothing here for the player to do, and the step can be resolved greedily and skipped.
+    let contacts = read_contacts(board, arena, &cards);
+    (0..units.len()).any(|i| can_act(&units, &contacts, sub, step, i))
 }
 
 /// A compact note for the current step when it is being auto-skipped: `"{Phase}|{Step}|{why}|{pairs}"`
@@ -999,9 +973,9 @@ pub fn current_skip_line(board: &Board, arena: PileId) -> String {
     let (_, _, sub, _, step) = arena_state(board, arena);
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
     let (name, reason) = match step {
-        Step::Strike => ("Strike", "no legal target"),
-        Step::React => ("React", "no reaction available"),
-        Step::Extra => ("Extra", "no surviving contact"),
+        Step::Engage => ("Engage", "no legal target"),
+        Step::Evade => ("Evade", "nothing reaching you"),
+        Step::Strike => ("Strike", "no contact to strike along"),
         Step::Marshal => ("Marshal", ""),
     };
     format!("{phase}|{name}|{reason}|{}", pairs_line(sub))
@@ -1043,28 +1017,6 @@ pub fn note_skip(board: &mut Board, arena: PileId, line: String) {
         let _ = board.set_card_type(c, "skiplog");
         let _ = board.set_card_detail(c, vec![line]);
     }
-}
-
-/// Cards to spend to evade a `bid` at finesse `f_def`: the smallest count whose value strictly exceeds it.
-fn evade_cost(bid: u32, f_def: u32, tempo: u32) -> u32 {
-    (bid / f_def.max(1) + 1).min(tempo)
-}
-
-/// The reactions defender `i` can actually **afford** against its incoming contacts (Eat is always free, so it
-/// is not returned): `evade_ok` needs enough Tempo to strictly beat some incoming bid; `strikeback_ok` needs a
-/// Tempo card *and* a melee answer to a melee blow (spec: they came to you). A defender with neither is forced
-/// to Eat, so the UI must offer no choice and the step auto-resolves - a unit with no Tempo cannot evade or
-/// strike back.
-pub(crate) fn react_options(units: &[Combatant], contacts: &[Contact], i: usize) -> (bool, bool) {
-    let u = &units[i];
-    if u.fallen || u.tempo == 0 {
-        return (false, false);
-    }
-    let incoming = || contacts.iter().filter(|c| c.target == i);
-    let evade_ok = incoming().any(|c| c.bid / u.finesse.max(1) < u.tempo);
-    let strikeback_ok =
-        u.melee && incoming().any(|c| !combat::rank_is_ranged(units[c.attacker].rank));
-    (evade_ok, strikeback_ok)
 }
 
 /// Move any Pool stragglers into their default rank pile (a direct commit's safety net; the UI gates Start
@@ -1117,57 +1069,49 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
     match step {
         Step::Marshal => unreachable!("handled above"),
 
-        Step::Strike => {
-            let mut strikes = party_strikes(board, &cards, &units, sub);
+        Step::Engage => {
+            let mut engagements = party_engagements(board, &cards, &units, sub);
             // The greedy fallback is for headless play (tests, the solver), where nobody gave orders. It must
-            // NOT fire when the player deliberately Held: an empty strike list is then their decision, not an
-            // absent one.
-            if strikes.is_empty() && !party_has_orders(board, &cards, &units) {
-                strikes = Greedy.strikes(&units, Side::Party, sub);
+            // NOT fire when the player deliberately Held: an empty list is then their decision, not an absent
+            // one.
+            if engagements.is_empty() && !party_has_orders(board, &cards, &units) {
+                engagements = Greedy.engagements(&units, Side::Party, sub);
             }
-            strikes.extend(Greedy.strikes(&units, Side::Foe, sub));
-            let contacts = combat::resolve_strike(&mut units, &strikes);
-            writeback(board, &units); // clears the staged strike plan
-            write_contacts(board, arena, &cards, &contacts);
-            rotate_deck(board, arena, STEPS); // Strike -> React
+            engagements.extend(Greedy.engagements(&units, Side::Foe, sub));
+            let reaching = combat::resolve_engage(&mut units, &engagements);
+            writeback(board, &units); // clears the staged engagement plan
+            write_contacts(board, arena, &cards, &reaching);
+            rotate_deck(board, arena, STEPS); // Engage -> Evade
         }
 
-        Step::React => {
-            let contacts = read_contacts(board, arena, &cards);
-            let reactions: Vec<React> = contacts
-                .iter()
-                .map(|c| {
-                    if units[c.target].side != Side::Party {
-                        return React::Eat; // greedy foe soaks
+        Step::Evade => {
+            let reaching = read_contacts(board, arena, &cards);
+            let dodges: Vec<Dodge> = (0..units.len())
+                .map(|i| {
+                    if units[i].side != Side::Party {
+                        return Greedy.dodge(&units, &reaching, i);
                     }
-                    match staged_of(board, cards[c.target]).react {
-                        Some(ReactKind::Evade) => React::Evade {
-                            cards: evade_cost(
-                                c.bid,
-                                units[c.target].finesse,
-                                units[c.target].tempo,
-                            ),
-                        },
-                        Some(ReactKind::StrikeBack) => React::StrikeBack,
-                        _ => React::Eat,
+                    match staged_of(board, cards[i]).dodge {
+                        Some(d) => d,
+                        None => Dodge::Stand, // nothing was asked, or nothing was answered: you stand
                     }
                 })
                 .collect();
-            let surviving = combat::resolve_react(&mut units, &contacts, &reactions);
-            writeback(board, &units); // clears the staged reactions
+            let contacts = combat::resolve_evade(&mut units, &reaching, &dodges);
+            writeback(board, &units); // clears the staged dodges
             clear_contacts(board, arena);
-            write_contacts(board, arena, &cards, &surviving);
-            rotate_deck(board, arena, STEPS); // React -> Extra
+            write_contacts(board, arena, &cards, &contacts);
+            rotate_deck(board, arena, STEPS); // Evade -> Strike
         }
 
-        Step::Extra => {
-            let surviving = read_contacts(board, arena, &cards);
-            let mut extras = party_extras(board, &cards, &units, &surviving);
-            if extras.is_empty() && !party_has_orders(board, &cards, &units) {
-                extras = Greedy.extras(&units, Side::Party, &surviving);
+        Step::Strike => {
+            let contacts = read_contacts(board, arena, &cards);
+            let mut blows = party_blows(board, &cards, &units, &contacts);
+            if blows.is_empty() && !party_has_orders(board, &cards, &units) {
+                blows = Greedy.blows(&units, Side::Party, &contacts);
             }
-            extras.extend(Greedy.extras(&units, Side::Foe, &surviving));
-            combat::resolve_extra(&mut units, &extras);
+            blows.extend(Greedy.blows(&units, Side::Foe, &contacts));
+            combat::resolve_strike(&mut units, &contacts, &blows);
             combat::end_sub_phase(&mut units);
             clear_contacts(board, arena);
 
@@ -1315,66 +1259,42 @@ fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usi
     write_staged(board, cards[active], &s);
 }
 
-/// Select the defender the React choices apply to (clearing any other selection). Unlike the *attacker*
-/// selection at Strike, there is no effectiveness gate: you are being hit whether or not you can hit back.
-fn select_defender(board: &mut Board, cards: &[CardId], chosen: usize) {
-    for (i, &c) in cards.iter().enumerate() {
-        let mut s = staged_of(board, c);
-        let want = i == chosen;
-        if s.active != want {
-            s.active = want;
-            write_staged(board, c, &s);
-        }
-    }
-}
-
-/// The struck party defender the React decision is *about*: the one the player selected, or — when only one
-/// hero is under fire — that one, so a lone defender needs no selecting first. `None` outside React, or when
-/// nobody the player controls was hit.
-pub(crate) fn struck_defender(board: &Board, arena: PileId) -> Option<(CardId, usize)> {
-    let (cards, units, _sub, _round, step) = arena_state(board, arena);
-    if step != Step::React {
+/// The party unit a step's choice cards are *about*: the one the player selected, or - when only one hero is
+/// being asked anything - that one, so a lone decision needs no selecting first.
+pub(crate) fn focused_party(board: &Board, arena: PileId) -> Option<(CardId, usize)> {
+    let (cards, units, sub, _round, step) = arena_state(board, arena);
+    if step == Step::Marshal {
         return None;
     }
     let contacts = read_contacts(board, arena, &cards);
-    let struck: Vec<usize> = (0..units.len())
-        .filter(|&i| {
-            units[i].side == Side::Party
-                && !units[i].fallen
-                && contacts.iter().any(|c| c.target == i)
-        })
+    let asked: Vec<usize> = (0..units.len())
+        .filter(|&i| can_act(&units, &contacts, sub, step, i))
         .collect();
-    let i = struck
+    let i = asked
         .iter()
         .copied()
         .find(|&i| staged_of(board, cards[i]).active)
-        .or_else(|| (struck.len() == 1).then(|| struck[0]))?;
+        .or_else(|| (asked.len() == 1).then(|| asked[0]))?;
     Some((cards[i], i))
 }
 
-/// The reactions on offer to the struck defender — **each carrying what it will cost and do**, and, when it
-/// cannot be taken, *why not*.
-///
-/// This is the answer to the question that started all this: looking at the screen, you could not tell whether
-/// Strike Back was legitimately on offer, because nothing said what had hit you. A barred option is therefore
-/// still listed, with its reason ("the blow was ranged - nothing to answer"), rather than silently vanishing:
-/// an absent option teaches nothing and reads as a bug.
-/// What a blow of `might` really does to `target`, in words - for a choice card's consequence line.
+/// What `n` blows of `might` really do to `target`, in words - for a choice card's consequence line.
 ///
 /// **A Might is not a health count.** It banks into the target's damage pile and only turns a Health card each
 /// time that pile crosses Toughness; whatever is left **closes at the Lull**, the round boundary. So "deal 7
 /// back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
 /// including that the wound *keeps* for the rest of the round, which is what makes a blow under the bar worth
 /// striking at all.
-fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
-    let (flips, pile, bar) = combat::pile_effect(target, might);
+fn blows_phrase(target: &combat::Combatant, might: u32, n: u32) -> String {
+    let (flips, pile, bar) = combat::pile_effect_strikes(target, might, n);
     let name = &target.name;
+    let total = might * n;
     if flips > 0 {
-        format!("{might} damage: {name} loses {flips} health")
+        format!("{total} damage: {name} loses {flips} health")
     } else if pile == 0 {
-        format!("{might} damage: {name}'s armor stops it")
+        format!("{total} damage: {name}'s armor stops it")
     } else {
-        format!("{might} into {name}'s pile: {pile}/{bar} - it keeps until the Lull")
+        format!("{total} into {name}'s pile: {pile}/{bar} - it keeps until the Lull")
     }
 }
 
@@ -1383,32 +1303,30 @@ fn damage_phrase(target: &combat::Combatant, might: u32) -> String {
 /// says *which* hero or foe we are talking about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChoiceAction {
-    /// React: how the struck defender answers.
-    React(ReactKind),
-    /// Strike: aim the selected hero at this foe's card (seeding the minimum bid that can land).
+    /// Engage: reach for this foe's card (committing one tempo to start).
     Aim(CardId),
-    /// Strike: drop the aim and pick a target again.
+    /// Engage: drop the reach and pick a target again.
     Unaim,
-    /// Strike / Extra: spend this many tempo cards.
+    /// Engage: commit this many tempo to the reach. Strike: pour this many blows in.
     Bid(u32),
-    /// Strike / Extra: this hero deliberately does nothing here. **Not** the same as having decided nothing.
+    /// Evade: pay the exact price and break everything reaching you, or stand and keep the tempo to hit back.
+    Dodge(Dodge),
+    /// Engage / Strike: this hero deliberately does nothing here. **Not** the same as having decided nothing.
     Hold,
 }
 
 /// **Every decision on offer right now, as cards** - each carrying what it costs and does, and, when it cannot
-/// be taken, why not. This is the whole decision surface of a fight: React's answers, Strike's targets and
-/// bids, Extra's follow-up strikes.
+/// be taken, why not. This is the whole decision surface of a fight: Engage's targets and commitments, Evade's
+/// slip-or-stand, Strike's blows.
 ///
-/// The rule it encodes: *a tap on a card says **which**; a choice card says **what***. Tapping used to decide
-/// things by cycling in place (rank, bid, reaction), which could name an option but never its consequence -
-/// and silently skipped the ones you could not afford, so a missing option was indistinguishable from a bug.
+/// The rule it encodes: *a tap on a card says **which**; a choice card says **what***.
 pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     let (_, _, _, _, step) = arena_state(board, arena);
     match step {
         Step::Marshal => Vec::new(),
-        Step::React => react_choices_inner(board, arena),
+        Step::Engage => engage_choices(board, arena),
+        Step::Evade => evade_choices(board, arena),
         Step::Strike => strike_choices(board, arena),
-        Step::Extra => extra_choices(board, arena),
     }
 }
 
@@ -1420,52 +1338,46 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .collect()
 }
 
-/// Strike: the selected hero's orders. With no aim yet these are the **targets** (one card each, quoting what
-/// the blow would do to that foe's pile); once aimed they become the **bid** (how much tempo to commit, and
-/// what the target can still slip).
-fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
+/// **Engage.** With no target yet, the cards are the targets. Once reaching, they are the *commitment* - and
+/// each says the thing that makes this a decision: what it costs the target to slip you, and how many blows
+/// you will have left if they cannot. Every card you sink into reaching them is a card you cannot swing with.
+fn engage_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     let (cards, units, sub, _round, _step) = arena_state(board, arena);
-    let Some(i) = active_party(board, &cards, &units) else {
+    let Some((card, i)) = focused_party(board, arena) else {
         return Vec::new();
     };
     let u = &units[i];
-    let s = staged_of(board, cards[i]);
+    let s = staged_of(board, card);
     let mut out = Vec::new();
 
     match s.aim.and_then(|a| cards.iter().position(|&c| c == a)) {
-        // Aimed: choose the bid. `bid = cards x Finesse`, and the target slips it if that value fails to beat
-        // its own Finesse - so quote the value, not just the count.
         Some(t) => {
-            let floor = min_to_land(u, &units[t]);
+            let foe = &units[t];
             for n in 1..=u.tempo {
                 let value = n * u.finesse.max(1);
-                let text = if n < floor {
+                let price = value / foe.finesse.max(1) + 1; // what it costs them to slip this
+                let blows = 1 + (u.tempo - n); // the opening blow is paid for, however much you committed
+                let text = if price > foe.tempo {
                     format!(
-                        "value {value} - {} slips it on Finesse {}",
-                        units[t].name, units[t].finesse
+                        "value {value} - {} cannot escape ({price} tempo, has {}); then {blows} blows",
+                        foe.name, foe.tempo
                     )
                 } else {
                     format!(
-                        "value {value} - lands; {}",
-                        damage_phrase(&units[t], u.might)
+                        "value {value} - {} escapes for {price} tempo; else {blows} blows",
+                        foe.name
                     )
                 };
-                let c = Choice::new(format!("Bid {n} tempo"), text).chosen(s.bid == n);
                 out.push((
-                    if n < floor {
-                        c.barred("too light to land")
-                    } else {
-                        c
-                    },
+                    Choice::new(format!("Commit {n} tempo"), text).chosen(s.bid == n),
                     ChoiceAction::Bid(n),
                 ));
             }
             out.push((
-                Choice::new("Aim elsewhere", "pick another target"),
+                Choice::new("Reach elsewhere", "pick another target"),
                 ChoiceAction::Unaim,
             ));
         }
-        // Not aimed: choose the target.
         None => {
             for (j, foe) in units.iter().enumerate() {
                 if foe.side != Side::Foe
@@ -1476,7 +1388,10 @@ fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
                     continue;
                 }
                 out.push((
-                    Choice::new(format!("Strike {}", foe.name), damage_phrase(foe, u.might)),
+                    Choice::new(
+                        format!("Reach for {}", foe.name),
+                        format!("Might {} a blow, once you have them", u.might),
+                    ),
                     ChoiceAction::Aim(cards[j]),
                 ));
             }
@@ -1488,32 +1403,72 @@ fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     out
 }
 
-/// Extra strikes: the selected hero presses a blow it already landed. Each card is Might again, into the same
-/// pile - which is exactly when striking under the bar pays off.
-fn extra_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
+/// **Evade.** You can see exactly what they committed, so the price of escaping is exact - which is why there
+/// is no partial slip to offer: underpaying would never be a gamble, only a waste. Two cards: pay it in full,
+/// or stand, keep the tempo, and (on a melee edge) hit back with it.
+fn evade_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     let (cards, units, _sub, _round, _step) = arena_state(board, arena);
-    let Some(i) = active_party(board, &cards, &units) else {
+    let Some((card, i)) = focused_party(board, arena) else {
+        return Vec::new();
+    };
+    let reaching = read_contacts(board, arena, &cards);
+    let u = &units[i];
+    let s = staged_of(board, card).dodge;
+    let Some(cost) = combat::slip_cost(&units, &reaching, i) else {
+        return Vec::new();
+    };
+
+    let incoming: Vec<&Contact> = reaching.iter().filter(|c| c.target == i).collect();
+    let taken: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
+    let answer = incoming
+        .iter()
+        .find(|c| u.melee && !combat::rank_is_ranged(units[c.attacker].rank))
+        .map(|c| &units[c.attacker]);
+    let stand_text = match answer {
+        Some(foe) => format!(
+            "take {taken} damage - then {} blows back: {}",
+            u.tempo,
+            blows_phrase(foe, u.might, u.tempo)
+        ),
+        None => format!("take {taken} damage - they are at range, nothing to answer with"),
+    };
+    let stand = Choice::new("Stand", stand_text).chosen(s == Some(Dodge::Stand));
+
+    let slip = Choice::new(
+        "Slip",
+        format!("spend {cost} tempo - nothing reaches you this phase"),
+    )
+    .chosen(s == Some(Dodge::Slip));
+    let slip = if cost <= u.tempo {
+        slip
+    } else {
+        slip.barred(format!("needs {cost} tempo, you have {}", u.tempo))
+    };
+
+    vec![
+        (slip, ChoiceAction::Dodge(Dodge::Slip)),
+        (stand, ChoiceAction::Dodge(Dodge::Stand)),
+    ]
+}
+
+/// **Strike.** Finesse is done; contact is made. One card per blow, each blow a Might - so this is where the
+/// tempo you did *not* sink into reaching them turns into damage.
+fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
+    let (cards, units, _sub, _round, _step) = arena_state(board, arena);
+    let Some((card, i)) = focused_party(board, arena) else {
         return Vec::new();
     };
     let contacts = read_contacts(board, arena, &cards);
-    let Some(t) = contacts.iter().find(|c| c.attacker == i).map(|c| c.target) else {
+    let Some(t) = combat::strike_target(&units, &contacts, i) else {
         return Vec::new();
     };
     let u = &units[i];
-    let s = staged_of(board, cards[i]);
+    let s = staged_of(board, card);
     let mut out = Vec::new();
     for n in 1..=u.tempo {
-        let (flips, pile, bar) = combat::pile_effect_strikes(&units[t], u.might, n);
-        let text = if flips > 0 {
-            format!("{} loses {flips} health", units[t].name)
-        } else {
-            format!(
-                "{pile}/{bar} in {}'s pile - not enough to crack",
-                units[t].name
-            )
-        };
         out.push((
-            Choice::new(format!("Strike {n} more"), text).chosen(s.bid == n),
+            Choice::new(format!("Strike {n}x"), blows_phrase(&units[t], u.might, n))
+                .chosen(s.bid == n),
             ChoiceAction::Bid(n),
         ));
     }
@@ -1522,74 +1477,6 @@ fn extra_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
         ChoiceAction::Hold,
     ));
     out
-}
-
-/// The party unit the player has selected (by tapping its card), if any.
-fn active_party(board: &Board, cards: &[CardId], units: &[Combatant]) -> Option<usize> {
-    (0..units.len()).find(|&i| {
-        units[i].side == Side::Party && !units[i].fallen && staged_of(board, cards[i]).active
-    })
-}
-
-fn react_choices_inner(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
-    let Some((card, i)) = struck_defender(board, arena) else {
-        return Vec::new();
-    };
-    let (cards, units, _sub, _round, _step) = arena_state(board, arena);
-    let contacts = read_contacts(board, arena, &cards);
-    let u = &units[i];
-    let incoming: Vec<&Contact> = contacts.iter().filter(|c| c.target == i).collect();
-    // Nothing is pre-chosen: an unanswered blow shows every card unlit, and Commit stays barred until the
-    // player says which way this hero answers. A default here would decide for them and read as their choice.
-    let staged = staged_of(board, card).react;
-    let (evade_ok, strikeback_ok) = react_options(&units, &contacts, i);
-
-    // Eat: every incoming blow lands, at its attacker's Might.
-    let might: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
-    let eat = Choice::new("Eat", format!("take {}", damage_phrase(u, might)))
-        .chosen(staged == Some(ReactKind::Eat));
-
-    // Evade: beat the bid. The cheapest incoming blow is the one worth quoting.
-    let need = incoming
-        .iter()
-        .map(|c| c.bid / u.finesse.max(1) + 1)
-        .min()
-        .unwrap_or(0);
-    let evade = Choice::new("Evade", format!("spend {need} tempo to slip it"))
-        .chosen(staged == Some(ReactKind::Evade));
-    let evade = if evade_ok {
-        evade
-    } else if u.tempo == 0 {
-        evade.barred("no tempo left")
-    } else {
-        evade.barred(format!("needs {need} tempo, you have {}", u.tempo))
-    };
-
-    // Strike Back: melee-vs-melee only - you answer a foe that *approached* you.
-    let counter = incoming
-        .iter()
-        .find(|c| !combat::rank_is_ranged(units[c.attacker].rank))
-        .map(|c| &units[c.attacker]);
-    let back_text = match counter {
-        Some(foe) => format!("spend 1 tempo, deal {}", damage_phrase(foe, u.might)),
-        None => format!("spend 1 tempo, deal {} back", u.might),
-    };
-    let back = Choice::new("Strike Back", back_text).chosen(staged == Some(ReactKind::StrikeBack));
-    let back = if strikeback_ok {
-        back
-    } else if u.tempo == 0 {
-        back.barred("no tempo left")
-    } else if !u.melee {
-        back.barred("you carry no melee blow")
-    } else {
-        back.barred("the blow was ranged - nothing to answer")
-    };
-
-    vec![
-        (eat, ChoiceAction::React(ReactKind::Eat)),
-        (evade, ChoiceAction::React(ReactKind::Evade)),
-        (back, ChoiceAction::React(ReactKind::StrikeBack)),
-    ]
 }
 
 /// Take the choice card at `index` (into [`step_choices`]). A barred option does nothing.
@@ -1603,28 +1490,16 @@ pub fn choose(board: &mut Board, index: usize) {
     if !choice.enabled() {
         return;
     }
-    let (cards, units, _sub, _round, step) = arena_state(board, arena);
-    let card = match step {
-        Step::React => struck_defender(board, arena).map(|(c, _)| c),
-        _ => active_party(board, &cards, &units).map(|i| cards[i]),
-    };
-    let Some(card) = card else {
+    let Some((card, _)) = focused_party(board, arena) else {
         return;
     };
     let mut s = staged_of(board, card);
     match action {
-        ChoiceAction::React(kind) => s.react = Some(kind),
+        // Reaching starts at one card - the cheapest reach, and the most tempo kept back for blows. The player
+        // raises it from the commitment cards, each of which says what the extra card actually buys.
         ChoiceAction::Aim(foe) => {
-            // Seed the lightest bid that can actually land, so the aim is never a no-op the player has to
-            // discover; they raise it from the bid cards.
-            let (Some(a), Some(t)) = (
-                cards.iter().position(|&c| c == card),
-                cards.iter().position(|&c| c == foe),
-            ) else {
-                return;
-            };
             s.aim = Some(foe);
-            s.bid = min_to_land(&units[a], &units[t]).min(units[a].tempo).max(1);
+            s.bid = 1;
             s.hold = false;
         }
         ChoiceAction::Unaim => {
@@ -1635,6 +1510,7 @@ pub fn choose(board: &mut Board, index: usize) {
             s.bid = n;
             s.hold = false;
         }
+        ChoiceAction::Dodge(d) => s.dodge = Some(d),
         ChoiceAction::Hold => {
             s.hold = true;
             s.aim = None;
@@ -1665,26 +1541,17 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
     // **A tap says which, never what.** It selects the hero we are giving orders to, or (as a shortcut) the
     // foe we mean; the order itself is always taken from a choice card, which says what it costs and does.
     // Tapping used to cycle a bid, a rank or a reaction in place - naming an option but never its consequence.
-    match step {
-        Step::Marshal => unreachable!("handled above"),
-        Step::Strike => match side {
-            Side::Party => select_active(board, &cards, &units, i),
-            Side::Foe => aim_active(board, &cards, &units, sub, i),
-        },
-        Step::React => {
-            let contacts = read_contacts(board, arena, &cards);
-            if side == Side::Party && contacts.iter().any(|c| c.target == i) {
-                select_defender(board, &cards, i);
-            }
+    let contacts = read_contacts(board, arena, &cards);
+    match (step, side) {
+        (Step::Marshal, _) => unreachable!("handled above"),
+        // A foe tap only means anything while reaching: it is the shortcut for picking a target.
+        (Step::Engage, Side::Foe) => aim_active(board, &cards, &units, sub, i),
+        // Any hero this step is asking something of may be selected - that is the whole rule, and it is the
+        // same `can_act` the choice cards and the Commit gate read.
+        (_, Side::Party) if can_act(&units, &contacts, sub, step, i) => {
+            select_active(board, &cards, &units, i)
         }
-        Step::Extra => {
-            let outgoing = read_contacts(board, arena, &cards)
-                .iter()
-                .any(|c| c.attacker == i);
-            if side == Side::Party && outgoing {
-                select_active(board, &cards, &units, i);
-            }
-        }
+        _ => {}
     }
 }
 
@@ -1828,22 +1695,22 @@ mod tests {
     use super::*;
     use crate::sample_table;
 
-    /// **Nothing is decided by default, and Commit says what is missing.** The Raider is struck at Intercept
-    /// and can Eat, Evade or Strike Back - so it is being *asked*. Committing before it answers would silently
-    /// enter Eat as if the player had chosen it.
+    /// **Nothing is decided by default, and Commit says what is missing.** The Raider is reached at Intercept
+    /// and can Slip or Stand - so it is being *asked*. Committing before it answers would silently enter Stand
+    /// as if the player had chosen it.
     #[test]
-    fn commit_is_barred_until_a_struck_hero_answers_and_names_who() {
+    fn commit_is_barred_until_a_reached_hero_answers_and_names_who() {
         let mut board = sample_table();
         // The Raider marches alone: it ranks Outrider, so The Wall (an enemy Vanguard) screens it at Intercept.
-        let arena = open_a_fight_with(&mut board, "Raider");
-        commit(&mut board, arena); // Marshal -> Intercept / Strike
-        commit(&mut board, arena); // Strike -> React: The Wall's blow has landed on the Raider
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Marshal -> Intercept / Engage
+        commit(&mut board, arena); // Engage -> Evade: The Wall is reaching for the Raider
 
-        let (cards, units, _, _, step) = arena_state(&board, arena);
-        assert_eq!(step, Step::React);
-        let (card, i) = struck_defender(&board, arena).expect("a hero is under fire");
+        let (_, units, _, _, step) = arena_state(&board, arena);
+        assert_eq!(step, Step::Evade);
+        let (card, i) = focused_party(&board, arena).expect("a hero is being reached for");
         assert!(
-            staged_of(&board, card).react.is_none(),
+            staged_of(&board, card).dodge.is_none(),
             "nothing pre-chosen"
         );
         assert!(
@@ -1862,28 +1729,23 @@ mod tests {
         );
 
         // Answer, and Commit comes live.
-        let eat = scene_choices(&board, arena)
+        let stand = scene_choices(&board, arena)
             .iter()
-            .position(|c| c.label == "Eat")
-            .expect("Eat is always offered");
-        choose(&mut board, eat);
+            .position(|c| c.label == "Stand")
+            .expect("Stand is always offered");
+        choose(&mut board, stand);
         assert_eq!(pending_decision(&board, arena), None);
         assert_eq!(commit_label(&board, arena), "Commit");
-        let _ = cards;
     }
 
-    /// **The damage pile spans the whole sub-phase.** A Raider (Might 7) that strikes The Wall (Toughness 9)
-    /// and then presses with an Extra strike banks 7 + 7 = 14 into one pile, which crosses 9 and flips a Health
-    /// card. That is the only way anything cracks a Wall, and it is the whole reason to strike under the bar.
-    ///
-    /// It did not work: `pending` was rebuilt as 0 on every read of a card, so the pile was wiped at each
-    /// *step* boundary rather than the sub-phase boundary, and the two 7s never met. The cards are the state -
-    /// anything that has to survive a step has to be written on one.
+    /// **Reaching buys ONE blow; the tempo you keep back buys the rest - and the pile spans the round.** The
+    /// Raider (Might 7) reaches The Wall (Toughness 9) with one card, stands its ground, then pours its
+    /// remaining card in: 7 + 7 = 14 into one pile, which crosses 9 and turns a Health card. That is the only
+    /// way anything cracks a Wall.
     #[test]
-    fn a_catch_and_an_extra_bank_into_the_same_pile_and_crack_the_wall() {
+    fn one_card_of_reach_plus_one_blow_cracks_the_wall() {
         let mut board = sample_table();
-        // The lone Wall - the fight the Raider is built to solo. (Against the corner it dies inside a round,
-        // which would end the fight before the Lull we are here to test.)
+        // The lone Wall - the fight the Raider is built to solo.
         let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
         // Rank the Raider as a Vanguard, so it meets The Wall in the Clash (Vanguard -> Vanguard).
         let raider = pool_heroes(&board, arena)[0];
@@ -1891,109 +1753,105 @@ mod tests {
         let _ = board.move_card(raider, van, 0);
         commit(&mut board, arena); // Start / Reveal
 
-        let clash = 3;
-        while arena_state(&board, arena).2 != clash {
-            commit(&mut board, arena);
-        }
-        // Read The Wall off its card, not out of `arena_state`: at the Lull it has stepped back into the
-        // muster, so it is no longer a ranked combatant - but it is the same card, wounds and all.
         let wall_card = {
             let (cards, units, _, _, _) = arena_state(&board, arena);
             cards[units.iter().position(|u| u.side == Side::Foe).unwrap()]
         };
         let wall = |b: &Board| read_combatant(b, wall_card, Rank::Vanguard).unwrap();
-        let hp0 = wall(&board).health;
-
-        // Strike: aim at The Wall and bid 1 tempo (the blow's damage is Might, never the bid).
         let me = |b: &Board| {
             let (cards, units, _, _, _) = arena_state(b, arena);
-            (0..units.len())
+            cards[(0..units.len())
                 .find(|&i| units[i].side == Side::Party)
-                .map(|i| cards[i])
-                .unwrap()
+                .unwrap()]
         };
-        let c = me(&board);
-        handle_tap(&mut board, c);
-        let strike = scene_choices(&board, arena)
-            .iter()
-            .position(|c| c.label.starts_with("Strike The Wall"))
-            .expect("a Vanguard may strike the enemy Vanguard at Clash");
-        choose(&mut board, strike);
-        commit(&mut board, arena); // Strike -> React: contact is made (damage lands when the defender answers)
+        let hp0 = wall(&board).health;
 
-        // React: eat the counter-blow, keeping tempo for the Extra. The Wall soaks ours: 7 into its pile.
-        if pending_decision(&board, arena).is_some() {
-            let eat = scene_choices(&board, arena)
-                .iter()
-                .position(|c| c.label == "Eat")
-                .unwrap();
-            choose(&mut board, eat);
+        // Walk to the Clash, answering every step on the way.
+        let clash = 3;
+        let mut guard = 0;
+        while arena_state(&board, arena).2 != clash || arena_state(&board, arena).4 != Step::Engage
+        {
+            answer_greedily(&mut board, arena);
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 40, "the Clash must arrive");
         }
-        commit(&mut board, arena); // React -> Extra
-        assert_eq!(
-            wall(&board).pending,
-            7,
-            "the blow banked 7, and the pile survives the step boundary"
-        );
-        assert_eq!(wall(&board).health, hp0, "7 alone cannot crack Toughness 9");
 
-        // Extra: press once more. 7 + 7 = 14 >= 9, and a Health card turns.
+        // Engage: reach for The Wall with the seeded single card - the cheapest reach, keeping tempo for blows.
         let c = me(&board);
         handle_tap(&mut board, c);
-        let more = scene_choices(&board, arena)
+        let reach = scene_choices(&board, arena)
             .iter()
-            .position(|c| c.label == "Strike 1 more")
-            .expect("a surviving contact may be pressed");
-        choose(&mut board, more);
-        commit(&mut board, arena); // Extra -> the next sub-phase
+            .position(|c| c.label.starts_with("Reach for The Wall"))
+            .expect("a Vanguard may reach the enemy Vanguard at the Clash");
+        choose(&mut board, reach);
+        assert_eq!(staged_of(&board, c).bid, 1, "reaching starts at one card");
+        commit(&mut board, arena);
+
+        // Evade: The Wall (greedy) stands - it is in melee and would rather answer. We are reached in turn.
+        answer_greedily(&mut board, arena);
+        commit(&mut board, arena);
+
+        // Strike: the opening blow is already paid for. Pour the last card in.
+        assert_eq!(arena_state(&board, arena).4, Step::Strike);
+        let c = me(&board);
+        handle_tap(&mut board, c);
+        let one_more = scene_choices(&board, arena)
+            .iter()
+            .position(|c| c.label == "Strike 1x")
+            .expect("one card left to swing with");
+        choose(&mut board, one_more);
+        commit(&mut board, arena);
 
         assert_eq!(
             wall(&board).health,
             hp0 - 1,
-            "14 in one pile crosses Toughness 9 - The Wall loses a Health card"
+            "the opening blow (7) plus one more (7) = 14, which crosses Toughness 9"
         );
-        // The 5 left over is a real, open wound: it carries into the next sub-phase, and only closes at the
-        // Lull. (It used to be wiped here, which is what made a blow under the bar a blow into the void.)
         assert_eq!(
             wall(&board).pending,
             5,
-            "the remainder carries across the sub-phase boundary"
-        );
-
-        // ...and the Lull closes it. Walk to the top of the next round.
-        let mut guard = 0;
-        while arena_state(&board, arena).4 != Step::Marshal && outcome(&board, arena).is_none() {
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 100, "the round must come back round to Marshal");
-        }
-        assert_eq!(
-            wall(&board).pending,
-            0,
-            "the Lull closes every unfinished wound - the one deadline in a fight"
+            "the remainder is an open wound - it keeps until the Lull"
         );
     }
 
-    /// **At Strike the choice row IS the target list, then the bid.** Tapping only says *which* hero; the order
-    /// is always a card that states what it does. And Hold is a real order - a hero that could strike must say
-    /// it is not striking, so "no aim" never has to mean two different things.
-    #[test]
-    fn catch_offers_targets_then_bids_and_hold_is_a_real_order() {
-        let mut board = sample_table();
-        let arena = open_a_fight_with(&mut board, "Bastion"); // a Vanguard, so it meets The Wall at Clash
-        commit(&mut board, arena); // Marshal -> Intercept / Strike
+    /// Answer whatever the current step is asking, so a test can walk a fight without hand-playing it.
+    fn answer_greedily(board: &mut Board, arena: PileId) {
+        let mut guard = 0;
+        while pending_decision(board, arena).is_some() {
+            let choices = scene_choices(board, arena);
+            let Some(i) = choices.iter().position(|c| {
+                c.enabled() && (c.label == "Hold" || c.label == "Stand" || c.label == "Slip")
+            }) else {
+                break;
+            };
+            choose(board, i);
+            guard += 1;
+            assert!(guard < 20, "every asked hero must be answerable");
+        }
+    }
 
-        // Nothing selected: nothing to decide yet, and the tap is what selects.
-        assert!(scene_choices(&board, arena).is_empty());
+    /// **At Engage the choice row IS the target list, then the commitment.** Tapping only says *which* hero;
+    /// the order is always a card that states what it does. And Hold is a real order - a hero that could reach
+    /// must say it is not reaching, so "no target" never has to mean two different things.
+    #[test]
+    fn engage_offers_targets_then_commitments_and_hold_is_a_real_order() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Bastion", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Marshal -> Intercept / Engage
+
         let (cards, units, _, _, _) = arena_state(&board, arena);
         let hero = (0..units.len())
             .find(|&i| units[i].side == Side::Party)
             .expect("the Bastion marched");
-        handle_tap(&mut board, cards[hero]);
 
-        // Walk to Clash, where a Vanguard may strike the enemy Vanguard.
-        while arena_state(&board, arena).2 != 3 {
+        // Walk to the Clash, where a Vanguard may reach the enemy Vanguard.
+        let mut guard = 0;
+        while arena_state(&board, arena).2 != 3 || arena_state(&board, arena).4 != Step::Engage {
+            answer_greedily(&mut board, arena);
             commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 40, "the Clash must arrive");
         }
         handle_tap(&mut board, cards[hero]);
         let labels = |b: &Board| -> Vec<String> {
@@ -2002,24 +1860,24 @@ mod tests {
                 .map(|c| c.label.clone())
                 .collect()
         };
-        assert_eq!(labels(&board), vec!["Strike The Wall", "Hold"]);
+        assert_eq!(labels(&board), vec!["Reach for The Wall", "Hold"]);
 
-        // Aim: the row becomes the bid, and the hero no longer owes an order.
+        // Reach: the row becomes the commitment, and the hero no longer owes an order.
         assert!(
             pending_decision(&board, arena).is_some(),
-            "unaimed hero owes an order"
+            "a hero with no target owes an order"
         );
         choose(&mut board, 0);
-        assert!(labels(&board).iter().any(|l| l.starts_with("Bid ")));
-        assert!(labels(&board).contains(&"Aim elsewhere".to_string()));
+        assert!(labels(&board).iter().any(|l| l.starts_with("Commit ")));
+        assert!(labels(&board).contains(&"Reach elsewhere".to_string()));
         assert_eq!(pending_decision(&board, arena), None);
 
-        // Hold is equally an answer: it clears the aim, and Commit still comes live.
-        let hold = labels(&board)
+        // Hold is equally an answer: it clears the reach, and Commit still comes live.
+        let back = labels(&board)
             .iter()
-            .position(|l| l == "Aim elsewhere")
+            .position(|l| l == "Reach elsewhere")
             .unwrap();
-        choose(&mut board, hold); // back to the target list
+        choose(&mut board, back);
         let hold = labels(&board).iter().position(|l| l == "Hold").unwrap();
         choose(&mut board, hold);
         assert!(staged_of(&board, cards[hero]).hold);
@@ -2030,10 +1888,9 @@ mod tests {
         );
     }
 
-    /// **A choice must not promise damage it cannot deliver.** The Raider (Might 7) striking back at The Wall
-    /// (Toughness 9) used to read "deal 7 back" - and it flipped nothing: 7 banks into the Wall's pile and
-    /// never crosses 9 on its own. The card has to say where the blow actually goes, and how long it keeps
-    /// (until the Lull), because that is the whole reason to strike under the bar.
+    /// **A choice must not promise damage it cannot deliver.** The Raider's blow (Might 7) on The Wall
+    /// (Toughness 9) flips nothing on its own: it banks into the pile and keeps until the Lull. The card has to
+    /// say where the blow goes and how long it lasts, because that is the whole reason to strike under the bar.
     #[test]
     fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {
         let wall = combat::Combatant::from_stats(
@@ -2046,14 +1903,14 @@ mod tests {
             false,
         );
         assert_eq!(
-            damage_phrase(&wall, 7),
+            blows_phrase(&wall, 7, 1),
             "7 into The Wall's pile: 7/9 - it keeps until the Lull"
         );
-
-        // Land another 2 in the same sub-phase and the pile crosses: now the promise is real.
-        let mut wall = wall;
-        wall.pending = 7;
-        assert_eq!(damage_phrase(&wall, 2), "2 damage: The Wall loses 1 health");
+        // Two blows in one go DO cross it - which is exactly what makes keeping tempo back worth it.
+        assert_eq!(
+            blows_phrase(&wall, 7, 2),
+            "14 damage: The Wall loses 1 health"
+        );
     }
 
     /// A melee kit (the Raider carries Jab) must flag `Melee` (not `no strike`) on its combat card:
@@ -2307,30 +2164,30 @@ mod tests {
     }
 
     #[test]
-    fn taps_stage_a_plan_and_catch_persists_a_contact() {
+    fn taps_stage_a_plan_and_engaging_persists_a_reach() {
         let mut board = sample_table();
         let arena = open_a_fight(&mut board);
-        commit(&mut board, arena); // Marshal -> Strike (auto-ranks the hero)
-        assert_eq!(current_step(&board, arena), Step::Strike);
+        commit(&mut board, arena); // Marshal -> Engage (auto-ranks the hero)
+        assert_eq!(current_step(&board, arena), Step::Engage);
 
         let (cards, units, sub, _, _) = arena_state(&board, arena);
         let pi = units.iter().position(|u| u.side == Side::Party).unwrap();
         if let Some(fi) = (0..units.len()).find(|&j| {
             units[j].side == Side::Foe && combat::legal_strike(sub, units[pi].rank, units[j].rank)
         }) {
-            handle_tap(&mut board, cards[pi]); // select active
+            handle_tap(&mut board, cards[pi]); // select
             assert!(staged_of(&board, cards[pi]).active);
-            handle_tap(&mut board, cards[fi]); // aim at the foe (seeds a bid)
+            handle_tap(&mut board, cards[fi]); // reach for the foe (seeds one card)
             let staged = staged_of(&board, cards[pi]);
             assert_eq!(staged.aim, Some(cards[fi]));
-            assert!(staged.bid >= 1, "aiming seeds at least one card of bid");
+            assert_eq!(staged.bid, 1, "reaching starts at the cheapest commitment");
 
-            commit(&mut board, arena); // resolve Strike
-            assert_eq!(current_step(&board, arena), Step::React);
+            commit(&mut board, arena); // resolve Engage
+            assert_eq!(current_step(&board, arena), Step::Evade);
             let contacts = read_contacts(&board, arena, &arena_state(&board, arena).0);
             assert!(
                 contacts.iter().any(|c| c.attacker == pi),
-                "the staged strike landed as a persisted contact"
+                "the staged reach persisted as a contact for the Evade step"
             );
         }
     }
@@ -2339,47 +2196,6 @@ mod tests {
 #[cfg(test)]
 mod choice_tests {
     use super::*;
-    use crate::sample_table;
-
-    /// Drive a fight to React with the Marksman (ranged) struck by... nothing yet - we build the state we need
-    /// directly, because what is under test is what the *choices say*, not how the fight got here.
-    fn defender_choices(defender: Combatant, attacker: Combatant, bid: u32) -> Vec<Choice> {
-        // A tiny stand-in for the arena read: react_choices' logic is react_options + the consequence text, so
-        // exercise them together through the same predicate the UI uses.
-        let units = vec![defender, attacker];
-        let contacts = vec![Contact {
-            attacker: 1,
-            target: 0,
-            bid,
-        }];
-        let (evade_ok, strikeback_ok) = react_options(&units, &contacts, 0);
-        let u = &units[0];
-        let might: u32 = units[1].might;
-        let need = bid / u.finesse.max(1) + 1;
-        let eat = Choice::new("Eat", format!("take the hit ({might} might)"));
-        let evade = Choice::new("Evade", format!("spend {need} tempo to slip it"));
-        let evade = if evade_ok {
-            evade
-        } else if u.tempo == 0 {
-            evade.barred("no tempo left")
-        } else {
-            evade.barred(format!("needs {need} tempo, you have {}", u.tempo))
-        };
-        let back = Choice::new(
-            "Strike Back",
-            format!("spend 1 tempo, deal {} back", u.might),
-        );
-        let back = if strikeback_ok {
-            back
-        } else if u.tempo == 0 {
-            back.barred("no tempo left")
-        } else if !u.melee {
-            back.barred("you carry no melee blow")
-        } else {
-            back.barred("the blow was ranged - nothing to answer")
-        };
-        vec![eat, evade, back]
-    }
 
     fn combatant(name: &str, side: Side, rank: Rank, melee: bool, ranged: bool) -> Combatant {
         let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, melee, ranged);
@@ -2387,63 +2203,64 @@ mod choice_tests {
         c
     }
 
-    /// **The question that started this.** A ranged blow cannot be answered — you strike back at a foe that
-    /// *approached* you. The option must still be shown, saying so, rather than silently vanishing: an absent
-    /// option teaches nothing and is indistinguishable from a bug.
+    /// **The question that started all this, answered by the model instead of a keyword.** You cannot strike
+    /// back at a shot from the back line - not because a rule forbids it, but because a ranged contact is
+    /// one-way: nothing came within your reach. Standing against an archer therefore buys you *nothing*, and
+    /// the Stand card has to say so, or the player cannot tell a rule from a bug.
     #[test]
-    fn strike_back_is_barred_against_a_ranged_blow_and_says_why() {
+    fn standing_against_a_shot_buys_nothing_and_the_card_says_so() {
         let hero = combatant("hero", Side::Party, Rank::Outrider, true, false); // carries melee
         let shooter = combatant("shooter", Side::Foe, Rank::Rearguard, false, true); // fires from the back
-        let choices = defender_choices(hero, shooter, 2);
-
-        let back = &choices[2];
-        assert_eq!(back.label, "Strike Back");
-        assert!(!back.enabled(), "a ranged shot cannot be struck back at");
-        assert_eq!(back.why_not, "the blow was ranged - nothing to answer");
+        let units = vec![hero, shooter];
+        let reaching = vec![Contact {
+            attacker: 1,
+            target: 0,
+            bid: 2,
+        }];
+        assert_eq!(
+            combat::strike_target(&units, &reaching, 0),
+            None,
+            "a ranged edge is one-way - there is nothing to answer along it"
+        );
     }
 
-    /// The Wall's case: a melee Vanguard intercepting the crossing Outrider. Strike Back **is** legitimate,
-    /// and the card says what it will do.
+    /// The Wall's case: a melee Vanguard reaching the crossing Outrider. The edge is **mutual**, so standing is
+    /// a real posture - you take the blow and answer it with everything you kept back. That is emergent from the
+    /// edge, not a Strike Back keyword.
     #[test]
-    fn strike_back_is_offered_against_a_melee_blow_with_its_consequence() {
+    fn standing_against_a_melee_reach_lets_you_answer_with_everything_you_kept() {
         let hero = combatant("Raider", Side::Party, Rank::Outrider, true, false);
         let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
-        let choices = defender_choices(hero, wall, 2);
-
-        let back = &choices[2];
-        assert!(back.enabled(), "a melee blow can be answered");
-        assert_eq!(back.consequence, "spend 1 tempo, deal 3 back");
-
-        // ...and eating it says what it costs, rather than just naming the action.
-        assert_eq!(choices[0].consequence, "take the hit (3 might)");
+        let units = vec![hero, wall];
+        let reaching = vec![Contact {
+            attacker: 1,
+            target: 0,
+            bid: 2,
+        }];
+        assert_eq!(
+            combat::strike_target(&units, &reaching, 0),
+            Some(1),
+            "they came to you - you may answer, in a phase the schedule never gave you"
+        );
     }
 
-    /// A spent unit cannot buy its way out: both paid options are barred, and both say so.
+    /// **A slip you cannot pay for is not on offer**, and the card says the price rather than vanishing. With
+    /// Finesse 2 against a reach worth 6, escaping costs 4 tempo - and a body holding 2 simply cannot.
     #[test]
-    fn a_unit_with_no_tempo_is_told_why_it_can_only_eat() {
-        let mut hero = combatant("hero", Side::Party, Rank::Vanguard, true, false);
-        hero.tempo = 0;
+    fn an_unaffordable_slip_is_barred_with_its_price() {
+        let hero = combatant("hero", Side::Party, Rank::Vanguard, true, false); // Finesse 2, tempo 2
         let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
-        let choices = defender_choices(hero, wall, 2);
-
-        assert!(choices[0].enabled(), "Eat is always free");
-        assert!(!choices[1].enabled());
-        assert_eq!(choices[1].why_not, "no tempo left");
-        assert!(!choices[2].enabled());
-        assert_eq!(choices[2].why_not, "no tempo left");
-    }
-
-    /// The React choices exist only at React, and only for a hero who was actually hit. A fresh fight opens at
-    /// Marshal, where nothing has struck anyone, so the game asks for no decision — the choice row is empty
-    /// rather than showing three inert cards.
-    #[test]
-    fn no_decision_is_asked_for_when_nobody_is_under_fire() {
-        let mut board = sample_table();
-        let arena = super::tests::open_a_fight_for_tests(&mut board);
-        assert_eq!(current_step(&board, arena), Step::Marshal);
+        let units = vec![hero, wall];
+        let reaching = vec![Contact {
+            attacker: 1,
+            target: 0,
+            bid: 6,
+        }];
+        // 6 / 2 + 1 = 4 cards to strictly exceed it.
+        assert_eq!(combat::slip_cost(&units, &reaching, 0), Some(4));
         assert!(
-            scene_choices(&board, arena).is_empty(),
-            "at Marshal nothing has struck anyone - there is no reaction to choose"
+            !can_act(&units, &reaching, 0, Step::Evade, 0),
+            "with 2 tempo it cannot escape, so it is not being asked anything - it stands"
         );
     }
 }

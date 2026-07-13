@@ -1,6 +1,6 @@
 //! **Headless v2 battle simulator** — a pure driver that plays a whole fight over [`Combatant`]s (no board,
 //! no renderer), the foundation the exact solver and the balance harness build on. It walks the same
-//! SCHEDULE the arena does (up to five rounds, each five sub-phases of Strike -> React -> Extra), folding two
+//! SCHEDULE the arena does (up to five rounds, each five sub-phases of Engage -> Evade -> Strike), folding two
 //! [`Policy`]s (party + foe) through the [`crate::combat`] resolvers.
 //!
 //! Deterministic: given the starting units + both policies, the outcome is fixed (no RNG in v2 resolution).
@@ -12,7 +12,7 @@
 
 use deckbound_content::schedule::SCHEDULE;
 
-use crate::combat::{self, Combatant, Contact, ExtraStrike, React, Side, Strike};
+use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
 
 /// The most rounds a battle runs before it is called a draw (Spec §0.4 — an unresolved fight is a draw).
 pub const MAX_ROUNDS: usize = 5;
@@ -21,12 +21,12 @@ pub const MAX_ROUNDS: usize = 5;
 /// for party units and the foe's for foe units, so a solver can swap in an optimal party policy while the
 /// foe stays scripted.
 pub trait Policy {
-    /// The side's strikes (attacker -> target bids) in sub-phase `sub`.
-    fn strikes(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Strike>;
-    /// How a unit of this side reacts to one incoming `contact` (its target is on this side).
-    fn react(&self, units: &[Combatant], contact: &Contact) -> React;
-    /// The side's extra strikes along its still-surviving contacts.
-    fn extras(&self, units: &[Combatant], side: Side, surviving: &[Contact]) -> Vec<ExtraStrike>;
+    /// The side's engagements (attacker -> target, tempo committed to reach) in sub-phase `sub`.
+    fn engagements(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Engage>;
+    /// Whether unit `i` of this side pays [`combat::slip_cost`] to break everything reaching it, or stands.
+    fn dodge(&self, units: &[Combatant], contacts: &[Contact], i: usize) -> Dodge;
+    /// The side's strikes along its established contacts (beyond each engager's free opening blow).
+    fn blows(&self, units: &[Combatant], side: Side, contacts: &[Contact]) -> Vec<Blows>;
 }
 
 /// Whether the fight is over: `Some(true)` = party won, `Some(false)` = foe won, `None` = still going. A side
@@ -51,29 +51,28 @@ pub fn play_battle(
     for _round in 0..MAX_ROUNDS {
         combat::refresh_round(&mut units);
         for sub in 0..SCHEDULE.len() {
-            // Strike: both sides bid; landed strikes become contacts.
-            let mut strikes = party.strikes(&units, Side::Party, sub);
-            strikes.extend(foe.strikes(&units, Side::Foe, sub));
-            let contacts = combat::resolve_strike(&mut units, &strikes);
+            // Engage: both sides commit tempo to reach; each reach is a (not yet established) contact.
+            let mut engagements = party.engagements(&units, Side::Party, sub);
+            engagements.extend(foe.engagements(&units, Side::Foe, sub));
+            let reaching = combat::resolve_engage(&mut units, &engagements);
 
-            // React: each incoming contact is answered by its target's side.
-            let reactions: Vec<React> = contacts
-                .iter()
-                .map(|c| {
-                    let pol: &dyn Policy = if units[c.target].side == Side::Party {
+            // Evade: each target - now seeing exactly what was committed - pays to slip, or stands.
+            let dodges: Vec<Dodge> = (0..units.len())
+                .map(|i| {
+                    let pol: &dyn Policy = if units[i].side == Side::Party {
                         party
                     } else {
                         foe
                     };
-                    pol.react(&units, c)
+                    pol.dodge(&units, &reaching, i)
                 })
                 .collect();
-            let surviving = combat::resolve_react(&mut units, &contacts, &reactions);
+            let contacts = combat::resolve_evade(&mut units, &reaching, &dodges);
 
-            // Extra: still-contacted units flip remaining Tempo.
-            let mut extras = party.extras(&units, Side::Party, &surviving);
-            extras.extend(foe.extras(&units, Side::Foe, &surviving));
-            combat::resolve_extra(&mut units, &extras);
+            // Strike: each engager's free opening blow, plus whatever tempo either end pours in after it.
+            let mut blows = party.blows(&units, Side::Party, &contacts);
+            blows.extend(foe.blows(&units, Side::Foe, &contacts));
+            combat::resolve_strike(&mut units, &contacts, &blows);
             combat::end_sub_phase(&mut units);
 
             if let Some(done) = outcome(&units) {
@@ -85,14 +84,22 @@ pub fn play_battle(
 }
 
 /// The **greedy** policy (the scripted default for both sides, and the foe's fixed strategy the solver plays
-/// against): each effective unit strikes the first enemy it can legally reach and afford, at the minimum
-/// landing bid; a struck unit evades when the blow threatens a flip and it can afford to beat the bid, else
-/// eats; every still-contacted unit dumps its remaining Tempo as extra strikes.
+/// against). It plays the attack tension the honest way: commit the **fewest** cards that the target cannot
+/// afford to slip — landing guaranteed, and every card saved becomes a blow. If nothing prices them out, reach
+/// with one card and take the chance. A target stands whenever it can answer (an edge it can swing along is
+/// worth more than an escape), else slips if it can afford it and the incoming blow actually threatens it.
+/// Everyone then dumps their remaining tempo into strikes.
 pub struct Greedy;
 
+/// The tempo `defender` would need to slip a reach worth `bid` — the same arithmetic as [`combat::slip_cost`],
+/// but for a *hypothetical* bid the attacker has not committed yet.
+fn slip_price(bid: u32, f_def: u32) -> u32 {
+    bid / f_def.max(1) + 1
+}
+
 impl Policy for Greedy {
-    fn strikes(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Strike> {
-        let mut strikes = Vec::new();
+    fn engagements(&self, units: &[Combatant], side: Side, sub: usize) -> Vec<Engage> {
+        let mut out = Vec::new();
         for (i, u) in units.iter().enumerate() {
             if u.fallen
                 || u.side != side
@@ -101,52 +108,68 @@ impl Policy for Greedy {
             {
                 continue;
             }
-            if let Some((t, cards)) = units.iter().enumerate().find_map(|(j, v)| {
-                if v.fallen
-                    || v.side == side
-                    || !combat::legal_strike(sub, u.rank, v.rank)
-                    || !combat::back_access_ok(units, u.rank, j)
-                {
-                    return None;
-                }
-                // An area strike is unevadable and costs one card; a single strike bids the minimum to land.
-                let need = if u.aoe {
-                    1
-                } else {
-                    v.finesse.div_ceil(u.finesse.max(1)).max(1)
-                };
-                (need <= u.tempo).then_some((j, need))
-            }) {
-                strikes.push(Strike {
-                    attacker: i,
-                    target: t,
-                    cards,
-                });
-            }
+            let Some(t) = units.iter().enumerate().position(|(j, v)| {
+                !v.fallen
+                    && v.side != side
+                    && combat::legal_strike(sub, u.rank, v.rank)
+                    && combat::back_access_ok(units, u.rank, j)
+            }) else {
+                continue;
+            };
+            // An area strike cannot be slipped, so reaching costs exactly one card and nothing is gained by
+            // committing more. Otherwise: the cheapest commitment they cannot afford to escape, else one card.
+            let cards = if u.aoe {
+                1
+            } else {
+                (1..=u.tempo)
+                    .find(|&c| slip_price(c * u.finesse.max(1), units[t].finesse) > units[t].tempo)
+                    .unwrap_or(1)
+            };
+            out.push(Engage {
+                attacker: i,
+                target: t,
+                cards,
+            });
         }
-        strikes
+        out
     }
 
-    fn react(&self, units: &[Combatant], contact: &Contact) -> React {
-        let d = &units[contact.target];
-        let threatens = units[contact.attacker].might >= d.toughness.max(1);
-        // Cards needed to strictly exceed the attacker's spent bid, at the defender's Finesse.
-        let need = contact.bid / d.finesse.max(1) + 1;
-        if threatens && need > 0 && need <= d.tempo {
-            React::Evade { cards: need }
-        } else {
-            React::Eat
+    fn dodge(&self, units: &[Combatant], contacts: &[Contact], i: usize) -> Dodge {
+        let u = &units[i];
+        let Some(cost) = combat::slip_cost(units, contacts, i) else {
+            return Dodge::Stand; // nothing is reaching you
+        };
+        if u.fallen || cost > u.tempo {
+            return Dodge::Stand; // cannot afford it - so it is not on offer at all
         }
-    }
-
-    fn extras(&self, units: &[Combatant], side: Side, surviving: &[Contact]) -> Vec<ExtraStrike> {
-        surviving
+        // If there is an edge you can swing along, standing is worth more than escaping: let them come, and
+        // spend the tempo hitting back.
+        if combat::strike_target(units, contacts, i).is_some() {
+            return Dodge::Stand;
+        }
+        // Nothing to answer with (a shot from the back line, or no melee of your own). Escape if it threatens.
+        let worst = contacts
             .iter()
-            .filter(|c| units[c.attacker].side == side && units[c.attacker].tempo > 0)
-            .map(|c| ExtraStrike {
-                attacker: c.attacker,
-                target: c.target,
-                cards: units[c.attacker].tempo,
+            .filter(|c| c.target == i)
+            .map(|c| units[c.attacker].might)
+            .max()
+            .unwrap_or(0);
+        if worst >= u.toughness.max(1) {
+            Dodge::Slip
+        } else {
+            Dodge::Stand
+        }
+    }
+
+    fn blows(&self, units: &[Combatant], side: Side, contacts: &[Contact]) -> Vec<Blows> {
+        (0..units.len())
+            .filter(|&i| units[i].side == side && !units[i].fallen && units[i].tempo > 0)
+            .filter_map(|i| {
+                combat::strike_target(units, contacts, i).map(|target| Blows {
+                    unit: i,
+                    target,
+                    cards: units[i].tempo,
+                })
             })
             .collect()
     }
