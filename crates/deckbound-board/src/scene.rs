@@ -272,6 +272,14 @@ fn rank_hint(rank: Option<Rank>, side: Side) -> String {
     }
 }
 
+/// A formation tile speaks the **same three states the combat tiles do** - one vocabulary for the whole
+/// fight, so what a ring means never depends on which screen you are looking at:
+///
+/// - **Available** (waiting on you): a hero still in the Pool. It has no rank, and Start is barred until it
+///   does - it is *exactly* the "this one still needs you" case the combat steps use the cue for.
+/// - **Settled** (decided, still open): a hero standing in a rank. You told it where to stand, and you may
+///   tell it somewhere else.
+/// - **Idle**: a mustered foe. Nothing is being asked of you about it and nothing ever will be.
 fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>, side: Side) -> Tile {
     let party = side == Side::Party;
     let effective = rank.is_none_or(|r| combat::effective_in_rank(r, u.melee, u.ranged));
@@ -296,7 +304,11 @@ fn formation_tile(u: &Combatant, card: CardId, max: u32, rank: Option<Rank>, sid
         card,
         title: u.name.clone(),
         team: if party { Team::Left } else { Team::Right },
-        highlight: Highlight::Idle,
+        highlight: match (party, rank) {
+            (true, Some(_)) => Highlight::Settled,
+            (true, None) => Highlight::Available,
+            (false, _) => Highlight::Idle,
+        },
         badges,
         // A mustered foe is there to be read, not handled: you cannot drag it, and tapping it does nothing.
         draggable: party,
@@ -414,7 +426,11 @@ fn sel_of(
         if arena::owes_order(units, contacts, staged, sub, step, i) {
             return Highlight::Available;
         }
-        return Highlight::Idle;
+        // It has told you what it will do, and you may tell it something else. This used to be Idle - drawn as
+        // an ordinary card, indistinguishable from a hero with nothing to say - so "which of these have I
+        // already done?", the one question you ask over and over while working through a phase, could only be
+        // answered by reading every tile's small print.
+        return Highlight::Settled;
     }
 
     match step {
@@ -764,6 +780,52 @@ mod tap_tests {
         let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, true, false);
         c.tempo = 2;
         c
+    }
+
+    /// **The three states must be three looks.** While you work through a phase you ask one question over and
+    /// over - *which of these have I already done?* - and the screen has to answer it without being read. A
+    /// hero that had given its orders used to draw as `Idle`: an ordinary card, indistinguishable from one with
+    /// nothing to say. So the answer was only in the small print.
+    #[test]
+    fn a_hero_reads_as_dim_settled_or_waiting_on_you() {
+        let mut units = vec![
+            unit("Raider", Side::Party, Rank::Outrider), // 0 - has orders
+            unit("Bastion", Side::Party, Rank::Vanguard), // 1 - still owes them
+            unit("Marksman", Side::Party, Rank::Rearguard), // 2 - melee-only, so nothing is asked of it
+            unit("The Wall", Side::Foe, Rank::Vanguard),
+        ];
+        units[2].melee = true;
+        units[2].ranged = false; // melee body in the back line: it can never reach anything
+        let contacts = vec![];
+        let mut staged = vec![Staged::default(); 4];
+        staged[0].hold = true; // an order, and a real one
+
+        // Everyone can reach The Wall at the Clash (Vanguard -> Vanguard is sub-phase 3)... except the
+        // Outrider and the ineffective Rearguard.
+        let look =
+            |i, staged: &[Staged]| sel_of(&[], &units, staged, &contacts, None, 3, Step::Engage, i);
+        assert_eq!(look(2, &staged), Highlight::Dim, "nothing is asked of it");
+        assert_eq!(
+            look(1, &staged),
+            Highlight::Available,
+            "it still owes you an order - the loudest cue on the screen"
+        );
+
+        // Give Bastion an order too, and it settles - a different look, not the same one.
+        let mut done = staged.clone();
+        done[1].hold = true;
+        assert_eq!(look(1, &done), Highlight::Settled);
+        assert_ne!(
+            look(1, &done),
+            look(1, &staged),
+            "deciding must CHANGE how a hero looks, or the screen cannot say what you have done"
+        );
+        assert_ne!(look(1, &done), Highlight::Dim, "settled is not spent");
+
+        // ...and the one you are commanding outranks both.
+        let mut sel = done.clone();
+        sel[1].active = true;
+        assert_eq!(look(1, &sel), Highlight::Active);
     }
 
     /// **A rank row has to say what putting a hero there is FOR.** Marshal is the one blind decision, and it is

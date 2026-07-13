@@ -2345,10 +2345,17 @@ fn draw_scene_lanes(root: &mut ChildSpawnerCommands, lanes: &[Lane]) {
 fn tile_look(highlight: Highlight, team: Team) -> (Color, Color, Color, f32) {
     match (highlight, team) {
         (Highlight::Spent, _) => (CARD_BACK, MUTED, MUTED, 2.0),
+        // The one you are commanding: the brightest ring, and the thickest.
         (Highlight::Active, Team::Left) => (CARD_FACE, ARMED_CUE, CARD_INK, 3.0),
         (Highlight::Active, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 3.0),
-        (Highlight::Available, Team::Left) => (CARD_FACE, SELECTABLE_CUE, CARD_INK, 2.0),
+        // **Waiting on you** — amber, and as thick as Active, because "this one still needs you" is the thing
+        // the screen most needs to shout. It is the only cue that says the step is not finished.
+        (Highlight::Available, Team::Left) => (CARD_FACE, SELECTABLE_CUE, CARD_INK, 3.0),
         (Highlight::Available, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 2.0),
+        // **Decided** — green, the confirm colour, and thin: done is quiet. Answers "which of these have I
+        // done?" at a glance, which used to require reading every tile's small print.
+        (Highlight::Settled, Team::Left) => (CARD_FACE, TARGET_CUE, CARD_INK, 2.0),
+        (Highlight::Settled, Team::Right) => (CARD_BACK, TARGET_CUE, INK, 2.0),
         (Highlight::Dim, _) => (DIM_FACE, MUTED, MUTED, 2.0),
         (Highlight::Idle, Team::Left) => (CARD_FACE, type_accent("hero"), CARD_INK, 2.0),
         (Highlight::Idle, Team::Right) => (CARD_BACK, type_accent("foe"), INK, 2.0),

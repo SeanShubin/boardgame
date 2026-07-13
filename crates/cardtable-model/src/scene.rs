@@ -164,6 +164,14 @@ pub enum Highlight {
     Dim,
     /// A legal thing to act on this step — an "available" cue.
     Available,
+    /// **Decided, and still open** — the player has told this one what to do, and may tell it something else.
+    /// A "confirmed" cue, distinct from both [`Available`](Highlight::Available) (still waiting on you) and
+    /// [`Idle`](Highlight::Idle) (nothing to say about it either way).
+    ///
+    /// Without this, a tile you had already given orders to looked exactly like an ordinary card — so the one
+    /// question the screen has to answer while you work through a formation or a phase, *"which of these have
+    /// I done?"*, could only be answered by reading every tile's small print.
+    Settled,
     /// The current choice / a tile with a staged action — the brightest cue.
     Active,
     /// Inert / out of play — drawn the hardest-receded.
