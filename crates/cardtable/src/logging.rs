@@ -1,12 +1,15 @@
 //! **Debug logs** that mirror the three layers (plan §0), so a play session can be read back and
-//! checked. Two files, each truncated on launch (native only — no filesystem on the web):
+//! checked. Three files (native only — no filesystem on the web):
 //!
 //! - `physical-cards.log` — the **physical model**: the conserved card tree as an indented hierarchy
 //!   (each card's face up/down), alternating with the **transitions** (what moved / flipped / appeared /
 //!   vanished) between one state and the next. Lets a human confirm each state transition by hand.
+//!   *Truncated on launch.*
 //! - `ui-state.log` — the **UI model + IO**: which view (zone) is entered, the settled layout of each
 //!   card on that view (position, size, zoom), and every pick-up / drop / click with its pointer
-//!   position. Lets a reader reconstruct exactly how the table was interacted with.
+//!   position. Lets a reader reconstruct exactly how the table was interacted with. *Truncated on launch.*
+//! - `combat-log.log` — **just the combat-log area**: the running transcript of exactly what the player read
+//!   there, and nothing else. *Truncated at the start of each battle*, so it always holds the last fight.
 //!
 //! Added by the product via [`LoggingPlugin`]; a pure observer/system side-channel that never mutates
 //! the board or the UI.
@@ -49,6 +52,33 @@ struct PhysicalLog(Log);
 #[derive(Resource)]
 struct UiLog(Log);
 
+/// `combat-log.log` — **only** what the combat-log area shows the player, and truncated at the start of each
+/// battle, so it always holds the last fight and nothing else. Unlike the other two it is not a launch-time
+/// log: it is re-created when a fight opens.
+#[derive(Resource)]
+struct CombatLog(Mutex<Option<std::fs::File>>);
+
+impl CombatLog {
+    /// Begin a battle: throw away the previous one.
+    fn restart(&self) {
+        if cfg!(target_arch = "wasm32") {
+            return;
+        }
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = std::fs::File::create("combat-log.log").ok();
+        }
+    }
+    fn write(&self, text: &str) {
+        if let Ok(mut guard) = self.0.lock()
+            && let Some(file) = guard.as_mut()
+        {
+            use std::io::Write;
+            let _ = write!(file, "{text}");
+            let _ = file.flush();
+        }
+    }
+}
+
 /// Records the two debug logs. Added by the product; native-only file output.
 pub struct LoggingPlugin;
 
@@ -56,6 +86,7 @@ impl Plugin for LoggingPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PhysicalLog(Log::create("physical-cards.log")))
             .insert_resource(UiLog(Log::create("ui-state.log")))
+            .insert_resource(CombatLog(Mutex::new(None)))
             .add_systems(
                 Update,
                 (
@@ -63,6 +94,7 @@ impl Plugin for LoggingPlugin {
                     log_view,
                     log_layout,
                     log_scene,
+                    log_combat,
                     drain_drop_trace,
                 ),
             )
@@ -630,4 +662,53 @@ fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
     }
     *last = out.clone();
     log.0.write(&out);
+}
+
+/// Write **the combat-log area** — exactly the lines the player reads there, nothing else — to
+/// `combat-log.log`, cleared at the start of each battle so it always holds the last fight.
+///
+/// The scene's log is a *snapshot* of the current step, not a running transcript: it is rebuilt from the board
+/// every frame and replaced wholesale as the fight walks on. So the running transcript has to be assembled
+/// here, by appending each distinct state as it appears. Each block is stamped with where in the fight it was
+/// shown, because "no legal target" means nothing without knowing which phase said it.
+fn log_combat(
+    scene: Res<SceneState>,
+    log: Res<CombatLog>,
+    mut last: Local<String>,
+    mut in_fight: Local<bool>,
+) {
+    let Some(s) = &scene.0 else {
+        // The arena is gone: the fight ended (or was left). Keep the file - it IS the last battle.
+        if *in_fight {
+            log.write("\n-- the fight is over --\n");
+            *in_fight = false;
+            last.clear();
+        }
+        return;
+    };
+    if !*in_fight {
+        log.restart(); // a new battle: the previous one is no longer "the last battle"
+        *in_fight = true;
+        last.clear();
+    }
+    if s.log.is_empty() {
+        return; // e.g. Marshal - the combat-log area is empty, so there is nothing the player read
+    }
+
+    let where_ = s
+        .tracks
+        .iter()
+        .filter_map(|t| t.items.iter().find(|i| i.current))
+        .map(|i| i.label.clone())
+        .collect::<Vec<_>>()
+        .join(" / ");
+    let mut out = format!("\n-- {} | {where_} --\n", s.heading);
+    for line in &s.log {
+        out.push_str(&format!("{line}\n"));
+    }
+    if out == *last {
+        return; // the same text still on screen - record each distinct state once, not once per frame
+    }
+    *last = out.clone();
+    log.write(&out);
 }
