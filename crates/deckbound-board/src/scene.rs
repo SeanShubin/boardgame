@@ -616,9 +616,15 @@ fn build_log(
                 } else {
                     ""
                 };
+                // Say what they SPENT, not only the value it came to. The player watches tempo cards flip, and
+                // the spend is the thing that tells them how heavily this was committed - the value is derived.
                 log.push(format!(
-                    "  {} reaches {}  ({reach}, value {}, Might {}) - slipping costs {price}{answer}",
-                    units[c.attacker].name, d.name, c.bid, units[c.attacker].might
+                    "  {} reaches {}  ({reach}, spent {} tempo -> value {}, Might {}) - slipping costs {price}{answer}",
+                    units[c.attacker].name,
+                    d.name,
+                    combat::reach_cards(units, c),
+                    c.bid,
+                    units[c.attacker].might
                 ));
             }
         }

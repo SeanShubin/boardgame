@@ -1422,23 +1422,31 @@ fn evade_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     let taken: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
     let answer = incoming
         .iter()
-        .find(|c| u.melee && !combat::rank_is_ranged(units[c.attacker].rank))
-        .map(|c| &units[c.attacker]);
-    let stand_text = match answer {
-        Some(foe) => format!(
-            "take {taken} damage - then {} blows back: {}",
-            u.tempo,
-            blows_phrase(foe, u.might, u.tempo)
-        ),
-        None => format!("take {taken} damage - they are at range, nothing to answer with"),
+        .any(|c| u.melee && !combat::rank_is_ranged(units[c.attacker].rank));
+
+    // **Standing does not spend anything, and it does not decide anything either.** How many blows you answer
+    // with is the *Strike* step's decision (0, 1, ... up to your tempo) - so this card must say what standing
+    // leaves you able to do, not what it will do. Quoting "then 2 blows back" here promised an allocation the
+    // player had not made and could not change, and hid the 0-and-1 options entirely.
+    let stand_text = if answer {
+        format!(
+            "take {taken} damage, spend nothing - keeps {} tempo to answer with at Strike",
+            u.tempo
+        )
+    } else {
+        format!("take {taken} damage, spend nothing - they are at range, nothing to answer with")
     };
     let stand = Choice::new("Stand", stand_text).chosen(s == Some(Dodge::Stand));
 
-    let slip = Choice::new(
-        "Slip",
-        format!("spend {cost} tempo - nothing reaches you this phase"),
-    )
-    .chosen(s == Some(Dodge::Slip));
+    let slip_text = if cost <= u.tempo {
+        format!(
+            "spend {cost} tempo - nothing reaches you this phase; {} tempo left",
+            u.tempo - cost
+        )
+    } else {
+        format!("spend {cost} tempo - nothing reaches you this phase")
+    };
+    let slip = Choice::new("Slip", slip_text).chosen(s == Some(Dodge::Slip));
     let slip = if cost <= u.tempo {
         slip
     } else {
@@ -1464,16 +1472,37 @@ fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
     };
     let u = &units[i];
     let s = staged_of(board, card);
+
+    // **The opening blow is already bought.** If this unit opened the contact, the tempo it committed at Engage
+    // has already paid for one blow, which lands whatever it does now. So a card here spends one *more* card
+    // for one *more* blow, and every quoted total has to include the free one - otherwise the numbers on the
+    // cards are simply wrong. A unit merely *answering* along a melee edge someone else opened has no opening
+    // blow: it never committed anything.
+    let opening = u32::from(contacts.iter().any(|c| c.attacker == i));
+
     let mut out = Vec::new();
     for n in 1..=u.tempo {
+        let label = if opening > 0 {
+            format!("Strike {n} more")
+        } else {
+            format!("Strike back {n}x")
+        };
         out.push((
-            Choice::new(format!("Strike {n}x"), blows_phrase(&units[t], u.might, n))
-                .chosen(s.bid == n),
+            Choice::new(label, blows_phrase(&units[t], u.might, opening + n)).chosen(s.bid == n),
             ChoiceAction::Bid(n),
         ));
     }
+    let hold_text = if opening > 0 {
+        format!(
+            "no more blows - the opening blow still lands ({}); keeps {} tempo",
+            blows_phrase(&units[t], u.might, 1),
+            u.tempo
+        )
+    } else {
+        format!("do not answer - keeps {} tempo for a later phase", u.tempo)
+    };
     out.push((
-        Choice::new("Hold", format!("keep {} tempo for a later phase", u.tempo)).chosen(s.hold),
+        Choice::new("Hold", hold_text).chosen(s.hold),
         ChoiceAction::Hold,
     ));
     out
@@ -1796,10 +1825,16 @@ mod tests {
         assert_eq!(arena_state(&board, arena).4, Step::Strike);
         let c = me(&board);
         handle_tap(&mut board, c);
-        let one_more = scene_choices(&board, arena)
+        let choices = scene_choices(&board, arena);
+        let one_more = choices
             .iter()
-            .position(|c| c.label == "Strike 1x")
+            .position(|c| c.label == "Strike 1 more")
             .expect("one card left to swing with");
+        // The card must count the free opening blow: one MORE card is 2 blows, 14 damage, which cracks 9.
+        assert_eq!(
+            choices[one_more].consequence,
+            "14 damage: The Wall loses 1 health"
+        );
         choose(&mut board, one_more);
         commit(&mut board, arena);
 
@@ -1886,6 +1921,57 @@ mod tests {
             None,
             "holding IS deciding - it must not read as undecided"
         );
+    }
+
+    /// **Evade decides slip-or-stand, and NOTHING else.** How many blows you answer with is the Strike step's
+    /// decision - 0, 1, ... up to your tempo. The Stand card used to read "then 2 blows back: 14 damage", which
+    /// promised an allocation the player had never made, could not change, and whose 0-and-1 alternatives it
+    /// hid entirely. Standing spends nothing; it *keeps* the tempo.
+    #[test]
+    fn standing_spends_nothing_and_the_blows_are_chosen_at_strike() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        commit(&mut board, arena); // Marshal -> Intercept / Engage
+        commit(&mut board, arena); // Engage -> Evade: The Wall reaches for the Raider
+
+        assert_eq!(arena_state(&board, arena).4, Step::Evade);
+        let (card, i) = focused_party(&board, arena).expect("a hero is being reached for");
+        let tempo = arena_state(&board, arena).1[i].tempo;
+
+        let stand = scene_choices(&board, arena);
+        let stand = stand.iter().find(|c| c.label == "Stand").unwrap();
+        assert_eq!(
+            stand.consequence,
+            format!("take 1 damage, spend nothing - keeps {tempo} tempo to answer with at Strike"),
+            "Stand must not pre-commit the blows"
+        );
+
+        let idx = scene_choices(&board, arena)
+            .iter()
+            .position(|c| c.label == "Stand")
+            .unwrap();
+        choose(&mut board, idx);
+        commit(&mut board, arena);
+
+        // ...and NOW the allocation is asked for, with every option from 0 (Hold) upward.
+        assert_eq!(arena_state(&board, arena).4, Step::Strike);
+        assert_eq!(
+            arena_state(&board, arena).1[i].tempo,
+            tempo,
+            "standing spent nothing"
+        );
+        handle_tap(&mut board, card);
+        let labels: Vec<String> = scene_choices(&board, arena)
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        for n in 1..=tempo {
+            assert!(
+                labels.contains(&format!("Strike back {n}x")),
+                "answering with {n} blows must be on offer: {labels:?}"
+            );
+        }
+        assert!(labels.contains(&"Hold".to_string()), "so must 0 blows");
     }
 
     /// **A choice must not promise damage it cannot deliver.** The Raider's blow (Might 7) on The Wall

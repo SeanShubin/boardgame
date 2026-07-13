@@ -237,6 +237,13 @@ pub fn back_access_ok(units: &[Combatant], attacker: Rank, target: usize) -> boo
         .any(|u| u.side == tgt.side && u.rank == Rank::Vanguard && !u.fallen)
 }
 
+/// The **tempo cards** the attacker actually spent to open this contact. `bid` is their *value*
+/// (`cards × F_att`), which is what a slip must beat - but the player thinks in cards, and the card count is
+/// what they can see being flipped, so the log has to quote it. Exact, since `bid` is built from it.
+pub fn reach_cards(units: &[Combatant], c: &Contact) -> u32 {
+    c.bid / units[c.attacker].finesse.max(1)
+}
+
 /// The tempo `defender` must spend to **slip** — to break every engagement currently reaching it.
 ///
 /// One dodge covers your body, so the price is set by the *largest* commitment against you: enough cards that
