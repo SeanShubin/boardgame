@@ -606,17 +606,11 @@ fn plan_text(board: &Board, s: &Staged) -> String {
 /// under the sub-phase they happened in; a sub-phase where nothing happened does not appear, because nothing
 /// happened.
 fn build_log(board: &Board, arena: PileId) -> Vec<String> {
-    let mut log = Vec::new();
-    let mut current = String::new();
-    for e in arena::read_events(board, arena) {
-        let (phase, line) = e.split_once('|').unwrap_or(("", e.as_str()));
-        if phase != current {
-            log.push(phase.to_string());
-            current = phase.to_string();
-        }
-        log.push(format!("  {line}"));
-    }
-    log
+    // **This round only.** The journal spans the battle (a fight ends with a card carrying the whole thing),
+    // but the panel shows the round you are in: the Reset closed everything before it - tempo stood back up,
+    // open wounds closed - so nothing earlier still bears on what you decide next.
+    let round = arena::arena_state(board, arena).3;
+    arena::round_log(board, arena, round)
 }
 
 /// The three **constant** stats a fight actually turns on, compact enough for a tile only a card wide:

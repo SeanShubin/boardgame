@@ -976,7 +976,8 @@ pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
 /// the prompt's job and the choice cards' job. **The log's job is the record.**
 fn note_event(board: &mut Board, arena: PileId, sub: usize, line: String) {
     let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
-    let line = format!("{phase}|{line}");
+    let round = read_phase(board, arena).1;
+    let line = format!("{round}|{phase}|{line}");
     if let Some(c) = board
         .content_cards(arena)
         .into_iter()
@@ -1001,7 +1002,11 @@ fn note_event(board: &mut Board, arena: PileId, sub: usize, line: String) {
     }
 }
 
-/// Every event this round, in order (`"Phase|line"`).
+/// Every event of the **whole battle**, in order (`"Round|Phase|line"`).
+///
+/// The journal spans the fight, not the round: the screen shows only the round you are in (nothing earlier
+/// still bears on what you do next, since the Reset closed it), but the *record* has to survive to the end,
+/// because a fight ends with a card carrying what happened in it.
 pub(crate) fn read_events(board: &Board, arena: PileId) -> Vec<String> {
     board
         .content_cards(arena)
@@ -1016,8 +1021,45 @@ pub(crate) fn read_events(board: &Board, arena: PileId) -> Vec<String> {
         .collect()
 }
 
-/// Wipe the journal. Called at the Reset: the log shows **this round**, which is the span a decision is made
-/// over (tempo refreshes and open wounds close, so nothing before it still bears on what you do next).
+/// One round of the journal, formatted for reading: sub-phase headers, indented events. The **one** formatter
+/// - the live panel and the outcome card must not be able to tell the story differently.
+pub(crate) fn round_log(board: &Board, arena: PileId, round: u32) -> Vec<String> {
+    let want = round.to_string();
+    let mut log = Vec::new();
+    let mut current = String::new();
+    for e in read_events(board, arena) {
+        let mut it = e.splitn(3, '|');
+        let (r, phase, line) = (
+            it.next().unwrap_or(""),
+            it.next().unwrap_or("").to_string(),
+            it.next().unwrap_or(""),
+        );
+        if r != want {
+            continue;
+        }
+        if phase != current {
+            log.push(phase.clone());
+            current = phase;
+        }
+        log.push(format!("  {line}"));
+    }
+    log
+}
+
+/// The rounds the journal has anything to say about, in order.
+fn rounds_logged(board: &Board, arena: PileId) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    for e in read_events(board, arena) {
+        if let Some(r) = e.split('|').next().and_then(|r| r.parse::<u32>().ok())
+            && !out.contains(&r)
+        {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// Wipe the journal. Called only when a fight **restarts** - the record of a battle that no longer happened.
 fn clear_events(board: &mut Board, arena: PileId) {
     let stale: Vec<CardId> = board
         .content_cards(arena)
@@ -1088,10 +1130,6 @@ pub fn commit(board: &mut Board, arena: PileId) -> bool {
     if step0 == Step::Marshal {
         autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
         reveal(board, arena); // both formations go down at once: the foes leave the muster and take their ranks
-        // A fresh round, a fresh journal. The log covers **this round** - the span a decision is actually made
-        // over, since tempo refreshes and open wounds close at the Reset, so nothing before it still bears on
-        // what you do next. (Committing Marshal is the last moment the previous round's record is on screen.)
-        clear_events(board, arena);
         // Round start: refresh every unit's tempo to its pool - Cadence, or body count for a horde (which
         // "swarms with one card per living body"). The end-of-round refresh only covers later rounds, so the
         // opening round is set here; idempotent for the rounds that were already refreshed.
@@ -1848,9 +1886,67 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
 }
 
 /// **Fold the fight back** after a decision: on a **win** the encounter is cleared; the fight spends a day.
+///
+/// The record goes down at the place *before* the arena is torn down - it is the only moment the journal still
+/// exists, and the place is the only thing that outlives the fight.
 pub fn fold_back(board: &mut Board, arena: PileId) {
-    let won = outcome(board, arena) == Some(Outcome::Victory);
+    let result = outcome(board, arena);
+    let won = result == Some(Outcome::Victory);
+    if let (Some(place), Some(result)) = (place_of(board, arena), result) {
+        record_outcome(board, arena, place, result);
+    }
     teardown(board, arena, won, true);
+}
+
+/// **What happened here**, left at the place as a pile: a named result you can read at a glance, and the whole
+/// battle inside it, one card per round.
+///
+/// A pile, not a card, and not a scroll pane. The log can run to hundreds of lines and the table has no
+/// chrome - no scrollbars, no prev/next buttons - so the answer is the one the card table already gives:
+/// **it is a stack you drill into.** The round cap bounds it at five cards, it needs no gesture the player does
+/// not already have, and it reads the same on a desk and on an iPad.
+///
+/// Replaces any previous result at this place: the last fight here is the one that happened.
+fn record_outcome(board: &mut Board, arena: PileId, place: PileId, result: Outcome) {
+    let label = match result {
+        Outcome::Victory => "Victory",
+        Outcome::Defeat => "Defeat",
+        Outcome::Draw => "Draw",
+    };
+
+    // Out with the old. A place remembers one fight - the one that just happened.
+    let stale: Vec<PileId> = board
+        .pile(place)
+        .map(|p| p.subpiles())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|&sp| {
+            board
+                .pile(sp)
+                .is_some_and(|p| matches!(p.label.as_str(), "Victory" | "Defeat" | "Draw"))
+        })
+        .collect();
+    for sp in stale {
+        let _ = board.remove_pile(sp);
+    }
+
+    let Ok(record) = board.add_pile(place, label) else {
+        return;
+    };
+    for round in rounds_logged(board, arena) {
+        let Ok(card) = board.add_card(
+            record,
+            cardtable_model::Face::Up {
+                title: format!("Round {round}"),
+            },
+            None,
+        ) else {
+            continue;
+        };
+        let _ = board.set_card_kind(card, CardKind::Virtual); // a readout, not a tabletop card
+        let _ = board.set_card_type(card, "log");
+        let _ = board.set_card_detail(card, round_log(board, arena, round));
+    }
 }
 
 /// **Cancel the fight** (retreat): tear the arena down with nothing resolved — the encounter is left intact
@@ -1864,6 +1960,7 @@ pub fn cancel_fight(board: &mut Board, arena: PileId) {
 /// membership), so you can re-form or just Start again. Foes, place, and encounter are untouched.
 pub fn restart_fight(board: &mut Board, arena: PileId) {
     clear_contacts(board, arena);
+    clear_events(board, arena); // the record of a battle that no longer happened
     for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
         let Some(pile) = sub_pile(board, arena, label) else {
             continue;
@@ -2465,6 +2562,58 @@ mod tests {
         );
     }
 
+    /// **A fight leaves a card behind, and the whole battle is inside it.** The record is a *pile* - one card
+    /// per round - because the table has no chrome: no scrollbars, no prev/next. A stack you drill into is the
+    /// gesture the card table already has, it is bounded by the round cap, and it reads the same on a desk and
+    /// on an iPad. And it replaces the last one: a place remembers the fight that happened, not every fight
+    /// that ever did.
+    #[test]
+    fn a_finished_fight_leaves_its_whole_log_at_the_place() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
+        let place = place_of(&board, arena).expect("the fight knows where it is");
+
+        let mut guard = 0;
+        while outcome(&board, arena).is_none() {
+            commit(&mut board, arena);
+            guard += 1;
+            assert!(guard < 500, "the fight must end");
+        }
+        let rounds = rounds_logged(&board, arena);
+        assert!(!rounds.is_empty(), "something happened");
+        fold_back(&mut board, arena);
+
+        // A Victory/Defeat/Draw pile now stands at the place, holding one card per round of the battle.
+        let record = board
+            .pile(place)
+            .unwrap()
+            .subpiles()
+            .into_iter()
+            .find(|&sp| {
+                board
+                    .pile(sp)
+                    .is_some_and(|p| matches!(p.label.as_str(), "Victory" | "Defeat" | "Draw"))
+            })
+            .expect("the fight left its result at the place");
+        let pages = board.content_cards(record);
+        assert_eq!(pages.len(), rounds.len(), "one card per round, and no more");
+
+        // ...and each page carries that round's events, in full.
+        let first = board.card(pages[0]).unwrap();
+        assert_eq!(first.front_title(), format!("Round {}", rounds[0]));
+        assert!(
+            first.detail().iter().any(|l| l.contains("strikes")),
+            "the page holds the round's record: {:?}",
+            first.detail()
+        );
+        // A readout, not a tabletop card - it must not count toward the place's physical tally.
+        assert_eq!(
+            board.physical_card_count(record),
+            0,
+            "a log is software, not cardboard"
+        );
+    }
+
     /// **A tap never puts a hero back in the Pool.** The Pool is not a rank - it is the *absence* of one, the
     /// state Marshal exists to leave. Cycling into it would un-rank a hero and re-bar the Start you had just
     /// earned, which is not a thing anyone taps a card intending to do.
@@ -2517,7 +2666,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| e.starts_with("Intercept|The Wall spends 1 tempo reaching Raider")),
+                .any(|e| e.starts_with("1|Intercept|The Wall spends 1 tempo reaching Raider")),
             "the reach is a state change - tempo flipped: {events:?}"
         );
 
