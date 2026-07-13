@@ -669,8 +669,13 @@ fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
 ///
 /// The scene's log is a *snapshot* of the current step, not a running transcript: it is rebuilt from the board
 /// every frame and replaced wholesale as the fight walks on. So the running transcript has to be assembled
-/// here, by appending each distinct state as it appears. Each block is stamped with where in the fight it was
-/// shown, because "no legal target" means nothing without knowing which phase said it.
+/// here, by appending each state as it appears.
+///
+/// **Only committed states.** The log area also previews what you are *staging* ("Raider may strike: The Wall
+/// (not aimed yet)"), and that churns with every tap. A transcript full of half-formed plans is noise, so a
+/// block is written only when the fight's **walk position** moves - which is exactly what a Commit does, and
+/// the only thing that does. The log at that moment describes what the commit resolved. Everything staged and
+/// then re-staged in between is left out, as it should be: it never happened.
 fn log_combat(
     scene: Res<SceneState>,
     log: Res<CombatLog>,
@@ -691,10 +696,9 @@ fn log_combat(
         *in_fight = true;
         last.clear();
     }
-    if s.log.is_empty() {
-        return; // e.g. Marshal - the combat-log area is empty, so there is nothing the player read
-    }
 
+    // Where the fight stands: round + the current item of each track. It changes only on a Commit (or a Back,
+    // which rewinds one) - never on staging a plan.
     let where_ = s
         .tracks
         .iter()
@@ -702,13 +706,18 @@ fn log_combat(
         .map(|i| i.label.clone())
         .collect::<Vec<_>>()
         .join(" / ");
-    let mut out = format!("\n-- {} | {where_} --\n", s.heading);
+    let position = format!("{} | {where_}", s.heading);
+    if position == *last {
+        return;
+    }
+    *last = position.clone();
+
+    if s.log.is_empty() {
+        return; // e.g. Marshal - the combat-log area is empty, so there is nothing the player read
+    }
+    let mut out = format!("\n-- {position} --\n");
     for line in &s.log {
         out.push_str(&format!("{line}\n"));
     }
-    if out == *last {
-        return; // the same text still on screen - record each distinct state once, not once per frame
-    }
-    *last = out.clone();
     log.write(&out);
 }
