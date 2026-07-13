@@ -1958,9 +1958,16 @@ fn record_outcome(board: &mut Board, arena: PileId, place: PileId, result: Outco
         ) else {
             continue;
         };
+        // **A panel, not detail** - and the difference is the whole question of "how do we fit a combat log on
+        // a card?". Detail grows a card to Size::Medium, whose footprint is *unbounded*: a thirty-line round
+        // would become a 700px card that clips, because Medium has no cap and does not scroll. A panel grows it
+        // to Size::Large, which is what Large exists for ("a document-sized panel... e.g. a combat log"): it
+        // sizes itself to its content, caps at LARGE_MAX_H, and then **scrolls** - by drag, so it reads the
+        // same on a desk and on an iPad. The card is already sized at runtime; it just has to be the right
+        // kind of card. Virtual is what opts it into the scroll.
         let _ = board.set_card_kind(card, CardKind::Virtual); // a readout, not a tabletop card
         let _ = board.set_card_type(card, "log");
-        let _ = board.set_card_detail(card, round_log(board, arena, round));
+        let _ = board.set_card_panel(card, round_log(board, arena, round));
     }
 }
 
@@ -2618,13 +2625,18 @@ mod tests {
         let pages = board.content_cards(record);
         assert_eq!(pages.len(), rounds.len(), "one card per round, and no more");
 
-        // ...and each page carries that round's events, in full.
+        // ...and each page carries that round's events, in full - as a PANEL, which is what makes it a
+        // document-sized card that scrolls rather than a Medium card that grows without bound and clips.
         let first = board.card(pages[0]).unwrap();
         assert_eq!(first.front_title(), format!("Round {}", rounds[0]));
         assert!(
-            first.detail().iter().any(|l| l.contains("strikes")),
+            first.detail().is_empty(),
+            "detail would grow it to Medium, which has no cap and does not scroll"
+        );
+        assert!(
+            first.panel().iter().any(|l| l.contains("strikes")),
             "the page holds the round's record: {:?}",
-            first.detail()
+            first.panel()
         );
         // A readout, not a tabletop card - it must not count toward the place's physical tally.
         assert_eq!(
