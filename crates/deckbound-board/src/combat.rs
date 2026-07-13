@@ -27,7 +27,7 @@
 //!
 //! Economy: **Tempo = Cadence** (a per-round pool, refreshed each round); **Finesse** decides *reach and
 //! escape* only (`value = cards × finesse`) and never touches damage; **Might = damage**, applied via a
-//! toughness-accumulate model (a health card flips each time accumulated damage crosses `toughness`).
+//! grit-accumulate model (a health card flips each time accumulated damage crosses `grit`).
 
 use deckbound_content::rank::Intention as Rank;
 
@@ -50,10 +50,10 @@ pub struct Combatant {
     pub finesse: u32,
     /// Full tempo pool, refreshed each round.
     pub cadence: u32,
-    /// The health bar: accumulated damage flips a health card each `toughness` crossed.
-    pub toughness: u32,
+    /// The health bar: accumulated damage flips a health card each `grit` crossed.
+    pub grit: u32,
     /// **Armor**: a flat reduction applied to *each individual strike* (`max(0, Might - armor)`). Unlike
-    /// Toughness (which scales how fast accumulated damage flips a card), armor is a *per-strike floor*: a
+    /// Grit (which scales how fast accumulated damage flips a card), armor is a *per-strike floor*: a
     /// strike whose Might does not exceed it deals **nothing**, and no amount of Cadence (more strikes)
     /// changes that. So armor is what makes high per-strike Might *necessary* rather than merely efficient.
     pub armor: u32,
@@ -82,7 +82,7 @@ pub struct Combatant {
 
 impl Combatant {
     /// Build a fresh combatant at full Health (Vitality) and full Tempo (Cadence), pending 0, not fallen.
-    /// `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` (the catalog order); Finesse and Toughness
+    /// `stats` is `[Might, Vitality, Grit, Cadence, Finesse]` (the catalog order); Finesse and Grit
     /// floor at 1 (matching how the arena reads a card). For the headless [`crate::battle`] / [`crate::solver`]
     /// tooling, which builds units from catalog specs rather than from the board.
     pub fn from_stats(
@@ -94,7 +94,7 @@ impl Combatant {
         melee: bool,
         ranged: bool,
     ) -> Self {
-        let [might, vitality, toughness, cadence, finesse] = stats.map(u32::from);
+        let [might, vitality, grit, cadence, finesse] = stats.map(u32::from);
         Combatant {
             name: name.into(),
             side,
@@ -102,7 +102,7 @@ impl Combatant {
             might,
             finesse: finesse.max(1),
             cadence,
-            toughness: toughness.max(1),
+            grit: grit.max(1),
             armor,
             melee,
             ranged,
@@ -128,10 +128,10 @@ impl Combatant {
         self
     }
 
-    /// Accumulate `might` damage, flipping a health card each time the pile crosses `toughness`
+    /// Accumulate `might` damage, flipping a health card each time the pile crosses `grit`
     /// (deckbound's `take_with_toughness` semantics, inline). Never below zero.
     fn take(&mut self, might: u32) {
-        let bar = self.toughness.max(1);
+        let bar = self.grit.max(1);
         self.pending += might;
         while self.pending >= bar && self.health > 0 {
             self.pending -= bar;
@@ -298,7 +298,7 @@ fn hit(target: &Combatant, might: u32) -> u32 {
 /// sitting in its pile, the bar it must cross)`.
 ///
 /// Damage is not health. It banks into a per-sub-phase **pile** and only turns a Health card each time that
-/// pile crosses the target's Toughness; whatever is left is **wiped at the sub-phase boundary**. So a Might
+/// pile crosses the target's Grit; whatever is left is **wiped at the sub-phase boundary**. So a Might
 /// under the bar flips nothing on its own — and quoting the raw Might to the player ("deal 7 back") is a
 /// false promise. Quote this instead. It is still worth doing under the bar when other blows land on the same
 /// target in the same sub-phase: the pile is shared, so damage adds up across attackers.
@@ -314,7 +314,7 @@ pub fn pile_effect_strikes(target: &Combatant, might: u32, strikes: u32) -> (u32
         // A horde has no bar to cross: each body is one Health and penetrating damage spills body to body.
         return (dmg.min(target.health), 0, 1);
     }
-    let bar = target.toughness.max(1);
+    let bar = target.grit.max(1);
     let pile = target.pending + dmg;
     let flips = (pile / bar).min(target.health);
     (flips, pile - flips * bar, bar)
@@ -429,7 +429,7 @@ pub fn resolve_strike(units: &mut [Combatant], contacts: &[Contact], blows: &[Bl
 }
 
 /// Apply an order-free damage vector to the units. For a normal body `damage` is accumulated Might (fed
-/// through the toughness pile); for a **horde** it is a **body count** (each penetrating strike already
+/// through the grit pile); for a **horde** it is a **body count** (each penetrating strike already
 /// counted one body via [`hit`]), so it comes straight off health — bodies are one-Health, nothing to
 /// accumulate.
 fn apply(units: &mut [Combatant], damage: &[u32]) {
@@ -447,7 +447,7 @@ fn apply(units: &mut [Combatant], damage: &[u32]) {
 /// End a sub-phase: mark units at zero health fallen. **That is all it does now** — the sub-phase boundary is
 /// where the dead stop fighting, not where wounds close.
 ///
-/// The damage pile used to be wiped here, which made Toughness a *per-sub-phase concentration gate*: land less
+/// The damage pile used to be wiped here, which made Grit a *per-sub-phase concentration gate*: land less
 /// than T in one sub-phase and you accomplished literally nothing, and there was no way to see that you had
 /// accomplished nothing. Wounds now carry across the sub-phases of a round and close at the [Reset](refresh_round).
 ///
@@ -469,7 +469,7 @@ pub fn end_sub_phase(units: &mut [Combatant]) {
 /// clear wins.
 ///
 /// This is the one deadline in a fight: a wound you cannot finish *this round* is a wound you did not inflict.
-/// So Toughness still demands concentration - but over a whole round's five sub-phases, a grain the player can
+/// So Grit still demands concentration - but over a whole round's five sub-phases, a grain the player can
 /// actually plan at, rather than within a single sub-phase where a blow could vanish unremarked.
 pub fn refresh_round(units: &mut [Combatant]) {
     for u in units.iter_mut() {
@@ -489,7 +489,7 @@ mod tests {
         might: u32,
         finesse: u32,
         cadence: u32,
-        toughness: u32,
+        grit: u32,
         health: u32,
     ) -> Combatant {
         Combatant {
@@ -499,7 +499,7 @@ mod tests {
             might,
             finesse,
             cadence,
-            toughness,
+            grit,
             armor: 0,
             melee: true,
             ranged: false,
@@ -763,7 +763,7 @@ mod tests {
             target: 1,
             bid: 2,
         };
-        // The opening blow alone: Might 2, Toughness 1 -> 2 health cards.
+        // The opening blow alone: Might 2, Grit 1 -> 2 health cards.
         resolve_strike(&mut u, &[contact], &[]);
         assert_eq!(u[1].health, 3, "one opening blow, free");
         assert_eq!(u[0].tempo, 3, "and it cost nothing further");
@@ -779,7 +779,7 @@ mod tests {
             }],
         );
         assert_eq!(u[0].tempo, 0);
-        assert_eq!(u[1].health, 0, "6 more damage at toughness 1");
+        assert_eq!(u[1].health, 0, "6 more damage at grit 1");
     }
 
     /// The Strike step is one **order-free, commit-based batch**: a blow lands even if its striker dies to a
@@ -795,7 +795,7 @@ mod tests {
             target: 1,
             bid: 4,
         };
-        // A's opening blow kills D (3 might, toughness 1, 3 health); D answers along the mutual melee edge
+        // A's opening blow kills D (3 might, grit 1, 3 health); D answers along the mutual melee edge
         // with its last card, and the answer still lands.
         resolve_strike(
             &mut u,

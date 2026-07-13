@@ -154,7 +154,7 @@ impl Policy for Greedy {
             .map(|c| units[c.attacker].might)
             .max()
             .unwrap_or(0);
-        if worst >= u.toughness.max(1) {
+        if worst >= u.grit.max(1) {
             Dodge::Slip
         } else {
             Dodge::Stand
@@ -187,7 +187,7 @@ mod tests {
         might: u32,
         finesse: u32,
         cadence: u32,
-        toughness: u32,
+        grit: u32,
         health: u32,
     ) -> Combatant {
         Combatant {
@@ -197,7 +197,7 @@ mod tests {
             might,
             finesse,
             cadence,
-            toughness,
+            grit,
             armor: 0,
             melee: true,
             ranged: false,

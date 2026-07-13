@@ -19,7 +19,7 @@ use deckbound_content::rank::Intention as Rank;
 // area), Salvo (ranged area). Each should be uniquely useful along its hit type.
 const KIT_NAMES: [&str; 4] = ["Jab", "Shot", "Sweep", "Salvo"];
 /// The 4 creatures as the matching 2x2: {single, horde} x {safe-to-melee, punishes-melee}.
-///  Wall   = single + safe    -> Jab   (concentrate to crack Toughness)
+///  Wall   = single + safe    -> Jab   (concentrate to crack Grit)
 ///  Duelist= single + punish  -> Shot   (crack it from range; melee trades and dies)
 ///  Swarm  = horde  + safe    -> Sweep  (area up front)
 ///  Storm  = horde  + punish  -> Salvo  (area from safety; melee gets torn up)
@@ -34,7 +34,7 @@ const KIT_SHAPE: [(bool, bool, bool); 4] = [
 /// Swarm and Storm are hordes (both want an area answer); the split between them is melee-danger.
 const FOE_HORDE: [bool; 4] = [false, false, true, true];
 
-const STAT_LO: [u8; 5] = [1, 2, 1, 1, 1]; // Might, Vitality, Toughness, Cadence, Finesse
+const STAT_LO: [u8; 5] = [1, 2, 1, 1, 1]; // Might, Vitality, Grit, Cadence, Finesse
 const STAT_HI: [u8; 5] = [8, 24, 12, 3, 6]; // Cadence capped at 3 to keep the solver quick
 
 #[derive(Clone)]

@@ -9,7 +9,7 @@
 //! card-table model's `Recipe`.
 
 /// The five stats, each `(name, description)`. The order is the canonical stat order —
-/// `[Might, Vitality, Toughness, Cadence, Finesse]` — the order a `Recipe`'s stat values line up with.
+/// `[Might, Vitality, Grit, Cadence, Finesse]` — the order a `Recipe`'s stat values line up with.
 pub const STATS: [(&str, &str); 5] = [
     (
         "Might",
@@ -17,21 +17,27 @@ pub const STATS: [(&str, &str); 5] = [
     ),
     (
         "Vitality",
-        "Your life. With Toughness it sets your Health - how much you endure before you fall.",
+        "Your life. With Grit it sets your Health - how much you endure before you fall.",
     ),
     (
-        "Toughness",
-        "The bar your damage-pile must clear: within a sub-phase, damage piles up and each time it reaches your Toughness one Health card flips - leftover is wiped, not carried.",
+        "Grit",
+        "The strength of each Health card: damage piles up against you, and every time the pile reaches your Grit one Health card turns. An unfinished pile keeps until the Reset, then closes.",
     ),
-    (
-        "Cadence",
-        "Your pace - how many actions you get each round.",
-    ),
+    ("Cadence", "How many Tempo cards you get each round."),
     (
         "Finesse",
-        "Your skill - the grade of each action; how cheaply you win a contest.",
+        "The strength of each Tempo card - what one card is worth toward reaching a foe, or slipping one. It never touches damage.",
     ),
 ];
+
+/// **Every stat's initial is unique**, across the five stats *and* the two pools they build (Health, Tempo):
+/// `M H V G T C F`. So a one-letter abbreviation on a cramped tile is never ambiguous, and the legend never has
+/// to disambiguate itself.
+///
+/// This is why Toughness is called **Grit**: it collided with Tempo. The rename earns its keep twice, because
+/// the two pools turn out to be the same shape and the names now say so - *health is Vitality cards, each Grit
+/// strong; tempo is Cadence cards, each Finesse strong.*
+pub const POOLS: [&str; 2] = ["Health", "Tempo"];
 
 /// The four **generic attack** cards — the strike a body carries, one per `(reach x spread)` combination,
 /// each `(name, description)`. A kit's identity lives in its *stats*; the attack card only sets **how** it
@@ -55,14 +61,14 @@ pub const ABILITIES: [(&str, &str); 4] = [
 ];
 
 /// The starter roster — the four **reach x spread kits**, one per generic attack (Jab / Shot / Sweep /
-/// Salvo), each `(name, stats, ability)` where `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]`
+/// Salvo), each `(name, stats, ability)` where `stats` is `[Might, Vitality, Grit, Cadence, Finesse]`
 /// — the same order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole solo
 /// answer to one creature: Raider (melee single) answers the Wall, Marksman (ranged single) the Duelist,
 /// Bastion (melee area, tanky) the Swarm, Bombardier (ranged area) the Storm (see [`creature_counter`]).
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
     ("Raider", [7, 6, 1, 2, 2], "Jab"),       // melee single
     ("Marksman", [5, 2, 1, 2, 2], "Shot"),    // ranged single
-    ("Bastion", [1, 3, 3, 1, 2], "Sweep"),    // melee area, tanky (Toughness)
+    ("Bastion", [1, 3, 3, 1, 2], "Sweep"),    // melee area, tanky (Grit)
     ("Bombardier", [3, 3, 1, 1, 2], "Salvo"), // ranged area, fragile
 ];
 
@@ -110,7 +116,7 @@ pub fn ability_shape(name: &str) -> (bool, bool) {
 
 /// A kit's default battle **intention** — Vanguard / Outrider / Rearguard — derived by exactly the rule the
 /// engine uses (`default_intentions`) and that [`creature_intention`] applies to foes: a ranged body holds
-/// the Rearguard, a body whose Might meets its Toughness flanks as an Outrider, and the rest brace as a
+/// the Rearguard, a body whose Might meets its Grit flanks as an Outrider, and the rest brace as a
 /// Vanguard. Pure derivation from the numbers, never stored.
 ///
 /// This is what the build is **for** — the player still *declares* a hero's intention each round in Marshal,
@@ -121,7 +127,7 @@ pub fn kit_intention(stats: [u8; 5], ability: &str) -> &'static str {
     if ranged {
         "Rearguard"
     } else if stats[0] >= stats[2] {
-        // Might >= Toughness: it hits harder than it holds, so it crosses to raid rather than brace.
+        // Might >= Grit: it hits harder than it holds, so it crosses to raid rather than brace.
         "Outrider"
     } else {
         "Vanguard"
@@ -140,7 +146,7 @@ pub fn kit_shape(ability: &str) -> &'static str {
     }
 }
 
-/// A **creature** — a foe stationed at an encounter. `stats` is `[Might, Vitality, Toughness,
+/// A **creature** — a foe stationed at an encounter. `stats` is `[Might, Vitality, Grit,
 /// Cadence, Finesse]` (the [`STATS`] order); `ranged`/`aoe` are the strike shape; `horde` marks a card
 /// that fields Vitality-many one-Health bodies in one pack; `pos` is an authored stance override (the
 /// Duelist and the Storm hold the front regardless of their stats). A creature's **intention** and
@@ -210,7 +216,7 @@ pub const CREATURES: [Creature; 4] = [
 pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     (
         "Bulwark",
-        "High Toughness; sub-bar blows are wiped, so only one overwhelming strike dents it.",
+        "High Grit; sub-bar blows are wiped, so only one overwhelming strike dents it.",
     ),
     (
         "Riposte",
@@ -233,7 +239,7 @@ pub fn creature(name: &str) -> Option<&'static Creature> {
 
 /// A creature's battle **intention** — Vanguard / Outrider / Rearguard — derived by the same
 /// `default_intentions` rule: an authored [`pos`](Creature::pos) wins; otherwise a ranged creature holds
-/// the Rearguard, a creature whose Might meets its Toughness flanks as an Outrider, and the rest brace as
+/// the Rearguard, a creature whose Might meets its Grit flanks as an Outrider, and the rest brace as
 /// a Vanguard. Pure derivation — no stored stance.
 pub fn creature_intention(c: &Creature) -> &'static str {
     if let Some(pos) = c.pos {
@@ -462,4 +468,28 @@ pub fn encounter_roster(place_label: &str) -> Vec<(&'static str, u32)> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **No two stats may share an initial.** The tiles are 120px wide, so they abbreviate to a single letter;
+    /// an abbreviation the player cannot resolve is worse than none, and a legend that has to say "T means
+    /// Toughness, not Tempo" has already failed. This is a build-time guarantee, not a convention: mint a stat
+    /// that collides and this fails.
+    #[test]
+    fn every_stat_and_pool_has_a_unique_initial() {
+        let words: Vec<&str> = STATS.iter().map(|(name, _)| *name).chain(POOLS).collect();
+        let mut seen: Vec<char> = Vec::new();
+        for w in &words {
+            let c = w.chars().next().expect("a stat has a name");
+            assert!(
+                !seen.contains(&c),
+                "'{c}' is already taken - {words:?} cannot be abbreviated to one letter each"
+            );
+            seen.push(c);
+        }
+        assert_eq!(seen.len(), 7, "five stats and the two pools they build");
+    }
 }

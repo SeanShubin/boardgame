@@ -23,7 +23,7 @@ fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId
 
 /// Add a **hero** card — the kit *is* the hero (they were merged; see the Inn removal). Named for its kit
 /// ("Raider", "Marksman", ...), typed `hero`, it grows to show the five-stat line and ability that kit
-/// gives, and carries that kit's **recipe**. `stats` is `[Might, Vitality, Toughness, Cadence, Finesse]` —
+/// gives, and carries that kit's **recipe**. `stats` is `[Might, Vitality, Grit, Cadence, Finesse]` —
 /// the suitless-roster order from `data/balance/generic-classes.ron`; `ability` is the derived strike card
 /// (Jab / Shot / ...).
 ///
@@ -32,7 +32,7 @@ fn typed(tree: &mut Board, pile: PileId, title: &str, card_type: &str) -> CardId
 /// out of the banks into the character deck (PC.2, no mint).
 fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &str) -> CardId {
     let id = typed(tree, pile, name, "hero");
-    let [might, vitality, toughness, cadence, finesse] = stats;
+    let [might, vitality, grit, cadence, finesse] = stats;
     // The card carries its **computed** stats, not just its raw ones: the two **pools** its stats become in a
     // fight — Vitality is its Health cards, Cadence its Tempo cards. That is what connects a stat printed on
     // the card to the cards you actually flip in combat. Derived, never stored.
@@ -45,7 +45,7 @@ fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &st
     tree.set_card_detail(
         id,
         vec![
-            format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
+            format!("Might {might} | Vitality {vitality} | Grit {grit}"),
             format!("Cadence {cadence} | Finesse {finesse}"),
             format!("Health {vitality} cards | Tempo {cadence} cards"),
             format!("{ability}: {}", catalog::ability_description(ability)),
@@ -69,7 +69,7 @@ fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &st
 /// never stored — the card reads back what the numbers already say. Mirrors [`hero`] for the party.
 fn creature_card(tree: &mut Board, pile: PileId, c: &catalog::Creature) -> CardId {
     let id = typed(tree, pile, c.name, "foe");
-    let [might, vitality, toughness, cadence, finesse] = c.stats;
+    let [might, vitality, grit, cadence, finesse] = c.stats;
     tree.set_card_detail(
         id,
         vec![
@@ -78,7 +78,7 @@ fn creature_card(tree: &mut Board, pile: PileId, c: &catalog::Creature) -> CardI
                 catalog::creature_intention(c),
                 catalog::creature_posture(c)
             ),
-            format!("Might {might} | Vitality {vitality} | Toughness {toughness}"),
+            format!("Might {might} | Vitality {vitality} | Grit {grit}"),
             format!("Cadence {cadence} | Finesse {finesse}"),
             format!(
                 "{}: {}",
@@ -147,7 +147,7 @@ const PHASES: [(&str, &str); 10] = [
     ),
     (
         "Wipe pile",
-        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears - sub-Toughness damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
+        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears - sub-Grit damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
     ),
     (
         "Refresh",
@@ -414,7 +414,7 @@ pub fn sample_table() -> Board {
                     "Raid - Outrider -> Rearguard".into(),
                     "Clash - Rearguard / Vanguard -> Vanguard".into(),
                     "Breach - the trailing blows land".into(),
-                    "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Toughness damage does not carry to the next.".into(),
+                    "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Grit damage does not carry to the next.".into(),
                 ],
             )
             .expect("engage detail");
@@ -954,7 +954,7 @@ mod tests {
     }
 
     /// `character_recipe` reads a hero's build back out of its deck cards — the stats and ability
-    /// round-trip, so combat can recover `[Might, Vitality, Toughness, Cadence, Finesse]`.
+    /// round-trip, so combat can recover `[Might, Vitality, Grit, Cadence, Finesse]`.
     #[test]
     fn character_recipe_round_trips_a_recruited_build() {
         let t = sample_table();
@@ -1255,10 +1255,10 @@ mod tests {
             let shows = |needle: &str| label.detail().iter().any(|l| l.contains(needle));
 
             // Its raw stats...
-            let [might, vitality, toughness, cadence, finesse] = stats;
+            let [might, vitality, grit, cadence, finesse] = stats;
             assert!(
                 shows(&format!(
-                    "Might {might} | Vitality {vitality} | Toughness {toughness}"
+                    "Might {might} | Vitality {vitality} | Grit {grit}"
                 )),
                 "{name} shows its stat line: {:?}",
                 label.detail()
@@ -1294,12 +1294,8 @@ mod tests {
                 .expect("a roster kit");
             catalog::kit_intention(stats, ability)
         };
-        assert_eq!(by("Raider"), "Outrider", "Might 7 vs Toughness 1: it raids");
-        assert_eq!(
-            by("Bastion"),
-            "Vanguard",
-            "Toughness outweighs Might: it holds"
-        );
+        assert_eq!(by("Raider"), "Outrider", "Might 7 vs Grit 1: it raids");
+        assert_eq!(by("Bastion"), "Vanguard", "Grit outweighs Might: it holds");
         assert_eq!(by("Marksman"), "Rearguard");
         assert_eq!(by("Bombardier"), "Rearguard");
     }
@@ -1367,7 +1363,7 @@ mod tests {
         let mut t = sample_table();
         let total = t.card_count();
 
-        // The Raider: Might 7, Vitality 6, Toughness 1, Cadence 2, Finesse 2, carrying Jab.
+        // The Raider: Might 7, Vitality 6, Grit 1, Cadence 2, Finesse 2, carrying Jab.
         let (cdeck, name) = party_member(&t, 0);
 
         // A top-level character deck, marked as reflecting the hero, spelling its stats as name+number.
@@ -1384,7 +1380,7 @@ mod tests {
                 "7",
                 "Vitality",
                 "6",
-                "Toughness",
+                "Grit",
                 "1",
                 "Cadence",
                 "2",

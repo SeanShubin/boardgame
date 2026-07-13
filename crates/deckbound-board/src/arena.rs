@@ -45,12 +45,12 @@ pub(crate) const RANK_PILES: [(&str, Rank); 3] = [
     ("Rearguard", Rank::Rearguard),
 ];
 
-// ---- constant stats, derived from the source ([Might, Vitality, Toughness, Cadence, Finesse]) ----------
+// ---- constant stats, derived from the source ([Might, Vitality, Grit, Cadence, Finesse]) ----------
 
 struct Stats {
     might: u32,
     vitality: u32,
-    toughness: u32,
+    grit: u32,
     cadence: u32,
     finesse: u32,
 }
@@ -60,7 +60,7 @@ fn stats_of(s: [u8; 5], melee: bool, ranged: bool, aoe: bool) -> (Stats, bool, b
         Stats {
             might: s[0] as u32,
             vitality: s[1] as u32,
-            toughness: s[2] as u32,
+            grit: s[2] as u32,
             cadence: s[3] as u32,
             finesse: s[4] as u32,
         },
@@ -130,11 +130,11 @@ pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
 }
 
 /// The default opening rank (matching deckbound's stat-derived formation): ranged → Rearguard, else
-/// Might ≥ Toughness → Outrider, else Vanguard. Heroes start in the Pool; foes take this automatically.
+/// Might ≥ Grit → Outrider, else Vanguard. Heroes start in the Pool; foes take this automatically.
 fn default_rank(s: &Stats, ranged: bool) -> Rank {
     if ranged {
         Rank::Rearguard
-    } else if s.might >= s.toughness {
+    } else if s.might >= s.grit {
         Rank::Outrider
     } else {
         Rank::Vanguard
@@ -192,7 +192,7 @@ fn detail(
     // spans the three mini-phases of a sub-phase (a Strike's blow and an Extra's blow bank into the same pile
     // and only flip a Health card together). It used to live nowhere - rebuilt as 0 on every read - so it was
     // silently wiped at every *step* boundary instead of the sub-phase boundary, and two 7s against a
-    // Toughness 9 never added up. The cards are the state; anything that survives a step has to be on one.
+    // Grit 9 never added up. The cards are the state; anything that survives a step has to be on one.
     vec![
         format!("Health {hp}/{max_hp}"),
         format!("Tempo {tempo}/{max_tempo}"),
@@ -250,7 +250,7 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         might: stats.might,
         finesse: stats.finesse.max(1),
         cadence: stats.cadence,
-        toughness: stats.toughness.max(1),
+        grit: stats.grit.max(1),
         armor: 0,
         melee,
         ranged,
@@ -1281,8 +1281,8 @@ pub(crate) fn focused_party(board: &Board, arena: PileId) -> Option<(CardId, usi
 /// What `n` blows of `might` really do to `target`, in words - for a choice card's consequence line.
 ///
 /// **A Might is not a health count.** It banks into the target's damage pile and only turns a Health card each
-/// time that pile crosses Toughness; whatever is left **closes at the Reset**, the round boundary. So "deal 7
-/// back" against a Toughness 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
+/// time that pile crosses Grit; whatever is left **closes at the Reset**, the round boundary. So "deal 7
+/// back" against a Grit 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
 /// including that the wound *keeps* for the rest of the round, which is what makes a blow under the bar worth
 /// striking at all.
 fn blows_phrase(target: &combat::Combatant, might: u32, n: u32) -> String {
@@ -1785,7 +1785,7 @@ mod tests {
     }
 
     /// **Reaching buys ONE blow; the tempo you keep back buys the rest - and the pile spans the round.** The
-    /// Raider (Might 7) reaches The Wall (Toughness 9) with one card, stands its ground, then pours its
+    /// Raider (Might 7) reaches The Wall (Grit 9) with one card, stands its ground, then pours its
     /// remaining card in: 7 + 7 = 14 into one pile, which crosses 9 and turns a Health card. That is the only
     /// way anything cracks a Wall.
     #[test]
@@ -1858,7 +1858,7 @@ mod tests {
         assert_eq!(
             wall(&board).health,
             hp0 - 1,
-            "the opening blow (7) plus one more (7) = 14, which crosses Toughness 9"
+            "the opening blow (7) plus one more (7) = 14, which crosses Grit 9"
         );
         assert_eq!(
             wall(&board).pending,
@@ -2021,7 +2021,7 @@ mod tests {
     }
 
     /// **A choice must not promise damage it cannot deliver.** The Raider's blow (Might 7) on The Wall
-    /// (Toughness 9) flips nothing on its own: it banks into the pile and keeps until the Reset. The card has to
+    /// (Grit 9) flips nothing on its own: it banks into the pile and keeps until the Reset. The card has to
     /// say where the blow goes and how long it lasts, because that is the whole reason to strike under the bar.
     #[test]
     fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {

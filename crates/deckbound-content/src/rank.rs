@@ -12,7 +12,7 @@ pub enum Intention {
     Vanguard,
     /// Break the line (flank): raids the enemy Rearguard directly, exposed to the enemy front and back first.
     Outrider,
-    /// Deal from the back: fires/buffs/degrades from safety; the only answer to a Vanguard's Toughness.
+    /// Deal from the back: fires/buffs/degrades from safety; the only answer to a Vanguard's Grit.
     Rearguard,
 }
 

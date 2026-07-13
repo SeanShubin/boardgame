@@ -85,7 +85,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
 /// explains, not in a manual.
 ///
 /// Grouped to show the shape of the game, which is a symmetry worth seeing: **health is Vitality-many cards,
-/// each Toughness strong; tempo is Cadence-many cards, each Finesse strong.** Might stands alone because it is
+/// each Grit strong; tempo is Cadence-many cards, each Finesse strong.** Might stands alone because it is
 /// the only stat that is damage - Finesse buys reach and escape and never touches it.
 fn stat_legend() -> Vec<String> {
     vec![
@@ -93,7 +93,7 @@ fn stat_legend() -> Vec<String> {
         "  M  Might - how hard you hit".to_string(),
         "Health".to_string(),
         "  V  Vitality - how many health cards".to_string(),
-        "  T  Toughness - strength of each one".to_string(),
+        "  G  Grit - strength of each one".to_string(),
         "Tempo".to_string(),
         "  C  Cadence - how many tempo cards".to_string(),
         "  F  Finesse - strength of each one".to_string(),
@@ -446,10 +446,10 @@ fn lane_tile(
     }];
     badges.push(stats_badge(u));
     // The damage pile, whenever it holds anything: it is what makes a second blow this phase worth striking,
-    // and its silence is what made 7 + 7 against Toughness 9 look like a bug. It wipes at the phase boundary.
+    // and its silence is what made 7 + 7 against Grit 9 look like a bug. It wipes at the phase boundary.
     if u.pending > 0 && !u.fallen {
         badges.push(Badge {
-            text: format!("Pile {}/{}", u.pending, u.toughness),
+            text: format!("Pile {}/{}", u.pending, u.grit),
             tone: Tone::Warn,
         });
     }
@@ -802,17 +802,21 @@ fn rank_range_word(rank: Rank) -> &'static str {
 }
 
 /// The three **constant** stats a fight actually turns on, compact enough for a tile only a card wide:
-/// **M**ight (the damage each strike deals), **F**inesse (the bid multiplier — one tempo card is worth this
-/// much toward reaching a target, and toward slipping one), **T**oughness (the gate accumulated damage must
-/// cross to flip a health card). Abbreviated because the tile is 120px; the hero's own card spells all five
-/// out in full, and so does the log.
+/// **M**ight (the damage each blow deals), **G**rit (the bar accumulated damage must cross to turn one health
+/// card), **F**inesse (one tempo card is worth this much toward reaching a target, and toward slipping one).
 ///
-/// **Vitality and Cadence are deliberately absent** — they are already on the tile, as the *totals* of the two
-/// pools: `Health 4/6` is Vitality 6, `Tempo 2/3` is Cadence 3. Naming them again would say nothing new, and a
+/// **Every stat's initial is unique** — M H V G T C F — so a single letter is never ambiguous. That is the
+/// whole reason Toughness became Grit: it collided with Tempo, and a legend that has to disambiguate its own
+/// abbreviations is not a legend. The rename also makes the shape audible, because the two pools are the same
+/// shape: *health is Vitality cards, each Grit strong; tempo is Cadence cards, each Finesse strong.*
+///
+/// Abbreviated because the tile is 120px; the legend card in the sidebar spells them out. **Vitality and
+/// Cadence are deliberately absent here** — they are already on the tile as the *totals* of the two pools
+/// (`Health 4/6` is Vitality 6, `Tempo 2/3` is Cadence 3). Naming them twice would say nothing new, and a
 /// badge has to earn its space.
 fn stats_badge(u: &Combatant) -> Badge {
     Badge {
-        text: format!("M {}   F {}   T {}", u.might, u.finesse, u.toughness),
+        text: format!("M {}   G {}   F {}", u.might, u.grit, u.finesse),
         tone: Tone::Muted,
     }
 }

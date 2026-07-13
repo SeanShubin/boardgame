@@ -22,7 +22,7 @@ pub fn demo_table() -> Board {
             "Vanguard",
             "hero",
             &[
-                "Might 3 | Vitality 2 | Toughness 4",
+                "Might 3 | Vitality 2 | Grit 4",
                 "Cadence 2 | Finesse 1",
                 "Abilities: Jab (reach 1)",
             ],

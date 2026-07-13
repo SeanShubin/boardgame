@@ -226,7 +226,7 @@ fn seed(x: usize) -> Vec<Foe> {
 
 fn main() {
     // Direct check (no search - the swap-out search is too slow): report each corner's seed encounter, then
-    // sweep the Jab wall's Toughness to find where a doubled substitute (2x Shot) stops cracking it.
+    // sweep the Jab wall's Grit to find where a doubled substitute (2x Shot) stops cracking it.
     println!("--- swap-out breakdown on each corner's seed encounter ---\n");
     for x in 0..4 {
         report(x, &seed(x));

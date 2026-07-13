@@ -50,7 +50,7 @@ pub fn winnable(party: &[Combatant], foes: &[Combatant]) -> bool {
 /// sub-phase boundary - i.e. it was *always zero* at exactly the points we memoize. Now that wounds carry
 /// across a round's sub-phases, two positions with identical health and tempo but different accumulated
 /// damage are genuinely different positions, and conflating them would make the solver return confidently
-/// wrong answers rather than fail. It costs state space (a wound counter in `[0, toughness)` per unit), which
+/// wrong answers rather than fail. It costs state space (a wound counter in `[0, grit)` per unit), which
 /// is the price of the rule.
 type Key = (Vec<(u32, u32, bool, u32)>, usize, usize);
 
@@ -295,7 +295,7 @@ mod tests {
         might: u32,
         finesse: u32,
         cadence: u32,
-        toughness: u32,
+        grit: u32,
         vitality: u32,
         melee: bool,
         ranged: bool,
@@ -307,7 +307,7 @@ mod tests {
             might,
             finesse,
             cadence,
-            toughness,
+            grit,
             armor: 0,
             melee,
             ranged,
