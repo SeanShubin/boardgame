@@ -144,18 +144,26 @@ fn formations(us: &[Combatant], party: usize) -> Vec<(Vec<u8>, Vec<Post>)> {
 }
 
 /// The board as one line: each region, its front line, then its back line after a `|`.
-fn board_line(b: &Board) -> String {
+fn board_line(b: &Board, snap: Option<&regions::SubPhaseLog>) -> String {
     b.occupied()
         .iter()
         .map(|&r| {
             let tier = |post: Post| -> Vec<String> {
-                b.in_region(r)
-                    .into_iter()
-                    .filter(|&i| b.posts[i] == post)
+                // Walk ALL units against the snapshot, not `in_region` - that filters on who is fallen *now*,
+                // so a body that was alive at this boundary and died later in the round would vanish from the
+                // line that should show it standing. The snapshot is what happened; the board is only where it
+                // ended up.
+                (0..b.units.len())
+                    .filter(|&i| b.regions[i] == r)
+                    .filter(|&i| match snap {
+                        Some(s) => s.health[i] > 0 && s.posts[i] == post,
+                        None => !b.units[i].fallen && b.posts[i] == post,
+                    })
                     .map(|i| {
                         let u = &b.units[i];
                         let mark = if u.side == Side::Party { "" } else { "*" };
-                        format!("{}{}({})", mark, u.name, u.health)
+                        let hp = snap.map_or(u.health, |s| s.health[i]);
+                        format!("{}{}({})", mark, u.name, hp)
                     })
                     .collect()
             };
@@ -297,7 +305,7 @@ fn main() {
         "{} - {}\n  setup:  {}\n",
         e.location,
         e.title,
-        board_line(&b)
+        board_line(&b, None)
     );
 
     for round in 0..regions::MAX_ROUNDS {
@@ -334,7 +342,7 @@ fn main() {
             println!(
                 "  {:<8}{}{}",
                 format!("{}:", phase.label()),
-                board_line(&b),
+                board_line(&b, Some(l)),
                 note
             );
         }

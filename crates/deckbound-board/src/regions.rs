@@ -430,6 +430,16 @@ pub struct SubPhaseLog {
     /// Promoted from back to front, because the front ahead of it collapsed.
     pub promoted: Vec<usize>,
     pub fallen: Vec<usize>,
+    /// **Every body's health at this boundary** - a snapshot, so a transcript can show what the board looked
+    /// like *here* rather than at the end of the round.
+    ///
+    /// Without it a caller can only read the *final* board, and every sub-phase line prints identically - which
+    /// hid the fact that all the damage was landing in one place. A log you cannot trust to say *when* is worse
+    /// than no log.
+    pub health: Vec<u32>,
+    /// Every body's **post** at this boundary. Same reason: without it a promotion that happens in the last
+    /// sub-phase appears to have been true all round.
+    pub posts: Vec<Post>,
 }
 
 fn slip_price(bid: u32, f_def: u32) -> u32 {
@@ -570,6 +580,8 @@ fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
         promoted: (0..board.units.len())
             .filter(|&i| was[i] == Post::Back && board.posts[i] == Post::Front)
             .collect(),
+        health: board.units.iter().map(|u| u.health).collect(),
+        posts: board.posts.clone(),
         ..Default::default()
     }
 }
