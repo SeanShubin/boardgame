@@ -395,25 +395,25 @@ pub fn foe_acts(board: &Board) -> Vec<Option<Act>> {
             if board.units[i].side != Side::Foe || board.units[i].fallen {
                 return None;
             }
-            let softest = |t: usize| (board.units[t].health, board.units[t].grit);
             let acts = legal_acts(board, i);
-            let clash = acts
-                .iter()
+            // **Hunt the weakest body on the board, wherever it is standing.** If it is behind their line, go
+            // through the line for it - that is what the raid is *for*.
+            //
+            // The previous script was `clash.or(raid)`: it preferred a clash and only raided when no clash
+            // existed at all. Since a side always has a front (no rearguard without a vanguard), a clash always
+            // existed - so **the foes never once raided**. The party's cannons were untouchable forever, not by
+            // design but by omission, and the party won every attrition race by default. That single `or` was
+            // holding the whole balance question shut.
+            let softest = |t: usize| (board.units[t].health, board.units[t].grit);
+            acts.iter()
                 .filter_map(|a| match a {
-                    Act::Clash(t) => Some((softest(*t), *a)),
+                    // Push, not Evade: a scripted body spends its pool on the kill, not on the crossing.
+                    Act::Clash(t) | Act::Raid(t, Answer::Push) => Some((softest(*t), *a)),
                     _ => None,
                 })
                 .min_by_key(|&(k, _)| k)
-                .map(|(_, a)| a);
-            let raid = acts
-                .iter()
-                .filter_map(|a| match a {
-                    Act::Raid(t, Answer::Push) => Some((softest(*t), *a)),
-                    _ => None,
-                })
-                .min_by_key(|&(k, _)| k)
-                .map(|(_, a)| a);
-            clash.or(raid).or(Some(Act::Hold))
+                .map(|(_, a)| a)
+                .or(Some(Act::Hold))
         })
         .collect()
 }
@@ -1226,6 +1226,36 @@ mod tests {
         assert!(
             legal_acts(&b, 1).iter().any(|a| matches!(a, Act::Slip(..))),
             "the cannon can always try to slip away - same contest, different destination"
+        );
+    }
+
+    /// **The scripted foe must actually USE the raid.** This is the bug that hid the whole balance question for
+    /// three commits, so it gets a test rather than a comment.
+    ///
+    /// The old script was `clash.or(raid)` - prefer a clash, raid only if no clash exists. But a side *always*
+    /// has a front (no rearguard without a vanguard), so a clash always existed, so **the foes never once
+    /// raided**. The party's cannons were untouchable forever - not by design, but by omission - and the party
+    /// won every attrition race by default. The probe then reported, quite correctly, that raiding was never
+    /// *necessary*: it was measuring a world in which the opponent had unilaterally disarmed.
+    ///
+    /// An environment that refuses to use a mechanic cannot tell you whether that mechanic matters.
+    #[test]
+    fn the_foes_raid_a_screened_body_when_it_is_the_softest_thing_on_the_board() {
+        let b = Board::new(
+            vec![
+                // A tough front the foe could clash, screening a cannon it would much rather kill.
+                unit("Bastion", Side::Party, [1, 6, 4, 1, 2], true, false),
+                unit("Marksman", Side::Party, [5, 1, 1, 2, 2], false, true),
+                unit("Ogre", Side::Foe, [5, 5, 2, 3, 2], true, false),
+            ],
+            vec![0, 0, 1],
+            vec![Post::Front, Post::Back, Post::Front],
+        );
+        let acts = foe_acts(&b);
+        assert_eq!(
+            acts[2],
+            Some(Act::Raid(1, Answer::Push)),
+            "it must go through the line for the soft body behind it, not settle for the wall in front"
         );
     }
 
