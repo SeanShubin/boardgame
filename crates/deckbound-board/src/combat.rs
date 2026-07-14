@@ -669,6 +669,54 @@ mod tests {
         assert_eq!(strike_target(&no_melee, &[melee], 1), None);
     }
 
+    /// **KNOWN DEFECT, recorded rather than fixed.** [`strike_target`] answers "who am I in contact with?" by
+    /// taking the **first** matching contact. So a body closed on by *two* attackers answers whichever of them
+    /// happens to come first in the contact list - which is **seat order**.
+    ///
+    /// This test asserts the *current* behaviour, so the defect is pinned and cannot be forgotten, and so that
+    /// any fix has to come here and delete it deliberately. It is **not** a statement that the behaviour is
+    /// right. It is not: Spec 1.9 requires that "permuting the seat order of a tier's duels must yield the
+    /// identical end-state - any divergence is an order-dependent mechanic, i.e. a bug."
+    ///
+    /// It is live. `strike_target` is called from `arena.rs` (the played game), `battle.rs` (the sim) and
+    /// `solver.rs` (the doom oracle), so **whenever two bodies clash one, who it hits back is decided by who was
+    /// loaded first** - and the oracle inherits the same arbitrariness while claiming certainty.
+    ///
+    /// The fix is not to sort the contacts. Sorting only writes the arbitrariness down. *Whom you answer* is a
+    /// real decision, and it wants to be a **declared** one - which is what `regions::land` now does ("you fight
+    /// who you declared"). Doing the same here is a behaviour change with balance consequences, so it is a
+    /// deliberate call, not a drive-by.
+    #[test]
+    fn strike_target_picks_its_answer_by_seat_order_and_that_is_a_bug() {
+        let u = vec![
+            unit("Hero", Side::Party, Rank::Vanguard, 2, 2, 4, 1, 5),
+            unit("X", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
+            unit("Y", Side::Foe, Rank::Vanguard, 2, 2, 4, 1, 5),
+        ];
+        let from_x = Contact {
+            attacker: 1,
+            target: 0,
+            bid: 4,
+        };
+        let from_y = Contact {
+            attacker: 2,
+            target: 0,
+            bid: 4,
+        };
+
+        // Same fight. Same bodies. The only difference is which contact was pushed first.
+        assert_eq!(
+            strike_target(&u, &[from_x, from_y], 0),
+            Some(1),
+            "it answers X..."
+        );
+        assert_eq!(
+            strike_target(&u, &[from_y, from_x], 0),
+            Some(2),
+            "...and the identical position answers Y, purely because the list was built the other way round"
+        );
+    }
+
     #[test]
     fn schedule_gates_catches() {
         // Intercept (sub-phase 0) is Vanguard -> Outrider only.
