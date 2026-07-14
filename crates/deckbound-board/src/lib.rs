@@ -14,6 +14,9 @@ pub mod battle;
 mod board_game;
 pub mod combat;
 pub mod fixtures;
+/// The candidate **regions / relations** combat model - additive and inert; nothing shipped calls it. It is
+/// here so the two models can be compared side by side without either disturbing the other.
+pub mod regions;
 pub mod scene;
 pub mod solver;
 pub mod targets;
