@@ -1672,6 +1672,58 @@ mod tests {
         );
     }
 
+    /// **KNOWN DEFECT, recorded not fixed: AN AREA STRIKE HAS NO ADVANTAGE AGAINST A HORDE.**
+    ///
+    /// Measured, on a 12-body pack, in one round:
+    ///
+    /// ```text
+    /// Raider     (Might 7, single-target) -> felled 12 of 12   <- wipes it outright
+    /// Marksman   (Might 5, single-target) -> felled 10 of 12
+    /// Bastion    (Might 1, AREA)          -> felled  1 of 12   <- the Swarm's designated counter
+    /// Bombardier (Might 3, AREA)          -> felled  3 of 12   <- the Storm's designated counter
+    /// ```
+    ///
+    /// The two **anti-horde** kits are the **worst** horde-killers in the game, and the single-target Raider is
+    /// the best. Two of the four balance locks (The Swarm, The Storm) are horde locks - so two of the four are
+    /// **inverted**, and no amount of stat tuning can flip them back.
+    ///
+    /// **Why.** A horde is one [`Combatant`] whose `health` is its body count. An aimed strike deals `Might`,
+    /// which comes straight off that count - felling **Might-many bodies** - and the striker gets to *pour*, so
+    /// it lands several. An area strike forms **one** contact against that **one** body, deals `Might` once, and
+    /// cannot pour at all (coverage bought at the price of concentration). So a sweep is *strictly worse* than an
+    /// aimed blow against a pack, which is the exact opposite of what a sweep is for.
+    ///
+    /// **This is my regression.** `combat::resolve_engage` has the rule - an area strike *clears the pack* - and
+    /// I dropped it when writing `area_strike`, because region-wide it let one Salvo delete sixteen bodies for a
+    /// single card. That reason is now **gone**: a sweep only covers the tier it was aimed at. The rule should
+    /// come back, and it is one line.
+    ///
+    /// Recorded as a test so it cannot be forgotten, and so the fix has to come here and delete it deliberately.
+    #[test]
+    fn an_area_strike_is_currently_worse_against_a_horde_than_an_aimed_blow_and_that_is_a_bug() {
+        let felled = |stats: [u8; 5], aoe: bool| -> u32 {
+            let pack = 12u32;
+            let mut b = Board::new(
+                vec![
+                    unit("Hero", Side::Party, stats, true, true).with_aoe(aoe),
+                    unit("Horde", Side::Foe, [1, pack as u8, 1, 1, 1], true, false).as_horde(true),
+                ],
+                vec![0, 1],
+                vec![Post::Front, Post::Front],
+            );
+            play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+            pack - b.units[1].health
+        };
+        let raider = felled([7, 6, 1, 2, 2], false);
+        let bastion = felled([1, 3, 3, 1, 2], true);
+        let bombardier = felled([3, 3, 1, 1, 2], true);
+
+        assert!(
+            raider > bastion && raider > bombardier,
+            "THE DEFECT: a single-target body ({raider}) out-kills both area strikers              (Bastion {bastion}, Bombardier {bombardier}) against a pack. When this assertion starts              FAILING, the bug is fixed - delete the test."
+        );
+    }
+
     /// The fight terminates and someone wins - the model does not stall.
     #[test]
     fn a_fight_resolves() {
