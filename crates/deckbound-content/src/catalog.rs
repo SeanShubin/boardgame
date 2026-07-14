@@ -182,7 +182,10 @@ pub const CREATURES: [Creature; 4] = [
     Creature {
         name: "The Duelist",
         ability: "Riposte",
-        stats: [5, 5, 1, 2, 2],
+        // Might 6, not 5: enough to kill a Raider that closes (Vitality 6, Grit 1 - so six lands it exactly).
+        // At 5 the Raider survived on 1 and soloed it too, which made the lesson "hit it with anything".
+        // "Close in and you trade and DIE - answer it from range" only teaches if the trade actually kills you.
+        stats: [6, 5, 1, 2, 2],
         melee: true,
         ranged: false,
         aoe: false,

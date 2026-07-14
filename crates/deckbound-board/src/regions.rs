@@ -94,35 +94,71 @@ use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
 /// A fight not decided in five rounds is a draw, and a draw is not a win (spec 0.4).
 pub const MAX_ROUNDS: usize = 5;
 
-/// The three sub-phases, in order. See the module docs for why there are exactly three.
+/// The four sub-phases, in order. Each earns its boundary by exactly one silencing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubPhase {
-    Slip,
+    /// The **front line** reaches for the slippers. A death here silences the Volley *and* the Raid.
+    Intercept,
+    /// The **back line** fires on whoever is still coming. The cannons defend themselves - and a slipper the
+    /// front already killed is not shot at twice, which is exactly why this is its own sub-phase: **the saved
+    /// card is real.** A death here silences the Raid.
+    Volley,
+    /// Those who got through strike the backs they came for - *before* those backs get to fire. A death here
+    /// silences that victim's own shot, and that is the whole of what the raid buys.
     Raid,
+    /// **The back lines fire.** Holding off *is* being quicker: a body that never closed shoots before the ones
+    /// that did can swing. A death here silences that victim's Clash - which is exactly why a screened cannon is
+    /// worth screening, and why a lone archer can beat a swordsman it could never out-trade.
+    Fire,
+    /// **The front lines close, and trade.** Seeking melee is the slowest thing you can do, so it lands last.
     Clash,
 }
 
 impl SubPhase {
-    pub const ALL: [SubPhase; 3] = [SubPhase::Slip, SubPhase::Raid, SubPhase::Clash];
+    pub const ALL: [SubPhase; 5] = [
+        SubPhase::Intercept,
+        SubPhase::Volley,
+        SubPhase::Raid,
+        SubPhase::Fire,
+        SubPhase::Clash,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
-            SubPhase::Slip => "Slip",
+            SubPhase::Intercept => "Intercept",
+            SubPhase::Volley => "Volley",
             SubPhase::Raid => "Raid",
+            SubPhase::Fire => "Fire",
             SubPhase::Clash => "Clash",
         }
     }
 }
 
-/// Where a body stands within its side's contingent in its region. **Persistent state, not a declaration** - set
-/// once at setup, and thereafter changed only by [`Board::promote`] or by slipping into somewhere new.
+/// **Where a body stands in its line - and it is a statement of INTENT, not a rank.**
+///
+/// *Seek melee*, or *avoid it*. That is the whole of it, and everything else follows:
+///
+/// - A body at the **front** is in the fight. It can be clashed, it **catches slippers**, and it swings **last**
+///   (the Clash) - because closing to melee is the slowest thing you can do.
+/// - A body at the **back** is holding off. It **fires first** (the Volley), it cannot be clashed while its own
+///   front stands (a raider has to come *in* for it), and a **melee** body posted here is **dead weight** - it
+///   declared that it is avoiding melee, and a sword cannot do anything else.
+///
+/// **A back whose front has collapsed is not promoted.** This is the collapsed-vanguard rule, and it is the
+/// hinge the whole design turns on: the back **stays** a back. It becomes *targetable* - anyone may now clash it
+/// directly, no raid required (force, not fiat) - but it **keeps its phase slot**, and so it still shoots
+/// *before* the front swings.
+///
+/// That is what makes range mean something. A lone archer posts to the back, is perfectly targetable, and gets
+/// **the first hit** anyway. *Close in and you trade and die; answer it from range.* Promotion destroyed exactly
+/// this: it turned every unscreened cannon into just another front-line body, and left "ranged" gating nothing a
+/// solo fight could see.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Post {
-    /// **The vanguard.** It can be clashed with and shot at, and it **catches slippers**. Being reachable is the
-    /// job.
+    /// **Seek melee.** In the fight: clashable, catches slippers, swings last.
     Front,
-    /// **The rearguard.** Unreachable by clash or by fire while a front stands - a raider must slip in for it. A
-    /// *melee* body here is **dead weight**: it cannot attack at all. That is the price of hiding.
+    /// **Avoid melee.** Fires first; reachable only by a raid while a front still stands, and reachable by
+    /// anyone once it does not. A melee body here does nothing at all.
     Back,
 }
 
@@ -220,7 +256,6 @@ impl Board {
             posts,
         };
         b.sync_ranks();
-        b.promote();
         b
     }
 
@@ -241,26 +276,18 @@ impl Board {
         }
     }
 
-    /// **No rearguard without a vanguard.** If a side's front in a region is gone but its back is not, the back is
-    /// promoted - on the spot, at the boundary where the front died.
+    /// **Is `target` screened?** - it is posted at the back, *and* its side still has a living front in its
+    /// region to do the screening.
     ///
-    /// This is what opens the ground behind a broken line, and it makes *"at the back"* and *"screened"* the same
-    /// fact, so there is no separate predicate to get wrong.
-    pub fn promote(&mut self) {
-        for r in self.occupied() {
-            for side in [Side::Party, Side::Foe] {
-                let here: Vec<usize> = self
-                    .in_region(r)
-                    .into_iter()
-                    .filter(|&i| self.units[i].side == side)
-                    .collect();
-                if !here.is_empty() && here.iter().all(|&i| self.posts[i] == Post::Back) {
-                    for i in here {
-                        self.posts[i] = Post::Front;
-                    }
-                }
-            }
-        }
+    /// A back with **no** front left is **not promoted** - it stays a back, keeps its phase slot, and simply
+    /// becomes reachable. That is the collapsed-vanguard rule: a screen is a body, and when the body is gone the
+    /// screening stops, but the *intent* does not change. The cannon is still a cannon; it is just out in the
+    /// open now.
+    pub fn is_screened(&self, target: usize) -> bool {
+        self.posts[target] == Post::Back
+            && !self
+                .vanguard(self.regions[target], self.units[target].side)
+                .is_empty()
     }
 
     /// The **vanguard** of `side` in `region` - the living bodies at the front. This is the whole screen: every
@@ -355,14 +382,15 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
             if e.fallen || e.side == u.side {
                 continue;
             }
-            match board.posts[t] {
-                // Their vanguard is reachable by anyone from anywhere: a region is a formation, not a place.
-                Post::Front => out.push(Act::Clash(t)),
-                // Their rearguard is behind their front. Only a melee body can slip in for it.
-                Post::Back if u.melee => {
+            if board.is_screened(t) {
+                // Behind a living front. Only a melee body can slip in for it.
+                if u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
-                Post::Back => {}
+            } else {
+                // At the front, or a back whose front has collapsed - either way, reachable by anyone from
+                // anywhere. A region is a formation, not a place.
+                out.push(Act::Clash(t));
             }
         }
     }
@@ -724,14 +752,9 @@ fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows>
 /// is how the ground behind a broken line opens up *within* a round.
 fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
     combat::end_sub_phase(&mut board.units);
-    let was = board.posts.clone();
-    board.promote();
     SubPhaseLog {
         fallen: (0..board.units.len())
             .filter(|&i| before[i] && board.units[i].fallen)
-            .collect(),
-        promoted: (0..board.units.len())
-            .filter(|&i| was[i] == Post::Back && board.posts[i] == Post::Front)
             .collect(),
         health: board.units.iter().map(|u| u.health).collect(),
         posts: board.posts.clone(),
@@ -743,48 +766,66 @@ fn living(board: &Board) -> Vec<bool> {
     board.units.iter().map(|u| !u.fallen).collect()
 }
 
-/// Play **one whole round**: the Reset, then Slip -> Raid -> Clash.
-pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
-    combat::refresh_round(&mut board.units);
-    let mut logs = Vec::new();
+/// **A body that is slipping is in NEITHER line.** It has left the front and not yet arrived anywhere - it is a
+/// third position, in transit, and while it is there it can neither screen nor be screened.
+///
+/// So it **cannot catch another slipper**: you are outside the line the moment you leave it. Without this, a
+/// body could be running across open ground and simultaneously holding the wall it just abandoned.
+fn in_transit(board: &Board, acts: &[Act], i: usize) -> bool {
+    !board.units[i].fallen && acts[i].destination(board, i).is_some()
+}
 
-    // ---- 1. SLIP -----------------------------------------------------------------------------------------
-    //
-    // A slip is opposed by **every enemy vanguard in the region you leave and the region you enter** - you are
-    // outside your own screen the moment you move, so both ends reach for you. Raid / retreat / regroup are all
-    // the same contest; only the destination differs.
-    let before = living(board);
-    let movers: Vec<(usize, u8, Answer)> = (0..board.units.len())
-        .filter(|&i| !board.units[i].fallen)
-        .filter_map(|i| {
-            let d = acts[i].destination(board, i)?;
-            Some((i, d, acts[i].answer()?))
+/// The bodies of `side` **actually holding the line** in `region` right now: posted at the front, and not off
+/// slipping somewhere.
+fn holding_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> {
+    board
+        .vanguard(region, side)
+        .into_iter()
+        .filter(|&f| !in_transit(board, acts, f))
+        .collect()
+}
+
+/// The bodies of `side` **at the back** of `region`, not off slipping - the cannons that get to volley an
+/// incoming raider before it lands.
+fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> {
+    board
+        .in_region(region)
+        .into_iter()
+        .filter(|&i| {
+            board.units[i].side == side
+                && board.posts[i] == Post::Back
+                && !in_transit(board, acts, i)
+        })
+        .collect()
+}
+
+/// One pass of bodies reaching for the slippers: they commit, the slipper answers as it declared, the blows
+/// land. Returns the contacts that stuck (a slipper that Evaded broke them all).
+///
+/// This is used **twice** - once for the front line ([`SubPhase::Intercept`]) and once for the back line
+/// ([`SubPhase::Volley`]) - and the two are separate sub-phases for a reason that is pure tempo economy: **if
+/// the front already killed the slipper, the back does not waste its shot on a corpse.** That saved card is the
+/// whole reason the boundary earns its place under the razor.
+fn reach_for_slippers(
+    board: &mut Board,
+    catchers: &[(usize, usize)], // (catcher, slipper)
+    movers: &[(usize, u8, Answer)],
+) -> Vec<Contact> {
+    let engagements: Vec<Engage> = catchers
+        .iter()
+        .filter(|&&(f, s)| {
+            !board.units[f].fallen && !board.units[s].fallen && board.units[f].tempo > 0
+        })
+        .map(|&(f, s)| Engage {
+            attacker: f,
+            target: s,
+            cards: reach_cards(&board.units, f, s),
         })
         .collect();
+    let reaching = engage(board, &engagements);
 
-    let mut catches: Vec<Engage> = Vec::new();
-    for &(i, dest, _) in &movers {
-        let foe = if board.units[i].side == Side::Party {
-            Side::Foe
-        } else {
-            Side::Party
-        };
-        for from in [board.regions[i], dest] {
-            for f in board.vanguard(from, foe) {
-                if board.units[f].tempo > 0 {
-                    catches.push(Engage {
-                        attacker: f,
-                        target: i,
-                        cards: reach_cards(&board.units, f, i),
-                    });
-                }
-            }
-        }
-    }
-    let reaching = engage(board, &catches);
-
-    // Now the slipper answers, **seeing exactly what was committed**. Evade pays in full and breaks every edge;
-    // Push and Abort spend nothing and eat the blows. The difference between them is only whether you go.
+    // The slipper answers, seeing exactly what was committed. Evade pays in full and breaks every edge; Push and
+    // Abort spend nothing and eat the blows.
     let dodges: Vec<Dodge> = (0..board.units.len())
         .map(|i| match movers.iter().find(|&&(m, _, _)| m == i) {
             Some(&(_, _, Answer::Evade)) => Dodge::Slip,
@@ -793,34 +834,28 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .collect();
     let landed = combat::resolve_evade(&mut board.units, &reaching, &dodges);
 
-    // An Abort turns and fights: it spends its tempo swinging back at whoever caught it. Push and Evade keep
-    // their pool for the raid.
-    let aborting: Vec<usize> = movers
-        .iter()
-        .filter(|&&(_, _, a)| a == Answer::Abort)
-        .map(|&(i, _, _)| i)
-        .collect();
-    // **An Abort turns and lays about it - at EVERY body that caught it, evenly.**
-    //
-    // Not "the first one in the list". A slipper caught by three fronts is fighting three fronts, and picking
-    // one of them by iteration order would make who dies depend on who sits at index 0 (Spec 1.9). Splitting the
-    // pool is the only answer that is symmetric in the catchers, so it needs no tie-break and cannot be gamed by
-    // re-seating. The remainder is simply not spent - you cannot cut a tempo card in half.
+    // An Abort turns and lays about it - at EVERY body that caught it, evenly. Not "the first one in the list":
+    // picking one by iteration order would make who dies depend on who sits at index 0 (Spec 1.9). Splitting the
+    // pool is symmetric in the catchers, so it needs no tie-break and cannot be gamed by re-seating.
     let mut ripostes: Vec<Blows> = Vec::new();
-    for &i in &aborting {
-        if board.units[i].fallen || board.units[i].tempo == 0 || !board.units[i].melee {
+    for &(i, _, answer) in movers {
+        if answer != Answer::Abort
+            || board.units[i].fallen
+            || board.units[i].tempo == 0
+            || !board.units[i].melee
+        {
             continue;
         }
-        let catchers: Vec<usize> = landed
+        let caught_by: Vec<usize> = landed
             .iter()
             .filter(|c| c.target == i)
             .map(|c| c.attacker)
             .collect();
-        let each = board.units[i].tempo / catchers.len().max(1) as u32;
+        let each = board.units[i].tempo / caught_by.len().max(1) as u32;
         if each == 0 {
             continue;
         }
-        for c in catchers {
+        for c in caught_by {
             ripostes.push(Blows {
                 unit: i,
                 target: c,
@@ -829,9 +864,64 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         }
     }
     land(board, &landed, &[], &ripostes);
+    landed
+}
 
+/// Play **one whole round**: the Reset, then Intercept -> Volley -> Raid -> Clash.
+pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
+    combat::refresh_round(&mut board.units);
+    let mut logs = Vec::new();
+
+    let movers: Vec<(usize, u8, Answer)> = (0..board.units.len())
+        .filter(|&i| !board.units[i].fallen)
+        .filter_map(|i| {
+            let d = acts[i].destination(board, i)?;
+            Some((i, d, acts[i].answer()?))
+        })
+        .collect();
+
+    // Every enemy body that gets a reach at a slipper, in the region it LEAVES and the region it ENTERS - you
+    // are outside your own screen the moment you move, so both ends reach for you.
+    let mut front_catchers: Vec<(usize, usize)> = Vec::new();
+    let mut back_catchers: Vec<(usize, usize)> = Vec::new();
+    for &(i, dest, _) in &movers {
+        let foe = if board.units[i].side == Side::Party {
+            Side::Foe
+        } else {
+            Side::Party
+        };
+        for from in [board.regions[i], dest] {
+            for f in holding_line(board, acts, from, foe) {
+                front_catchers.push((f, i));
+            }
+            for c in back_line(board, acts, from, foe) {
+                back_catchers.push((c, i));
+            }
+        }
+    }
+
+    // ---- 1. INTERCEPT: the front line reaches for the slippers ------------------------------------------
+    let before = living(board);
+    let caught_by_front = reach_for_slippers(board, &front_catchers, &movers);
+    logs.push(close(board, &before));
+
+    // ---- 2. VOLLEY: the back line fires on whoever is still coming --------------------------------------
+    //
+    // The cannons defend themselves. A slipper the front already killed is not shot at twice - which is exactly
+    // why this is its own sub-phase rather than one pile with the Intercept: the saved card is real.
+    let before = living(board);
+    let caught_by_back = reach_for_slippers(board, &back_catchers, &movers);
+    logs.push(close(board, &before));
+
+    // Arrival is settled now: a slipper that Evaded broke every edge and is through; one that Pushed bled for it
+    // and is through anyway; one that Aborted turned and fought, and never left.
+    let caught: Vec<&Contact> = caught_by_front.iter().chain(&caught_by_back).collect();
     let mut through = vec![false; board.units.len()];
-    let mut log = close(board, &before);
+    let mut log = SubPhaseLog {
+        health: board.units.iter().map(|u| u.health).collect(),
+        posts: board.posts.clone(),
+        ..Default::default()
+    };
     for &(i, dest, answer) in &movers {
         if board.units[i].fallen {
             continue;
@@ -840,21 +930,23 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             log.aborted.push(i);
             continue; // it chose the fight over the ground
         }
-        // Evade paid for it; Push bled for it. Either way it is through.
+        let _ = &caught; // (a Push takes the blows and goes anyway; an Evade broke them)
         board.regions[i] = dest;
         board.posts[i] = Post::Front; // it charged in - it is at the sharp end by definition
         through[i] = true;
         log.through.push(i);
     }
-    board.promote(); // leaving a region can strand a back line with no front
-    logs.push(log);
+    if let Some(last) = logs.last_mut() {
+        last.through = log.through.clone();
+        last.aborted = log.aborted.clone();
+    }
 
-    // ---- 2. RAID -----------------------------------------------------------------------------------------
+    // ---- 3. RAID: those who got through strike the backs they came for ----------------------------------
     //
     // The early slot, and the whole of what the slip bought: the raider hits the cannon *before* the cannon
-    // fires. Tempo-gated - a raider that evaded with everything arrives with nothing to swing.
+    // fires in the Clash. Tempo-gated - a raider that evaded with everything arrives with nothing to swing.
     let before = living(board);
-    let raids: Vec<(usize, usize)> = (0..board.units.len())
+    let raids: Vec<Attack> = (0..board.units.len())
         .filter(|&i| through[i] && !board.units[i].fallen && board.units[i].tempo > 0)
         .filter_map(|i| match acts[i] {
             Act::Raid(t, _) if !board.units[t].fallen => Some((i, t)),
@@ -864,17 +956,30 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     exchange(board, &raids, false);
     logs.push(close(board, &before));
 
-    // ---- 3. CLASH ----------------------------------------------------------------------------------------
-    let before = living(board);
-    let clashes: Vec<(usize, usize)> = (0..board.units.len())
-        .filter(|&i| !board.units[i].fallen && board.units[i].tempo > 0)
-        .filter_map(|i| match acts[i] {
-            Act::Clash(t) if !board.units[t].fallen => Some((i, t)),
-            _ => None,
-        })
-        .collect();
-    exchange(board, &clashes, true);
-    logs.push(close(board, &before));
+    // ---- 4. FIRE, then 5. CLASH -------------------------------------------------------------------------
+    //
+    // **The back lines fire first, and the front lines close last.** That is not a schedule quirk - it is what
+    // the two posts MEAN. `Front` is "seek melee", and closing is the slowest thing you can do; `Back` is "avoid
+    // melee", and a body that never closed gets its shot away first.
+    //
+    // A death in Fire silences that body's Clash, which is the whole value of a cannon - and the whole reason a
+    // cannon is worth screening. It is also what lets a lone archer beat a swordsman it could never out-trade:
+    // it is targetable, it just gets to shoot first.
+    for (phase, tier) in [(SubPhase::Fire, Post::Back), (SubPhase::Clash, Post::Front)] {
+        let _ = phase;
+        let before = living(board);
+        let attacks: Vec<Attack> = (0..board.units.len())
+            .filter(|&i| {
+                !board.units[i].fallen && board.units[i].tempo > 0 && board.posts[i] == tier
+            })
+            .filter_map(|i| match acts[i] {
+                Act::Clash(t) if !board.units[t].fallen => Some((i, t)),
+                _ => None,
+            })
+            .collect();
+        exchange(board, &attacks, true);
+        logs.push(close(board, &before));
+    }
 
     logs
 }
@@ -1154,21 +1259,74 @@ mod tests {
         assert_ne!(canonical(&[0, 0, 1]), canonical(&[0, 1, 1]));
     }
 
-    /// **NO REARGUARD WITHOUT A VANGUARD.** The front collapses, the back is promoted on the spot - which makes
-    /// *"at the back"* and *"screened"* the same fact, and is how the ground behind a broken line opens up.
+    /// **THE COLLAPSED VANGUARD.** A back whose front has fallen is **not promoted**. It stays a back: it becomes
+    /// *targetable* - anyone may clash it now, no raid required (force, not fiat) - but it **keeps its phase
+    /// slot**, so it still fires *before* the front line swings.
+    ///
+    /// This is the hinge the whole design turns on. Promotion destroyed it: it turned every unscreened cannon
+    /// into just another front-line body, which left `ranged` gating **nothing a solo fight could see** - and so
+    /// a lone archer was simply a worse swordsman, and no stat tuning could ever have fixed that.
+    ///
+    /// Front and back are a statement of **intent** - *seek melee* or *avoid it* - and losing your screen does
+    /// not change your intent. The cannon is still a cannon. It is just out in the open now.
     #[test]
-    fn a_back_line_with_no_front_is_promoted_not_protected() {
+    fn a_back_whose_front_has_fallen_is_targetable_but_still_a_back() {
         let mut b = wall_and_cannon();
         assert_eq!(b.posts[1], Post::Back, "the cannon starts behind the wall");
+        assert!(b.is_screened(1), "and is screened by it");
+        assert!(
+            !legal_acts(&b, 2).contains(&Act::Clash(1)),
+            "so the Ogre cannot simply clash it - it must raid"
+        );
 
-        b.units[0].fallen = true;
-        b.promote();
+        b.units[0].fallen = true; // the wall dies
         assert_eq!(
             b.posts[1],
-            Post::Front,
-            "with no wall left, the cannon IS the front - there is no hiding behind nothing"
+            Post::Back,
+            "the cannon is STILL a cannon - it is not promoted into the line"
         );
-        assert_eq!(b.vanguard(0, Side::Party), vec![1]);
+        assert!(!b.is_screened(1), "but nothing is screening it any more");
+        assert!(
+            legal_acts(&b, 2).contains(&Act::Clash(1)),
+            "so it is targetable now - force, not fiat"
+        );
+    }
+
+    /// **AND THAT IS WHAT MAKES RANGE MEAN SOMETHING.** A lone archer is perfectly targetable - and **still gets
+    /// the first hit**, because holding off *is* being quicker.
+    ///
+    /// The Raider out-trades the Duelist and survives on 1. The Marksman could never out-trade it - Might 5 into
+    /// Might 5, Vitality 2 into Vitality 5 - and wins anyway, because it shoots in the **Fire** sub-phase and the
+    /// Duelist swings in the **Clash**. *Close in and you trade and die; answer it from range.*
+    #[test]
+    fn a_lone_archer_at_the_back_shoots_before_a_swordsman_can_swing() {
+        let duel = |hero: [u8; 5], melee: bool, ranged: bool, post: Post| -> Option<bool> {
+            let mut b = Board::new(
+                vec![
+                    unit("Hero", Side::Party, hero, melee, ranged),
+                    unit("Duelist", Side::Foe, [5, 5, 1, 2, 2], true, false),
+                ],
+                vec![0, 1],
+                vec![post, Post::Front],
+            );
+            let mut rounds = 0;
+            while b.outcome().is_none() && rounds < MAX_ROUNDS {
+                play_round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
+                rounds += 1;
+            }
+            b.outcome()
+        };
+
+        assert_eq!(
+            duel([5, 2, 1, 2, 2], false, true, Post::Back),
+            Some(true),
+            "the Marksman posts to the back, is fully targetable, and kills it before it can swing"
+        );
+        assert_eq!(
+            duel([5, 2, 1, 2, 2], false, true, Post::Front),
+            Some(false),
+            "...and the SAME body, posted to the front, closes and dies. The post is the whole difference."
+        );
     }
 
     /// **A rearguard is reachable only by a raid** - and that is not a special case, it falls out of the menu.
@@ -1335,7 +1493,10 @@ mod tests {
             &mut b,
             &[Act::Clash(2), Act::Clash(2), Act::Raid(1, Answer::Abort)],
         );
-        assert!(logs[0].aborted.contains(&2), "it turned back at the line");
+        assert!(
+            logs.iter().any(|l| l.aborted.contains(&2)),
+            "it turned back at the line"
+        );
         assert_eq!(b.regions[2], 1, "it never left its own ground");
         assert_eq!(b.units[1].health, cannon, "and it never reached the cannon");
     }
@@ -1358,7 +1519,10 @@ mod tests {
             vec![Post::Front, Post::Front, Post::Back],
         );
         let (wall, mage) = (b.units[1].health, b.units[2].health);
-        play_round(&mut b, &[Act::Clash(1), Act::Clash(0), Act::Clash(0)]);
+        // The Mage HOLDS: this test is about where a sweep reaches, not about who shoots first. (Leave it
+        // firing and it kills the Bombardier in the Fire sub-phase before the sweep ever lands - which is the
+        // collapsed-vanguard rule working, but it is not what we are measuring here.)
+        play_round(&mut b, &[Act::Clash(1), Act::Clash(0), Act::Hold]);
         assert!(b.units[1].health < wall, "it sweeps their front line");
         assert_eq!(
             b.units[2].health, mage,
@@ -1816,6 +1980,70 @@ mod tests {
         assert!(
             raider <= 2,
             "an aimed blow fells one body per strike - Might 7 bought it nothing: it felled {raider}"
+        );
+    }
+
+    /// **THE VOLLEY: the back line fires on an incoming raider.** The cannons defend themselves - which is what
+    /// makes a screened rearguard powerful rather than merely hidden.
+    ///
+    /// And it is its own sub-phase, not one pile with the Intercept, for a reason that is pure tempo economy:
+    /// **a slipper the front already killed is not shot at twice.** The saved card is real, and that is what
+    /// earns the boundary under the razor.
+    #[test]
+    fn the_back_line_volleys_an_incoming_raider() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [7, 6, 1, 3, 2], true, false), // 0 - coming for the cannon
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),     // 1 - their front
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),     // 2 - their back
+            ],
+            vec![0, 1, 1],
+            vec![Post::Front, Post::Front, Post::Back],
+        );
+        let raider = b.units[0].health;
+        // It pushes through: it spends nothing on the line, so every blow the line lands, lands.
+        play_round(
+            &mut b,
+            &[Act::Raid(2, Answer::Push), Act::Clash(0), Act::Clash(0)],
+        );
+        assert_eq!(b.regions[0], 1, "it got through");
+        assert!(
+            b.units[0].health < raider,
+            "and it was shot on the way in - by the wall AND by the cannon it was coming for"
+        );
+    }
+
+    /// **SLIPPING IS A THIRD POSITION.** A body in transit has left the front and not arrived anywhere: while it
+    /// is there it can neither screen nor be screened, and in particular **it cannot catch another slipper**.
+    ///
+    /// Without this, a body could be running across open ground and simultaneously holding the wall it just
+    /// abandoned.
+    #[test]
+    fn a_body_in_transit_cannot_hold_the_line_it_just_left() {
+        let b = Board::new(
+            vec![
+                unit("Guard", Side::Party, [3, 4, 1, 2, 2], true, false), // 0 - our front...
+                unit("Cannon", Side::Party, [4, 2, 1, 2, 2], false, true), // 1 - ...screening this
+                unit("Ogre", Side::Foe, [5, 5, 2, 3, 2], true, false),    // 2 - raiding our cannon
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),    // 3 - their back
+            ],
+            vec![0, 0, 1, 1],
+            vec![Post::Front, Post::Back, Post::Front, Post::Back],
+        );
+        // Our Guard slips away to raid THEIR back at the same moment their Ogre raids ours.
+        let acts = [
+            Act::Raid(3, Answer::Evade),
+            Act::Clash(2),
+            Act::Raid(1, Answer::Evade),
+            Act::Clash(0),
+        ];
+        assert!(
+            in_transit(&b, &acts, 0),
+            "the Guard is in transit, not on the line"
+        );
+        assert!(
+            holding_line(&b, &acts, 0, Side::Party).is_empty(),
+            "so it is NOT holding the line it just left - it cannot catch the Ogre coming the other way"
         );
     }
 
