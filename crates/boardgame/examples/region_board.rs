@@ -8,43 +8,55 @@
 //!
 //! # What to look at
 //!
-//! 1. **Regions are just who is standing together.** No map, no coordinates, no ranks. A region with an enemy
-//!    in it is a *melee*; one without is **the back** - which is not a rank any more, it is a fact about the
-//!    board, and it stops being true the moment somebody walks in.
+//! 1. **A region is a formation, not a bag.** Within each region every side has a **front** and a **back**. The
+//!    front is drawn on top; the back is shingled beneath it, behind a "behind the line" marker. Kill the front
+//!    and the marker turns red: the back is exposed, and there is nobody left paying for it.
 //!
-//! 2. **The screen is a cascade you can see.** Declare `Guard` and your card physically **shingles over your
-//!    ward** - depth of shingle is depth of protection, and the card on top is the one an attacker has to go
-//!    through. That is not a decoration invented for the renderer: it is literally the rule (a blow aimed at
-//!    the ward lands on the head of the chain), drawn.
+//! 2. **The three old roles are still here - as consequences, not as ranks.**
+//!    - **Vanguard** = a body at the **front**. It can be shot and clashed with, and it *catches slippers*.
+//!    - **Rearguard** = a body at the **back** with a ranged strike. Deals from safety somebody else is paying
+//!      for. Ranged fire cannot even pick it out while a front stands.
+//!    - **Outrider** = a **melee strike at an enemy in the back**. Not a role, not even a separate declaration:
+//!      it is simply *what pressing a screened target means*. Any front can catch you. Get through and you are
+//!      on the cannon; get caught and your tempo went to the body that caught you.
 //!
-//! 3. **The doom chart** (right). Every move each hero could make, and whether the position is still winnable
-//!    if it makes it. It asks what **forecloses** the win, not what is optimal. On Greywater Ford it says the
-//!    thing the current model cannot even express: *the Raider must not charge in round one.*
+//!    `Slip > Cannon > Front > Slip` - the old triangle, inside a region, with no ranks anywhere.
 //!
-//! 4. **Round 4 still reads.** Step the rounds and watch the board. That is the whole question this design
-//!    exists to answer.
+//! 3. **The screen is a price, never an immunity.** Enough Tempo always gets past a front. (The previous cut
+//!    silently *redirected* every blow onto the screen, which made a screened body untouchable until its guard
+//!    died - that was fiat, and it had quietly deleted the Outrider.)
+//!
+//! 4. **An area strike nukes the whole region**, both tiers, bypassing the screen entirely. That is the
+//!    anti-cluster counter, and it is what stops a deep formation from being free.
+//!
+//! 5. **The doom chart** (right). Every move each hero could make, and whether the position is still winnable if
+//!    it makes it. It asks what **forecloses** the win, not what is optimal.
 //!
 //! # How to drive it
 //!
-//! Click a **hero** to select it. **Every legal move it has is then listed on the right, with the oracle's
-//! verdict beside it - click a row to declare it.** That list is the whole move set; the card clicks below are
-//! just shortcuts into it. Nothing is ever a dead end:
+//! Click a **hero** to select it. **Every legal declaration is listed on the right, with the oracle's verdict
+//! beside it - click a row to declare it.** That list is the whole move set; card clicks are just shortcuts into
+//! it. Nothing is ever a dead end:
 //!
 //! - click the **selected hero again** -> deselect (back to where you started)
 //! - the **Undo** row at the top of the chart -> un-declare that hero
 //! - **Clear all** -> put every hero back to undeclared
 //!
-//! Card shortcuts, once a hero is selected: click an **enemy** to `Press` it, an **ally** to `Guard` it.
+//! Card shortcut: with a hero selected, click an **enemy** to strike it.
 //!
-//! # The five things a body can declare
+//! # What a body declares
+//!
+//! A **post** (front or back - where it stands in its own line) and an **act**:
 //!
 //! | | |
 //! |---|---|
-//! | **Press X** | assassinate. A melee body crosses to it and pays the gauntlet; an arrow does not walk. |
-//! | **Guard X** | put your body between an ally and harm. You cross to your ward. Watch the shingle. |
-//! | **Fall in behind X** | get *behind* an ally so **they** can guard **you** - the opposite direction to Guard. This is how a cannon gets in behind the Bastion. |
-//! | **Hold your ground** | stay put, do nothing. |
-//! | **Peel away alone** | retreat to empty ground - break out of a melee, or split a cluster so one area strike cannot catch it all. Not free: everything hostile in the region you leave gets a parting blow at you. |
+//! | **Strike X** | a melee body crosses to X and pays the crossing gauntlet; an arrow does not walk. If X is at their **back**, this is a *slip* - their front will try to catch you. |
+//! | **Hold the front / back** | take your post and wait. |
+//! | **Fall in with X** | cross to that region without attacking. |
+//! | **Peel away alone** | retreat to empty ground. Not free: everything hostile in the region you leave gets a parting blow at you. |
+//!
+//! A body that **crosses arrives at the front** - you charged in, you are at the sharp end by definition - so a
+//! crossing act carries no post choice.
 //!
 //! Declare for every hero, then **Resolve the round**.
 //!
@@ -58,7 +70,9 @@
 use bevy::prelude::*;
 
 use deckbound_board::combat::{Combatant, Side};
-use deckbound_board::regions::{self, Aim, Board, Oracle, SubPhase, Verdict, legal_aims};
+use deckbound_board::regions::{
+    self, Act, Aim, Board, Oracle, Post, SubPhase, Verdict, legal_aims,
+};
 use deckbound_content::catalog::{self, Creature, Encounter};
 use deckbound_content::rank::Intention as Rank;
 
@@ -259,14 +273,24 @@ impl Spike {
                 self.selected = None;
                 self.repick();
             }
-            Some(h) => {
-                let aim = if self.board.units[i].side == Side::Party {
-                    Aim::Defend(i)
+            // A card click is a SHORTCUT into the chart, never the only way in: clicking an enemy declares the
+            // strike, keeping whatever post this hero is already committed to (or the front, by default).
+            Some(h) if self.board.units[i].side != self.board.units[h].side => {
+                let post = self.aims[h].map_or(Post::Front, |a| a.post);
+                let want = Aim::new(post, Act::Strike(i));
+                let legal = legal_aims(&self.board, h);
+                let pick = if legal.contains(&want) {
+                    Some(want)
                 } else {
-                    Aim::Press(i)
+                    // The post it wanted is not on offer for this strike (a crosser always arrives at the
+                    // front) - so take whichever post the model does offer for it.
+                    legal.into_iter().find(|a| a.act == Act::Strike(i))
                 };
-                self.declare(h, aim);
+                if let Some(a) = pick {
+                    self.declare(h, a);
+                }
             }
+            Some(_) => {} // clicking an ally does nothing now - there is no "guard X" to declare
             None if self.board.units[i].side == Side::Party => {
                 self.selected = Some(i);
                 self.repick();
@@ -292,7 +316,7 @@ impl Spike {
             return;
         }
         let mut aims: Vec<Aim> = (0..self.board.units.len())
-            .map(|i| self.aims[i].unwrap_or(Aim::Hold))
+            .map(|i| self.aims[i].unwrap_or(Aim::WAIT))
             .collect();
         for (i, a) in regions::foe_aims(&self.board).iter().enumerate() {
             if let Some(a) = a {
@@ -305,7 +329,7 @@ impl Spike {
             self.log.push(format!(
                 "  {} -> {}",
                 self.board.units[i].name,
-                aims[i].label(&self.board.units)
+                aims[i].label(&self.board)
             ));
         }
 
@@ -445,46 +469,31 @@ fn verdict_color(v: Verdict) -> Color {
     }
 }
 
-/// Who each unit is shingled *under*: `screen[w] = Some(d)` when `d` declared `Defend(w)` from `w`'s region.
-/// This is the same edge [`regions::screen_head`] walks - the picture and the rule are the same object.
-fn screens(s: &Spike) -> Vec<Option<usize>> {
-    let b = &s.board;
-    (0..b.units.len())
-        .map(|w| {
-            (0..b.units.len()).find(|&d| {
-                !b.units[d].fallen
-                    && b.units[d].side == b.units[w].side
-                    && b.regions[d] == b.regions[w]
-                    && s.aims[d] == Some(Aim::Defend(w))
-            })
-        })
-        .collect()
-}
-
-/// The render order for one region: each screen chain from its **head** down to its ward, so a defender is
-/// drawn above the body it is covering and the ward can tuck under it. Depth of shingle = depth of protection.
-fn chains(s: &Spike, region: u8) -> Vec<Vec<usize>> {
-    let b = &s.board;
-    let screen = screens(s);
-    let here = b.in_region(region);
-    let mut out = Vec::new();
-    for &head in &here {
-        if screen[head].is_some() {
-            continue; // somebody is covering it - it will be drawn under them
-        }
-        let mut chain = vec![head];
-        let mut at = head;
-        // Walk DOWN: what is this body covering?
-        while let Some(Aim::Defend(w)) = s.aims[at] {
-            if !here.contains(&w) || chain.contains(&w) {
-                break; // out of region, or a mutual-defend cycle - legal, just not a line
-            }
-            chain.push(w);
-            at = w;
-        }
-        out.push(chain);
-    }
-    out
+/// The render order for one region: **the front line first, then the back line, shingled beneath it** - per
+/// side, so a mixed region (a melee) shows both formations.
+///
+/// The shingle *is* the rule, drawn: a body at the back is tucked under the bodies that are screening it, and
+/// the cards on top are the ones an attacker has to go through. It is not a decoration - `front_line` is the
+/// same function the resolver uses to decide who can catch a slipper.
+fn tiers(s: &Spike, region: u8, side: Side) -> (Vec<usize>, Vec<usize>) {
+    let here: Vec<usize> = s
+        .board
+        .in_region(region)
+        .into_iter()
+        .filter(|&i| s.board.units[i].side == side)
+        .collect();
+    let post = |i: usize| s.aims[i].map_or(Post::Front, |a| a.post);
+    let front: Vec<usize> = here
+        .iter()
+        .copied()
+        .filter(|&i| post(i) == Post::Front)
+        .collect();
+    let back: Vec<usize> = here
+        .iter()
+        .copied()
+        .filter(|&i| post(i) == Post::Back)
+        .collect();
+    (front, back)
 }
 
 fn rebuild(mut commands: Commands, mut s: ResMut<Spike>, old: Query<Entity, With<Root>>) {
@@ -634,9 +643,30 @@ fn regions_row(p: &mut ChildSpawnerCommands, s: &Spike) {
                     13.0,
                     if contested { BAD } else { MUTED },
                 );
-                for chain in chains(s, r) {
-                    for (depth, &i) in chain.iter().enumerate() {
-                        card(panel, s, i, depth);
+                // Each side's formation in this region: its front line, then its back line shingled beneath.
+                for side in [Side::Party, Side::Foe] {
+                    let (front, back) = tiers(s, r, side);
+                    if front.is_empty() && back.is_empty() {
+                        continue;
+                    }
+                    for &i in &front {
+                        card(panel, s, i, 0);
+                    }
+                    if !back.is_empty() {
+                        let screened = !front.is_empty();
+                        label(
+                            panel,
+                            if screened {
+                                "-- behind the line --"
+                            } else {
+                                "-- no line left: the back is exposed --"
+                            },
+                            10.0,
+                            if screened { GOOD } else { BAD },
+                        );
+                        for &i in &back {
+                            card(panel, s, i, 1);
+                        }
                     }
                 }
             });
@@ -709,7 +739,7 @@ fn card(p: &mut ChildSpawnerCommands, s: &Spike, i: usize, depth: usize) {
             label(c, "guarded - the screen takes the blow", 10.0, GOOD);
         }
         if let Some(a) = s.aims[i] {
-            label(c, a.label(&s.board.units), 11.0, PICK);
+            label(c, a.label(&s.board), 11.0, PICK);
         } else if u.side == Side::Party {
             label(c, "undeclared", 11.0, WARN);
         }
@@ -823,7 +853,7 @@ fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
         Some(a) => row(
             p,
             Hit::Undeclare(h),
-            &format!("Undo: {}", a.label(&s.board.units)),
+            &format!("Undo: {}", a.label(&s.board)),
             "take it back",
             PICK,
             PANEL,
@@ -836,7 +866,7 @@ fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
         row(
             p,
             Hit::Declare(*a),
-            &a.label(&s.board.units),
+            &a.label(&s.board),
             &format!("{v:?}"),
             verdict_color(*v),
             if chosen { HERO } else { SUNK },
