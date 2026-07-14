@@ -102,7 +102,7 @@ fn nth_line(b: &Board, heroes: &[usize], pick: usize) -> Option<Vec<Aim>> {
     if pick >= total {
         return None;
     }
-    let mut aims: Vec<Aim> = vec![Aim::Withdraw; b.units.len()];
+    let mut aims: Vec<Aim> = vec![Aim::Hold; b.units.len()];
     for (k, &i) in heroes.iter().enumerate() {
         let radix: usize = choices[..k]
             .iter()
@@ -299,12 +299,10 @@ fn main() {
             if b.units[i].side != Side::Party {
                 continue;
             }
+            let mut o = Oracle::new(BUDGET);
             let lines: Vec<(String, Verdict)> = legal_aims(&b, i)
                 .into_iter()
-                .map(|a| {
-                    let mut o = Oracle::new(BUDGET / 8);
-                    (a.label(&b.units), o.verdict_for(&b, 0, i, a))
-                })
+                .map(|a| (a.label(&b.units), o.verdict_for(&b, 0, i, a)))
                 .collect();
             // Only print a hero whose choice actually discriminates. One whose every move keeps the win has no
             // decision to make, and listing seven identical verdicts is noise (spec 4.1: count-adaptivity - a

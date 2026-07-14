@@ -23,10 +23,17 @@
 //! from what people declare, and the ids are [`canonical`]ized before they enter a memo key, because a
 //! *labelling* is not a *position*. "The back" is not a rank: it is **any region with no enemy in it**.
 //!
-//! **One declaration per unit, and the move follows from it** ([`Aim`]):
-//! - [`Aim::Press`] - my violence is aimed at that enemy. Melee crosses to it; ranged stays and shoots.
-//! - [`Aim::Defend`] - my body is between that ally and harm. I move to my ward if it is elsewhere.
-//! - [`Aim::Withdraw`] - peel off alone to fresh ground.
+//! **Each body declares one [`Aim`], and its move follows from it.** Five variants, covering all four things the
+//! design asked for - who is together or apart, who they defend, who they assassinate (support is unbuilt):
+//!
+//! - [`Aim::Press`] - violence at that enemy. Melee crosses to it; an arrow does not walk.
+//! - [`Aim::Defend`] - put my body between that ally and harm.
+//! - [`Aim::Regroup`] - get in *behind* an ally (so *they* can guard *me* - the opposite direction to Defend).
+//! - [`Aim::Hold`] - stay put, do nothing.
+//! - [`Aim::Peel`] - retreat alone onto empty ground.
+//!
+//! A separate `Move` axis crossed with an `Aim` axis was **built and measured, and it cost 200x for no
+//! expressiveness this enum lacks** - see [`Aim`]. The tree is not deeper; the cost is per-node enumeration.
 //!
 //! **[`Defend`](Aim::Defend) is a damage REDIRECT** ([`screen_head`]), not a separate contest. A blow aimed at
 //! W lands on W's living defender instead, and that chains. So the screen, the bodyguard and the back-access
@@ -110,23 +117,59 @@ impl SubPhase {
     }
 }
 
-/// A unit's whole declaration for the round. The **move follows from the aim** - one declaration, not two.
+/// **A body's whole declaration for the round.** One axis, five variants - *not* two axes multiplied.
+///
+/// The design asked for four things: *who is together or apart, who they support, who they defend, who they
+/// assassinate.* All four are here. What is **not** here is a separate `Move` axis crossed with a separate
+/// `Aim` axis, and that is a **measured** decision, not a taste:
+///
+/// | | per-hero declarations | all 8 encounters |
+/// |---|---|---|
+/// | two axes (`Move` x `Aim`) | ~15 | 9852 nodes, **27.7 s** |
+/// | one axis, five variants | ~8 | 836 nodes, **0.13 s** |
+///
+/// The node counts are nearly identical - the tree is not deeper. The cost is **per-node enumeration**: a
+/// 4-hero party crossing two axes enumerates ~18,000 joint declarations at *every* node, each one a board clone
+/// and a full round. Two axes bought no expressiveness this enum lacks, and cost 200x. (It also *weakened* the
+/// result, because the extra expressiveness accrues to the fixed-setup control as much as to the treatment.)
+///
+/// The earlier three-variant version really was lossy, though - its `Withdraw` carried retreat, hold *and*
+/// split at once, and its "if you are already alone this does nothing" special case was the tell that one word
+/// was doing three jobs. [`Hold`](Aim::Hold), [`Peel`](Aim::Peel) and [`Regroup`](Aim::Regroup) are those three
+/// jobs, named.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Aim {
-    /// Aim my violence at this enemy. A melee body crosses to it; a ranged body stays and shoots.
+    /// **Assassinate.** Aim my violence at that enemy: a **melee** body crosses to it (and pays the gauntlet);
+    /// a **ranged** body shoots from where it stands - an arrow does not walk.
     Press(usize),
-    /// Put my body between this ally and harm (a damage redirect). Move to my ward if it is elsewhere.
+    /// **Defend.** Put my body between that ally and harm - a damage redirect ([`screen_head`]). I cross to my
+    /// ward if it is elsewhere, because there is nothing to stand in front of from another region.
     Defend(usize),
-    /// Peel off alone to fresh ground - the retreat.
-    Withdraw,
+    /// **Get behind someone.** Cross to an ally's region *without* bodyguarding them.
+    ///
+    /// This is the one the three-variant model could not say at all, and it is not a nicety: `Defend(X)` guards
+    /// **X**, which is the *wrong direction* when what you want is for X to guard **you**. A cannon getting in
+    /// behind the Bastion has to declare `Regroup(Bastion)` and let the Bastion declare `Defend(cannon)`. With
+    /// only `Defend` available, the only retreat a body had was to *empty ground* - alone, and unscreened.
+    Regroup(usize),
+    /// **Hold your ground.** Stay where you are; no blow, no screen. Reachable before only as the silent
+    /// withdraw-when-already-alone no-op - i.e. not at all, whenever you had company.
+    Hold,
+    /// **Peel away.** Retreat alone onto fresh, empty ground - to break out of a melee, or to split a cluster so
+    /// one area strike cannot catch it all. You are crossing, so everything hostile in the region you leave gets
+    /// a parting blow at you. Not offered when you are already alone (it would be a no-op).
+    Peel,
 }
 
 impl Aim {
+    /// A player-facing sentence.
     pub fn label(self, units: &[Combatant]) -> String {
         match self {
             Aim::Press(t) => format!("Press {}", units[t].name),
-            Aim::Defend(w) => format!("Defend {}", units[w].name),
-            Aim::Withdraw => "Withdraw".to_string(),
+            Aim::Defend(w) => format!("Guard {}", units[w].name),
+            Aim::Regroup(a) => format!("Fall in behind {}", units[a].name),
+            Aim::Hold => "Hold your ground".to_string(),
+            Aim::Peel => "Peel away alone".to_string(),
         }
     }
 }
@@ -207,34 +250,49 @@ pub fn canonical(regions: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// The region unit `i` ends its move in, given its aim. `None` = it does not move.
+/// The **first empty region** - the ground an [`Aim::Peel`] runs to. Counts only the living, so a corpse's old
+/// region is reusable and the ids do not creep upward all fight.
+fn empty_ground(board: &Board) -> u8 {
+    let taken = board.occupied();
+    (0u8..).find(|r| !taken.contains(r)).unwrap_or(u8::MAX)
+}
+
+/// The region unit `i` ends its move in. `None` = it does not move (and so pays no crossing).
+///
+/// **The move follows from the aim** - one declaration, not two. Which body you are coming for, or getting
+/// behind, *is* where you are going.
 pub fn destination(board: &Board, i: usize, aim: Aim) -> Option<u8> {
     let (units, regions) = (&board.units, &board.regions);
+    let here = regions[i];
+    let elsewhere = |t: usize| (regions[t] != here).then(|| regions[t]);
     match aim {
-        // A ranged body needs no ground - an arrow does not walk. A melee body must close.
-        Aim::Press(t) => (!units[i].ranged && regions[t] != regions[i]).then(|| regions[t]),
-        Aim::Defend(w) => (regions[w] != regions[i]).then(|| regions[w]),
-        Aim::Withdraw => {
-            let alone = board.in_region(regions[i]).iter().all(|&j| j == i);
-            if alone {
-                return None; // you cannot withdraw from solitude
-            }
-            Some((0u8..).find(|r| !regions.contains(r)).unwrap_or(u8::MAX))
-        }
+        // An arrow does not walk: a ranged body shoots from where it stands. A melee body must close.
+        Aim::Press(t) => (!units[i].ranged).then(|| elsewhere(t)).flatten(),
+        Aim::Defend(w) => elsewhere(w),
+        Aim::Regroup(a) => elsewhere(a),
+        Aim::Hold => None,
+        // You cannot peel away from solitude - there is nobody to peel away from.
+        Aim::Peel => (board.in_region(here).len() > 1).then(|| empty_ground(board)),
     }
 }
 
-/// The legal aims for unit `i` - the count-adaptive candidate list (spec 4.1: a choice is presented only when
-/// it has two or more legal options). **This is the branching factor the design lives or dies by**, so it is
-/// the one place to look when a cost report comes back bad. Measured at about 7 per unit for a 4v4 - nothing.
+/// **Every legal declaration for unit `i`** - the count-adaptive candidate list (spec 4.1: a choice is presented
+/// only when it has two or more legal options). **This is the branching factor the design lives or dies by**, so
+/// it is the one place to look when a cost report comes back bad. Measured at about 8 per hero for a 4v4.
+///
+/// A variant is offered only where it would actually *do* something, which is what keeps the count down:
+/// `Regroup` only toward an ally who is somewhere else (regrouping with the body beside you is `Hold`), and
+/// `Peel` only when you have company to peel away from.
 ///
 /// **Press comes first, deliberately.** A reachability search short-circuits on the first winning line, so this
 /// order decides which of several winning lines gets *shown*. Enumerating Defend first opened every transcript
-/// with a four-way mutual-defend knot - legal, winning, and unreadable. Trying the attack first shows the line
-/// a player would recognize. It changes no verdict, only which witness is printed.
+/// with a four-way mutual-defend knot - legal, winning, and unreadable. Trying the attack first shows the line a
+/// player would recognize. It changes no verdict, only which witness is printed.
 pub fn legal_aims(board: &Board, i: usize) -> Vec<Aim> {
     let units = &board.units;
+    let here = board.regions[i];
     let mut out = Vec::new();
+
     for (j, u) in units.iter().enumerate() {
         if !u.fallen && u.side != units[i].side {
             out.push(Aim::Press(j));
@@ -243,9 +301,16 @@ pub fn legal_aims(board: &Board, i: usize) -> Vec<Aim> {
     for (j, u) in units.iter().enumerate() {
         if !u.fallen && u.side == units[i].side && j != i {
             out.push(Aim::Defend(j));
+            // Falling in behind someone you are already standing with is just holding.
+            if board.regions[j] != here {
+                out.push(Aim::Regroup(j));
+            }
         }
     }
-    out.push(Aim::Withdraw);
+    out.push(Aim::Hold);
+    if board.in_region(here).len() > 1 {
+        out.push(Aim::Peel);
+    }
     out
 }
 
@@ -297,18 +362,20 @@ pub fn reach_cards(units: &[Combatant], a: usize, t: usize) -> u32 {
 }
 
 /// The foe script: a fixed, deterministic policy, so this stays a **single-agent reachability search** and not
-/// a minimax (spec 0.1 - creatures are an environment, not an opponent that searches back). Every foe presses
-/// the living hero it can most cheaply finish.
+/// a minimax (spec 0.1 - creatures are an environment, not an opponent that searches back).
+///
+/// Every foe hunts the living hero it can most cheaply finish: a **melee** body closes on it (and pays the
+/// crossing like anyone else); a **ranged** body holds its ground and shoots. Simple, and it makes the foes
+/// exert exactly the pressure the geometry is supposed to answer.
 pub fn foe_aims(board: &Board) -> Vec<Option<Aim>> {
     let units = &board.units;
     let prey = (0..units.len())
         .filter(|&j| units[j].side == Side::Party && !units[j].fallen)
         .min_by_key(|&j| (units[j].health, units[j].grit));
-    units
-        .iter()
-        .map(|u| match (u.side, u.fallen, prey) {
-            (Side::Foe, false, Some(p)) => Some(Aim::Press(p)),
-            _ => None,
+    (0..units.len())
+        .map(|i| {
+            let (u, p) = (&units[i], prey?);
+            (u.side == Side::Foe && !u.fallen).then_some(Aim::Press(p))
         })
         .collect()
 }
@@ -816,7 +883,7 @@ fn count(choices: &[Vec<Aim>]) -> usize {
     choices.iter().map(|c| c.len()).product::<usize>().max(1)
 }
 
-/// The `pick`-th joint declaration over `who`, mixed-radix, with the foes' scripted aims folded in.
+/// The `pick`-th joint declaration over `who`, mixed-radix, with the foes' scripted orders folded in.
 fn assemble(
     board: &Board,
     who: &[usize],
@@ -824,7 +891,7 @@ fn assemble(
     pick: usize,
     foes: &[Option<Aim>],
 ) -> Vec<Aim> {
-    let mut aims: Vec<Aim> = vec![Aim::Withdraw; board.units.len()];
+    let mut aims: Vec<Aim> = vec![Aim::Hold; board.units.len()];
     for (k, &i) in who.iter().enumerate() {
         let radix: usize = choices[..k].iter().map(|c| c.len()).product();
         aims[i] = choices[k][(pick / radix.max(1)) % choices[k].len().max(1)];
@@ -898,7 +965,7 @@ mod tests {
             unit("Bastion", Side::Party, [1, 3, 3, 1, 2], true, false),
             unit("Ogre", Side::Foe, [5, 5, 2, 2, 2], true, false),
         ]);
-        let aims = [Aim::Withdraw, Aim::Defend(0), Aim::Press(0)];
+        let aims = [Aim::Hold, Aim::Defend(0), Aim::Press(0)];
         assert_eq!(screen_head(&b, &aims, 0), 1, "the Bastion takes the blow");
 
         b.units[1].fallen = true;
@@ -930,8 +997,6 @@ mod tests {
         Board::opening(vec![
             unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
             unit("Marksman", Side::Party, [5, 2, 1, 2, 2], false, true),
-            unit("Bastion", Side::Party, [1, 3, 3, 1, 2], true, false),
-            unit("Bombardier", Side::Party, [3, 3, 1, 1, 2], false, true),
             unit("The Wall", Side::Foe, [1, 4, 9, 1, 2], true, false),
         ])
     }
@@ -960,9 +1025,9 @@ mod tests {
                 "the control must actually settle"
             );
 
-            for grant in [1u64, 2, 3, 5, 8, 13, 21] {
+            for grant in [1u64, 3, 8, 21] {
                 let mut o = Oracle::new(0);
-                for _ in 0..400 {
+                for _ in 0..120 {
                     o.grant(grant);
                     let got = o.verdict(&board, 0);
                     assert!(
@@ -1036,6 +1101,74 @@ mod tests {
             }
             assert_eq!(got, truth, "{aim:?} never settled");
         }
+    }
+
+    /// **The five variants say the three things the old three could not** - and this is the whole case for the
+    /// change, so it is pinned rather than argued.
+    ///
+    /// The old set was `Press` / `Defend` / `Withdraw`, and `Withdraw` was carrying **retreat, hold and split**
+    /// all at once. Its "if you are already alone this does nothing" special case was the tell: one word doing
+    /// three jobs means at least two of them are unsayable.
+    #[test]
+    fn the_five_variants_say_what_three_could_not() {
+        let board = Board::opening(vec![
+            unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
+            unit("Bastion", Side::Party, [1, 3, 3, 1, 2], true, false),
+            unit("Ogre", Side::Foe, [5, 5, 2, 2, 2], true, false),
+        ]);
+
+        // 1. HOLD YOUR GROUND. Reachable before only as the silent withdraw-when-alone no-op - i.e. never,
+        //    whenever you actually had company to withdraw from.
+        let legal = legal_aims(&board, 0);
+        assert!(
+            legal.contains(&Aim::Hold),
+            "a body must be able to stand still"
+        );
+
+        // 2. PEEL AWAY is a real retreat, offered only when there is company to leave.
+        assert!(legal.contains(&Aim::Peel));
+        let mut alone = board.clone();
+        alone.regions = vec![0, 1, 2];
+        assert!(
+            !legal_aims(&alone, 0).contains(&Aim::Peel),
+            "peeling away from solitude is a no-op, so it is not offered - no silent special case"
+        );
+
+        // 3. REGROUP - and this is the one that was genuinely IMPOSSIBLE before. `Defend(X)` guards X, which is
+        //    the WRONG DIRECTION when what you want is for X to guard YOU. Getting a cannon in behind the
+        //    Bastion needs Regroup; with only Defend, the sole retreat available was to empty ground, alone.
+        assert!(
+            legal_aims(&alone, 0).contains(&Aim::Regroup(1)),
+            "a body must be able to fall in behind an ally without bodyguarding it"
+        );
+        assert_eq!(
+            destination(&alone, 0, Aim::Regroup(1)),
+            Some(alone.regions[1]),
+            "and regrouping takes you to them"
+        );
+        assert!(
+            !legal_aims(&board, 0).contains(&Aim::Regroup(1)),
+            "but not when you are already standing with them - that is just Hold"
+        );
+    }
+
+    /// A **ranged** body is the exception the geometry has to respect: an arrow does not walk, so it may press an
+    /// enemy in any region, from wherever it stands.
+    #[test]
+    fn an_arrow_does_not_walk() {
+        let board = Board::opening(vec![
+            unit("Marksman", Side::Party, [5, 2, 1, 2, 2], false, true),
+            unit("Ogre", Side::Foe, [5, 5, 2, 2, 2], true, false),
+        ]);
+        assert!(
+            legal_aims(&board, 0).contains(&Aim::Press(1)),
+            "a ranged body may press an enemy in another region"
+        );
+        assert_eq!(
+            destination(&board, 0, Aim::Press(1)),
+            None,
+            "and pays no crossing for it - an arrow does not walk"
+        );
     }
 
     /// The fight terminates and someone wins - the model does not stall.

@@ -12,7 +12,7 @@
 //!    in it is a *melee*; one without is **the back** - which is not a rank any more, it is a fact about the
 //!    board, and it stops being true the moment somebody walks in.
 //!
-//! 2. **The screen is a cascade you can see.** Declare `Defend` and your card physically **shingles over your
+//! 2. **The screen is a cascade you can see.** Declare `Guard` and your card physically **shingles over your
 //!    ward** - depth of shingle is depth of protection, and the card on top is the one an attacker has to go
 //!    through. That is not a decoration invented for the renderer: it is literally the rule (a blow aimed at
 //!    the ward lands on the head of the chain), drawn.
@@ -26,16 +26,25 @@
 //!
 //! # How to drive it
 //!
-//! Click a **hero** to select it (the chart fills in). Then click:
-//! - an **enemy** -> `Press` it (melee crosses to it; ranged stays and shoots)
-//! - an **ally**  -> `Defend` it (your body goes in the way - watch the shingle)
-//! - **that hero again** -> deselect. Clicking it back off always returns you to where you started.
-//! - **a row of the chart** -> declare that aim directly. This is where `Withdraw` lives.
+//! Click a **hero** to select it. **Every legal move it has is then listed on the right, with the oracle's
+//! verdict beside it - click a row to declare it.** That list is the whole move set; the card clicks below are
+//! just shortcuts into it. Nothing is ever a dead end:
 //!
-//! **Withdraw** = peel off alone to fresh ground. The retreat: how a cannon escapes a melee that walked in on
-//! it, or how a cluster breaks up so one area strike cannot catch it all. It is *not free* - you are crossing,
-//! so everything hostile in the region you leave gets a parting blow at you. If you are already alone it does
-//! nothing.
+//! - click the **selected hero again** -> deselect (back to where you started)
+//! - the **Undo** row at the top of the chart -> un-declare that hero
+//! - **Clear all** -> put every hero back to undeclared
+//!
+//! Card shortcuts, once a hero is selected: click an **enemy** to `Press` it, an **ally** to `Guard` it.
+//!
+//! # The five things a body can declare
+//!
+//! | | |
+//! |---|---|
+//! | **Press X** | assassinate. A melee body crosses to it and pays the gauntlet; an arrow does not walk. |
+//! | **Guard X** | put your body between an ally and harm. You cross to your ward. Watch the shingle. |
+//! | **Fall in behind X** | get *behind* an ally so **they** can guard **you** - the opposite direction to Guard. This is how a cannon gets in behind the Bastion. |
+//! | **Hold your ground** | stay put, do nothing. |
+//! | **Peel away alone** | retreat to empty ground - break out of a melee, or split a cluster so one area strike cannot catch it all. Not free: everything hostile in the region you leave gets a parting blow at you. |
 //!
 //! Declare for every hero, then **Resolve the round**.
 //!
@@ -238,8 +247,8 @@ impl Spike {
     /// declare its aim against this card.
     ///
     /// Clicking the selected hero again **puts you back where you started**. It used to declare `Withdraw`,
-    /// which was a bad overload of the one gesture a player reaches for to say *"never mind"* - so `Withdraw`
-    /// moved to its own row in the chart, where it belongs: it is a **move**, not something you do *to* a card.
+    /// which stole the one gesture a player reaches for to say *"never mind"*. The chart is now the full move
+    /// list, so a card click is only ever a *shortcut* into it - and every state is leavable.
     fn click(&mut self, i: usize) {
         if self.board.outcome().is_some() || self.board.units[i].fallen {
             return;
@@ -283,7 +292,7 @@ impl Spike {
             return;
         }
         let mut aims: Vec<Aim> = (0..self.board.units.len())
-            .map(|i| self.aims[i].unwrap_or(Aim::Withdraw))
+            .map(|i| self.aims[i].unwrap_or(Aim::Hold))
             .collect();
         for (i, a) in regions::foe_aims(&self.board).iter().enumerate() {
             if let Some(a) = a {
@@ -367,9 +376,13 @@ fn setup(e: &Encounter) -> Board {
 #[derive(Component, Clone, Copy)]
 enum Hit {
     Card(usize),
-    /// A row of the doom chart: declare this aim for the selected hero. This is where `Withdraw` lives - it is
-    /// a move, not something you do *to* another card, so it has no card to click.
+    /// A row of the doom chart: declare this aim for the selected hero. The chart IS the move list, so every
+    /// aim has a home here - including the ones (Hold, Peel) that have no card to click.
     Declare(Aim),
+    /// Take a hero's declaration back. Every state must be reachable *and* leavable.
+    Undeclare(usize),
+    /// Put every hero back to undeclared - the big escape hatch.
+    ClearAll,
     Resolve,
     Reset,
     NextEncounter,
@@ -401,6 +414,16 @@ fn on_click(mut s: ResMut<Spike>, q: Query<(&Interaction, &Hit), Changed<Interac
                 if let Some(h) = s.selected {
                     s.declare(h, a);
                 }
+            }
+            Hit::Undeclare(h) => {
+                s.aims[h] = None;
+                s.selected = Some(h); // leave it selected, so you can immediately pick something else
+                s.repick();
+            }
+            Hit::ClearAll => {
+                s.aims = vec![None; s.board.units.len()];
+                s.selected = None;
+                s.repick();
             }
             Hit::Resolve => s.resolve(),
             Hit::Reset => s.reset(),
@@ -559,7 +582,7 @@ fn header(p: &mut ChildSpawnerCommands, s: &Spike) {
             h,
             match s.selected {
                 Some(i) => format!(
-                    "{} is selected - click an enemy to Press, an ally to Defend, or itself to Withdraw",
+                    "{} selected - pick any row on the right, or click an enemy to press / an ally to guard. Click it again to deselect.",
                     s.board.units[i].name
                 ),
                 None => "click a hero to select it".to_string(),
@@ -711,6 +734,7 @@ fn controls(p: &mut ChildSpawnerCommands, s: &Spike) {
             },
             if ready { GOOD } else { PANEL },
         );
+        button(row, Hit::ClearAll, "Clear all", PANEL);
         button(row, Hit::Reset, "Reset", PANEL);
         button(row, Hit::NextEncounter, "Next encounter", PANEL);
     });
@@ -762,9 +786,10 @@ fn log_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
 /// it makes it. It asks what *forecloses* the win, not what is optimal - which is what a player actually wants
 /// to know. On Greywater Ford it says the thing the rank model cannot express: the Raider must not charge.
 ///
-/// **Every row is clickable** - it declares that aim. That is what gives `Withdraw` a home: it is a *move*, not
-/// something you do *to* another card, so it has no card to click. And it means the chart is not a read-out
-/// bolted onto the UI - it **is** the move list, with the consequence of each move printed next to it.
+/// **The chart IS the move list.** Every row is clickable and declares that aim, so every state is reachable
+/// from here - including the ones with no card to click (`Hold`, `Peel`). A card click is only ever a
+/// *shortcut* into this list, never the only way in. And every state is **leavable**: the hero's current pick
+/// is highlighted, and the first row takes it back.
 fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
     label(p, "The doom oracle", 18.0, INK);
     let Some(h) = s.selected else {
@@ -792,35 +817,56 @@ fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
         12.0,
         if pending || decisive { WARN } else { MUTED },
     );
-    label(p, "click a row to declare it", 11.0, MUTED);
 
-    for (a, v) in &s.chart {
-        p.spawn((
-            Button,
-            Hit::Declare(*a),
-            Node {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(SUNK),
-        ))
-        .with_children(|row| {
-            label(row, a.label(&s.board.units), 13.0, INK);
-            label(row, format!("{v:?}"), 13.0, verdict_color(*v));
-        });
+    // Leaving a state must be exactly as easy as entering it.
+    match s.aims[h] {
+        Some(a) => row(
+            p,
+            Hit::Undeclare(h),
+            &format!("Undo: {}", a.label(&s.board.units)),
+            "take it back",
+            PICK,
+            PANEL,
+        ),
+        None => label(p, "click a row to declare it", 11.0, MUTED),
     }
 
-    // Withdraw is the one aim with no card to click, so say what it is where it lives.
-    label(
-        p,
-        "Withdraw: peel off alone to fresh ground. The retreat - how a cannon escapes a melee \
-         that walked in on it, or how a cluster breaks up so one area strike cannot catch it all. \
-         Not free: you are crossing, so everything hostile in the region you leave gets a parting \
-         blow at you. If you are already alone, it does nothing.",
-        11.0,
-        MUTED,
-    );
+    for (a, v) in &s.chart {
+        let chosen = s.aims[h] == Some(*a);
+        row(
+            p,
+            Hit::Declare(*a),
+            &a.label(&s.board.units),
+            &format!("{v:?}"),
+            verdict_color(*v),
+            if chosen { HERO } else { SUNK },
+        );
+    }
+}
+
+/// One clickable line of the chart: a label on the left, a verdict on the right.
+fn row(
+    p: &mut ChildSpawnerCommands,
+    hit: Hit,
+    text: &str,
+    right: &str,
+    right_color: Color,
+    bg: Color,
+) {
+    p.spawn((
+        Button,
+        hit,
+        Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+            border_radius: BorderRadius::all(Val::Px(4.0)),
+            ..default()
+        },
+        BackgroundColor(bg),
+    ))
+    .with_children(|r| {
+        label(r, text, 13.0, INK);
+        label(r, right, 12.0, right_color);
+    });
 }
