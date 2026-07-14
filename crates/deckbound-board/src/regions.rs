@@ -596,22 +596,46 @@ pub fn set_area_reach(reach: AreaReach) {
     AREA_REACH.with(|r| *r.borrow_mut() = reach);
 }
 
-/// Land a set of blows: each contact's opening blow, plus - if `pour` - everyone's leftover tempo poured along an
-/// edge they can swing on. One order-free, commit-based batch: a blow lands even if its striker died to a
-/// simultaneous one.
-fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], pour: bool) {
-    let blows: Vec<Blows> = (0..board.units.len())
-        .filter(|&i| pour && !board.units[i].fallen && board.units[i].tempo > 0)
-        .filter_map(|i| {
-            combat::strike_target(&board.units, contacts, i).map(|target| Blows {
-                unit: i,
-                target,
-                cards: board.units[i].tempo,
-            })
-        })
-        .collect();
+/// Land a set of blows: each contact's opening blow, plus whatever `extra` tempo is poured after it. One
+/// order-free, commit-based batch - a blow lands even if its striker died to a simultaneous one.
+///
+/// **`extra` is passed in, never inferred.** It used to be derived with `combat::strike_target`, which answers
+/// "who am I in contact with?" by taking the **first** matching contact - iteration order. A body closed on from
+/// two sides therefore poured its entire pool into whichever attacker happened to be seated first, so **who died
+/// depended on who was at index 0**. Spec 1.9 forbids exactly that ("permuting the seat order must yield the
+/// identical end-state; any divergence is an order-dependent mechanic, i.e. a bug"), and it is the kind of bug
+/// that hides forever because every rule test still passes.
+///
+/// The fix is not to sort the contacts. It is that *whom you swing at* is a **real decision**, and this model
+/// already has a place to make it: your declaration. So you pour into **what you declared**, and nothing else
+/// decides it for you.
+///
+/// (`combat::strike_target` still has this flaw, and the shipped rank model still calls it - so the live game
+/// has the same order-dependence whenever two bodies clash one. Out of scope here; flagged, not touched.)
+fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) {
     let all: Vec<Contact> = contacts.iter().chain(sweeps).copied().collect();
-    combat::resolve_strike(&mut board.units, &all, &blows);
+    combat::resolve_strike(&mut board.units, &all, extra);
+}
+
+/// One body attacking another: `(attacker, target)`.
+type Attack = (usize, usize);
+
+/// The blows a body pours **into the target it declared**, once its reach is paid for. No pour without a
+/// declaration: a body that declared `Hold` holds.
+fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows> {
+    attacks
+        .iter()
+        .filter(|&&(a, t)| {
+            !board.units[a].fallen
+                && board.units[a].tempo > 0
+                && contacts.iter().any(|c| c.attacker == a && c.target == t)
+        })
+        .map(|&(a, t)| Blows {
+            unit: a,
+            target: t,
+            cards: board.units[a].tempo,
+        })
+        .collect()
 }
 
 /// Close a sub-phase: finalize deaths, then **promote any back line whose front just collapsed**. That promotion
@@ -694,17 +718,34 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .filter(|&&(_, _, a)| a == Answer::Abort)
         .map(|&(i, _, _)| i)
         .collect();
-    let ripostes: Vec<Blows> = aborting
-        .iter()
-        .filter(|&&i| !board.units[i].fallen && board.units[i].tempo > 0 && board.units[i].melee)
-        .filter_map(|&i| {
-            combat::strike_target(&board.units, &landed, i).map(|target| Blows {
+    // **An Abort turns and lays about it - at EVERY body that caught it, evenly.**
+    //
+    // Not "the first one in the list". A slipper caught by three fronts is fighting three fronts, and picking
+    // one of them by iteration order would make who dies depend on who sits at index 0 (Spec 1.9). Splitting the
+    // pool is the only answer that is symmetric in the catchers, so it needs no tie-break and cannot be gamed by
+    // re-seating. The remainder is simply not spent - you cannot cut a tempo card in half.
+    let mut ripostes: Vec<Blows> = Vec::new();
+    for &i in &aborting {
+        if board.units[i].fallen || board.units[i].tempo == 0 || !board.units[i].melee {
+            continue;
+        }
+        let catchers: Vec<usize> = landed
+            .iter()
+            .filter(|c| c.target == i)
+            .map(|c| c.attacker)
+            .collect();
+        let each = board.units[i].tempo / catchers.len().max(1) as u32;
+        if each == 0 {
+            continue;
+        }
+        for c in catchers {
+            ripostes.push(Blows {
                 unit: i,
-                target,
-                cards: board.units[i].tempo,
-            })
-        })
-        .collect();
+                target: c,
+                cards: each,
+            });
+        }
+    }
     combat::resolve_strike(&mut board.units, &landed, &ripostes);
 
     let mut through = vec![false; board.units.len()];
@@ -758,12 +799,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
 
 /// One Engage -> Evade -> Strike exchange - **the product's inner three, unchanged.** Area strikes split off and
 /// sweep their target's whole region.
-fn exchange(board: &mut Board, attacks: &[(usize, usize)], pour: bool) {
+fn exchange(board: &mut Board, attacks: &[Attack], pour: bool) {
     let mut sweeps: Vec<Contact> = Vec::new();
     let mut aimed: Vec<Engage> = Vec::new();
     for &(a, t) in attacks {
         if board.units[a].aoe {
-            // The sweep covers the tier it was aimed at (or both, under `AreaReach::WholeRegion`).
+            // The sweep covers the tier it was aimed at: width, never depth.
             let (region, tier) = (board.regions[t], board.posts[t]);
             sweeps.extend(area_strike(board, a, region, tier));
         } else {
@@ -777,7 +818,14 @@ fn exchange(board: &mut Board, attacks: &[(usize, usize)], pour: bool) {
     let reaching = engage(board, &aimed);
     let dodges = dodges_against(board, &reaching);
     let contacts = combat::resolve_evade(&mut board.units, &reaching, &dodges);
-    land(board, &contacts, &sweeps, pour);
+
+    // Pour into what you DECLARED - never into whoever the contact list happened to list first.
+    let extra: Vec<Blows> = if pour {
+        poured(board, attacks, &contacts)
+    } else {
+        Vec::new()
+    };
+    land(board, &contacts, &sweeps, &extra);
 }
 
 // ---- the doom oracle -----------------------------------------------------------------------------------
@@ -1305,6 +1353,322 @@ mod tests {
             acts[2],
             Some(Act::Raid(1, Answer::Push)),
             "it must go through the line for the soft body behind it, not settle for the wall in front"
+        );
+    }
+
+    // ---- resolver invariants ---------------------------------------------------------------------------
+    //
+    // Everything above tests a RULE. These test the RESOLVER: the properties that must hold whatever the rules
+    // say, and that a bug would quietly break while every rule test still passed. Tuning on top of a broken
+    // resolver is worse than not tuning, so these come first.
+
+    /// A messy board with every mechanic on it at once - two regions, both tiers, melee and ranged, an area
+    /// striker, a horde, and a raid in flight. If an invariant breaks anywhere, it breaks here.
+    fn messy() -> (Board, Vec<Act>) {
+        let b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false), // 0
+                unit("Bastion", Side::Party, [1, 3, 3, 1, 2], true, false).with_aoe(true), // 1
+                unit("Marksman", Side::Party, [5, 2, 1, 2, 2], false, true), // 2
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),     // 3
+                unit("Duelist", Side::Foe, [5, 5, 1, 2, 2], true, false),  // 4
+                unit("Swarm", Side::Foe, [2, 6, 1, 2, 2], false, true).as_horde(true), // 5
+            ],
+            vec![0, 0, 0, 1, 1, 1],
+            vec![
+                Post::Front,
+                Post::Front,
+                Post::Back,
+                Post::Front,
+                Post::Front,
+                Post::Back,
+            ],
+        );
+        let acts = vec![
+            Act::Raid(5, Answer::Evade), // the Raider slips in for their back line
+            Act::Clash(3),
+            Act::Clash(4),
+            Act::Clash(0),
+            Act::Raid(2, Answer::Push), // the Duelist pushes through for our cannon
+            Act::Clash(1),
+        ];
+        (b, acts)
+    }
+
+    /// **ORDER-INDEPENDENCE - the property test the whole design leans on** (Spec 1.9).
+    ///
+    /// Permuting the seat order of the units must yield the **identical** end-state. Nothing may depend on who
+    /// happens to be at index 0: not who lands a blow first, not who catches a slipper, not who dies.
+    ///
+    /// This is the invariant that makes a "commit-based, order-free batch" mean anything, and it is the one a
+    /// resolver bug is most likely to break *quietly* - every rule test still passes while the outcome silently
+    /// depends on iteration order. If it ever fails, some effect is reading state another effect already wrote,
+    /// and the fix is to move it to its own sub-phase (or its own pile), never to re-sort the units.
+    #[test]
+    fn resolution_does_not_depend_on_seat_order() {
+        let (b, acts) = messy();
+        let n = b.units.len();
+
+        // The reference run, in the natural order.
+        let mut base = b.clone();
+        play_round(&mut base, &acts);
+
+        // Every rotation is a permutation; that is enough to catch an order dependence without a shuffler.
+        for shift in 1..n {
+            let perm: Vec<usize> = (0..n).map(|i| (i + shift) % n).collect(); // new seat -> old index
+            let inv = {
+                let mut v = vec![0usize; n];
+                for (new, &old) in perm.iter().enumerate() {
+                    v[old] = new;
+                }
+                v
+            };
+            let remap = |a: Act| match a {
+                Act::Clash(t) => Act::Clash(inv[t]),
+                Act::Raid(t, x) => Act::Raid(inv[t], x),
+                other => other,
+            };
+
+            let mut shuffled = Board::new(
+                perm.iter().map(|&o| b.units[o].clone()).collect(),
+                perm.iter().map(|&o| b.regions[o]).collect(),
+                perm.iter().map(|&o| b.posts[o]).collect(),
+            );
+            let shuffled_acts: Vec<Act> = perm.iter().map(|&o| remap(acts[o])).collect();
+            play_round(&mut shuffled, &shuffled_acts);
+
+            for old in 0..n {
+                let new = inv[old];
+                assert_eq!(
+                    (
+                        base.units[old].health,
+                        base.units[old].fallen,
+                        base.regions[old],
+                        base.posts[old],
+                    ),
+                    (
+                        shuffled.units[new].health,
+                        shuffled.units[new].fallen,
+                        shuffled.regions[new],
+                        shuffled.posts[new],
+                    ),
+                    "{} came out differently when the units were re-seated (shift {shift}) - something in \
+                     the resolver depends on iteration order",
+                    base.units[old].name
+                );
+            }
+        }
+    }
+
+    /// **The nastiest order-dependence case: one body, two attackers.**
+    ///
+    /// A body closed on from two sides has to pick which one to swing back at, and `land` picks it with
+    /// `contacts.iter().find(..)` - **the first contact in the list**, which is iteration order. That is exactly
+    /// the shape of bug the seat-order property exists to catch, so it gets its own test with the case forced,
+    /// rather than relying on `messy()` happening to contain it.
+    ///
+    /// If this fails, the fix is *not* to sort the contacts - it is that the choice of whom to answer is a real
+    /// decision the model is currently making silently, and it should be a declared one.
+    #[test]
+    fn a_body_closed_on_from_two_sides_answers_the_same_way_whatever_the_seating() {
+        let build = |names: [(&str, Side); 3]| {
+            Board::new(
+                vec![
+                    unit(names[0].0, names[0].1, [4, 9, 1, 3, 1], true, false),
+                    unit(names[1].0, names[1].1, [4, 9, 1, 3, 1], true, false),
+                    unit(names[2].0, names[2].1, [4, 9, 1, 3, 1], true, false),
+                ],
+                vec![0, 1, 1],
+                vec![Post::Front, Post::Front, Post::Front],
+            )
+        };
+        // The lone hero (seat 0) is clashed by BOTH foes and has tempo left to answer with.
+        let mut a = build([("Hero", Side::Party), ("X", Side::Foe), ("Y", Side::Foe)]);
+        play_round(&mut a, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
+
+        // Same fight, the two foes seated the other way round.
+        let mut b = build([("Hero", Side::Party), ("Y", Side::Foe), ("X", Side::Foe)]);
+        play_round(&mut b, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
+
+        // X is seat 1 in `a` and seat 2 in `b`; Y the reverse. Total damage dealt to the foes must match, and so
+        // must its distribution - the hero cannot hit a *different body* just because the seats moved.
+        assert_eq!(
+            (a.units[1].health, a.units[2].health),
+            (b.units[2].health, b.units[1].health),
+            "the hero answered a different attacker purely because the foes swapped seats"
+        );
+    }
+
+    /// **Determinism.** The same position and the same declarations must produce the same board, every time.
+    /// There is no RNG in this model, and if this ever fails there is a hidden one.
+    #[test]
+    fn resolution_is_deterministic() {
+        let (b, acts) = messy();
+        let run = || {
+            let mut x = b.clone();
+            play_round(&mut x, &acts);
+            (
+                x.units
+                    .iter()
+                    .map(|u| (u.health, u.fallen))
+                    .collect::<Vec<_>>(),
+                x.regions.clone(),
+                x.posts.clone(),
+            )
+        };
+        assert_eq!(run(), run());
+    }
+
+    /// **Nothing goes out of bounds.** Tempo never underflows, health never exceeds what a body started with,
+    /// and a fallen body is at zero. A resolver bug shows up here first.
+    #[test]
+    fn no_body_ends_a_round_in_an_impossible_state() {
+        let (mut b, acts) = messy();
+        let start: Vec<u32> = b.units.iter().map(|u| u.health).collect();
+        for _ in 0..MAX_ROUNDS {
+            if b.outcome().is_some() {
+                break;
+            }
+            play_round(&mut b, &acts);
+            for (i, u) in b.units.iter().enumerate() {
+                assert!(u.health <= start[i], "{} healed itself", u.name);
+                assert_eq!(
+                    u.fallen,
+                    u.health == 0,
+                    "{} is fallen iff it is out of Health",
+                    u.name
+                );
+            }
+        }
+    }
+
+    /// **A committed blow lands even if its striker dies.** The order-free, commit-based batch: you swing, and
+    /// the swing counts, even when the answering blow kills you in the same sub-phase. Mutual death resolves
+    /// cleanly rather than depending on who was evaluated first.
+    #[test]
+    fn a_committed_blow_lands_even_if_its_striker_dies() {
+        let mut b = Board::new(
+            vec![
+                // Two glass cannons that each kill the other outright.
+                unit("A", Side::Party, [9, 1, 1, 1, 1], true, false),
+                unit("B", Side::Foe, [9, 1, 1, 1, 1], true, false),
+            ],
+            vec![0, 1],
+            vec![Post::Front, Post::Front],
+        );
+        play_round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
+        assert!(b.units[0].fallen && b.units[1].fallen, "both blows landed");
+        assert_eq!(
+            b.outcome(),
+            Some(false),
+            "a mutual wipe is not a party win - and it is not order-dependent either"
+        );
+    }
+
+    /// **A fallen body does nothing.** It cannot clash, raid, slip, catch a slipper, or be offered any act at
+    /// all. Death silences, and it silences completely.
+    #[test]
+    fn a_fallen_body_takes_no_part() {
+        let mut b = messy().0;
+        b.units[3].fallen = true; // the Wall dies
+        b.units[3].health = 0;
+        assert!(legal_acts(&b, 3).is_empty(), "a corpse declares nothing");
+        assert!(
+            !b.vanguard(1, Side::Foe).contains(&3),
+            "and it screens nothing - a dead line catches no slipper"
+        );
+        assert!(
+            foe_acts(&b)[3].is_none(),
+            "and the script does not order it about"
+        );
+    }
+
+    /// **The damage pile closes at the Round Reset, and only there.** Sub-threshold damage - a hit that never
+    /// turned a Health card - must not carry into the next round. Otherwise chip damage accumulates forever and
+    /// Grit stops being a wall at all.
+    #[test]
+    fn sub_threshold_damage_does_not_carry_between_rounds() {
+        // Might 1 into Grit 5: it can never flip a card, however many rounds it is given.
+        let mut b = Board::new(
+            vec![
+                unit("Gnat", Side::Party, [1, 9, 1, 1, 9], true, false),
+                unit("Boulder", Side::Foe, [0, 3, 5, 1, 1], true, false),
+            ],
+            vec![0, 1],
+            vec![Post::Front, Post::Front],
+        );
+        let boulder = b.units[1].health;
+        for _ in 0..MAX_ROUNDS {
+            play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+        }
+        assert_eq!(
+            b.units[1].health, boulder,
+            "five rounds of chip under the bar must add up to exactly nothing - the pile closes each Reset"
+        );
+    }
+
+    /// **Every fight terminates.** Whatever the declarations, the round cap ends it - there is no line that
+    /// stalls the resolver.
+    #[test]
+    fn every_fight_terminates() {
+        let (mut b, acts) = messy();
+        for _ in 0..MAX_ROUNDS {
+            if b.outcome().is_some() {
+                return;
+            }
+            play_round(&mut b, &acts);
+        }
+        // A draw at the cap is a legitimate end - what matters is that we got here at all.
+        assert!(b.outcome().is_some() || b.alive(Side::Party) && b.alive(Side::Foe));
+    }
+
+    /// **YOU FIGHT WHO YOU DECLARED.** A body that declared `Hold` does not swing back, however hard it is hit.
+    ///
+    /// This is a deliberate departure from the shipped rank model, where a melee contact is *mutual* and a body
+    /// answers even when the schedule never paired it against you ("it did not choose the fight"). That rule
+    /// makes sense there, because a unit's target is chosen for it by the schedule - it never *had* a say.
+    ///
+    /// Here it had one. Declarations are simultaneous, so a body that wanted to trade could have declared
+    /// `Clash` back and traded. `Hold` is a real choice, and taking a free hit is what it costs.
+    ///
+    /// And it is what buys **order-independence**: the moment a body answers something it did not name, the
+    /// resolver has to pick *which* attacker - and it was picking the first one in the contact list, so who died
+    /// depended on who sat at index 0. See
+    /// [`a_body_closed_on_from_two_sides_answers_the_same_way_whatever_the_seating`]. There is no way to have
+    /// both an undeclared riposte and a seat-independent resolver without inventing a tie-break, and a tie-break
+    /// is just an order dependence you have written down.
+    #[test]
+    fn a_body_fights_only_what_it_declared() {
+        let mut b = Board::new(
+            vec![
+                unit("Attacker", Side::Party, [3, 5, 1, 1, 9], true, false),
+                unit("Defender", Side::Foe, [4, 5, 1, 3, 1], true, false),
+            ],
+            vec![0, 1],
+            vec![Post::Front, Post::Front],
+        );
+        let (attacker, defender) = (b.units[0].health, b.units[1].health);
+
+        play_round(&mut b, &[Act::Clash(1), Act::Hold]); // the defender declares NOTHING
+        assert!(b.units[1].health < defender, "the blow lands");
+        assert_eq!(
+            b.units[0].health, attacker,
+            "and Hold means hold - it takes the hit for free, because it never declared a fight"
+        );
+
+        // Declare the trade, and the trade happens.
+        let mut c = Board::new(
+            vec![
+                unit("Attacker", Side::Party, [3, 5, 1, 1, 9], true, false),
+                unit("Defender", Side::Foe, [4, 5, 1, 3, 1], true, false),
+            ],
+            vec![0, 1],
+            vec![Post::Front, Post::Front],
+        );
+        play_round(&mut c, &[Act::Clash(1), Act::Clash(0)]);
+        assert!(
+            c.units[0].health < attacker && c.units[1].health < defender,
+            "both declared the fight, so both pay for it"
         );
     }
 
