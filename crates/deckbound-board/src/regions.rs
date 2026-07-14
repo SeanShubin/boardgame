@@ -538,17 +538,39 @@ fn area_strike(board: &mut Board, attacker: usize, region: u8, tier: Post) -> Ve
     board.units[attacker].tempo -= 1;
     let side = board.units[attacker].side;
     let depth = AREA_REACH.with(|r| *r.borrow());
-    board
+    let might = board.units[attacker].might;
+
+    let caught: Vec<usize> = board
         .in_region(region)
         .into_iter()
         .filter(|&j| board.units[j].side != side)
         .filter(|&j| depth == AreaReach::WholeRegion || board.posts[j] == tier)
-        .map(|j| Contact {
-            attacker,
-            target: j,
-            bid: 0, // no bid: it cannot be evaded, and nobody answers along it
-        })
-        .collect()
+        .collect();
+
+    let mut contacts = Vec::new();
+    for j in caught {
+        if board.units[j].horde {
+            // **A pack is many bodies, and an area strike catches every one of them.**
+            //
+            // This is the second axis, and it is independent of reach: *which* bodies in the region a sweep
+            // touches is settled by the tier; *how much of a body* it touches is settled here. A horde is one
+            // `Combatant` whose Health is its body count, so an aimed blow felling `Might`-many bodies looks
+            // like damage - but a sweep landing on the same one body deals `Might` **once**, which made a sweep
+            // strictly WORSE against a pack than an aimed blow. Exactly backwards.
+            //
+            // A sweep clears it. Armour aside, there is nowhere in a pack to not be.
+            if might > board.units[j].armor {
+                board.units[j].health = 0;
+            }
+        } else {
+            contacts.push(Contact {
+                attacker,
+                target: j,
+                bid: 0, // no bid: it cannot be evaded, and nobody answers along it
+            });
+        }
+    }
+    contacts
 }
 
 /// **How far an area strike reaches.** The rule is [`FrontLine`](AreaReach::FrontLine), and it follows from one
@@ -612,9 +634,69 @@ pub fn set_area_reach(reach: AreaReach) {
 ///
 /// (`combat::strike_target` still has this flaw, and the shipped rank model still calls it - so the live game
 /// has the same order-dependence whenever two bodies clash one. Out of scope here; flagged, not touched.)
+///
+/// # Why this does not call `combat::resolve_strike`
+///
+/// **An aimed blow fells ONE body of a pack.** `combat`'s model spills - a horde is one [`Combatant`] whose
+/// Health is its body count, so `Might` damage takes `Might` bodies off it in a single strike. That reads as
+/// damage, but it makes a **Might-7 aimed blow a better horde-killer than a sweep**, which inverts the two
+/// horde locks and no stat tuning can flip them back.
+///
+/// One blow kills one of them. That is also the more natural fiction: you stab one, you do not scythe seven.
+/// **Width against a pack is what a sweep is FOR** - it catches every body at once, whatever its Might - and if
+/// an aimed blow can do the same thing by being big, the sweep has no job.
+///
+/// So the damage model here is:
+/// - **Normal body:** each strike banks `max(0, Might - armor)` into the per-round pile; a Health card flips
+///   every time the pile clears Grit. The pile closes at the Reset (`combat::refresh_round`), unchanged.
+/// - **Horde:** each strike fells exactly **one** body. A sweep clears the pack outright ([`area_strike`]).
 fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) {
-    let all: Vec<Contact> = contacts.iter().chain(sweeps).copied().collect();
-    combat::resolve_strike(&mut board.units, &all, extra);
+    // Collect every blow first, apply nothing yet: an order-free, commit-based batch, so a blow lands even if
+    // its striker dies to a simultaneous one.
+    let n = board.units.len();
+    let mut damage = vec![0u32; n]; // banked Might, for a normal body
+    let mut felled = vec![0u32; n]; // bodies struck off, for a horde
+
+    // Gather every strike as `(attacker, target, hits)` first, so nothing is applied while we are still reading.
+    let mut strikes: Vec<(usize, usize, u32)> = Vec::new();
+
+    // Each established contact gives its engager one opening blow - already paid for by the tempo it committed.
+    for c in contacts.iter().chain(sweeps) {
+        strikes.push((c.attacker, c.target, 1));
+    }
+    // ...and then whatever tempo was poured after it, one strike per card.
+    for b in extra {
+        let cards = b.cards.min(board.units[b.unit].tempo);
+        board.units[b.unit].tempo -= cards;
+        strikes.push((b.unit, b.target, cards));
+    }
+
+    for (a, t, hits) in strikes {
+        if hits == 0 {
+            continue;
+        }
+        if board.units[t].horde {
+            felled[t] += hits; // one blow, one body - Might buys nothing against a pack
+        } else {
+            let per = board.units[a].might.saturating_sub(board.units[t].armor);
+            damage[t] += per * hits;
+        }
+    }
+
+    for i in 0..n {
+        if board.units[i].horde {
+            board.units[i].health = board.units[i].health.saturating_sub(felled[i]);
+        } else if damage[i] > 0 {
+            // The grit pile: bank the Might, flip a Health card each time it clears the bar. It closes at the
+            // Reset and only there, so a wound you cannot finish this round is a wound you did not inflict.
+            let bar = board.units[i].grit.max(1);
+            board.units[i].pending += damage[i];
+            while board.units[i].pending >= bar && board.units[i].health > 0 {
+                board.units[i].pending -= bar;
+                board.units[i].health -= 1;
+            }
+        }
+    }
 }
 
 /// One body attacking another: `(attacker, target)`.
@@ -746,7 +828,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             });
         }
     }
-    combat::resolve_strike(&mut board.units, &landed, &ripostes);
+    land(board, &landed, &[], &ripostes);
 
     let mut through = vec![false; board.units.len()];
     let mut log = close(board, &before);
@@ -1672,37 +1754,31 @@ mod tests {
         );
     }
 
-    /// **KNOWN DEFECT, recorded not fixed: AN AREA STRIKE HAS NO ADVANTAGE AGAINST A HORDE.**
+    /// **A SWEEP CLEARS A PACK.** The second axis of an area strike, and it is independent of the first.
     ///
-    /// Measured, on a 12-body pack, in one round:
+    /// - *Which bodies in the region does it touch?* -> the ones you could have single-targeted: the tier you can
+    ///   reach ([`AreaReach`]). Width, never depth.
+    /// - *How much of a body does it touch?* -> **all of it.** A horde is many bodies, and there is nowhere in a
+    ///   pack to not be.
+    ///
+    /// It was inverted. A horde is one [`Combatant`] whose Health is its body count, so an aimed blow deals
+    /// `Might` straight off that count - felling **Might-many bodies** - and gets to *pour*, landing several. A
+    /// sweep landed on the same one body for `Might` **once**, and could not pour. So a sweep was **strictly
+    /// worse** against a pack than an aimed blow, which made the two anti-horde kits the worst horde-killers in
+    /// the game:
     ///
     /// ```text
-    /// Raider     (Might 7, single-target) -> felled 12 of 12   <- wipes it outright
-    /// Marksman   (Might 5, single-target) -> felled 10 of 12
-    /// Bastion    (Might 1, AREA)          -> felled  1 of 12   <- the Swarm's designated counter
-    /// Bombardier (Might 3, AREA)          -> felled  3 of 12   <- the Storm's designated counter
+    /// BEFORE, on a 12-body pack, in one round:
+    ///   Raider     (Might 7, single) -> 12 of 12     <- wiped it outright
+    ///   Bastion    (Might 1, AREA)   ->  1 of 12     <- the Swarm's designated counter
+    ///   Bombardier (Might 3, AREA)   ->  3 of 12     <- the Storm's designated counter
     /// ```
     ///
-    /// The two **anti-horde** kits are the **worst** horde-killers in the game, and the single-target Raider is
-    /// the best. Two of the four balance locks (The Swarm, The Storm) are horde locks - so two of the four are
-    /// **inverted**, and no amount of stat tuning can flip them back.
-    ///
-    /// **Why.** A horde is one [`Combatant`] whose `health` is its body count. An aimed strike deals `Might`,
-    /// which comes straight off that count - felling **Might-many bodies** - and the striker gets to *pour*, so
-    /// it lands several. An area strike forms **one** contact against that **one** body, deals `Might` once, and
-    /// cannot pour at all (coverage bought at the price of concentration). So a sweep is *strictly worse* than an
-    /// aimed blow against a pack, which is the exact opposite of what a sweep is for.
-    ///
-    /// **This is my regression.** `combat::resolve_engage` has the rule - an area strike *clears the pack* - and
-    /// I dropped it when writing `area_strike`, because region-wide it let one Salvo delete sixteen bodies for a
-    /// single card. That reason is now **gone**: a sweep only covers the tier it was aimed at. The rule should
-    /// come back, and it is one line.
-    ///
-    /// Recorded as a test so it cannot be forgotten, and so the fix has to come here and delete it deliberately.
+    /// Two of the four balance locks are horde locks, so two of the four were inverted - and no stat tuning
+    /// could have flipped them back.
     #[test]
-    fn an_area_strike_is_currently_worse_against_a_horde_than_an_aimed_blow_and_that_is_a_bug() {
-        let felled = |stats: [u8; 5], aoe: bool| -> u32 {
-            let pack = 12u32;
+    fn a_sweep_clears_a_pack_and_an_aimed_blow_does_not() {
+        let felled = |stats: [u8; 5], aoe: bool, pack: u32| -> u32 {
             let mut b = Board::new(
                 vec![
                     unit("Hero", Side::Party, stats, true, true).with_aoe(aoe),
@@ -1714,13 +1790,32 @@ mod tests {
             play_round(&mut b, &[Act::Clash(1), Act::Hold]);
             pack - b.units[1].health
         };
-        let raider = felled([7, 6, 1, 2, 2], false);
-        let bastion = felled([1, 3, 3, 1, 2], true);
-        let bombardier = felled([3, 3, 1, 1, 2], true);
 
+        // **A sweep clears a pack of ANY size** - one card, whatever its Might. A pack has nowhere to hide.
+        for pack in [8, 20, 40] {
+            assert_eq!(
+                felled([1, 3, 3, 1, 2], true, pack),
+                pack,
+                "the Bastion's Sweep clears a pack of {pack} - Might 1, and it does not matter"
+            );
+            assert_eq!(
+                felled([3, 3, 1, 1, 2], true, pack),
+                pack,
+                "the Bombardier's Salvo clears a pack of {pack}"
+            );
+        }
+
+        // **An aimed blow fells ONE body.** Not `Might`-many: one blow, one of them. Spec 4.6 spills instead,
+        // and `combat::resolve_strike` implements the spill - which made a Might-7 aimed blow a BETTER
+        // horde-killer than a sweep, inverting both horde locks. Width against a pack is what a sweep is *for*;
+        // if a big enough single blow can do the same job, the sweep has no job.
+        //
+        // So the Raider chews two bodies a round (its opening blow, plus one poured card) whatever its Might -
+        // and Might buys it nothing here at all. That is the lock.
+        let raider = felled([7, 6, 1, 2, 2], false, 8);
         assert!(
-            raider > bastion && raider > bombardier,
-            "THE DEFECT: a single-target body ({raider}) out-kills both area strikers              (Bastion {bastion}, Bombardier {bombardier}) against a pack. When this assertion starts              FAILING, the bug is fixed - delete the test."
+            raider <= 2,
+            "an aimed blow fells one body per strike - Might 7 bought it nothing: it felled {raider}"
         );
     }
 
