@@ -551,35 +551,47 @@ fn area_strike(board: &mut Board, attacker: usize, region: u8, tier: Post) -> Ve
         .collect()
 }
 
-/// **How deep an area strike reaches** - the open design question this model turned up, and the reason the raid
-/// currently has nothing to be *for*.
+/// **How far an area strike reaches.** The rule is [`FrontLine`](AreaReach::FrontLine), and it follows from one
+/// sentence:
 ///
-/// It is a switch rather than a constant because the two answers are a **rule** fork, not a number, and the
-/// difference is not one you can tune your way across:
+/// > **An area strike multiplies your TARGETS. It does not extend your REACH.**
+/// > A body you could not single-target, you cannot sweep.
 ///
-/// - [`WholeRegion`](AreaReach::WholeRegion) - a sweep hits **both tiers**. Then an area strike is a *universal
-///   solvent for the screen*: it reaches a body behind an intact front, for one card, at **any power level**.
-///   Turning its Might down changes how *fast* the back line dies, never whether it is *reachable* - so the
-///   front/back structure means nothing to anybody carrying one, and the raid's unique selling point ("the only
-///   way past an intact line") is simply false.
-/// - [`FrontLine`](AreaReach::FrontLine) - a sweep hits **the tier it was aimed at**. This is the old spec's rule
-///   ("an attack may strike a whole *rank* at once"), and the more natural reading of what an area strike even
-///   is: it covers a **line**, not a **depth**. The screen keeps meaning, AoE stays the anti-cluster counter
-///   against a *wide* front, and the raid stays the only way to a screened body.
+/// Reach is what the screen governs; width is what an area strike governs. They are **different axes**, and a
+/// sweep that reached through a line was quietly buying both. That is not a balance number - it is a category
+/// error, and no amount of tuning fixes a category error. (We tried: the sweep was measured at full Might, half
+/// Might and Might 1, and *none* of it changed whether a raid was ever necessary. Of course it did not. Turning
+/// a sweep's damage down changes how fast the back line dies, never whether it is **reachable**.)
+///
+/// So a sweep hits every enemy **in the tier it was aimed at**, in that region:
+///
+/// - **Clash** their front, and you sweep their whole front line. Wide, and free of the screen - because their
+///   front was never behind anything.
+/// - **Raid** their back, and you sweep their whole back line - because you *are standing in it now*. The reach
+///   was paid for at the line, exactly like any other blow. Width came free; depth did not.
+///
+/// It leaves an area strike as the honest anti-cluster counter (bunch up and one card catches all of you) while
+/// leaving the **raid as the only door to a screened body** - which is what a screen is *for*. It also makes the
+/// Bastion's Sweep have to **go in after** the back-line Swarm it is built to answer, rather than lobbing a
+/// sweep through the wall from outside.
+///
+/// [`WholeRegion`] is retained only as a probe knob, to keep the comparison re-runnable rather than
+/// re-litigable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AreaReach {
-    /// Both tiers. An area strike ignores the screen entirely.
-    WholeRegion,
-    /// Only the tier it was aimed at. The screen still screens.
+    /// **The rule.** A sweep hits every enemy in the tier it was aimed at. Width, never depth.
     FrontLine,
+    /// Both tiers - an area strike ignores the screen entirely. **Not the rule**; kept so the measurement that
+    /// rejected it can be re-run.
+    WholeRegion,
 }
 
 thread_local! {
-    static AREA_REACH: std::cell::RefCell<AreaReach> = const { std::cell::RefCell::new(AreaReach::WholeRegion) };
+    static AREA_REACH: std::cell::RefCell<AreaReach> = const { std::cell::RefCell::new(AreaReach::FrontLine) };
 }
 
-/// Set the [`AreaReach`] rule for this thread. A probe knob, not a game setting - it exists so the two answers
-/// can be *measured* against each other rather than argued about.
+/// Override the [`AreaReach`] rule for this thread. A **probe knob, not a game setting** - it exists so the two
+/// answers stay measurable against each other rather than arguable.
 pub fn set_area_reach(reach: AreaReach) {
     AREA_REACH.with(|r| *r.borrow_mut() = reach);
 }
@@ -1198,10 +1210,14 @@ mod tests {
         assert_eq!(b.units[1].health, cannon, "and it never reached the cannon");
     }
 
-    /// **An area strike nukes the whole region, both tiers** - bypassing the screen entirely. The anti-cluster
-    /// counter: pile bodies behind a vanguard and you become a target.
+    /// **AN AREA STRIKE MULTIPLIES TARGETS, IT DOES NOT EXTEND REACH.** A body you could not single-target,
+    /// you cannot sweep - so a screened back line is safe from a sweep lobbed at their front.
+    ///
+    /// Reach is what the screen governs; width is what an area strike governs. A sweep that reached through the
+    /// line was buying both, and that is a category error rather than a balance number - which is why tuning it
+    /// (full Might, half, floor) never once changed whether a raid was necessary.
     #[test]
-    fn an_area_strike_reaches_the_back_line() {
+    fn a_sweep_cannot_reach_a_body_a_single_strike_could_not() {
         let mut b = Board::new(
             vec![
                 unit("Bombardier", Side::Party, [3, 3, 1, 1, 2], false, true).with_aoe(true),
@@ -1211,11 +1227,44 @@ mod tests {
             vec![0, 1, 1],
             vec![Post::Front, Post::Front, Post::Back],
         );
-        let mage = b.units[2].health;
+        let (wall, mage) = (b.units[1].health, b.units[2].health);
         play_round(&mut b, &[Act::Clash(1), Act::Clash(0), Act::Clash(0)]);
+        assert!(b.units[1].health < wall, "it sweeps their front line");
+        assert_eq!(
+            b.units[2].health, mage,
+            "and it must NOT touch the body behind that line - the sweep has no reach it did not pay for"
+        );
+    }
+
+    /// ...but width still comes free once the reach IS paid for. A **raider** carrying an area strike sweeps the
+    /// whole back line, because it is standing in it. The Bastion has to go *in* after the Swarm it answers.
+    #[test]
+    fn a_raider_with_an_area_strike_sweeps_the_back_line_it_slipped_into() {
+        let mut b = Board::new(
+            vec![
+                // A melee area striker with the tempo to buy its way past the wall.
+                unit("Bastion", Side::Party, [3, 4, 3, 5, 2], true, false).with_aoe(true),
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Mage", Side::Foe, [4, 2, 1, 2, 2], false, true),
+                unit("Seer", Side::Foe, [4, 2, 1, 2, 2], false, true),
+            ],
+            vec![0, 1, 1, 1],
+            vec![Post::Front, Post::Front, Post::Back, Post::Back],
+        );
+        let (mage, seer) = (b.units[2].health, b.units[3].health);
+        play_round(
+            &mut b,
+            &[
+                Act::Raid(2, Answer::Evade),
+                Act::Clash(0),
+                Act::Clash(0),
+                Act::Clash(0),
+            ],
+        );
+        assert_eq!(b.regions[0], 1, "it got in");
         assert!(
-            b.units[2].health < mage || b.units[2].fallen,
-            "a sweep cannot be screened - a bodyguard soaks an aimed blow but cannot cover an area"
+            b.units[2].health < mage && b.units[3].health < seer,
+            "and swept the WHOLE back line, not just the body it came for - width is free once you have paid              for the reach"
         );
     }
 
