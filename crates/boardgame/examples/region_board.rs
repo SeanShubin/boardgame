@@ -29,9 +29,22 @@
 //! Click a **hero** to select it (the chart fills in). Then click:
 //! - an **enemy** -> `Press` it (melee crosses to it; ranged stays and shoots)
 //! - an **ally**  -> `Defend` it (your body goes in the way - watch the shingle)
-//! - **itself**   -> `Withdraw` (peel off alone to fresh ground)
+//! - **that hero again** -> deselect. Clicking it back off always returns you to where you started.
+//! - **a row of the chart** -> declare that aim directly. This is where `Withdraw` lives.
+//!
+//! **Withdraw** = peel off alone to fresh ground. The retreat: how a cannon escapes a melee that walked in on
+//! it, or how a cluster breaks up so one area strike cannot catch it all. It is *not free* - you are crossing,
+//! so everything hostile in the region you leave gets a parting blow at you. If you are already alone it does
+//! nothing.
 //!
 //! Declare for every hero, then **Resolve the round**.
+//!
+//! # A note on the oracle
+//!
+//! Selecting is **instant**. The oracle never runs on the click: every verdict starts `Evaluating` and is
+//! ground down a frame at a time ([`grind`]), so the UI stays live and the chart fills in as each answer
+//! *settles*. `Evaluating` is honest - it means "not sure yet", never "probably fine". One memo is shared by
+//! every question about a position, which is what makes the second question nearly free.
 
 use bevy::prelude::*;
 
@@ -52,9 +65,10 @@ const GOOD: Color = Color::srgb(0.45, 0.80, 0.65);
 const WARN: Color = Color::srgb(0.85, 0.60, 0.30);
 const BAD: Color = Color::srgb(0.88, 0.38, 0.40);
 
-/// The oracle's node budget per question. Measured cost for a whole encounter is a few hundred nodes, so this
-/// is enormous headroom - it exists only so a pathological position answers `Evaluating` instead of hanging.
-const BUDGET: u64 = 2_000_000;
+/// How much search one frame is allowed to pay for. A whole encounter measures a few hundred nodes, so this is
+/// generous - it exists so that a click is *never* the thing that pays for a search: the answer arrives over
+/// the next frame or two while the UI stays live, and says `Evaluating` honestly until it is sure.
+const FRAME_NODES: u64 = 3_000;
 
 fn main() {
     App::new()
@@ -69,7 +83,7 @@ fn main() {
         .insert_resource(ClearColor(FELT))
         .init_resource::<Spike>()
         .add_systems(Startup, (setup_camera, rebuild).chain())
-        .add_systems(Update, (on_click, rebuild.run_if(is_dirty)).chain())
+        .add_systems(Update, (on_click, grind, rebuild.run_if(is_dirty)).chain())
         .run();
 }
 
@@ -87,10 +101,19 @@ struct Spike {
     aims: Vec<Option<Aim>>,
     selected: Option<usize>,
     round: usize,
-    /// The per-move verdicts for the selected hero - the doom chart.
+    /// The per-move verdicts for the selected hero - the doom chart. An entry stays `Evaluating` until the
+    /// oracle has actually settled it; it is never a guess.
     chart: Vec<(Aim, Verdict)>,
     /// The overall verdict for the position at the top of this round.
     verdict: Verdict,
+    /// **One oracle per board position, shared by every question asked about it.** This is the whole reason
+    /// selection is instant: the memo is what makes the second question cheap, so building a fresh `Oracle` per
+    /// chart row (as the first cut did) threw away exactly the thing that makes this affordable and re-walked
+    /// the tree seven times over. Rebuilt only when the *board* changes - never when the selection does.
+    oracle: Oracle,
+    /// How many nodes the next walk may spend. Doubles whenever a walk comes back `Evaluating`, and resets once
+    /// a question settles - so an easy position never over-spends and a hard one still converges.
+    grant: u64,
     log: Vec<String>,
     dirty: bool,
 }
@@ -105,6 +128,8 @@ impl Default for Spike {
             round: 0,
             chart: Vec::new(),
             verdict: Verdict::Evaluating,
+            oracle: Oracle::new(0),
+            grant: FRAME_NODES,
             log: Vec::new(),
             dirty: true,
         };
@@ -128,23 +153,75 @@ impl Spike {
             self.encounter().title,
             self.encounter().flavor
         )];
-        self.rescore();
-        self.dirty = true;
+        self.reposition();
     }
 
-    /// Re-ask the oracle: the position's verdict, and (if a hero is selected) its per-move chart.
-    fn rescore(&mut self) {
-        self.verdict = Oracle::new(BUDGET).verdict(&self.board, self.round);
+    /// **The board changed** - throw the memo away (it is keyed to the old position) and start asking again.
+    /// Nothing is *computed* here: every verdict starts `Evaluating` and is ground down by [`grind`], a frame
+    /// at a time, so a click is never the thing that pays for a search.
+    fn reposition(&mut self) {
+        self.oracle = Oracle::new(0);
+        self.grant = FRAME_NODES;
+        self.verdict = Verdict::Evaluating;
+        self.repick();
+    }
+
+    /// **The selection changed** - the chart is about a different hero, but it is the *same board*, so the memo
+    /// still applies and is kept. That is why selecting a second hero is nearly free.
+    fn repick(&mut self) {
         self.chart = match self.selected {
             Some(h) if !self.board.units[h].fallen => legal_aims(&self.board, h)
                 .into_iter()
-                .map(|a| {
-                    let v = Oracle::new(BUDGET).verdict_for(&self.board, self.round, h, a);
-                    (a, v)
-                })
+                .map(|a| (a, Verdict::Evaluating))
                 .collect(),
             _ => Vec::new(),
         };
+        self.dirty = true;
+    }
+
+    /// One frame's worth of search: grant the oracle a slice of nodes and settle **one** pending question -
+    /// the position's own verdict first, then the chart rows in order. Returns whether anything settled.
+    ///
+    /// A question that runs out of its grant stays `Evaluating` and is retried next frame with a **doubled**
+    /// grant. That escalation is not optional: a subtree only memoizes once it is fully explored, so a grant too
+    /// small to settle *any* new subtree makes no progress however many frames it is repeated for. Doubling
+    /// settles anything in a handful of frames, and the memo survives every retry so nothing is re-derived.
+    ///
+    /// Safety does not depend on any of this: an incomplete subtree is never memoized, so a starved oracle can
+    /// only ever be **silent**, never wrong. Pinned by `regions::tests::a_starved_oracle_is_silent_never_wrong`.
+    fn grind(&mut self) -> bool {
+        self.oracle.grant(self.grant);
+        if self.verdict == Verdict::Evaluating {
+            // Disjoint fields: `oracle` is borrowed mutably, `board` immutably. Rust permits this.
+            let v = self.oracle.verdict(&self.board, self.round);
+            if v != Verdict::Evaluating {
+                self.verdict = v;
+                self.grant = FRAME_NODES;
+                return true;
+            }
+            self.grant = self.grant.saturating_mul(2); // that bite was too small - take a bigger one
+            return false; // still chewing - do not start a chart row while the position itself is unknown
+        }
+        let Some(h) = self.selected else { return false };
+        let Some(k) = self
+            .chart
+            .iter()
+            .position(|(_, v)| *v == Verdict::Evaluating)
+        else {
+            return false; // everything settled
+        };
+        let aim = self.chart[k].0;
+        let v = self.oracle.verdict_for(&self.board, self.round, h, aim);
+        if v == Verdict::Evaluating {
+            self.grant = self.grant.saturating_mul(2);
+        } else {
+            self.grant = FRAME_NODES;
+        }
+        if v != Verdict::Evaluating {
+            self.chart[k].1 = v;
+            return true;
+        }
+        false
     }
 
     fn heroes(&self) -> Vec<usize> {
@@ -157,33 +234,47 @@ impl Spike {
         self.heroes().iter().all(|&i| self.aims[i].is_some())
     }
 
-    /// Click a card: select a living hero, or - with one selected - declare its aim against this card.
+    /// Click a card: select a living hero, **deselect it if it is already selected**, or - with one selected -
+    /// declare its aim against this card.
+    ///
+    /// Clicking the selected hero again **puts you back where you started**. It used to declare `Withdraw`,
+    /// which was a bad overload of the one gesture a player reaches for to say *"never mind"* - so `Withdraw`
+    /// moved to its own row in the chart, where it belongs: it is a **move**, not something you do *to* a card.
     fn click(&mut self, i: usize) {
         if self.board.outcome().is_some() || self.board.units[i].fallen {
             return;
         }
-        let Some(h) = self.selected else {
-            if self.board.units[i].side == Side::Party {
-                self.selected = Some(i);
-                self.rescore();
-                self.dirty = true;
+        match self.selected {
+            // Toggle back to the original state - the escape hatch.
+            Some(h) if h == i => {
+                self.selected = None;
+                self.repick();
             }
-            return;
-        };
-        let aim = if i == h {
-            Aim::Withdraw
-        } else if self.board.units[i].side == Side::Party {
-            Aim::Defend(i)
-        } else {
-            Aim::Press(i)
-        };
-        // A declaration must be one the model actually offers - otherwise the chart and the board disagree.
-        if legal_aims(&self.board, h).contains(&aim) {
-            self.aims[h] = Some(aim);
-            self.selected = None;
-            self.chart.clear();
-            self.dirty = true;
+            Some(h) => {
+                let aim = if self.board.units[i].side == Side::Party {
+                    Aim::Defend(i)
+                } else {
+                    Aim::Press(i)
+                };
+                self.declare(h, aim);
+            }
+            None if self.board.units[i].side == Side::Party => {
+                self.selected = Some(i);
+                self.repick();
+            }
+            None => {}
         }
+    }
+
+    /// Declare `aim` for hero `h` - gated on what the model actually offers, so the chart and the board can
+    /// never disagree about what was legal.
+    fn declare(&mut self, h: usize, aim: Aim) {
+        if !legal_aims(&self.board, h).contains(&aim) {
+            return;
+        }
+        self.aims[h] = Some(aim);
+        self.selected = None;
+        self.repick();
     }
 
     /// Play the round: the declared aims, the foes' script, and the four sub-phases.
@@ -238,8 +329,7 @@ impl Spike {
             }
             None => {}
         }
-        self.rescore();
-        self.dirty = true;
+        self.reposition();
     }
 }
 
@@ -277,6 +367,9 @@ fn setup(e: &Encounter) -> Board {
 #[derive(Component, Clone, Copy)]
 enum Hit {
     Card(usize),
+    /// A row of the doom chart: declare this aim for the selected hero. This is where `Withdraw` lives - it is
+    /// a move, not something you do *to* another card, so it has no card to click.
+    Declare(Aim),
     Resolve,
     Reset,
     NextEncounter,
@@ -289,6 +382,14 @@ fn is_dirty(s: Res<Spike>) -> bool {
     s.dirty
 }
 
+/// Chip away at whatever the oracle has not settled yet, a frame at a time, and redraw when something lands.
+/// The UI never blocks on a search: it shows `Evaluating` and means it.
+fn grind(mut s: ResMut<Spike>) {
+    if s.grind() {
+        s.dirty = true;
+    }
+}
+
 fn on_click(mut s: ResMut<Spike>, q: Query<(&Interaction, &Hit), Changed<Interaction>>) {
     for (i, hit) in &q {
         if *i != Interaction::Pressed {
@@ -296,6 +397,11 @@ fn on_click(mut s: ResMut<Spike>, q: Query<(&Interaction, &Hit), Changed<Interac
         }
         match *hit {
             Hit::Card(u) => s.click(u),
+            Hit::Declare(a) => {
+                if let Some(h) = s.selected {
+                    s.declare(h, a);
+                }
+            }
             Hit::Resolve => s.resolve(),
             Hit::Reset => s.reset(),
             Hit::NextEncounter => {
@@ -581,6 +687,8 @@ fn card(p: &mut ChildSpawnerCommands, s: &Spike, i: usize, depth: usize) {
         }
         if let Some(a) = s.aims[i] {
             label(c, a.label(&s.board.units), 11.0, PICK);
+        } else if u.side == Side::Party {
+            label(c, "undeclared", 11.0, WARN);
         }
     });
 }
@@ -653,6 +761,10 @@ fn log_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
 /// **The doom chart.** Every move the selected hero could make, and whether the position is still winnable if
 /// it makes it. It asks what *forecloses* the win, not what is optimal - which is what a player actually wants
 /// to know. On Greywater Ford it says the thing the rank model cannot express: the Raider must not charge.
+///
+/// **Every row is clickable** - it declares that aim. That is what gives `Withdraw` a home: it is a *move*, not
+/// something you do *to* another card, so it has no card to click. And it means the chart is not a read-out
+/// bolted onto the UI - it **is** the move list, with the consequence of each move printed next to it.
 fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
     label(p, "The doom oracle", 18.0, INK);
     let Some(h) = s.selected else {
@@ -666,20 +778,26 @@ fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
     };
     label(p, s.board.units[h].name.clone(), 15.0, PICK);
 
-    let decisive = s.chart.iter().any(|(_, v)| *v != Verdict::Winnable);
+    let pending = s.chart.iter().any(|(_, v)| *v == Verdict::Evaluating);
+    let decisive = s.chart.iter().any(|(_, v)| matches!(v, Verdict::Doomed));
     label(
         p,
-        if decisive {
+        if pending {
+            "thinking - a verdict appears as soon as the oracle is sure of it"
+        } else if decisive {
             "This choice matters - some moves lose the fight outright."
         } else {
             "Every move keeps the win. No decision here."
         },
         12.0,
-        if decisive { WARN } else { MUTED },
+        if pending || decisive { WARN } else { MUTED },
     );
+    label(p, "click a row to declare it", 11.0, MUTED);
 
     for (a, v) in &s.chart {
         p.spawn((
+            Button,
+            Hit::Declare(*a),
             Node {
                 flex_direction: FlexDirection::Row,
                 justify_content: JustifyContent::SpaceBetween,
@@ -694,4 +812,15 @@ fn chart_panel(p: &mut ChildSpawnerCommands, s: &Spike) {
             label(row, format!("{v:?}"), 13.0, verdict_color(*v));
         });
     }
+
+    // Withdraw is the one aim with no card to click, so say what it is where it lives.
+    label(
+        p,
+        "Withdraw: peel off alone to fresh ground. The retreat - how a cannon escapes a melee \
+         that walked in on it, or how a cluster breaks up so one area strike cannot catch it all. \
+         Not free: you are crossing, so everything hostile in the region you leave gets a parting \
+         blow at you. If you are already alone, it does nothing.",
+        11.0,
+        MUTED,
+    );
 }

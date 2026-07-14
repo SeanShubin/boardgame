@@ -625,7 +625,11 @@ type Key = (Vec<(u32, bool)>, Vec<u8>, usize);
 /// "I gave up" must never be cached as `Doomed`. The oracle may be silent; it may never be wrong.
 pub struct Oracle {
     memo: HashMap<Key, bool>,
+    /// Cumulative positions evaluated across every walk - the cost report.
     nodes: u64,
+    /// Positions evaluated in **this** walk. The budget bounds *this*, not the lifetime total - otherwise a
+    /// resumed walk would re-spend its allowance on the nodes it is merely re-treading, and never get deeper.
+    walk: u64,
     budget: u64,
     aborted: bool,
 }
@@ -635,6 +639,7 @@ impl Oracle {
         Oracle {
             memo: HashMap::new(),
             nodes: 0,
+            walk: 0,
             budget,
             aborted: false,
         }
@@ -652,10 +657,44 @@ impl Oracle {
         self.aborted
     }
 
+    /// **Allow the next walk `nodes` positions, and clear the abort flag** - the frame tick of a resumable
+    /// oracle.
+    ///
+    /// This is what makes the oracle affordable *inside a frame*: ask a question with a small grant, and if it
+    /// comes back [`Verdict::Evaluating`], grant more next frame and ask again. The **memo survives**, so each
+    /// retry re-treads its settled positions for free and pushes the frontier deeper. It is a *restart*, not a
+    /// resume - the walk begins again at the root - but every position already settled is a lookup, so the
+    /// answer converges in a handful of frames, with no threads and no half-built state to get wrong.
+    ///
+    /// The budget bounds **this walk**, not the lifetime total. (It used to bound the total, which was a
+    /// liveness bug: a resumed walk re-spent its whole allowance on the nodes it was merely re-treading, so
+    /// with a small grant it could never settle a single subtree and never converged at all. It stayed
+    /// *silent* rather than wrong - the safety invariant held - but it also never answered.)
+    ///
+    /// **Liveness is the caller's job.** A subtree only memoizes once it is fully explored, so a grant smaller
+    /// than the work needed to settle *any* new subtree makes no progress at all, however many times it is
+    /// repeated. A caller that grinds must therefore **escalate** its grant when a walk settles nothing - see
+    /// `examples/region_board`'s `grind`.
+    ///
+    /// Safety is *not* the caller's job, and never depends on the grant: an aborted subtree is never memoized,
+    /// so a starved oracle can only ever be **silent**, never wrong.
+    pub fn grant(&mut self, nodes: u64) {
+        self.walk = 0;
+        self.budget = nodes;
+        self.aborted = false;
+    }
+
     /// The verdict for a position at the start of `round`.
     pub fn verdict(&mut self, board: &Board, round: usize) -> Verdict {
         let before = self.aborted;
         let win = self.winnable(board, round, None);
+        self.judge(win, before)
+    }
+
+    /// Turn a search result into a verdict. A **win is a proof** (we hold a witness line), so it stands even if
+    /// other branches were abandoned. A **loss is only a proof if the tree was exhausted** - otherwise all we
+    /// learned is that we did not find a win *yet*, and the honest word for that is `Evaluating`.
+    fn judge(&self, win: bool, before: bool) -> Verdict {
         match (win, self.aborted && !before) {
             (true, _) => Verdict::Winnable,
             (false, true) => Verdict::Evaluating,
@@ -685,11 +724,7 @@ impl Oracle {
                 break;
             }
         }
-        match (win, self.aborted && !before) {
-            (true, _) => Verdict::Winnable,
-            (false, true) => Verdict::Evaluating,
-            (false, false) => Verdict::Doomed,
-        }
+        self.judge(win, before)
     }
 
     /// Can the party force a win from here? `fixed` pins the aims for the whole fight - the **control** the
@@ -702,7 +737,7 @@ impl Oracle {
         if round >= MAX_ROUNDS {
             return false; // a draw at the cap is not a win
         }
-        if self.nodes >= self.budget {
+        if self.walk >= self.budget {
             self.aborted = true;
             return false;
         }
@@ -715,13 +750,24 @@ impl Oracle {
             return v;
         }
         self.nodes += 1;
+        self.walk += 1;
 
         let heroes: Vec<usize> = (0..board.units.len())
             .filter(|&i| board.units[i].side == Side::Party && !board.units[i].fallen)
             .collect();
         let choices: Vec<Vec<Aim>> = heroes.iter().map(|&i| legal_aims(board, i)).collect();
         let foes = foe_aims(board);
-        let before = self.aborted;
+
+        // **Each node must judge its OWN subtree.** Stash the caller's abort flag and start clean, or this node
+        // would inherit a *sibling's* give-up and mistake it for its own completeness.
+        //
+        // This is the bug that made a bounded oracle unsound. The old guard was `aborted && !before`, with
+        // `before` read from the shared flag - so only the FIRST node to run out of budget in a walk was
+        // protected. Every node visited after it saw `before == true`, computed `gave_up_here == false`, and
+        // cached its incomplete "no win found" as a **proven Doomed**. A starved oracle would then hand back
+        // confidently wrong answers - the one thing it may never do.
+        let outer = self.aborted;
+        self.aborted = false;
 
         let mut win = false;
         for pick in 0..count(&choices) {
@@ -747,10 +793,19 @@ impl Oracle {
                 break; // the control has exactly one declaration: itself
             }
         }
-        // Only ever cache an HONEST answer. A "no win found" that was really "I gave up" must never be
-        // memoized as Doomed: the oracle may be silent, but it may never be wrong.
-        let gave_up_here = self.aborted && !before;
-        if !gave_up_here {
+
+        let incomplete = self.aborted; // something under THIS node ran out of budget
+        self.aborted = outer || incomplete; // restore the caller's flag, and propagate ours
+
+        // Cache only what we can actually prove.
+        //
+        // A **win is a proof**: we hold a witness line, and abandoning the branches we never needed does not
+        // weaken it. So a win is memoized even from an incomplete walk - which is also what lets the search
+        // short-circuit without throwing away what it found.
+        //
+        // A **loss is a proof only if the tree was exhausted**. Otherwise all we learned is that we have not
+        // found a win *yet*, and caching that as Doomed is precisely the lie this oracle must never tell.
+        if win || !incomplete {
             self.memo.insert(key, win);
         }
         win
@@ -866,6 +921,121 @@ mod tests {
         let aims = [Aim::Defend(1), Aim::Defend(0), Aim::Press(0)];
         let head = screen_head(&b, &aims, 0);
         assert!(head == 0 || head == 1, "the walk terminated on a real body");
+    }
+
+    /// A **winnable but deep** board: the full party against the Wall, whose Grit 9 means the fight takes
+    /// several rounds to close. It matters that this one is `Winnable` and not shallow - a board that is Doomed
+    /// at depth 1 settles for free and can never catch an oracle that gives up early and *calls* it Doomed.
+    fn deep_board() -> Board {
+        Board::opening(vec![
+            unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
+            unit("Marksman", Side::Party, [5, 2, 1, 2, 2], false, true),
+            unit("Bastion", Side::Party, [1, 3, 3, 1, 2], true, false),
+            unit("Bombardier", Side::Party, [3, 3, 1, 1, 2], false, true),
+            unit("The Wall", Side::Foe, [1, 4, 9, 1, 2], true, false),
+        ])
+    }
+
+    /// **SAFETY: a starved oracle is SILENT, never WRONG - at any grant, however cruel.**
+    ///
+    /// The invariant the whole in-app indicator rests on, and it must not depend on the *size* of the grant.
+    /// Starve it one node at a time and it may say `Evaluating` forever - that is allowed, and honest - but it
+    /// must never once answer `Doomed` or `Winnable` and disagree with the unbounded search. **A certainty
+    /// indicator may be silent; it may never be wrong.**
+    ///
+    /// This is the test that caught the bug that made the bounded oracle unsound. The abort guard used to be
+    /// `aborted && !before` against a *shared* flag, so only the FIRST node to run out of budget in a walk was
+    /// protected - every node visited after it inherited the sibling's give-up, concluded it had exhausted its
+    /// own tree, and cached "no win found" as a **proven Doomed**. A starved oracle would then confidently call
+    /// a winnable position lost. Each node now judges its own subtree (stash the flag, start clean, propagate),
+    /// and a loss is cached only when the tree was actually exhausted - while a *win* is cached regardless,
+    /// because a witness line is a proof no abandoned branch can weaken.
+    #[test]
+    fn a_starved_oracle_is_silent_never_wrong() {
+        for board in [deep_board(), hard_board()] {
+            let truth = Oracle::new(u64::MAX).verdict(&board, 0);
+            assert_ne!(
+                truth,
+                Verdict::Evaluating,
+                "the control must actually settle"
+            );
+
+            for grant in [1u64, 2, 3, 5, 8, 13, 21] {
+                let mut o = Oracle::new(0);
+                for _ in 0..400 {
+                    o.grant(grant);
+                    let got = o.verdict(&board, 0);
+                    assert!(
+                        got == Verdict::Evaluating || got == truth,
+                        "grant {grant} answered {got:?}, but the truth is {truth:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A board that really is lost - so "never wrong" is tested in *both* directions and a permanently
+    /// optimistic oracle could not pass by accident.
+    fn hard_board() -> Board {
+        Board::opening(vec![
+            unit("Marksman", Side::Party, [1, 1, 1, 1, 1], false, true),
+            unit("The Wall", Side::Foe, [9, 9, 9, 3, 3], true, false),
+        ])
+    }
+
+    /// **LIVENESS: an escalating grind converges on the unbounded verdict.**
+    ///
+    /// A subtree memoizes only once it is fully explored, so a grant too small to settle *any* new subtree can
+    /// make no progress however often it is repeated. Escalation is therefore the caller's job, and the policy
+    /// that works is the blunt one: **double the grant on every `Evaluating`.** (Doubling only when the memo
+    /// stops growing is too timid - the memo grows by a trickle every walk, so the grant never rises and the
+    /// search crawls.) Geometric growth settles any position in a handful of walks.
+    #[test]
+    fn it_converges_when_the_grant_escalates() {
+        for board in [deep_board(), hard_board()] {
+            let truth = Oracle::new(u64::MAX).verdict(&board, 0);
+            let mut o = Oracle::new(0);
+            let mut grant = 1u64;
+            let mut got = Verdict::Evaluating;
+            for _ in 0..64 {
+                o.grant(grant);
+                got = o.verdict(&board, 0);
+                if got != Verdict::Evaluating {
+                    break;
+                }
+                grant *= 2;
+            }
+            assert_eq!(
+                got, truth,
+                "an escalating grind must reach the unbounded verdict"
+            );
+        }
+    }
+
+    /// The same contract for the per-move chart: every row converges to the unbounded answer, and never lies on
+    /// the way there.
+    #[test]
+    fn the_chart_converges_to_the_truth() {
+        let board = deep_board();
+        for aim in legal_aims(&board, 0) {
+            let truth = Oracle::new(u64::MAX).verdict_for(&board, 0, 0, aim);
+            let mut o = Oracle::new(0);
+            let mut grant = 1u64;
+            let mut got = Verdict::Evaluating;
+            for _ in 0..64 {
+                o.grant(grant);
+                got = o.verdict_for(&board, 0, 0, aim);
+                assert!(
+                    got == Verdict::Evaluating || got == truth,
+                    "{aim:?} answered {got:?} on the way to {truth:?}"
+                );
+                if got != Verdict::Evaluating {
+                    break;
+                }
+                grant *= 2;
+            }
+            assert_eq!(got, truth, "{aim:?} never settled");
+        }
     }
 
     /// The fight terminates and someone wins - the model does not stall.
