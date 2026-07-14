@@ -1908,6 +1908,7 @@ dependencies = [
  "cardtable",
  "cardtable-model",
  "deckbound-board",
+ "deckbound-content",
  "directories",
  "ron 0.8.1",
  "serde",

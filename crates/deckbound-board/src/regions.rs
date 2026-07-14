@@ -224,9 +224,9 @@ pub fn destination(board: &Board, i: usize, aim: Aim) -> Option<u8> {
     }
 }
 
-/// The legal aims for unit `i` - the count-adaptive candidate list (spec 4.1: a choice is presented iff it has
-/// >= 2 legal options). **This is the branching factor the design lives or dies by**, so it is the one place to
-/// look when a cost report comes back bad. Measured at ~7 per unit for a 4v4, which is nothing.
+/// The legal aims for unit `i` - the count-adaptive candidate list (spec 4.1: a choice is presented only when
+/// it has two or more legal options). **This is the branching factor the design lives or dies by**, so it is
+/// the one place to look when a cost report comes back bad. Measured at about 7 per unit for a 4v4 - nothing.
 ///
 /// **Press comes first, deliberately.** A reachability search short-circuits on the first winning line, so this
 /// order decides which of several winning lines gets *shown*. Enumerating Defend first opened every transcript
@@ -747,8 +747,11 @@ impl Oracle {
                 break; // the control has exactly one declaration: itself
             }
         }
-        if !(self.aborted && !before) {
-            self.memo.insert(key, win); // only ever cache an honest answer
+        // Only ever cache an HONEST answer. A "no win found" that was really "I gave up" must never be
+        // memoized as Doomed: the oracle may be silent, but it may never be wrong.
+        let gave_up_here = self.aborted && !before;
+        if !gave_up_here {
+            self.memo.insert(key, win);
         }
         win
     }

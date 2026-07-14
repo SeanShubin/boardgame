@@ -19,6 +19,11 @@ deckbound-board = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
 
+# For `examples/region_board` (the regions/relations design spike): the kits, creatures and encounters it
+# fights over. Not used by the shipped binary.
+[dev-dependencies]
+deckbound-content = { workspace = true }
+
 # Native persistence: write the RON save to the OS data directory.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = "5"
