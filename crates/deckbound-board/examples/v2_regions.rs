@@ -1,57 +1,51 @@
-//! **Does a PRICED move ever matter? The mirror of `v2_remarshal`.**
+//! **Is SLIPPING ever necessary to win?**
 //!
-//! `v2_remarshal` asked whether a mid-fight re-rank is ever *required* to win, against the honest control
-//! (the **best fixed formation**, not a bad one). The answer was no, exhaustively - so re-Marshalling was cut
-//! as decoration and the formation was frozen for the whole fight.
+//! `v2_remarshal` proved that a **free** mid-fight re-rank never turns a loss into a win: a costless
+//! repositioning offered every round can always be pre-empted by simply starting in the right place, so it can
+//! never be *necessary*. It did not show that position does not matter - it showed that **costless** position
+//! does not matter. So the formation was frozen, and the fiction went with it: the game still narrates a charge
+//! every round by bodies that never move.
 //!
-//! That result is sound, and it is *why* this probe exists. Read it again:
+//! [`deckbound_board::regions`] answers that differently. The formation is declared **once**, in secret, and
+//! thereafter **evolves through play**: you never declare a position, you can only *earn* one, by slipping past
+//! a line that is trying to catch you. Movement is priced by construction - you cannot ask for it.
 //!
-//!     re-ranking was worthless BECAUSE re-ranking was free.
+//! So the honest question is no longer "fixed formation vs re-declared". It is:
 //!
-//! A repositioning that costs nothing and is offered every round can always be pre-empted by simply starting
-//! in the right place. It can therefore never be *necessary* - which is exactly what the probe measured. It
-//! did not show that position does not matter. It showed that **costless** position does not matter.
+//!     Is there a fight that CANNOT be won by clashing, and CAN be won by slipping?
 //!
-//! So: re-ask the identical question, with the identical control, in a model where **moving costs**.
+//! - **Control:** the party may only `Clash` or `Hold`. It never raids, retreats, or regroups.
+//! - **Treatment:** the full menu, slipping included.
 //!
-//!     Does there exist a position where NO fixed setup wins, AND moving wins?
+//! Both get the **best setup**, enumerated exhaustively - the honest control `v2_remarshal` insisted on, since
+//! starting wrong and fixing it does not count.
 //!
-//! - **Yes** -> movement is load-bearing. The model buys something real.
-//! - **No**  -> the model is DEAD, and we learned it for the price of one example program instead of an arena
-//!   rewrite.
+//! A **yes** means slipping is load-bearing in the strongest possible sense: it could not have been pre-empted
+//! by starting somewhere else, because the formation was fixed at setup **either way**. A **no** means the
+//! mechanic is decoration, and we learned it for the price of one example program.
 //!
-//! The model under test is [`deckbound_board::regions`] - read its module docs, they are the design. This
-//! program only *drives* it: the control, the treatment, the cost report, a transcript, and the per-move
-//! verdict table the UI has to surface.
+//! Both sides' tempo allocation is held at **greedy**; only the *declarations* are searched. That is deliberate,
+//! so a "no" is evidence rather than proof - but a **"yes" is proof**, and yes is the answer that costs money.
 //!
 //! Run: `cargo run --release -p deckbound-board --example v2_regions`
-//!
-//! # What this does NOT search (stated honestly)
-//!
-//! It searches the **aim layer exhaustively** and holds the **tempo allocation at greedy** for both sides (the
-//! same greedy tension `battle.rs` uses). That is deliberate - it isolates the *positional* question by
-//! comparing like with like, and it is what makes the probe finish. So a **"no" would be evidence, not proof**
-//! (a fixed setup might still lose under optimal allocation where it wins under greedy). A **"yes" is proof**,
-//! and "yes" is the answer that costs money. Support (buffs) is omitted.
 
 use std::time::Instant;
 
 use deckbound_board::combat::{Combatant, Side};
-use deckbound_board::regions::{
-    self, Aim, Board, Oracle, SubPhase, Verdict, best_fixed, legal_aims,
-};
+use deckbound_board::regions::{self, Act, Board, Oracle, Post, SubPhase, legal_acts};
 use deckbound_content::catalog::{self, Creature, Encounter};
 use deckbound_content::rank::Intention as Rank;
 
-const BUDGET: u64 = 4_000_000;
+const BUDGET: u64 = 20_000_000;
 
-fn kit_unit((name, stats, ability): (&'static str, [u8; 5], &'static str)) -> Combatant {
+fn kit(spec: (&'static str, [u8; 5], &'static str)) -> Combatant {
+    let (name, stats, ability) = spec;
     let (melee, ranged) = catalog::ability_reach(ability);
     let (_r, aoe) = catalog::ability_shape(ability);
     Combatant::from_stats(name, Side::Party, Rank::Vanguard, stats, 0, melee, ranged).with_aoe(aoe)
 }
 
-fn creature_unit(c: &Creature) -> Combatant {
+fn beast(c: &Creature) -> Combatant {
     Combatant::from_stats(
         c.name,
         Side::Foe,
@@ -65,175 +59,242 @@ fn creature_unit(c: &Creature) -> Combatant {
     .as_horde(c.horde)
 }
 
-fn setup(e: &Encounter) -> Board {
-    let mut units: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit_unit).collect();
+/// The bodies of an encounter: the four kits, then its foes.
+fn units(e: &Encounter) -> Vec<Combatant> {
+    let mut out: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit).collect();
     for (c, q) in catalog::encounter_foes(e) {
         for _ in 0..q {
-            units.push(creature_unit(c));
+            out.push(beast(c));
         }
     }
-    Board::opening(units)
+    out
 }
 
-/// The board as one line: the regions, and who stands in each. `*` = foe, `(n)` = health.
+/// Every **partition of the party into regions**, as a restricted-growth string (`rgs[k]` is hero `k`'s region,
+/// and may exceed the running max by at most one). That enumerates each *partition* exactly once and never a
+/// mere relabelling of one - the same idea as `regions::canonical`: what is real is the partition, not the names
+/// on it.
+fn partitions(n: usize) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut rgs = vec![0u8; n];
+    let mut going = true;
+    while going {
+        out.push(rgs.clone());
+        going = false;
+        for k in (1..n).rev() {
+            let ceiling = rgs[..k].iter().copied().max().unwrap_or(0) + 1;
+            if rgs[k] < ceiling {
+                rgs[k] += 1;
+                for x in rgs.iter_mut().skip(k + 1) {
+                    *x = 0;
+                }
+                going = true;
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// **The foes' scripted formation.** They take one region of their own and post themselves the natural way: a
+/// body that only shoots holds the **back**, everything that can swing holds the **front**.
+///
+/// This is not a detail - it is the thing the raid *exists to punish*, and getting it wrong hides the whole
+/// question. The first cut posted every foe at the front, so the foes had **no back line at all**, so no raid
+/// was ever a legal act, so the probe reported that slipping was decoration. It was measuring a board on which
+/// slipping could not be tried.
+fn foe_posts(us: &[Combatant]) -> Vec<Post> {
+    us.iter()
+        .map(|u| {
+            if u.ranged && !u.melee {
+                Post::Back // the cannon shelters behind the line - which is exactly what a raider comes for
+            } else {
+                Post::Front
+            }
+        })
+        .collect()
+}
+
+/// Every **formation** the party could commit to at the round-1 secret: a partition of the party into regions,
+/// plus a front/back post for each hero. The foes take one region of their own, posted by [`foe_posts`].
+fn formations(us: &[Combatant], party: usize) -> Vec<(Vec<u8>, Vec<Post>)> {
+    let foes = us.len() - party;
+    let scripted = foe_posts(us);
+    let mut out = Vec::new();
+    for p in partitions(party) {
+        let foe_region = p.iter().copied().max().unwrap_or(0) + 1;
+        for mask in 0..(1u32 << party) {
+            let mut posts: Vec<Post> = (0..party)
+                .map(|k| {
+                    if (mask >> k) & 1 == 1 {
+                        Post::Back
+                    } else {
+                        Post::Front
+                    }
+                })
+                .collect();
+            posts.extend(scripted.iter().skip(party).copied());
+
+            let mut regions = p.clone();
+            regions.extend(std::iter::repeat_n(foe_region, foes));
+            out.push((regions, posts));
+        }
+    }
+    out
+}
+
+/// The board as one line: each region, its front line, then its back line after a `|`.
 fn board_line(b: &Board) -> String {
     b.occupied()
         .iter()
         .map(|&r| {
-            let who: Vec<String> = b
-                .in_region(r)
-                .iter()
-                .map(|&i| {
-                    let u = &b.units[i];
-                    let mark = if u.side == Side::Party { "" } else { "*" };
-                    format!("{}{}({})", mark, u.name, u.health)
-                })
-                .collect();
-            format!("[{}: {}]", (b'A' + r) as char, who.join(" "))
+            let tier = |post: Post| -> Vec<String> {
+                b.in_region(r)
+                    .into_iter()
+                    .filter(|&i| b.posts[i] == post)
+                    .map(|i| {
+                        let u = &b.units[i];
+                        let mark = if u.side == Side::Party { "" } else { "*" };
+                        format!("{}{}({})", mark, u.name, u.health)
+                    })
+                    .collect()
+            };
+            let (front, back) = (tier(Post::Front), tier(Post::Back));
+            let tail = if back.is_empty() {
+                String::new()
+            } else {
+                format!(" | {}", back.join(" "))
+            };
+            format!("[{}: {}{}]", (b'A' + r) as char, front.join(" "), tail)
         })
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-/// The `pick`-th joint declaration over the living heroes, or `None` once they are exhausted.
-fn nth_line(b: &Board, heroes: &[usize], pick: usize) -> Option<Vec<Aim>> {
-    let choices: Vec<Vec<Aim>> = heroes.iter().map(|&i| legal_aims(b, i)).collect();
-    let total: usize = choices.iter().map(|c| c.len()).product::<usize>().max(1);
-    if pick >= total {
-        return None;
-    }
-    let mut aims: Vec<Aim> = vec![Aim::WAIT; b.units.len()];
-    for (k, &i) in heroes.iter().enumerate() {
-        let radix: usize = choices[..k]
-            .iter()
-            .map(|c| c.len())
-            .product::<usize>()
-            .max(1);
-        aims[i] = choices[k][(pick / radix) % choices[k].len()];
-    }
-    for (i, a) in regions::foe_aims(b).iter().enumerate() {
-        if let Some(a) = a {
-            aims[i] = *a;
-        }
-    }
-    Some(aims)
-}
-
-/// The line a player following the doom oracle would take: the first joint declaration it still certifies as
-/// winnable. Falls back to the first legal one if the position is already lost - which is the honest thing to
-/// show, because a doomed board still has to be played out.
-fn certified_line(b: &Board, round: usize) -> Vec<Aim> {
+/// The line a player following the oracle would take: the first joint declaration it still certifies as winnable.
+/// Falls back to the first legal one when the position is already lost - which is the honest thing to show,
+/// because a doomed board still has to be played out.
+fn certified_line(b: &Board, round: usize) -> Vec<Act> {
     let heroes: Vec<usize> = (0..b.units.len())
         .filter(|&i| b.units[i].side == Side::Party && !b.units[i].fallen)
         .collect();
-    let mut o = Oracle::new(BUDGET);
-    let mut fallback: Option<Vec<Aim>> = None;
-    for pick in 0.. {
-        let Some(aims) = nth_line(b, &heroes, pick) else {
-            break;
-        };
-        if fallback.is_none() {
-            fallback = Some(aims.clone());
+    let choices: Vec<Vec<Act>> = heroes.iter().map(|&i| legal_acts(b, i)).collect();
+    let total: usize = choices.iter().map(|c| c.len().max(1)).product();
+    let foes = regions::foe_acts(b);
+    let build = |pick: usize| -> Vec<Act> {
+        let mut acts = vec![Act::Hold; b.units.len()];
+        for (k, &i) in heroes.iter().enumerate() {
+            if choices[k].is_empty() {
+                continue;
+            }
+            let radix: usize = choices[..k].iter().map(|c| c.len().max(1)).product();
+            acts[i] = choices[k][(pick / radix) % choices[k].len()];
         }
+        for (i, a) in foes.iter().enumerate() {
+            if let Some(a) = a {
+                acts[i] = *a;
+            }
+        }
+        acts
+    };
+
+    let mut o = Oracle::new(BUDGET);
+    for pick in 0..total {
+        let acts = build(pick);
         let mut probe = b.clone();
-        regions::play_round(&mut probe, &aims);
-        if o.winnable(&probe, round + 1, None) {
-            return aims;
+        regions::play_round(&mut probe, &acts);
+        if o.winnable(&probe, round + 1, false) {
+            return acts;
         }
     }
-    fallback.expect("at least one legal declaration")
+    build(0)
 }
 
 fn main() {
-    println!("v2_regions - does a PRICED move ever turn a loss into a win?");
-    println!("the mirror of v2_remarshal, which proved a FREE move never does.\n");
+    println!("v2_regions - is SLIPPING ever necessary to win?\n");
+    println!("The formation is declared ONCE and thereafter evolves through play, so the old");
+    println!("question (fixed vs re-declared) is moot. Both arms get the BEST setup.");
+    println!("  control:   the party may only CLASH or HOLD - it never slips.");
+    println!("  treatment: the full menu, slipping included.\n");
 
-    let mut rescued = Vec::new();
-    let (mut nodes, mut worst_memo, mut ms) = (0u64, 0usize, 0u128);
+    let mut needs_slip = Vec::new();
+    let (mut nodes, mut worst, mut ms) = (0u64, 0usize, 0u128);
 
     for e in catalog::ENCOUNTERS.iter() {
-        let board = setup(e);
+        let us = units(e);
+        let party = catalog::ROSTER.len();
 
         let t0 = Instant::now();
-        let (fixed_wins, fo) = best_fixed(&board, BUDGET);
-        let fixed_ms = t0.elapsed().as_millis();
+        let (mut clash_only, mut with_slip) = (false, false);
+        let (mut n, mut w) = (0u64, 0usize);
+        for (regions, posts) in formations(&us, party) {
+            let b = Board::new(us.clone(), regions, posts);
+            for (arm, no_slip) in [(&mut clash_only, true), (&mut with_slip, false)] {
+                if **&arm {
+                    continue; // already answered by an earlier formation
+                }
+                let mut o = Oracle::new(BUDGET);
+                *arm = o.winnable(&b, 0, no_slip);
+                n += o.nodes();
+                w = w.max(o.states());
+            }
+            if clash_only && with_slip {
+                break;
+            }
+        }
+        let dt = t0.elapsed().as_millis();
+        nodes += n;
+        worst = worst.max(w);
+        ms += dt;
 
-        let t1 = Instant::now();
-        let mut mo = Oracle::new(BUDGET);
-        let moving = mo.verdict(&board, 0);
-        let move_ms = t1.elapsed().as_millis();
-
-        nodes += mo.nodes();
-        worst_memo = worst_memo.max(mo.states());
-        ms += move_ms;
-
-        let fixed_verdict = match (fixed_wins, fo.aborted()) {
-            (true, _) => "WINNABLE",
-            (false, true) => "evaluating (budget)",
-            (false, false) => "DOOMED",
-        };
-
+        let say = |b: bool| if b { "WINNABLE" } else { "no line wins" };
         println!("{} - {}", e.location, e.title);
-        println!(
-            "   fixed setup, never moves : {:<20} ({} nodes, {} memo, {} ms)",
-            fixed_verdict,
-            fo.nodes(),
-            fo.states(),
-            fixed_ms
-        );
-        println!(
-            "   re-declare every round   : {:<20} ({} nodes, {} memo, {} ms)",
-            format!("{moving:?}").to_uppercase(),
-            mo.nodes(),
-            mo.states(),
-            move_ms
-        );
-
-        // The whole question, in one line.
-        if moving == Verdict::Winnable && !fixed_wins && !fo.aborted() {
-            println!("   >>> MOVEMENT IS LOAD-BEARING HERE: no fixed setup wins, and moving does.");
-            rescued.push(e.location);
+        println!("   clash only, never slip : {}", say(clash_only));
+        println!("   the full menu          : {}", say(with_slip));
+        println!("   ({n} nodes, {w} memo, {dt} ms)");
+        if with_slip && !clash_only {
+            println!("   >>> SLIPPING IS LOAD-BEARING: no clash-only line wins, and a slip does.");
+            needs_slip.push(e.location);
         }
         println!();
     }
 
     println!("----------------------------------------------------------------");
-    if rescued.is_empty() {
-        println!("VERDICT: movement is DECORATION. No encounter is rescued by moving that a fixed");
-        println!("         setup could not already win - the same result v2_remarshal got for a");
-        println!(
-            "         FREE re-rank. Pricing the move did not make it matter. Do not build it."
-        );
+    if needs_slip.is_empty() {
+        println!("VERDICT: slipping is DECORATION. Every fight winnable at all is winnable by");
+        println!("         clashing. The mechanic is not paying for itself - the same answer");
+        println!("         v2_remarshal got, and it deserves to be taken just as seriously.");
     } else {
         println!(
-            "VERDICT: movement is LOAD-BEARING. {} encounter(s) are winnable ONLY by moving,",
-            rescued.len()
+            "VERDICT: slipping is LOAD-BEARING. {} encounter(s) cannot be won by clashing,",
+            needs_slip.len()
         );
-        println!("         and unwinnable from every fixed setup:");
-        for r in &rescued {
+        println!("         and can be won by slipping:");
+        for r in &needs_slip {
             println!("           - {r}");
         }
-        println!("         This is what v2_remarshal could NOT find with a free move. Pricing the");
-        println!("         move created a decision that did not exist before.");
+        println!("         And no better SETUP could have pre-empted it: the formation was fixed");
+        println!("         at round 1 in both arms. That is what v2_remarshal could not find.");
     }
-    println!(
-        "\nCOST (v2_remarshal measured 24x for a per-round re-rank; that is what to beat):\n  \
-         {nodes} nodes total, {worst_memo} states in the worst memo, {ms} ms total"
-    );
+    println!("\nCOST: {nodes} nodes, {worst} states in the worst memo, {ms} ms total");
 
-    // ---- the transcript: can you READ the fight at round 4? --------------------------------------------
+    // ---- the transcript -----------------------------------------------------------------------------------
     println!("\n----------------------------------------------------------------");
-    println!("TRANSCRIPT - the board after every sub-phase. `*` = foe, `(n)` = health.");
+    println!("TRANSCRIPT - `*` = foe, `(n)` = health. Front line first; the back line after `|`.");
     println!("The judgment the numbers cannot give: at round 4, can you still say what is");
     println!("happening, and why?\n");
 
-    let e = catalog::ENCOUNTERS
-        .iter()
-        .find(|e| e.location == "Greywater Ford")
-        .expect("Greywater Ford");
-    let mut b = setup(e);
+    let e = &catalog::ENCOUNTERS[5]; // Greywater Ford
+    let us = units(e);
+    let party = catalog::ROSTER.len();
+    // A plausible opening: the whole party in one region, the melee bodies holding the front, the cannons behind.
+    let regions: Vec<u8> = (0..us.len()).map(|i| u8::from(i >= party)).collect();
+    // Both sides post themselves the natural way: cannons behind the line, everything that swings in front.
+    let posts = foe_posts(&us);
+
+    let mut b = Board::new(us, regions, posts);
     println!(
-        "{} - {}\n  start:   {}\n",
+        "{} - {}\n  setup:  {}\n",
         e.location,
         e.title,
         board_line(&b)
@@ -243,23 +304,26 @@ fn main() {
         if b.outcome().is_some() {
             break;
         }
-        let aims = certified_line(&b, round);
+        let acts = certified_line(&b, round);
         println!("Round {}:", round + 1);
         for i in 0..b.units.len() {
             if b.units[i].side == Side::Party && !b.units[i].fallen {
-                println!("    {:<12} {}", b.units[i].name, aims[i].label(&b));
+                println!("    {:<12} {}", b.units[i].name, acts[i].label(&b));
             }
         }
-        let logs = regions::play_round(&mut b, &aims);
-        for (phase, log) in SubPhase::ALL.iter().zip(&logs) {
+        let logs = regions::play_round(&mut b, &acts);
+        for (phase, l) in SubPhase::ALL.iter().zip(&logs) {
             let mut notes = Vec::new();
-            for &i in &log.caught {
-                notes.push(format!("{} is CAUGHT crossing", b.units[i].name));
+            for &i in &l.through {
+                notes.push(format!("{} GETS THROUGH", b.units[i].name));
             }
-            for &i in &log.arrived {
-                notes.push(format!("{} gets through", b.units[i].name));
+            for &i in &l.aborted {
+                notes.push(format!("{} turns and fights", b.units[i].name));
             }
-            for &i in &log.fallen {
+            for &i in &l.promoted {
+                notes.push(format!("{} promoted to the front", b.units[i].name));
+            }
+            for &i in &l.fallen {
                 notes.push(format!("{} FALLS", b.units[i].name));
             }
             let note = if notes.is_empty() {
@@ -268,7 +332,7 @@ fn main() {
                 format!("   ({})", notes.join("; "))
             };
             println!(
-                "  {:<9}{}{}",
+                "  {:<8}{}{}",
                 format!("{}:", phase.label()),
                 board_line(&b),
                 note
@@ -277,48 +341,11 @@ fn main() {
         println!();
     }
     println!(
-        "  result: {}\n",
+        "  result: {}",
         match b.outcome() {
-            Some(true) => "party wins",
-            Some(false) => "party falls",
+            Some(true) => "the party wins",
+            Some(false) => "the party falls",
             None => "draw at the round cap",
         }
     );
-
-    // ---- the per-move verdict table: exactly the doom-oracle data the UI must surface -------------------
-    println!("----------------------------------------------------------------");
-    println!("PER-MOVE VERDICT TABLE (the doom oracle, as the UI would chart it)");
-    println!("For each hero, each move it could open with, and whether the position is still");
-    println!("winnable if it makes it. It asks what FORECLOSES the win - not what is optimal.\n");
-
-    for e in catalog::ENCOUNTERS.iter().filter(|e| e.party) {
-        let b = setup(e);
-        println!("{} - {}", e.location, e.title);
-        println!("  board: {}", board_line(&b));
-        for i in 0..b.units.len() {
-            if b.units[i].side != Side::Party {
-                continue;
-            }
-            let mut o = Oracle::new(BUDGET);
-            let lines: Vec<(String, Verdict)> = legal_aims(&b, i)
-                .into_iter()
-                .map(|a| (a.label(&b), o.verdict_for(&b, 0, i, a)))
-                .collect();
-            // Only print a hero whose choice actually discriminates. One whose every move keeps the win has no
-            // decision to make, and listing seven identical verdicts is noise (spec 4.1: count-adaptivity - a
-            // choice is shown iff it has >= 2 meaningfully different options).
-            if lines.iter().all(|(_, v)| *v == Verdict::Winnable) {
-                println!(
-                    "  {}: every move keeps the win - no decision here",
-                    b.units[i].name
-                );
-                continue;
-            }
-            println!("  {}:", b.units[i].name);
-            for (l, v) in lines {
-                println!("      {l:<22} {v:?}");
-            }
-        }
-        println!();
-    }
 }
