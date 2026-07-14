@@ -32,7 +32,9 @@
 use std::time::Instant;
 
 use deckbound_board::combat::{Combatant, Side};
-use deckbound_board::regions::{self, Act, Board, Oracle, Post, SubPhase, legal_acts};
+use deckbound_board::regions::{
+    self, Act, AreaReach, Board, Oracle, Post, SubPhase, legal_acts, set_area_reach,
+};
 use deckbound_content::catalog::{self, Creature, Encounter};
 use deckbound_content::rank::Intention as Rank;
 
@@ -59,15 +61,92 @@ fn beast(c: &Creature) -> Combatant {
     .as_horde(c.horde)
 }
 
-/// The bodies of an encounter: the four kits, then its foes.
-fn units(e: &Encounter) -> Vec<Combatant> {
+/// The bodies of an encounter: the four kits, then its foes. `aoe_might` scales the Might of every **area**
+/// striker - the tuning knob, so we can ask whether AoE is merely *too strong* or structurally *too reaching*.
+fn units(e: &Encounter, aoe_might: f32) -> Vec<Combatant> {
     let mut out: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit).collect();
     for (c, q) in catalog::encounter_foes(e) {
         for _ in 0..q {
             out.push(beast(c));
         }
     }
+    for u in &mut out {
+        if u.aoe {
+            u.might = ((u.might as f32) * aoe_might).round().max(1.0) as u32;
+        }
+    }
     out
+}
+
+/// Does the party NEED to slip to win this encounter, under the given rules?
+/// Returns `(winnable by clashing only, winnable with the full menu)`.
+fn probe(e: &Encounter, aoe_might: f32, reach: AreaReach) -> (bool, bool) {
+    set_area_reach(reach);
+    probe_units(units(e, aoe_might))
+}
+
+/// [`probe`], over an explicit roster.
+fn probe_units(us: Vec<Combatant>) -> (bool, bool) {
+    let party = catalog::ROSTER.len();
+    let (mut clash_only, mut with_slip) = (false, false);
+    for (regions, posts) in formations(&us, party) {
+        let b = Board::new(us.clone(), regions, posts);
+        if !clash_only {
+            clash_only = Oracle::new(BUDGET).winnable(&b, 0, true);
+        }
+        if !with_slip {
+            with_slip = Oracle::new(BUDGET).winnable(&b, 0, false);
+        }
+        if clash_only && with_slip {
+            break;
+        }
+    }
+    (clash_only, with_slip)
+}
+
+/// **The decisive test: a tough front and a lethal back.**
+///
+/// The four-arm AoE experiment exonerated area strikes - the raid is never necessary at *any* sweep power or
+/// reach. So the cause is elsewhere, and the invariant points straight at it:
+///
+/// > **No rearguard without a vanguard.** Kill the front and the back is *promoted into reach*. So a screen
+/// > never DENIES anything - it only DELAYS. A raid is therefore never a necessity, only a **shortcut**.
+///
+/// A shortcut is worth buying only when the long way round does not fit in the time you have. So a raid can only
+/// be *necessary* against a front that cannot be ground down in time, guarding a back that you cannot afford to
+/// leave alive. That is a claim about **encounters**, not about mechanics - and it is testable.
+///
+/// This is that encounter: a wall with enormous Grit and Health (grinding it takes longer than the round cap
+/// allows) sheltering a cannon that kills a hero a round. If the raid does not become necessary *here*, it is
+/// not an encounter problem and the mechanic really is broken.
+fn tough_front_lethal_back() -> Vec<Combatant> {
+    let mut us: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit).collect();
+    us.push(
+        // The wall: Might 2, Vitality 9, Grit 9, Cadence 3, Finesse 3. Chewing through 9 cards at Grit 9 is far
+        // more damage than the party can pile up inside five rounds.
+        Combatant::from_stats(
+            "The Bulwark",
+            Side::Foe,
+            Rank::Vanguard,
+            [2, 9, 9, 3, 3],
+            0,
+            true,
+            false,
+        ),
+    );
+    us.push(
+        // The cannon behind it: Might 6, so it flips a hero's Health every single round it is left alive.
+        Combatant::from_stats(
+            "The Executioner",
+            Side::Foe,
+            Rank::Vanguard,
+            [6, 3, 2, 2, 2],
+            0,
+            false,
+            true,
+        ),
+    );
+    us
 }
 
 /// Every **partition of the party into regions**, as a restricted-growth string (`rgs[k]` is hero `k`'s region,
@@ -219,72 +298,134 @@ fn certified_line(b: &Board, round: usize) -> Vec<Act> {
 }
 
 fn main() {
-    println!("v2_regions - is SLIPPING ever necessary to win?\n");
+    println!(
+        "v2_regions - is SLIPPING ever necessary to win?
+"
+    );
     println!("The formation is declared ONCE and thereafter evolves through play, so the old");
     println!("question (fixed vs re-declared) is moot. Both arms get the BEST setup.");
     println!("  control:   the party may only CLASH or HOLD - it never slips.");
-    println!("  treatment: the full menu, slipping included.\n");
+    println!("  treatment: the full menu, slipping included.");
+    println!(
+        "A raid is NECESSARY exactly when the control loses and the treatment wins.
+"
+    );
 
-    let mut needs_slip = Vec::new();
-    let (mut nodes, mut worst, mut ms) = (0u64, 0usize, 0u128);
+    // Three rule-sets, to settle whether AoE is merely too STRONG or structurally too REACHING.
+    //
+    // An area strike costs one tempo card - for the Bombardier (Cadence 1) that is its whole round, so it is
+    // not free. But it pays the *vanguard* nothing: no slip contest, no catch, no blood, no risk of being
+    // repelled. If that is the problem, then TUNING ITS MIGHT CANNOT FIX IT - a weaker sweep kills the back
+    // line more slowly, but the screen still costs it nothing. This measures that claim instead of asserting it.
+    let arms: [(&str, f32, AreaReach); 4] = [
+        (
+            "as built:        sweep hits BOTH tiers, full Might",
+            1.0,
+            AreaReach::WholeRegion,
+        ),
+        (
+            "tuned down:      sweep hits BOTH tiers, HALF Might",
+            0.5,
+            AreaReach::WholeRegion,
+        ),
+        (
+            "tuned to floor:  sweep hits BOTH tiers, Might 1   ",
+            0.0,
+            AreaReach::WholeRegion,
+        ),
+        (
+            "RULE CHANGE:     sweep hits ONE tier, full Might  ",
+            1.0,
+            AreaReach::FrontLine,
+        ),
+    ];
 
-    for e in catalog::ENCOUNTERS.iter() {
-        let us = units(e);
-        let party = catalog::ROSTER.len();
-
-        let t0 = Instant::now();
-        let (mut clash_only, mut with_slip) = (false, false);
-        let (mut n, mut w) = (0u64, 0usize);
-        for (regions, posts) in formations(&us, party) {
-            let b = Board::new(us.clone(), regions, posts);
-            for (arm, no_slip) in [(&mut clash_only, true), (&mut with_slip, false)] {
-                if **&arm {
-                    continue; // already answered by an earlier formation
-                }
-                let mut o = Oracle::new(BUDGET);
-                *arm = o.winnable(&b, 0, no_slip);
-                n += o.nodes();
-                w = w.max(o.states());
-            }
-            if clash_only && with_slip {
-                break;
+    let t0 = Instant::now();
+    for (label, might, reach) in arms {
+        let mut needs_slip = Vec::new();
+        for e in catalog::ENCOUNTERS.iter() {
+            let (clash_only, with_slip) = probe(e, might, reach);
+            if with_slip && !clash_only {
+                needs_slip.push(e.location);
             }
         }
-        let dt = t0.elapsed().as_millis();
-        nodes += n;
-        worst = worst.max(w);
-        ms += dt;
-
-        let say = |b: bool| if b { "WINNABLE" } else { "no line wins" };
-        println!("{} - {}", e.location, e.title);
-        println!("   clash only, never slip : {}", say(clash_only));
-        println!("   the full menu          : {}", say(with_slip));
-        println!("   ({n} nodes, {w} memo, {dt} ms)");
-        if with_slip && !clash_only {
-            println!("   >>> SLIPPING IS LOAD-BEARING: no clash-only line wins, and a slip does.");
-            needs_slip.push(e.location);
-        }
-        println!();
-    }
-
-    println!("----------------------------------------------------------------");
-    if needs_slip.is_empty() {
-        println!("VERDICT: slipping is DECORATION. Every fight winnable at all is winnable by");
-        println!("         clashing. The mechanic is not paying for itself - the same answer");
-        println!("         v2_remarshal got, and it deserves to be taken just as seriously.");
-    } else {
         println!(
-            "VERDICT: slipping is LOAD-BEARING. {} encounter(s) cannot be won by clashing,",
+            "{label}   ->  raid necessary in {}/8 encounters",
             needs_slip.len()
         );
-        println!("         and can be won by slipping:");
         for r in &needs_slip {
-            println!("           - {r}");
+            println!("      - {r}");
         }
-        println!("         And no better SETUP could have pre-empted it: the formation was fixed");
-        println!("         at round 1 in both arms. That is what v2_remarshal could not find.");
     }
-    println!("\nCOST: {nodes} nodes, {worst} states in the worst memo, {ms} ms total");
+    println!(
+        "
+  ({} ms)
+",
+        t0.elapsed().as_millis()
+    );
+
+    // ---- the decisive test ------------------------------------------------------------------------------
+    println!("----------------------------------------------------------------");
+    println!("THE DECISIVE TEST: a tough front and a lethal back.");
+    println!();
+    println!("If AoE is exonerated above, the cause is the invariant: NO REARGUARD WITHOUT A");
+    println!("VANGUARD. Kill the front and the back is PROMOTED into reach - so a screen never");
+    println!("DENIES anything, it only DELAYS, and a raid is never a necessity, only a shortcut.");
+    println!("A shortcut is worth buying only when the long way round does not fit in the time");
+    println!("you have. So: a wall too tough to grind inside five rounds, sheltering a cannon");
+    println!("that kills a hero every round it lives. If the raid is not necessary HERE, the");
+    println!(
+        "problem is the mechanic - not the encounters.
+"
+    );
+
+    set_area_reach(AreaReach::WholeRegion);
+    let (clash_only, with_slip) = probe_units(tough_front_lethal_back());
+    println!(
+        "  clash only, never slip : {}",
+        if clash_only {
+            "WINNABLE"
+        } else {
+            "no line wins"
+        }
+    );
+    println!(
+        "  the full menu          : {}",
+        if with_slip {
+            "WINNABLE"
+        } else {
+            "no line wins"
+        }
+    );
+    if with_slip && !clash_only {
+        println!(
+            "
+  >>> THE RAID IS NECESSARY HERE. The mechanic works; the eight shipped"
+        );
+        println!("      encounters simply never present a front worth going around.");
+        println!("      That is a CONTENT problem, and a content problem is a good problem.");
+    } else if !with_slip {
+        println!(
+            "
+  >>> Unwinnable either way - the test is too hard to be informative. Soften it."
+        );
+    } else {
+        println!(
+            "
+  >>> The raid is STILL not necessary, even against a wall that cannot be ground"
+        );
+        println!(
+            "      down guarding a cannon that cannot be ignored. Then the mechanic is broken:"
+        );
+        println!("      there is no shape of fight a raid is the answer to.");
+    }
+    println!(
+        "----------------------------------------------------------------
+"
+    );
+
+    // Put the model back to the shipped rule before the transcript.
+    set_area_reach(AreaReach::WholeRegion);
 
     // ---- the transcript -----------------------------------------------------------------------------------
     println!("\n----------------------------------------------------------------");
@@ -293,7 +434,7 @@ fn main() {
     println!("happening, and why?\n");
 
     let e = &catalog::ENCOUNTERS[5]; // Greywater Ford
-    let us = units(e);
+    let us = units(e, 1.0);
     let party = catalog::ROSTER.len();
     // A plausible opening: the whole party in one region, the melee bodies holding the front, the cannons behind.
     let regions: Vec<u8> = (0..us.len()).map(|i| u8::from(i >= party)).collect();
@@ -314,9 +455,9 @@ fn main() {
         }
         let acts = certified_line(&b, round);
         println!("Round {}:", round + 1);
-        for i in 0..b.units.len() {
+        for (i, act) in acts.iter().enumerate() {
             if b.units[i].side == Side::Party && !b.units[i].fallen {
-                println!("    {:<12} {}", b.units[i].name, acts[i].label(&b));
+                println!("    {:<12} {}", b.units[i].name, act.label(&b));
             }
         }
         let logs = regions::play_round(&mut b, &acts);

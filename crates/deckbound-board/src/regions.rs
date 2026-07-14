@@ -531,22 +531,57 @@ fn dodges_against(board: &Board, reaching: &[Contact]) -> Vec<Dodge> {
 /// It deliberately does **not** carry the product's "one sweep clears the whole pack" horde rule: region-wide,
 /// that let one Salvo delete sixteen bodies for a single card and collapsed seven of eight encounters to a
 /// round-one wipe. A horde takes a sweep like anything else, spilling body to body.
-fn area_strike(board: &mut Board, attacker: usize, region: u8) -> Vec<Contact> {
+fn area_strike(board: &mut Board, attacker: usize, region: u8, tier: Post) -> Vec<Contact> {
     if board.units[attacker].fallen || board.units[attacker].tempo == 0 {
         return Vec::new();
     }
     board.units[attacker].tempo -= 1;
     let side = board.units[attacker].side;
+    let depth = AREA_REACH.with(|r| *r.borrow());
     board
         .in_region(region)
         .into_iter()
         .filter(|&j| board.units[j].side != side)
+        .filter(|&j| depth == AreaReach::WholeRegion || board.posts[j] == tier)
         .map(|j| Contact {
             attacker,
             target: j,
             bid: 0, // no bid: it cannot be evaded, and nobody answers along it
         })
         .collect()
+}
+
+/// **How deep an area strike reaches** - the open design question this model turned up, and the reason the raid
+/// currently has nothing to be *for*.
+///
+/// It is a switch rather than a constant because the two answers are a **rule** fork, not a number, and the
+/// difference is not one you can tune your way across:
+///
+/// - [`WholeRegion`](AreaReach::WholeRegion) - a sweep hits **both tiers**. Then an area strike is a *universal
+///   solvent for the screen*: it reaches a body behind an intact front, for one card, at **any power level**.
+///   Turning its Might down changes how *fast* the back line dies, never whether it is *reachable* - so the
+///   front/back structure means nothing to anybody carrying one, and the raid's unique selling point ("the only
+///   way past an intact line") is simply false.
+/// - [`FrontLine`](AreaReach::FrontLine) - a sweep hits **the tier it was aimed at**. This is the old spec's rule
+///   ("an attack may strike a whole *rank* at once"), and the more natural reading of what an area strike even
+///   is: it covers a **line**, not a **depth**. The screen keeps meaning, AoE stays the anti-cluster counter
+///   against a *wide* front, and the raid stays the only way to a screened body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AreaReach {
+    /// Both tiers. An area strike ignores the screen entirely.
+    WholeRegion,
+    /// Only the tier it was aimed at. The screen still screens.
+    FrontLine,
+}
+
+thread_local! {
+    static AREA_REACH: std::cell::RefCell<AreaReach> = const { std::cell::RefCell::new(AreaReach::WholeRegion) };
+}
+
+/// Set the [`AreaReach`] rule for this thread. A probe knob, not a game setting - it exists so the two answers
+/// can be *measured* against each other rather than argued about.
+pub fn set_area_reach(reach: AreaReach) {
+    AREA_REACH.with(|r| *r.borrow_mut() = reach);
 }
 
 /// Land a set of blows: each contact's opening blow, plus - if `pour` - everyone's leftover tempo poured along an
@@ -716,8 +751,9 @@ fn exchange(board: &mut Board, attacks: &[(usize, usize)], pour: bool) {
     let mut aimed: Vec<Engage> = Vec::new();
     for &(a, t) in attacks {
         if board.units[a].aoe {
-            let region = board.regions[t];
-            sweeps.extend(area_strike(board, a, region));
+            // The sweep covers the tier it was aimed at (or both, under `AreaReach::WholeRegion`).
+            let (region, tier) = (board.regions[t], board.posts[t]);
+            sweeps.extend(area_strike(board, a, region, tier));
         } else {
             aimed.push(Engage {
                 attacker: a,
