@@ -28,9 +28,13 @@ const GOOD: Color = Color::srgb(0.45, 0.80, 0.65);
 const WARN: Color = Color::srgb(0.90, 0.72, 0.35);
 const BAD: Color = Color::srgb(0.90, 0.42, 0.44);
 
-/// How many nodes the win/loss counter may spend per option, per rebuild. A fight's tree is large, so this is a
-/// cap: an incomplete tally is shown with a `>=` rather than hangs the UI.
-const COUNT_BUDGET: u64 = 60_000;
+/// The MOST work any one frame may do, so a frame never stalls and the window stays responsive - you can drag
+/// it, close it, and see progress while the solver thinks. The verdict search restarts from the root each frame
+/// reusing its memo, so capping the per-frame grant just spreads a hard question over more frames.
+const FRAME_NODES: u64 = 20_000;
+/// The win/loss tally is a single bounded pass per option; an incomplete result is an honest ">=" lower bound,
+/// good enough to compare routes. (The shared memo makes later options' tallies more complete for free.)
+const COUNT_BUDGET: u64 = 40_000;
 
 fn main() {
     let idx: usize = std::env::args()
@@ -55,7 +59,7 @@ fn main() {
         .insert_resource(ClearColor(FELT))
         .insert_resource(Fight::new(idx))
         .add_systems(Startup, (camera, rebuild).chain())
-        .add_systems(Update, (on_click, rebuild.run_if(is_dirty)).chain())
+        .add_systems(Update, (on_click, grind, rebuild.run_if(is_dirty)).chain())
         .run();
 }
 
@@ -69,9 +73,19 @@ fn camera(mut commands: Commands) {
 struct Fight {
     encounter: usize,
     state: State,
-    /// Per current option: its verdict and win/loss path tally. Computed on rebuild.
-    scored: Vec<(Choice, Verdict, Paths)>,
-    verdict: Verdict,
+    /// The legal options right now. Their scores are computed lazily, a slice per frame - never on the click.
+    options: Vec<Choice>,
+    /// Each option's verdict and win/loss tally; `None` means "still computing" (shown as `...`).
+    opt_verdict: Vec<Option<Verdict>>,
+    opt_paths: Vec<Option<Paths>>,
+    /// The position's own verdict; `None` while thinking.
+    verdict: Option<Verdict>,
+    /// A solver and counter kept ACROSS frames, so their memo survives and the work converges instead of
+    /// restarting. Rebuilt only when the position changes.
+    solver: Solver<Combat>,
+    counter: PathCounter<Combat>,
+    /// The current per-walk grant, doubled each frame a verdict stays uncertain (capped at [`FRAME_NODES`]).
+    grant: u64,
     log: Vec<String>,
     dirty: bool,
 }
@@ -81,12 +95,17 @@ impl Fight {
         let mut f = Fight {
             encounter,
             state: build(encounter),
-            scored: Vec::new(),
-            verdict: Verdict::Evaluating,
+            options: Vec::new(),
+            opt_verdict: Vec::new(),
+            opt_paths: Vec::new(),
+            verdict: None,
+            solver: Solver::new(),
+            counter: PathCounter::new(),
+            grant: FRAME_NODES,
             log: Vec::new(),
             dirty: true,
         };
-        f.rescore();
+        f.reposition();
         f
     }
 
@@ -97,61 +116,96 @@ impl Fight {
     fn reset(&mut self) {
         self.state = build(self.encounter);
         self.log.clear();
-        self.rescore();
+        self.reposition();
     }
 
-    /// Ask the solver for this position's verdict, then score every option: its own verdict, and how many lines
-    /// through it win vs lose. One `Solver` and one `PathCounter` are reused across the options so the shared
-    /// tree is walked once.
-    fn rescore(&mut self) {
-        let opts = Combat::options(&self.state);
+    /// **The position changed** - list the new options and arm the lazy compute. Nothing is searched here, so a
+    /// click returns instantly and the board is drawn at once; the scores fill in over the next frames.
+    fn reposition(&mut self) {
         // Auto-advance a forced single option so the UI only ever shows real decisions.
-        if opts.len() == 1 {
-            self.state = Combat::apply(&self.state, &opts[0]);
-            if Combat::outcome(&self.state).is_none() {
-                return self.rescore();
+        loop {
+            let opts = Combat::options(&self.state);
+            if opts.len() == 1 && Combat::outcome(&self.state).is_none() {
+                self.state = Combat::apply(&self.state, &opts[0]);
+            } else {
+                self.options = opts;
+                break;
             }
         }
-        // ONE solver and ONE counter across the whole rescore: the options lead to heavily overlapping subtrees,
-        // so a shared memo settles the second option almost for free. (A fresh solver per option re-walked the
-        // shared tree every time - that was the tens-of-seconds startup on a party encounter.)
-        let mut solver = Solver::<Combat>::new();
-        let mut counter = PathCounter::<Combat>::new();
-        self.verdict = settle_with(&mut solver, &self.state);
-        self.scored = opts
-            .into_iter()
-            .map(|c| {
-                let next = Combat::apply(&self.state, &c);
-                let v = settle_with(&mut solver, &next);
-                counter.grant(COUNT_BUDGET);
-                let p = counter.count(&next);
-                (c, v, p)
-            })
-            .collect();
+        self.opt_verdict = vec![None; self.options.len()];
+        self.opt_paths = vec![None; self.options.len()];
+        self.verdict = None;
+        self.solver = Solver::new();
+        self.counter = PathCounter::new();
+        self.grant = FRAME_NODES;
         self.dirty = true;
     }
 
+    /// **One frame's worth of scoring.** Settle the position's verdict first, then each option's verdict, then
+    /// each option's win/loss tally - one small step, capped at [`FRAME_NODES`], so the frame never stalls. The
+    /// shared memo means each step is cheaper than the last. Returns whether anything changed (redraw if so).
+    fn grind(&mut self) -> bool {
+        if Combat::outcome(&self.state).is_some() {
+            return false;
+        }
+        // 1. the position's own verdict
+        if self.verdict.is_none() {
+            self.solver.grant(self.grant);
+            match self.solver.verdict(&self.state) {
+                Verdict::Evaluating => {
+                    self.grant = (self.grant * 2).min(FRAME_NODES.saturating_mul(8))
+                }
+                v => {
+                    self.verdict = Some(v);
+                    self.grant = FRAME_NODES;
+                }
+            }
+            return true;
+        }
+        // 2. the first option still missing a verdict
+        for i in 0..self.options.len() {
+            if self.opt_verdict[i].is_none() {
+                let next = Combat::apply(&self.state, &self.options[i]);
+                self.solver.grant(self.grant);
+                match self.solver.verdict(&next) {
+                    Verdict::Evaluating => {
+                        self.grant = (self.grant * 2).min(FRAME_NODES.saturating_mul(8))
+                    }
+                    v => {
+                        self.opt_verdict[i] = Some(v);
+                        self.grant = FRAME_NODES;
+                    }
+                }
+                return true;
+            }
+        }
+        // 3. the first option still missing a tally (a single bounded pass; a partial ">=" is fine)
+        for i in 0..self.options.len() {
+            if self.opt_paths[i].is_none() {
+                let next = Combat::apply(&self.state, &self.options[i]);
+                self.counter.grant(COUNT_BUDGET);
+                self.opt_paths[i] = Some(self.counter.count(&next));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// How many options are fully scored (verdict + tally), for the progress line.
+    fn scored_count(&self) -> usize {
+        (0..self.options.len())
+            .filter(|&i| self.opt_verdict[i].is_some() && self.opt_paths[i].is_some())
+            .count()
+    }
+
     fn choose(&mut self, i: usize) {
-        if i >= self.scored.len() || Combat::outcome(&self.state).is_some() {
+        if i >= self.options.len() || Combat::outcome(&self.state).is_some() {
             return;
         }
-        let (c, _, _) = self.scored[i].clone();
+        let c = self.options[i].clone();
         self.log.push(describe(self.state.board(), &c));
         self.state = Combat::apply(&self.state, &c);
-        self.rescore();
-    }
-}
-
-/// Grind a SHARED solver to a certain verdict (escalating grant) - reuses its memo across calls.
-fn settle_with(o: &mut Solver<Combat>, s: &State) -> Verdict {
-    let mut grant = 1u64 << 12;
-    loop {
-        o.grant(grant);
-        let v = o.verdict(s);
-        if v != Verdict::Evaluating {
-            return v;
-        }
-        grant = grant.saturating_mul(2);
+        self.reposition();
     }
 }
 
@@ -229,6 +283,13 @@ struct Root;
 
 fn is_dirty(f: Res<Fight>) -> bool {
     f.dirty
+}
+
+/// Do one frame's scoring and redraw if a result landed. The window stays live because this is bounded.
+fn grind(mut f: ResMut<Fight>) {
+    if f.grind() {
+        f.dirty = true;
+    }
 }
 
 fn on_click(mut f: ResMut<Fight>, q: Query<(&Interaction, &Hit), Changed<Interaction>>) {
@@ -330,14 +391,34 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
     })
     .with_children(|h| {
         text(h, format!("{} - {}", e.location, e.title), 20.0, INK);
-        let status = match Combat::outcome(&f.state) {
-            Some(o) => (format!("*** {o:?} ***"), verdict_color(f.verdict)),
-            None => (
-                format!("round {}   position: {:?}", f.state.round(), f.verdict),
-                verdict_color(f.verdict),
+        let status = match (Combat::outcome(&f.state), f.verdict) {
+            (Some(o), _) => (
+                format!("*** {o:?} ***"),
+                verdict_color(f.verdict.unwrap_or(Verdict::Evaluating)),
+            ),
+            (None, Some(v)) => (
+                format!("round {}   position: {v:?}", f.state.round()),
+                verdict_color(v),
+            ),
+            (None, None) => (
+                format!("round {}   position: computing...", f.state.round()),
+                WARN,
             ),
         };
         text(h, status.0, 14.0, status.1);
+        // What you are waiting on: a live progress line, so a busy UI is never a silent one.
+        if Combat::outcome(&f.state).is_none() {
+            let n = f.options.len();
+            let done = f.scored_count();
+            if f.verdict.is_none() || done < n {
+                text(
+                    h,
+                    format!("scoring options... {done}/{n} done"),
+                    12.0,
+                    MUTED,
+                );
+            }
+        }
     });
 }
 
@@ -497,13 +578,24 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         MUTED,
     );
 
-    for (i, (c, v, paths)) in f.scored.iter().enumerate() {
-        let ge = if paths.complete { "" } else { ">=" };
-        let counts = format!(
-            "{ge}{} win / {ge}{} lose",
-            abbrev(paths.wins),
-            abbrev(paths.losses)
-        );
+    for i in 0..f.options.len() {
+        let c = &f.options[i];
+        let v = f.opt_verdict[i];
+        let counts = match f.opt_paths[i] {
+            Some(paths) => {
+                let ge = if paths.complete { "" } else { ">=" };
+                format!(
+                    "{ge}{} win / {ge}{} lose",
+                    abbrev(paths.wins),
+                    abbrev(paths.losses)
+                )
+            }
+            None => "counting lines...".to_string(),
+        };
+        let border = v.map(verdict_color).unwrap_or(WARN); // amber while still evaluating
+        let vtag = v
+            .map(|x| format!("{x:?}"))
+            .unwrap_or_else(|| "...".to_string());
         p.spawn((
             Button,
             Hit::Option(i),
@@ -517,7 +609,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 ..default()
             },
             BackgroundColor(SUNK),
-            BorderColor::all(verdict_color(*v)),
+            BorderColor::all(border),
         ))
         .with_children(|row| {
             row.spawn(Node {
@@ -529,7 +621,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 text(left, describe(f.state.board(), c), 14.0, INK);
                 text(left, counts, 11.0, MUTED);
             });
-            text(row, format!("{v:?}"), 12.0, verdict_color(*v));
+            text(row, vtag, 12.0, border);
         });
     }
 }
