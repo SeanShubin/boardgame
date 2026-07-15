@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Answer, Board, Post, foe_acts};
+use rules::combat::regions::{Act, Answer, Board, Post};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -135,11 +135,14 @@ impl Fight {
     /// **The position changed** - list the new options and arm the lazy compute. Nothing is searched here, so a
     /// click returns instantly and the board is drawn at once; the scores fill in over the next frames.
     fn reposition(&mut self) {
-        // Auto-advance a forced single option so the UI only ever shows real decisions.
+        // Auto-advance a forced single option so the UI only ever shows real decisions. A FOE reaches the
+        // declaration cursor exactly here - its turn has one legal act - so this is where creature declarations
+        // (and any forced hero move) get applied and, crucially, LOGGED, through the same path a click takes.
         loop {
             let opts = Combat::options(&self.state);
             if opts.len() == 1 && Combat::outcome(&self.state).is_none() {
-                self.state = Combat::apply(&self.state, &opts[0]);
+                let c = opts[0].clone();
+                self.apply_choice(&c);
             } else {
                 self.options = opts;
                 break;
@@ -216,47 +219,54 @@ impl Fight {
             return;
         }
         let c = self.options[i].clone();
-        // Snapshot the whole STATE (not just the board): the board tells us what changed, and `pending()` tells us
-        // the acts it changed FROM - which is the only way to explain damage a slip contest dealt.
+        self.apply_choice(&c);
+        self.reposition();
+    }
+
+    /// **Apply one declaration and record it in the history** - the single path EVERY choice takes, whether a
+    /// player clicked it or a foe (or a forced hero) auto-advanced it. It logs who declared what, applies it, and
+    /// - when the choice closes a round - narrates the slip contests and the net damage. Because foes now declare
+    /// through this same path, their attacks appear in the log with no reconstruction: a hero that falls has the
+    /// creature that felled it named a line or two above.
+    fn apply_choice(&mut self, c: &Choice) {
+        // Snapshot the whole STATE: the board says what changed, and `pending()` says the acts it changed FROM -
+        // the only way to explain damage a slip contest dealt (no declared attack accounts for it).
         let before_state = self.state.clone();
         let before = before_state.board();
         let acting = before_state.deciding();
-        let who = acting
-            .map(|k| before.units[k].name.clone())
-            .unwrap_or_default();
         let round_before = before_state.round();
-        self.log.push(format!("{who}: {}", describe(before, &c)));
 
-        self.state = Combat::apply(&self.state, &c);
+        if let Some(idx) = acting {
+            // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read apart.
+            let mark = if before.units[idx].side == Side::Party {
+                ""
+            } else {
+                "*"
+            };
+            self.log.push(format!(
+                "{mark}{}: {}",
+                before.units[idx].name,
+                describe(before, c)
+            ));
+        }
 
-        // Combat resolves in exactly ONE apply per round - the round-closing declaration, where the foe folds in
-        // and the round counter advances. A mid-round declaration by a non-last hero records an intent and changes
-        // nothing, so it must stay silent. (The setup->round-1 transition also advances the counter but draws no
-        // blood; `round_before >= 1` excludes it.)
+        // The full act vector this apply would resolve with, if it is the round-closer: every body's pending
+        // declaration, plus the one being made now. When it is NOT the closer this is unused.
+        let mut acts: Vec<Act> = before_state
+            .pending()
+            .iter()
+            .map(|p| p.unwrap_or(Act::Hold))
+            .collect();
+        if let (Some(idx), Choice::Act(a)) = (acting, c) {
+            acts[idx] = *a;
+        }
+
+        self.state = Combat::apply(&self.state, c);
+
+        // A round resolves on exactly one apply - the one where the counter advances past round 1's start (the
+        // setup->round-1 transition also advances it but draws no blood, which `round_before >= 1` excludes).
         let resolved = round_before >= 1 && self.state.round() != round_before;
         if resolved {
-            // Rebuild the exact acts this round resolved with - the party's pending declarations (which already
-            // include any hero auto-advanced through a forced single option), the choice just made, and the
-            // scripted foe acts. This is precisely what resolve_round assembles, so the narration matches the math.
-            let mut acts: Vec<Act> = before_state
-                .pending()
-                .iter()
-                .map(|p| p.unwrap_or(Act::Hold))
-                .collect();
-            if let (Some(idx), Choice::Act(a)) = (acting, &c) {
-                acts[idx] = *a;
-            }
-            for (k, a) in foe_acts(before).into_iter().enumerate() {
-                if let Some(a) = a {
-                    acts[k] = a;
-                }
-            }
-            // The foes never appear in the options - they are scripted inside apply - so their attacks are
-            // invisible unless we surface them. Declarations, then the slip contests (who caught whom crossing),
-            // then the net damage. A hero going down now has a named attacker above it.
-            for line in foe_declarations(before) {
-                self.log.push(line);
-            }
             for line in crossings(before, &acts) {
                 self.log.push(line);
             }
@@ -272,7 +282,6 @@ impl Fight {
                     .push(format!("--- round {} ---", self.state.round())),
             }
         }
-        self.reposition();
     }
 }
 
@@ -371,27 +380,6 @@ fn join_counts(names: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-/// **What each foe declared this round** - one line per foe that did something, marked with `*` like the table.
-/// The foes are scripted ([`foe_acts`]) rather than chosen, so without this the player sees a hero fall with no
-/// idea who felled it. Computed on the pre-resolution board, which is exactly what `apply` scripted them from.
-fn foe_declarations(before: &Board) -> Vec<String> {
-    foe_acts(before)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, a)| {
-            let a = a?;
-            if matches!(a, Act::Hold) {
-                return None; // a foe that did nothing is not worth a line
-            }
-            Some(format!(
-                "*{}: {}",
-                before.units[i].name,
-                act_label(before, &a)
-            ))
-        })
-        .collect()
 }
 
 /// **What the last round actually did to the board**, read from a before/after diff - the events the player
