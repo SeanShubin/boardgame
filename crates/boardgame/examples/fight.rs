@@ -458,15 +458,7 @@ fn region_letter(r: u8) -> char {
 /// repeated per action - a placement reads just "stand at region A (front)".
 fn describe(b: &Board, c: &Choice) -> String {
     match c {
-        Choice::Place { region, post } => format!(
-            "stand at region {} ({})",
-            region_letter(*region),
-            if *post == Post::Front {
-                "front"
-            } else {
-                "back"
-            }
-        ),
+        Choice::Place { region } => format!("stand at region {}", region_letter(*region)),
         Choice::Act(a) => act_label(b, a),
     }
 }
@@ -480,6 +472,7 @@ fn act_label(b: &Board, a: &Act) -> String {
     match a {
         Act::Clash(t) => format!("Clash {}", b.units[*t].name),
         Act::Raid(t, x) => format!("Raid {} / {}", b.units[*t].name, ans(x)),
+        Act::Melee(t) => format!("Melee {}", b.units[*t].name),
         Act::Slip(r, x) => format!("Slip -> {} / {}", region_letter(*r), ans(x)),
         Act::Hold => "Hold".into(),
     }

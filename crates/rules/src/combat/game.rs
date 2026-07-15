@@ -32,8 +32,8 @@ use crate::core::{Game, Outcome};
 /// A choice in the combat game: place a hero at setup, or declare its act in a round.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Choice {
-    /// Setup: stand this hero in `region`, posted `post`.
-    Place { region: u8, post: Post },
+    /// Setup: stand this hero in `region`. Its post is derived from its weapon, not chosen.
+    Place { region: u8 },
     /// A round: this hero does `act`.
     Act(Act),
 }
@@ -64,8 +64,6 @@ pub struct State {
     /// Each unit's declared act this round (`None` until declared); reset each round.
     pending: Vec<Option<Act>>,
     round: usize,
-    /// Set once, from the *scripted* foe formation, so it can be dropped in when setup ends.
-    foe_posts: Vec<Post>,
 }
 
 impl State {
@@ -77,17 +75,8 @@ impl State {
         let n = units.len();
         let party: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Party).collect();
         let foes: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Foe).collect();
-        let foe_posts: Vec<Post> = foes
-            .iter()
-            .map(|&i| {
-                if units[i].ranged && !units[i].melee {
-                    Post::Back
-                } else {
-                    Post::Front
-                }
-            })
-            .collect();
-        let board = Board::new(units, vec![0; n], vec![Post::Front; n]);
+        // Post is derived from the weapon at construction, for heroes and foes alike - never chosen at setup.
+        let board = Board::new(units, vec![0; n]);
         // Everyone declares each round, party first then foes - the one loop the whole round flows through.
         let order: Vec<usize> = party.iter().chain(foes.iter()).copied().collect();
         State {
@@ -98,7 +87,6 @@ impl State {
             phase: Phase::Setup { next: 0 },
             pending: vec![None; n],
             round: 0,
-            foe_posts,
         }
     }
 
@@ -161,17 +149,13 @@ impl Game for Combat {
     fn options(state: &State) -> Vec<Choice> {
         match state.phase {
             Phase::Setup { next } => {
-                // Hero `party[next]` picks a region and a post. It may JOIN any region an earlier hero already
-                // stands in, or OPEN the next fresh one (restricted growth - each partition offered once, never
-                // a relabelling), and it may face front or back.
+                // Hero `party[next]` picks only a REGION - its post is derived from its weapon. It may JOIN any
+                // region an earlier hero already stands in, or OPEN the next fresh one (restricted growth - each
+                // partition offered once, never a relabelling).
                 let ceiling = state.max_party_region(next).map_or(0, |m| m + 1);
-                let mut out = Vec::new();
-                for region in 0..=ceiling {
-                    for post in [Post::Front, Post::Back] {
-                        out.push(Choice::Place { region, post });
-                    }
-                }
-                out
+                (0..=ceiling)
+                    .map(|region| Choice::Place { region })
+                    .collect()
             }
             Phase::Declare { next } => match state.order.get(next) {
                 // A hero's real acts to choose among; a foe's single scripted act (its instinct's pick), so it
@@ -189,19 +173,17 @@ impl Game for Combat {
     fn apply(state: &State, choice: &Choice) -> State {
         let mut s = state.clone();
         match (s.phase, choice) {
-            (Phase::Setup { next }, Choice::Place { region, post }) => {
+            (Phase::Setup { next }, Choice::Place { region }) => {
                 let hero = s.party[next];
                 s.board.regions[hero] = *region;
-                s.board.posts[hero] = *post;
                 match s.party.get(next + 1) {
                     Some(_) => s.phase = Phase::Setup { next: next + 1 },
                     None => {
                         // The party is formed. Drop the foes into a region of their own, past the party's, and
-                        // begin the first round.
+                        // begin the first round. (Posts are weapon-derived - fixed at construction.)
                         let foe_region = s.max_party_region(s.party.len()).map_or(0, |m| m + 1);
-                        for (k, &f) in s.foes.iter().enumerate() {
+                        for &f in s.foes.iter() {
                             s.board.regions[f] = foe_region;
-                            s.board.posts[f] = s.foe_posts[k];
                         }
                         s.round = 1;
                         s.phase = Phase::Declare {
@@ -295,28 +277,29 @@ mod tests {
         }
     }
 
-    /// Setup enumerates the party's formations: one hero => join-or-open x front/back. A single hero can only be
-    /// in region 0, front or back - two placements, not a partition explosion.
+    /// **Setup offers a REGION only - never a post.** Post is derived from the weapon, so a lone hero has exactly
+    /// one placement (region 0), not the old region x front/back pair. This is the halved setup branching.
     #[test]
-    fn setup_offers_a_post_choice_even_for_a_lone_hero() {
+    fn setup_offers_only_a_region_never_a_post() {
         let s = State::new(vec![
             unit("Hero", Side::Party, [5, 4, 1, 2, 2], true, false),
             unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
         ]);
         let opts = Combat::options(&s);
-        assert_eq!(
-            opts,
-            vec![
-                Choice::Place {
-                    region: 0,
-                    post: Post::Front
-                },
-                Choice::Place {
-                    region: 0,
-                    post: Post::Back
-                },
-            ]
-        );
+        assert_eq!(opts, vec![Choice::Place { region: 0 }]);
+    }
+
+    /// **Post is derived from the weapon.** A melee body stands front; a ranged-only body stands back - fixed at
+    /// construction, never chosen. The setup options prove it (region-only, above); this pins the derivation.
+    #[test]
+    fn post_is_derived_from_the_weapon() {
+        let s = State::new(vec![
+            unit("Sword", Side::Party, [5, 4, 1, 2, 2], true, false),
+            unit("Bow", Side::Party, [5, 4, 1, 2, 2], false, true),
+            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
+        ]);
+        assert_eq!(s.board().posts[0], Post::Front, "a melee body is front");
+        assert_eq!(s.board().posts[1], Post::Back, "a ranged-only body is back");
     }
 
     /// Two heroes: the second may join the first's region or open a new one - the partition search, as choices.
@@ -327,13 +310,7 @@ mod tests {
             unit("B", Side::Party, [5, 4, 1, 2, 2], true, false),
             unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
         ]);
-        s = Combat::apply(
-            &s,
-            &Choice::Place {
-                region: 0,
-                post: Post::Front,
-            },
-        ); // A in region 0
+        s = Combat::apply(&s, &Choice::Place { region: 0 }); // A in region 0
         let regions: Vec<u8> = Combat::options(&s)
             .into_iter()
             .filter_map(|c| match c {
@@ -355,26 +332,28 @@ mod tests {
 use super::regions::canonical;
 use crate::core::Solvable;
 
-/// A hashable digest of a position: per-unit `(health, fallen, post)`, the **canonicalized** regions (so a
-/// relabelling is not a distinct position), the round, and the pending declarations + cursor (a half-declared
-/// round is genuinely a different state than a fresh one).
+/// A hashable digest of a position: per-unit `(health, fallen, post, intruder)`, the **canonicalized** regions
+/// (so a relabelling is not a distinct position), the round, and the pending declarations + cursor (a
+/// half-declared round is genuinely a different state than a fresh one). The intruder flag is in the key so two
+/// positions that differ only by who is loose inside the enemy ranks stay distinct.
 ///
 /// `tempo` and the damage pile are absent on purpose: both are re-derived at the round Reset, so they are only
 /// ever meaningful *inside* [`play_round`], never at a state a search actually visits.
-type Key = (Vec<(u32, bool, Post)>, Vec<u8>, usize, u8, Vec<Option<Act>>);
+type Key = (
+    Vec<(u32, bool, Post, bool)>,
+    Vec<u8>,
+    usize,
+    u8,
+    Vec<Option<Act>>,
+);
 
 fn key_of(s: &State) -> Key {
-    let per: Vec<(u32, bool, Post)> = s
+    let per: Vec<(u32, bool, Post, bool)> = s
         .board
         .units
         .iter()
-        .map(|u| (u.health, u.fallen, Post::Front)) // post filled below (units carry no post; the board does)
-        .collect();
-    // Fold the board's posts in (units and posts are index-aligned).
-    let per: Vec<(u32, bool, Post)> = per
-        .into_iter()
         .enumerate()
-        .map(|(i, (h, f, _))| (h, f, s.board.posts[i]))
+        .map(|(i, u)| (u.health, u.fallen, s.board.posts[i], s.board.intruders[i]))
         .collect();
     let cursor = match s.phase {
         Phase::Setup { next } => 1 + next as u8, // setup cursors are distinct from declare (which starts at 0)

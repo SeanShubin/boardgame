@@ -56,18 +56,11 @@ fn show_board(b: &Board) -> String {
 
 fn label(b: &Board, c: &Choice) -> String {
     match c {
-        Choice::Place { region, post } => format!(
-            "stand in region {} at the {}",
-            (b'A' + region) as char,
-            if *post == Post::Front {
-                "front"
-            } else {
-                "back"
-            }
-        ),
+        Choice::Place { region } => format!("stand in region {}", (b'A' + region) as char),
         Choice::Act(a) => match a {
             Act::Clash(t) => format!("Clash {}", b.units[*t].name),
             Act::Raid(t, ans) => format!("Raid {} ({ans:?})", b.units[*t].name),
+            Act::Melee(t) => format!("Melee {}", b.units[*t].name),
             Act::Slip(r, ans) => format!("Slip to region {} ({ans:?})", (b'A' + r) as char),
             Act::Hold => "Hold".to_string(),
         },

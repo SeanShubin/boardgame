@@ -49,18 +49,11 @@ fn show_board(b: &Board) -> String {
 
 fn label(b: &Board, c: &Choice) -> String {
     match c {
-        Choice::Place { region, post } => format!(
-            "place in region {} at the {}",
-            (b'A' + region) as char,
-            if *post == Post::Front {
-                "front"
-            } else {
-                "back"
-            }
-        ),
+        Choice::Place { region } => format!("place in region {}", (b'A' + region) as char),
         Choice::Act(a) => match a {
             Act::Clash(t) => format!("Clash {}", b.units[*t].name),
             Act::Raid(t, ans) => format!("Raid {} ({:?})", b.units[*t].name, ans),
+            Act::Melee(t) => format!("Melee {}", b.units[*t].name),
             Act::Slip(r, ans) => format!("Slip to region {} ({:?})", (b'A' + r) as char, ans),
             Act::Hold => "Hold".to_string(),
         },
