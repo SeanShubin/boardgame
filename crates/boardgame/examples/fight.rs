@@ -30,7 +30,7 @@ const BAD: Color = Color::srgb(0.90, 0.42, 0.44);
 
 /// How many nodes the win/loss counter may spend per option, per rebuild. A fight's tree is large, so this is a
 /// cap: an incomplete tally is shown with a `>=` rather than hangs the UI.
-const COUNT_BUDGET: u64 = 400_000;
+const COUNT_BUDGET: u64 = 60_000;
 
 fn main() {
     let idx: usize = std::env::args()
@@ -104,7 +104,6 @@ impl Fight {
     /// through it win vs lose. One `Solver` and one `PathCounter` are reused across the options so the shared
     /// tree is walked once.
     fn rescore(&mut self) {
-        self.verdict = settle(&self.state);
         let opts = Combat::options(&self.state);
         // Auto-advance a forced single option so the UI only ever shows real decisions.
         if opts.len() == 1 {
@@ -113,12 +112,17 @@ impl Fight {
                 return self.rescore();
             }
         }
+        // ONE solver and ONE counter across the whole rescore: the options lead to heavily overlapping subtrees,
+        // so a shared memo settles the second option almost for free. (A fresh solver per option re-walked the
+        // shared tree every time - that was the tens-of-seconds startup on a party encounter.)
+        let mut solver = Solver::<Combat>::new();
         let mut counter = PathCounter::<Combat>::new();
+        self.verdict = settle_with(&mut solver, &self.state);
         self.scored = opts
             .into_iter()
             .map(|c| {
                 let next = Combat::apply(&self.state, &c);
-                let v = settle(&next);
+                let v = settle_with(&mut solver, &next);
                 counter.grant(COUNT_BUDGET);
                 let p = counter.count(&next);
                 (c, v, p)
@@ -138,10 +142,9 @@ impl Fight {
     }
 }
 
-/// Grind the solver to a certain verdict (escalating grant).
-fn settle(s: &State) -> Verdict {
-    let mut o = Solver::<Combat>::new();
-    let mut grant = 1u64;
+/// Grind a SHARED solver to a certain verdict (escalating grant) - reuses its memo across calls.
+fn settle_with(o: &mut Solver<Combat>, s: &State) -> Verdict {
+    let mut grant = 1u64 << 12;
     loop {
         o.grant(grant);
         let v = o.verdict(s);
