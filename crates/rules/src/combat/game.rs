@@ -302,6 +302,44 @@ mod tests {
         assert_eq!(s.board().posts[1], Post::Back, "a ranged-only body is back");
     }
 
+    /// **The scattered control forces every hero into its own fresh region.** At each setup step it offers
+    /// exactly ONE placement (the fresh region), so nobody is ever screened - whereas plain `Combat` lets a
+    /// later hero join an existing region, giving it strictly more placements.
+    #[test]
+    fn scattered_forces_a_fresh_region_per_hero() {
+        let mut s = State::new(vec![
+            unit("A", Side::Party, [5, 4, 1, 2, 2], true, false),
+            unit("B", Side::Party, [5, 4, 1, 2, 2], true, false),
+            unit("C", Side::Party, [5, 4, 1, 2, 2], true, false),
+            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
+        ]);
+        // Every hero, in turn, gets exactly one Scattered placement - the fresh region - while Combat offers
+        // more once there is an existing region to join.
+        while matches!(s.phase, Phase::Setup { .. }) {
+            let scattered = Scattered::options(&s);
+            assert_eq!(scattered.len(), 1, "Scattered offers exactly one placement");
+            let region = match scattered[0] {
+                Choice::Place { region } => region,
+                _ => panic!("setup must be a placement"),
+            };
+            // The fresh region is one past the highest already placed (0 for the first hero).
+            let expected = s
+                .max_party_region(match s.phase {
+                    Phase::Setup { next } => next,
+                    _ => unreachable!(),
+                })
+                .map_or(0, |m| m + 1);
+            assert_eq!(region, expected, "and it is the fresh region");
+            if !matches!(s.phase, Phase::Setup { next: 0 }) {
+                assert!(
+                    Combat::options(&s).len() > 1,
+                    "Combat offers more (join or split) once a region exists"
+                );
+            }
+            s = Scattered::apply(&s, &scattered[0]);
+        }
+    }
+
     /// Two heroes: the second may join the first's region or open a new one - the partition search, as choices.
     #[test]
     fn setup_lets_a_second_hero_group_or_split() {
@@ -409,6 +447,44 @@ impl Game for ClashOnly {
 }
 
 impl Solvable for ClashOnly {
+    type Key = Key;
+    fn key(state: &State) -> Key {
+        key_of(state)
+    }
+}
+
+/// The **scattered control**: the same game, but at setup every hero is forced to **open a fresh region** of its
+/// own - it may never join an existing one. So no formation ever has two bodies in it, nothing is ever screened,
+/// and no back line exists to hide behind. Like [`ClashOnly`], it is a thin newtype that changes only `options`
+/// (and only during Setup); everything else delegates to `Combat`.
+///
+/// It answers the experiment's other question - *is the screen ever necessary?* - by search: if `Combat` is
+/// winnable but `Scattered` is not, grouping (and the screen it buys) was load-bearing.
+pub struct Scattered;
+
+impl Game for Scattered {
+    type State = State;
+    type Choice = Choice;
+    fn options(state: &State) -> Vec<Choice> {
+        match state.phase {
+            // Force the fresh region (`ceiling`) and nothing else - so each hero stands alone and unscreened.
+            // Away from setup this is exactly `Combat`.
+            Phase::Setup { next } => {
+                let ceiling = state.max_party_region(next).map_or(0, |m| m + 1);
+                vec![Choice::Place { region: ceiling }]
+            }
+            Phase::Declare { .. } => Combat::options(state),
+        }
+    }
+    fn apply(state: &State, choice: &Choice) -> State {
+        Combat::apply(state, choice)
+    }
+    fn outcome(state: &State) -> Option<Outcome> {
+        Combat::outcome(state)
+    }
+}
+
+impl Solvable for Scattered {
     type Key = Key;
     fn key(state: &State) -> Key {
         key_of(state)

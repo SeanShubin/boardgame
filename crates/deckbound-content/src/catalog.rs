@@ -289,6 +289,28 @@ pub fn creature_ability_description(name: &str) -> &'static str {
         .unwrap_or_default()
 }
 
+/// **The lesson a corner is built to teach** — the load-bearing mechanic a party fight leans on, checked by
+/// search (see the `regions_diagonal` / `regions_tune_corners` examples). A corner PASSES its behavior iff the
+/// full party wins under `Combat` AND the behavior's own necessity test holds:
+///
+/// - [`VanguardCarries`](Behavior::VanguardCarries): the melee-only sub-party wins; the ranged-only one loses.
+/// - [`RearguardCarries`](Behavior::RearguardCarries): the ranged-only sub-party wins; the melee-only one loses.
+/// - [`RaidNecessary`](Behavior::RaidNecessary): the full party under the clash-only control loses (the raid
+///   was load-bearing).
+/// - [`ScreenNecessary`](Behavior::ScreenNecessary): the full party scattered (every hero alone, nothing
+///   screened) loses (grouping/screening was load-bearing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Behavior {
+    /// The front line has to carry it: melee-only wins, ranged-only loses.
+    VanguardCarries,
+    /// The back line has to carry it: ranged-only wins, melee-only loses.
+    RearguardCarries,
+    /// The raid is load-bearing: clash-only loses.
+    RaidNecessary,
+    /// The screen is load-bearing: scattering (nobody screened) loses.
+    ScreenNecessary,
+}
+
 /// A location **encounter** — the foes stationed at a place on the map. Two tiers, both keyed to the
 /// four creatures ([`CREATURES`]):
 ///
@@ -308,6 +330,9 @@ pub struct Encounter {
     /// only foe of a solo, the centrepiece of a party fight (see [`creature_counter`] for the answering kit).
     pub keystone: &'static str,
     pub party: bool,
+    /// The **lesson** a corner is built to teach ([`Behavior`]), scored by search. `None` for solos (a solo
+    /// teaches its keystone's lock, not a formation behavior).
+    pub behavior: Option<Behavior>,
     /// The exact foes fielded, as `(creature name, quantity)` — tuned so a solo is beaten only by its
     /// keystone's kit and a corner falls to the full four-kit party but to no lone kit (see the
     /// `v2_encounters` / `v2_corner_tune` examples).
@@ -324,6 +349,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "A blade-master holding the ruined keep, striking back at anyone who closes to melee.",
         keystone: "The Duelist",
         party: false,
+        behavior: None,
         foes: &[("The Duelist", 1)],
     },
     Encounter {
@@ -332,6 +358,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "An armored warden set to guard the sundered vault, unmoved by all but the heaviest blow.",
         keystone: "The Wall",
         party: false,
+        behavior: None,
         foes: &[("The Wall", 1)],
     },
     Encounter {
@@ -340,6 +367,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "A boiling mass of bramble-imps loosing thorns from behind the gate.",
         keystone: "The Swarm",
         party: false,
+        behavior: None,
         foes: &[("The Swarm", 1)],
     },
     Encounter {
@@ -348,6 +376,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "A charging host of grave-risen boiling up out of the salt barrows, trampling all before them.",
         keystone: "The Storm",
         party: false,
+        behavior: None,
         foes: &[("The Storm", 1)],
     },
     // --- corners: a warband the full party must break, each leaning on one kit (tuned) -----------
@@ -357,6 +386,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "The rampart is breached: two swarms boil through the gap, a warden anchoring the rubble.",
         keystone: "The Swarm",
         party: true,
+        behavior: Some(Behavior::RaidNecessary),
         foes: &[("The Wall", 1), ("The Swarm", 2)],
     },
     Encounter {
@@ -365,6 +395,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "An ambush at the crossing: a duelist lashing from the reeds, a warden and a swarm barring the ford.",
         keystone: "The Duelist",
         party: true,
+        behavior: Some(Behavior::RearguardCarries),
         foes: &[("The Wall", 1), ("The Duelist", 1), ("The Swarm", 1)],
     },
     Encounter {
@@ -373,6 +404,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "Twin wardens bar the burning hollow; neither will fall to a single hand.",
         keystone: "The Wall",
         party: true,
+        behavior: Some(Behavior::VanguardCarries),
         foes: &[("The Wall", 2)],
     },
     Encounter {
@@ -381,6 +413,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "The deep churns: a charging host boils up out of the dark, screened by a warden and a swarm.",
         keystone: "The Storm",
         party: true,
+        behavior: Some(Behavior::ScreenNecessary),
         foes: &[("The Wall", 1), ("The Swarm", 1), ("The Storm", 2)],
     },
 ];

@@ -385,6 +385,36 @@ pub fn canonical(regions: &[u8]) -> Vec<u8> {
 /// The three ways to answer a line reaching for you. Every slip offers all three - that is the point.
 const ANSWERS: [Answer; 3] = [Answer::Evade, Answer::Push, Answer::Abort];
 
+/// **Are `a` and `b` interchangeable targets?** - the same position AND the same body, so a strike aimed at one
+/// yields an isomorphic successor to the same strike aimed at the other. Two such foes are the same target, and
+/// offering both is wasted branching.
+///
+/// "Same position" is region + post + intruder flag (what decides *how* it is reached - Melee / Raid / Clash);
+/// "same body" is every stat that shapes the exchange (health, might, grit, cadence, finesse, armor), the reach
+/// and shape flags (melee, ranged, aoe, horde), the side, AND the **instinct** (two same-stat foes that will
+/// script differently are genuinely different bodies). `tempo`/`pending` are absent on purpose: both re-derive at
+/// the round Reset, so at any state a search visits they equal cadence / zero.
+fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
+    let (x, y) = (&board.units[a], &board.units[b]);
+    !x.fallen
+        && !y.fallen
+        && board.regions[a] == board.regions[b]
+        && board.posts[a] == board.posts[b]
+        && board.intruders[a] == board.intruders[b]
+        && x.side == y.side
+        && x.health == y.health
+        && x.might == y.might
+        && x.grit == y.grit
+        && x.cadence == y.cadence
+        && x.finesse == y.finesse
+        && x.armor == y.armor
+        && x.melee == y.melee
+        && x.ranged == y.ranged
+        && x.aoe == y.aoe
+        && x.horde == y.horde
+        && x.instinct == y.instinct
+}
+
 /// **Every legal action for unit `i`** - the count-adaptive candidate list (spec 4.1: a choice is offered only
 /// where it would do something). This is the branching factor, so it is the first place to look when a cost
 /// report comes back bad.
@@ -410,6 +440,13 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
     if u.melee || u.ranged {
         for (t, e) in board.units.iter().enumerate() {
             if e.fallen || e.side == u.side {
+                continue;
+            }
+            // **Symmetric-target dedup (sound).** If a lower-index enemy is interchangeable with this one, it
+            // already stands in for it - the two strikes yield isomorphic successors, so keeping only the
+            // lowest-index representative collapses the horde branching with no loss. The moment one is wounded it
+            // diverges (different health) and becomes targetable in its own right again.
+            if (0..t).any(|t2| interchangeable(board, t2, t)) {
                 continue;
             }
             if board.regions[t] == here {
@@ -1513,6 +1550,43 @@ mod tests {
         assert!(
             !acts.contains(&Act::Clash(2)),
             "and cannot shoot through the wall"
+        );
+    }
+
+    /// **Interchangeable foes collapse to one target (sound dedup).** Three identical foes in one region offer
+    /// exactly one Clash target between them; the moment one is wounded it diverges and becomes targetable again,
+    /// so the menu grows back to two (the wounded body + a representative of the still-identical pair).
+    #[test]
+    fn interchangeable_foes_collapse_to_a_single_target() {
+        let mut b = Board::new(
+            vec![
+                unit("Hero", Side::Party, [5, 4, 1, 2, 2], true, false), // 0
+                unit("A", Side::Foe, [3, 4, 1, 2, 2], true, false),      // 1
+                unit("B", Side::Foe, [3, 4, 1, 2, 2], true, false),      // 2
+                unit("C", Side::Foe, [3, 4, 1, 2, 2], true, false),      // 3
+            ],
+            vec![0, 1, 1, 1],
+        );
+        let clash_targets = |b: &Board| -> Vec<usize> {
+            legal_acts(b, 0)
+                .into_iter()
+                .filter_map(|a| match a {
+                    Act::Clash(t) | Act::Melee(t) => Some(t),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            clash_targets(&b),
+            vec![1],
+            "three identical foes offer exactly one target - the lowest-index representative"
+        );
+
+        b.units[2].health -= 1; // wound B: it is no longer interchangeable with A/C
+        assert_eq!(
+            clash_targets(&b),
+            vec![1, 2],
+            "the wounded body diverges and is targetable again, alongside a representative of the pair"
         );
     }
 
