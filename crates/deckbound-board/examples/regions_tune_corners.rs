@@ -10,23 +10,11 @@
 
 use std::time::Instant;
 
+use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Creature};
 use rules::combat::game::{Combat, State};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Solver, Verdict};
-
-fn kit(spec: (&'static str, [u8; 5], &'static str)) -> Combatant {
-    let (name, stats, ability) = spec;
-    let (melee, ranged) = catalog::ability_reach(ability);
-    let (_r, aoe) = catalog::ability_shape(ability);
-    Combatant::from_stats(name, Side::Party, stats, 0, melee, ranged).with_aoe(aoe)
-}
-
-fn beast(c: &Creature) -> Combatant {
-    Combatant::from_stats(c.name, Side::Foe, c.stats, 0, c.melee, c.ranged)
-        .with_aoe(c.aoe)
-        .as_horde(c.horde)
-}
 
 /// Can the party win, given its best formation? (The `Combat` game searches the formation itself.)
 fn winnable(heroes: &[Combatant], foes: &[Combatant]) -> bool {

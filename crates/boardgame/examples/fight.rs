@@ -12,6 +12,7 @@
 
 use bevy::prelude::*;
 
+use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Creature, Encounter};
 use rules::combat::game::{Choice, Combat, State};
 use rules::combat::regions::{Act, Answer, Board, Post};
@@ -218,19 +219,6 @@ fn build(encounter: usize) -> State {
         }
     }
     State::new(units)
-}
-
-fn kit(spec: (&'static str, [u8; 5], &'static str)) -> Combatant {
-    let (name, stats, ability) = spec;
-    let (melee, ranged) = catalog::ability_reach(ability);
-    let (_r, aoe) = catalog::ability_shape(ability);
-    Combatant::from_stats(name, Side::Party, stats, 0, melee, ranged).with_aoe(aoe)
-}
-
-fn beast(c: &Creature) -> Combatant {
-    Combatant::from_stats(c.name, Side::Foe, c.stats, 0, c.melee, c.ranged)
-        .with_aoe(c.aoe)
-        .as_horde(c.horde)
 }
 
 // ---- choice / board formatting -------------------------------------------------------------------------

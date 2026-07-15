@@ -17,6 +17,7 @@ pub mod fixtures;
 pub mod scene;
 pub mod solver;
 pub mod targets;
+pub mod units;
 
 pub use board_game::{CardTableGame, Intention};
 pub use fixtures::sample_table;
