@@ -457,12 +457,20 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // A loose enemy body in another region is dealt with in-region by the formation that hosts it,
                 // never reached across the gap. Not a target from here.
             } else if board.is_screened(t) {
-                // A screened rearguard in another region. Only a melee body can cross in for it.
+                // A **screened** rearguard: reach it only by RAIDING across, past the front that guards it (melee
+                // only). The front intercepts the raid in Band 2 - that is the whole worth of the screen.
                 if u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
             } else {
-                // An enemy vanguard (front, or a collapsed back) in another region: reachable by any weapon.
+                // A vanguard, OR an **exposed** rearguard whose front has fallen. Either is clashable across the
+                // gap by any weapon - it is *always targetable*, so standing unscreened is never shelter. But an
+                // exposed BACK can ALSO be raided (melee): a raider reaches it in Band 2, *before* it would fire in
+                // Band 3, so being unscreened is never an advantage either - a screen is what buys a back its
+                // first shot. (Raid pushed first so a scripted raider prefers the earlier, silencing reach.)
+                if board.posts[t] == Post::Back && u.melee {
+                    out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
+                }
                 out.push(Act::Clash(t));
             }
         }
