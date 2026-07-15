@@ -8,17 +8,24 @@
 //!    and a **post** (front or back). This is the secret formation. It is a sequence of ordinary choices, so a
 //!    solver searches formations by walking the tree - and shares one memo across all of them, where an
 //!    external formation loop would not.
-//! 2. **Declare** (each round, one choice per living party hero): each hero picks its [`Act`]. The **foe folds
-//!    in here** - when the last hero declares, [`apply`] scripts the foes ([`foe_acts`]) and resolves the whole
-//!    round ([`play_round`]) as a single deterministic transition. So `options` only ever offers the party's
-//!    decisions: this is a single-agent reachability machine, not a two-sided one.
+//! 2. **Declare** (each round, one choice per living body - heroes *and* foes): every body declares its [`Act`]
+//!    through the same loop. A hero's [`options`] are its real choices; a **foe's are a single option** - the
+//!    act its instinct dictates ([`foe_act`]) - so a foe "declares" too, but the driver has nothing to pick and
+//!    auto-advances it. When the last body declares, [`apply`] resolves the whole round ([`play_round`]) from the
+//!    acts everyone committed.
 //!
-//! Resolution is *inside* `apply`, not a set of choices, because within a round nothing is a player decision -
-//! the schedule is fixed and the slip answers are part of each [`Act`]. (In perfect-information PvE a slip's
-//! answer declared up front is equivalent to one chosen on reveal, since the party already knows what the
+//! Everything flows through one system: a creature is not folded into `apply` as a hidden script, it takes its
+//! turn like a hero, its turn just has one legal move. That keeps this a **single-agent reachability** machine
+//! anyway - a foe multiplies the branching by exactly one - so the solver is unaffected (creatures are perfectly
+//! predictable), while every consumer that walks the loop (a UI, an explorer) now *sees* the foe's declaration
+//! instead of having to reconstruct it.
+//!
+//! Resolution is still *inside* `apply`, not a set of choices, because within a round nothing is a player
+//! decision - the schedule is fixed and the slip answers are part of each [`Act`]. (In perfect-information PvE a
+//! slip's answer declared up front is equivalent to one chosen on reveal, since the party already knows what the
 //! scripted foes will commit - so folding it into the declaration loses nothing a solver could use.)
 
-use super::regions::{Act, Board, MAX_ROUNDS, Post, foe_acts, legal_acts, play_round};
+use super::regions::{Act, Board, MAX_ROUNDS, Post, foe_act, legal_acts, play_round};
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
 
@@ -31,12 +38,14 @@ pub enum Choice {
     Act(Act),
 }
 
-/// What decision is pending. The cursor is always a **party** unit index (the foes never choose).
+/// What decision is pending.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
-    /// Placing the party, one hero at a time, in seat order. `next` is the next unplaced party unit.
+    /// Placing the party, one hero at a time, in seat order. `next` indexes the party; it is the next unplaced
+    /// hero. Only heroes place - the foes' formation is scripted.
     Setup { next: usize },
-    /// A round of combat. `next` is the next living party unit that has not yet declared.
+    /// A round of combat. `next` indexes the **declaration order** (heroes then foes); it is the next living body
+    /// that has not yet declared. A foe reaches this cursor like a hero - it just has one legal act.
     Declare { next: usize },
 }
 
@@ -44,10 +53,13 @@ enum Phase {
 #[derive(Clone, Debug)]
 pub struct State {
     board: Board,
-    /// Party unit indices, in the seat order they are placed and declare.
+    /// Party unit indices, in the seat order they are placed.
     party: Vec<usize>,
     /// The foes, pre-formed into their own region once the party finishes placing.
     foes: Vec<usize>,
+    /// The **declaration order** every round: the party (seat order) then the foes. Every body that acts appears
+    /// here once; the `Declare` cursor walks it, skipping the fallen and the already-declared.
+    order: Vec<usize>,
     phase: Phase,
     /// Each unit's declared act this round (`None` until declared); reset each round.
     pending: Vec<Option<Act>>,
@@ -76,10 +88,13 @@ impl State {
             })
             .collect();
         let board = Board::new(units, vec![0; n], vec![Post::Front; n]);
+        // Everyone declares each round, party first then foes - the one loop the whole round flows through.
+        let order: Vec<usize> = party.iter().chain(foes.iter()).copied().collect();
         State {
             board,
             party,
             foes,
+            order,
             phase: Phase::Setup { next: 0 },
             pending: vec![None; n],
             round: 0,
@@ -95,9 +110,10 @@ impl State {
             .max()
     }
 
-    /// The next living party unit at or after `from` that has not declared, or `None` if all have.
+    /// The next living body in the declaration order at or after `from` that has not declared, or `None` if all
+    /// have. Walks heroes and foes alike - the cursor does not care which side is next.
     fn next_undeclared(&self, from: usize) -> Option<usize> {
-        self.party[from..]
+        self.order[from..]
             .iter()
             .position(|&i| !self.board.units[i].fallen && self.pending[i].is_none())
             .map(|off| from + off)
@@ -118,13 +134,14 @@ impl State {
         &self.pending
     }
 
-    /// The **party unit whose decision is pending** right now - the hero being placed at setup, or the hero
-    /// declaring its act this round. `None` if nobody is deciding (a forced/terminal state). A UI names it so
-    /// "place region A" is never ambiguous about *which* hero.
+    /// The **body whose decision is pending** right now - the hero being placed at setup, or the body (hero or
+    /// foe) declaring its act this round. `None` if nobody is deciding (a forced/terminal state). A UI names it so
+    /// "place region A" is never ambiguous about *which* body. (A foe reaching this cursor has a single option, so
+    /// a driver auto-advances it without asking.)
     pub fn deciding(&self) -> Option<usize> {
         match self.phase {
             Phase::Setup { next } => self.party.get(next).copied(),
-            Phase::Declare { next } => self.party.get(next).copied(),
+            Phase::Declare { next } => self.order.get(next).copied(),
         }
     }
 
@@ -156,16 +173,16 @@ impl Game for Combat {
                 }
                 out
             }
-            Phase::Declare { next } => state
-                .party
-                .get(next)
-                .map(|&i| {
-                    legal_acts(&state.board, i)
-                        .into_iter()
-                        .map(Choice::Act)
-                        .collect()
-                })
-                .unwrap_or_default(),
+            Phase::Declare { next } => match state.order.get(next) {
+                // A hero's real acts to choose among; a foe's single scripted act (its instinct's pick), so it
+                // flows through the same loop but the driver has nothing to decide and auto-advances it.
+                Some(&i) if state.board.units[i].side == Side::Party => legal_acts(&state.board, i)
+                    .into_iter()
+                    .map(Choice::Act)
+                    .collect(),
+                Some(&i) => vec![Choice::Act(foe_act(&state.board, i).unwrap_or(Act::Hold))],
+                None => Vec::new(),
+            },
         }
     }
 
@@ -188,14 +205,14 @@ impl Game for Combat {
                         }
                         s.round = 1;
                         s.phase = Phase::Declare {
-                            next: s.next_undeclared(0).unwrap_or(s.party.len()),
+                            next: s.next_undeclared(0).unwrap_or(s.order.len()),
                         };
                     }
                 }
             }
             (Phase::Declare { next }, Choice::Act(act)) => {
-                let hero = s.party[next];
-                s.pending[hero] = Some(*act);
+                let unit = s.order[next];
+                s.pending[unit] = Some(*act);
                 match s.next_undeclared(next + 1) {
                     Some(n) => s.phase = Phase::Declare { next: n },
                     None => resolve_round(&mut s),
@@ -220,23 +237,19 @@ impl Game for Combat {
     }
 }
 
-/// The whole round resolves as one transition: the party's declared acts, the foes scripted in, then
-/// [`play_round`]. Afterwards the cursor resets to the next round's first decision.
+/// The whole round resolves as one transition from the acts **everyone** committed - heroes and foes alike are in
+/// `pending` now, so there is nothing left to script here. Afterwards the cursor resets to the next round's first
+/// decision. (A body that somehow reached resolution undeclared defaults to [`Act::Hold`].)
 fn resolve_round(s: &mut State) {
-    let mut acts: Vec<Act> = (0..s.board.units.len())
+    let acts: Vec<Act> = (0..s.board.units.len())
         .map(|i| s.pending[i].unwrap_or(Act::Hold))
         .collect();
-    for (i, a) in foe_acts(&s.board).into_iter().enumerate() {
-        if let Some(a) = a {
-            acts[i] = a;
-        }
-    }
     play_round(&mut s.board, &acts);
 
     s.round += 1;
     s.pending = vec![None; s.board.units.len()];
     s.phase = Phase::Declare {
-        next: s.next_undeclared(0).unwrap_or(s.party.len()),
+        next: s.next_undeclared(0).unwrap_or(s.order.len()),
     };
 }
 
@@ -395,9 +408,17 @@ impl Game for ClashOnly {
     type State = State;
     type Choice = Choice;
     fn options(state: &State) -> Vec<Choice> {
+        // Restrict the PARTY only. Now that foes declare through the same loop, a foe can reach the cursor with a
+        // single scripted move that happens to be a raid - stripping it would strand the round with nothing to
+        // declare. The control is about what the *party* may do, so it leaves the foes' one move alone.
+        let restrict = state
+            .deciding()
+            .is_some_and(|i| state.board().units[i].side == Side::Party);
         Combat::options(state)
             .into_iter()
-            .filter(|c| !matches!(c, Choice::Act(Act::Raid(..)) | Choice::Act(Act::Slip(..))))
+            .filter(|c| {
+                !restrict || !matches!(c, Choice::Act(Act::Raid(..)) | Choice::Act(Act::Slip(..)))
+            })
             .collect()
     }
     fn apply(state: &State, choice: &Choice) -> State {

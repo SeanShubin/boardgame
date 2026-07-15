@@ -381,6 +381,13 @@ impl<G: Solvable> Solver<G> {
             Some(_) => return false, // Loss or Draw: not a win
             None => {}
         }
+        let opts = G::options(state);
+        // A forced move is not a decision: pass straight through it, charging no budget and taking no memo slot,
+        // so a long scripted run - every creature declaring its one legal act - costs the search nothing. This is
+        // the solver honouring the same "one option is not a choice" rule the runner ([`run`]) already follows.
+        if opts.len() == 1 {
+            return self.winnable(&G::apply(state, &opts[0]));
+        }
         if self.walk >= self.budget {
             self.aborted = true;
             return false;
@@ -399,7 +406,7 @@ impl<G: Solvable> Solver<G> {
         self.aborted = false;
 
         let mut win = false;
-        for choice in G::options(state) {
+        for choice in opts {
             if self.winnable(&G::apply(state, &choice)) {
                 win = true;
                 break;
@@ -481,6 +488,13 @@ impl<G: Solvable> PathCounter<G> {
             Some(_) => return (0, 1), // loss or draw - a tie is a loss
             None => {}
         }
+        let opts = G::options(state);
+        // A forced move is transparent to the count: the lines through it are exactly the lines through its one
+        // child. Pass through without a budget charge or a memo slot, so a scripted foe chain neither inflates the
+        // tree nor eats the budget - the count reaches as deep as it did before creatures declared.
+        if opts.len() == 1 {
+            return self.tally(&G::apply(state, &opts[0]));
+        }
         if self.walk >= self.budget {
             self.aborted = true;
             return (0, 0);
@@ -494,7 +508,7 @@ impl<G: Solvable> PathCounter<G> {
         let outer = self.aborted;
         self.aborted = false;
         let (mut w, mut l) = (0u64, 0u64);
-        for choice in G::options(state) {
+        for choice in opts {
             let (cw, cl) = self.tally(&G::apply(state, &choice));
             w = w.saturating_add(cw);
             l = l.saturating_add(cl);

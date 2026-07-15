@@ -411,33 +411,37 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
 /// Each foe goes for the hero it can most cheaply finish, preferring a **clash** it can simply take over a
 /// **raid** it has to pay for; and when it must raid, it pushes through rather than turning back.
 pub fn foe_acts(board: &Board) -> Vec<Option<Act>> {
-    (0..board.units.len())
-        .map(|i| {
-            if board.units[i].side != Side::Foe || board.units[i].fallen {
-                return None;
-            }
-            let acts = legal_acts(board, i);
-            let softest = |t: usize| (board.units[t].health, board.units[t].grit);
-            // The one behavioural switch, dispatched on the creature's card instinct.
-            let allowed = |a: &&Act| match board.units[i].instinct {
-                // Hunt anything: a clash, or a raid PUSHED through a line (spend the pool on the kill, not the
-                // crossing). This is the aggressive default - and it will leave its own post to do it.
-                Instinct::HuntWeakest => matches!(a, Act::Clash(_) | Act::Raid(_, Answer::Push)),
-                // Hold the line: only a clash, which does not move you. NEVER a raid or a slip - so the body
-                // behind this one stays screened. What makes a wall a wall.
-                Instinct::HoldTheLine => matches!(a, Act::Clash(_)),
-            };
-            acts.iter()
-                .filter(allowed)
-                .filter_map(|a| match a {
-                    Act::Clash(t) | Act::Raid(t, _) => Some((softest(*t), *a)),
-                    _ => None,
-                })
-                .min_by_key(|&(k, _)| k)
-                .map(|(_, a)| a)
-                .or(Some(Act::Hold))
+    (0..board.units.len()).map(|i| foe_act(board, i)).collect()
+}
+
+/// **The one act a single scripted foe takes** - its instinct applied to the board. `None` if `i` is not a living
+/// foe (a hero chooses; a corpse does nothing). This is the whole of a creature's decision, so it is the single
+/// option [`super::game`] offers when a foe reaches the declaration cursor - a creature "declares" like a hero,
+/// its turn just has exactly one legal move.
+pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
+    if board.units[i].side != Side::Foe || board.units[i].fallen {
+        return None;
+    }
+    let acts = legal_acts(board, i);
+    let softest = |t: usize| (board.units[t].health, board.units[t].grit);
+    // The one behavioural switch, dispatched on the creature's card instinct.
+    let allowed = |a: &&Act| match board.units[i].instinct {
+        // Hunt anything: a clash, or a raid PUSHED through a line (spend the pool on the kill, not the
+        // crossing). This is the aggressive default - and it will leave its own post to do it.
+        Instinct::HuntWeakest => matches!(a, Act::Clash(_) | Act::Raid(_, Answer::Push)),
+        // Hold the line: only a clash, which does not move you. NEVER a raid or a slip - so the body
+        // behind this one stays screened. What makes a wall a wall.
+        Instinct::HoldTheLine => matches!(a, Act::Clash(_)),
+    };
+    acts.iter()
+        .filter(allowed)
+        .filter_map(|a| match a {
+            Act::Clash(t) | Act::Raid(t, _) => Some((softest(*t), *a)),
+            _ => None,
         })
-        .collect()
+        .min_by_key(|&(k, _)| k)
+        .map(|(_, a)| a)
+        .or(Some(Act::Hold))
 }
 
 // ---- resolution ----------------------------------------------------------------------------------------
