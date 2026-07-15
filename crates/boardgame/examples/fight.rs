@@ -216,15 +216,16 @@ impl Fight {
             return;
         }
         let c = self.options[i].clone();
-        // Snapshot the board so we can narrate what the resolution actually DID, not just what was declared.
-        let before = self.state.board().clone();
-        let who = self
-            .state
-            .deciding()
+        // Snapshot the whole STATE (not just the board): the board tells us what changed, and `pending()` tells us
+        // the acts it changed FROM - which is the only way to explain damage a slip contest dealt.
+        let before_state = self.state.clone();
+        let before = before_state.board();
+        let acting = before_state.deciding();
+        let who = acting
             .map(|k| before.units[k].name.clone())
             .unwrap_or_default();
-        let round_before = self.state.round();
-        self.log.push(format!("{who}: {}", describe(&before, &c)));
+        let round_before = before_state.round();
+        self.log.push(format!("{who}: {}", describe(before, &c)));
 
         self.state = Combat::apply(&self.state, &c);
 
@@ -234,13 +235,32 @@ impl Fight {
         // blood; `round_before >= 1` excludes it.)
         let resolved = round_before >= 1 && self.state.round() != round_before;
         if resolved {
+            // Rebuild the exact acts this round resolved with - the party's pending declarations (which already
+            // include any hero auto-advanced through a forced single option), the choice just made, and the
+            // scripted foe acts. This is precisely what resolve_round assembles, so the narration matches the math.
+            let mut acts: Vec<Act> = before_state
+                .pending()
+                .iter()
+                .map(|p| p.unwrap_or(Act::Hold))
+                .collect();
+            if let (Some(idx), Choice::Act(a)) = (acting, &c) {
+                acts[idx] = *a;
+            }
+            for (k, a) in foe_acts(before).into_iter().enumerate() {
+                if let Some(a) = a {
+                    acts[k] = a;
+                }
+            }
             // The foes never appear in the options - they are scripted inside apply - so their attacks are
-            // invisible unless we surface them here. Log what each foe went for, so a hero going down has a named
-            // attacker above it.
-            for line in foe_declarations(&before) {
+            // invisible unless we surface them. Declarations, then the slip contests (who caught whom crossing),
+            // then the net damage. A hero going down now has a named attacker above it.
+            for line in foe_declarations(before) {
                 self.log.push(line);
             }
-            for line in narrate(&before, self.state.board()) {
+            for line in crossings(before, &acts) {
+                self.log.push(line);
+            }
+            for line in narrate(before, self.state.board()) {
                 self.log.push(line);
             }
         }
@@ -254,6 +274,103 @@ impl Fight {
         }
         self.reposition();
     }
+}
+
+/// The region an act carries its actor into, if it moves at all - the renderer's copy of the private
+/// `Act::destination`, so the UI can tell a slipper from a stander without reaching into the rules.
+fn act_destination(before: &Board, i: usize, a: &Act) -> Option<u8> {
+    let here = before.regions[i];
+    match a {
+        Act::Raid(t, _) => (before.regions[*t] != here).then(|| before.regions[*t]),
+        Act::Slip(r, _) => (*r != here).then_some(*r),
+        _ => None,
+    }
+}
+
+fn act_answer(a: &Act) -> Option<Answer> {
+    match a {
+        Act::Raid(_, x) | Act::Slip(_, x) => Some(*x),
+        _ => None,
+    }
+}
+
+/// **The slip contests** - who reached for each body that tried to cross. A slipper is caught by every enemy
+/// standing in the region it LEAVES and the region it ENTERS (it is outside its own screen the moment it moves) -
+/// which is where a pushed slipper's damage comes from, damage no *declared* attack would explain. Reconstructed
+/// from the same acts the round resolved with, so it names the exact bodies that reached for it.
+fn crossings(before: &Board, acts: &[Act]) -> Vec<String> {
+    // A body mid-crossing cannot also hold a line, so it is not a catcher.
+    let transit: Vec<bool> = (0..before.units.len())
+        .map(|j| !before.units[j].fallen && act_destination(before, j, &acts[j]).is_some())
+        .collect();
+
+    let mut out = Vec::new();
+    for i in 0..before.units.len() {
+        if before.units[i].fallen {
+            continue;
+        }
+        let Some(dest) = act_destination(before, i, &acts[i]) else {
+            continue;
+        };
+        let foe_side = if before.units[i].side == Side::Party {
+            Side::Foe
+        } else {
+            Side::Party
+        };
+        // Every enemy in the region left and the region entered reaches for the slipper.
+        let mut names: Vec<String> = Vec::new();
+        for region in [before.regions[i], dest] {
+            for j in before.in_region(region) {
+                if before.units[j].side == foe_side && !transit[j] {
+                    names.push(before.units[j].name.clone());
+                }
+            }
+        }
+        if names.is_empty() {
+            continue; // an unopposed crossing - nobody to catch it
+        }
+        let verb = match act_answer(&acts[i]) {
+            Some(Answer::Evade) => "slips past",
+            Some(Answer::Push) => "pushes past",
+            Some(Answer::Abort) => "turns and fights",
+            None => "crosses past",
+        };
+        out.push(format!(
+            "  {} {} {} (crossing to region {})",
+            before.units[i].name,
+            verb,
+            join_counts(&names),
+            region_letter(dest)
+        ));
+    }
+    out
+}
+
+/// Join names, collapsing repeats into "The Swarm x2" so a pack reads as one catcher, not a wall of text.
+fn join_counts(names: &[String]) -> String {
+    let mut order: Vec<String> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    for n in names {
+        match order.iter().position(|o| o == n) {
+            Some(p) => counts[p] += 1,
+            None => {
+                order.push(n.clone());
+                counts.push(1);
+            }
+        }
+    }
+    order
+        .iter()
+        .zip(counts)
+        .map(|(n, c)| {
+            if c > 1 {
+                format!("{n} x{c}")
+            } else {
+                n.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// **What each foe declared this round** - one line per foe that did something, marked with `*` like the table.

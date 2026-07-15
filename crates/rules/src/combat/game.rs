@@ -111,6 +111,13 @@ impl State {
         self.round
     }
 
+    /// The acts declared **so far this round**, indexed by unit (`None` = not yet declared, or a foe/fallen body).
+    /// A renderer uses this to reconstruct the round it just resolved - who slipped where, and so who a slip
+    /// contest would have caught - which the board alone cannot explain.
+    pub fn pending(&self) -> &[Option<Act>] {
+        &self.pending
+    }
+
     /// The **party unit whose decision is pending** right now - the hero being placed at setup, or the hero
     /// declaring its act this round. `None` if nobody is deciding (a forced/terminal state). A UI names it so
     /// "place region A" is never ambiguous about *which* hero.
