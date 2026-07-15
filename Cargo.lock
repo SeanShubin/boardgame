@@ -2361,6 +2361,7 @@ dependencies = [
  "cardtable-model",
  "deckbound-content",
  "ron 0.8.1",
+ "rules",
 ]
 
 [[package]]

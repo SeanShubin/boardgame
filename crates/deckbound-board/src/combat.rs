@@ -683,7 +683,7 @@ mod tests {
     /// loaded first** - and the oracle inherits the same arbitrariness while claiming certainty.
     ///
     /// The fix is not to sort the contacts. Sorting only writes the arbitrariness down. *Whom you answer* is a
-    /// real decision, and it wants to be a **declared** one - which is what `regions::land` now does ("you fight
+    /// real decision, and it wants to be a **declared** one - which is what the regions model (`rules::combat`) now does ("you fight
     /// who you declared"). Doing the same here is a behaviour change with balance consequences, so it is a
     /// deliberate call, not a drive-by.
     #[test]

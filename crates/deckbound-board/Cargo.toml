@@ -13,6 +13,9 @@ cardtable-model = { workspace = true }
 # finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module. The product
 # depends on this stable leaf, never on the `deckbound` sample crate.
 deckbound-content = { workspace = true }
+# The pure, dep-free game rules (the regions combat as a `Game`). The probes drive this now; the local
+# `regions` copy is retired.
+rules = { workspace = true }
 
 [dev-dependencies]
 # The fixtures' tests round-trip the tableau through RON (the persistence format).
