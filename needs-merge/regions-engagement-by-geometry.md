@@ -81,10 +81,10 @@ intruder has **no post** while it is loose: post describes a zone's own formatio
 is not part of the formation it invaded.
 
 **Zone promotion -- clearing ground takes it.** When intruders kill **every** body of the
-formation that owns a zone, that zone **flips to their side** on the spot -- the resolution step
-where the last defender falls (the same "on the spot" as vanguard-promotion, not deferred to the
-Reset). The erstwhile intruders are now the zone's formation, taking their weapon-fixed posts
-(below). This gives a raid a *territorial* payoff and lets a side be pushed back zone by zone. It
+formation that owns a zone, that zone **flips to their side**: clear a zone's defenders and it is
+yours. Settled once, at the **end of the intruder band** (the one place a zone is cleared by
+melee) -- a single rule to hold in your head, not a per-sub-step tick. The erstwhile intruders are
+now the zone's formation, taking their weapon-fixed posts (below). This gives a raid a *territorial* payoff and lets a side be pushed back zone by zone. It
 mostly bites when an enemy formation spans **more than one zone**; against a single-zone warband,
 clearing the only enemy zone simply *is* the win.
 
@@ -233,7 +233,9 @@ and the smaller setup/move branching makes it *faster*.
   crossing in reverse); or clear the zone and hold it. A stranded intruder always has the
   retreat-home fallback.
 - **Post is the weapon** (§5) -- melee front, ranged back, fixed; setup declares region only.
-- **Zone flip is on the spot** (§2) -- the step where the last defender dies, not the Reset.
+- **Zone flip settles at the end of the intruder band** (§2) -- "clear a zone's defenders and it
+  is yours," resolved once (the human-simple rule; byte-identical to a per-sub-step tick). Could be
+  moved to the Round Reset later if one settling point for everything reads cleaner.
 
 **Still open / deferred:**
 - **Dual melee+ranged bodies** -- the one case post-by-weapon cannot decide; deferred until such a

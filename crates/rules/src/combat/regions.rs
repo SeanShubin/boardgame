@@ -987,7 +987,9 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         exchange(board, &group, true, true);
         logs.push(close(board, &before));
     }
-    // Clearing a zone's formation with intruders takes it - flip those intruders to the owning side, on the spot.
+    // Clearing a zone's formation with intruders takes it - flip those intruders to the owning side. Resolved
+    // ONCE here, at the end of the intruder band: clear a zone's defenders and it is yours. (Simple to remember;
+    // the exact sub-step it happens on is byte-identical, since Bands 2/3 run after this either way.)
     promote(board);
 
     // ---- BAND 2: CROSSINGS (closing into a formation) ---------------------------------------------------
