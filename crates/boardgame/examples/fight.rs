@@ -204,10 +204,92 @@ impl Fight {
             return;
         }
         let c = self.options[i].clone();
-        self.log.push(describe(self.state.board(), &c));
+        // Snapshot the board so we can narrate what the resolution actually DID, not just what was declared.
+        let before = self.state.board().clone();
+        let who = self
+            .state
+            .deciding()
+            .map(|k| before.units[k].name.clone())
+            .unwrap_or_default();
+        let round_before = self.state.round();
+        self.log.push(format!("{who}: {}", describe(&before, &c)));
+
         self.state = Combat::apply(&self.state, &c);
+
+        // Only the round-closing declaration resolves combat (the foe folds in there); the others just record an
+        // intent and change nothing. So a board diff after each choice narrates exactly the round that just ran.
+        // Guarded to real rounds - the setup->round-1 transition would otherwise report the foes "moving" as they
+        // drop into their region.
+        if round_before >= 1 {
+            for line in narrate(&before, self.state.board()) {
+                self.log.push(line);
+            }
+        }
+        if self.state.round() != round_before {
+            match Combat::outcome(&self.state) {
+                Some(o) => self.log.push(format!("=== {o:?} ===")),
+                None => self
+                    .log
+                    .push(format!("--- round {} ---", self.state.round())),
+            }
+        }
         self.reposition();
     }
+}
+
+/// **What the last round actually did to the board**, read from a before/after diff - the events the player
+/// never sees otherwise, because the whole round (foes included) resolves inside one `apply`. One line per thing
+/// that changed: a body that moved, took damage, or fell. Indented so the history can colour them apart from the
+/// declarations that caused them.
+fn narrate(before: &Board, after: &Board) -> Vec<String> {
+    let mut out = Vec::new();
+    for i in 0..after.units.len() {
+        let (bu, au) = (&before.units[i], &after.units[i]);
+        let name = &au.name;
+        // Moved: a slip landed it in a new region, or its post changed under it (a charge-in, a promotion).
+        if !au.fallen && before.regions[i] != after.regions[i] {
+            out.push(format!(
+                "  {name} slips to region {}",
+                region_letter(after.regions[i])
+            ));
+        } else if !au.fallen && before.posts[i] != after.posts[i] {
+            let where_to = if after.posts[i] == Post::Front {
+                "charges to the front"
+            } else {
+                "falls back"
+            };
+            out.push(format!("  {name} {where_to}"));
+        }
+        // Bled: a horde loses whole bodies; anyone else loses hp.
+        if au.health < bu.health {
+            let d = bu.health - au.health;
+            if au.horde {
+                out.push(format!(
+                    "  {name} loses {d} ({} -> {} bodies)",
+                    bu.health, au.health
+                ));
+            } else {
+                out.push(format!(
+                    "  {name} takes {d} ({} -> {} hp)",
+                    bu.health, au.health
+                ));
+            }
+        }
+        // Fell.
+        if au.fallen && !bu.fallen {
+            out.push(format!("  {name} is down"));
+        }
+    }
+    if out.is_empty() {
+        out.push("  (no blood drawn)".into());
+    }
+    out
+}
+
+/// The tempo a body actually has to spend in a round: its Cadence pool - except a **horde**, which swarms with one
+/// tempo per living body (`refresh_round`). This is why a Swarm's `C` stat reads low but it still floods the round.
+fn round_tempo(u: &Combatant) -> u32 {
+    if u.horde { u.health.max(1) } else { u.cadence }
 }
 
 fn build(encounter: usize) -> State {
@@ -410,7 +492,7 @@ fn screen_text(f: &Fight) -> String {
 
     // The unit table - same columns and widths as the UI.
     writeln!(s, "\nUNITS").ok();
-    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "hp", "kind"];
+    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "tp", "kind"];
     let w = [16usize, 4, 3, 3, 3, 3, 3, 4, 10];
     let row = |cells: &[String]| -> String {
         cells
@@ -442,6 +524,11 @@ fn screen_text(f: &Fight) -> String {
             }
         }
         let dead = if u.fallen { " (down)" } else { "" };
+        let tp = if u.fallen {
+            "-".to_string()
+        } else {
+            round_tempo(u).to_string()
+        };
         writeln!(
             s,
             "{}",
@@ -453,7 +540,7 @@ fn screen_text(f: &Fight) -> String {
                 u.grit.to_string(),
                 u.cadence.to_string(),
                 u.finesse.to_string(),
-                u.health.to_string(),
+                tp,
                 kind.trim().to_string(),
             ])
         )
@@ -461,7 +548,7 @@ fn screen_text(f: &Fight) -> String {
     }
     writeln!(
         s,
-        "(M might  V vitality/hp  G grit  C cadence  F finesse;  rg = region+post, F front / b back)"
+        "(M might  V health  G grit  C cadence  F finesse  tp tempo/round, horde=bodies;  rg = region+post, F front / b back)"
     )
     .ok();
 
@@ -492,8 +579,16 @@ fn screen_text(f: &Fight) -> String {
     }
 
     if !f.log.is_empty() {
-        writeln!(s, "\nHISTORY (most recent last)").ok();
-        for line in f.log.iter().rev().take(16).collect::<Vec<_>>().iter().rev() {
+        writeln!(s, "\nHISTORY - what actually happened (most recent last)").ok();
+        for line in f
+            .log
+            .iter()
+            .rev()
+            .take(HISTORY_LINES)
+            .collect::<Vec<_>>()
+            .iter()
+            .rev()
+        {
             writeln!(s, "  {line}").ok();
         }
     }
@@ -567,7 +662,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         // header row
         row_cells(
             t,
-            &["unit", "rg", "M", "V", "G", "C", "F", "hp", "kind"],
+            &["unit", "rg", "M", "V", "G", "C", "F", "tp", "kind"],
             MUTED,
             12.0,
         );
@@ -600,17 +695,22 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
                 kind.push_str("hd");
             }
             let marker = if is_active { "> " } else { "  " };
+            let tp = if u.fallen {
+                "-".to_string()
+            } else {
+                round_tempo(u).to_string()
+            };
             row_cells(
                 t,
                 &[
                     &format!("{marker}{side}{}", u.name),
                     &place,
                     &u.might.to_string(),
-                    &u.health.to_string(), // Vitality shown as current HP; full at start
+                    &u.health.to_string(), // V = current health (drops as it bleeds; full at the start)
                     &u.grit.to_string(),
                     &u.cadence.to_string(),
                     &u.finesse.to_string(),
-                    &u.health.to_string(),
+                    &tp, // tempo available THIS round - a horde swarms with its body count, not its Cadence
                     kind.trim(),
                 ],
                 colour,
@@ -619,7 +719,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         }
         text(
             t,
-            "M might  V vitality  G grit  C cadence  F finesse   rg = region+post (F front / b back)",
+            "M might  V health  G grit  C cadence  F finesse  tp tempo/round (horde = bodies)   rg = region+post",
             10.0,
             MUTED,
         );
@@ -672,6 +772,25 @@ fn button(p: &mut ChildSpawnerCommands, hit: Hit, label: &str, bg: Color) {
     .with_children(|b| text(b, label, 13.0, INK));
 }
 
+/// How many trailing history lines the panel and the mirror both show.
+const HISTORY_LINES: usize = 22;
+
+/// Colour a history line by what it is: a declaration (who chose what), an effect (indented - damage, a move), a
+/// death, a round marker, or the final outcome. So the player can read the story of the fight at a glance.
+fn history_color(line: &str) -> Color {
+    if line.starts_with("===") {
+        if line.contains("Win") { GOOD } else { BAD }
+    } else if line.starts_with("---") {
+        MUTED
+    } else if line.ends_with("is down") {
+        BAD
+    } else if line.starts_with("  ") {
+        WARN // an effect of the round: damage, a slip, a fall-back
+    } else {
+        INK // a declaration: "Raider: Clash Wall"
+    }
+}
+
 fn log_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     p.spawn((
         Node {
@@ -685,9 +804,17 @@ fn log_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         BackgroundColor(SUNK),
     ))
     .with_children(|panel| {
-        text(panel, "history", 11.0, MUTED);
-        for line in f.log.iter().rev().take(16).collect::<Vec<_>>().iter().rev() {
-            text(panel, (*line).clone(), 12.0, MUTED);
+        text(panel, "history - what actually happened", 11.0, MUTED);
+        for line in f
+            .log
+            .iter()
+            .rev()
+            .take(HISTORY_LINES)
+            .collect::<Vec<_>>()
+            .iter()
+            .rev()
+        {
+            text(panel, (*line).clone(), 12.0, history_color(line));
         }
     });
 }
