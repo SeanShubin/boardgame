@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Answer, Board, Post};
+use rules::combat::regions::{Act, Answer, Board, Post, foe_acts};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -28,6 +28,7 @@ const MUTED: Color = Color::srgb(0.60, 0.64, 0.70);
 const GOOD: Color = Color::srgb(0.45, 0.80, 0.65);
 const WARN: Color = Color::srgb(0.90, 0.72, 0.35);
 const BAD: Color = Color::srgb(0.90, 0.42, 0.44);
+const FOE: Color = Color::srgb(0.95, 0.72, 0.72);
 
 /// The MOST work any one frame may do, so a frame never stalls and the window stays responsive - you can drag
 /// it, close it, and see progress while the solver thinks. The verdict search restarts from the root each frame
@@ -87,6 +88,9 @@ struct Fight {
     counter: PathCounter<Combat>,
     /// The current per-walk grant, doubled each frame a verdict stays uncertain (capped at [`FRAME_NODES`]).
     grant: u64,
+    /// Each unit's Vitality (its full health), snapshotted at the start so the table can show max **and** current
+    /// health - the live `health` field only ever holds the current value, so the maximum has to be kept here.
+    max_health: Vec<u32>,
     log: Vec<String>,
     dirty: bool,
 }
@@ -103,11 +107,18 @@ impl Fight {
             solver: Solver::new(),
             counter: PathCounter::new(),
             grant: FRAME_NODES,
+            max_health: Vec::new(),
             log: Vec::new(),
             dirty: true,
         };
+        f.snapshot_max();
         f.reposition();
         f
+    }
+
+    /// Record every unit's full health for this encounter, so the table can show max vs current.
+    fn snapshot_max(&mut self) {
+        self.max_health = self.state.board().units.iter().map(|u| u.health).collect();
     }
 
     fn enc(&self) -> &'static Encounter {
@@ -116,6 +127,7 @@ impl Fight {
 
     fn reset(&mut self) {
         self.state = build(self.encounter);
+        self.snapshot_max();
         self.log.clear();
         self.reposition();
     }
@@ -216,11 +228,18 @@ impl Fight {
 
         self.state = Combat::apply(&self.state, &c);
 
-        // Only the round-closing declaration resolves combat (the foe folds in there); the others just record an
-        // intent and change nothing. So a board diff after each choice narrates exactly the round that just ran.
-        // Guarded to real rounds - the setup->round-1 transition would otherwise report the foes "moving" as they
-        // drop into their region.
-        if round_before >= 1 {
+        // Combat resolves in exactly ONE apply per round - the round-closing declaration, where the foe folds in
+        // and the round counter advances. A mid-round declaration by a non-last hero records an intent and changes
+        // nothing, so it must stay silent. (The setup->round-1 transition also advances the counter but draws no
+        // blood; `round_before >= 1` excludes it.)
+        let resolved = round_before >= 1 && self.state.round() != round_before;
+        if resolved {
+            // The foes never appear in the options - they are scripted inside apply - so their attacks are
+            // invisible unless we surface them here. Log what each foe went for, so a hero going down has a named
+            // attacker above it.
+            for line in foe_declarations(&before) {
+                self.log.push(line);
+            }
             for line in narrate(&before, self.state.board()) {
                 self.log.push(line);
             }
@@ -235,6 +254,27 @@ impl Fight {
         }
         self.reposition();
     }
+}
+
+/// **What each foe declared this round** - one line per foe that did something, marked with `*` like the table.
+/// The foes are scripted ([`foe_acts`]) rather than chosen, so without this the player sees a hero fall with no
+/// idea who felled it. Computed on the pre-resolution board, which is exactly what `apply` scripted them from.
+fn foe_declarations(before: &Board) -> Vec<String> {
+    foe_acts(before)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, a)| {
+            let a = a?;
+            if matches!(a, Act::Hold) {
+                return None; // a foe that did nothing is not worth a line
+            }
+            Some(format!(
+                "*{}: {}",
+                before.units[i].name,
+                act_label(before, &a)
+            ))
+        })
+        .collect()
 }
 
 /// **What the last round actually did to the board**, read from a before/after diff - the events the player
@@ -492,8 +532,8 @@ fn screen_text(f: &Fight) -> String {
 
     // The unit table - same columns and widths as the UI.
     writeln!(s, "\nUNITS").ok();
-    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "tp", "kind"];
-    let w = [16usize, 4, 3, 3, 3, 3, 3, 4, 10];
+    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "hp", "tp", "kind"];
+    let w = [16usize, 4, 3, 3, 3, 3, 3, 4, 4, 10];
     let row = |cells: &[String]| -> String {
         cells
             .iter()
@@ -529,6 +569,7 @@ fn screen_text(f: &Fight) -> String {
         } else {
             round_tempo(u).to_string()
         };
+        let vitality = f.max_health.get(i).copied().unwrap_or(u.health);
         writeln!(
             s,
             "{}",
@@ -536,10 +577,11 @@ fn screen_text(f: &Fight) -> String {
                 format!("{mark}{side}{}{dead}", u.name),
                 place,
                 u.might.to_string(),
-                u.health.to_string(),
+                vitality.to_string(),
                 u.grit.to_string(),
                 u.cadence.to_string(),
                 u.finesse.to_string(),
+                u.health.to_string(),
                 tp,
                 kind.trim().to_string(),
             ])
@@ -548,7 +590,7 @@ fn screen_text(f: &Fight) -> String {
     }
     writeln!(
         s,
-        "(M might  V health  G grit  C cadence  F finesse  tp tempo/round, horde=bodies;  rg = region+post, F front / b back)"
+        "(M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round, horde=bodies;  rg = region+post, F front / b back)"
     )
     .ok();
 
@@ -662,7 +704,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         // header row
         row_cells(
             t,
-            &["unit", "rg", "M", "V", "G", "C", "F", "tp", "kind"],
+            &["unit", "rg", "M", "V", "G", "C", "F", "hp", "tp", "kind"],
             MUTED,
             12.0,
         );
@@ -700,16 +742,18 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
             } else {
                 round_tempo(u).to_string()
             };
+            let vitality = f.max_health.get(i).copied().unwrap_or(u.health);
             row_cells(
                 t,
                 &[
                     &format!("{marker}{side}{}", u.name),
                     &place,
                     &u.might.to_string(),
-                    &u.health.to_string(), // V = current health (drops as it bleeds; full at the start)
+                    &vitality.to_string(), // V = Vitality, the FULL health
                     &u.grit.to_string(),
                     &u.cadence.to_string(),
                     &u.finesse.to_string(),
+                    &u.health.to_string(), // hp = current health, drops as it bleeds
                     &tp, // tempo available THIS round - a horde swarms with its body count, not its Cadence
                     kind.trim(),
                 ],
@@ -719,7 +763,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         }
         text(
             t,
-            "M might  V health  G grit  C cadence  F finesse  tp tempo/round (horde = bodies)   rg = region+post",
+            "M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round (horde = bodies)   rg = region+post",
             10.0,
             MUTED,
         );
@@ -728,7 +772,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
 
 fn row_cells(p: &mut ChildSpawnerCommands, cells: &[&str], colour: Color, size: f32) {
     // fixed widths so columns line up without a real grid
-    let widths = [132.0, 34.0, 26.0, 26.0, 26.0, 26.0, 26.0, 30.0, 90.0];
+    let widths = [132.0, 34.0, 26.0, 26.0, 26.0, 26.0, 26.0, 30.0, 30.0, 90.0];
     p.spawn(Node {
         flex_direction: FlexDirection::Row,
         ..default()
@@ -781,13 +825,15 @@ fn history_color(line: &str) -> Color {
     if line.starts_with("===") {
         if line.contains("Win") { GOOD } else { BAD }
     } else if line.starts_with("---") {
-        MUTED
+        MUTED // a round marker
     } else if line.ends_with("is down") {
-        BAD
+        BAD // a body fell
+    } else if line.starts_with('*') {
+        FOE // a foe's declaration: "*The Wall: Clash Marksman"
     } else if line.starts_with("  ") {
         WARN // an effect of the round: damage, a slip, a fall-back
     } else {
-        INK // a declaration: "Raider: Clash Wall"
+        INK // a hero's declaration: "Raider: Clash Wall"
     }
 }
 
