@@ -263,9 +263,9 @@ impl Fight {
 
         self.state = Combat::apply(&self.state, c);
 
-        // A round resolves on exactly one apply - the one where the counter advances past round 1's start (the
-        // setup->round-1 transition also advances it but draws no blood, which `round_before >= 1` excludes).
-        let resolved = round_before >= 1 && self.state.round() != round_before;
+        // A round resolves on exactly one apply - the one where the round counter advances. (There is no setup,
+        // so the fight opens on round 1 and every advance is a resolved round that may have drawn blood.)
+        let resolved = self.state.round() != round_before;
         if resolved {
             for line in crossings(before, &acts) {
                 self.log.push(line);
@@ -454,13 +454,11 @@ fn region_letter(r: u8) -> char {
     (b'A' + r) as char
 }
 
-/// A choice label. The active hero is shown once above the options and marked on the table, so it is never
-/// repeated per action - a placement reads just "stand at region A (front)".
+/// A choice label. The active body is shown once above the options and marked on the table, so it is never
+/// repeated per action.
 fn describe(b: &Board, c: &Choice) -> String {
-    match c {
-        Choice::Place { region } => format!("stand at region {}", region_letter(*region)),
-        Choice::Act(a) => act_label(b, a),
-    }
+    let Choice::Act(a) = c;
+    act_label(b, a)
 }
 
 fn act_label(b: &Board, a: &Act) -> String {
@@ -614,12 +612,7 @@ fn screen_text(f: &Fight) -> String {
         (None, None) => writeln!(s, "round {}   position: computing...", f.state.round()).ok(),
     };
     if let Some(i) = f.state.deciding() {
-        let verb = if f.state.placing() {
-            "placing"
-        } else {
-            "acting"
-        };
-        writeln!(s, "{verb}: {}", b.units[i].name).ok();
+        writeln!(s, "acting: {}", b.units[i].name).ok();
     }
     if Combat::outcome(&f.state).is_none() {
         let (done, n) = (f.scored_count(), f.options.len());
@@ -759,15 +752,10 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
             ),
         };
         text(h, status.0, 14.0, status.1);
-        // Say WHO is deciding, so "place region A" is never ambiguous about which hero.
+        // Say WHO is deciding, so an action is never ambiguous about which body.
         if let Some(i) = f.state.deciding() {
             let who = &f.state.board().units[i].name;
-            let verb = if f.state.placing() {
-                "placing"
-            } else {
-                "acting"
-            };
-            text(h, format!("{verb}: {who}"), 13.0, GOOD);
+            text(h, format!("acting: {who}"), 13.0, GOOD);
         }
         // What you are waiting on: a live progress line, so a busy UI is never a silent one.
         if Combat::outcome(&f.state).is_none() {
@@ -980,12 +968,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     match f.state.deciding() {
         Some(i) => {
             let u = &f.state.board().units[i];
-            let verb = if f.state.placing() {
-                "is placing"
-            } else {
-                "is choosing an action"
-            };
-            text(p, format!("> {} {}", u.name, verb), 17.0, GOOD);
+            text(p, format!("> {} is choosing an action", u.name), 17.0, GOOD);
         }
         None => text(p, "your options", 16.0, INK),
     }

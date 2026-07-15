@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Behavior, Creature};
-use rules::combat::game::{ClashOnly, Combat, Scattered, State};
+use rules::combat::game::{ClashOnly, Combat, State};
 use rules::combat::resolve::Combatant;
 use rules::core::{Game, Solvable, Solver, Verdict};
 
@@ -24,10 +24,10 @@ use rules::core::{Game, Solvable, Solver, Verdict};
 /// tuner runs the solver on hundreds of candidates - and one keystone (the Storm, a 12-body horde) yields very
 /// deep trees - so a low per-candidate ceiling is what keeps the whole scan bounded to a few minutes. A candidate
 /// whose full-party win we cannot prove within it is simply skipped (the safe direction: a warband we cannot
-/// decisively solve is not one to lean a lesson on). The cap hits the setup-branching `Combat` search, not the
-/// forced-setup `Scattered` control, so lowering it turns unprovable warbands into rejections, not false passes.
+/// decisively solve is not one to lean a lesson on). Lowering the cap turns unprovable warbands into rejections,
+/// never false passes.
 ///
-/// NOTE: 30k, not the diagonal's 20M. The Storm corner (ScreenNecessary) scans many deep 12-body-horde warbands
+/// NOTE: 30k, not the diagonal's 20M. The Storm corner scans many deep 12-body-horde warbands
 /// whose nodes are individually expensive (a full round played over a 12-strong horde), so even 150k ran well
 /// past 5 minutes. The cap is pulled down here to keep the whole scan bounded to a couple of minutes. A warband
 /// whose full-party win needs more than 30k nodes to prove is skipped rather than waited on - the safe direction
@@ -85,7 +85,6 @@ fn behavior_passes(
             winnable::<Combat>(ranged, foes) && !winnable::<Combat>(melee, foes)
         }
         Behavior::RaidNecessary => !winnable::<ClashOnly>(kits, foes),
-        Behavior::ScreenNecessary => !winnable::<Scattered>(kits, foes),
         Behavior::CombinedArms => {
             !winnable::<Combat>(melee, foes)
                 && !winnable::<Combat>(ranged, foes)

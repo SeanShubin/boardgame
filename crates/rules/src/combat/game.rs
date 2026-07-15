@@ -2,17 +2,15 @@
 //! same rules as [`super::regions`], re-expressed through [`options`](Game::options) / [`apply`](Game::apply) /
 //! [`outcome`](Game::outcome) so every consumer walks one machine.
 //!
-//! A whole fight is a walk through these phases:
+//! A whole fight is a walk through **declarations**, with no setup: there is **one region per side** - the party
+//! stands on its ground (region 0), the foes on theirs (region 1), posts weapon-derived (melee front, ranged
+//! back) and fixed at construction. Nobody ever chooses a partition, so the fight opens directly on round 1.
 //!
-//! 1. **Setup** (round 1, one choice per party hero, in seat order): each hero picks a **region** to stand in
-//!    and a **post** (front or back). This is the secret formation. It is a sequence of ordinary choices, so a
-//!    solver searches formations by walking the tree - and shares one memo across all of them, where an
-//!    external formation loop would not.
-//! 2. **Declare** (each round, one choice per living body - heroes *and* foes): every body declares its [`Act`]
-//!    through the same loop. A hero's [`options`] are its real choices; a **foe's are a single option** - the
-//!    act its instinct dictates ([`foe_act`]) - so a foe "declares" too, but the driver has nothing to pick and
-//!    auto-advances it. When the last body declares, [`apply`] resolves the whole round ([`play_round`]) from the
-//!    acts everyone committed.
+//! **Declare** (each round, one choice per living body - heroes *and* foes): every body declares its [`Act`]
+//! through the same loop. A hero's [`options`](Game::options) are its real choices; a **foe's are a single
+//! option** - the act its instinct dictates ([`foe_act`]) - so a foe "declares" too, but the driver has nothing
+//! to pick and auto-advances it. When the last body declares, [`apply`](Game::apply) resolves the whole round
+//! ([`play_round`]) from the acts everyone committed.
 //!
 //! Everything flows through one system: a creature is not folded into `apply` as a hidden script, it takes its
 //! turn like a hero, its turn just has one legal move. That keeps this a **single-agent reachability** machine
@@ -29,73 +27,54 @@ use super::regions::{Act, Board, MAX_ROUNDS, Post, foe_act, legal_acts, play_rou
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
 
-/// A choice in the combat game: place a hero at setup, or declare its act in a round.
+/// A choice in the combat game: a body declares its act for the round. There is no setup - the formation is
+/// fixed at construction (one region per side), so a fight opens on round 1's first declaration.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Choice {
-    /// Setup: stand this hero in `region`. Its post is derived from its weapon, not chosen.
-    Place { region: u8 },
-    /// A round: this hero does `act`.
+    /// A round: this body does `act`.
     Act(Act),
 }
 
-/// What decision is pending.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Phase {
-    /// Placing the party, one hero at a time, in seat order. `next` indexes the party; it is the next unplaced
-    /// hero. Only heroes place - the foes' formation is scripted.
-    Setup { next: usize },
-    /// A round of combat. `next` indexes the **declaration order** (heroes then foes); it is the next living body
-    /// that has not yet declared. A foe reaches this cursor like a hero - it just has one legal act.
-    Declare { next: usize },
-}
-
-/// The whole position: the bodies, their formation-so-far, whose decision is pending, and the round.
+/// The whole position: the bodies, their formation, whose declaration is pending, and the round.
 #[derive(Clone, Debug)]
 pub struct State {
     board: Board,
-    /// Party unit indices, in the seat order they are placed.
-    party: Vec<usize>,
-    /// The foes, pre-formed into their own region once the party finishes placing.
-    foes: Vec<usize>,
     /// The **declaration order** every round: the party (seat order) then the foes. Every body that acts appears
-    /// here once; the `Declare` cursor walks it, skipping the fallen and the already-declared.
+    /// here once; the `next` cursor walks it, skipping the fallen and the already-declared.
     order: Vec<usize>,
-    phase: Phase,
+    /// The declaration cursor: an index into `order`, the next living body that has not yet declared this round.
+    /// A foe reaches this cursor like a hero - it just has one legal act.
+    next: usize,
     /// Each unit's declared act this round (`None` until declared); reset each round.
     pending: Vec<Option<Act>>,
     round: usize,
 }
 
 impl State {
-    /// Begin a fight: the party unplaced, the foes' formation fixed by script (shoot-only bodies at the back).
-    ///
-    /// The `Board` starts with every unit parked in region 0 as a placeholder; setup overwrites the party's
-    /// region/post one hero at a time, and the foes' real placement drops in when the last hero is placed.
+    /// Begin a fight at round 1, with **one region per side**: every party body on region 0 (its ground), every
+    /// foe on region 1 (theirs). Posts are weapon-derived at construction, for heroes and foes alike (a
+    /// ranged-only body stands back, everything else front). There is no setup phase - the fight opens directly
+    /// on round 1's first declaration.
     pub fn new(units: Vec<Combatant>) -> State {
         let n = units.len();
+        // One region per side: the party's formation faces the foes' formation, with no ground between them.
+        let regions: Vec<u8> = (0..n)
+            .map(|i| if units[i].side == Side::Party { 0 } else { 1 })
+            .collect();
         let party: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Party).collect();
         let foes: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Foe).collect();
-        // Post is derived from the weapon at construction, for heroes and foes alike - never chosen at setup.
-        let board = Board::new(units, vec![0; n]);
         // Everyone declares each round, party first then foes - the one loop the whole round flows through.
         let order: Vec<usize> = party.iter().chain(foes.iter()).copied().collect();
-        State {
+        let board = Board::new(units, regions);
+        let mut s = State {
             board,
-            party,
-            foes,
             order,
-            phase: Phase::Setup { next: 0 },
+            next: 0,
             pending: vec![None; n],
-            round: 0,
-        }
-    }
-
-    /// The largest region id any already-placed party hero stands in (`None` before the first placement).
-    fn max_party_region(&self, upto: usize) -> Option<u8> {
-        self.party[..upto]
-            .iter()
-            .map(|&i| self.board.regions[i])
-            .max()
+            round: 1,
+        };
+        s.next = s.next_undeclared(0).unwrap_or(s.order.len());
+        s
     }
 
     /// The next living body in the declaration order at or after `from` that has not declared, or `None` if all
@@ -122,20 +101,11 @@ impl State {
         &self.pending
     }
 
-    /// The **body whose decision is pending** right now - the hero being placed at setup, or the body (hero or
-    /// foe) declaring its act this round. `None` if nobody is deciding (a forced/terminal state). A UI names it so
-    /// "place region A" is never ambiguous about *which* body. (A foe reaching this cursor has a single option, so
-    /// a driver auto-advances it without asking.)
+    /// The **body whose declaration is pending** right now - the body (hero or foe) declaring its act this round.
+    /// `None` if nobody is deciding (a forced/terminal state). A UI names it so an action is never ambiguous about
+    /// *which* body. (A foe reaching this cursor has a single option, so a driver auto-advances it without asking.)
     pub fn deciding(&self) -> Option<usize> {
-        match self.phase {
-            Phase::Setup { next } => self.party.get(next).copied(),
-            Phase::Declare { next } => self.order.get(next).copied(),
-        }
-    }
-
-    /// Whether the pending decision is a setup placement (vs a round action).
-    pub fn placing(&self) -> bool {
-        matches!(self.phase, Phase::Setup { .. })
+        self.order.get(self.next).copied()
     }
 }
 
@@ -147,69 +117,31 @@ impl Game for Combat {
     type Choice = Choice;
 
     fn options(state: &State) -> Vec<Choice> {
-        match state.phase {
-            Phase::Setup { next } => {
-                // Hero `party[next]` picks only a REGION - its post is derived from its weapon. It may JOIN any
-                // region an earlier hero already stands in, or OPEN the next fresh one (restricted growth - each
-                // partition offered once, never a relabelling).
-                let ceiling = state.max_party_region(next).map_or(0, |m| m + 1);
-                (0..=ceiling)
-                    .map(|region| Choice::Place { region })
-                    .collect()
-            }
-            Phase::Declare { next } => match state.order.get(next) {
-                // A hero's real acts to choose among; a foe's single scripted act (its instinct's pick), so it
-                // flows through the same loop but the driver has nothing to decide and auto-advances it.
-                Some(&i) if state.board.units[i].side == Side::Party => legal_acts(&state.board, i)
-                    .into_iter()
-                    .map(Choice::Act)
-                    .collect(),
-                Some(&i) => vec![Choice::Act(foe_act(&state.board, i).unwrap_or(Act::Hold))],
-                None => Vec::new(),
-            },
+        match state.order.get(state.next) {
+            // A hero's real acts to choose among; a foe's single scripted act (its instinct's pick), so it
+            // flows through the same loop but the driver has nothing to decide and auto-advances it.
+            Some(&i) if state.board.units[i].side == Side::Party => legal_acts(&state.board, i)
+                .into_iter()
+                .map(Choice::Act)
+                .collect(),
+            Some(&i) => vec![Choice::Act(foe_act(&state.board, i).unwrap_or(Act::Hold))],
+            None => Vec::new(),
         }
     }
 
     fn apply(state: &State, choice: &Choice) -> State {
         let mut s = state.clone();
-        match (s.phase, choice) {
-            (Phase::Setup { next }, Choice::Place { region }) => {
-                let hero = s.party[next];
-                s.board.regions[hero] = *region;
-                match s.party.get(next + 1) {
-                    Some(_) => s.phase = Phase::Setup { next: next + 1 },
-                    None => {
-                        // The party is formed. Drop the foes into a region of their own, past the party's, and
-                        // begin the first round. (Posts are weapon-derived - fixed at construction.)
-                        let foe_region = s.max_party_region(s.party.len()).map_or(0, |m| m + 1);
-                        for &f in s.foes.iter() {
-                            s.board.regions[f] = foe_region;
-                        }
-                        s.round = 1;
-                        s.phase = Phase::Declare {
-                            next: s.next_undeclared(0).unwrap_or(s.order.len()),
-                        };
-                    }
-                }
-            }
-            (Phase::Declare { next }, Choice::Act(act)) => {
-                let unit = s.order[next];
-                s.pending[unit] = Some(*act);
-                match s.next_undeclared(next + 1) {
-                    Some(n) => s.phase = Phase::Declare { next: n },
-                    None => resolve_round(&mut s),
-                }
-            }
-            _ => debug_assert!(false, "choice does not match phase"),
+        let Choice::Act(act) = choice;
+        let unit = s.order[s.next];
+        s.pending[unit] = Some(*act);
+        match s.next_undeclared(s.next + 1) {
+            Some(n) => s.next = n,
+            None => resolve_round(&mut s),
         }
         s
     }
 
     fn outcome(state: &State) -> Option<Outcome> {
-        // No verdict until the fight has actually begun.
-        if matches!(state.phase, Phase::Setup { .. }) {
-            return None;
-        }
         match state.board.outcome() {
             Some(true) => Some(Outcome::Win),
             Some(false) => Some(Outcome::Loss),
@@ -230,9 +162,7 @@ fn resolve_round(s: &mut State) {
 
     s.round += 1;
     s.pending = vec![None; s.board.units.len()];
-    s.phase = Phase::Declare {
-        next: s.next_undeclared(0).unwrap_or(s.order.len()),
-    };
+    s.next = s.next_undeclared(0).unwrap_or(s.order.len());
 }
 
 #[cfg(test)]
@@ -244,124 +174,58 @@ mod tests {
         Combatant::from_stats(name, side, stats, 0, melee, ranged)
     }
 
-    /// The Game plays a whole fight to a verdict, driven by the generic runner - setup, then rounds, with the
-    /// foe folded into apply and never appearing in the options.
+    /// The Game plays a whole fight to a verdict, driven by the generic runner - rounds of declarations, with the
+    /// foe folded into apply and never appearing in the options. No setup: it opens on round 1.
     #[test]
     fn the_runner_plays_a_whole_fight() {
         let s = State::new(vec![
             unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
             unit("Foe", Side::Foe, [1, 2, 1, 1, 1], true, false),
         ]);
-        // Always take the first option (place front-of-region-0, then Clash the foe).
+        // Always take the first option (Clash the foe each round).
         let out = run::<Combat>(s, |_, _| 0);
         assert_eq!(out, Outcome::Win, "the stronger body wins the fight");
+    }
+
+    /// **A fight opens on round 1 with no setup.** The party stands on region 0, the foes on region 1, posts
+    /// weapon-derived - and the first decision is a hero *choosing an action*, not a placement.
+    #[test]
+    fn new_starts_at_round_one_with_one_region_per_side() {
+        let s = State::new(vec![
+            unit("Sword", Side::Party, [5, 4, 1, 2, 2], true, false),
+            unit("Bow", Side::Party, [5, 4, 1, 2, 2], false, true),
+            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
+        ]);
+        assert_eq!(s.round(), 1, "the fight begins at round 1 - no setup");
+        assert_eq!(s.board().regions[0], 0, "the party stands on region 0");
+        assert_eq!(s.board().regions[1], 0, "all party bodies share region 0");
+        assert_eq!(s.board().regions[2], 1, "the foes stand on region 1");
+        // Posts are weapon-derived, exactly as before - front for melee, back for ranged-only.
+        assert_eq!(s.board().posts[0], Post::Front, "a melee body is front");
+        assert_eq!(s.board().posts[1], Post::Back, "a ranged-only body is back");
+        // The first decision is an action, not a placement: every option is an Act.
+        let opts = Combat::options(&s);
+        assert!(!opts.is_empty(), "the first hero has acts to choose from");
+        for o in &opts {
+            assert!(matches!(o, Choice::Act(_)), "an action, never a placement");
+        }
     }
 
     /// Options are only ever the PARTY's - the foe is never offered a choice, because it is scripted inside
     /// apply.
     #[test]
     fn the_foe_never_appears_in_the_options() {
-        let mut s = State::new(vec![
+        let s = State::new(vec![
             unit("Hero", Side::Party, [5, 4, 1, 2, 2], true, false),
             unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
         ]);
-        // Walk through setup (place the one hero), then check the first Declare state.
-        while matches!(s.phase, Phase::Setup { .. }) {
-            s = Combat::apply(&s, &Combat::options(&s)[0]);
-        }
+        // The fight opens on round 1's first declaration - the hero's, never the foe's.
         let opts = Combat::options(&s);
         assert!(!opts.is_empty(), "the hero has acts to choose from");
         // Every option is an Act declared by the hero; nothing here is a foe decision.
         for o in &opts {
             assert!(matches!(o, Choice::Act(_)));
         }
-    }
-
-    /// **Setup offers a REGION only - never a post.** Post is derived from the weapon, so a lone hero has exactly
-    /// one placement (region 0), not the old region x front/back pair. This is the halved setup branching.
-    #[test]
-    fn setup_offers_only_a_region_never_a_post() {
-        let s = State::new(vec![
-            unit("Hero", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
-        ]);
-        let opts = Combat::options(&s);
-        assert_eq!(opts, vec![Choice::Place { region: 0 }]);
-    }
-
-    /// **Post is derived from the weapon.** A melee body stands front; a ranged-only body stands back - fixed at
-    /// construction, never chosen. The setup options prove it (region-only, above); this pins the derivation.
-    #[test]
-    fn post_is_derived_from_the_weapon() {
-        let s = State::new(vec![
-            unit("Sword", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("Bow", Side::Party, [5, 4, 1, 2, 2], false, true),
-            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
-        ]);
-        assert_eq!(s.board().posts[0], Post::Front, "a melee body is front");
-        assert_eq!(s.board().posts[1], Post::Back, "a ranged-only body is back");
-    }
-
-    /// **The scattered control forces every hero into its own fresh region.** At each setup step it offers
-    /// exactly ONE placement (the fresh region), so nobody is ever screened - whereas plain `Combat` lets a
-    /// later hero join an existing region, giving it strictly more placements.
-    #[test]
-    fn scattered_forces_a_fresh_region_per_hero() {
-        let mut s = State::new(vec![
-            unit("A", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("B", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("C", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
-        ]);
-        // Every hero, in turn, gets exactly one Scattered placement - the fresh region - while Combat offers
-        // more once there is an existing region to join.
-        while matches!(s.phase, Phase::Setup { .. }) {
-            let scattered = Scattered::options(&s);
-            assert_eq!(scattered.len(), 1, "Scattered offers exactly one placement");
-            let region = match scattered[0] {
-                Choice::Place { region } => region,
-                _ => panic!("setup must be a placement"),
-            };
-            // The fresh region is one past the highest already placed (0 for the first hero).
-            let expected = s
-                .max_party_region(match s.phase {
-                    Phase::Setup { next } => next,
-                    _ => unreachable!(),
-                })
-                .map_or(0, |m| m + 1);
-            assert_eq!(region, expected, "and it is the fresh region");
-            if !matches!(s.phase, Phase::Setup { next: 0 }) {
-                assert!(
-                    Combat::options(&s).len() > 1,
-                    "Combat offers more (join or split) once a region exists"
-                );
-            }
-            s = Scattered::apply(&s, &scattered[0]);
-        }
-    }
-
-    /// Two heroes: the second may join the first's region or open a new one - the partition search, as choices.
-    #[test]
-    fn setup_lets_a_second_hero_group_or_split() {
-        let mut s = State::new(vec![
-            unit("A", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("B", Side::Party, [5, 4, 1, 2, 2], true, false),
-            unit("Foe", Side::Foe, [4, 4, 1, 2, 2], true, false),
-        ]);
-        s = Combat::apply(&s, &Choice::Place { region: 0 }); // A in region 0
-        let regions: Vec<u8> = Combat::options(&s)
-            .into_iter()
-            .filter_map(|c| match c {
-                Choice::Place { region, .. } => Some(region),
-                _ => None,
-            })
-            .collect();
-        assert!(regions.contains(&0), "B may join A");
-        assert!(regions.contains(&1), "B may split off");
-        assert!(
-            !regions.contains(&2),
-            "but not open a region beyond the next - no relabellings"
-        );
     }
 }
 
@@ -371,7 +235,7 @@ use super::regions::canonical;
 use crate::core::Solvable;
 
 /// A hashable digest of a position: per-unit `(health, fallen, post, intruder)`, the **canonicalized** regions
-/// (so a relabelling is not a distinct position), the round, and the pending declarations + cursor (a
+/// (so a relabelling is not a distinct position), the round, and the pending declarations + declare cursor (a
 /// half-declared round is genuinely a different state than a fresh one). The intruder flag is in the key so two
 /// positions that differ only by who is loose inside the enemy ranks stay distinct.
 ///
@@ -393,15 +257,11 @@ fn key_of(s: &State) -> Key {
         .enumerate()
         .map(|(i, u)| (u.health, u.fallen, s.board.posts[i], s.board.intruders[i]))
         .collect();
-    let cursor = match s.phase {
-        Phase::Setup { next } => 1 + next as u8, // setup cursors are distinct from declare (which starts at 0)
-        Phase::Declare { next } => 128 + next as u8,
-    };
     (
         per,
         canonical(&s.board.regions),
         s.round,
-        cursor,
+        s.next as u8,
         s.pending.clone(),
     )
 }
@@ -447,76 +307,6 @@ impl Game for ClashOnly {
 }
 
 impl Solvable for ClashOnly {
-    type Key = Key;
-    fn key(state: &State) -> Key {
-        key_of(state)
-    }
-}
-
-/// The **scattered control**: the same game, but at setup every hero is forced to **open a fresh region** of its
-/// own - it may never join an existing one. So no formation ever has two bodies in it, nothing is ever screened,
-/// and no back line exists to hide behind. Like [`ClashOnly`], it is a thin newtype that changes only `options`
-/// (and only during Setup); everything else delegates to `Combat`.
-///
-/// It answers the experiment's other question - *is the screen ever necessary?* - by search: if `Combat` is
-/// winnable but `Scattered` is not, grouping (and the screen it buys) was load-bearing.
-pub struct Scattered;
-
-impl Game for Scattered {
-    type State = State;
-    type Choice = Choice;
-    fn options(state: &State) -> Vec<Choice> {
-        match state.phase {
-            // Force the fresh region (`ceiling`) and nothing else - so each hero stands alone and unscreened.
-            // Away from setup this is exactly `Combat`.
-            Phase::Setup { next } => {
-                let ceiling = state.max_party_region(next).map_or(0, |m| m + 1);
-                vec![Choice::Place { region: ceiling }]
-            }
-            Phase::Declare { .. } => Combat::options(state),
-        }
-    }
-    fn apply(state: &State, choice: &Choice) -> State {
-        Combat::apply(state, choice)
-    }
-    fn outcome(state: &State) -> Option<Outcome> {
-        Combat::outcome(state)
-    }
-}
-
-impl Solvable for Scattered {
-    type Key = Key;
-    fn key(state: &State) -> Key {
-        key_of(state)
-    }
-}
-
-/// The **one-region control**: the party may never split - every hero stands in the single region 0. The opposite
-/// of [`Scattered`]. It exists to answer the removal test *"is multi-region splitting ever load-bearing?"*: if
-/// `Combat` (free formation) is winnable from an encounter but `OneRegion` is not, splitting was necessary there;
-/// if the two agree everywhere, the whole partition mechanic earns nothing and the game could confine each side
-/// to one region for free.
-pub struct OneRegion;
-
-impl Game for OneRegion {
-    type State = State;
-    type Choice = Choice;
-    fn options(state: &State) -> Vec<Choice> {
-        match state.phase {
-            // Force region 0 and nothing else - everyone joins the single party region.
-            Phase::Setup { .. } => vec![Choice::Place { region: 0 }],
-            Phase::Declare { .. } => Combat::options(state),
-        }
-    }
-    fn apply(state: &State, choice: &Choice) -> State {
-        Combat::apply(state, choice)
-    }
-    fn outcome(state: &State) -> Option<Outcome> {
-        Combat::outcome(state)
-    }
-}
-
-impl Solvable for OneRegion {
     type Key = Key;
     fn key(state: &State) -> Key {
         key_of(state)
@@ -573,15 +363,13 @@ mod solve_tests {
     /// a hand-authored board, because it depends on the scripted foe actually holding its formation.
     #[test]
     fn clash_only_never_offers_a_slip() {
-        // A board with a screened back, so `Combat` WOULD offer a raid.
-        let mut s = State::new(vec![
+        // A board with a screened back, so `Combat` WOULD offer a raid. The fight opens on round 1's first
+        // declaration - the Raider's - with the foes' Wall (front) screening their Cannon (back) in region 1.
+        let s = State::new(vec![
             u("Raider", Side::Party, [7, 6, 1, 3, 2], true, false),
             u("Wall", Side::Foe, [1, 6, 4, 1, 2], true, false),
             u("Cannon", Side::Foe, [4, 2, 1, 2, 2], false, true),
         ]);
-        while matches!(s.phase, Phase::Setup { .. }) {
-            s = Combat::apply(&s, &Combat::options(&s)[0]);
-        }
         let full = Combat::options(&s);
         assert!(
             full.iter().any(|c| matches!(c, Choice::Act(Act::Raid(..)))),

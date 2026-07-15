@@ -17,11 +17,12 @@
 //!
 //! # The model
 //!
-//! **Setup - round 1 only, secret and simultaneous.** Partition the party into **regions**, and post each body at
-//! the **front** or the **back** of its region. Foes do the same by script, so their arrangement is effectively
-//! public.
+//! **One region per side.** The party stands on its ground, the foes on theirs - two formations facing each
+//! other, with no ground between. Each body is posted at the **front** or the **back** of its formation,
+//! weapon-derived (a ranged-only body avoids melee at the back, everything else stands front). There is no
+//! partition to choose and no setup phase: the fight opens on round 1's first declaration.
 //!
-//! **Thereafter you declare only an action.** You start each round where you ended. **Position is never
+//! **You declare only an action.** You start each round where you ended. **Position is never
 //! declared; it is only ever earned.** That is what makes movement *priced by construction*: `v2_remarshal`
 //! proved a costless repositioning offered every round can always be pre-empted by starting in the right place,
 //! so it can never be *necessary*. Here you cannot ask to move; you have to win it.
@@ -307,12 +308,6 @@ impl Board {
         rs
     }
 
-    /// The first region nobody stands in - where a body slips to when it just wants *out*.
-    pub fn open_ground(&self) -> u8 {
-        let taken = self.occupied();
-        (0u8..).find(|r| !taken.contains(r)).unwrap_or(u8::MAX)
-    }
-
     pub fn alive(&self, side: Side) -> bool {
         self.units.iter().any(|u| u.side == side && !u.fallen)
     }
@@ -437,18 +432,11 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
         }
     }
 
-    // Slip - the one movement. It goes ONLY to a region that already holds bodies: an enemy zone (raid-style) or
-    // a friendly zone (rally). No slipping onto empty ground - EXCEPT an intruder may always retreat to a fresh
-    // home region, so a stranded raider is never trapped.
-    let mut elsewhere: Vec<u8> = board
-        .occupied()
-        .into_iter()
-        .filter(|&r| r != here)
-        .collect();
-    if board.intruders[i] {
-        elsewhere.push(board.open_ground()); // the intruder's sanctioned retreat onto open ground
-    }
-    for r in elsewhere {
+    // Slip - the one movement. With one region per side there are only ever two grounds: your own and the
+    // enemy's. So a slip goes to the *other* occupied region - a body crosses into the enemy's ground (raid-style,
+    // becoming an intruder), or an intruder retreats back to its own. Either way, the destination is simply the
+    // other region that holds bodies.
+    for r in board.occupied().into_iter().filter(|&r| r != here) {
         out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
     }
 
