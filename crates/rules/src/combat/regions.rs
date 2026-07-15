@@ -106,46 +106,6 @@ struct Blows {
 /// A fight not decided in five rounds is a draw, and a draw is not a win (spec 0.4).
 pub const MAX_ROUNDS: usize = 5;
 
-/// The four sub-phases, in order. Each earns its boundary by exactly one silencing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SubPhase {
-    /// The **front line** reaches for the slippers. A death here silences the Volley *and* the Raid.
-    Intercept,
-    /// The **back line** fires on whoever is still coming. The cannons defend themselves - and a slipper the
-    /// front already killed is not shot at twice, which is exactly why this is its own sub-phase: **the saved
-    /// card is real.** A death here silences the Raid.
-    Volley,
-    /// Those who got through strike the backs they came for - *before* those backs get to fire. A death here
-    /// silences that victim's own shot, and that is the whole of what the raid buys.
-    Raid,
-    /// **The back lines fire.** Holding off *is* being quicker: a body that never closed shoots before the ones
-    /// that did can swing. A death here silences that victim's Clash - which is exactly why a screened cannon is
-    /// worth screening, and why a lone archer can beat a swordsman it could never out-trade.
-    Fire,
-    /// **The front lines close, and trade.** Seeking melee is the slowest thing you can do, so it lands last.
-    Clash,
-}
-
-impl SubPhase {
-    pub const ALL: [SubPhase; 5] = [
-        SubPhase::Intercept,
-        SubPhase::Volley,
-        SubPhase::Raid,
-        SubPhase::Fire,
-        SubPhase::Clash,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            SubPhase::Intercept => "Intercept",
-            SubPhase::Volley => "Volley",
-            SubPhase::Raid => "Raid",
-            SubPhase::Fire => "Fire",
-            SubPhase::Clash => "Clash",
-        }
-    }
-}
-
 /// **Where a body stands in its line - and it is a statement of INTENT, not a rank.**
 ///
 /// *Seek melee*, or *avoid it*. That is the whole of it, and everything else follows:
@@ -458,16 +418,17 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // never reached across the gap. Not a target from here.
             } else if board.is_screened(t) {
                 // A **screened** rearguard: reach it only by RAIDING across, past the front that guards it (melee
-                // only). The front intercepts the raid in Band 2 - that is the whole worth of the screen.
+                // only). The front intercepts the raid in the Crossing Ring - that is the whole worth of the screen.
                 if u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
             } else {
                 // A vanguard, OR an **exposed** rearguard whose front has fallen. Either is clashable across the
                 // gap by any weapon - it is *always targetable*, so standing unscreened is never shelter. But an
-                // exposed BACK can ALSO be raided (melee): a raider reaches it in Band 2, *before* it would fire in
-                // Band 3, so being unscreened is never an advantage either - a screen is what buys a back its
-                // first shot. (Raid pushed first so a scripted raider prefers the earlier, silencing reach.)
+                // exposed BACK can ALSO be raided (melee): a raider reaches it in the Crossing Ring, *before* it
+                // would fire in the Outer Ring, so being unscreened is never an advantage either - a screen is
+                // what buys a back its first shot. (Raid pushed first so a scripted raider prefers the earlier,
+                // silencing reach.)
                 if board.posts[t] == Post::Back && u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
@@ -979,7 +940,7 @@ fn other_side(s: Side) -> Side {
 
 /// **Zone promotion - clearing ground takes it.** Any region whose owning formation has been wiped, leaving only
 /// living intruders, flips to those intruders' side *on the spot*: they stop being intruders and become the
-/// region's formation, resuming their weapon-fixed posts (which never changed). Called at the Band-1 boundary,
+/// region's formation, resuming their weapon-fixed posts (which never changed). Called at the Inner Ring boundary,
 /// where an intruder's havoc is what wipes a formation.
 fn promote(board: &mut Board) {
     for r in board.occupied() {
@@ -993,19 +954,23 @@ fn promote(board: &mut Board) {
     }
 }
 
-/// Play **one whole round**: the Reset, then the three distance bands nearest-first - **Intruders** (distance
-/// zero), **Crossings** (closing into a formation), and **Across the gap** (Fire then Clash). Deaths finalize at
-/// each step boundary, so a body killed early is silenced in every later step (the razor).
+/// Play **one whole round**: the Reset, then the three distance **rings** nearest-first - the **Inner Ring**
+/// (Intruders, distance zero, a single simultaneous strike), the **Crossing Ring** (closing into a formation),
+/// and the **Outer Ring** (Across the gap - Fire then Clash). Each ring resolves in **strikes**, and deaths
+/// finalize at each strike boundary, so a body killed early is silenced in every later strike (the razor).
 pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     refresh_round(&mut board.units);
     let mut logs = Vec::new();
 
-    // ---- BAND 1: INTRUDERS (distance zero) --------------------------------------------------------------
+    // ---- INNER RING: INTRUDERS (distance zero) ---------------------------------------------------------
     //
     // Every region holding both a formation and enemy intruders resolves its in-place fight with NO screen: the
-    // intruder strikes any host it declared, the host strikes any intruder it declared. Ranged before melee (the
-    // shot lands before the swing). An intruder is past the screen, so a melee sweep here catches EVERY enemy in
-    // the region, both tiers.
+    // intruder strikes any host it declared, the host strikes any intruder it declared. It is ONE simultaneous
+    // strike - melee and ranged together, no "ranged first". The ranged-first rule of the outer rings only exists
+    // to model *closing the distance* (an arrow lands before a swordsman crosses the gap); but here nobody is
+    // closing - the crossing happened on an earlier round, so everyone is already point-blank and intermingled.
+    // No distance, so no order. An intruder is past the screen, so a melee sweep here catches EVERY enemy in the
+    // region, both tiers.
     let melees: Vec<Attack> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen && board.units[i].tempo > 0)
         .filter_map(|i| match acts[i] {
@@ -1019,25 +984,16 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             _ => None,
         })
         .collect();
-    for want_ranged in [true, false] {
-        let group: Vec<Attack> = melees
-            .iter()
-            .filter(|&&(a, _)| (board.units[a].ranged && !board.units[a].melee) == want_ranged)
-            .copied()
-            .collect();
-        if group.is_empty() {
-            continue;
-        }
+    if !melees.is_empty() {
         let before = living(board);
-        exchange(board, &group, true, true);
+        exchange(board, &melees, true, true);
         logs.push(close(board, &before));
     }
     // Clearing a zone's formation with intruders takes it - flip those intruders to the owning side. Resolved
-    // ONCE here, at the end of the intruder band: clear a zone's defenders and it is yours. (Simple to remember;
-    // the exact sub-step it happens on is byte-identical, since Bands 2/3 run after this either way.)
+    // once here, at the end of the Inner Ring: clear a zone's defenders and it is yours.
     promote(board);
 
-    // ---- BAND 2: CROSSINGS (closing into a formation) ---------------------------------------------------
+    // ---- CROSSING RING: CROSSINGS (closing into a formation) -------------------------------------------
     //
     // Every declared Raid/Slip sends its body across as a transient. An enemy formation reaches for a crosser at
     // BOTH ends it touches - the zone ENTERED and the zone LEFT - because you are outside your own screen the
@@ -1101,7 +1057,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         last.aborted = landing.aborted.clone();
     }
 
-    // The raiders that got through strike the rearguard they came for - before it can fire in Band 3. Tempo-gated:
+    // The raiders that got through strike the rearguard they came for - before it can fire in the Outer Ring. Tempo-gated:
     // a raider that evaded with everything arrives with nothing to swing. A Raid sweep covers the back line it is
     // now standing among (its tier).
     let before = living(board);
@@ -1118,7 +1074,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     exchange(board, &raids, false, false);
     logs.push(close(board, &before));
 
-    // ---- BAND 3: ACROSS THE GAP (Fire then Clash) -------------------------------------------------------
+    // ---- OUTER RING: ACROSS THE GAP (Fire then Clash) -------------------------------------------------
     //
     // The standing formations trade at each other's vanguards in other regions. Every back line fires first
     // (holding off IS being quicker), then every front line closes and trades. Ranged before melee.
@@ -1475,7 +1431,7 @@ mod tests {
     }
 
     /// **A lone archer at the back shoots before a swordsman can swing.** It is fully targetable, and wins anyway
-    /// because it fires in Band 3's Fire while the swordsman closes in the later Clash. Posted at the front, the
+    /// because it fires in the Outer Ring.s Fire while the swordsman closes in the later Clash. Posted at the front, the
     /// same body closes and dies - but the post is the weapon, so a ranged body is *always* back.
     #[test]
     fn a_lone_archer_shoots_before_a_swordsman_can_swing() {
@@ -1598,7 +1554,7 @@ mod tests {
         );
     }
 
-    // ---- THE CROSSING (Band 2) --------------------------------------------------------------------------
+    // ---- THE CROSSING (Crossing Ring) --------------------------------------------------------------------------
 
     /// **THE ONE THAT MATTERS. The screen is a PRICE, not an immunity** - enough Tempo gets past a front and
     /// reaches the body behind it. And a landed raider ends up standing INSIDE the enemy formation, as an
