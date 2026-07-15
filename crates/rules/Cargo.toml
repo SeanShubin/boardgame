@@ -1,0 +1,10 @@
+[package]
+name = "rules"
+version.workspace = true
+edition.workspace = true
+
+# **This crate has NO dependencies, and that is a load-bearing rule, not an accident.**
+# It is the pure game rules - the only thing solvers, the application, and demo UIs must agree on. Nothing
+# here knows about physical cards, rendering, the overworld, or any other rule category. If a dependency ever
+# appears in this file, a boundary has been crossed; delete it rather than work around it.
+[dependencies]
