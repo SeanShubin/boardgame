@@ -66,7 +66,7 @@ pub const ABILITIES: [(&str, &str); 4] = [
 /// answer to one creature: Raider (melee single) answers the Wall, Marksman (ranged single) the Duelist,
 /// Bastion (melee area, tanky) the Swarm, Bombardier (ranged area) the Storm (see [`creature_counter`]).
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
-    ("Raider", [7, 6, 1, 2, 2], "Jab"),       // melee single
+    ("Raider", [6, 6, 1, 2, 2], "Jab"),       // melee single
     ("Marksman", [5, 2, 1, 2, 2], "Shot"),    // ranged single
     ("Bastion", [1, 3, 3, 1, 2], "Sweep"),    // melee area, tanky (Grit)
     ("Bombardier", [3, 3, 1, 1, 2], "Salvo"), // ranged area, fragile
@@ -172,7 +172,7 @@ pub const CREATURES: [Creature; 4] = [
     Creature {
         name: "The Wall",
         ability: "Bulwark",
-        stats: [1, 4, 9, 1, 2],
+        stats: [1, 4, 6, 1, 2],
         melee: true,
         ranged: false,
         aoe: false,
@@ -195,7 +195,7 @@ pub const CREATURES: [Creature; 4] = [
     Creature {
         name: "The Swarm",
         ability: "Overrun",
-        stats: [1, 8, 1, 1, 1],
+        stats: [1, 7, 1, 1, 1],
         melee: false,
         ranged: true,
         aoe: false,
@@ -205,7 +205,7 @@ pub const CREATURES: [Creature; 4] = [
     Creature {
         name: "The Storm",
         ability: "Onslaught",
-        stats: [2, 12, 1, 2, 1],
+        stats: [3, 4, 1, 2, 1],
         melee: true,
         ranged: false,
         aoe: false,
@@ -387,7 +387,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         keystone: "The Swarm",
         party: true,
         behavior: Some(Behavior::RaidNecessary),
-        foes: &[("The Wall", 1), ("The Swarm", 2)],
+        foes: &[("The Wall", 3), ("The Swarm", 1)],
     },
     Encounter {
         location: "Greywater Ford",
@@ -396,7 +396,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         keystone: "The Duelist",
         party: true,
         behavior: Some(Behavior::RearguardCarries),
-        foes: &[("The Wall", 1), ("The Duelist", 1), ("The Swarm", 1)],
+        foes: &[("The Duelist", 3)],
     },
     Encounter {
         location: "Emberfall Hollow",
