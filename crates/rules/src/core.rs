@@ -471,7 +471,7 @@ impl<G: Solvable> PathCounter<G> {
         Paths {
             wins,
             losses,
-            complete: !(self.aborted && !before),
+            complete: !self.aborted || before,
         }
     }
 
