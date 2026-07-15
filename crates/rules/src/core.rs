@@ -209,3 +209,136 @@ mod tests {
         assert_eq!(decisions_within::<Line>(&0, 1), 1);
     }
 }
+
+// ---- the generic solver: winnable / evaluating / doomed over any single-agent Game -----------------------
+
+/// What a search says about a position. The three states, exactly as the design has always named them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    /// Some line from here reaches a [`Outcome::Win`].
+    Winnable,
+    /// The search ran out of budget before it could be sure. **Not an answer** - an answer in progress.
+    Evaluating,
+    /// The tree is exhausted and no line wins.
+    Doomed,
+}
+
+/// A [`Game`] a solver can search. It is single-agent by construction (the opponent is folded into
+/// [`Game::apply`]), so "can the controlling side force a win" is a plain reachability question: **is there a
+/// path to a [`Win`](Outcome::Win)** - an OR over `options` at every node.
+///
+/// The only thing a `Game` must add to be searchable is a **key**: a cheap, hashable digest of a state that is
+/// equal for two states a search may treat as the same position. Canonicalizing away meaningless distinctions
+/// (relabelled regions, seat order) belongs in `key` - it is what lets the memo collapse the tree.
+pub trait Solvable: Game {
+    type Key: std::hash::Hash + Eq;
+    fn key(state: &Self::State) -> Self::Key;
+}
+
+/// **The doom oracle, generic over any [`Solvable`] game.** Holds the memo, so the first evaluation walks the
+/// tree and every later one is a lookup - which is the whole reason a search over many near-identical positions
+/// (e.g. every opening formation) is affordable.
+///
+/// Budgeted and restartable: give it a node budget with [`grant`](Solver::grant), and if it runs out it answers
+/// [`Verdict::Evaluating`] rather than lying. **The one rule it may never break:** an incomplete subtree is
+/// never memoized as a loss. A "no win found" that was really "I gave up" must never be cached as `Doomed`. The
+/// oracle may be silent; it may never be wrong.
+pub struct Solver<G: Solvable> {
+    memo: std::collections::HashMap<G::Key, bool>,
+    nodes: u64,
+    walk: u64,
+    budget: u64,
+    aborted: bool,
+}
+
+impl<G: Solvable> Default for Solver<G> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<G: Solvable> Solver<G> {
+    pub fn new() -> Self {
+        Solver {
+            memo: std::collections::HashMap::new(),
+            nodes: 0,
+            walk: 0,
+            budget: 0,
+            aborted: false,
+        }
+    }
+
+    /// Positions evaluated across every walk - the cost report.
+    pub fn nodes(&self) -> u64 {
+        self.nodes
+    }
+    /// Distinct positions the memo holds.
+    pub fn states(&self) -> usize {
+        self.memo.len()
+    }
+    pub fn aborted(&self) -> bool {
+        self.aborted
+    }
+
+    /// Allow the next walk `nodes` positions and clear the abort flag. The memo survives, so each retry
+    /// re-treads its settled positions for free and pushes the frontier deeper. **Escalate on `Evaluating`** -
+    /// a grant too small to settle any new subtree makes no progress however often repeated; the caller doubles
+    /// it. Safety never depends on the grant.
+    pub fn grant(&mut self, nodes: u64) {
+        self.walk = 0;
+        self.budget = nodes;
+        self.aborted = false;
+    }
+
+    /// The verdict for `state`, spending up to the current [`grant`](Solver::grant).
+    pub fn verdict(&mut self, state: &G::State) -> Verdict {
+        let before = self.aborted;
+        let win = self.winnable(state);
+        match (win, self.aborted && !before) {
+            (true, _) => Verdict::Winnable,
+            (false, true) => Verdict::Evaluating,
+            (false, false) => Verdict::Doomed,
+        }
+    }
+
+    /// Is there a line from `state` that wins? A **win is a proof** (a witness path), so it stands even when
+    /// other branches were abandoned; a **loss is a proof only if the whole subtree was explored**.
+    pub fn winnable(&mut self, state: &G::State) -> bool {
+        match G::outcome(state) {
+            Some(Outcome::Win) => return true,
+            Some(_) => return false, // Loss or Draw: not a win
+            None => {}
+        }
+        if self.walk >= self.budget {
+            self.aborted = true;
+            return false;
+        }
+        let key = G::key(state);
+        if let Some(&v) = self.memo.get(&key) {
+            return v;
+        }
+        self.nodes += 1;
+        self.walk += 1;
+
+        // Each node judges its OWN subtree: stash the caller's abort flag and start clean, so this node cannot
+        // inherit a sibling's give-up and mistake it for its own completeness (which would cache an incomplete
+        // "no win" as a proven Doomed - the one thing the oracle may never do).
+        let outer = self.aborted;
+        self.aborted = false;
+
+        let mut win = false;
+        for choice in G::options(state) {
+            if self.winnable(&G::apply(state, &choice)) {
+                win = true;
+                break;
+            }
+        }
+
+        let incomplete = self.aborted;
+        self.aborted = outer || incomplete;
+        if win || !incomplete {
+            self.memo.insert(key, win); // cache only what we can prove
+        }
+        win
+    }
+}
