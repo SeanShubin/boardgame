@@ -9,6 +9,7 @@ through to the underlying cargo command.
 | -------------- | ----------------------------------------------------------------- |
 | `build`        | Build the whole workspace (debug). `build --release` for release. |
 | `run`          | Run the game (`boardgame` launcher).                              |
+| `combat`       | Combat simulator: play one encounter in a clickable window (`combat 4` for encounter #4). |
 | `test`         | Run the whole test suite.                                         |
 | `check`        | Fast type-check, no binaries produced.                            |
 | `fmt`          | Format all code in place. `fmt --check` to verify only.           |
