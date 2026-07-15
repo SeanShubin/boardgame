@@ -992,9 +992,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
 
     // ---- BAND 2: CROSSINGS (closing into a formation) ---------------------------------------------------
     //
-    // Every declared Raid/Slip-to-a-zone sends its body across as a transient. The enemy FRONT of the target zone
-    // intercepts (spears), THEN the enemy BACK volleys the survivors (bows) - front before back, so a front-killed
-    // crosser is not volleyed. A rally into a friendly zone (or a retreat onto open ground) is unopposed.
+    // Every declared Raid/Slip sends its body across as a transient. An enemy formation reaches for a crosser at
+    // BOTH ends it touches - the zone ENTERED and the zone LEFT - because you are outside your own screen the
+    // moment you move. At each such end the FRONT intercepts (spears) THEN the BACK volleys the survivors (bows),
+    // so a front-killed crosser is not volleyed. A friendly zone never reaches for its own, so a rally between
+    // friendly zones is free; but an intruder pulling OUT of enemy ranks is opposed by the ranks it leaves (the
+    // crossing in reverse).
     let movers: Vec<(usize, u8, Answer)> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen)
         .filter_map(|i| Some((i, acts[i].destination(board, i)?, acts[i].answer()?)))
@@ -1004,14 +1007,16 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     let mut back_catchers: Vec<(usize, usize)> = Vec::new();
     for &(i, dest, _) in &movers {
         let enemy = other_side(board.units[i].side);
-        if board.owner(dest) != Some(enemy) {
-            continue; // only an enemy zone intercepts a crosser
-        }
-        for f in holding_line(board, acts, dest, enemy) {
-            front_catchers.push((f, i));
-        }
-        for c in back_line(board, acts, dest, enemy) {
-            back_catchers.push((c, i));
+        for zone in [board.regions[i], dest] {
+            if board.owner(zone) != Some(enemy) {
+                continue; // only an enemy-owned zone reaches for a crosser; a friendly zone lets its own pass
+            }
+            for f in holding_line(board, acts, zone, enemy) {
+                front_catchers.push((f, i));
+            }
+            for c in back_line(board, acts, zone, enemy) {
+                back_catchers.push((c, i));
+            }
         }
     }
 
@@ -1714,6 +1719,38 @@ mod tests {
             b.owner(1),
             Some(Side::Party),
             "and region 1 has flipped to the party"
+        );
+    }
+
+    /// **An intruder pulling out is opposed by the ranks it leaves.** Retreat is a crossing in reverse: you are
+    /// outside your screen the moment you move, so the enemy formation you abandon reaches for you. A pushed
+    /// retreat arrives - but bloodied. (Before the both-ends fix, only the destination opposed a crosser, so a
+    /// retreat into a friendly zone was free.)
+    #[test]
+    fn an_intruder_retreat_is_opposed_by_the_zone_it_leaves() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [7, 3, 1, 4, 2], true, false), // 0 - the intruder (Grit 1)
+                unit("Wall", Side::Foe, [2, 6, 3, 2, 2], true, false), // 1 - the ranks it leaves (Might 2 > Grit 1)
+                unit("Ally", Side::Party, [3, 4, 2, 2, 2], true, false), // 2 - holds the friendly home zone
+            ],
+            vec![1, 1, 0],
+        );
+        b.intruders[0] = true; // the Raider is loose inside the foe's region 1
+
+        let before = b.units[0].health;
+        // It pushes out to the friendly region 0. It arrives - but the Wall it leaves swings at it on the way.
+        play_round(&mut b, &[Act::Slip(0, Answer::Push), Act::Hold, Act::Hold]);
+
+        assert_eq!(b.regions[0], 0, "a pushed retreat still arrives");
+        assert!(
+            !b.intruders[0],
+            "and it has rejoined a friendly zone, no longer an intruder"
+        );
+        assert!(
+            b.units[0].health < before,
+            "but the ranks it left drew blood on the way out ({before} -> {})",
+            b.units[0].health
         );
     }
 
