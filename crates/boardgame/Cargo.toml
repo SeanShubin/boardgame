@@ -22,6 +22,7 @@ ron = { workspace = true }
 # For `examples/region_board` (the regions/relations design spike): the kits, creatures and encounters it
 # fights over. Not used by the shipped binary.
 [dev-dependencies]
+rules = { workspace = true }
 deckbound-content = { workspace = true }
 
 # Native persistence: write the RON save to the OS data directory.

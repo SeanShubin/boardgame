@@ -1911,6 +1911,7 @@ dependencies = [
  "deckbound-content",
  "directories",
  "ron 0.8.1",
+ "rules",
  "serde",
  "web-sys",
 ]

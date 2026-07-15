@@ -178,6 +178,78 @@ mod tests {
         });
     }
 
+    /// The path counter tallies terminal leaves: on a tiny loop-free game with a known tree, the win/loss split
+    /// is exact and complete.
+    #[test]
+    fn path_counter_tallies_wins_and_losses() {
+        // A 2-ply binary tree: from 0, two moves to depth 1; from each, two moves to depth 2 (terminal).
+        // Depth-2 states 2,3,4 are wins if even, losses if odd - so we know the leaf outcomes.
+        struct Tree;
+        impl Game for Tree {
+            type State = u32;
+            type Choice = u32; // add 1 or add 2
+            fn options(s: &u32) -> Vec<u32> {
+                if *s >= 4 { vec![] } else { vec![1, 2] }
+            }
+            fn apply(s: &u32, c: &u32) -> u32 {
+                s + c
+            }
+            fn outcome(s: &u32) -> Option<Outcome> {
+                if *s < 4 {
+                    None
+                } else if s % 2 == 0 {
+                    Some(Outcome::Win)
+                } else {
+                    Some(Outcome::Loss)
+                }
+            }
+        }
+        impl Solvable for Tree {
+            type Key = u32;
+            fn key(s: &u32) -> u32 {
+                *s
+            }
+        }
+        let mut c = PathCounter::<Tree>::new();
+        c.grant(1_000);
+        let p = c.count(&0);
+        assert!(p.complete, "the tree is small enough to finish");
+        // From 0: paths reach terminals 4,5,6 (even=win). Every leaf >=4 that is even is a win.
+        assert!(
+            p.wins > 0 && p.losses > 0,
+            "both outcomes are reachable: {p:?}"
+        );
+    }
+
+    /// A starved counter is honest: it returns a partial (`complete=false`) lower bound, never a wrong total.
+    #[test]
+    fn a_starved_path_counter_is_incomplete_not_wrong() {
+        struct Deep;
+        impl Game for Deep {
+            type State = u32;
+            type Choice = u32;
+            fn options(s: &u32) -> Vec<u32> {
+                if *s >= 30 { vec![] } else { vec![1, 2] }
+            }
+            fn apply(s: &u32, c: &u32) -> u32 {
+                s + c
+            }
+            fn outcome(s: &u32) -> Option<Outcome> {
+                (*s >= 30).then_some(Outcome::Win)
+            }
+        }
+        impl Solvable for Deep {
+            type Key = u32;
+            fn key(s: &u32) -> u32 {
+                *s
+            }
+        }
+        let mut c = PathCounter::<Deep>::new();
+        c.grant(5); // far too little
+        let p = c.count(&0);
+        assert!(!p.complete, "it should run out of budget");
+    }
+
     #[test]
     fn decisions_within_counts_forks_not_leaves() {
         // A loop-free game: at each step, Fork (two ways to the same successor) or nothing. So every
@@ -340,5 +412,98 @@ impl<G: Solvable> Solver<G> {
             self.memo.insert(key, win); // cache only what we can prove
         }
         win
+    }
+}
+
+// ---- path counting: how many ways a route wins vs loses --------------------------------------------------
+
+/// A tally of terminal outcomes reachable from a state: how many complete lines end in a [`Win`](Outcome::Win)
+/// versus not (a loss or a draw - **a tie counts as a loss**). `complete` is false when the count ran out of
+/// budget, in which case `wins`/`losses` are honest **lower bounds** (a `>=`), never guesses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Paths {
+    pub wins: u64,
+    pub losses: u64,
+    pub complete: bool,
+}
+
+/// Counts winning vs losing lines through a [`Solvable`] game's tree, memoized on the state key so the shared
+/// DAG is walked once. Budgeted like [`Solver`]: a walk that runs out of budget returns a partial count and
+/// **does not memoize the incomplete node**, so a cached count is always exact.
+///
+/// Counts saturate at [`u64::MAX`] rather than overflow - a fight can have astronomically many lines, and past
+/// a point the exact number matters less than the ratio.
+pub struct PathCounter<G: Solvable> {
+    memo: std::collections::HashMap<G::Key, (u64, u64)>,
+    walk: u64,
+    budget: u64,
+    aborted: bool,
+}
+
+impl<G: Solvable> Default for PathCounter<G> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<G: Solvable> PathCounter<G> {
+    pub fn new() -> Self {
+        PathCounter {
+            memo: std::collections::HashMap::new(),
+            walk: 0,
+            budget: 0,
+            aborted: false,
+        }
+    }
+
+    /// Allow the next count `nodes` positions. The memo survives, so an escalating grant converges (double on
+    /// an incomplete result).
+    pub fn grant(&mut self, nodes: u64) {
+        self.walk = 0;
+        self.budget = nodes;
+        self.aborted = false;
+    }
+
+    /// Tally the lines from `state`, up to the current [`grant`](PathCounter::grant).
+    pub fn count(&mut self, state: &G::State) -> Paths {
+        let before = self.aborted;
+        let (wins, losses) = self.tally(state);
+        Paths {
+            wins,
+            losses,
+            complete: !(self.aborted && !before),
+        }
+    }
+
+    fn tally(&mut self, state: &G::State) -> (u64, u64) {
+        match G::outcome(state) {
+            Some(Outcome::Win) => return (1, 0),
+            Some(_) => return (0, 1), // loss or draw - a tie is a loss
+            None => {}
+        }
+        if self.walk >= self.budget {
+            self.aborted = true;
+            return (0, 0);
+        }
+        let key = G::key(state);
+        if let Some(&v) = self.memo.get(&key) {
+            return v;
+        }
+        self.walk += 1;
+
+        let outer = self.aborted;
+        self.aborted = false;
+        let (mut w, mut l) = (0u64, 0u64);
+        for choice in G::options(state) {
+            let (cw, cl) = self.tally(&G::apply(state, &choice));
+            w = w.saturating_add(cw);
+            l = l.saturating_add(cl);
+        }
+        let incomplete = self.aborted;
+        self.aborted = outer || incomplete;
+        if !incomplete {
+            self.memo.insert(key, (w, l)); // cache only a complete tally
+        }
+        (w, l)
     }
 }
