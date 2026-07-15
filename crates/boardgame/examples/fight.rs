@@ -13,7 +13,7 @@
 use bevy::prelude::*;
 
 use deckbound_board::units::{beast, kit};
-use deckbound_content::catalog::{self, Creature, Encounter};
+use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
 use rules::combat::regions::{Act, Answer, Board, Post};
 use rules::combat::resolve::{Combatant, Side};
@@ -227,25 +227,19 @@ fn region_letter(r: u8) -> char {
     (b'A' + r) as char
 }
 
+/// A choice label. The active hero is shown once above the options and marked on the table, so it is never
+/// repeated per action - a placement reads just "stand at region A (front)".
 fn describe(b: &Board, c: &Choice) -> String {
-    describe_for(b, None, c)
-}
-
-/// A choice label; if `who` is given (the deciding hero), a placement names it: "Raider -> region A front".
-fn describe_for(b: &Board, who: Option<&str>, c: &Choice) -> String {
     match c {
-        Choice::Place { region, post } => {
-            let hero = who.map(|n| format!("{n} ")).unwrap_or_default();
-            format!(
-                "{hero}-> region {} ({})",
-                region_letter(*region),
-                if *post == Post::Front {
-                    "front"
-                } else {
-                    "back"
-                }
-            )
-        }
+        Choice::Place { region, post } => format!(
+            "stand at region {} ({})",
+            region_letter(*region),
+            if *post == Post::Front {
+                "front"
+            } else {
+                "back"
+            }
+        ),
         Choice::Act(a) => act_label(b, a),
     }
 }
@@ -417,7 +411,7 @@ fn screen_text(f: &Fight) -> String {
     // The unit table - same columns and widths as the UI.
     writeln!(s, "\nUNITS").ok();
     let cols = ["unit", "rg", "M", "V", "G", "C", "F", "hp", "kind"];
-    let w = [14usize, 4, 3, 3, 3, 3, 3, 4, 10];
+    let w = [16usize, 4, 3, 3, 3, 3, 3, 4, 10];
     let row = |cells: &[String]| -> String {
         cells
             .iter()
@@ -426,8 +420,10 @@ fn screen_text(f: &Fight) -> String {
             .collect::<String>()
     };
     writeln!(s, "{}", row(&cols.map(String::from))).ok();
+    let active = f.state.deciding();
     for i in 0..b.units.len() {
         let u = &b.units[i];
+        let mark = if active == Some(i) { "> " } else { "  " };
         let side = if u.side == Side::Party { "" } else { "*" };
         let place = format!(
             "{}{}",
@@ -450,7 +446,7 @@ fn screen_text(f: &Fight) -> String {
             s,
             "{}",
             row(&[
-                format!("{side}{}{dead}", u.name),
+                format!("{mark}{side}{}{dead}", u.name),
                 place,
                 u.might.to_string(),
                 u.health.to_string(),
@@ -485,11 +481,10 @@ fn screen_text(f: &Fight) -> String {
                 }
                 None => "counting lines...".into(),
             };
-            let who = f.state.deciding().map(|k| b.units[k].name.clone());
             writeln!(
                 s,
-                "[{i}] {:<32} {:<12} {counts}",
-                describe_for(b, who.as_deref(), &f.options[i]),
+                "[{i}] {:<28} {:<12} {counts}",
+                describe(b, &f.options[i]),
                 v
             )
             .ok();
@@ -576,9 +571,13 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
             MUTED,
             12.0,
         );
+        let active = f.state.deciding();
         for i in 0..b.units.len() {
             let u = &b.units[i];
-            let colour = if u.fallen {
+            let is_active = active == Some(i);
+            let colour = if is_active {
+                GOOD // the hero currently deciding, matched to the ">" heading above the options
+            } else if u.fallen {
                 MUTED
             } else if u.side == Side::Party {
                 INK
@@ -600,10 +599,11 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
             if u.horde {
                 kind.push_str("hd");
             }
+            let marker = if is_active { "> " } else { "  " };
             row_cells(
                 t,
                 &[
-                    &format!("{side}{}", u.name),
+                    &format!("{marker}{side}{}", u.name),
                     &place,
                     &u.might.to_string(),
                     &u.health.to_string(), // Vitality shown as current HP; full at start
@@ -628,7 +628,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
 
 fn row_cells(p: &mut ChildSpawnerCommands, cells: &[&str], colour: Color, size: f32) {
     // fixed widths so columns line up without a real grid
-    let widths = [120.0, 34.0, 26.0, 26.0, 26.0, 26.0, 26.0, 30.0, 90.0];
+    let widths = [132.0, 34.0, 26.0, 26.0, 26.0, 26.0, 26.0, 30.0, 90.0];
     p.spawn(Node {
         flex_direction: FlexDirection::Row,
         ..default()
@@ -694,8 +694,8 @@ fn log_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
 
 /// The options, each a clickable button carrying its verdict and win/loss line counts.
 fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
-    text(p, "your options", 16.0, INK);
     if Combat::outcome(&f.state).is_some() {
+        text(p, "your options", 16.0, INK);
         text(
             p,
             "the fight is over - Restart or Next encounter.",
@@ -704,6 +704,20 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         );
         return;
     }
+    // The active hero, once and prominently - every option below belongs to it, so it is not repeated per row.
+    // (It is also marked with a > on its row in the unit table.)
+    match f.state.deciding() {
+        Some(i) => {
+            let u = &f.state.board().units[i];
+            let verb = if f.state.placing() {
+                "is placing"
+            } else {
+                "is choosing an action"
+            };
+            text(p, format!("> {} {}", u.name, verb), 17.0, GOOD);
+        }
+        None => text(p, "your options", 16.0, INK),
+    }
     text(
         p,
         "each shows: solver verdict, then winning / losing lines through it (a tie is a loss)",
@@ -711,10 +725,6 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         MUTED,
     );
 
-    let who = f
-        .state
-        .deciding()
-        .map(|i| f.state.board().units[i].name.clone());
     for i in 0..f.options.len() {
         let c = &f.options[i];
         let v = f.opt_verdict[i];
@@ -755,12 +765,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 ..default()
             })
             .with_children(|left| {
-                text(
-                    left,
-                    describe_for(f.state.board(), who.as_deref(), c),
-                    14.0,
-                    INK,
-                );
+                text(left, describe(f.state.board(), c), 14.0, INK);
                 text(left, counts, 11.0, MUTED);
             });
             text(row, vtag, 12.0, border);
