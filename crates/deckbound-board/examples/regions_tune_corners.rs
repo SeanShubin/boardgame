@@ -86,6 +86,11 @@ fn behavior_passes(
         }
         Behavior::RaidNecessary => !winnable::<ClashOnly>(kits, foes),
         Behavior::ScreenNecessary => !winnable::<Scattered>(kits, foes),
+        Behavior::CombinedArms => {
+            !winnable::<Combat>(melee, foes)
+                && !winnable::<Combat>(ranged, foes)
+                && !winnable::<ClashOnly>(kits, foes)
+        }
     }
 }
 

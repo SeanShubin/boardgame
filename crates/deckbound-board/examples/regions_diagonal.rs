@@ -75,6 +75,8 @@ where
 /// - `RearguardCarries`: ranged-only wins, melee-only loses.
 /// - `RaidNecessary`: the full party under `ClashOnly` loses (the raid was load-bearing).
 /// - `ScreenNecessary`: the full party under `Scattered` loses (grouping/screening was load-bearing).
+/// - `CombinedArms`: melee-only loses, ranged-only loses, AND the full party under `ClashOnly` loses (the
+///   whole toolkit - ranged, melee, and the raid - is load-bearing at once).
 fn behavior_passes(
     behavior: Behavior,
     kits: &[Combatant],
@@ -112,6 +114,19 @@ fn behavior_passes(
         Behavior::ScreenNecessary => {
             if winnable::<Scattered>(kits, foes) {
                 return Err("full party wins scattered (the screen is not necessary)".to_string());
+            }
+        }
+        Behavior::CombinedArms => {
+            if winnable::<Combat>(melee, foes) {
+                return Err("melee-only party wins (ranged damage is not necessary)".to_string());
+            }
+            if winnable::<Combat>(ranged, foes) {
+                return Err("ranged-only party wins (melee damage is not necessary)".to_string());
+            }
+            if winnable::<ClashOnly>(kits, foes) {
+                return Err(
+                    "full party wins under ClashOnly (the raid is not necessary)".to_string(),
+                );
             }
         }
     }

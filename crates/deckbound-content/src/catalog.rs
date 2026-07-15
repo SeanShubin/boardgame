@@ -299,6 +299,9 @@ pub fn creature_ability_description(name: &str) -> &'static str {
 ///   was load-bearing).
 /// - [`ScreenNecessary`](Behavior::ScreenNecessary): the full party scattered (every hero alone, nothing
 ///   screened) loses (grouping/screening was load-bearing).
+/// - [`CombinedArms`](Behavior::CombinedArms): the whole toolkit is load-bearing at once - the melee-only
+///   sub-party loses (ranged damage is necessary), the ranged-only sub-party loses (melee damage is
+///   necessary), AND the full party under the clash-only control loses (the raid is necessary).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Behavior {
     /// The front line has to carry it: melee-only wins, ranged-only loses.
@@ -309,6 +312,9 @@ pub enum Behavior {
     RaidNecessary,
     /// The screen is load-bearing: scattering (nobody screened) loses.
     ScreenNecessary,
+    /// The whole toolkit is load-bearing at once: melee-only loses (ranged is necessary), ranged-only loses
+    /// (melee is necessary), and clash-only loses (the raid is necessary). The capstone corner.
+    CombinedArms,
 }
 
 /// A location **encounter** — the foes stationed at a place on the map. Two tiers, both keyed to the
@@ -413,8 +419,8 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         flavor: "The deep churns: a charging host boils up out of the dark, screened by a warden and a swarm.",
         keystone: "The Storm",
         party: true,
-        behavior: Some(Behavior::ScreenNecessary),
-        foes: &[("The Wall", 1), ("The Swarm", 1), ("The Storm", 2)],
+        behavior: Some(Behavior::CombinedArms),
+        foes: &[("The Wall", 2), ("The Swarm", 2), ("The Storm", 1)],
     },
 ];
 
