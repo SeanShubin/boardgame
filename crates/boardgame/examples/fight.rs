@@ -380,6 +380,125 @@ fn rebuild(mut commands: Commands, mut f: ResMut<Fight>, old: Query<Entity, With
             ))
             .with_children(|col| options_panel(col, f));
         });
+
+    // Mirror the screen to a file, clobbered every redraw. Not a log - a snapshot of exactly what is on screen
+    // right now, so it can be read and asked about without describing it. Written here so it can never drift
+    // from the render: same data, same moment.
+    let _ = std::fs::write(SCREEN_FILE, screen_text(f));
+}
+
+/// Where the on-screen snapshot is written (relative to the run directory - the repo root under `cargo run`).
+const SCREEN_FILE: &str = "fight-screen.txt";
+
+/// A plain-text mirror of everything on screen: the same header, unit table, options, and history the UI draws,
+/// with the same abbreviations. Pending values read `...` / `counting...`, exactly as they do on screen.
+fn screen_text(f: &Fight) -> String {
+    use std::fmt::Write;
+    let b = f.state.board();
+    let mut s = String::new();
+    let e = f.enc();
+
+    writeln!(s, "{} - {}", e.location, e.title).ok();
+    match (Combat::outcome(&f.state), f.verdict) {
+        (Some(o), _) => writeln!(s, "*** {o:?} ***").ok(),
+        (None, Some(v)) => writeln!(s, "round {}   position: {v:?}", f.state.round()).ok(),
+        (None, None) => writeln!(s, "round {}   position: computing...", f.state.round()).ok(),
+    };
+    if Combat::outcome(&f.state).is_none() {
+        let (done, n) = (f.scored_count(), f.options.len());
+        if f.verdict.is_none() || done < n {
+            writeln!(s, "scoring options... {done}/{n} done").ok();
+        }
+    }
+
+    // The unit table - same columns and widths as the UI.
+    writeln!(s, "\nUNITS").ok();
+    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "hp", "kind"];
+    let w = [14usize, 4, 3, 3, 3, 3, 3, 4, 10];
+    let row = |cells: &[String]| -> String {
+        cells
+            .iter()
+            .zip(w)
+            .map(|(c, width)| format!("{c:<width$}"))
+            .collect::<String>()
+    };
+    writeln!(s, "{}", row(&cols.map(String::from))).ok();
+    for i in 0..b.units.len() {
+        let u = &b.units[i];
+        let side = if u.side == Side::Party { "" } else { "*" };
+        let place = format!(
+            "{}{}",
+            region_letter(b.regions[i]),
+            if b.posts[i] == Post::Front { "F" } else { "b" }
+        );
+        let mut kind = String::new();
+        for (flag, tag) in [
+            (u.melee, "me "),
+            (u.ranged, "rg "),
+            (u.aoe, "aoe "),
+            (u.horde, "hd"),
+        ] {
+            if flag {
+                kind.push_str(tag);
+            }
+        }
+        let dead = if u.fallen { " (down)" } else { "" };
+        writeln!(
+            s,
+            "{}",
+            row(&[
+                format!("{side}{}{dead}", u.name),
+                place,
+                u.might.to_string(),
+                u.health.to_string(),
+                u.grit.to_string(),
+                u.cadence.to_string(),
+                u.finesse.to_string(),
+                u.health.to_string(),
+                kind.trim().to_string(),
+            ])
+        )
+        .ok();
+    }
+    writeln!(
+        s,
+        "(M might  V vitality/hp  G grit  C cadence  F finesse;  rg = region+post, F front / b back)"
+    )
+    .ok();
+
+    // The options - same order and content as the buttons.
+    writeln!(s, "\nOPTIONS").ok();
+    if Combat::outcome(&f.state).is_some() {
+        writeln!(s, "the fight is over.").ok();
+    } else {
+        for i in 0..f.options.len() {
+            let v = f.opt_verdict[i]
+                .map(|x| format!("{x:?}"))
+                .unwrap_or_else(|| "...".into());
+            let counts = match f.opt_paths[i] {
+                Some(p) => {
+                    let ge = if p.complete { "" } else { ">=" };
+                    format!("{ge}{} win / {ge}{} lose", abbrev(p.wins), abbrev(p.losses))
+                }
+                None => "counting lines...".into(),
+            };
+            writeln!(
+                s,
+                "[{i}] {:<32} {:<12} {counts}",
+                describe(f.state.board(), &f.options[i]),
+                v
+            )
+            .ok();
+        }
+    }
+
+    if !f.log.is_empty() {
+        writeln!(s, "\nHISTORY (most recent last)").ok();
+        for line in f.log.iter().rev().take(16).collect::<Vec<_>>().iter().rev() {
+            writeln!(s, "  {line}").ok();
+        }
+    }
+    s
 }
 
 fn header(p: &mut ChildSpawnerCommands, f: &Fight) {

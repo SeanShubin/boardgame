@@ -11,3 +11,4 @@ cardtable-debug.log
 crates/cardtable/examples/fonts/*.ttf
 /local/
 *.log
+fight-screen.txt
