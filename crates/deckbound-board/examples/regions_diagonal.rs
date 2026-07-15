@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Behavior, Encounter};
-use rules::combat::game::{ClashOnly, Combat, Scattered, State};
+use rules::combat::game::{ClashOnly, Combat, OneRegion, Scattered, State};
 use rules::combat::resolve::Combatant;
 use rules::core::{Game, Solvable, Solver, Verdict};
 
@@ -204,5 +204,38 @@ fn main() {
     println!(
         "\nSCORE: {solo_ok}/4 solos, {corner_ok}/4 corners   ({} ms)",
         t0.elapsed().as_millis()
+    );
+
+    // ---- REMOVAL TEST: is multi-region splitting ever load-bearing? ------------------------------------
+    //
+    // Compare the free-formation game (Combat) with OneRegion (the party confined to a single region) for every
+    // party encounter's full party. If OneRegion wins wherever Combat does, splitting never earned a win, and the
+    // whole partition mechanic (and the setup phase that chooses it) could be collapsed to one region per side.
+    println!(
+        "\nSPLIT-NEEDED? (Combat vs OneRegion, full party) - is splitting ever load-bearing?\n"
+    );
+    let mut split_ever = false;
+    for e in catalog::ENCOUNTERS.iter().filter(|e| e.party) {
+        let foes = foes_of(e);
+        let free = winnable::<Combat>(&kits, &foes);
+        let one = winnable::<OneRegion>(&kits, &foes);
+        let note = if free && !one {
+            split_ever = true;
+            "SPLIT LOAD-BEARING (free wins, one-region loses)"
+        } else {
+            "one region suffices"
+        };
+        println!(
+            "  {:<20} free={free:<5} one_region={one:<5}  {note}",
+            e.location
+        );
+    }
+    println!(
+        "\n  => splitting is {}",
+        if split_ever {
+            "LOAD-BEARING somewhere - keep multi-region"
+        } else {
+            "MOOT everywhere - one region per side loses nothing"
+        }
     );
 }

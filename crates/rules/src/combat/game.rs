@@ -491,6 +491,38 @@ impl Solvable for Scattered {
     }
 }
 
+/// The **one-region control**: the party may never split - every hero stands in the single region 0. The opposite
+/// of [`Scattered`]. It exists to answer the removal test *"is multi-region splitting ever load-bearing?"*: if
+/// `Combat` (free formation) is winnable from an encounter but `OneRegion` is not, splitting was necessary there;
+/// if the two agree everywhere, the whole partition mechanic earns nothing and the game could confine each side
+/// to one region for free.
+pub struct OneRegion;
+
+impl Game for OneRegion {
+    type State = State;
+    type Choice = Choice;
+    fn options(state: &State) -> Vec<Choice> {
+        match state.phase {
+            // Force region 0 and nothing else - everyone joins the single party region.
+            Phase::Setup { .. } => vec![Choice::Place { region: 0 }],
+            Phase::Declare { .. } => Combat::options(state),
+        }
+    }
+    fn apply(state: &State, choice: &Choice) -> State {
+        Combat::apply(state, choice)
+    }
+    fn outcome(state: &State) -> Option<Outcome> {
+        Combat::outcome(state)
+    }
+}
+
+impl Solvable for OneRegion {
+    type Key = Key;
+    fn key(state: &State) -> Key {
+        key_of(state)
+    }
+}
+
 #[cfg(test)]
 mod solve_tests {
     use super::*;
