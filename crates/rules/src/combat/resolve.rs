@@ -212,13 +212,15 @@ pub fn resolve_evade(
         .collect()
 }
 
-/// End a sub-phase: mark units at zero health **fallen**. That is all it does - the boundary is where the dead
-/// stop fighting, not where wounds close. A committed blow still landed even if its striker died here.
+/// End a sub-phase: mark units at zero health **fallen**, and **close the damage pile**. A committed blow still
+/// landed even if its striker died here. (EXPLORATION: the pile now closes at every strike boundary, not only at
+/// the Reset - so sub-threshold damage never carries between strikes, only blows within one strike combine.)
 pub fn end_sub_phase(units: &mut [Combatant]) {
     for u in units.iter_mut() {
         if u.health == 0 {
             u.fallen = true;
         }
+        u.pending = 0;
     }
 }
 
