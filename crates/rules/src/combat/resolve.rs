@@ -13,6 +13,23 @@ pub enum Side {
     Foe,
 }
 
+/// **A creature's instinct** - its deterministic, card-expressible behaviour when the game (not a player) drives
+/// it. One line on a card, one branch in [`super::regions::foe_acts`]. Heroes never have an instinct (a player
+/// chooses); it only steers scripted foes.
+///
+/// It exists because the scripted default was actively *wrong* for some creatures: a body that hunts the
+/// weakest hero will **leave its own screening post** to do it, exposing the cannon it was meant to shield. A
+/// per-creature instinct lets a wall be a wall.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Instinct {
+    /// **Hunt.** Go for the weakest body on the board, wherever it stands - clash it, or raid past a line for
+    /// it. The aggressive default.
+    HuntWeakest,
+    /// **Hold the line.** Never leave this region (never raid, never slip): stand your post and strike whatever
+    /// enemy front you can reach, so the body behind you stays screened. What makes a wall a wall.
+    HoldTheLine,
+}
+
 /// A combatant during a fight - the scratch unit the resolver works over.
 ///
 /// The five stats are the shared chassis: **Might** (damage per strike), **Vitality** (Health cards),
@@ -48,6 +65,8 @@ pub struct Combatant {
     /// Damage accumulated this round; closes at the Reset ([`refresh_round`]).
     pub(crate) pending: u32,
     pub fallen: bool,
+    /// How the game drives this body when it is a scripted foe. Ignored for a hero (a player chooses).
+    pub instinct: Instinct,
 }
 
 impl Combatant {
@@ -78,7 +97,14 @@ impl Combatant {
             health: vitality,
             pending: 0,
             fallen: false,
+            instinct: Instinct::HuntWeakest,
         }
+    }
+
+    /// Builder: set this body's [`Instinct`] (its scripted-foe behaviour).
+    pub fn with_instinct(mut self, instinct: Instinct) -> Self {
+        self.instinct = instinct;
+        self
     }
 
     /// Builder: mark this body as carrying an **area** strike.

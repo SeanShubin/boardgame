@@ -240,17 +240,24 @@ fn region_letter(r: u8) -> char {
 }
 
 fn describe(b: &Board, c: &Choice) -> String {
+    describe_for(b, None, c)
+}
+
+/// A choice label; if `who` is given (the deciding hero), a placement names it: "Raider -> region A front".
+fn describe_for(b: &Board, who: Option<&str>, c: &Choice) -> String {
     match c {
-        Choice::Place { region, post } => format!(
-            "{} -> region {} ({})",
-            "place",
-            region_letter(*region),
-            if *post == Post::Front {
-                "front"
-            } else {
-                "back"
-            }
-        ),
+        Choice::Place { region, post } => {
+            let hero = who.map(|n| format!("{n} ")).unwrap_or_default();
+            format!(
+                "{hero}-> region {} ({})",
+                region_letter(*region),
+                if *post == Post::Front {
+                    "front"
+                } else {
+                    "back"
+                }
+            )
+        }
         Choice::Act(a) => act_label(b, a),
     }
 }
@@ -404,6 +411,14 @@ fn screen_text(f: &Fight) -> String {
         (None, Some(v)) => writeln!(s, "round {}   position: {v:?}", f.state.round()).ok(),
         (None, None) => writeln!(s, "round {}   position: computing...", f.state.round()).ok(),
     };
+    if let Some(i) = f.state.deciding() {
+        let verb = if f.state.placing() {
+            "placing"
+        } else {
+            "acting"
+        };
+        writeln!(s, "{verb}: {}", b.units[i].name).ok();
+    }
     if Combat::outcome(&f.state).is_none() {
         let (done, n) = (f.scored_count(), f.options.len());
         if f.verdict.is_none() || done < n {
@@ -482,10 +497,11 @@ fn screen_text(f: &Fight) -> String {
                 }
                 None => "counting lines...".into(),
             };
+            let who = f.state.deciding().map(|k| b.units[k].name.clone());
             writeln!(
                 s,
                 "[{i}] {:<32} {:<12} {counts}",
-                describe(f.state.board(), &f.options[i]),
+                describe_for(b, who.as_deref(), &f.options[i]),
                 v
             )
             .ok();
@@ -525,6 +541,16 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
             ),
         };
         text(h, status.0, 14.0, status.1);
+        // Say WHO is deciding, so "place region A" is never ambiguous about which hero.
+        if let Some(i) = f.state.deciding() {
+            let who = &f.state.board().units[i].name;
+            let verb = if f.state.placing() {
+                "placing"
+            } else {
+                "acting"
+            };
+            text(h, format!("{verb}: {who}"), 13.0, GOOD);
+        }
         // What you are waiting on: a live progress line, so a busy UI is never a silent one.
         if Combat::outcome(&f.state).is_none() {
             let n = f.options.len();
@@ -697,6 +723,10 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         MUTED,
     );
 
+    let who = f
+        .state
+        .deciding()
+        .map(|i| f.state.board().units[i].name.clone());
     for i in 0..f.options.len() {
         let c = &f.options[i];
         let v = f.opt_verdict[i];
@@ -737,7 +767,12 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 ..default()
             })
             .with_children(|left| {
-                text(left, describe(f.state.board(), c), 14.0, INK);
+                text(
+                    left,
+                    describe_for(f.state.board(), who.as_deref(), c),
+                    14.0,
+                    INK,
+                );
                 text(left, counts, 11.0, MUTED);
             });
             text(row, vtag, 12.0, border);

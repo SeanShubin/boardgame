@@ -110,6 +110,21 @@ impl State {
     pub fn round(&self) -> usize {
         self.round
     }
+
+    /// The **party unit whose decision is pending** right now - the hero being placed at setup, or the hero
+    /// declaring its act this round. `None` if nobody is deciding (a forced/terminal state). A UI names it so
+    /// "place region A" is never ambiguous about *which* hero.
+    pub fn deciding(&self) -> Option<usize> {
+        match self.phase {
+            Phase::Setup { next } => self.party.get(next).copied(),
+            Phase::Declare { next } => self.party.get(next).copied(),
+        }
+    }
+
+    /// Whether the pending decision is a setup placement (vs a round action).
+    pub fn placing(&self) -> bool {
+        matches!(self.phase, Phase::Setup { .. })
+    }
 }
 
 /// The regions combat as a [`Game`].

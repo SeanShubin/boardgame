@@ -90,7 +90,7 @@
 use std::collections::HashMap;
 
 use super::resolve::{
-    Combatant, Contact, Dodge, Engage, Side, can_answer, end_sub_phase, refresh_round,
+    Combatant, Contact, Dodge, Engage, Instinct, Side, can_answer, end_sub_phase, refresh_round,
     resolve_evade, slip_cost,
 };
 
@@ -417,19 +417,20 @@ pub fn foe_acts(board: &Board) -> Vec<Option<Act>> {
                 return None;
             }
             let acts = legal_acts(board, i);
-            // **Hunt the weakest body on the board, wherever it is standing.** If it is behind their line, go
-            // through the line for it - that is what the raid is *for*.
-            //
-            // The previous script was `clash.or(raid)`: it preferred a clash and only raided when no clash
-            // existed at all. Since a side always has a front (no rearguard without a vanguard), a clash always
-            // existed - so **the foes never once raided**. The party's cannons were untouchable forever, not by
-            // design but by omission, and the party won every attrition race by default. That single `or` was
-            // holding the whole balance question shut.
             let softest = |t: usize| (board.units[t].health, board.units[t].grit);
+            // The one behavioural switch, dispatched on the creature's card instinct.
+            let allowed = |a: &&Act| match board.units[i].instinct {
+                // Hunt anything: a clash, or a raid PUSHED through a line (spend the pool on the kill, not the
+                // crossing). This is the aggressive default - and it will leave its own post to do it.
+                Instinct::HuntWeakest => matches!(a, Act::Clash(_) | Act::Raid(_, Answer::Push)),
+                // Hold the line: only a clash, which does not move you. NEVER a raid or a slip - so the body
+                // behind this one stays screened. What makes a wall a wall.
+                Instinct::HoldTheLine => matches!(a, Act::Clash(_)),
+            };
             acts.iter()
+                .filter(allowed)
                 .filter_map(|a| match a {
-                    // Push, not Evade: a scripted body spends its pool on the kill, not on the crossing.
-                    Act::Clash(t) | Act::Raid(t, Answer::Push) => Some((softest(*t), *a)),
+                    Act::Clash(t) | Act::Raid(t, _) => Some((softest(*t), *a)),
                     _ => None,
                 })
                 .min_by_key(|&(k, _)| k)
@@ -2037,6 +2038,42 @@ mod tests {
             holding_line(&b, &acts, 0, Side::Party).is_empty(),
             "so it is NOT holding the line it just left - it cannot catch the Ogre coming the other way"
         );
+    }
+
+    /// **HoldTheLine: a wall never abandons its post.** The default HuntWeakest instinct will leave its region
+    /// to chase the soft body behind a line - exposing the cannon it should be screening. HoldTheLine forbids
+    /// every move (raid, slip), so it stays put and only clashes what it can reach. That is what makes a screen
+    /// reliable, and it is the fix for corners that were "too soft" because the wall wandered off.
+    #[test]
+    fn a_hold_the_line_creature_never_leaves_its_region() {
+        // A foe wall in region 1 screening a foe cannon, and a soft hero the wall could raid for in region 0.
+        let mut b = Board::new(
+            vec![
+                unit("Softie", Side::Party, [1, 1, 1, 1, 1], false, true), // 0, region 0 - tempting prey
+                unit("Wall", Side::Foe, [3, 6, 3, 2, 2], true, false),     // 1, region 1 front
+                unit("Cannon", Side::Foe, [5, 2, 1, 2, 2], false, true),   // 2, region 1 back
+            ],
+            vec![0, 1, 1],
+            vec![Post::Front, Post::Front, Post::Back],
+        );
+
+        // Default (HuntWeakest): the wall would go for the Softie, which may mean leaving its region.
+        let hunt = foe_acts(&b);
+        // Now make the wall hold the line.
+        b.units[1].instinct = Instinct::HoldTheLine;
+        let hold = foe_acts(&b);
+        assert!(
+            !matches!(hold[1], Some(Act::Raid(..)) | Some(Act::Slip(..))),
+            "a HoldTheLine wall must never raid or slip: {:?}",
+            hold[1]
+        );
+        // It still fights - it clashes an enemy front it can reach, or holds if none.
+        assert!(
+            matches!(hold[1], Some(Act::Clash(_)) | Some(Act::Hold)),
+            "it holds its post and clashes what it can, or waits: {:?}",
+            hold[1]
+        );
+        let _ = hunt; // (the default's exact target is not what this test pins)
     }
 
     /// The fight terminates and someone wins - the model does not stall.
