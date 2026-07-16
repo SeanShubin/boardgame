@@ -7,6 +7,10 @@
 //! counts carry a completeness sign: `>=` while the tally is still a growing lower bound, flipping to `=` once
 //! that whole subtree has been walked (a `Doomed` is always `=` - it can only be proven by exhaustion).
 //!
+//! Each option also shows its **best route** - `best Nd/Nr/Nhp` = the single best line through it under the stated
+//! priority (win, then fewest heroes **d**owned, then fewest **r**ounds, then least **hp** flipped), `<=` while
+//! that search is still a provisional bound. The header shows the best route from the position itself.
+//!
 //! **Crossings are two beats, in fiction order.** A Raid or Slip is not shown pre-answered; it is one card. Pick
 //! it and - because the foes are deterministic, so who intercepts you is known - the UI names who caught you
 //! (`The Wall catches you at the line`) and *then* asks how to answer: Evade, Push, or turn and fight the catcher.
@@ -28,7 +32,7 @@ use bevy::prelude::*;
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
-use rules::combat::game::{Choice, Combat, State};
+use rules::combat::game::{Choice, Combat, Score, Scorer, State};
 use rules::combat::regions::{Act, Answer, Board, Rank, catchers, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
@@ -146,6 +150,8 @@ struct Step {
     entries: Vec<Entry>,
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
+    opt_score: Vec<Option<Score>>,
+    opt_score_done: Vec<bool>,
     verdict: Option<Verdict>,
 }
 
@@ -168,15 +174,22 @@ struct Fight {
     /// Each option's verdict and win/loss tally; `None` means "still computing" (shown as `...`).
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
+    /// Each option's **best route** (win > fewest downed > fewest rounds > least hp), and whether that search is
+    /// exhausted (exact) rather than still a provisional `<=` bound.
+    opt_score: Vec<Option<Score>>,
+    opt_score_done: Vec<bool>,
     /// The position's own verdict; `None` while thinking.
     verdict: Option<Verdict>,
-    /// A solver and counter kept ACROSS frames, so their memo survives and the work converges instead of
-    /// restarting. Rebuilt only when the position changes.
+    /// A solver, counter, and best-route scorer kept ACROSS frames, so their memos survive and the work converges
+    /// instead of restarting. Rebuilt only when the roster changes (the scorer's hp reference is the fight-start
+    /// Vitality, fixed for the fight).
     solver: Solver<Combat>,
     counter: PathCounter<Combat>,
-    /// A round-robin cursor over the options, so each option's win/loss tally gets a fair share of refinement
-    /// each frame - no single hard tally starves the others.
+    scorer: Scorer,
+    /// Round-robin cursors over the options, so each option's tally and each option's best-route search get a fair
+    /// share of refinement each frame - no single hard one starves the others.
     refine: usize,
+    refine_score: usize,
     /// Each unit's Vitality (its full health), snapshotted at the start so the table can show max **and** current
     /// health - the live `health` field only ever holds the current value, so the maximum has to be kept here.
     max_health: Vec<u32>,
@@ -196,18 +209,29 @@ impl Fight {
             history: Vec::new(),
             opt_verdict: Vec::new(),
             opt_paths: Vec::new(),
+            opt_score: Vec::new(),
+            opt_score_done: Vec::new(),
             verdict: None,
             solver: Solver::new(),
             counter: PathCounter::new(),
+            scorer: Scorer::new(Vec::new(), 0),
             refine: 0,
+            refine_score: 0,
             max_health: Vec::new(),
             log: Vec::new(),
             dirty: true,
         };
         f.snapshot_max();
+        f.rebuild_scorer();
         f.reposition();
         f.sync_log();
         f
+    }
+
+    /// (Re)build the best-route scorer with the fight-start Vitality as its hp reference - called once per roster
+    /// (the reference is fixed for the whole fight, so the scorer memo stays valid across moves).
+    fn rebuild_scorer(&mut self) {
+        self.scorer = Scorer::new(self.max_health.clone(), 0);
     }
 
     /// Record every unit's full health for this encounter, so the table can show max vs current.
@@ -227,6 +251,7 @@ impl Fight {
         // place the units change. Ordinary moves keep the memo (see `reposition`).
         self.solver = Solver::new();
         self.counter = PathCounter::new();
+        self.rebuild_scorer();
         self.log.clear();
         self.history.clear(); // a new roster invalidates every prior decision point
         self.reposition();
@@ -255,6 +280,8 @@ impl Fight {
         self.drill = None;
         self.opt_verdict = vec![None; self.options.len()];
         self.opt_paths = vec![None; self.options.len()];
+        self.opt_score = vec![None; self.options.len()];
+        self.opt_score_done = vec![false; self.options.len()];
         self.verdict = None;
         // KEEP the solver/counter memos across a move - do NOT re-new them here. The game is deterministic and the
         // memo key is a pure function of the position, so any subtree already explored while scoring the parent's
@@ -263,6 +290,7 @@ impl Fight {
         // change invalidates them, and that is handled in `reset`. So stepping through a fight re-computes only the
         // genuinely new frontier, never a node already seen.
         self.refine = 0;
+        self.refine_score = 0;
         self.dirty = true;
     }
 
@@ -304,23 +332,45 @@ impl Fight {
             }
         }
 
-        // 3. the option tallies, refined ROUND-ROBIN so no one hard tally starves the rest. The first still-
-        //    incomplete option this frame gets whatever frame budget the verdicts left - a fuller pass than a
-        //    verdict step, so counts fill decently - and the cursor moves on so the next frame refines the next
-        //    option. Each pass keeps the latest count (a partial is an honest ">="); the shared memo makes it more
-        //    complete each visit.
+        // 3. the option tallies AND the best-route scores, each refined ROUND-ROBIN so no one hard search starves
+        //    the rest. The frame's remaining budget is split between them (half each), and each advances the first
+        //    still-incomplete option under its own cursor - so both fill in over a handful of frames while the
+        //    shared memos make each visit more complete. A partial tally is an honest ">="; a partial score an
+        //    honest "<=".
         let n = self.options.len();
-        let mut looked = 0;
-        while spent < FRAME_BUDGET && looked < n {
-            let i = self.refine % n;
-            self.refine = (self.refine + 1) % n;
-            looked += 1;
-            if !self.opt_paths[i].is_some_and(|p| p.complete) {
-                let next = Combat::apply(&self.state, &self.options[i]);
-                self.counter.grant(FRAME_BUDGET - spent);
-                self.opt_paths[i] = Some(self.counter.count(&next));
-                spent = FRAME_BUDGET; // that one pass used the rest of this frame's budget
-                changed = true;
+        if n > 0 && spent < FRAME_BUDGET {
+            let remaining = FRAME_BUDGET - spent;
+            let half = (remaining / 2).max(1);
+
+            // one option's win/loss tally
+            let mut looked = 0;
+            while looked < n {
+                let i = self.refine % n;
+                self.refine = (self.refine + 1) % n;
+                looked += 1;
+                if !self.opt_paths[i].is_some_and(|p| p.complete) {
+                    let next = Combat::apply(&self.state, &self.options[i]);
+                    self.counter.grant(half);
+                    self.opt_paths[i] = Some(self.counter.count(&next));
+                    changed = true;
+                    break;
+                }
+            }
+
+            // one option's best route
+            let mut looked = 0;
+            while looked < n {
+                let i = self.refine_score % n;
+                self.refine_score = (self.refine_score + 1) % n;
+                looked += 1;
+                if !self.opt_score_done[i] {
+                    let next = Combat::apply(&self.state, &self.options[i]);
+                    self.scorer.grant(remaining - half);
+                    self.opt_score[i] = self.scorer.best(&next);
+                    self.opt_score_done[i] = !self.scorer.aborted();
+                    changed = true;
+                    break;
+                }
             }
         }
         changed
@@ -347,6 +397,8 @@ impl Fight {
             entries: self.entries.clone(),
             opt_verdict: self.opt_verdict.clone(),
             opt_paths: self.opt_paths.clone(),
+            opt_score: self.opt_score.clone(),
+            opt_score_done: self.opt_score_done.clone(),
             verdict: self.verdict,
         });
         self.drill = None;
@@ -374,8 +426,11 @@ impl Fight {
         self.entries = step.entries;
         self.opt_verdict = step.opt_verdict;
         self.opt_paths = step.opt_paths;
+        self.opt_score = step.opt_score;
+        self.opt_score_done = step.opt_score_done;
         self.verdict = step.verdict;
         self.refine = 0;
+        self.refine_score = 0;
         self.sync_log();
         self.dirty = true;
     }
@@ -466,6 +521,33 @@ impl Fight {
             complete &= p.complete;
         }
         counts_line(wins, losses, complete)
+    }
+
+    /// The best route achievable across a crossing's answers - the min [`Score`] over them (whichever answer plays
+    /// out best), and whether every answer's search is exhausted (so the min is exact, not a provisional `<=`).
+    fn agg_route(&self, members: &[(Answer, usize)]) -> (Option<Score>, bool) {
+        let mut best: Option<Score> = None;
+        let mut done = true;
+        for &(_, i) in members {
+            done &= self.opt_score_done[i];
+            if let Some(s) = self.opt_score[i] {
+                best = Some(best.map_or(s, |b| b.min(s)));
+            }
+        }
+        (best, done)
+    }
+
+    /// The best route from **this position** - the min over all options' best routes, and whether all are done.
+    fn best_route(&self) -> (Option<Score>, bool) {
+        let mut best: Option<Score> = None;
+        let mut done = !self.opt_score.is_empty();
+        for i in 0..self.opt_score.len() {
+            done &= self.opt_score_done[i];
+            if let Some(s) = self.opt_score[i] {
+                best = Some(best.map_or(s, |b| b.min(s)));
+            }
+        }
+        (best, done)
     }
 
     /// **Apply one declaration and record it in the history** - the single path EVERY choice takes, whether a
@@ -1111,6 +1193,15 @@ fn screen_text(f: &Fight) -> String {
 
     // The options - same order and content as the buttons, including the two-beat crossings.
     writeln!(s, "\nOPTIONS").ok();
+    if Combat::outcome(&f.state).is_none() {
+        let (rs, rd) = f.best_route();
+        writeln!(
+            s,
+            "best route from here: {}  (downed/rounds/hp, minimized in that priority)",
+            route_cell(rs, rd)
+        )
+        .ok();
+    }
     let vtag = |v: Option<Verdict>| v.map(|x| format!("{x:?}")).unwrap_or_else(|| "...".into());
     if Combat::outcome(&f.state).is_some() {
         writeln!(s, "the fight is over.").ok();
@@ -1125,10 +1216,11 @@ fn screen_text(f: &Fight) -> String {
         for (n, &(ans, opt)) in drill.answers.iter().enumerate() {
             writeln!(
                 s,
-                "[{n}] {:<28} {:<12} {}",
+                "[{n}] {:<28} {:<12} {:<22} {}",
                 answer_label(ans, &drill.catchers),
                 vtag(f.opt_verdict[opt]),
-                opt_counts(f.opt_paths[opt])
+                opt_counts(f.opt_paths[opt]),
+                fmt_route(f.opt_score[opt], f.opt_score_done[opt])
             )
             .ok();
         }
@@ -1136,19 +1228,24 @@ fn screen_text(f: &Fight) -> String {
     } else {
         // Beat one: entries, crossings collapsed to one line.
         for (k, entry) in f.entries.iter().enumerate() {
-            let (title, v, counts) = match entry {
+            let (title, v, counts, route) = match entry {
                 Entry::Direct(opt) => (
                     describe(b, &f.options[*opt]),
                     vtag(f.opt_verdict[*opt]),
                     opt_counts(f.opt_paths[*opt]),
+                    fmt_route(f.opt_score[*opt], f.opt_score_done[*opt]),
                 ),
-                Entry::Crossing { label, answers, .. } => (
-                    format!("{label}  >"),
-                    vtag(f.agg_verdict(answers)),
-                    f.agg_counts(answers),
-                ),
+                Entry::Crossing { label, answers, .. } => {
+                    let (rs, rd) = f.agg_route(answers);
+                    (
+                        format!("{label}  >"),
+                        vtag(f.agg_verdict(answers)),
+                        f.agg_counts(answers),
+                        fmt_route(rs, rd),
+                    )
+                }
             };
-            writeln!(s, "[{k}] {title:<28} {v:<12} {counts}").ok();
+            writeln!(s, "[{k}] {title:<28} {v:<12} {counts:<22} {route}").ok();
         }
     }
 
@@ -1209,6 +1306,16 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
         if let Some(i) = f.state.deciding() {
             let who = &f.state.board().units[i].name;
             text(h, format!("acting: {who}"), 13.0, GOOD);
+        }
+        // The best route from HERE, under the priority order - the headline number to steer by.
+        if Combat::outcome(&f.state).is_none() {
+            let (rs, rd) = f.best_route();
+            text(
+                h,
+                format!("best route: {}  (downed/rounds/hp)", route_cell(rs, rd)),
+                12.0,
+                GOOD,
+            );
         }
         // What you are waiting on: a live progress line, so a busy UI is never a silent one.
         if Combat::outcome(&f.state).is_none() {
@@ -1420,6 +1527,7 @@ fn choice_button(
     hit: Hit,
     title: String,
     counts: String,
+    route: String,
     v: Option<Verdict>,
 ) {
     let border = v.map(verdict_color).unwrap_or(WARN); // amber while still evaluating
@@ -1450,9 +1558,32 @@ fn choice_button(
         .with_children(|left| {
             text(left, title, 14.0, INK);
             text(left, counts, 11.0, MUTED);
+            text(left, route, 11.0, GOOD); // the best route through this option, in the "good" colour
         });
         text(row, vtag, 12.0, border);
     });
+}
+
+/// The bare best-route cell `Nd/Nr/Nhp` (downed / rounds / hp lost), prefixed `<=` while the search is still a
+/// provisional bound; `no win` when proven unwinnable, `...` while still computing.
+fn route_cell(score: Option<Score>, done: bool) -> String {
+    match score {
+        Some(s) => {
+            let le = if done { "" } else { "<=" };
+            format!("{le}{}d/{}r/{}hp", s.downed, s.rounds, s.hp_lost)
+        }
+        None if done => "no win".to_string(),
+        None => "...".to_string(),
+    }
+}
+
+/// The best-route line for one option button - the [`route_cell`] with a "best " prefix (or the full "no winning
+/// route" when the option is proven doomed).
+fn fmt_route(score: Option<Score>, done: bool) -> String {
+    match (score, done) {
+        (None, true) => "no winning route".to_string(),
+        _ => format!("best {}", route_cell(score, done)),
+    }
 }
 
 /// The options, each a clickable button carrying its verdict and win/loss line counts.
@@ -1495,6 +1626,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 Hit::Option(opt),
                 answer_label(ans, &drill.catchers),
                 opt_counts(f.opt_paths[opt]),
+                fmt_route(f.opt_score[opt], f.opt_score_done[opt]),
                 f.opt_verdict[opt],
             );
         }
@@ -1529,15 +1661,20 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
                 Hit::Option(*opt),
                 describe(f.state.board(), &f.options[*opt]),
                 opt_counts(f.opt_paths[*opt]),
+                fmt_route(f.opt_score[*opt], f.opt_score_done[*opt]),
                 f.opt_verdict[*opt],
             ),
-            Entry::Crossing { label, answers, .. } => choice_button(
-                p,
-                Hit::Crossing(k),
-                format!("{label}  >"),
-                f.agg_counts(answers),
-                f.agg_verdict(answers),
-            ),
+            Entry::Crossing { label, answers, .. } => {
+                let (rs, rd) = f.agg_route(answers);
+                choice_button(
+                    p,
+                    Hit::Crossing(k),
+                    format!("{label}  >"),
+                    f.agg_counts(answers),
+                    fmt_route(rs, rd),
+                    f.agg_verdict(answers),
+                )
+            }
         }
     }
 }
