@@ -440,7 +440,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
     Encounter {
         location: "Ninefold Deep",
         title: "Horror of the Ninefold Deep",
-        flavor: "The deep churns: a swarm overruns the front, a warden anchors the line, a sniper marks you from a nested brood - clear the swarm, slip a blade to the sniper, break the wall, sweep the nest.",
+        flavor: "The deep churns: a swarm overruns the front, two wardens anchor the line, a sniper marks you from the dark - first-strike the swarm from range, slip a blade to the sniper, then break the wall.",
         keystone: "The Sniper",
         party: true,
         behavior: Some(Behavior::CombinedArms),

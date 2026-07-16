@@ -116,13 +116,14 @@ fn fmt_score((score, exact): (Option<Score>, bool)) -> String {
 /// - `VanguardCarries`: melee-only wins, ranged-only loses.
 /// - `RearguardCarries`: ranged-only wins, melee-only loses.
 /// - `RaidNecessary`: the full party under `ClashOnly` loses (the raid was load-bearing).
-/// - `CombinedArms`: melee-only loses, ranged-only loses, AND the full party under `ClashOnly` loses (the
-///   whole toolkit - ranged, melee, and the raid - is load-bearing at once).
+/// - `CombinedArms`: melee-only loses, ranged-only loses, single-target-only loses, AND the full party under
+///   `ClashOnly` loses - so ranged, melee, an **area** strike, and the raid are ALL load-bearing at once.
 fn behavior_passes(
     behavior: Behavior,
     kits: &[Combatant],
     melee: &[Combatant],
     ranged: &[Combatant],
+    single: &[Combatant],
     foes: &[Combatant],
 ) -> Result<(), String> {
     if !winnable::<Combat>(kits, foes) {
@@ -159,6 +160,11 @@ fn behavior_passes(
             if winnable::<Combat>(ranged, foes) {
                 return Err("ranged-only party wins (melee damage is not necessary)".to_string());
             }
+            if winnable::<Combat>(single, foes) {
+                return Err(
+                    "single-target-only party wins (an area strike is not necessary)".to_string(),
+                );
+            }
             if winnable::<ClashOnly>(kits, foes) {
                 return Err(
                     "full party wins under ClashOnly (the raid is not necessary)".to_string(),
@@ -190,6 +196,8 @@ fn main() {
         .filter(|k| k.ranged && !k.melee)
         .cloned()
         .collect();
+    // The single-target-only sub-party (no area strike): Raider + Marksman.
+    let single: Vec<Combatant> = kits.iter().filter(|k| !k.aoe).cloned().collect();
 
     println!("SOLOS - each must be soloable by exactly ONE kit (its keystone's counter).\n");
     let mut solo_ok = 0;
@@ -248,7 +256,7 @@ fn main() {
             println!("  {:<20} (no behavior assigned - skipped)", e.location);
             continue;
         };
-        let verdict = match behavior_passes(behavior, &kits, &melee, &ranged, &foes) {
+        let verdict = match behavior_passes(behavior, &kits, &melee, &ranged, &single, &foes) {
             Ok(()) => {
                 corner_ok += 1;
                 "OK".to_string()
