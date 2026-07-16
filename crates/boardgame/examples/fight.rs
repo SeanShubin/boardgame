@@ -689,18 +689,51 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 }
             }
         }
-        // A body's tempo spend is a per-phase fact (a sweep hits many for one spend), so state it once per attacker.
+        // Each strike, in the pool -> flow vocabulary: the attacker FLIPS tempo (at its Finesse) to GENERATE the
+        // reach that lands the contact, then STRIKES for damage (Might per blow). The reach/tempo is a per-attacker
+        // fact - a sweep hits many for one flip - so it is stated once, on the attacker's first strike this phase.
         let mut tempo_said: Vec<usize> = Vec::new();
         for (&(a, t), &n) in order.iter().zip(&blows) {
             let (an, tn) = (&before.units[a].name, &before.units[t].name);
+            let mult = if before.units[a].horde {
+                prev_hp[a].max(1) // body count ENTERING this phase - what `land` and the bid both read
+            } else {
+                1
+            };
+            // The reach clause (once per attacker): tempo flipped x Finesse x bodies = the reach it generated, plus
+            // any tempo poured for extra strikes. Recovered from the recorded bid, so it always matches `land`.
             let cost = if tempo_said.contains(&a) {
                 String::new()
             } else {
                 tempo_said.push(a);
-                format!(
-                    "spends {} tempo, then ",
-                    prev_tp[a].saturating_sub(log.tempo[a])
-                )
+                let f = before.units[a].finesse.max(1);
+                let total = prev_tp[a].saturating_sub(log.tempo[a]);
+                match log
+                    .reaches
+                    .iter()
+                    .find(|r| r.attacker == a && r.target == t && !r.evaded)
+                {
+                    Some(r) => {
+                        let rt = r.bid / (f * mult).max(1); // tempo cards that made the bid (bid = rt x f x bodies)
+                        let fclause = if before.units[a].horde {
+                            format!("Finesse {f} x {mult} bodies")
+                        } else {
+                            format!("Finesse {f}")
+                        };
+                        let pour = total.saturating_sub(rt);
+                        let poured = if pour > 0 {
+                            format!("pours {pour} more tempo, ")
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "flips {rt} tempo at {fclause} to generate {} reach, {poured}",
+                            r.bid
+                        )
+                    }
+                    None if before.units[a].aoe => format!("flips {total} tempo to sweep, "),
+                    None => format!("flips {total} tempo, "),
+                }
             };
             if before.units[t].horde {
                 // A blow fells bodies of a pack (one per blow; a sweep records the whole pack) - no pile, no Might.
@@ -708,15 +741,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             } else {
                 // Banked damage = (Might - armor) per blow; a horde attacker swings its whole body count at once.
                 let per_blow = before.units[a].might.saturating_sub(before.units[t].armor);
-                let bodies = if before.units[a].horde {
-                    prev_hp[a].max(1) // the horde's body count ENTERING this phase (what `land` reads)
-                } else {
-                    1
-                };
-                let dmg = per_blow * bodies * n;
-                // Show the armor when it bites, so `Might - armor = per-blow` is legible (both numbers of that
-                // comparison). Armor is 0 for the current roster, so this stays silent until a stat makes it real.
+                let dmg = per_blow * mult * n;
                 let armor = before.units[t].armor;
+                // Show armor only when it bites, so `Might - armor = per-blow` is legible (0 for the roster today).
                 let base = if armor > 0 {
                     format!(
                         "Might {} - armor {armor} = {per_blow}",
@@ -726,14 +753,17 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     format!("Might {}", before.units[a].might)
                 };
                 let how = if before.units[a].horde {
-                    format!("{base} x {bodies} bodies")
-                } else if n > 1 {
-                    format!("{base} x {n} blows")
+                    format!("{base} x {mult} bodies")
                 } else {
                     base
                 };
+                let strikes = if n > 1 && !before.units[a].horde {
+                    format!(" ({n} strikes)")
+                } else {
+                    String::new()
+                };
                 lines.push(format!(
-                    "    {an}: {cost}strikes {tn} for {dmg} damage ({how})"
+                    "    {an}: {cost}strikes {tn} at {how} for {dmg} damage{strikes}"
                 ));
             }
         }
@@ -759,16 +789,18 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     1
                 };
                 for r in my_reaches {
-                    // The reach is a product: cards x Finesse (x body count for a horde) = the bid. No division.
+                    // Same vocabulary as a strike: flip tempo (at Finesse x bodies) to GENERATE reach - only here
+                    // the target out-reached it and dodged. A product, never a quotient.
                     let cards = r.bid / (f * mult).max(1);
-                    let build = if before.units[i].horde {
-                        format!("{cards} tempo x Finesse {f} x {mult} bodies")
+                    let fclause = if before.units[i].horde {
+                        format!("Finesse {f} x {mult} bodies")
                     } else {
-                        format!("{cards} tempo x Finesse {f}")
+                        format!("Finesse {f}")
                     };
                     lines.push(format!(
-                        "    {name}: reaches {} - {build} = bid {}, slipped",
-                        before.units[r.target].name, r.bid
+                        "    {name}: flips {cards} tempo at {fclause} to generate {} reach, but {} dodges it",
+                        r.bid,
+                        before.units[r.target].name
                     ));
                 }
             } else if let Some(worst) = log
@@ -778,15 +810,17 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 .map(|r| r.bid)
                 .max()
             {
-                // The slip is the same product - cards x Finesse - and it breaks the reach when it OUTWEIGHS the
-                // bid. State both values (multiply, never divide): "2 tempo x Finesse 2 = 4 beats bid 2".
+                // The dodge is the SAME flow: flip tempo to generate reach, and it breaks the incoming reach when it
+                // OUTWEIGHS it. Both values on the page (multiply, never divide): "4 reach clears the 2 reaching it".
                 let f = before.units[i].finesse.max(1);
-                let slip = spent * f;
+                let dodge = spent * f;
                 lines.push(format!(
-                    "    {name}: spends {spent} tempo to slip the line - {spent} tempo x Finesse {f} = {slip} beats bid {worst}"
+                    "    {name}: flips {spent} tempo at Finesse {f} to generate {dodge} reach, dodging the {worst} reaching it"
                 ));
             } else {
-                lines.push(format!("    {name}: spends {spent} tempo, no blow lands"));
+                lines.push(format!(
+                    "    {name}: flips {spent} tempo, no reach connects"
+                ));
             }
         }
 
@@ -836,26 +870,34 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             let grit = before.units[i].grit.max(1);
             if before.units[i].horde {
                 if h1 < h0 {
-                    lines.push(format!("    {name}: down to {h1} bodies (was {h0})"));
+                    lines.push(format!(
+                        "    {name}: loses {} bodies, {h1} remaining",
+                        h0 - h1
+                    ));
                 }
             } else if h1 < h0 {
+                // The mirror of the strike line: FLIP health cards (at Grit each) to ABSORB damage. Flipped x Grit
+                // is what the cards soaked; the pile closes each sub-phase, so any damage past that is discarded.
                 let flipped = h0 - h1;
-                // The pile closes each sub-phase, so any banked damage beyond the cards it turned is discarded here.
-                let leftover = dmg_to[i].saturating_sub(flipped * grit);
-                let tail = if h1 > 0 && leftover > 0 {
-                    format!("; {leftover} left over, discarded at the boundary")
+                let absorbed = flipped * grit;
+                let overflow = dmg_to[i].saturating_sub(absorbed);
+                let over = if overflow > 0 {
+                    format!(" ({overflow} overflow, discarded)")
+                } else {
+                    String::new()
+                };
+                let remain = if h1 > 0 {
+                    format!(", {h1} health left")
                 } else {
                     String::new()
                 };
                 lines.push(format!(
-                    "    {name}: absorbs {} damage; Grit {grit} flips {flipped} Health card{} ({h0} -> {h1}){tail}",
-                    dmg_to[i],
-                    if flipped == 1 { "" } else { "s" }
+                    "    {name}: flips {flipped} health at Grit {grit} to absorb {absorbed} damage{over}{remain}"
                 ));
             } else if dmg_to[i] > 0 {
                 // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-phase closes.
                 lines.push(format!(
-                    "    {name}: absorbs {} damage - short of Grit {grit}, no Health card flips (discarded)",
+                    "    {name}: takes {} damage - under Grit {grit}, no health flips (discarded)",
                     dmg_to[i]
                 ));
             }
@@ -903,9 +945,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         for &i in &log.fallen {
             let name = &before.units[i].name;
             if before.units[i].horde {
-                lines.push(format!("    {name}: wiped out - no bodies remain"));
+                lines.push(format!("    {name}: no bodies remaining, wiped out"));
             } else {
-                lines.push(format!("    {name}: downed - no Health cards remain"));
+                lines.push(format!("    {name}: no health remaining, downed"));
             }
         }
 
