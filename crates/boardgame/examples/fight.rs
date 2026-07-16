@@ -30,13 +30,17 @@ const WARN: Color = Color::srgb(0.90, 0.72, 0.35);
 const BAD: Color = Color::srgb(0.90, 0.42, 0.44);
 const FOE: Color = Color::srgb(0.95, 0.72, 0.72);
 
-/// The MOST work any one frame may do, so a frame never stalls and the window stays responsive - you can drag
-/// it, close it, and see progress while the solver thinks. The verdict search restarts from the root each frame
-/// reusing its memo, so capping the per-frame grant just spreads a hard question over more frames.
-const FRAME_NODES: u64 = 20_000;
-/// The win/loss tally is a single bounded pass per option; an incomplete result is an honest ">=" lower bound,
-/// good enough to compare routes. (The shared memo makes later options' tallies more complete for free.)
-const COUNT_BUDGET: u64 = 40_000;
+/// **The MOST node-work any one frame may do.** A frame is bounded to this, so it never stalls: the window stays
+/// at framerate and a click is always handled next frame *no matter how hard the position* - the search just
+/// spreads over more frames, it never freezes one. A **work** budget, not a wall clock, deliberately - it must
+/// behave identically on WASM (where `std::time::Instant` panics) as on desktop, and these small boards make
+/// node-count a good time proxy. Tune down for a smaller frame, up for faster convergence.
+const FRAME_BUDGET: u64 = 12_000;
+/// One item's node grant - a verdict push, or one refinement pass of an option's win/loss tally. Small enough
+/// that several items get a turn inside [`FRAME_BUDGET`]; the shared memo carries each walk deeper across frames,
+/// so verdicts settle and tallies fill in over a handful of frames, and a still-incomplete tally is an honest
+/// ">=" lower bound in the meantime.
+const STEP_NODES: u64 = 4_000;
 
 fn main() {
     let idx: usize = std::env::args()
@@ -86,8 +90,9 @@ struct Fight {
     /// restarting. Rebuilt only when the position changes.
     solver: Solver<Combat>,
     counter: PathCounter<Combat>,
-    /// The current per-walk grant, doubled each frame a verdict stays uncertain (capped at [`FRAME_NODES`]).
-    grant: u64,
+    /// A round-robin cursor over the options, so each option's win/loss tally gets a fair share of refinement
+    /// each frame - no single hard tally starves the others.
+    refine: usize,
     /// Each unit's Vitality (its full health), snapshotted at the start so the table can show max **and** current
     /// health - the live `health` field only ever holds the current value, so the maximum has to be kept here.
     max_health: Vec<u32>,
@@ -106,7 +111,7 @@ impl Fight {
             verdict: None,
             solver: Solver::new(),
             counter: PathCounter::new(),
-            grant: FRAME_NODES,
+            refine: 0,
             max_health: Vec::new(),
             log: Vec::new(),
             dirty: true,
@@ -162,58 +167,68 @@ impl Fight {
         // on its button, so its verdict and counts are already in the memo and land instantly. Only a *roster*
         // change invalidates them, and that is handled in `reset`. So stepping through a fight re-computes only the
         // genuinely new frontier, never a node already seen.
-        self.grant = FRAME_NODES;
+        self.refine = 0;
         self.dirty = true;
     }
 
-    /// **One frame's worth of scoring.** Settle the position's verdict first, then each option's verdict, then
-    /// each option's win/loss tally - one small step, capped at [`FRAME_NODES`], so the frame never stalls. The
-    /// shared memo means each step is cheaper than the last. Returns whether anything changed (redraw if so).
+    /// **One frame's worth of scoring, bounded to [`FRAME_BUDGET`] nodes** so the frame never stalls. Priorities,
+    /// each item granted [`STEP_NODES`] at a time and retried across frames until it settles: the position's own
+    /// verdict, then each option's verdict, then the option tallies refined round-robin. No grant ever escalates,
+    /// so worst-case frame time is bounded no matter how hard the position - a brutal search just takes more
+    /// frames. Returns whether anything changed (redraw if so).
     fn grind(&mut self) -> bool {
         if Combat::outcome(&self.state).is_some() {
             return false;
         }
-        // 1. the position's own verdict
-        if self.verdict.is_none() {
-            self.solver.grant(self.grant);
-            match self.solver.verdict(&self.state) {
-                Verdict::Evaluating => {
-                    self.grant = (self.grant * 2).min(FRAME_NODES.saturating_mul(8))
-                }
-                v => {
-                    self.verdict = Some(v);
-                    self.grant = FRAME_NODES;
-                }
+        let mut spent = 0u64;
+        let mut changed = false;
+
+        // 1. the position's own verdict - push it a step; the memo carries the walk deeper next frame.
+        if spent < FRAME_BUDGET && self.verdict.is_none() {
+            self.solver.grant(STEP_NODES);
+            if let v @ (Verdict::Winnable | Verdict::Doomed) = self.solver.verdict(&self.state) {
+                self.verdict = Some(v);
             }
-            return true;
+            spent += STEP_NODES;
+            changed = true;
         }
-        // 2. the first option still missing a verdict
+
+        // 2. each option's verdict, in turn.
         for i in 0..self.options.len() {
+            if spent >= FRAME_BUDGET {
+                break;
+            }
             if self.opt_verdict[i].is_none() {
                 let next = Combat::apply(&self.state, &self.options[i]);
-                self.solver.grant(self.grant);
-                match self.solver.verdict(&next) {
-                    Verdict::Evaluating => {
-                        self.grant = (self.grant * 2).min(FRAME_NODES.saturating_mul(8))
-                    }
-                    v => {
-                        self.opt_verdict[i] = Some(v);
-                        self.grant = FRAME_NODES;
-                    }
+                self.solver.grant(STEP_NODES);
+                if let v @ (Verdict::Winnable | Verdict::Doomed) = self.solver.verdict(&next) {
+                    self.opt_verdict[i] = Some(v);
                 }
-                return true;
+                spent += STEP_NODES;
+                changed = true;
             }
         }
-        // 3. the first option still missing a tally (a single bounded pass; a partial ">=" is fine)
-        for i in 0..self.options.len() {
-            if self.opt_paths[i].is_none() {
+
+        // 3. the option tallies, refined ROUND-ROBIN so no one hard tally starves the rest. The first still-
+        //    incomplete option this frame gets whatever frame budget the verdicts left - a fuller pass than a
+        //    verdict step, so counts fill decently - and the cursor moves on so the next frame refines the next
+        //    option. Each pass keeps the latest count (a partial is an honest ">="); the shared memo makes it more
+        //    complete each visit.
+        let n = self.options.len();
+        let mut looked = 0;
+        while spent < FRAME_BUDGET && looked < n {
+            let i = self.refine % n;
+            self.refine = (self.refine + 1) % n;
+            looked += 1;
+            if !self.opt_paths[i].is_some_and(|p| p.complete) {
                 let next = Combat::apply(&self.state, &self.options[i]);
-                self.counter.grant(COUNT_BUDGET);
+                self.counter.grant(FRAME_BUDGET - spent);
                 self.opt_paths[i] = Some(self.counter.count(&next));
-                return true;
+                spent = FRAME_BUDGET; // that one pass used the rest of this frame's budget
+                changed = true;
             }
         }
-        false
+        changed
     }
 
     /// How many options are fully scored (verdict + tally), for the progress line.
