@@ -761,8 +761,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             } else if h1 < h0 {
                 let flipped = h0 - h1;
                 lines.push(format!(
-                    "    {name}: absorbs {} damage, flipping {flipped} Health card{} ({h0} -> {h1})",
+                    "    {name}: absorbs {} damage; Grit {} flips {flipped} Health card{} ({h0} -> {h1})",
                     dmg_to[i],
+                    before.units[i].grit.max(1),
                     if flipped == 1 { "" } else { "s" }
                 ));
             } else if dmg_to[i] > 0 {
