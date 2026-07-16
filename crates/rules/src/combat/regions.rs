@@ -433,9 +433,10 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
         }
     }
 
-    // Slip - the one movement. A body of its own formation crosses into the enemy's ground (promoting to
-    // outrider), but an **outrider is committed - there is no retreat** once you are inside the enemy's ranks.
-    if board.ranks[i] != Rank::Outrider {
+    // Slip - the one movement, and **only the Vanguard crosses**. The front line is who charges into the enemy's
+    // ground (promoting to outrider); a Rearguard stays back and fires (it reaches an enemy back by outliving the
+    // enemy front, not by slipping), and an outrider is committed - there is no retreat.
+    if board.ranks[i] == Rank::Vanguard {
         for r in board.occupied().into_iter().filter(|&r| r != here) {
             out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
         }

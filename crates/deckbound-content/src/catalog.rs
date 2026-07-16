@@ -64,7 +64,8 @@ pub const ABILITIES: [(&str, &str); 4] = [
 /// Salvo), each `(name, stats, ability)` where `stats` is `[Might, Vitality, Grit, Cadence, Finesse]`
 /// — the same order as [`STATS`] — and `ability` names an entry in [`ABILITIES`]. Each kit is the sole solo
 /// answer to one creature: Raider (melee single) answers the Wall, Marksman (ranged single) the Duelist,
-/// Bastion (melee area, tanky) the Swarm, Bombardier (ranged area) the Storm (see [`creature_counter`]).
+/// Bombardier (ranged area) the Swarm (a melee front horde, first-struck from range), Bastion (melee area, tanky)
+/// the Brood (a ranged back horde, swept from inside) (see [`creature_counter`]).
 pub const ROSTER: [(&str, [u8; 5], &str); 4] = [
     ("Raider", [6, 6, 1, 2, 2], "Jab"),       // melee single
     ("Marksman", [5, 2, 1, 2, 2], "Shot"),    // ranged single
@@ -165,10 +166,14 @@ pub struct Creature {
     pub pos: Option<&'static str>,
 }
 
-/// The four creatures. Each is beaten by exactly one kit — a clean diagonal (Wall->Raider,
-/// Duelist->Marksman, Swarm->Bastion, Storm->Bombardier) — and that answer is a consequence of the numbers,
-/// not a keyword (see [`creature_counter`]).
-pub const CREATURES: [Creature; 4] = [
+/// The creatures. Four are a **clean diagonal** - each beaten by exactly one kit (Wall->Raider,
+/// Duelist->Marksman, Swarm->Bombardier, Brood->Bastion) as a consequence of the numbers, not a keyword (see
+/// [`creature_counter`]). The **Sniper** is the fifth - a **corner-only priority threat** with no solo, answered
+/// not by a lone kit but by a melee slip past a cleared screen.
+///
+/// The two hordes split by position: the **Swarm** is the *melee front* horde (overruns the vanguard - answered
+/// from range), the **Brood** the *ranged back* horde (spits from cover - answered by going in and sweeping).
+pub const CREATURES: [Creature; 5] = [
     Creature {
         name: "The Wall",
         ability: "Bulwark",
@@ -193,8 +198,22 @@ pub const CREATURES: [Creature; 4] = [
         pos: Some("Vanguard"),
     },
     Creature {
+        // The **melee front horde**: a swarm that overruns the vanguard with numbers, too fast and deadly to
+        // trade with - clear the charge from range with an area strike (answered by the Bombardier).
         name: "The Swarm",
         ability: "Overrun",
+        stats: [3, 4, 1, 2, 2],
+        melee: true,
+        ranged: false,
+        aoe: false,
+        horde: true,
+        pos: Some("Vanguard"),
+    },
+    Creature {
+        // The **ranged back horde**: a brood spitting from cover behind the front. Single strikes drown in the
+        // numbers - you must go IN and sweep the nest in melee (answered by the tanky Bastion).
+        name: "The Brood",
+        ability: "Fusillade",
         stats: [1, 7, 1, 1, 1],
         melee: false,
         ranged: true,
@@ -203,20 +222,23 @@ pub const CREATURES: [Creature; 4] = [
         pos: None,
     },
     Creature {
-        name: "The Storm",
-        ability: "Onslaught",
-        stats: [3, 4, 1, 2, 2],
-        melee: true,
-        ranged: false,
+        // A single deadly marksman in the back line - a **priority threat you must slip a blade in to silence**.
+        // Fragile (Vitality 1 - one blow kills it), but its shot picks off a hero, and screened it cannot be
+        // answered from range until the screen falls. A corner threat, not a solo.
+        name: "The Sniper",
+        ability: "Deadeye",
+        stats: [5, 1, 1, 2, 3],
+        melee: false,
+        ranged: true,
         aoe: false,
-        horde: true,
-        pos: Some("Vanguard"),
+        horde: false,
+        pos: None,
     },
 ];
 
 /// The creatures' abilities, each `(name, description)` — the mechanic that makes the creature a lock,
 /// in player-facing terms. Parallel to [`ABILITIES`] for kits.
-pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
+pub const CREATURE_ABILITIES: [(&str, &str); 5] = [
     (
         "Bulwark",
         "High Grit; sub-bar blows are wiped, so only one overwhelming strike dents it.",
@@ -227,11 +249,15 @@ pub const CREATURE_ABILITIES: [(&str, &str); 4] = [
     ),
     (
         "Overrun",
-        "A pack of one-Health bodies firing from the back line; single strikes drown, an area strike clears the group.",
+        "A melee pack that overruns the vanguard with numbers; too fast and deadly to trade with - clear the charge from range with an area strike.",
     ),
     (
-        "Onslaught",
-        "A pack that charges the front; too fast and deadly to trade with - clear it from range with an area strike.",
+        "Fusillade",
+        "A ranged brood spitting from cover behind the front; single strikes drown in the numbers - go in and sweep the nest with a melee area strike.",
+    ),
+    (
+        "Deadeye",
+        "A lone marksman in the back line; one deadly shot a round picks off a hero - slip a blade in to silence it before the screen even falls.",
     ),
 ];
 
@@ -262,8 +288,9 @@ pub fn creature_posture(c: &Creature) -> &'static str {
     match c.ability {
         "Bulwark" => "armored",
         "Riposte" => "ripostes",
-        "Overrun" => "swarming",
-        "Onslaught" => "charging",
+        "Overrun" => "charging",  // the melee swarm overruns the front
+        "Fusillade" => "nesting", // the ranged brood spits from cover
+        "Deadeye" => "sniping",
         _ => "",
     }
 }
@@ -272,10 +299,11 @@ pub fn creature_posture(c: &Creature) -> &'static str {
 /// and the solver check. Not shown on the card (the player infers the answer from the foe's posture).
 pub fn creature_counter(c: &Creature) -> &'static str {
     match c.ability {
-        "Bulwark" => "Raider",       // tough single -> concentrate a big blow (Jab)
+        "Bulwark" => "Raider",     // tough single -> concentrate a big blow (Jab)
         "Riposte" => "Marksman", // hard-hitting single that mauls melee -> answer from range (Shot)
-        "Overrun" => "Bastion", // back-line horde -> a tough melee area survives the exchange (Sweep)
-        "Onslaught" => "Bombardier", // front horde -> ranged area first-strikes it (Salvo)
+        "Overrun" => "Bombardier", // melee front horde -> ranged area first-strikes the charge (Salvo)
+        "Fusillade" => "Bastion", // ranged back horde -> a tough melee area goes in and sweeps it (Sweep)
+        "Deadeye" => "", // the Sniper is a corner threat, answered by a melee slip, not a lone kit
         _ => "",
     }
 }
@@ -366,7 +394,7 @@ pub const ENCOUNTERS: [Encounter; 8] = [
     Encounter {
         location: "Thornmarch Gate",
         title: "The Thorn Swarm",
-        flavor: "A boiling mass of bramble-imps loosing thorns from behind the gate.",
+        flavor: "A boiling mass of bramble-imps that overruns the gate in a charging tide of thorns.",
         keystone: "The Swarm",
         party: false,
         behavior: None,
@@ -374,22 +402,22 @@ pub const ENCOUNTERS: [Encounter; 8] = [
     },
     Encounter {
         location: "The Salt Barrows",
-        title: "The Barrow Storm",
-        flavor: "A charging host of grave-risen boiling up out of the salt barrows, trampling all before them.",
-        keystone: "The Storm",
+        title: "The Barrow Brood",
+        flavor: "A brood nested deep in the salt barrows, spitting bone-shards from the dark behind their kin.",
+        keystone: "The Brood",
         party: false,
         behavior: None,
-        foes: &[("The Storm", 1)],
+        foes: &[("The Brood", 1)],
     },
     // --- corners: a warband the full party must break, each leaning on one kit (tuned) -----------
     Encounter {
         location: "The Hollow Rampart",
         title: "Breach of the Rampart",
-        flavor: "The rampart is breached: two swarms boil through the gap, a warden anchoring the rubble.",
-        keystone: "The Swarm",
+        flavor: "Wardens anchor the breach while a marksman picks the party off from the rubble behind - you must slip a blade past the wall to silence it.",
+        keystone: "The Sniper",
         party: true,
         behavior: Some(Behavior::RaidNecessary),
-        foes: &[("The Wall", 3), ("The Swarm", 1)],
+        foes: &[("The Wall", 4), ("The Sniper", 1)],
     },
     Encounter {
         location: "Greywater Ford",
@@ -412,11 +440,11 @@ pub const ENCOUNTERS: [Encounter; 8] = [
     Encounter {
         location: "Ninefold Deep",
         title: "Horror of the Ninefold Deep",
-        flavor: "The deep churns: a charging host boils up out of the dark, screened by a warden and a swarm.",
-        keystone: "The Storm",
+        flavor: "The deep churns: a swarm overruns the front, a warden anchors the line, a sniper marks you from a nested brood - clear the swarm, slip a blade to the sniper, break the wall, sweep the nest.",
+        keystone: "The Sniper",
         party: true,
         behavior: Some(Behavior::CombinedArms),
-        foes: &[("The Wall", 2), ("The Swarm", 2), ("The Storm", 1)],
+        foes: &[("The Swarm", 1), ("The Wall", 2), ("The Sniper", 1)],
     },
 ];
 
