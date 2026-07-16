@@ -12,7 +12,7 @@
 use std::io::{self, Write};
 
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Board, Post};
+use rules::combat::regions::{Act, Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, Solvable, Solver, Verdict, decisions_within};
 
@@ -25,9 +25,9 @@ fn show_board(b: &Board) -> String {
     b.occupied()
         .iter()
         .map(|&r| {
-            let tier = |p: Post| -> Vec<String> {
+            let tier = |rank: Rank| -> Vec<String> {
                 (0..b.units.len())
-                    .filter(|&i| b.regions[i] == r && b.posts[i] == p && !b.units[i].fallen)
+                    .filter(|&i| b.regions[i] == r && b.ranks[i] == rank && !b.units[i].fallen)
                     .map(|i| {
                         let un = &b.units[i];
                         let mark = if un.side == Side::Party { "" } else { "*" };
@@ -35,13 +35,16 @@ fn show_board(b: &Board) -> String {
                     })
                     .collect()
             };
-            let (f, k) = (tier(Post::Front), tier(Post::Back));
+            let mut front = tier(Rank::Vanguard);
+            // A loose outrider stands in no line; show it in the region marked with a leading ~.
+            front.extend(tier(Rank::Outrider).into_iter().map(|s| format!("~{s}")));
+            let k = tier(Rank::Rearguard);
             let back = if k.is_empty() {
                 String::new()
             } else {
                 format!(" | {}", k.join(" "))
             };
-            format!("[{}: {}{}]", (b'A' + r) as char, f.join(" "), back)
+            format!("[{}: {}{}]", (b'A' + r) as char, front.join(" "), back)
         })
         .collect::<Vec<_>>()
         .join(" ")

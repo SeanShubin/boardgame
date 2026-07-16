@@ -23,7 +23,7 @@
 //! slip's answer declared up front is equivalent to one chosen on reveal, since the party already knows what the
 //! scripted foes will commit - so folding it into the declaration loses nothing a solver could use.)
 
-use super::regions::{Act, Board, MAX_ROUNDS, Post, foe_act, legal_acts, play_round};
+use super::regions::{Act, Board, MAX_ROUNDS, Rank, foe_act, legal_acts, play_round};
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
 
@@ -201,8 +201,12 @@ mod tests {
         assert_eq!(s.board().regions[1], 0, "all party bodies share region 0");
         assert_eq!(s.board().regions[2], 1, "the foes stand on region 1");
         // Posts are weapon-derived, exactly as before - front for melee, back for ranged-only.
-        assert_eq!(s.board().posts[0], Post::Front, "a melee body is front");
-        assert_eq!(s.board().posts[1], Post::Back, "a ranged-only body is back");
+        assert_eq!(s.board().ranks[0], Rank::Vanguard, "a melee body is front");
+        assert_eq!(
+            s.board().ranks[1],
+            Rank::Rearguard,
+            "a ranged-only body is back"
+        );
         // The first decision is an action, not a placement: every option is an Act.
         let opts = Combat::options(&s);
         assert!(!opts.is_empty(), "the first hero has acts to choose from");
@@ -234,28 +238,22 @@ mod tests {
 use super::regions::canonical;
 use crate::core::Solvable;
 
-/// A hashable digest of a position: per-unit `(health, fallen, post, intruder)`, the **canonicalized** regions
+/// A hashable digest of a position: per-unit `(health, fallen, rank)`, the **canonicalized** regions
 /// (so a relabelling is not a distinct position), the round, and the pending declarations + declare cursor (a
-/// half-declared round is genuinely a different state than a fresh one). The intruder flag is in the key so two
-/// positions that differ only by who is loose inside the enemy ranks stay distinct.
+/// half-declared round is genuinely a different state than a fresh one). The [`Rank`] carries the outrider state,
+/// so two positions that differ only by who is loose inside the enemy ranks stay distinct.
 ///
 /// `tempo` and the damage pile are absent on purpose: both are re-derived at the round Reset, so they are only
 /// ever meaningful *inside* [`play_round`], never at a state a search actually visits.
-type Key = (
-    Vec<(u32, bool, Post, bool)>,
-    Vec<u8>,
-    usize,
-    u8,
-    Vec<Option<Act>>,
-);
+type Key = (Vec<(u32, bool, Rank)>, Vec<u8>, usize, u8, Vec<Option<Act>>);
 
 fn key_of(s: &State) -> Key {
-    let per: Vec<(u32, bool, Post, bool)> = s
+    let per: Vec<(u32, bool, Rank)> = s
         .board
         .units
         .iter()
         .enumerate()
-        .map(|(i, u)| (u.health, u.fallen, s.board.posts[i], s.board.intruders[i]))
+        .map(|(i, u)| (u.health, u.fallen, s.board.ranks[i]))
         .collect();
     (
         per,

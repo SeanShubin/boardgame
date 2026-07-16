@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Answer, Board, Post, play_round};
+use rules::combat::regions::{Act, Answer, Board, Rank, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -474,17 +474,17 @@ fn narrate(before: &Board, after: &Board) -> Vec<String> {
     for i in 0..after.units.len() {
         let (bu, au) = (&before.units[i], &after.units[i]);
         let name = &au.name;
-        // Moved: a slip landed it in a new region, or its post changed under it (a charge-in, a promotion).
+        // Moved: a slip landed it in a new region, or its rank changed under it (a charge-in, a promotion).
         if !au.fallen && before.regions[i] != after.regions[i] {
             out.push(format!(
                 "  {name} slips to region {}",
                 region_letter(after.regions[i])
             ));
-        } else if !au.fallen && before.posts[i] != after.posts[i] {
-            let where_to = if after.posts[i] == Post::Front {
-                "charges to the front"
-            } else {
-                "falls back"
+        } else if !au.fallen && before.ranks[i] != after.ranks[i] {
+            let where_to = match after.ranks[i] {
+                Rank::Outrider => "breaks into the enemy ranks",
+                Rank::Vanguard => "takes the front",
+                Rank::Rearguard => "falls back",
             };
             out.push(format!("  {name} {where_to}"));
         }
@@ -712,7 +712,11 @@ fn screen_text(f: &Fight) -> String {
         let place = format!(
             "{}{}",
             region_letter(b.regions[i]),
-            if b.posts[i] == Post::Front { "F" } else { "b" }
+            match b.ranks[i] {
+                Rank::Vanguard => "F",
+                Rank::Rearguard => "b",
+                Rank::Outrider => "o",
+            }
         );
         let mut kind = String::new();
         for (flag, tag) in [
@@ -879,7 +883,15 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
                 Color::srgb(0.95, 0.72, 0.72)
             };
             let side = if u.side == Side::Party { "" } else { "*" };
-            let place = format!("{}{}", region_letter(b.regions[i]), if b.posts[i] == Post::Front { "F" } else { "b" });
+            let place = format!(
+                "{}{}",
+                region_letter(b.regions[i]),
+                match b.ranks[i] {
+                    Rank::Vanguard => "F",
+                    Rank::Rearguard => "b",
+                    Rank::Outrider => "o",
+                }
+            );
             let mut kind = String::new();
             if u.melee {
                 kind.push_str("me ");

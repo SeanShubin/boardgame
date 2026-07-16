@@ -2,9 +2,10 @@
 //! resolves over. No rules of *formation* live here (those are [`super::regions`]); this is only the physics of
 //! a single contested exchange: a bid, a slip, a batch of blows.
 //!
-//! It is deliberately tiny and rank-free. The old rank model gated engagements through a `Rank` field (a
-//! Vanguard/Outrider/Rearguard); the regions model has no ranks, so a body's reach is just its `melee`/`ranged`
-//! flags and nothing here mentions a rank at all.
+//! It is deliberately tiny and rank-free. The regions model does have a [`Rank`](super::regions::Rank)
+//! (Vanguard / Rearguard / Outrider), but rank governs *geometry* up in [`super::regions`] and is kept out of the
+//! physics entirely: a body's reach down here is just its `melee`/`ranged` flags, and nothing in this file
+//! mentions a rank at all.
 
 /// Which side a combatant fights for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -33,12 +33,15 @@
 //!
 //! ## Three invariants that do most of the work
 //!
-//! - **No rearguard without a vanguard** ([`Board::promote`]). A front collapses, its back is promoted to front.
-//!   So *"at the back"* and *"screened"* are the **same fact** - a whole predicate disappears.
+//! - **A collapsed vanguard does not promote its rearguard.** When a front line dies its back **stays a back**
+//!   (`Rearguard`): it keeps its phase slot and still fires first, it merely loses its screen and becomes
+//!   clashable. That is what keeps range meaning something. (The one promotion that *does* happen -
+//!   [`Board::promote`] - is a different thing: an outrider becoming the formation on ground it has cleared.)
 //! - **A melee body at the back is dead weight.** It cannot attack; that is the price of hiding behind the
 //!   vanguard. Nothing bans it - posting a Raider at the back simply punishes itself. Force, not fiat.
-//! - **Slipping is the only movement in the game.** Retreat, regroup and raiding are *one mechanic* with
-//!   different destinations.
+//! - **Slipping is the only movement, and it is one-way.** You cross into the enemy's ground and promote to an
+//!   `Outrider`; there is no retreat back out. Reaching a screened body and going loose in the enemy ranks are
+//!   the same mechanic.
 //!
 //! ## What a body can do ([`Act`])
 //!
@@ -46,7 +49,7 @@
 //! |---|---|
 //! | [`Act::Clash`] | strike an enemy **vanguard**. Free - melee or ranged, any region. |
 //! | [`Act::Raid`] | **slip** their front to strike an enemy **rearguard**, and end up standing in their region. Melee only. |
-//! | [`Act::Slip`] | **slip** across into the enemy's ground, becoming an intruder. No retreat once inside. |
+//! | [`Act::Slip`] | **slip** across into the enemy's ground, becoming an outrider. No retreat once inside. |
 //! | [`Act::Hold`] | nothing. |
 //!
 //! A **rearguard cannot reach an enemy rearguard** - not until that side's vanguard collapses and its back is
@@ -107,32 +110,38 @@ struct Blows {
 /// A fight not decided in five rounds is a draw, and a draw is not a win (spec 0.4).
 pub const MAX_ROUNDS: usize = 5;
 
-/// **Where a body stands in its line - and it is a statement of INTENT, not a rank.**
+/// **A body's rank - where it stands, and the one thing that can be earned mid-fight.**
 ///
-/// *Seek melee*, or *avoid it*. That is the whole of it, and everything else follows:
+/// Two of the three are fixed by the weapon and never chosen: a body that can strike in melee is a
+/// [`Vanguard`](Rank::Vanguard) at the front, a ranged-only body a [`Rearguard`](Rank::Rearguard) at the back.
+/// The third is a **promotion** - cross into the enemy's ground and survive, and you become an
+/// [`Outrider`](Rank::Outrider), loose inside their ranks. It is the only rank you reach by *playing*, and you
+/// revert to your weapon rank the moment your side takes the ground you are standing on.
 ///
-/// - A body at the **front** is in the fight. It can be clashed, it **catches slippers**, and it swings **last**
-///   (the Clash) - because closing to melee is the slowest thing you can do.
-/// - A body at the **back** is holding off. It **fires first** (the Volley), it cannot be clashed while its own
-///   front stands (a raider has to come *in* for it), and a **melee** body posted here is **dead weight** - it
-///   declared that it is avoiding melee, and a sword cannot do anything else.
+/// - A **vanguard** is in the fight. It can be clashed, it **catches slippers**, and it swings **last** (the
+///   Clash) - closing to melee is the slowest thing you can do.
+/// - A **rearguard** is holding off. It **fires first** (the Volley), it cannot be clashed while its own vanguard
+///   stands (a raider has to come *in* for it), and a **melee** body ranked here is **dead weight** - a sword
+///   cannot reach from the back.
+/// - An **outrider** is past every screen, in enemy territory, part of no formation: it strikes any enemy in its
+///   region and is struck by any of them, until it dies or its side takes the ground and it rejoins the line.
 ///
-/// **A back whose front has collapsed is not promoted.** This is the collapsed-vanguard rule, and it is the
-/// hinge the whole design turns on: the back **stays** a back. It becomes *targetable* - anyone may now clash it
-/// directly, no raid required (force, not fiat) - but it **keeps its phase slot**, and so it still shoots
-/// *before* the front swings.
-///
-/// That is what makes range mean something. A lone archer posts to the back, is perfectly targetable, and gets
-/// **the first hit** anyway. *Close in and you trade and die; answer it from range.* Promotion destroyed exactly
-/// this: it turned every unscreened cannon into just another front-line body, and left "ranged" gating nothing a
-/// solo fight could see.
+/// **A rearguard whose vanguard has collapsed is not promoted to vanguard.** This is the collapsed-vanguard rule,
+/// and it is the hinge the whole design turns on: the back **stays** a back. It becomes *targetable* - anyone may
+/// now clash it directly, no raid required (force, not fiat) - but it **keeps its phase slot**, so it still
+/// shoots *before* the front swings. That is what makes range mean something: a lone archer is perfectly
+/// targetable and gets **the first hit** anyway. (Promotion-*to-vanguard* destroyed exactly this - it turned
+/// every unscreened cannon into just another front-line body - so only the *outrider* promotion survives.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Post {
-    /// **Seek melee.** In the fight: clashable, catches slippers, swings last.
-    Front,
-    /// **Avoid melee.** Fires first; reachable only by a raid while a front still stands, and reachable by
-    /// anyone once it does not. A melee body here does nothing at all.
-    Back,
+pub enum Rank {
+    /// **Front, seeks melee** (weapon-fixed). Clashable, catches slippers, swings last.
+    Vanguard,
+    /// **Back, avoids melee** (weapon-fixed). Fires first; reachable only by a raid while a vanguard still stands,
+    /// and by anyone once it does not. A melee body ranked here does nothing at all.
+    Rearguard,
+    /// **Loose in the enemy's ranks** (earned by crossing in). Past every screen: it strikes any enemy in its
+    /// region and is struck by any of them. Reverts to its weapon rank when its side takes the ground.
+    Outrider,
 }
 
 /// **How a slipper answers the bodies reaching for it** - and it is a real decision, taken *after* seeing exactly
@@ -162,14 +171,16 @@ pub enum Act {
     /// **Slip their front to strike an enemy rearguard**, and end the round standing inside their formation - in
     /// melee range of the vanguard you just went around. Thems the consequences.
     ///
-    /// Melee only. This is the old Outrider entire: not a role, but *what reaching a screened body costs*.
+    /// Melee only. You land as an [`Outrider`](Rank::Outrider): the rank is not a role you pick but *what
+    /// reaching a screened body costs*.
     Raid(usize, Answer),
-    /// **Strike a body in your OWN region** - an intruder loose in your ranks, or (if you are the intruder) any
-    /// host body. No screen applies in-region: the tiers stopped protecting anyone the moment a body got inside
-    /// them. Not a crossing, so it carries no evade-answer.
+    /// **Strike a body in your OWN region** - an enemy outrider loose in your ranks, or (if you are the outrider)
+    /// any host body. No screen applies in-region: the ranks stopped protecting anyone the moment a body got
+    /// inside them. Not a crossing, so it carries no evade-answer.
     Melee(usize),
-    /// **Slip into the enemy's ground** - cross the gap and stand in their formation, becoming an intruder. The
-    /// same contest as a raid, only without a declared target. **Committed: an intruder cannot slip back out.**
+    /// **Slip into the enemy's ground** - cross the gap and stand in their formation, promoting to an
+    /// [`Outrider`](Rank::Outrider). The same contest as a raid, only without a declared target. **Committed: an
+    /// outrider cannot slip back out.**
     Slip(u8, Answer),
     /// Nothing.
     Hold,
@@ -215,79 +226,70 @@ impl Act {
     }
 }
 
-/// The whole position: the bodies, which region each stands in, where each is posted, and which are intruders.
+/// The whole position: the bodies, which region each stands in, and each body's rank.
 #[derive(Clone, Debug)]
 pub struct Board {
     pub units: Vec<Combatant>,
     /// Which region each body stands in. Ids are arbitrary - only the **partition** is meaningful.
     pub regions: Vec<u8>,
-    /// Where each body is posted within its region. **Derived from the weapon and fixed for the whole fight**:
-    /// a ranged-only body is `Back`, everything else `Front`. It is never chosen and never mutated - post
-    /// describes intent (seek melee / avoid it), and a weapon does not change mid-fight. An intruder's post is
-    /// meaningless while it is loose (it is not part of any formation), and it resumes exactly this value the
-    /// moment it promotes.
-    pub posts: Vec<Post>,
-    /// **Is body `i` an intruder** - loose in a zone owned by the enemy, having raided/slipped in and not yet
-    /// promoted or retreated. Index-aligned with `units`. An intruder is never screened and is never part of a
-    /// vanguard or a formation: it is past the screen, in enemy territory, unscreened.
-    pub intruders: Vec<bool>,
+    /// Each body's [`Rank`]. **Vanguard/Rearguard are derived from the weapon and fixed for the whole fight**
+    /// (ranged-only -> `Rearguard`, else `Vanguard`); **Outrider is earned** by crossing into the enemy's ground,
+    /// and reverts to the weapon rank the moment the body's side takes that ground. Index-aligned with `units`.
+    pub ranks: Vec<Rank>,
 }
 
 impl Board {
-    /// Build a position. **Post is derived from the weapon** (ranged-only -> `Back`, else `Front`) and nobody
-    /// starts an intruder.
+    /// Build a position. **Rank is derived from the weapon** (ranged-only -> `Rearguard`, else `Vanguard`) and
+    /// nobody starts an outrider.
     pub fn new(units: Vec<Combatant>, regions: Vec<u8>) -> Board {
-        let posts = units.iter().map(Board::weapon_post).collect();
-        let n = units.len();
+        let ranks = units.iter().map(Board::weapon_rank).collect();
         Board {
             units,
             regions,
-            posts,
-            intruders: vec![false; n],
+            ranks,
         }
     }
 
-    /// The post a body takes from its weapon: a ranged-only body avoids melee (`Back`); anything that can strike
-    /// in melee stands at the `Front`. A dual melee+ranged body is `Front` (the deferred case - there are none).
-    pub fn weapon_post(u: &Combatant) -> Post {
+    /// The rank a body takes from its weapon: a ranged-only body avoids melee (`Rearguard`); anything that can
+    /// strike in melee stands at the front (`Vanguard`). A dual melee+ranged body is `Vanguard` (the deferred
+    /// case - there are none). Never returns `Outrider`: that rank is only ever reached by promotion.
+    pub fn weapon_rank(u: &Combatant) -> Rank {
         if u.ranged && !u.melee {
-            Post::Back
+            Rank::Rearguard
         } else {
-            Post::Front
+            Rank::Vanguard
         }
     }
 
-    /// **Who owns `region`** - the side of its living, non-intruder bodies (its *formation*). There is at most
-    /// one such side. `None` when the region holds only intruders or is empty.
+    /// **Who owns `region`** - the side of its living **formation** bodies (vanguards and rearguards, never
+    /// outriders). There is at most one such side. `None` when the region holds only outriders or is empty.
     pub fn owner(&self, region: u8) -> Option<Side> {
         self.in_region(region)
             .into_iter()
-            .find(|&i| !self.intruders[i])
+            .find(|&i| self.ranks[i] != Rank::Outrider)
             .map(|i| self.units[i].side)
     }
 
-    /// **Is `target` screened?** - it is a **non-intruder** posted at the back, *and* its side still has a living
-    /// front (its formation's vanguard) in its region to do the screening.
+    /// **Is `target` screened?** - it is a **rearguard** whose side still has a living vanguard in its region to
+    /// do the screening.
     ///
-    /// An intruder is **never** screened - it is loose inside the enemy ranks, adjacent to everyone. A back with
-    /// no front left is **not promoted**: it stays a back, keeps its phase slot, and simply becomes reachable.
+    /// An **outrider** is never screened (it is not a rearguard - it is loose inside the enemy ranks, adjacent to
+    /// everyone), and a rearguard with no vanguard left is exposed: still a rearguard (it keeps its phase slot),
+    /// simply now reachable.
     pub fn is_screened(&self, target: usize) -> bool {
-        !self.intruders[target]
-            && self.posts[target] == Post::Back
+        self.ranks[target] == Rank::Rearguard
             && !self
                 .vanguard(self.regions[target], self.units[target].side)
                 .is_empty()
     }
 
-    /// The **vanguard** of `side` in `region` - the living, **non-intruder** bodies at the front. This is the
-    /// whole screen: every one can catch a crosser, and it gets shorter each time one dies. Intruders are never
+    /// The **vanguard** of `side` in `region` - the living bodies ranked [`Vanguard`](Rank::Vanguard). This is the
+    /// whole screen: every one can catch a crosser, and it gets shorter each time one dies. An outrider is never
     /// part of a vanguard.
     pub fn vanguard(&self, region: u8, side: Side) -> Vec<usize> {
         self.in_region(region)
             .into_iter()
-            .filter(|&i| {
-                !self.intruders[i] && self.units[i].side == side && self.posts[i] == Post::Front
-            })
+            .filter(|&i| self.ranks[i] == Rank::Vanguard && self.units[i].side == side)
             .collect()
     }
 
@@ -344,7 +346,7 @@ const ANSWERS: [Answer; 3] = [Answer::Evade, Answer::Push, Answer::Abort];
 /// yields an isomorphic successor to the same strike aimed at the other. Two such foes are the same target, and
 /// offering both is wasted branching.
 ///
-/// "Same position" is region + post + intruder flag (what decides *how* it is reached - Melee / Raid / Clash);
+/// "Same position" is region + rank (what decides *how* it is reached - Melee / Raid / Clash);
 /// "same body" is every stat that shapes the exchange (health, might, grit, cadence, finesse, armor), the reach
 /// and shape flags (melee, ranged, aoe, horde), the side, AND the **instinct** (two same-stat foes that will
 /// script differently are genuinely different bodies). `tempo`/`pending` are absent on purpose: both re-derive at
@@ -354,8 +356,7 @@ fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
     !x.fallen
         && !y.fallen
         && board.regions[a] == board.regions[b]
-        && board.posts[a] == board.posts[b]
-        && board.intruders[a] == board.intruders[b]
+        && board.ranks[a] == board.ranks[b]
         && x.side == y.side
         && x.health == y.health
         && x.might == y.might
@@ -405,10 +406,10 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 continue;
             }
             if board.regions[t] == here {
-                // **In your own region.** The two are intermingled (one of you is an intruder), so there is no
+                // **In your own region.** The two are intermingled (one of you is an outrider), so there is no
                 // screen between you: any weapon reaches any enemy body here.
                 out.push(Act::Melee(t));
-            } else if board.intruders[t] {
+            } else if board.ranks[t] == Rank::Outrider {
                 // A loose enemy body in another region is dealt with in-region by the formation that hosts it,
                 // never reached across the gap. Not a target from here.
             } else if board.is_screened(t) {
@@ -424,7 +425,7 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // would fire in the Outer Ring, so being unscreened is never an advantage either - a screen is
                 // what buys a back its first shot. (Raid pushed first so a scripted raider prefers the earlier,
                 // silencing reach.)
-                if board.posts[t] == Post::Back && u.melee {
+                if board.ranks[t] == Rank::Rearguard && u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
                 out.push(Act::Clash(t));
@@ -432,9 +433,9 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
         }
     }
 
-    // Slip - the one movement. A body of its own formation crosses into the enemy's ground (becoming an
-    // intruder), but an **intruder is committed - there is no retreat** once you are inside the enemy's ranks.
-    if !board.intruders[i] {
+    // Slip - the one movement. A body of its own formation crosses into the enemy's ground (promoting to
+    // outrider), but an **outrider is committed - there is no retreat** once you are inside the enemy's ranks.
+    if board.ranks[i] != Rank::Outrider {
         for r in board.occupied().into_iter().filter(|&r| r != here) {
             out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
         }
@@ -465,7 +466,7 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
     let softest = |t: usize| (board.units[t].health, board.units[t].grit);
     // The one behavioural switch, dispatched on the creature's card instinct.
     let allowed = |a: &&Act| match board.units[i].instinct {
-        // Hunt anything: a clash, an in-region melee (dig out an intruder, or - if it is the intruder - strike a
+        // Hunt anything: a clash, an in-region melee (dig out an outrider, or - if it is the outrider - strike a
         // host), or a raid PUSHED through a line. The aggressive default - it will leave its own post to do it.
         Instinct::HuntWeakest => {
             matches!(
@@ -516,9 +517,9 @@ pub struct SubPhaseLog {
     /// hid the fact that all the damage was landing in one place. A log you cannot trust to say *when* is worse
     /// than no log.
     pub health: Vec<u32>,
-    /// Every body's **post** at this boundary. Same reason: without it a promotion that happens in the last
+    /// Every body's **rank** at this boundary. Same reason: without it a promotion that happens in the last
     /// sub-phase appears to have been true all round.
-    pub posts: Vec<Post>,
+    pub ranks: Vec<Rank>,
     /// **Every strike that landed in this sub-phase**, source-attributed: who hit whom, and how many blows. A
     /// renderer reads Might per blow from the attacker to say *where* each body's damage came from (a sweep
     /// records one `Hit` per swept contact, so an area strike is attributed to its sweeper too).
@@ -534,7 +535,7 @@ fn slip_price(bid: u32, f_def: u32) -> u32 {
 /// We cannot call `combat::resolve_engage` here, and the reason is worth stating: it runs `back_access_ok`,
 /// which is the **old rank model's** back-access rule - it silently discards any engagement aimed at a
 /// `Rank::Rearguard` while that side still has a living `Rank::Vanguard`. That is a *screen*, and this model
-/// already has one: [`Post`] plus the slip contest. Inheriting the old one on top of it made a screened body
+/// already has one: [`Rank`] plus the slip contest. Inheriting the old one on top of it made a screened body
 /// **unreachable by any raid at all** - the exact fiat this whole redesign exists to remove, smuggled back in
 /// through a helper. (It silently deleted the Outrider a second time. Caught by
 /// `evading_the_line_reaches_the_body_behind_it`.)
@@ -622,7 +623,7 @@ fn area_strike(
     board: &mut Board,
     attacker: usize,
     region: u8,
-    tier: Post,
+    tier: Rank,
     both_tiers: bool,
 ) -> (Vec<Contact>, Vec<Hit>) {
     if board.units[attacker].fallen || board.units[attacker].tempo == 0 {
@@ -640,7 +641,7 @@ fn area_strike(
         .in_region(region)
         .into_iter()
         .filter(|&j| board.units[j].side != side)
-        .filter(|&j| whole || board.posts[j] == tier)
+        .filter(|&j| whole || board.ranks[j] == tier)
         .collect();
 
     let mut contacts = Vec::new();
@@ -845,7 +846,7 @@ fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
             .filter(|&i| before[i] && board.units[i].fallen)
             .collect(),
         health: board.units.iter().map(|u| u.health).collect(),
-        posts: board.posts.clone(),
+        ranks: board.ranks.clone(),
         ..Default::default()
     }
 }
@@ -881,7 +882,7 @@ fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> 
         .into_iter()
         .filter(|&i| {
             board.units[i].side == side
-                && board.posts[i] == Post::Back
+                && board.ranks[i] == Rank::Rearguard
                 && !in_transit(board, acts, i)
         })
         .collect()
@@ -963,16 +964,16 @@ fn other_side(s: Side) -> Side {
 }
 
 /// **Zone promotion - clearing ground takes it.** Any region whose owning formation has been wiped, leaving only
-/// living intruders, flips to those intruders' side *on the spot*: they stop being intruders and become the
-/// region's formation, resuming their weapon-fixed posts (which never changed). Called at the Inner Ring boundary,
-/// where an intruder's havoc is what wipes a formation.
+/// living outriders, flips to those outriders' side *on the spot*: they stop being outriders and become the
+/// region's formation, resuming their weapon-fixed rank (Vanguard or Rearguard). Called at the Inner Ring
+/// boundary, where an outrider's havoc is what wipes a formation.
 fn promote(board: &mut Board) {
     for r in board.occupied() {
         let bodies = board.in_region(r);
-        let has_formation = bodies.iter().any(|&i| !board.intruders[i]);
+        let has_formation = bodies.iter().any(|&i| board.ranks[i] != Rank::Outrider);
         if !has_formation {
             for i in bodies {
-                board.intruders[i] = false; // they own the ground now
+                board.ranks[i] = Board::weapon_rank(&board.units[i]); // they own the ground - back to the line
             }
         }
     }
@@ -988,12 +989,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
 
     // ---- INNER RING: INTRUDERS (distance zero) ---------------------------------------------------------
     //
-    // Every region holding both a formation and enemy intruders resolves its in-place fight with NO screen: the
-    // intruder strikes any host it declared, the host strikes any intruder it declared. It is ONE simultaneous
+    // Every region holding both a formation and enemy outriders resolves its in-place fight with NO screen: the
+    // outrider strikes any host it declared, the host strikes any outrider it declared. It is ONE simultaneous
     // strike - melee and ranged together, no "ranged first". The ranged-first rule of the outer rings only exists
     // to model *closing the distance* (an arrow lands before a swordsman crosses the gap); but here nobody is
     // closing - the crossing happened on an earlier round, so everyone is already point-blank and intermingled.
-    // No distance, so no order. An intruder is past the screen, so a melee sweep here catches EVERY enemy in the
+    // No distance, so no order. An outrider is past the screen, so a melee sweep here catches EVERY enemy in the
     // region, both tiers.
     let melees: Vec<Attack> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen && board.units[i].tempo > 0)
@@ -1015,7 +1016,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         lg.hits = hits;
         logs.push(lg);
     }
-    // Clearing a zone's formation with intruders takes it - flip those intruders to the owning side. Resolved
+    // Clearing a zone's formation with outriders takes it - flip those outriders to the owning side. Resolved
     // once here, at the end of the Inner Ring: clear a zone's defenders and it is yours.
     promote(board);
 
@@ -1025,7 +1026,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // BOTH ends it touches - the zone ENTERED and the zone LEFT - because you are outside your own screen the
     // moment you move. At each such end the FRONT intercepts (spears) THEN the BACK volleys the survivors (bows),
     // so a front-killed crosser is not volleyed. A friendly zone never reaches for its own, so a rally between
-    // friendly zones is free; but an intruder pulling OUT of enemy ranks is opposed by the ranks it leaves (the
+    // friendly zones is free; but an outrider pulling OUT of enemy ranks is opposed by the ranks it leaves (the
     // crossing in reverse).
     let movers: Vec<(usize, u8, Answer)> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen)
@@ -1060,12 +1061,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     lg.hits = hits;
     logs.push(lg);
 
-    // LAND: survivors that got through leave their post and arrive. Into an enemy zone they become intruders
-    // (loose inside the ranks, no post); a rally into a friendly zone joins that formation, non-intruder.
+    // LAND: survivors that got through leave the line and arrive. Into an enemy zone they promote to outrider
+    // (loose inside the ranks); a rally into a friendly zone rejoins that formation at its weapon rank.
     let mut through = vec![false; board.units.len()];
     let mut landing = SubPhaseLog {
         health: board.units.iter().map(|u| u.health).collect(),
-        posts: board.posts.clone(),
+        ranks: board.ranks.clone(),
         ..Default::default()
     };
     for &(i, dest, answer) in &movers {
@@ -1078,7 +1079,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         }
         let into_enemy = board.owner(dest) == Some(other_side(board.units[i].side));
         board.regions[i] = dest;
-        board.intruders[i] = into_enemy;
+        board.ranks[i] = if into_enemy {
+            Rank::Outrider
+        } else {
+            Board::weapon_rank(&board.units[i])
+        };
         through[i] = true;
         landing.through.push(i);
     }
@@ -1110,14 +1115,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     //
     // The standing formations trade at each other's vanguards in other regions. Every back line fires first
     // (holding off IS being quicker), then every front line closes and trades. Ranged before melee.
-    for tier in [Post::Back, Post::Front] {
+    for tier in [Rank::Rearguard, Rank::Vanguard] {
         let before = living(board);
         let attacks: Vec<Attack> = (0..board.units.len())
             .filter(|&i| {
-                !board.units[i].fallen
-                    && !board.intruders[i]
-                    && board.units[i].tempo > 0
-                    && board.posts[i] == tier
+                !board.units[i].fallen && board.units[i].tempo > 0 && board.ranks[i] == tier
             })
             .filter_map(|i| match acts[i] {
                 Act::Clash(t) if !board.units[t].fallen => Some((i, t)),
@@ -1142,7 +1144,7 @@ fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool
     let mut aimed: Vec<Engage> = Vec::new();
     for &(a, t) in attacks {
         if board.units[a].aoe {
-            let (region, tier) = (board.regions[t], board.posts[t]);
+            let (region, tier) = (board.regions[t], board.ranks[t]);
             let (contacts, felled) = area_strike(board, a, region, tier, sweep_whole);
             sweeps.extend(contacts);
             sweep_hits.extend(felled);
@@ -1179,12 +1181,13 @@ pub enum Verdict {
     Doomed,
 }
 
-/// The memo key: per-unit `(health, fallen, post, intruder)`, the **canonicalized** partition, and the round.
-/// Two positions that differ only by who is loose inside the enemy ranks are genuinely different positions.
+/// The memo key: per-unit `(health, fallen, rank)`, the **canonicalized** partition, and the round. The rank
+/// carries it all - two positions that differ only by who is loose inside the enemy ranks (an outrider) are
+/// genuinely different positions.
 ///
 /// Tempo and the damage pile are absent on purpose - both are re-derived by the round Reset, and we only memoize
 /// at a **round** boundary. The product's own rule (the round is the one deadline) paying a dividend.
-type Key = (Vec<(u32, bool, Post, bool)>, Vec<u8>, usize);
+type Key = (Vec<(u32, bool, Rank)>, Vec<u8>, usize);
 
 /// **The doom oracle.** Holds the memo, so the first evaluation walks the tree and every later one is a lookup.
 ///
@@ -1299,14 +1302,7 @@ impl Oracle {
         }
         let key = (
             (0..board.units.len())
-                .map(|i| {
-                    (
-                        board.units[i].health,
-                        board.units[i].fallen,
-                        board.posts[i],
-                        board.intruders[i],
-                    )
-                })
+                .map(|i| (board.units[i].health, board.units[i].fallen, board.ranks[i]))
                 .collect(),
             canonical(&board.regions),
             round,
@@ -1418,28 +1414,36 @@ mod tests {
         assert_ne!(canonical(&[0, 0, 1]), canonical(&[0, 1, 1]));
     }
 
-    // ---- POST IS DERIVED --------------------------------------------------------------------------------
+    // ---- RANK IS DERIVED --------------------------------------------------------------------------------
 
-    /// **Post is derived from the weapon, not chosen.** A ranged-only body is `Back`; anything that can strike in
-    /// melee is `Front`. Fixed at construction, for heroes and foes alike.
+    /// **Rank is derived from the weapon, not chosen.** A ranged-only body is a `Rearguard`; anything that can
+    /// strike in melee is a `Vanguard`. Fixed at construction, for heroes and foes alike; nobody starts an
+    /// `Outrider` (that rank is only ever earned).
     #[test]
-    fn post_is_derived_from_the_weapon() {
+    fn rank_is_derived_from_the_weapon() {
         let b = Board::new(
             vec![
                 unit("Sword", Side::Party, [3, 3, 1, 2, 2], true, false),
                 unit("Bow", Side::Party, [3, 3, 1, 2, 2], false, true),
-                unit("Skirmisher", Side::Foe, [3, 3, 1, 2, 2], true, true), // dual - deferred, treated as front
+                unit("Skirmisher", Side::Foe, [3, 3, 1, 2, 2], true, true), // dual - deferred, treated as vanguard
             ],
             vec![0, 0, 1],
         );
-        assert_eq!(b.posts[0], Post::Front, "a melee body stands front");
-        assert_eq!(b.posts[1], Post::Back, "a ranged-only body stands back");
+        assert_eq!(b.ranks[0], Rank::Vanguard, "a melee body stands front");
         assert_eq!(
-            b.posts[2],
-            Post::Front,
-            "a dual body is front (the deferred case)"
+            b.ranks[1],
+            Rank::Rearguard,
+            "a ranged-only body stands back"
         );
-        assert!(b.intruders.iter().all(|&x| !x), "nobody starts an intruder");
+        assert_eq!(
+            b.ranks[2],
+            Rank::Vanguard,
+            "a dual body is a vanguard (the deferred case)"
+        );
+        assert!(
+            b.ranks.iter().all(|&r| r != Rank::Outrider),
+            "nobody starts an outrider"
+        );
     }
 
     // ---- REACH: SCREEN, RAID, CLASH ---------------------------------------------------------------------
@@ -1449,7 +1453,11 @@ mod tests {
     #[test]
     fn a_back_whose_front_has_fallen_is_targetable_but_still_a_back() {
         let mut b = wall_and_cannon();
-        assert_eq!(b.posts[1], Post::Back, "the cannon starts behind the wall");
+        assert_eq!(
+            b.ranks[1],
+            Rank::Rearguard,
+            "the cannon starts behind the wall"
+        );
         assert!(b.is_screened(1), "and is screened by it");
         assert!(
             !legal_acts(&b, 2).contains(&Act::Clash(1)),
@@ -1458,8 +1466,8 @@ mod tests {
 
         b.units[0].fallen = true; // the wall dies
         assert_eq!(
-            b.posts[1],
-            Post::Back,
+            b.ranks[1],
+            Rank::Rearguard,
             "the cannon is STILL a cannon - not promoted"
         );
         assert!(!b.is_screened(1), "but nothing is screening it any more");
@@ -1482,8 +1490,8 @@ mod tests {
             vec![0, 1],
         );
         assert_eq!(
-            b.posts[0],
-            Post::Back,
+            b.ranks[0],
+            Rank::Rearguard,
             "a ranged body is derived to the back"
         );
         let mut rounds = 0;
@@ -1597,7 +1605,7 @@ mod tests {
 
     /// **THE ONE THAT MATTERS. The screen is a PRICE, not an immunity** - enough Tempo gets past a front and
     /// reaches the body behind it. And a landed raider ends up standing INSIDE the enemy formation, as an
-    /// intruder.
+    /// outrider.
     #[test]
     fn evading_the_line_reaches_the_body_behind_it() {
         let mut b = wall_and_cannon();
@@ -1614,7 +1622,11 @@ mod tests {
             b.regions[2], 0,
             "and it is now standing inside their formation"
         );
-        assert!(b.intruders[2], "as an intruder - loose in the enemy ranks");
+        assert_eq!(
+            b.ranks[2],
+            Rank::Outrider,
+            "as an outrider - loose in the enemy ranks"
+        );
     }
 
     /// **PUSH: take the hit and go anyway.** A vanguard cannot stop you; it can only bleed you.
@@ -1674,7 +1686,7 @@ mod tests {
             "it turned back at the line"
         );
         assert_eq!(b.regions[2], 1, "it never left its own ground");
-        assert!(!b.intruders[2], "and it is no intruder");
+        assert_ne!(b.ranks[2], Rank::Outrider, "and it is no outrider");
         assert_eq!(b.units[1].health, cannon, "and it never reached the cannon");
     }
 
@@ -1731,12 +1743,12 @@ mod tests {
         );
     }
 
-    // ---- PERSISTENT INTRUDERS + PROMOTION (the new idea) ------------------------------------------------
+    // ---- PERSISTENT OUTRIDERS + PROMOTION (the new idea) ------------------------------------------------
 
-    /// **A landed raider is a PERSISTENT intruder.** It is still standing in the enemy zone the next round, loose
+    /// **A landed raider is a PERSISTENT outrider.** It is still standing in the enemy zone the next round, loose
     /// in their ranks, and it fights with Melee (in-region, no screen), not a fresh raid.
     #[test]
-    fn a_landed_raider_persists_as_an_intruder_and_melees() {
+    fn a_landed_raider_persists_as_an_outrider_and_melees() {
         let mut b = Board::new(
             vec![
                 unit("Raider", Side::Party, [7, 9, 1, 4, 2], true, false), // 0 - rich enough to cross
@@ -1745,17 +1757,17 @@ mod tests {
             ],
             vec![0, 1, 1],
         );
-        // Round 1: the Raider crosses in for the Mage and lands as an intruder in region 1. The hosts hold, so
+        // Round 1: the Raider crosses in for the Mage and lands as an outrider in region 1. The hosts hold, so
         // the tough-Grit Mage survives the raid strike and is still there to be dug out next round.
         play_round(&mut b, &[Act::Raid(2, Answer::Push), Act::Hold, Act::Hold]);
         assert_eq!(b.regions[0], 1, "it is in the enemy zone");
-        assert!(b.intruders[0], "and is an intruder there");
+        assert_eq!(b.ranks[0], Rank::Outrider, "and is an outrider there");
 
         // Next round it is offered Melee (in-region, no screen) at the host bodies - not a raid.
         let acts = legal_acts(&b, 0);
         assert!(
             acts.iter().any(|a| matches!(a, Act::Melee(_))),
-            "an intruder melees in-region: {acts:?}"
+            "an outrider melees in-region: {acts:?}"
         );
         assert!(
             !acts.iter().any(|a| matches!(a, Act::Raid(..))),
@@ -1768,31 +1780,32 @@ mod tests {
         );
     }
 
-    /// **Zone promotion - clearing a formation takes the ground.** When intruders kill every body of a zone's
-    /// formation, that zone flips to their side on the spot: the intruders become the formation.
+    /// **Zone promotion - clearing a formation takes the ground.** When outriders kill every body of a zone's
+    /// formation, that zone flips to their side on the spot: the outriders become the formation.
     #[test]
-    fn clearing_a_zones_formation_promotes_the_intruders() {
+    fn clearing_a_zones_formation_promotes_the_outriders() {
         // A party Raider already loose inside a two-zone foe formation; region 1 holds a single soft foe.
         let mut b = Board::new(
             vec![
-                unit("Raider", Side::Party, [9, 9, 1, 4, 2], true, false), // 0 - the intruder
+                unit("Raider", Side::Party, [9, 9, 1, 4, 2], true, false), // 0 - the outrider
                 unit("Scout", Side::Foe, [1, 2, 1, 1, 1], true, false), // 1 - lone body in region 1
                 unit("Ogre", Side::Foe, [4, 6, 2, 2, 2], true, false), // 2 - region 2, a second zone
             ],
             vec![1, 1, 2],
         );
-        b.intruders[0] = true; // the Raider raided region 1 last round
+        b.ranks[0] = Rank::Outrider; // the Raider raided region 1 last round
         assert_eq!(
             b.owner(1),
             Some(Side::Foe),
             "region 1 is the foe's while its Scout lives"
         );
-        // The intruder melees the lone host to death; the Ogre in region 2 holds.
+        // The outrider melees the lone host to death; the Ogre in region 2 holds.
         play_round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
         assert!(b.units[1].fallen, "the Scout is dead");
-        assert!(
-            !b.intruders[0],
-            "so the Raider is promoted - no longer an intruder"
+        assert_ne!(
+            b.ranks[0],
+            Rank::Outrider,
+            "so the Raider is promoted - no longer an outrider"
         );
         assert_eq!(
             b.owner(1),
@@ -1825,7 +1838,7 @@ mod tests {
     }
 
     /// **Width comes free once the reach is paid for.** A melee area striker that crosses in sweeps the whole
-    /// region it lands in - both tiers, because an intruder is past the screen.
+    /// region it lands in - both tiers, because an outrider is past the screen.
     #[test]
     fn a_raider_with_an_area_strike_sweeps_the_region_it_lands_in() {
         let mut b = Board::new(
@@ -1854,19 +1867,19 @@ mod tests {
         );
     }
 
-    /// **An intruder's melee sweep catches EVERY enemy in the region, both tiers.** Standing inside the ranks, its
+    /// **An outrider's melee sweep catches EVERY enemy in the region, both tiers.** Standing inside the ranks, its
     /// area strike no longer respects the screen.
     #[test]
-    fn an_intruder_melee_sweep_catches_both_tiers() {
+    fn an_outrider_melee_sweep_catches_both_tiers() {
         let mut b = Board::new(
             vec![
-                unit("Bastion", Side::Party, [3, 9, 3, 5, 2], true, false).with_aoe(true), // 0 - the intruder
+                unit("Bastion", Side::Party, [3, 9, 3, 5, 2], true, false).with_aoe(true), // 0 - the outrider
                 unit("Wall", Side::Foe, [1, 4, 1, 1, 2], true, false), // 1 - front
                 unit("Mage", Side::Foe, [1, 4, 1, 1, 2], false, true), // 2 - back
             ],
             vec![1, 1, 1],
         );
-        b.intruders[0] = true; // loose inside the foe zone
+        b.ranks[0] = Rank::Outrider; // loose inside the foe zone
         let (wall, mage) = (b.units[1].health, b.units[2].health);
         play_round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
         assert!(
@@ -1875,7 +1888,7 @@ mod tests {
         );
         assert!(
             b.units[2].health < mage,
-            "AND the back - an intruder is past the screen"
+            "AND the back - an outrider is past the screen"
         );
     }
 
@@ -2026,15 +2039,13 @@ mod tests {
                         base.units[old].health,
                         base.units[old].fallen,
                         base.regions[old],
-                        base.posts[old],
-                        base.intruders[old],
+                        base.ranks[old],
                     ),
                     (
                         shuffled.units[new].health,
                         shuffled.units[new].fallen,
                         shuffled.regions[new],
-                        shuffled.posts[new],
-                        shuffled.intruders[new],
+                        shuffled.ranks[new],
                     ),
                     "{} came out differently when re-seated (shift {shift})",
                     base.units[old].name
@@ -2080,7 +2091,7 @@ mod tests {
                     .map(|u| (u.health, u.fallen))
                     .collect::<Vec<_>>(),
                 x.regions.clone(),
-                x.intruders.clone(),
+                x.ranks.clone(),
             )
         };
         assert_eq!(run(), run());
