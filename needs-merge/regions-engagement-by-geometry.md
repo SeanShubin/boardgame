@@ -17,6 +17,53 @@ Vanguard/Rearguard read spatially.
 
 ---
 
+## 0. Vocabulary: the two pools, the two flows
+
+Combat runs on two resources that share **one shape**, and two outputs that share **another**. Naming
+them in parallel is what keeps the log (and the rules) legible.
+
+**Five stats, one shared chassis.** Every body reads from the same `[Might, Vitality, Grit, Cadence,
+Finesse]`; roles differ by *card mechanics*, never by which stats they own.
+
+**Two pools -- `count x strength`.** A pool is a stack of cards. Both refill each round (the Reset):
+
+| Pool       | how many cards (count) | strength of each card |
+| ---------- | ---------------------- | --------------------- |
+| **Health** | **Vitality**           | **Grit**              |
+| **Tempo**  | **Cadence**            | **Finesse**           |
+
+*Health is Vitality cards, each Grit strong; Tempo is Cadence cards, each Finesse strong.* Every
+initial is distinct (`M V G C F`, plus the pools `H T`), so a one-letter tile is never ambiguous.
+
+**Two flows -- `strength x count`.** What you *produce by spending* is also a product. The strike side
+deals **damage**; the contest side (reach/dodge) produces **reach**:
+
+| Flow       | = per-unit strength x count   | measured against                            |
+| ---------- | ----------------------------- | ------------------------------------------- |
+| **damage** | **Might** x **strikes**       | **Grit** -- a Health card flips per Grit    |
+| **reach**  | **Finesse** x **tempo cards** | the opponent's **reach** -- the higher wins |
+
+- A **strike** is one blow. Banked **damage** piles up; a **Health card flips** each time the pile
+  reaches **Grit**, and any remainder clears when the sub-phase closes.
+- **reach** is the contest value on *both* sides: the attacker's is its **bid**, the defender's is
+  its **dodge**. The side trying to get through must **strictly beat** the other; the
+  reacher/screener **wins ties** (section 3). The first strike is bought by the reach that lands the
+  contact; each extra **tempo card** poured after it is `+1` strike.
+
+**Always multiply, never divide.** Every number the log shows is a product -- `3 tempo x Finesse 5 =
+15 reach`, `5 Might x 2 strikes = 10 damage`. Division only ever appeared inside a solver shortcut
+(the fewest cards needed to win a contest); it is kept out of the rules and out of the log.
+
+**The one asymmetry.** On the Health side, offense and defense are *different* stats: **Might** (the
+attacker's per-strike output) vs. **Grit** (the defender's per-card strength). On the Tempo side there
+is only **Finesse** -- a tempo card *is* both the pool card and what you spend into the contest, so
+Finesse does the job of *both* Grit (card strength) and Might (per-unit output). That is why the
+contest is symmetric (reach vs. reach) while the damage exchange is not (Might vs. Grit). A **horde**
+tilts it once more: its reach carries the body-count multiplier (`tempo x Finesse x bodies`) but its
+**dodge does not** -- a fearsome catcher, a poor evader.
+
+---
+
 ## 1. Standing: one formation per side, rank by weapon
 
 - Each side occupies **one region** -- the party on its ground, the foes on theirs, with open
@@ -35,11 +82,11 @@ Vanguard/Rearguard read spatially.
 A body never picks an "attack type." It picks a **target**, and where that target stands decides
 which of three engagements happens. All three run the same little primitive.
 
-| Engagement | The target is... | Reaches | Who may |
-|---|---|---|---|
-| **Clash** | an enemy **Vanguard**, across the gap | that front | any weapon |
-| **Raid** | an enemy **Rearguard**, across the gap | that back -- you cross in | **melee** only |
-| **Melee** | an enemy in your **own** region (an outrider is loose) | anyone in-region | any weapon |
+| Engagement | The target is...                                       | Reaches                   | Who may        |
+| ---------- | ------------------------------------------------------ | ------------------------- | -------------- |
+| **Clash**  | an enemy **Vanguard**, across the gap                  | that front                | any weapon     |
+| **Raid**   | an enemy **Rearguard**, across the gap                 | that back -- you cross in | **melee** only |
+| **Melee**  | an enemy in your **own** region (an outrider is loose) | anyone in-region          | any weapon     |
 
 **The one primitive** (the "inner three"):
 
@@ -221,12 +268,12 @@ Swarm->Bastion, Storm->Bombardier.
 
 **Corners** -- three single-mechanic lessons plus a capstone, each scored by control comparison:
 
-| Corner | Behavior | Passes iff (full party wins, and...) | Warband |
-|---|---|---|---|
-| Emberfall Hollow | **VanguardCarries** | melee-only wins, ranged-only loses | `Wall x2` |
-| Greywater Ford | **RearguardCarries** | ranged-only wins, melee-only loses | `Duelist x3` |
-| The Hollow Rampart | **RaidNecessary** | `ClashOnly` loses | `Wall x3, Swarm x1` |
-| Ninefold Deep | **CombinedArms** | melee-only loses AND ranged-only loses AND `ClashOnly` loses | `Wall x2, Swarm x2, Storm x1` |
+| Corner             | Behavior             | Passes iff (full party wins, and...)                         | Warband                       |
+| ------------------ | -------------------- | ------------------------------------------------------------ | ----------------------------- |
+| Emberfall Hollow   | **VanguardCarries**  | melee-only wins, ranged-only loses                           | `Wall x2`                     |
+| Greywater Ford     | **RearguardCarries** | ranged-only wins, melee-only loses                           | `Duelist x3`                  |
+| The Hollow Rampart | **RaidNecessary**    | `ClashOnly` loses                                            | `Wall x3, Swarm x1`           |
+| Ninefold Deep      | **CombinedArms**     | melee-only loses AND ranged-only loses AND `ClashOnly` loses | `Wall x2, Swarm x2, Storm x1` |
 
 CombinedArms is the graduation exam: it demands ranged *and* melee damage *and* a raid all at once --
 reachable where "screen necessary" was not, because capabilities are not redundant the way bodies

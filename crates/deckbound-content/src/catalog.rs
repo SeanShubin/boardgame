@@ -37,6 +37,13 @@ pub const STATS: [(&str, &str); 5] = [
 /// This is why Toughness is called **Grit**: it collided with Tempo. The rename earns its keep twice, because
 /// the two pools turn out to be the same shape and the names now say so - *health is Vitality cards, each Grit
 /// strong; tempo is Cadence cards, each Finesse strong.*
+///
+/// Each pool has a **flow** (`strength x count`) that meets it, and the two flows are parallel too:
+/// - **damage** = `Might x strikes`, piling against Health - a Health card flips per Grit.
+/// - **reach** = `Finesse x tempo cards`, spent in the reach/dodge contest - the higher reach wins.
+///
+/// So the four-word cross is *Health : Vitality : Grit : damage :: Tempo : Cadence : Finesse : reach*. Every
+/// number is a **product**, never a quotient (full parallel in the combat spec's vocabulary section).
 pub const POOLS: [&str; 2] = ["Health", "Tempo"];
 
 /// The four **generic attack** cards — the strike a body carries, one per `(reach x spread)` combination,
