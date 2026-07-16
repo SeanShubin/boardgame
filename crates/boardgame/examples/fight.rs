@@ -761,9 +761,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 for r in my_reaches {
                     let cards = r.bid / (f * mult).max(1);
                     let build = if before.units[i].horde {
-                        format!("{cards} tempo x Finesse {f} x {mult} bodies")
+                        format!("{cards} tempo, Finesse {f}, {mult} bodies")
                     } else {
-                        format!("{cards} tempo x Finesse {f}")
+                        format!("{cards} tempo, Finesse {f}")
                     };
                     lines.push(format!(
                         "    {name}: reaches {} - bid {} ({build}), slipped",
@@ -777,12 +777,11 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 .map(|r| r.bid)
                 .max()
             {
-                // A slipper that paid to break every edge reaching it: the bid it cleared, and the Finesse it weighed
-                // against it (cost = bid / Finesse + 1). Now "2 tempo beat a 1-tempo reach" is fully explained.
+                // A slipper that paid to break every edge reaching it: state the bid it cleared and its own Finesse -
+                // the two numbers of the contest - and leave the derivation out (WHAT, not WHY).
                 let f = before.units[i].finesse.max(1);
-                let cost = worst / f + 1;
                 lines.push(format!(
-                    "    {name}: spends {spent} tempo to slip the line - clears bid {worst} at Finesse {f} ({worst} / {f} + 1 = {cost})"
+                    "    {name}: spends {spent} tempo to slip the line, clearing bid {worst} at Finesse {f}"
                 ));
             } else {
                 lines.push(format!("    {name}: spends {spent} tempo, no blow lands"));
