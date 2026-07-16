@@ -635,54 +635,87 @@ fn act_answer(a: &Act) -> Option<Answer> {
     }
 }
 
-/// **The round, phase by phase.** Re-runs the deterministic resolution on a throwaway clone of the pre-round board
-/// (identical to what `self.state` just resolved, so it re-derives the exact strikes) and walks the
-/// [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE it happened in: the Inner
-/// Ring, the Crossing Ring's Intercept / Volley / Raid, the Outer Ring's Fire / Clash. This is what makes the log
-/// say *when* in the round each thing landed, not merely *that* it did.
+/// **The round, phase by phase - with the state change spelled out at each step.** Re-runs the deterministic
+/// resolution on a throwaway clone of the pre-round board (identical to what `self.state` just resolved, so it
+/// re-derives the exact strikes) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting
+/// everything UNDER THE PHASE it happened in: the Inner Ring, the Crossing Ring's Intercept / Volley / Raid, the
+/// Outer Ring's Fire / Clash.
 ///
-/// Within a phase, in order: the **pool additions** (who added how much to whose pile - stage one of the grit
-/// model, source-attributed, sweeps included), then the **crossings** that landed or turned back, then the
-/// resulting **card flips** (stage two), then the **deaths**. A flip is attributed to the phase whose snapshot
-/// first shows it - so damage that lands in the Outer Ring reads under "Outer Ring", not lumped at end-of-round. A
-/// phase that did nothing prints nothing.
+/// Within a phase, in order:
+/// - **Strikes** - one line per attacker: the **tempo** it spent this phase (the diff of the tempo snapshots,
+///   the true cost of reaching / pouring), the **Might** behind the blow, and the **damage** it banked. Damage is
+///   `(Might - armor)` per blow, a horde swinging its whole body count at once; against a horde a blow *fells
+///   bodies* instead.
+/// - **Crossings** that landed or turned back.
+/// - **Absorb / flips** - per target: the damage it soaked and how many **Health cards** that flipped (or that it
+///   fell short of Grit, so none did). The pile closes every sub-phase, so this pairs cleanly within the phase.
+/// - **Deaths**.
+///
+/// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); each phase
+/// diffs against the phase before it, so a flip or a spend is charged to the exact ring. Indices are stable across
+/// the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
 fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
     let mut clone = before.clone();
     let transcript = play_round(&mut clone, acts);
 
     let mut out = Vec::new();
-    // Health entering the first phase is the round-start board; each phase then diffs against the phase before it,
-    // so a flip is charged to the exact ring that caused it. Indices are stable across the clone, so names/Might
-    // are read from `before`.
-    let mut prev: Vec<u32> = before.units.iter().map(|u| u.health).collect();
+    let mut prev_hp: Vec<u32> = before.units.iter().map(|u| u.health).collect();
+    let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.cadence).collect(); // Reset stands tempo up to Cadence
     for log in &transcript {
         let mut lines: Vec<String> = Vec::new();
 
-        // Pool additions: sum this phase's blows per (attacker -> target), in strike order.
+        // --- Strikes: sum blows per (attacker -> target) in strike order, then one line each. ---
         let mut order: Vec<(usize, usize)> = Vec::new();
-        let mut totals: Vec<u32> = Vec::new();
+        let mut blows: Vec<u32> = Vec::new();
         for hit in &log.hits {
             let key = (hit.attacker, hit.target);
             match order.iter().position(|k| *k == key) {
-                Some(p) => totals[p] += hit.hits,
+                Some(p) => blows[p] += hit.hits,
                 None => {
                     order.push(key);
-                    totals.push(hit.hits);
+                    blows.push(hit.hits);
                 }
             }
         }
-        for (&(a, t), &hits) in order.iter().zip(&totals) {
-            let (attacker, target) = (&before.units[a].name, &before.units[t].name);
-            if before.units[t].horde {
-                // A sweep clears bodies rather than banking Might: attribute the bodies felled.
-                lines.push(format!("    {attacker} fells {hits} of {target}"));
+        // A body's tempo spend is a per-phase fact (a sweep hits many for one spend), so state it once per attacker.
+        let mut tempo_said: Vec<usize> = Vec::new();
+        for (&(a, t), &n) in order.iter().zip(&blows) {
+            let (an, tn) = (&before.units[a].name, &before.units[t].name);
+            let cost = if tempo_said.contains(&a) {
+                String::new()
             } else {
-                let amount = before.units[a].might * hits;
-                lines.push(format!("    {attacker} adds {amount} to {target}"));
+                tempo_said.push(a);
+                format!(
+                    "spends {} tempo, then ",
+                    prev_tp[a].saturating_sub(log.tempo[a])
+                )
+            };
+            if before.units[t].horde {
+                // A blow fells bodies of a pack (one per blow; a sweep records the whole pack) - no pile, no Might.
+                lines.push(format!("    {an}: {cost}fells {n} of {tn}"));
+            } else {
+                // Banked damage = (Might - armor) per blow; a horde attacker swings its whole body count at once.
+                let per_blow = before.units[a].might.saturating_sub(before.units[t].armor);
+                let bodies = if before.units[a].horde {
+                    prev_hp[a].max(1) // the horde's body count ENTERING this phase (what `land` reads)
+                } else {
+                    1
+                };
+                let dmg = per_blow * bodies * n;
+                let how = if before.units[a].horde {
+                    format!("Might {} x {bodies} bodies", before.units[a].might)
+                } else if n > 1 {
+                    format!("Might {} x {n} blows", before.units[a].might)
+                } else {
+                    format!("Might {}", before.units[a].might)
+                };
+                lines.push(format!(
+                    "    {an}: {cost}strikes {tn} for {dmg} damage ({how})"
+                ));
             }
         }
 
-        // Crossings that resolved this phase (the Land step attaches through/aborted to the Volley log).
+        // --- Crossings that resolved this phase (the Land step attaches through/aborted to the Volley log). ---
         for &i in &log.through {
             let name = &before.units[i].name;
             let verb = match act_answer(&acts[i]) {
@@ -690,36 +723,70 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 _ => "slips through to",
             };
             if let Some(dest) = act_destination(before, i, &acts[i]) {
-                lines.push(format!("    {name} {verb} region {}", region_letter(dest)));
+                lines.push(format!("    {name}: {verb} region {}", region_letter(dest)));
             }
         }
         for &i in &log.aborted {
             lines.push(format!(
-                "    {} turns and fights at the line",
+                "    {}: turns and fights at the line",
                 before.units[i].name
             ));
         }
 
-        // Card flips this phase: diff the phase-before snapshot against this one. A horde loses whole bodies.
+        // --- Absorb / flips (non-horde targets): the pile closes each sub-phase, so pair damage with the cards it
+        // flipped. First total the banked damage per target - same formula as the strike lines (armor per blow, a
+        // horde attacker's whole body count at once) - so the two always agree. ---
+        let mut dmg_to = vec![0u32; log.health.len()];
+        for h in &log.hits {
+            if before.units[h.target].horde {
+                continue; // a horde takes body-fells, not pile damage
+            }
+            let per_blow = before.units[h.attacker]
+                .might
+                .saturating_sub(before.units[h.target].armor);
+            let bodies = if before.units[h.attacker].horde {
+                prev_hp[h.attacker].max(1)
+            } else {
+                1
+            };
+            dmg_to[h.target] += per_blow * bodies * h.hits;
+        }
         for i in 0..log.health.len() {
-            if log.health[i] < prev[i] {
-                let kind = if before.units[i].horde {
-                    "bodies"
-                } else {
-                    "hp"
-                };
+            let (h0, h1) = (prev_hp[i], log.health[i]);
+            let name = &before.units[i].name;
+            if before.units[i].horde {
+                if h1 < h0 {
+                    lines.push(format!("    {name}: down to {h1} bodies (was {h0})"));
+                }
+            } else if h1 < h0 {
+                let flipped = h0 - h1;
                 lines.push(format!(
-                    "    {}: {} -> {} {kind}",
-                    before.units[i].name, prev[i], log.health[i]
+                    "    {name}: absorbs {} damage, flipping {flipped} Health card{} ({h0} -> {h1})",
+                    dmg_to[i],
+                    if flipped == 1 { "" } else { "s" }
+                ));
+            } else if dmg_to[i] > 0 {
+                // Banked damage that flipped no card: it fell short of Grit, and the pile clears at the Reset.
+                lines.push(format!(
+                    "    {name}: absorbs {} damage - short of Grit {}, no Health card flips",
+                    dmg_to[i],
+                    before.units[i].grit.max(1)
                 ));
             }
         }
-        // Deaths this phase.
+
+        // --- Deaths this phase. ---
         for &i in &log.fallen {
-            lines.push(format!("    {} is down", before.units[i].name));
+            let name = &before.units[i].name;
+            if before.units[i].horde {
+                lines.push(format!("    {name}: wiped out - no bodies remain"));
+            } else {
+                lines.push(format!("    {name}: downed - no Health cards remain"));
+            }
         }
 
-        prev = log.health.clone();
+        prev_hp = log.health.clone();
+        prev_tp = log.tempo.clone();
         if !lines.is_empty() {
             out.push(format!("  {}", log.phase)); // the phase header, above its events
             out.extend(lines);

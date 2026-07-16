@@ -550,6 +550,10 @@ pub struct SubPhaseLog {
     /// hid the fact that all the damage was landing in one place. A log you cannot trust to say *when* is worse
     /// than no log.
     pub health: Vec<u32>,
+    /// **Every body's Tempo at this boundary** - a snapshot, same shape and motive as `health`. The diff against
+    /// the phase before it is what a body *spent* this phase (a reach, a pour, a slip); without it a transcript
+    /// can say a blow landed but never what it cost to land.
+    pub tempo: Vec<u32>,
     /// Every body's **rank** at this boundary. Same reason: without it a promotion that happens in the last
     /// sub-phase appears to have been true all round.
     pub ranks: Vec<Rank>,
@@ -904,6 +908,7 @@ fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
             .filter(|&i| before[i] && board.units[i].fallen)
             .collect(),
         health: board.units.iter().map(|u| u.health).collect(),
+        tempo: board.units.iter().map(|u| u.tempo).collect(),
         ranks: board.ranks.clone(),
         ..Default::default()
     }
@@ -2047,6 +2052,16 @@ mod tests {
         assert_eq!(
             fire.health[1], start_foe,
             "and not before it - the Fire step drew no blood"
+        );
+        // Tempo is snapshotted the same way: the Hero (a Vanguard) spends its reach in the Clash, nothing in the
+        // Fire before it - so a transcript can charge the spend to the exact ring.
+        assert_eq!(
+            fire.tempo[0], b.units[0].cadence,
+            "the Hero spent no tempo in the Fire step"
+        );
+        assert!(
+            clash.tempo[0] < b.units[0].cadence,
+            "and spent its reach in the Clash"
         );
     }
 
