@@ -889,8 +889,9 @@ fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows>
         .collect()
 }
 
-/// Close a sub-phase: finalize deaths, then **promote any back line whose front just collapsed**. That promotion
-/// is how the ground behind a broken line opens up *within* a round.
+/// Close a sub-phase: **finalize deaths** and snapshot the boundary. Finalizing here is how the ground behind a
+/// broken line opens up *within* a round - a rearguard whose vanguard just fell becomes exposed (clashable) the
+/// moment that death is settled, no promotion needed.
 fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
     end_sub_phase(&mut board.units);
     SubPhaseLog {
@@ -1087,20 +1088,44 @@ fn other_side(s: Side) -> Side {
     }
 }
 
-/// **Zone promotion - clearing ground takes it.** Any region whose owning formation has been wiped, leaving only
-/// living outriders, flips to those outriders' side *on the spot*: they stop being outriders and become the
-/// region's formation, resuming their weapon-fixed rank (Vanguard or Rearguard). Called at the Inner Ring
-/// boundary, where an outrider's havoc is what wipes a formation.
-fn promote(board: &mut Board) {
+/// **The outrider state dissolves when its host is gone.** "Outrider" means *intermingled with an enemy
+/// formation, past their screen* - so a body loose in a zone with **no enemy formation left** (its havoc wiped
+/// the last of it) is an outrider of nothing. The state ends: the body reverts to its weapon rank and, if its
+/// side still holds a **line** elsewhere, **rejoins it** - there is no ground to garrison in a two-formation
+/// fight, only a line to hold. A body that is the *last* of its side simply becomes the formation where it
+/// stands. Called at the Inner Ring boundary, where an outrider's havoc is what wipes a formation.
+///
+/// (This replaced the old *promotion* - "clearing a zone takes the ground" - a multi-region leftover that, with
+/// one region per side, mostly just coincided with the win and mishandled a mutual raid.)
+fn dissolve(board: &mut Board) {
     for r in board.occupied() {
         let bodies = board.in_region(r);
-        let has_formation = bodies.iter().any(|&i| board.ranks[i] != Rank::Outrider);
-        if !has_formation {
-            for i in bodies {
-                board.ranks[i] = Board::weapon_rank(&board.units[i]); // they own the ground - back to the line
+        if bodies.iter().any(|&i| board.ranks[i] != Rank::Outrider) {
+            continue; // a formation still holds this zone - outriders here stay loose among it
+        }
+        // No formation here: every body is a loose outrider with no host, so each dissolves.
+        for i in bodies {
+            let home = home_of(board, board.units[i].side, r);
+            board.ranks[i] = Board::weapon_rank(&board.units[i]);
+            if let Some(home) = home {
+                board.regions[i] = home; // rejoin your own line
             }
+            // else: you are the last of your side - become the formation where you stand.
         }
     }
+}
+
+/// A region OTHER than `avoid` where `side` still stands as a **formation** (a living non-outrider body), or
+/// `None` if `side` holds no line to rejoin.
+fn home_of(board: &Board, side: Side, avoid: u8) -> Option<u8> {
+    (0..board.units.len())
+        .find(|&i| {
+            !board.units[i].fallen
+                && board.units[i].side == side
+                && board.ranks[i] != Rank::Outrider
+                && board.regions[i] != avoid
+        })
+        .map(|i| board.regions[i])
 }
 
 /// Play **one whole round**: the Reset, then the three distance **rings** nearest-first - the **Inner Ring**
@@ -1140,9 +1165,9 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         lg.hits = hits;
         logs.push(lg);
     }
-    // Clearing a zone's formation with outriders takes it - flip those outriders to the owning side. Resolved
-    // once here, at the end of the Inner Ring: clear a zone's defenders and it is yours.
-    promote(board);
+    // Outriders whose host formation is now gone are outriders of nothing - the state dissolves and they rejoin
+    // their own line (see `dissolve`). Resolved once here, at the Inner Ring boundary where the havoc lands.
+    dissolve(board);
 
     // ---- CROSSING RING: CROSSINGS (closing into a formation) -------------------------------------------
     //
@@ -1872,7 +1897,7 @@ mod tests {
         );
     }
 
-    // ---- PERSISTENT OUTRIDERS + PROMOTION (the new idea) ------------------------------------------------
+    // ---- PERSISTENT OUTRIDERS + DISSOLUTION (the new idea) ---------------------------------------------
 
     /// **A landed raider is a PERSISTENT outrider.** It is still standing in the enemy zone the next round, loose
     /// in their ranks, and it fights with Melee (in-region, no screen), not a fresh raid.
@@ -1909,16 +1934,18 @@ mod tests {
         );
     }
 
-    /// **Zone promotion - clearing a formation takes the ground.** When outriders kill every body of a zone's
-    /// formation, that zone flips to their side on the spot: the outriders become the formation.
+    /// **An outrider whose host is wiped dissolves - as the last of its side, it stands where it is.** When
+    /// outriders kill every body of a zone's formation they are outriders of nothing, so the state ends. Here the
+    /// Raider is the *only* body of its side, so it simply becomes the formation where it stands (no line
+    /// elsewhere to rejoin).
     #[test]
-    fn clearing_a_zones_formation_promotes_the_outriders() {
-        // A party Raider already loose inside a two-zone foe formation; region 1 holds a single soft foe.
+    fn an_outrider_of_a_wiped_host_dissolves_in_place_as_the_last_of_its_side() {
+        // A lone party Raider already loose inside a foe zone; region 1 holds a single soft foe.
         let mut b = Board::new(
             vec![
                 unit("Raider", Side::Party, [9, 9, 1, 4, 2], true, false), // 0 - the outrider
-                unit("Scout", Side::Foe, [1, 2, 1, 1, 1], true, false), // 1 - lone body in region 1
-                unit("Ogre", Side::Foe, [4, 6, 2, 2, 2], true, false), // 2 - region 2, a second zone
+                unit("Scout", Side::Foe, [1, 2, 1, 1, 1], true, false), // 1 - lone host in region 1
+                unit("Ogre", Side::Foe, [4, 6, 2, 2, 2], true, false),  // 2 - a second zone
             ],
             vec![1, 1, 2],
         );
@@ -1928,18 +1955,46 @@ mod tests {
             Some(Side::Foe),
             "region 1 is the foe's while its Scout lives"
         );
-        // The outrider melees the lone host to death; the Ogre in region 2 holds.
         play_round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
         assert!(b.units[1].fallen, "the Scout is dead");
         assert_ne!(
             b.ranks[0],
             Rank::Outrider,
-            "so the Raider is promoted - no longer an outrider"
+            "so the Raider is no longer an outrider - the state dissolved"
         );
         assert_eq!(
-            b.owner(1),
-            Some(Side::Party),
-            "and region 1 has flipped to the party"
+            b.regions[0], 1,
+            "the last of its side, it stays where it stands"
+        );
+        assert_eq!(b.owner(1), Some(Side::Party), "and region 1 is the party's");
+    }
+
+    /// **An outrider with a line to rejoin comes home.** When its host is wiped but its side still holds a
+    /// formation elsewhere, the dissolved outrider reverts and **rejoins that line** rather than garrisoning
+    /// empty ground.
+    #[test]
+    fn an_outrider_of_a_wiped_host_rejoins_its_own_line() {
+        // A Guard holds the party line in region 0; a Raider is loose in the foe zone (region 1) about to kill
+        // its lone host.
+        let mut b = Board::new(
+            vec![
+                unit("Guard", Side::Party, [3, 5, 1, 2, 2], true, false), // 0 - the party line, region 0
+                unit("Raider", Side::Party, [9, 9, 1, 4, 2], true, false), // 1 - the outrider, region 1
+                unit("Scout", Side::Foe, [1, 2, 1, 1, 1], true, false), // 2 - the lone host, region 1
+            ],
+            vec![0, 1, 1],
+        );
+        b.ranks[1] = Rank::Outrider; // the Raider raided region 1 last round
+        play_round(&mut b, &[Act::Hold, Act::Melee(2), Act::Hold]);
+        assert!(b.units[2].fallen, "the Scout is dead");
+        assert_ne!(
+            b.ranks[1],
+            Rank::Outrider,
+            "the Raider's outrider state dissolved"
+        );
+        assert_eq!(
+            b.regions[1], 0,
+            "and it rejoined the party's line in region 0, not held empty ground"
         );
     }
 

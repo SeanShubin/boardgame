@@ -77,7 +77,8 @@ A raider that survives the crossing and lands does **not** dissolve the formatio
 host keeps its vanguard, rearguard, and screen. The raider becomes an **Outrider**: a **loose body
 inside those ranks**, past the screen so it strikes anyone, adjacent to everyone so anyone strikes
 it. It is a **one-way commitment** -- once inside, there is no slipping back out. It stays a splinter
-until it is killed, or until its side clears the ground and it rejoins the line (promotion).
+until it is killed, or until the formation it is loose among is gone and its state dissolves (it
+reverts and rejoins its own line).
 
 That is the payoff of a raid, bigger than "the raider ends up somewhere":
 
@@ -88,10 +89,13 @@ That is the payoff of a raid, bigger than "the raider ends up somewhere":
 - An outrider with a **sweep** is devastating: inside the screen, its area strike catches the host's
   front *and* back at once. That is the price of letting one in.
 
-**Promotion -- clear a formation and the ground is yours.** If outriders kill *every* body of the
-formation that owns a region, that region flips to their side (they stop being outriders and resume
-their weapon rank), settled once at the end of the Inner ring. With one region per side this mostly
-coincides with the win; it earns its keep the day formations span more than one region again.
+**Dissolution -- an outrider without a host is an outrider of nothing.** "Outrider" is a *relation* --
+loose among an enemy formation, past their screen. If outriders kill *every* body of the formation
+they were loose among, the relation ends (settled once at the end of the Inner ring): each reverts to
+its weapon rank and **rejoins its own line** if it still holds one, else simply becomes the formation
+where it stands (the last of its side). There is no ground to garrison in a two-formation fight, only a
+line. (This replaced *promotion* -- "clearing a zone takes the ground" -- a multi-region leftover that,
+with one region per side, mostly coincided with the win and mishandled a mutual raid.)
 
 ## 5. Hordes: one body, many bodies
 
@@ -141,7 +145,7 @@ its place only by letting a death in it silence something after it.
 
 - **Inner ring -- Outriders** (distance 0). Every region holding both a formation and enemy outriders
   fights in place, no screen. It is **one simultaneous strike** -- melee and ranged together, because
-  nobody is closing (the crossing happened a round ago; everyone is point-blank). Then promotion.
+  nobody is closing (the crossing happened a round ago; everyone is point-blank). Then dissolution.
 - **Crossing ring** -- every declared raid crosses and runs the gauntlet:
   1. **Intercept** -- the enemy **vanguard** reaches for it (a death here silences the volley *and*
      the strike).
@@ -169,9 +173,10 @@ strike.) A fight undecided in **5 rounds** is a Draw, which counts as a loss.
 enemy region and becomes an **Outrider**; there is **no retreat** back out. (Reaching a screened back
 and going loose in the enemy ranks are the same mechanic -- a raid *is* a slip with a declared
 target.) The crossing is opposed by the enemy formation reaching for you as you cross in -- which is
-where a pushed slipper's damage comes from. An outrider leaves enemy ground only by **taking it**
-(promotion) or by dying. (Retreat and the both-ends "crossing in reverse" were removed with the
-retreat itself -- another rule that did not change a win.)
+where a pushed slipper's damage comes from. An outrider leaves enemy ground only when the formation it
+was loose among is destroyed (its state **dissolves** and it rejoins its own line) or by dying.
+(Retreat and the both-ends "crossing in reverse" were removed with the retreat itself -- another rule
+that did not change a win.)
 
 ## 9. What was cut, and why
 
