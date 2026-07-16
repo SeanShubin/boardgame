@@ -128,6 +128,11 @@ impl Fight {
     fn reset(&mut self) {
         self.state = build(self.encounter);
         self.snapshot_max();
+        // A new roster (Restart or Next encounter) is the ONE thing that invalidates the memos: the state key
+        // omits unit stats, so a key from one encounter must never answer for another. Start fresh here - the one
+        // place the units change. Ordinary moves keep the memo (see `reposition`).
+        self.solver = Solver::new();
+        self.counter = PathCounter::new();
         self.log.clear();
         self.reposition();
     }
@@ -151,8 +156,12 @@ impl Fight {
         self.opt_verdict = vec![None; self.options.len()];
         self.opt_paths = vec![None; self.options.len()];
         self.verdict = None;
-        self.solver = Solver::new();
-        self.counter = PathCounter::new();
+        // KEEP the solver/counter memos across a move - do NOT re-new them here. The game is deterministic and the
+        // memo key is a pure function of the position, so any subtree already explored while scoring the parent's
+        // options is reused now: the child we stepped into was walked to produce the win/loss tally we just showed
+        // on its button, so its verdict and counts are already in the memo and land instantly. Only a *roster*
+        // change invalidates them, and that is handled in `reset`. So stepping through a fight re-computes only the
+        // genuinely new frontier, never a node already seen.
         self.grant = FRAME_NODES;
         self.dirty = true;
     }
