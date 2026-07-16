@@ -594,24 +594,16 @@ impl Fight {
         // so the fight opens on round 1 and every advance is a resolved round that may have drawn blood.)
         let resolved = self.state.round() != round_before;
         if resolved {
-            for line in crossings(before, &acts) {
-                self.log.push(line);
-            }
-            // The two-stage damage-pile model, mirroring the grit mechanic. First the POOL ADDITIONS: re-run the
-            // deterministic resolution on a throwaway clone (it never touches `self.state`) purely to harvest the
-            // strike transcript, then say who added to whose pile - source-attributed, sweeps included. Then the
-            // resulting HEALTH FLIPS, read from the before/after board diff.
-            let additions = pool_additions(before, &acts);
-            let events = narrate(before, self.state.board());
-            let drew_blood = !additions.is_empty() || !events.is_empty();
-            for line in additions {
-                self.log.push(line);
-            }
-            for line in events {
-                self.log.push(line);
-            }
-            if !drew_blood {
+            // The round, phase by phase: re-run the deterministic resolution on a throwaway clone (it never
+            // touches `self.state`) and walk the transcript, so every pool addition, card flip, crossing and death
+            // is logged UNDER the ring it happened in.
+            let events = narrate_round(before, &acts);
+            if events.is_empty() {
                 self.log.push("  (no blood drawn)".into());
+            } else {
+                for line in events {
+                    self.log.push(line);
+                }
             }
         }
         if self.state.round() != round_before {
@@ -643,54 +635,95 @@ fn act_answer(a: &Act) -> Option<Answer> {
     }
 }
 
-/// **The slip contests** - who reached for each body that tried to cross. A slipper is caught by every enemy
-/// standing in the region it LEAVES and the region it ENTERS (it is outside its own screen the moment it moves) -
-/// which is where a pushed slipper's damage comes from, damage no *declared* attack would explain. Reconstructed
-/// from the same acts the round resolved with, so it names the exact bodies that reached for it.
-fn crossings(before: &Board, acts: &[Act]) -> Vec<String> {
-    // A body mid-crossing cannot also hold a line, so it is not a catcher.
-    let transit: Vec<bool> = (0..before.units.len())
-        .map(|j| !before.units[j].fallen && act_destination(before, j, &acts[j]).is_some())
-        .collect();
+/// **The round, phase by phase.** Re-runs the deterministic resolution on a throwaway clone of the pre-round board
+/// (identical to what `self.state` just resolved, so it re-derives the exact strikes) and walks the
+/// [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE it happened in: the Inner
+/// Ring, the Crossing Ring's Intercept / Volley / Raid, the Outer Ring's Fire / Clash. This is what makes the log
+/// say *when* in the round each thing landed, not merely *that* it did.
+///
+/// Within a phase, in order: the **pool additions** (who added how much to whose pile - stage one of the grit
+/// model, source-attributed, sweeps included), then the **crossings** that landed or turned back, then the
+/// resulting **card flips** (stage two), then the **deaths**. A flip is attributed to the phase whose snapshot
+/// first shows it - so damage that lands in the Outer Ring reads under "Outer Ring", not lumped at end-of-round. A
+/// phase that did nothing prints nothing.
+fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
+    let mut clone = before.clone();
+    let transcript = play_round(&mut clone, acts);
 
     let mut out = Vec::new();
-    for i in 0..before.units.len() {
-        if before.units[i].fallen {
-            continue;
-        }
-        let Some(dest) = act_destination(before, i, &acts[i]) else {
-            continue;
-        };
-        let foe_side = if before.units[i].side == Side::Party {
-            Side::Foe
-        } else {
-            Side::Party
-        };
-        // Every enemy in the region left and the region entered reaches for the slipper.
-        let mut names: Vec<String> = Vec::new();
-        for region in [before.regions[i], dest] {
-            for j in before.in_region(region) {
-                if before.units[j].side == foe_side && !transit[j] {
-                    names.push(before.units[j].name.clone());
+    // Health entering the first phase is the round-start board; each phase then diffs against the phase before it,
+    // so a flip is charged to the exact ring that caused it. Indices are stable across the clone, so names/Might
+    // are read from `before`.
+    let mut prev: Vec<u32> = before.units.iter().map(|u| u.health).collect();
+    for log in &transcript {
+        let mut lines: Vec<String> = Vec::new();
+
+        // Pool additions: sum this phase's blows per (attacker -> target), in strike order.
+        let mut order: Vec<(usize, usize)> = Vec::new();
+        let mut totals: Vec<u32> = Vec::new();
+        for hit in &log.hits {
+            let key = (hit.attacker, hit.target);
+            match order.iter().position(|k| *k == key) {
+                Some(p) => totals[p] += hit.hits,
+                None => {
+                    order.push(key);
+                    totals.push(hit.hits);
                 }
             }
         }
-        if names.is_empty() {
-            continue; // an unopposed crossing - nobody to catch it
+        for (&(a, t), &hits) in order.iter().zip(&totals) {
+            let (attacker, target) = (&before.units[a].name, &before.units[t].name);
+            if before.units[t].horde {
+                // A sweep clears bodies rather than banking Might: attribute the bodies felled.
+                lines.push(format!("    {attacker} fells {hits} of {target}"));
+            } else {
+                let amount = before.units[a].might * hits;
+                lines.push(format!("    {attacker} adds {amount} to {target}"));
+            }
         }
-        let verb = match act_answer(&acts[i]) {
-            Some(Answer::Evade) => "slips past",
-            Some(Answer::Push) => "pushes past",
-            Some(Answer::Abort) => "turns and fights",
-            None => "crosses past",
-        };
-        out.push(format!(
-            "  {} {} {} (crossing to region {})",
-            before.units[i].name,
-            verb,
-            join_counts(&names),
-            region_letter(dest)
-        ));
+
+        // Crossings that resolved this phase (the Land step attaches through/aborted to the Volley log).
+        for &i in &log.through {
+            let name = &before.units[i].name;
+            let verb = match act_answer(&acts[i]) {
+                Some(Answer::Push) => "pushes through to",
+                _ => "slips through to",
+            };
+            if let Some(dest) = act_destination(before, i, &acts[i]) {
+                lines.push(format!("    {name} {verb} region {}", region_letter(dest)));
+            }
+        }
+        for &i in &log.aborted {
+            lines.push(format!(
+                "    {} turns and fights at the line",
+                before.units[i].name
+            ));
+        }
+
+        // Card flips this phase: diff the phase-before snapshot against this one. A horde loses whole bodies.
+        for i in 0..log.health.len() {
+            if log.health[i] < prev[i] {
+                let kind = if before.units[i].horde {
+                    "bodies"
+                } else {
+                    "hp"
+                };
+                lines.push(format!(
+                    "    {}: {} -> {} {kind}",
+                    before.units[i].name, prev[i], log.health[i]
+                ));
+            }
+        }
+        // Deaths this phase.
+        for &i in &log.fallen {
+            lines.push(format!("    {} is down", before.units[i].name));
+        }
+
+        prev = log.health.clone();
+        if !lines.is_empty() {
+            out.push(format!("  {}", log.phase)); // the phase header, above its events
+            out.extend(lines);
+        }
     }
     out
 }
@@ -720,89 +753,6 @@ fn join_counts(names: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-/// **The pool additions** - stage one of the damage-pile model, mirroring the grit mechanic: one line per
-/// `(attacker -> target)` saying who added how much to whose pile, *before* any card flips. Built by re-running
-/// the deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
-/// resolved, so it re-derives the exact strikes) and reading the [`Hit`] transcript `play_round` returns. Blows
-/// from the same attacker on the same target are summed into one line; a sweep records each caught body, so an
-/// AoE striker is attributed to every body it hit (a horde included). Indices are stable across the clone, so
-/// names are read from `before`.
-fn pool_additions(before: &Board, acts: &[Act]) -> Vec<String> {
-    let mut clone = before.clone();
-    let transcript = play_round(&mut clone, acts);
-
-    // Sum hits per (attacker, target), preserving first-appearance order so the log reads in strike order.
-    let mut order: Vec<(usize, usize)> = Vec::new();
-    let mut totals: Vec<u32> = Vec::new();
-    for log in &transcript {
-        for hit in &log.hits {
-            let key = (hit.attacker, hit.target);
-            match order.iter().position(|k| *k == key) {
-                Some(p) => totals[p] += hit.hits,
-                None => {
-                    order.push(key);
-                    totals.push(hit.hits);
-                }
-            }
-        }
-    }
-
-    order
-        .iter()
-        .zip(totals)
-        .map(|(&(a, t), hits)| {
-            let attacker = &before.units[a].name;
-            let target = &before.units[t].name;
-            if before.units[t].horde {
-                // A sweep clears bodies rather than banking Might: attribute the bodies felled.
-                format!("  {attacker} fells {hits} of {target}")
-            } else {
-                // Might per blow, summed over the blows this attacker landed on this target.
-                let amount = before.units[a].might * hits;
-                format!("  {attacker} adds {amount} to {target}")
-            }
-        })
-        .collect()
-}
-
-/// **What the last round actually did to the board**, read from a before/after diff - stage two of the damage
-/// model (the resulting card flips) plus the moves the player never sees otherwise, because the whole round (foes
-/// included) resolves inside one `apply`. One line per thing that changed: a body that moved, lost a health card,
-/// or fell. The *source* of the loss is carried by the [`pool_additions`] lines above, so these say only the
-/// resulting flip. Indented so the history can colour them apart from the declarations that caused them.
-fn narrate(before: &Board, after: &Board) -> Vec<String> {
-    let mut out = Vec::new();
-    for i in 0..after.units.len() {
-        let (bu, au) = (&before.units[i], &after.units[i]);
-        let name = &au.name;
-        // Moved: a slip landed it in a new region, or its rank changed under it (a charge-in, a promotion).
-        if !au.fallen && before.regions[i] != after.regions[i] {
-            out.push(format!(
-                "  {name} slips to region {}",
-                region_letter(after.regions[i])
-            ));
-        } else if !au.fallen && before.ranks[i] != after.ranks[i] {
-            let where_to = match after.ranks[i] {
-                Rank::Outrider => "breaks into the enemy ranks",
-                Rank::Vanguard => "takes the front",
-                Rank::Rearguard => "falls back",
-            };
-            out.push(format!("  {name} {where_to}"));
-        }
-        // Flipped: a horde loses whole bodies; anyone else loses health cards. The pile that caused it is named in
-        // the pool-addition lines above, so this shows only the resulting flip.
-        if au.health < bu.health {
-            let kind = if au.horde { "bodies" } else { "hp" };
-            out.push(format!("  {name}: {} -> {} {kind}", bu.health, au.health));
-        }
-        // Fell.
-        if au.fallen && !bu.fallen {
-            out.push(format!("  {name} is down"));
-        }
-    }
-    out
 }
 
 /// The tempo a body has to spend in a round: its Cadence pool (`refresh_round`), hordes included. A horde no

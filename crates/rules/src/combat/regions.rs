@@ -531,6 +531,11 @@ pub struct Hit {
 /// What happened in one sub-phase - enough for a transcript or a renderer to say *why* the board changed.
 #[derive(Clone, Debug, Default)]
 pub struct SubPhaseLog {
+    /// **Which phase of the round this is** - the ring and step, e.g. `"Inner Ring: Outriders"`,
+    /// `"Crossing Ring: Intercept"`, `"Outer Ring: Clash"`. Set by [`play_round`] at each step so a transcript can
+    /// say *where* in the round every strike and card-flip happened, not just *that* it happened. Empty on a log
+    /// built outside `play_round`.
+    pub phase: &'static str,
     /// Got through - standing somewhere new now.
     pub through: Vec<usize>,
     /// Turned and fought instead: it stayed where it was.
@@ -1162,6 +1167,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         let before = living(board);
         let hits = exchange(board, &melees, true, true);
         let mut lg = close(board, &before);
+        lg.phase = "Inner Ring: Outriders";
         lg.hits = hits;
         logs.push(lg);
     }
@@ -1202,11 +1208,13 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     let before = living(board);
     let hits = reach_for_slippers(board, &front_catchers, &movers);
     let mut lg = close(board, &before);
+    lg.phase = "Crossing Ring: Intercept";
     lg.hits = hits;
     logs.push(lg);
     let before = living(board);
     let hits = reach_for_slippers(board, &back_catchers, &movers);
     let mut lg = close(board, &before);
+    lg.phase = "Crossing Ring: Volley";
     lg.hits = hits;
     logs.push(lg);
 
@@ -1257,6 +1265,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .collect();
     let hits = exchange(board, &raids, false, false);
     let mut lg = close(board, &before);
+    lg.phase = "Crossing Ring: Raid";
     lg.hits = hits;
     logs.push(lg);
 
@@ -1277,6 +1286,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             .collect();
         let hits = exchange(board, &attacks, true, false);
         let mut lg = close(board, &before);
+        lg.phase = if tier == Rank::Rearguard {
+            "Outer Ring: Fire"
+        } else {
+            "Outer Ring: Clash"
+        };
         lg.hits = hits;
         logs.push(lg);
     }
@@ -1995,6 +2009,44 @@ mod tests {
         assert_eq!(
             b.regions[1], 0,
             "and it rejoined the party's line in region 0, not held empty ground"
+        );
+    }
+
+    /// **Every sub-phase log is stamped with its phase, and a card-flip shows in the phase that caused it.** A
+    /// plain clash resolves in the Outer Ring: the log names it, carries the strike, and its health snapshot shows
+    /// the foe's flip *there* - while the Fire snapshot just before it still shows full health. This is what lets a
+    /// transcript say *when* in the round a card turned, not merely *that* it did.
+    #[test]
+    fn each_phase_is_labeled_and_localizes_its_card_flips() {
+        let mut b = Board::new(
+            vec![
+                unit("Hero", Side::Party, [3, 4, 1, 2, 2], true, false),
+                unit("Foe", Side::Foe, [3, 4, 1, 2, 2], true, false),
+            ],
+            vec![0, 1],
+        );
+        let start_foe = b.units[1].health;
+        let logs = play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+        assert!(
+            logs.iter().all(|l| !l.phase.is_empty()),
+            "every emitted phase is stamped with its name"
+        );
+        let clash = logs
+            .iter()
+            .find(|l| l.phase == "Outer Ring: Clash")
+            .expect("a Clash phase");
+        assert!(!clash.hits.is_empty(), "the clash carries the strike");
+        assert!(
+            clash.health[1] < start_foe,
+            "the foe's card-flip shows in the Clash phase"
+        );
+        let fire = logs
+            .iter()
+            .find(|l| l.phase == "Outer Ring: Fire")
+            .expect("a Fire phase");
+        assert_eq!(
+            fire.health[1], start_foe,
+            "and not before it - the Fire step drew no blood"
         );
     }
 
