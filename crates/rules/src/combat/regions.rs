@@ -528,6 +528,35 @@ pub struct Hit {
     pub hits: u32,
 }
 
+/// **A contested reach, recorded for the log.** `attacker` committed `bid` (`cards x Finesse x body-count`) to
+/// reach `target`; `evaded` says whether the target paid a slip to break it. This is the ONLY record of the slip
+/// contest a renderer gets: an evaded reach lands no [`Hit`], so without the bid the log could show a Tempo pool
+/// drained on both sides but never the two numbers that decided it (the bid, and the Finesse the slip weighed
+/// against it). Both operands of the comparison, made visible.
+#[derive(Clone, Copy, Debug)]
+pub struct Reach {
+    pub attacker: usize,
+    pub target: usize,
+    pub bid: u32,
+    pub evaded: bool,
+}
+
+/// Build the [`Reach`] records for one contest: every engagement that was formed, tagged with whether the target
+/// slipped it (present in `reaching` but not in the post-evade `landed` set).
+fn reaches_of(reaching: &[Contact], landed: &[Contact]) -> Vec<Reach> {
+    reaching
+        .iter()
+        .map(|c| Reach {
+            attacker: c.attacker,
+            target: c.target,
+            bid: c.bid,
+            evaded: !landed
+                .iter()
+                .any(|l| l.attacker == c.attacker && l.target == c.target),
+        })
+        .collect()
+}
+
 /// What happened in one sub-phase - enough for a transcript or a renderer to say *why* the board changed.
 #[derive(Clone, Debug, Default)]
 pub struct SubPhaseLog {
@@ -564,6 +593,10 @@ pub struct SubPhaseLog {
     /// renderer reads Might per blow from the attacker to say *where* each body's damage came from (a sweep
     /// records one `Hit` per swept contact, so an area strike is attributed to its sweeper too).
     pub hits: Vec<Hit>,
+    /// **Every contested reach this sub-phase**, with its bid and whether it was slipped ([`Reach`]). Carries the
+    /// slip-contest numbers a `Hit` cannot: an evaded reach lands nothing, so this is where the bid it committed -
+    /// and, read against the target's Finesse, the slip that beat it - become legible.
+    pub reaches: Vec<Reach>,
 }
 
 fn slip_price(bid: u32, f_def: u32) -> u32 {
@@ -973,7 +1006,7 @@ fn reach_for_slippers(
     board: &mut Board,
     catchers: &[(usize, usize)], // (catcher, slipper)
     movers: &[(usize, u8, Answer)],
-) -> Vec<Hit> {
+) -> (Vec<Hit>, Vec<Reach>) {
     // The live (catcher, slipper) pairs this pass - a fallen catcher or slipper, or a spent catcher, reaches for
     // nothing.
     let live: Vec<(usize, usize)> = catchers
@@ -1005,6 +1038,9 @@ fn reach_for_slippers(
         })
         .collect();
     let mut landed = resolve_evade(&mut board.units, &reaching, &dodges);
+    // Record the aimed contest NOW, before the unevadable area contacts join `landed` - so `evaded` reflects the
+    // genuine slip contest only.
+    let reaches = reaches_of(&reaching, &landed);
 
     // AREA catchers volley the whole crossing (the Crossing-ring sweep footprint): one card, every crosser they
     // catch, unevadably. A horde crosser is cleared outright (recorded, applied after `land` so it counts at full
@@ -1091,7 +1127,7 @@ fn reach_for_slippers(
         board.units[h.target].health = board.units[h.target].health.saturating_sub(h.hits);
     }
     hits.extend(felled);
-    hits
+    (hits, reaches)
 }
 
 /// The enemy of a side.
@@ -1174,10 +1210,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .collect();
     if !melees.is_empty() {
         let before = living(board);
-        let hits = exchange(board, &melees, true, true);
+        let (hits, reaches) = exchange(board, &melees, true, true);
         let mut lg = close(board, &before);
         lg.phase = "Inner Ring: Outriders";
         lg.hits = hits;
+        lg.reaches = reaches;
         logs.push(lg);
     }
     // Outriders whose host formation is now gone are outriders of nothing - the state dissolves and they rejoin
@@ -1222,16 +1259,18 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     }
 
     let before = living(board);
-    let hits = reach_for_slippers(board, &front_catchers, &movers);
+    let (hits, reaches) = reach_for_slippers(board, &front_catchers, &movers);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Intercept";
     lg.hits = hits;
+    lg.reaches = reaches;
     logs.push(lg);
     let before = living(board);
-    let hits = reach_for_slippers(board, &back_catchers, &movers);
+    let (hits, reaches) = reach_for_slippers(board, &back_catchers, &movers);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Volley";
     lg.hits = hits;
+    lg.reaches = reaches;
     logs.push(lg);
 
     // LAND: survivors that got through leave the line and arrive. Into an enemy zone they promote to outrider
@@ -1279,10 +1318,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             _ => None,
         })
         .collect();
-    let hits = exchange(board, &raids, false, false);
+    let (hits, reaches) = exchange(board, &raids, false, false);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Raid";
     lg.hits = hits;
+    lg.reaches = reaches;
     logs.push(lg);
 
     // ---- OUTER RING: ACROSS THE GAP (Fire then Clash) -------------------------------------------------
@@ -1300,7 +1340,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
                 _ => None,
             })
             .collect();
-        let hits = exchange(board, &attacks, true, false);
+        let (hits, reaches) = exchange(board, &attacks, true, false);
         let mut lg = close(board, &before);
         lg.phase = if tier == Rank::Rearguard {
             "Outer Ring: Fire"
@@ -1308,6 +1348,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             "Outer Ring: Clash"
         };
         lg.hits = hits;
+        lg.reaches = reaches;
         logs.push(lg);
     }
 
@@ -1317,7 +1358,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
 /// One Engage -> Evade -> Strike exchange - **the product's inner three, unchanged.** Area strikes split off and
 /// sweep their target's region: the tier aimed at, or - when `sweep_whole` - both tiers (an in-region melee, past
 /// the screen).
-fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool) -> Vec<Hit> {
+fn exchange(
+    board: &mut Board,
+    attacks: &[Attack],
+    pour: bool,
+    sweep_whole: bool,
+) -> (Vec<Hit>, Vec<Reach>) {
     let mut sweeps: Vec<Contact> = Vec::new();
     let mut sweep_hits: Vec<Hit> = Vec::new();
     let mut aimed: Vec<Engage> = Vec::new();
@@ -1338,6 +1384,7 @@ fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool
     let reaching = engage(board, &aimed);
     let dodges = dodges_against(board, &reaching);
     let contacts = resolve_evade(&mut board.units, &reaching, &dodges);
+    let reaches = reaches_of(&reaching, &contacts); // the aimed slip contest, bids and who slipped
 
     // Pour into what you DECLARED - never into whoever the contact list happened to list first.
     let extra: Vec<Blows> = if pour {
@@ -1352,7 +1399,7 @@ fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool
         board.units[h.target].health = board.units[h.target].health.saturating_sub(h.hits);
     }
     hits.extend(sweep_hits); // horde kills are recorded in area_strike for the transcript
-    hits
+    (hits, reaches)
 }
 
 // ---- the doom oracle -----------------------------------------------------------------------------------
@@ -2113,6 +2160,20 @@ mod tests {
         assert!(
             intercept.tempo[1] < wall_tp,
             "and the Wall still paid to reach (recorded, not invisible)"
+        );
+        // The contest itself is recorded: the Wall's reach on the Raider, its bid, and that it was slipped - the
+        // two numbers (bid vs. the Finesse-weighted slip) the log needs to explain why the escape worked.
+        let reach = intercept
+            .reaches
+            .iter()
+            .find(|r| r.attacker == 1 && r.target == 0)
+            .expect("the Wall's reach on the Raider is recorded");
+        assert!(reach.evaded, "and it is marked slipped");
+        let wall_cards = wall_tp - intercept.tempo[1]; // the tempo the Wall committed to the reach
+        assert_eq!(
+            reach.bid,
+            wall_cards * b.units[1].finesse,
+            "with its bid = cards x Finesse (1 tempo x Finesse 2 = 2)"
         );
     }
 

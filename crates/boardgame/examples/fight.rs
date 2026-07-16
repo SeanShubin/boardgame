@@ -714,12 +714,23 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     1
                 };
                 let dmg = per_blow * bodies * n;
-                let how = if before.units[a].horde {
-                    format!("Might {} x {bodies} bodies", before.units[a].might)
-                } else if n > 1 {
-                    format!("Might {} x {n} blows", before.units[a].might)
+                // Show the armor when it bites, so `Might - armor = per-blow` is legible (both numbers of that
+                // comparison). Armor is 0 for the current roster, so this stays silent until a stat makes it real.
+                let armor = before.units[t].armor;
+                let base = if armor > 0 {
+                    format!(
+                        "Might {} - armor {armor} = {per_blow}",
+                        before.units[a].might
+                    )
                 } else {
                     format!("Might {}", before.units[a].might)
+                };
+                let how = if before.units[a].horde {
+                    format!("{base} x {bodies} bodies")
+                } else if n > 1 {
+                    format!("{base} x {n} blows")
+                } else {
+                    base
                 };
                 lines.push(format!(
                     "    {an}: {cost}strikes {tn} for {dmg} damage ({how})"
@@ -727,25 +738,54 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             }
         }
 
-        // --- Tempo spent with NO blow behind it - the changes that used to be invisible. Every body that landed a
-        // strike had its spend stated above; every OTHER body that spent tempo this phase is accounted for here, so
-        // no spend goes unreported. A slipper paying to evade; a catcher whose target slipped its reach. ---
+        // --- Tempo spent with NO blow behind it - the slip contest, with BOTH numbers it turned on. A body that
+        // landed a strike had its spend stated above; every OTHER body that spent tempo is accounted for here, so
+        // no spend hides. An evaded reach shows the **bid** it committed (cards x Finesse x bodies); the slip that
+        // beat it shows the **bid it cleared** and the defender's **Finesse** - so the comparison is legible. ---
         for i in 0..log.tempo.len() {
             let spent = prev_tp[i].saturating_sub(log.tempo[i]);
             if spent == 0 || log.hits.iter().any(|h| h.attacker == i) {
                 continue; // no spend, or already stated on its strike line
             }
             let name = &before.units[i].name;
-            let evading = matches!(act_answer(&acts[i]), Some(Answer::Evade))
-                && act_destination(before, i, &acts[i]).is_some();
-            if evading {
+            let my_reaches: Vec<_> = log.reaches.iter().filter(|r| r.attacker == i).collect();
+            if !my_reaches.is_empty() {
+                // A catcher whose reach was slipped (a landed reach would have made a Hit, caught above). Show the
+                // bid and how it was built, so the number the slip had to beat is on the page.
+                let f = before.units[i].finesse.max(1);
+                let mult = if before.units[i].horde {
+                    prev_hp[i].max(1)
+                } else {
+                    1
+                };
+                for r in my_reaches {
+                    let cards = r.bid / (f * mult).max(1);
+                    let build = if before.units[i].horde {
+                        format!("{cards} tempo x Finesse {f} x {mult} bodies")
+                    } else {
+                        format!("{cards} tempo x Finesse {f}")
+                    };
+                    lines.push(format!(
+                        "    {name}: reaches {} - bid {} ({build}), slipped",
+                        before.units[r.target].name, r.bid
+                    ));
+                }
+            } else if let Some(worst) = log
+                .reaches
+                .iter()
+                .filter(|r| r.target == i && r.evaded)
+                .map(|r| r.bid)
+                .max()
+            {
+                // A slipper that paid to break every edge reaching it: the bid it cleared, and the Finesse it weighed
+                // against it (cost = bid / Finesse + 1). Now "2 tempo beat a 1-tempo reach" is fully explained.
+                let f = before.units[i].finesse.max(1);
+                let cost = worst / f + 1;
                 lines.push(format!(
-                    "    {name}: spends {spent} tempo to slip the line (evades the catchers)"
+                    "    {name}: spends {spent} tempo to slip the line - clears bid {worst} at Finesse {f} ({worst} / {f} + 1 = {cost})"
                 ));
             } else {
-                lines.push(format!(
-                    "    {name}: spends {spent} tempo reaching, but the blow is evaded"
-                ));
+                lines.push(format!("    {name}: spends {spent} tempo, no blow lands"));
             }
         }
 
