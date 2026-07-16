@@ -635,32 +635,44 @@ fn act_answer(a: &Act) -> Option<Answer> {
     }
 }
 
-/// **The round, phase by phase - with the state change spelled out at each step.** Re-runs the deterministic
-/// resolution on a throwaway clone of the pre-round board (identical to what `self.state` just resolved, so it
-/// re-derives the exact strikes) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting
-/// everything UNDER THE PHASE it happened in: the Inner Ring, the Crossing Ring's Intercept / Volley / Raid, the
-/// Outer Ring's Fire / Clash.
+/// **The round, phase by phase - every state change spelled out, none left invisible.** Re-runs the
+/// deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
+/// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE
+/// it happened in: the Inner Ring, the Crossing Ring's Intercept / Volley / Raid, the Outer Ring's Fire / Clash.
+///
+/// **The completeness rule: a body's every mutable field is snapshotted each phase, and a change to any of them
+/// prints a line.** Tempo, Health, rank and region are all diffed against the phase before, so no spend, flip,
+/// crossing or dissolution can happen silently. A tempo spend with no blow behind it (a slipper paying to evade,
+/// a catcher whose target slipped away) was exactly the kind of change that used to hide; now it does not.
 ///
 /// Within a phase, in order:
-/// - **Strikes** - one line per attacker: the **tempo** it spent this phase (the diff of the tempo snapshots,
-///   the true cost of reaching / pouring), the **Might** behind the blow, and the **damage** it banked. Damage is
-///   `(Might - armor)` per blow, a horde swinging its whole body count at once; against a horde a blow *fells
-///   bodies* instead.
-/// - **Crossings** that landed or turned back.
-/// - **Absorb / flips** - per target: the damage it soaked and how many **Health cards** that flipped (or that it
-///   fell short of Grit, so none did). The pile closes every sub-phase, so this pairs cleanly within the phase.
+/// - **Strikes** - one line per attacker: the tempo it spent (reaching + pouring), the Might, and the damage it
+///   banked (`(Might - armor)` per blow, a horde swinging its whole body count at once; against a horde it *fells
+///   bodies* instead).
+/// - **Tempo spent with no blow** - a slipper evading, or a reach the target slipped: the cost, made visible.
+/// - **Crossings** landed or turned back, with the rank they take.
+/// - **Absorb / flips** - the damage a target soaked, the Grit bar, the Health cards that flipped (or fell short),
+///   and any remainder discarded when the pile closes.
+/// - **Rank / region** changes not already narrated (a dissolved outrider rejoining its line).
 /// - **Deaths**.
 ///
-/// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); each phase
-/// diffs against the phase before it, so a flip or a spend is charged to the exact ring. Indices are stable across
-/// the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
+/// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
+/// stable across the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
 fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
     let mut clone = before.clone();
     let transcript = play_round(&mut clone, acts);
 
+    let rank_word = |r: Rank| match r {
+        Rank::Vanguard => "a Vanguard",
+        Rank::Rearguard => "a Rearguard",
+        Rank::Outrider => "an Outrider",
+    };
+
     let mut out = Vec::new();
     let mut prev_hp: Vec<u32> = before.units.iter().map(|u| u.health).collect();
     let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.cadence).collect(); // Reset stands tempo up to Cadence
+    let mut prev_rk: Vec<Rank> = before.ranks.clone();
+    let mut prev_rg: Vec<u8> = before.regions.clone();
     for log in &transcript {
         let mut lines: Vec<String> = Vec::new();
 
@@ -715,6 +727,28 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             }
         }
 
+        // --- Tempo spent with NO blow behind it - the changes that used to be invisible. Every body that landed a
+        // strike had its spend stated above; every OTHER body that spent tempo this phase is accounted for here, so
+        // no spend goes unreported. A slipper paying to evade; a catcher whose target slipped its reach. ---
+        for i in 0..log.tempo.len() {
+            let spent = prev_tp[i].saturating_sub(log.tempo[i]);
+            if spent == 0 || log.hits.iter().any(|h| h.attacker == i) {
+                continue; // no spend, or already stated on its strike line
+            }
+            let name = &before.units[i].name;
+            let evading = matches!(act_answer(&acts[i]), Some(Answer::Evade))
+                && act_destination(before, i, &acts[i]).is_some();
+            if evading {
+                lines.push(format!(
+                    "    {name}: spends {spent} tempo to slip the line (evades the catchers)"
+                ));
+            } else {
+                lines.push(format!(
+                    "    {name}: spends {spent} tempo reaching, but the blow is evaded"
+                ));
+            }
+        }
+
         // --- Crossings that resolved this phase (the Land step attaches through/aborted to the Volley log). ---
         for &i in &log.through {
             let name = &before.units[i].name;
@@ -723,7 +757,11 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 _ => "slips through to",
             };
             if let Some(dest) = act_destination(before, i, &acts[i]) {
-                lines.push(format!("    {name}: {verb} region {}", region_letter(dest)));
+                lines.push(format!(
+                    "    {name}: {verb} region {}, now {}",
+                    region_letter(dest),
+                    rank_word(log.ranks[i])
+                ));
             }
         }
         for &i in &log.aborted {
@@ -754,25 +792,69 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         for i in 0..log.health.len() {
             let (h0, h1) = (prev_hp[i], log.health[i]);
             let name = &before.units[i].name;
+            let grit = before.units[i].grit.max(1);
             if before.units[i].horde {
                 if h1 < h0 {
                     lines.push(format!("    {name}: down to {h1} bodies (was {h0})"));
                 }
             } else if h1 < h0 {
                 let flipped = h0 - h1;
+                // The pile closes each sub-phase, so any banked damage beyond the cards it turned is discarded here.
+                let leftover = dmg_to[i].saturating_sub(flipped * grit);
+                let tail = if h1 > 0 && leftover > 0 {
+                    format!("; {leftover} left over, discarded at the boundary")
+                } else {
+                    String::new()
+                };
                 lines.push(format!(
-                    "    {name}: absorbs {} damage; Grit {} flips {flipped} Health card{} ({h0} -> {h1})",
+                    "    {name}: absorbs {} damage; Grit {grit} flips {flipped} Health card{} ({h0} -> {h1}){tail}",
                     dmg_to[i],
-                    before.units[i].grit.max(1),
                     if flipped == 1 { "" } else { "s" }
                 ));
             } else if dmg_to[i] > 0 {
-                // Banked damage that flipped no card: it fell short of Grit, and the pile clears at the Reset.
+                // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-phase closes.
                 lines.push(format!(
-                    "    {name}: absorbs {} damage - short of Grit {}, no Health card flips",
-                    dmg_to[i],
-                    before.units[i].grit.max(1)
+                    "    {name}: absorbs {} damage - short of Grit {grit}, no Health card flips (discarded)",
+                    dmg_to[i]
                 ));
+            }
+        }
+
+        // --- Rank / region changes not already narrated by a crossing (a dissolved outrider rejoining its line). A
+        // crosser's new rank was shown on its crossing line; anything else that moved or changed rank is caught
+        // here, so no repositioning is silent. ---
+        for i in 0..log.ranks.len() {
+            if log.through.contains(&i) {
+                continue; // its move was narrated as a crossing
+            }
+            let rank_changed = prev_rk[i] != log.ranks[i];
+            let region_changed = prev_rg[i] != log.regions[i];
+            if !rank_changed && !region_changed {
+                continue;
+            }
+            let name = &before.units[i].name;
+            if prev_rk[i] == Rank::Outrider && log.ranks[i] != Rank::Outrider {
+                // Its host formation was wiped, so the outrider state dissolved.
+                if region_changed {
+                    lines.push(format!(
+                        "    {name}: outrider dissolves - rejoins the line as {} in region {}",
+                        rank_word(log.ranks[i]),
+                        region_letter(log.regions[i])
+                    ));
+                } else {
+                    lines.push(format!(
+                        "    {name}: outrider dissolves - reforms as {} where it stands",
+                        rank_word(log.ranks[i])
+                    ));
+                }
+            } else if region_changed {
+                lines.push(format!(
+                    "    {name}: moves to region {} (now {})",
+                    region_letter(log.regions[i]),
+                    rank_word(log.ranks[i])
+                ));
+            } else {
+                lines.push(format!("    {name}: becomes {}", rank_word(log.ranks[i])));
             }
         }
 
@@ -788,6 +870,8 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
 
         prev_hp = log.health.clone();
         prev_tp = log.tempo.clone();
+        prev_rk = log.ranks.clone();
+        prev_rg = log.regions.clone();
         if !lines.is_empty() {
             out.push(format!("  {}", log.phase)); // the phase header, above its events
             out.extend(lines);

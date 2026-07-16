@@ -557,6 +557,9 @@ pub struct SubPhaseLog {
     /// Every body's **rank** at this boundary. Same reason: without it a promotion that happens in the last
     /// sub-phase appears to have been true all round.
     pub ranks: Vec<Rank>,
+    /// Every body's **region** at this boundary. Same snapshot discipline: a crossing or a dissolution moves a
+    /// body, and a transcript that only reads the final board cannot say *which phase* it moved in.
+    pub regions: Vec<u8>,
     /// **Every strike that landed in this sub-phase**, source-attributed: who hit whom, and how many blows. A
     /// renderer reads Might per blow from the attacker to say *where* each body's damage came from (a sweep
     /// records one `Hit` per swept contact, so an area strike is attributed to its sweeper too).
@@ -910,6 +913,7 @@ fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
         health: board.units.iter().map(|u| u.health).collect(),
         tempo: board.units.iter().map(|u| u.tempo).collect(),
         ranks: board.ranks.clone(),
+        regions: board.regions.clone(),
         ..Default::default()
     }
 }
@@ -1179,6 +1183,13 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // Outriders whose host formation is now gone are outriders of nothing - the state dissolves and they rejoin
     // their own line (see `dissolve`). Resolved once here, at the Inner Ring boundary where the havoc lands.
     dissolve(board);
+    // Dissolution moves bodies (rank + region), so fold the result back into the Inner Ring's snapshot - it is an
+    // Inner-Ring-boundary event, and a transcript must not read it as having happened a phase later. (When no
+    // Inner strike ran, no formation was wiped this round, so dissolution is a no-op and there is nothing to fold.)
+    if let Some(inner) = logs.last_mut() {
+        inner.ranks = board.ranks.clone();
+        inner.regions = board.regions.clone();
+    }
 
     // ---- CROSSING RING: CROSSINGS (closing into a formation) -------------------------------------------
     //
@@ -2062,6 +2073,46 @@ mod tests {
         assert!(
             clash.tempo[0] < b.units[0].cadence,
             "and spent its reach in the Clash"
+        );
+    }
+
+    /// **A tempo spend with no blow behind it is still recorded.** When a raider evades the line, the interceptor's
+    /// reach lands nothing and the raider pays a slip cost - two tempo expenditures that produce *no* `Hit`. The
+    /// per-phase tempo snapshot must still show them both, or the transcript would report a silent state change (a
+    /// pool drained with nothing in the log to explain it). This is the data the fight log reads to make the evade
+    /// cost visible.
+    #[test]
+    fn an_evaded_crossing_still_records_both_tempo_spends() {
+        // A Raider in region 0 raids the foe cannon in region 1, evading the Wall that screens it.
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [6, 6, 1, 2, 2], true, false), // 0 - the crosser
+                unit("Wall", Side::Foe, [1, 4, 6, 1, 2], true, false), // 1 - the screen (region 1 front)
+                unit("Mage", Side::Foe, [5, 2, 1, 2, 2], false, true), // 2 - the cannon it came for
+            ],
+            vec![0, 1, 1],
+        );
+        let (raider_tp, wall_tp) = (b.units[0].cadence, b.units[1].cadence);
+        let logs = play_round(&mut b, &[Act::Raid(2, Answer::Evade), Act::Hold, Act::Hold]);
+        let intercept = logs
+            .iter()
+            .find(|l| l.phase == "Crossing Ring: Intercept")
+            .expect("an Intercept phase");
+        // The Wall reached and the Raider slipped it, so NOTHING landed - yet both paid.
+        assert!(
+            !intercept
+                .hits
+                .iter()
+                .any(|h| h.attacker == 1 && h.target == 0),
+            "the Wall's reach lands no blow - the Raider evaded it"
+        );
+        assert!(
+            intercept.tempo[0] < raider_tp,
+            "but the Raider still paid a slip cost (recorded, not invisible)"
+        );
+        assert!(
+            intercept.tempo[1] < wall_tp,
+            "and the Wall still paid to reach (recorded, not invisible)"
         );
     }
 
