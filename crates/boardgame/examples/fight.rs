@@ -759,14 +759,15 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     1
                 };
                 for r in my_reaches {
+                    // The reach is a product: cards x Finesse (x body count for a horde) = the bid. No division.
                     let cards = r.bid / (f * mult).max(1);
                     let build = if before.units[i].horde {
-                        format!("{cards} tempo, Finesse {f}, {mult} bodies")
+                        format!("{cards} tempo x Finesse {f} x {mult} bodies")
                     } else {
-                        format!("{cards} tempo, Finesse {f}")
+                        format!("{cards} tempo x Finesse {f}")
                     };
                     lines.push(format!(
-                        "    {name}: reaches {} - bid {} ({build}), slipped",
+                        "    {name}: reaches {} - {build} = bid {}, slipped",
                         before.units[r.target].name, r.bid
                     ));
                 }
@@ -777,11 +778,12 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 .map(|r| r.bid)
                 .max()
             {
-                // A slipper that paid to break every edge reaching it: state the bid it cleared and its own Finesse -
-                // the two numbers of the contest - and leave the derivation out (WHAT, not WHY).
+                // The slip is the same product - cards x Finesse - and it breaks the reach when it OUTWEIGHS the
+                // bid. State both values (multiply, never divide): "2 tempo x Finesse 2 = 4 beats bid 2".
                 let f = before.units[i].finesse.max(1);
+                let slip = spent * f;
                 lines.push(format!(
-                    "    {name}: spends {spent} tempo to slip the line, clearing bid {worst} at Finesse {f}"
+                    "    {name}: spends {spent} tempo to slip the line - {spent} tempo x Finesse {f} = {slip} beats bid {worst}"
                 ));
             } else {
                 lines.push(format!("    {name}: spends {spent} tempo, no blow lands"));
