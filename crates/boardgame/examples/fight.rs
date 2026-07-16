@@ -768,50 +768,59 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             }
         }
 
-        // --- Tempo spent with NO blow behind it - the slip contest, with BOTH numbers it turned on. A body that
-        // landed a strike had its spend stated above; every OTHER body that spent tempo is accounted for here, so
-        // no spend hides. An evaded reach shows the **bid** it committed (cards x Finesse x bodies); the slip that
-        // beat it shows the **bid it cleared** and the defender's **Finesse** - so the comparison is legible. ---
+        // --- Tempo spent with NO blow behind it - the slip contest, ordered CAUSE BEFORE EFFECT. Resolution is
+        // sequential: the reaching side commits first (`engage`), then the defender responds having seen the exact
+        // bid (`resolve_evade`). So the reaches are logged first, then the dodges that answer them. Both are
+        // products (flip tempo x Finesse = reach); the higher reach wins. A landed strike was stated above. ---
+        //
+        // Pass 1 - the reaches that were dodged (a landed reach became a Hit, so a body still here reached for a
+        // target that out-reached it).
         for i in 0..log.tempo.len() {
             let spent = prev_tp[i].saturating_sub(log.tempo[i]);
             if spent == 0 || log.hits.iter().any(|h| h.attacker == i) {
-                continue; // no spend, or already stated on its strike line
+                continue;
+            }
+            let f = before.units[i].finesse.max(1);
+            let mult = if before.units[i].horde {
+                prev_hp[i].max(1)
+            } else {
+                1
+            };
+            for r in log.reaches.iter().filter(|r| r.attacker == i) {
+                let cards = r.bid / (f * mult).max(1);
+                let fclause = if before.units[i].horde {
+                    format!("Finesse {f} x {mult} bodies")
+                } else {
+                    format!("Finesse {f}")
+                };
+                lines.push(format!(
+                    "    {}: flips {cards} tempo at {fclause} to generate {} reach, but {} dodges it",
+                    before.units[i].name,
+                    r.bid,
+                    before.units[r.target].name
+                ));
+            }
+        }
+        // Pass 2 - the dodge that ANSWERED each reach (it saw the bid, then out-reached it), plus any other tempo
+        // that bought no reach.
+        for i in 0..log.tempo.len() {
+            let spent = prev_tp[i].saturating_sub(log.tempo[i]);
+            if spent == 0
+                || log.hits.iter().any(|h| h.attacker == i)
+                || log.reaches.iter().any(|r| r.attacker == i)
+            {
+                continue; // no spend, already struck, or already shown as a reacher in pass 1
             }
             let name = &before.units[i].name;
-            let my_reaches: Vec<_> = log.reaches.iter().filter(|r| r.attacker == i).collect();
-            if !my_reaches.is_empty() {
-                // A catcher whose reach was slipped (a landed reach would have made a Hit, caught above). Show the
-                // bid and how it was built, so the number the slip had to beat is on the page.
-                let f = before.units[i].finesse.max(1);
-                let mult = if before.units[i].horde {
-                    prev_hp[i].max(1)
-                } else {
-                    1
-                };
-                for r in my_reaches {
-                    // Same vocabulary as a strike: flip tempo (at Finesse x bodies) to GENERATE reach - only here
-                    // the target out-reached it and dodged. A product, never a quotient.
-                    let cards = r.bid / (f * mult).max(1);
-                    let fclause = if before.units[i].horde {
-                        format!("Finesse {f} x {mult} bodies")
-                    } else {
-                        format!("Finesse {f}")
-                    };
-                    lines.push(format!(
-                        "    {name}: flips {cards} tempo at {fclause} to generate {} reach, but {} dodges it",
-                        r.bid,
-                        before.units[r.target].name
-                    ));
-                }
-            } else if let Some(worst) = log
+            if let Some(worst) = log
                 .reaches
                 .iter()
                 .filter(|r| r.target == i && r.evaded)
                 .map(|r| r.bid)
                 .max()
             {
-                // The dodge is the SAME flow: flip tempo to generate reach, and it breaks the incoming reach when it
-                // OUTWEIGHS it. Both values on the page (multiply, never divide): "4 reach clears the 2 reaching it".
+                // The same flow, responding: flip tempo to generate reach that OUTWEIGHS the incoming bid. Both
+                // values on the page (multiply, never divide): "4 reach clears the 2 reaching it".
                 let f = before.units[i].finesse.max(1);
                 let dodge = spent * f;
                 lines.push(format!(
