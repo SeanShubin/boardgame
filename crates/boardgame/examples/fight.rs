@@ -16,7 +16,13 @@
 //! Space-efficient by intent: a compact unit table with stat abbreviations (M/V/G/C/F = Might / Vitality /
 //! Grit / Cadence / Finesse), region letters, and F/b/o ranks (front vanguard / back rearguard / loose outrider).
 //!
-//! Run: `cargo run --release -p boardgame --example fight -- [encounter#]`
+//! **Back** steps to the previous decision - a pointer move over the kept solver memo, so nothing is recomputed,
+//! and the log unwinds with it (a first Back also just closes an open crossing). Two files mirror the session
+//! live: `fight-screen.txt` (a snapshot of the current screen) and `fight-log.txt` (the *entire* running log).
+//!
+//! Run: `cargo run --release -p boardgame --example fight -- [encounter#] [kit]` - a **solo** encounter (0-3) is
+//! fielded by exactly ONE kit (the keystone's counter by default; name another - Raider/Marksman/Bastion/
+//! Bombardier - to override); a **party** encounter (4-7) musters the whole roster.
 
 use bevy::prelude::*;
 
@@ -51,15 +57,33 @@ const FRAME_BUDGET: u64 = 12_000;
 const STEP_NODES: u64 = 4_000;
 
 fn main() {
-    let idx: usize = std::env::args()
-        .nth(1)
-        .and_then(|a| a.parse().ok())
-        .unwrap_or_else(|| {
-            catalog::ENCOUNTERS
-                .iter()
-                .position(|e| e.party)
-                .unwrap_or(0)
-        });
+    let args: Vec<String> = std::env::args().collect();
+    let idx: usize = args.get(1).and_then(|a| a.parse().ok()).unwrap_or_else(|| {
+        catalog::ENCOUNTERS
+            .iter()
+            .position(|e| e.party)
+            .unwrap_or(0)
+    });
+    // A **solo** encounter is fielded by exactly one kit (see `build`); an optional second arg names which.
+    let requested_kit = args.get(2).cloned();
+
+    // Terminal hint: what is fielded, and (for a solo) how to change the kit.
+    let e = &catalog::ENCOUNTERS[idx % catalog::ENCOUNTERS.len()];
+    let kits: Vec<&str> = catalog::ROSTER.iter().map(|(n, _, _)| *n).collect();
+    if e.party {
+        println!(
+            "{} - party encounter: full roster ({}).",
+            e.location,
+            kits.join(", ")
+        );
+    } else {
+        println!(
+            "{} - SOLO: one kit, [{}]. Change it with a second arg, one of: {}.",
+            e.location,
+            solo_kit(idx, requested_kit.as_deref()).0,
+            kits.join(", ")
+        );
+    }
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -71,7 +95,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(FELT))
-        .insert_resource(Fight::new(idx))
+        .insert_resource(Fight::new(idx, requested_kit))
         .add_systems(Startup, (camera, rebuild).chain())
         .add_systems(Update, (on_click, grind, rebuild.run_if(is_dirty)).chain())
         .run();
@@ -111,9 +135,26 @@ struct Drill {
     answers: Vec<(Answer, usize)>,
 }
 
+/// **One undo point** - the whole decision-point state, snapshotted so Back is a pointer move with **nothing
+/// recomputed**: the solver/counter memos are kept across moves (their key is a pure function of the position, so
+/// a restored position is already solved), and the scored options are captured here too, so undo restores
+/// instantly without even a re-scan. `log_len` is the log height to unwind the history stack back to.
+struct Step {
+    state: State,
+    log_len: usize,
+    options: Vec<Choice>,
+    entries: Vec<Entry>,
+    opt_verdict: Vec<Option<Verdict>>,
+    opt_paths: Vec<Option<Paths>>,
+    verdict: Option<Verdict>,
+}
+
 #[derive(Resource)]
 struct Fight {
     encounter: usize,
+    /// The kit requested on the command line for a solo encounter (`None` = the keystone's counter). Kept so
+    /// Restart / Next re-field the same solo kit.
+    requested_kit: Option<String>,
     state: State,
     /// The legal options right now. Their scores are computed lazily, a slice per frame - never on the click.
     options: Vec<Choice>,
@@ -122,6 +163,8 @@ struct Fight {
     entries: Vec<Entry>,
     /// Set while a crossing's second beat is open (the player picked Raid/Slip and must answer the line).
     drill: Option<Drill>,
+    /// The undo stack: one [`Step`] per decision the player has taken, most recent last. Back pops it.
+    history: Vec<Step>,
     /// Each option's verdict and win/loss tally; `None` means "still computing" (shown as `...`).
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
@@ -142,13 +185,15 @@ struct Fight {
 }
 
 impl Fight {
-    fn new(encounter: usize) -> Self {
+    fn new(encounter: usize, requested_kit: Option<String>) -> Self {
         let mut f = Fight {
             encounter,
-            state: build(encounter),
+            state: build(encounter, requested_kit.as_deref()),
+            requested_kit,
             options: Vec::new(),
             entries: Vec::new(),
             drill: None,
+            history: Vec::new(),
             opt_verdict: Vec::new(),
             opt_paths: Vec::new(),
             verdict: None,
@@ -161,6 +206,7 @@ impl Fight {
         };
         f.snapshot_max();
         f.reposition();
+        f.sync_log();
         f
     }
 
@@ -174,7 +220,7 @@ impl Fight {
     }
 
     fn reset(&mut self) {
-        self.state = build(self.encounter);
+        self.state = build(self.encounter, self.requested_kit.as_deref());
         self.snapshot_max();
         // A new roster (Restart or Next encounter) is the ONE thing that invalidates the memos: the state key
         // omits unit stats, so a key from one encounter must never answer for another. Start fresh here - the one
@@ -182,7 +228,9 @@ impl Fight {
         self.solver = Solver::new();
         self.counter = PathCounter::new();
         self.log.clear();
+        self.history.clear(); // a new roster invalidates every prior decision point
         self.reposition();
+        self.sync_log();
     }
 
     /// **The position changed** - list the new options and arm the lazy compute. Nothing is searched here, so a
@@ -289,10 +337,58 @@ impl Fight {
         if i >= self.options.len() || Combat::outcome(&self.state).is_some() {
             return;
         }
+        // Snapshot this decision point for Back BEFORE we mutate: a pointer into the (memoized) tree plus the log
+        // height, so undo restores instantly with nothing recomputed. One entry per player decision - the forced
+        // and foe declarations that `reposition` auto-advances are part of this same step, not their own.
+        self.history.push(Step {
+            state: self.state.clone(),
+            log_len: self.log.len(),
+            options: self.options.clone(),
+            entries: self.entries.clone(),
+            opt_verdict: self.opt_verdict.clone(),
+            opt_paths: self.opt_paths.clone(),
+            verdict: self.verdict,
+        });
         self.drill = None;
         let c = self.options[i].clone();
         self.apply_choice(&c);
         self.reposition();
+        self.sync_log();
+    }
+
+    /// **Back one step.** The first press closes an open crossing (beat two -> beat one); otherwise it pops the
+    /// last decision-point snapshot and restores it wholesale. It is a **pointer move, not a recompute**: the
+    /// solver/counter memos are kept (a restored position is already solved), the scored options come straight
+    /// out of the snapshot, and the log stack unwinds to the height it had at that point.
+    fn undo(&mut self) {
+        if self.drill.take().is_some() {
+            self.dirty = true; // just close the crossing; the move itself has not been made yet
+            return;
+        }
+        let Some(step) = self.history.pop() else {
+            return; // nothing to undo
+        };
+        self.state = step.state;
+        self.log.truncate(step.log_len);
+        self.options = step.options;
+        self.entries = step.entries;
+        self.opt_verdict = step.opt_verdict;
+        self.opt_paths = step.opt_paths;
+        self.verdict = step.verdict;
+        self.refine = 0;
+        self.sync_log();
+        self.dirty = true;
+    }
+
+    /// Mirror the **entire** running log to a file, rewritten on every change, so the whole history can be tailed
+    /// live as the fight is played. (The on-screen panel and `fight-screen.txt` show only the last lines; this is
+    /// all of it.)
+    fn sync_log(&self) {
+        let mut body = self.log.join("\n");
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        let _ = std::fs::write(LOG_FILE, body);
     }
 
     /// **Pick a crossing (beat one).** Work out who would catch the crosser - deterministically, since the foes
@@ -634,9 +730,43 @@ fn round_tempo(u: &Combatant) -> u32 {
     u.cadence
 }
 
-fn build(encounter: usize) -> State {
+/// The single kit that fields a **solo** encounter: the requested one if it names a real kit, else the
+/// keystone's counter (so `fight 3` opens the Bombardier-vs-Storm solo the diagonal actually tests). Returns the
+/// kit name and its ROSTER spec.
+fn solo_kit(
+    encounter: usize,
+    requested: Option<&str>,
+) -> (&'static str, (&'static str, [u8; 5], &'static str)) {
     let e = &catalog::ENCOUNTERS[encounter % catalog::ENCOUNTERS.len()];
-    let mut units: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit).collect();
+    let counter = catalog::creature(e.keystone)
+        .map(catalog::creature_counter)
+        .unwrap_or("");
+    let want = requested.unwrap_or(counter);
+    let spec = catalog::ROSTER
+        .iter()
+        .copied()
+        .find(|(n, _, _)| n.eq_ignore_ascii_case(want))
+        .or_else(|| {
+            // an unknown kit name falls back to the counter, so a typo still yields a legal solo
+            catalog::ROSTER
+                .iter()
+                .copied()
+                .find(|(n, _, _)| n.eq_ignore_ascii_case(counter))
+        })
+        .unwrap_or(catalog::ROSTER[0]);
+    (spec.0, spec)
+}
+
+/// Build the state for an encounter. A **party** encounter musters the whole roster; a **solo** encounter is
+/// fielded by exactly ONE kit ([`solo_kit`]) - the requirement that a solo is a single-kit test, matching the
+/// diagonal, not the full party.
+fn build(encounter: usize, requested_kit: Option<&str>) -> State {
+    let e = &catalog::ENCOUNTERS[encounter % catalog::ENCOUNTERS.len()];
+    let mut units: Vec<Combatant> = if e.party {
+        catalog::ROSTER.iter().copied().map(kit).collect()
+    } else {
+        vec![kit(solo_kit(encounter, requested_kit).1)]
+    };
     for (c, q) in catalog::encounter_foes(e) {
         for _ in 0..q {
             units.push(beast(c));
@@ -760,6 +890,8 @@ enum Hit {
     Crossing(usize),
     /// Cancel an open crossing and return to the top-level options.
     Back,
+    /// Step back one decision (close a crossing first, else pop the undo stack).
+    Undo,
     Reset,
     Next,
 }
@@ -790,6 +922,7 @@ fn on_click(mut f: ResMut<Fight>, q: Query<(&Interaction, &Hit), Changed<Interac
                 f.drill = None;
                 f.dirty = true;
             }
+            Hit::Undo => f.undo(),
             Hit::Reset => f.reset(),
             Hit::Next => {
                 f.encounter += 1;
@@ -880,6 +1013,9 @@ fn rebuild(mut commands: Commands, mut f: ResMut<Fight>, old: Query<Entity, With
 
 /// Where the on-screen snapshot is written (relative to the run directory - the repo root under `cargo run`).
 const SCREEN_FILE: &str = "fight-screen.txt";
+
+/// Where the FULL running log is mirrored (every line, not just the on-screen tail), rewritten on every change.
+const LOG_FILE: &str = "fight-log.txt";
 
 /// A plain-text mirror of everything on screen: the same header, unit table, options, and history the UI draws,
 /// with the same abbreviations. Pending values read `...` / `counting...`, exactly as they do on screen.
@@ -1042,6 +1178,18 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
     })
     .with_children(|h| {
         text(h, format!("{} - {}", e.location, e.title), 20.0, INK);
+        // A solo encounter is a single-kit test; name which kit is fielded so it reads apart from a party fight.
+        if !e.party {
+            let solo: Vec<&str> = f
+                .state
+                .board()
+                .units
+                .iter()
+                .filter(|u| u.side == Side::Party)
+                .map(|u| u.name.as_str())
+                .collect();
+            text(h, format!("solo - {}", solo.join(", ")), 12.0, MUTED);
+        }
         let status = match (Combat::outcome(&f.state), f.verdict) {
             (Some(o), _) => (
                 format!("*** {o:?} ***"),
@@ -1194,6 +1342,7 @@ fn controls(p: &mut ChildSpawnerCommands) {
         ..default()
     })
     .with_children(|row| {
+        button(row, Hit::Undo, "Back", PANEL);
         button(row, Hit::Reset, "Restart", PANEL);
         button(row, Hit::Next, "Next encounter", PANEL);
     });
