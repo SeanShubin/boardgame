@@ -23,6 +23,8 @@
 //! slip's answer declared up front is equivalent to one chosen on reveal, since the party already knows what the
 //! scripted foes will commit - so folding it into the declaration loses nothing a solver could use.)
 
+use std::collections::HashMap;
+
 use super::regions::{Act, Board, MAX_ROUNDS, Rank, foe_act, legal_acts, play_round};
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
@@ -165,6 +167,136 @@ fn resolve_round(s: &mut State) {
     s.next = s.next_undeclared(0).unwrap_or(s.order.len());
 }
 
+// ---- the best-route scorer -----------------------------------------------------------------------------
+
+/// A winning route's cost, ranked **lexicographically** in the player's stated priority: you must **win**
+/// (an unwinnable route has no `Score` at all), then fewest **heroes downed**, then fewest **rounds taken**,
+/// then fewest **hero Health cards flipped**. The derived `Ord` compares the fields in declaration order - which
+/// IS that priority - so `min` over routes picks the best one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Score {
+    /// Party bodies fallen at the win (first priority: keep everyone standing).
+    pub downed: u32,
+    /// Rounds taken to reach the win (second: win sooner).
+    pub rounds: u32,
+    /// Total party Health cards flipped over the route, measured against the fight-start Vitality passed to
+    /// [`Scorer::new`] (third: take the least damage).
+    pub hp_lost: u32,
+}
+
+/// **The best-route scorer.** Finds the lexicographically-minimal [`Score`] over *all* winning lines from a
+/// position - the party plays to minimize it, the scripted foes are the environment. Unlike the winnable oracle
+/// (which stops at the first win it finds), this must weigh **every** winning line, so it is heavier. It is
+/// budgeted and resumable the same way, and until the search is exhausted its answer is a **provisional upper
+/// bound** (`<=`) - more search can only find a cheaper line, never a costlier one.
+///
+/// `hp_lost` is measured against a fixed reference (the party's fight-start Vitality), so a `Score` is a pure
+/// function of the terminal position and the memo is reusable across moves, exactly like the winnable memo.
+pub struct Scorer {
+    memo: HashMap<Key, Option<Score>>,
+    /// The reference Health for `hp_lost` - the party's full Vitality, index-aligned with `units`. Fixed for the
+    /// whole fight, so `Score`s stay comparable across positions and the memo stays valid across moves.
+    start_hp: Vec<u32>,
+    nodes: u64,
+    walk: u64,
+    budget: u64,
+    aborted: bool,
+}
+
+impl Scorer {
+    /// `start_hp` is the party's full Vitality (index-aligned with the board's `units`); foes' entries are
+    /// ignored. `budget` bounds one walk (see [`Scorer::grant`]).
+    pub fn new(start_hp: Vec<u32>, budget: u64) -> Self {
+        Scorer {
+            memo: HashMap::new(),
+            start_hp,
+            nodes: 0,
+            walk: 0,
+            budget,
+            aborted: false,
+        }
+    }
+
+    pub fn nodes(&self) -> u64 {
+        self.nodes
+    }
+    pub fn aborted(&self) -> bool {
+        self.aborted
+    }
+
+    /// Allow the next walk `nodes` positions and clear the abort flag - the resumable frame tick. The memo
+    /// survives, so settled subtrees are free and each grant pushes the frontier deeper.
+    pub fn grant(&mut self, nodes: u64) {
+        self.walk = 0;
+        self.budget = nodes;
+        self.aborted = false;
+    }
+
+    /// The cost of a **won** terminal position.
+    fn score_of(&self, state: &State) -> Score {
+        let b = state.board();
+        let (mut downed, mut hp_lost) = (0u32, 0u32);
+        for (i, u) in b.units.iter().enumerate() {
+            if u.side != Side::Party {
+                continue;
+            }
+            if u.fallen {
+                downed += 1;
+            }
+            let start = self.start_hp.get(i).copied().unwrap_or(u.health);
+            hp_lost += start.saturating_sub(u.health);
+        }
+        Score {
+            downed,
+            // round() has already advanced past the deciding round when the win is seen, so subtract it back.
+            rounds: (state.round() as u32).saturating_sub(1),
+            hp_lost,
+        }
+    }
+
+    /// **The best [`Score`] achievable from `state`**, or `None` if no winning line was found (either genuinely
+    /// unwinnable, or the budget ran out - [`Scorer::aborted`] tells them apart). While `aborted`, a `Some` is a
+    /// provisional upper bound; when a walk completes without aborting, it is exact.
+    pub fn best(&mut self, state: &State) -> Option<Score> {
+        match Combat::outcome(state) {
+            Some(Outcome::Win) => return Some(self.score_of(state)),
+            Some(_) => return None, // a loss or a draw is not a winning route
+            None => {}
+        }
+        if self.walk >= self.budget {
+            self.aborted = true;
+            return None;
+        }
+        let key = key_of(state);
+        if let Some(&v) = self.memo.get(&key) {
+            return v;
+        }
+        self.nodes += 1;
+        self.walk += 1;
+
+        // Each node judges its OWN subtree's completeness (stash the caller's abort flag), so a sibling's give-up
+        // is never mistaken for this node being fully explored - the same rule that keeps the winnable oracle honest.
+        let outer = self.aborted;
+        self.aborted = false;
+
+        let mut best: Option<Score> = None;
+        for opt in Combat::options(state) {
+            let child = Combat::apply(state, &opt);
+            if let Some(s) = self.best(&child) {
+                best = Some(best.map_or(s, |b| b.min(s)));
+            }
+        }
+
+        let incomplete = self.aborted;
+        self.aborted = outer || incomplete;
+        // Cache only a COMPLETE subtree: a budget-truncated search may have missed a cheaper (or the only) line.
+        if !incomplete {
+            self.memo.insert(key, best);
+        }
+        best
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +317,68 @@ mod tests {
         // Always take the first option (Clash the foe each round).
         let out = run::<Combat>(s, |_, _| 0);
         assert_eq!(out, Outcome::Win, "the stronger body wins the fight");
+    }
+
+    /// **Score orders by the stated priority** - downed, then rounds, then hp_lost (the derived `Ord`).
+    #[test]
+    fn score_orders_lexicographically() {
+        let clean_slow = Score {
+            downed: 0,
+            rounds: 5,
+            hp_lost: 9,
+        };
+        let bloody_fast = Score {
+            downed: 1,
+            rounds: 1,
+            hp_lost: 0,
+        };
+        assert!(
+            clean_slow < bloody_fast,
+            "keeping everyone standing beats a fast, costly win"
+        );
+        let fewer_rounds = Score {
+            downed: 0,
+            rounds: 2,
+            hp_lost: 9,
+        };
+        let less_hp = Score {
+            downed: 0,
+            rounds: 3,
+            hp_lost: 0,
+        };
+        assert!(
+            fewer_rounds < less_hp,
+            "same downed: fewer rounds wins even at a higher hp cost"
+        );
+    }
+
+    /// **The scorer finds a clean win and ranks it.** The Raider one-shots a weakling: won, nobody downed.
+    #[test]
+    fn the_scorer_scores_a_clean_win() {
+        let s = State::new(vec![
+            unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
+            unit("Foe", Side::Foe, [1, 2, 1, 1, 1], true, false),
+        ]);
+        let start_hp: Vec<u32> = s.board().units.iter().map(|u| u.health).collect();
+        let mut sc = Scorer::new(start_hp, u64::MAX);
+        let best = sc.best(&s).expect("the Raider can win");
+        assert!(!sc.aborted(), "an unbudgeted search settles");
+        assert_eq!(best.downed, 0, "the Raider is never downed");
+        assert!(best.rounds >= 1, "a win takes at least one round");
+    }
+
+    /// **An unwinnable fight has no Score.** A naked Marksman cannot crack a giant Wall - the scorer returns
+    /// `None` (proven, not a budget give-up), never a bogus best.
+    #[test]
+    fn the_scorer_returns_none_when_doomed() {
+        let s = State::new(vec![
+            unit("Marksman", Side::Party, [1, 1, 1, 1, 1], false, true),
+            unit("The Wall", Side::Foe, [9, 9, 9, 3, 3], true, false),
+        ]);
+        let start_hp: Vec<u32> = s.board().units.iter().map(|u| u.health).collect();
+        let mut sc = Scorer::new(start_hp, u64::MAX);
+        assert_eq!(sc.best(&s), None, "no winning route exists");
+        assert!(!sc.aborted(), "and the search proved it, not gave up");
     }
 
     /// **A fight opens on round 1 with no setup.** The party stands on region 0, the foes on region 1, posts

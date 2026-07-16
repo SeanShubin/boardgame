@@ -13,7 +13,7 @@ use std::io::{self, Write};
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Creature, Encounter};
-use rules::combat::game::{Choice, Combat, State};
+use rules::combat::game::{Choice, Combat, Score, Scorer, State};
 use rules::combat::regions::{Act, Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, Solver, Verdict, decisions_within};
@@ -72,6 +72,20 @@ fn verdict(s: &State) -> Verdict {
     solve(s).0
 }
 
+/// The best winning route from `s` under the priority order (win, fewest downed, fewest rounds, least hp lost),
+/// measured against the fight-start Vitality `start_hp`. `None` when there is no winning route.
+fn best_route(s: &State, start_hp: &[u32]) -> Option<Score> {
+    Scorer::new(start_hp.to_vec(), u64::MAX).best(s)
+}
+
+/// A best-route Score as a compact `Nd/Nr/Nhp` (downed / rounds / hp lost), or `no-win`.
+fn fmt_score(s: Option<Score>) -> String {
+    match s {
+        Some(s) => format!("{}d/{}r/{}hp", s.downed, s.rounds, s.hp_lost),
+        None => "no-win".to_string(),
+    }
+}
+
 /// Solve `s` out completely (escalating the grant until it stops being Evaluating) and report the size of the
 /// graph it took: `states` = distinct positions memoized (the DAG), `nodes` = total positions walked.
 fn solve(s: &State) -> (Verdict, usize, u64) {
@@ -111,6 +125,8 @@ fn main() {
     );
 
     let mut state = fight(e);
+    // The fight-start Vitality - the fixed reference the best-route scorer measures hp lost against.
+    let start_hp: Vec<u32> = state.board().units.iter().map(|u| u.health).collect();
     let stdin = io::stdin();
     loop {
         if let Some(o) = Combat::outcome(&state) {
@@ -120,8 +136,10 @@ fn main() {
         println!("round {}   {}", state.round(), show_board(state.board()));
         let (v, states, nodes) = solve(&state);
         println!(
-            "  verdict here: {v:?}   (solved graph: {states} distinct positions, {nodes} nodes walked)"
+            "  verdict here: {v:?}   best route: {}   (solved graph: {states} distinct positions, {nodes} nodes walked)",
+            fmt_score(best_route(&state, &start_hp))
         );
+        println!("  (best route = downed / rounds / hp-lost, minimized in that priority order)");
         let opts = Combat::options(&state);
         if opts.len() == 1 {
             state = Combat::apply(&state, &opts[0]);
@@ -130,9 +148,10 @@ fn main() {
         for (i, c) in opts.iter().enumerate() {
             let next = Combat::apply(&state, c);
             println!(
-                "  [{i}] {:<32} -> {:?}, {} decisions within 6 plies",
+                "  [{i}] {:<32} -> {:?}, best {}, {} decisions within 6 plies",
                 label(state.board(), c),
                 verdict(&next),
+                fmt_score(best_route(&next, &start_hp)),
                 decisions_within::<Combat>(&next, 6)
             );
         }
