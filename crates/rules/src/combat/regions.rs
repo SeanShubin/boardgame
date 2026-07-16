@@ -46,7 +46,7 @@
 //! |---|---|
 //! | [`Act::Clash`] | strike an enemy **vanguard**. Free - melee or ranged, any region. |
 //! | [`Act::Raid`] | **slip** their front to strike an enemy **rearguard**, and end up standing in their region. Melee only. |
-//! | [`Act::Slip`] | **slip** to another region. Retreat, or regroup. |
+//! | [`Act::Slip`] | **slip** across into the enemy's ground, becoming an intruder. No retreat once inside. |
 //! | [`Act::Hold`] | nothing. |
 //!
 //! A **rearguard cannot reach an enemy rearguard** - not until that side's vanguard collapses and its back is
@@ -168,8 +168,8 @@ pub enum Act {
     /// host body. No screen applies in-region: the tiers stopped protecting anyone the moment a body got inside
     /// them. Not a crossing, so it carries no evade-answer.
     Melee(usize),
-    /// **Slip to another region** - retreat out of a region that has been breached, or regroup with allies. The
-    /// same contest as a raid; only the destination differs.
+    /// **Slip into the enemy's ground** - cross the gap and stand in their formation, becoming an intruder. The
+    /// same contest as a raid, only without a declared target. **Committed: an intruder cannot slip back out.**
     Slip(u8, Answer),
     /// Nothing.
     Hold,
@@ -432,12 +432,12 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
         }
     }
 
-    // Slip - the one movement. With one region per side there are only ever two grounds: your own and the
-    // enemy's. So a slip goes to the *other* occupied region - a body crosses into the enemy's ground (raid-style,
-    // becoming an intruder), or an intruder retreats back to its own. Either way, the destination is simply the
-    // other region that holds bodies.
-    for r in board.occupied().into_iter().filter(|&r| r != here) {
-        out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
+    // Slip - the one movement. A body of its own formation crosses into the enemy's ground (becoming an
+    // intruder), but an **intruder is committed - there is no retreat** once you are inside the enemy's ranks.
+    if !board.intruders[i] {
+        for r in board.occupied().into_iter().filter(|&r| r != here) {
+            out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
+        }
     }
 
     out.push(Act::Hold);
@@ -1798,38 +1798,6 @@ mod tests {
             b.owner(1),
             Some(Side::Party),
             "and region 1 has flipped to the party"
-        );
-    }
-
-    /// **An intruder pulling out is opposed by the ranks it leaves.** Retreat is a crossing in reverse: you are
-    /// outside your screen the moment you move, so the enemy formation you abandon reaches for you. A pushed
-    /// retreat arrives - but bloodied. (Before the both-ends fix, only the destination opposed a crosser, so a
-    /// retreat into a friendly zone was free.)
-    #[test]
-    fn an_intruder_retreat_is_opposed_by_the_zone_it_leaves() {
-        let mut b = Board::new(
-            vec![
-                unit("Raider", Side::Party, [7, 3, 1, 4, 2], true, false), // 0 - the intruder (Grit 1)
-                unit("Wall", Side::Foe, [2, 6, 3, 2, 2], true, false), // 1 - the ranks it leaves (Might 2 > Grit 1)
-                unit("Ally", Side::Party, [3, 4, 2, 2, 2], true, false), // 2 - holds the friendly home zone
-            ],
-            vec![1, 1, 0],
-        );
-        b.intruders[0] = true; // the Raider is loose inside the foe's region 1
-
-        let before = b.units[0].health;
-        // It pushes out to the friendly region 0. It arrives - but the Wall it leaves swings at it on the way.
-        play_round(&mut b, &[Act::Slip(0, Answer::Push), Act::Hold, Act::Hold]);
-
-        assert_eq!(b.regions[0], 0, "a pushed retreat still arrives");
-        assert!(
-            !b.intruders[0],
-            "and it has rejoined a friendly zone, no longer an intruder"
-        );
-        assert!(
-            b.units[0].health < before,
-            "but the ranks it left drew blood on the way out ({before} -> {})",
-            b.units[0].health
         );
     }
 
