@@ -489,6 +489,33 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
         .or(Some(Act::Hold))
 }
 
+/// **Who would intercept a crossing** - the enemy vanguard(s) that reach for `mover` if it crosses to region
+/// `dest`. This is the resolver's own interception rule (the front line at each enemy-owned zone the crossing
+/// touches), surfaced so a narrative UI can name *who* catches you *before* you commit an [`Answer`] - matching
+/// the order the fiction hands you the decision (declare the crossing, see who caught you, then answer).
+///
+/// Deterministic, so it can be shown at declaration time: a foe already committed to its own crossing (per
+/// [`foe_act`]) is in transit and cannot hold the line, exactly as the resolver's [`play_round`] would find. Meant
+/// for a hero's crossing (the catchers are foes); an empty result means the crossing is unopposed.
+pub fn catchers(board: &Board, mover: usize, dest: u8) -> Vec<usize> {
+    let enemy = other_side(board.units[mover].side);
+    let mut out = Vec::new();
+    for zone in [board.regions[mover], dest] {
+        if board.owner(zone) != Some(enemy) {
+            continue; // a friendly zone lets its own pass; only an enemy formation reaches for a crosser
+        }
+        for f in board.vanguard(zone, enemy) {
+            let in_transit = foe_act(board, f)
+                .and_then(|a| a.destination(board, f))
+                .is_some();
+            if !in_transit && !out.contains(&f) {
+                out.push(f);
+            }
+        }
+    }
+    out
+}
+
 // ---- resolution ----------------------------------------------------------------------------------------
 
 /// One strike, recorded for the combat log: `attacker` landed `hits` blows on `target`. A renderer attributes

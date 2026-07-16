@@ -3,10 +3,18 @@
 //!
 //! Every option button shows, for the route it opens, **how many complete lines end in a win and how many in a
 //! loss** (a tie counts as a loss), plus the solver's verdict. That is the "how forgiving is this move" number:
-//! a route with many winning lines and few losing ones is safe; one Doomed line is a trap the button says so.
+//! a route with many winning lines and few losing ones is safe; one Doomed line is a trap the button says so. The
+//! counts carry a completeness sign: `>=` while the tally is still a growing lower bound, flipping to `=` once
+//! that whole subtree has been walked (a `Doomed` is always `=` - it can only be proven by exhaustion).
+//!
+//! **Crossings are two beats, in fiction order.** A Raid or Slip is not shown pre-answered; it is one card. Pick
+//! it and - because the foes are deterministic, so who intercepts you is known - the UI names who caught you
+//! (`The Wall catches you at the line`) and *then* asks how to answer: Evade, Push, or turn and fight the catcher.
+//! An unopposed crossing skips the second beat and just crosses. Under the hood the solver still sees the atomic
+//! `Raid(target, Answer)`; the two beats are purely how the choice is presented.
 //!
 //! Space-efficient by intent: a compact unit table with stat abbreviations (M/V/G/C/F = Might / Vitality /
-//! Grit / Cadence / Finesse), region letters, and F/b posts.
+//! Grit / Cadence / Finesse), region letters, and F/b/o ranks (front vanguard / back rearguard / loose outrider).
 //!
 //! Run: `cargo run --release -p boardgame --example fight -- [encounter#]`
 
@@ -15,7 +23,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Answer, Board, Rank, play_round};
+use rules::combat::regions::{Act, Answer, Board, Rank, catchers, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -75,12 +83,45 @@ fn camera(mut commands: Commands) {
 
 // ---- state ---------------------------------------------------------------------------------------------
 
+/// **A menu entry as the player meets it**, one narrative beat. A crossing (Raid/Slip) is not shown as three
+/// pre-answered options; it is one entry that, when picked, reveals who caught you and asks how to answer -
+/// matching the order the fiction hands you the decision. Everything else is a direct choice.
+#[derive(Clone)]
+enum Entry {
+    /// A plain choice - index into [`Fight::options`].
+    Direct(usize),
+    /// A crossing that fans out into an [`Answer`] once you see the interception. `dest` is the region crossed to
+    /// (to find the catchers); `answers` pairs each answer with its underlying `options` index.
+    Crossing {
+        label: String,
+        dest: u8,
+        answers: Vec<(Answer, usize)>,
+    },
+}
+
+/// **Beat two of a crossing:** the player declared a Raid/Slip, the line caught them, and now they answer it. Held
+/// only while that second decision is open; cleared the moment an answer is chosen or the crossing is cancelled.
+struct Drill {
+    /// The crossing's own label, e.g. `Raid The Swarm`.
+    label: String,
+    /// Who caught the crosser, already joined for display (e.g. `The Wall x3`). Never empty - an unopposed
+    /// crossing skips the drill entirely and just crosses.
+    catchers: String,
+    /// Each answer and the underlying `options` index that applies it.
+    answers: Vec<(Answer, usize)>,
+}
+
 #[derive(Resource)]
 struct Fight {
     encounter: usize,
     state: State,
     /// The legal options right now. Their scores are computed lazily, a slice per frame - never on the click.
     options: Vec<Choice>,
+    /// The player-facing grouping of `options` into narrative entries (crossings collapsed to one beat). Rebuilt
+    /// with the options; scoring still runs over the flat `options`, this only changes how they are shown.
+    entries: Vec<Entry>,
+    /// Set while a crossing's second beat is open (the player picked Raid/Slip and must answer the line).
+    drill: Option<Drill>,
     /// Each option's verdict and win/loss tally; `None` means "still computing" (shown as `...`).
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
@@ -106,6 +147,8 @@ impl Fight {
             encounter,
             state: build(encounter),
             options: Vec::new(),
+            entries: Vec::new(),
+            drill: None,
             opt_verdict: Vec::new(),
             opt_paths: Vec::new(),
             verdict: None,
@@ -158,6 +201,10 @@ impl Fight {
                 break;
             }
         }
+        // Group the flat options into narrative entries, and drop any half-open crossing decision: a new position
+        // is a fresh set of beats.
+        self.entries = build_entries(self.state.board(), &self.options);
+        self.drill = None;
         self.opt_verdict = vec![None; self.options.len()];
         self.opt_paths = vec![None; self.options.len()];
         self.verdict = None;
@@ -242,9 +289,87 @@ impl Fight {
         if i >= self.options.len() || Combat::outcome(&self.state).is_some() {
             return;
         }
+        self.drill = None;
         let c = self.options[i].clone();
         self.apply_choice(&c);
         self.reposition();
+    }
+
+    /// **Pick a crossing (beat one).** Work out who would catch the crosser - deterministically, since the foes
+    /// are scripted - and either open the answer beat (if the line reaches you) or, when the crossing is
+    /// unopposed, just cross (Push spends nothing and there is nothing to answer).
+    fn enter_crossing(&mut self, entry: usize) {
+        let Some(Entry::Crossing {
+            label,
+            dest,
+            answers,
+        }) = self.entries.get(entry).cloned()
+        else {
+            return;
+        };
+        let Some(mover) = self.state.deciding() else {
+            return;
+        };
+        let names: Vec<String> = catchers(self.state.board(), mover, dest)
+            .into_iter()
+            .map(|j| self.state.board().units[j].name.clone())
+            .collect();
+        if names.is_empty() {
+            // Unopposed: no one to answer, so there is no second beat - cross cleanly and move on.
+            let opt = answers
+                .iter()
+                .find(|(a, _)| *a == Answer::Push)
+                .or_else(|| answers.first())
+                .map(|&(_, i)| i);
+            if let Some(i) = opt {
+                self.choose(i);
+            }
+            return;
+        }
+        self.drill = Some(Drill {
+            label,
+            catchers: join_counts(&names),
+            answers,
+        });
+        self.dirty = true;
+    }
+
+    /// The best verdict achievable across a crossing's answers (Winnable if any answer is, Doomed only if every
+    /// answer is), or `None` while any is still computing - what the collapsed crossing card shows.
+    fn agg_verdict(&self, members: &[(Answer, usize)]) -> Option<Verdict> {
+        if members
+            .iter()
+            .any(|&(_, i)| self.opt_verdict[i] == Some(Verdict::Winnable))
+        {
+            return Some(Verdict::Winnable);
+        }
+        if members.iter().any(|&(_, i)| self.opt_verdict[i].is_none()) {
+            return None;
+        }
+        if members
+            .iter()
+            .all(|&(_, i)| self.opt_verdict[i] == Some(Verdict::Doomed))
+        {
+            Some(Verdict::Doomed)
+        } else {
+            Some(Verdict::Evaluating)
+        }
+    }
+
+    /// The win/loss line counts summed over a crossing's answers (every line reachable by crossing, whatever the
+    /// answer). `=` when every answer's tally is exhausted, `>=` while any is still a lower bound.
+    fn agg_counts(&self, members: &[(Answer, usize)]) -> String {
+        if members.iter().any(|&(_, i)| self.opt_paths[i].is_none()) {
+            return "counting lines...".into();
+        }
+        let (mut wins, mut losses, mut complete) = (0u64, 0u64, true);
+        for &(_, i) in members {
+            let p = self.opt_paths[i].unwrap();
+            wins = wins.saturating_add(p.wins);
+            losses = losses.saturating_add(p.losses);
+            complete &= p.complete;
+        }
+        counts_line(wins, losses, complete)
     }
 
     /// **Apply one declaration and record it in the history** - the single path EVERY choice takes, whether a
@@ -547,11 +672,93 @@ fn act_label(b: &Board, a: &Act) -> String {
     }
 }
 
+/// Group the flat option list into narrative entries: consecutive `Raid(same target)` / `Slip(same region)`
+/// answers collapse into one crossing (legal_acts emits a crossing's three answers together, so they are always
+/// adjacent), everything else stays a direct choice. Order is preserved.
+fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
+    let mut entries = Vec::new();
+    let mut i = 0;
+    while i < options.len() {
+        let Choice::Act(a) = &options[i];
+        match a {
+            Act::Raid(t, _) => {
+                let (target, dest) = (*t, board.regions[*t]);
+                let label = format!("Raid {}", board.units[target].name);
+                let mut answers = Vec::new();
+                while let Some(Choice::Act(Act::Raid(t2, ans))) = options.get(i) {
+                    if *t2 != target {
+                        break;
+                    }
+                    answers.push((*ans, i));
+                    i += 1;
+                }
+                entries.push(Entry::Crossing {
+                    label,
+                    dest,
+                    answers,
+                });
+            }
+            Act::Slip(r, _) => {
+                let region = *r;
+                let label = format!("Slip toward region {}", region_letter(region));
+                let mut answers = Vec::new();
+                while let Some(Choice::Act(Act::Slip(r2, ans))) = options.get(i) {
+                    if *r2 != region {
+                        break;
+                    }
+                    answers.push((*ans, i));
+                    i += 1;
+                }
+                entries.push(Entry::Crossing {
+                    label,
+                    dest: region,
+                    answers,
+                });
+            }
+            _ => {
+                entries.push(Entry::Direct(i));
+                i += 1;
+            }
+        }
+    }
+    entries
+}
+
+/// The win/loss line-count line, with the completeness sign: `=` once the tally is exhausted (the whole subtree
+/// was walked), `>=` while it is still a growing lower bound.
+fn counts_line(wins: u64, losses: u64, complete: bool) -> String {
+    let sign = if complete { "=" } else { ">=" };
+    format!("{sign}{} win / {sign}{} lose", abbrev(wins), abbrev(losses))
+}
+
+/// The counts line for one scored option, or a placeholder while it is still counting.
+fn opt_counts(paths: Option<Paths>) -> String {
+    match paths {
+        Some(p) => counts_line(p.wins, p.losses, p.complete),
+        None => "counting lines...".into(),
+    }
+}
+
+/// How each crossing answer reads once you know who caught you - the `Abort` option is named after the actual
+/// catcher ("Turn and fight The Wall"), not the abstract verb.
+fn answer_label(a: Answer, catchers: &str) -> String {
+    match a {
+        Answer::Evade => "Evade the line".into(),
+        Answer::Push => "Push through, take the hits".into(),
+        Answer::Abort => format!("Turn and fight {catchers}"),
+    }
+}
+
 // ---- input ---------------------------------------------------------------------------------------------
 
 #[derive(Component, Clone, Copy)]
 enum Hit {
+    /// Apply `options[usize]` directly (a direct choice, or a chosen crossing answer).
     Option(usize),
+    /// Open the second beat of `entries[usize]` (a crossing): show who caught you, then the answers.
+    Crossing(usize),
+    /// Cancel an open crossing and return to the top-level options.
+    Back,
     Reset,
     Next,
 }
@@ -577,6 +784,11 @@ fn on_click(mut f: ResMut<Fight>, q: Query<(&Interaction, &Hit), Changed<Interac
         }
         match *hit {
             Hit::Option(k) => f.choose(k),
+            Hit::Crossing(k) => f.enter_crossing(k),
+            Hit::Back => {
+                f.drill = None;
+                f.dirty = true;
+            }
             Hit::Reset => f.reset(),
             Hit::Next => {
                 f.encounter += 1;
@@ -760,29 +972,46 @@ fn screen_text(f: &Fight) -> String {
     )
     .ok();
 
-    // The options - same order and content as the buttons.
+    // The options - same order and content as the buttons, including the two-beat crossings.
     writeln!(s, "\nOPTIONS").ok();
+    let vtag = |v: Option<Verdict>| v.map(|x| format!("{x:?}")).unwrap_or_else(|| "...".into());
     if Combat::outcome(&f.state).is_some() {
         writeln!(s, "the fight is over.").ok();
-    } else {
-        for i in 0..f.options.len() {
-            let v = f.opt_verdict[i]
-                .map(|x| format!("{x:?}"))
-                .unwrap_or_else(|| "...".into());
-            let counts = match f.opt_paths[i] {
-                Some(p) => {
-                    let ge = if p.complete { "" } else { ">=" };
-                    format!("{ge}{} win / {ge}{} lose", abbrev(p.wins), abbrev(p.losses))
-                }
-                None => "counting lines...".into(),
-            };
+    } else if let Some(drill) = &f.drill {
+        // Beat two: the line caught you, now answer it.
+        writeln!(
+            s,
+            "{} - {} catches you at the line. How do you answer?",
+            drill.label, drill.catchers
+        )
+        .ok();
+        for (n, &(ans, opt)) in drill.answers.iter().enumerate() {
             writeln!(
                 s,
-                "[{i}] {:<28} {:<12} {counts}",
-                describe(b, &f.options[i]),
-                v
+                "[{n}] {:<28} {:<12} {}",
+                answer_label(ans, &drill.catchers),
+                vtag(f.opt_verdict[opt]),
+                opt_counts(f.opt_paths[opt])
             )
             .ok();
+        }
+        writeln!(s, "[<] choose a different action").ok();
+    } else {
+        // Beat one: entries, crossings collapsed to one line.
+        for (k, entry) in f.entries.iter().enumerate() {
+            let (title, v, counts) = match entry {
+                Entry::Direct(opt) => (
+                    describe(b, &f.options[*opt]),
+                    vtag(f.opt_verdict[*opt]),
+                    opt_counts(f.opt_paths[*opt]),
+                ),
+                Entry::Crossing { label, answers, .. } => (
+                    format!("{label}  >"),
+                    vtag(f.agg_verdict(answers)),
+                    f.agg_counts(answers),
+                ),
+            };
+            writeln!(s, "[{k}] {title:<28} {v:<12} {counts}").ok();
         }
     }
 
@@ -1034,6 +1263,48 @@ fn log_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     });
 }
 
+/// One clickable choice row: its title and counts on the left, its verdict tag (and the border colour) on the
+/// right. Shared by direct options, collapsed crossings, and crossing answers so they all read the same.
+fn choice_button(
+    p: &mut ChildSpawnerCommands,
+    hit: Hit,
+    title: String,
+    counts: String,
+    v: Option<Verdict>,
+) {
+    let border = v.map(verdict_color).unwrap_or(WARN); // amber while still evaluating
+    let vtag = v
+        .map(|x| format!("{x:?}"))
+        .unwrap_or_else(|| "...".to_string());
+    p.spawn((
+        Button,
+        hit,
+        Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(Val::Px(9.0), Val::Px(6.0)),
+            border_radius: BorderRadius::all(Val::Px(5.0)),
+            border: UiRect::left(Val::Px(3.0)),
+            ..default()
+        },
+        BackgroundColor(SUNK),
+        BorderColor::all(border),
+    ))
+    .with_children(|row| {
+        row.spawn(Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(1.0),
+            ..default()
+        })
+        .with_children(|left| {
+            text(left, title, 14.0, INK);
+            text(left, counts, 11.0, MUTED);
+        });
+        text(row, vtag, 12.0, border);
+    });
+}
+
 /// The options, each a clickable button carrying its verdict and win/loss line counts.
 fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     if Combat::outcome(&f.state).is_some() {
@@ -1055,6 +1326,44 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         }
         None => text(p, "your options", 16.0, INK),
     }
+    // Beat two of a crossing: the line caught you - narrate who, then offer the answers (Abort named after the
+    // catcher). Nothing has been applied yet, so a "choose again" card backs out to beat one.
+    if let Some(drill) = &f.drill {
+        text(
+            p,
+            format!(
+                "{} - {} catches you at the line.",
+                drill.label, drill.catchers
+            ),
+            14.0,
+            WARN,
+        );
+        text(p, "how do you answer?", 11.0, MUTED);
+        for &(ans, opt) in &drill.answers {
+            choice_button(
+                p,
+                Hit::Option(opt),
+                answer_label(ans, &drill.catchers),
+                opt_counts(f.opt_paths[opt]),
+                f.opt_verdict[opt],
+            );
+        }
+        p.spawn((
+            Button,
+            Hit::Back,
+            Node {
+                padding: UiRect::axes(Val::Px(9.0), Val::Px(6.0)),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            BorderColor::all(MUTED.with_alpha(0.4)),
+        ))
+        .with_children(|b| text(b, "< choose a different action", 12.0, MUTED));
+        return;
+    }
+
     text(
         p,
         "each shows: solver verdict, then winning / losing lines through it (a tie is a loss)",
@@ -1062,51 +1371,24 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         MUTED,
     );
 
-    for i in 0..f.options.len() {
-        let c = &f.options[i];
-        let v = f.opt_verdict[i];
-        let counts = match f.opt_paths[i] {
-            Some(paths) => {
-                let ge = if paths.complete { "" } else { ">=" };
-                format!(
-                    "{ge}{} win / {ge}{} lose",
-                    abbrev(paths.wins),
-                    abbrev(paths.losses)
-                )
-            }
-            None => "counting lines...".to_string(),
-        };
-        let border = v.map(verdict_color).unwrap_or(WARN); // amber while still evaluating
-        let vtag = v
-            .map(|x| format!("{x:?}"))
-            .unwrap_or_else(|| "...".to_string());
-        p.spawn((
-            Button,
-            Hit::Option(i),
-            Node {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(9.0), Val::Px(6.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                border: UiRect::left(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(SUNK),
-            BorderColor::all(border),
-        ))
-        .with_children(|row| {
-            row.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(1.0),
-                ..default()
-            })
-            .with_children(|left| {
-                text(left, describe(f.state.board(), c), 14.0, INK);
-                text(left, counts, 11.0, MUTED);
-            });
-            text(row, vtag, 12.0, border);
-        });
+    // Beat one: the entries. A crossing is one card ("Raid X  >"); picking it opens beat two.
+    for (k, entry) in f.entries.iter().enumerate() {
+        match entry {
+            Entry::Direct(opt) => choice_button(
+                p,
+                Hit::Option(*opt),
+                describe(f.state.board(), &f.options[*opt]),
+                opt_counts(f.opt_paths[*opt]),
+                f.opt_verdict[*opt],
+            ),
+            Entry::Crossing { label, answers, .. } => choice_button(
+                p,
+                Hit::Crossing(k),
+                format!("{label}  >"),
+                f.agg_counts(answers),
+                f.agg_verdict(answers),
+            ),
+        }
     }
 }
 
