@@ -69,13 +69,19 @@ fn label(b: &Board, c: &Choice) -> String {
 }
 
 fn verdict(s: &State) -> Verdict {
+    solve(s).0
+}
+
+/// Solve `s` out completely (escalating the grant until it stops being Evaluating) and report the size of the
+/// graph it took: `states` = distinct positions memoized (the DAG), `nodes` = total positions walked.
+fn solve(s: &State) -> (Verdict, usize, u64) {
     let mut o = Solver::<Combat>::new();
     let mut grant = 1u64;
     loop {
         o.grant(grant);
         let v = o.verdict(s);
         if v != Verdict::Evaluating {
-            return v;
+            return (v, o.states(), o.nodes());
         }
         grant = grant.saturating_mul(2);
     }
@@ -112,7 +118,10 @@ fn main() {
             return;
         }
         println!("round {}   {}", state.round(), show_board(state.board()));
-        println!("  verdict here: {:?}", verdict(&state));
+        let (v, states, nodes) = solve(&state);
+        println!(
+            "  verdict here: {v:?}   (solved graph: {states} distinct positions, {nodes} nodes walked)"
+        );
         let opts = Combat::options(&state);
         if opts.len() == 1 {
             state = Combat::apply(&state, &opts[0]);
