@@ -205,7 +205,7 @@ pub const CREATURES: [Creature; 4] = [
     Creature {
         name: "The Storm",
         ability: "Onslaught",
-        stats: [3, 4, 1, 2, 1],
+        stats: [3, 4, 1, 2, 2],
         melee: true,
         ranged: false,
         aoe: false,

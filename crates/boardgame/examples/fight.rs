@@ -627,10 +627,11 @@ fn narrate(before: &Board, after: &Board) -> Vec<String> {
     out
 }
 
-/// The tempo a body actually has to spend in a round: its Cadence pool - except a **horde**, which swarms with one
-/// tempo per living body (`refresh_round`). This is why a Swarm's `C` stat reads low but it still floods the round.
+/// The tempo a body has to spend in a round: its Cadence pool (`refresh_round`), hordes included. A horde no
+/// longer swarms with body-count tempo - its size now shows up as a body-count volley of damage and a body-count
+/// reach, not extra tempo (see `rules::combat::regions::land` / `engage`).
 fn round_tempo(u: &Combatant) -> u32 {
-    if u.horde { u.health.max(1) } else { u.cadence }
+    u.cadence
 }
 
 fn build(encounter: usize) -> State {

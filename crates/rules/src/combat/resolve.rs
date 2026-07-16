@@ -225,12 +225,13 @@ pub fn end_sub_phase(units: &mut [Combatant]) {
     }
 }
 
-/// **The Reset** - the round boundary, and the one deadline in a fight. Tempo stands back up (leftover does not
-/// carry), and the accumulated damage pile **closes**: sub-threshold damage that never turned a Health card is
-/// gone. A horde refreshes to one card per living body.
+/// **The Reset** - the round boundary, and the one deadline in a fight. Tempo stands back up to Cadence (leftover
+/// does not carry), and the accumulated damage pile **closes**: sub-threshold damage that never turned a Health
+/// card is gone. A horde resets like anyone else - its size is spent as a **body-count volley** (see [`super`]'s
+/// `land`) and a **body-count reach** (see `engage`), not as extra tempo.
 pub fn refresh_round(units: &mut [Combatant]) {
     for u in units.iter_mut() {
-        u.tempo = if u.horde { u.health.max(1) } else { u.cadence };
+        u.tempo = u.cadence;
         u.pending = 0;
     }
 }

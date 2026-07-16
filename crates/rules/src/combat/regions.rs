@@ -582,11 +582,17 @@ fn engage(board: &mut Board, engagements: &[Engage]) -> Vec<Contact> {
             continue; // you cannot reach for someone without committing to it
         }
         let finesse = u.finesse.max(1);
+        // A horde reaches as one: every living body grabs together, so a single tempo card's bid is multiplied by
+        // the whole body count. That is what makes a swarm **hard to slip** - both when it catches a crosser and
+        // when it pins its own target - even though its Cadence tempo is small. (Its damage is likewise the whole
+        // swarm at once; see `land`.) The defence side gets no such multiplier (see `slip_cost`): a swarm is a
+        // fearsome catcher and a poor evader.
+        let mult = if u.horde { u.health.max(1) } else { 1 };
         board.units[e.attacker].tempo -= cards;
         contacts.push(Contact {
             attacker: e.attacker,
             target: e.target,
-            bid: cards * finesse,
+            bid: cards * finesse * mult,
         });
     }
     contacts
@@ -598,8 +604,15 @@ pub fn reach_cards(units: &[Combatant], a: usize, t: usize) -> u32 {
     if units[a].aoe {
         return 1; // an area strike forms no contact and cannot be evaded
     }
+    // A horde's bid is amplified by its body count (see `engage`), so it pins a target with far fewer cards.
+    let bodies = if units[a].horde {
+        units[a].health.max(1)
+    } else {
+        1
+    };
+    let per_card = units[a].finesse.max(1) * bodies;
     (1..=units[a].tempo)
-        .find(|&c| slip_price(c * units[a].finesse.max(1), units[t].finesse) > units[t].tempo)
+        .find(|&c| slip_price(c * per_card, units[t].finesse) > units[t].tempo)
         .unwrap_or(1)
 }
 
@@ -686,9 +699,11 @@ fn area_strike(
             // A sweep clears it. Armour aside, there is nowhere in a pack to not be.
             if might > board.units[j].armor {
                 let bodies = board.units[j].health;
-                board.units[j].health = 0;
                 if bodies > 0 {
-                    // Recording-only: the kill just happened; note who dealt it so a sweep is attributable.
+                    // Record the clear but DO NOT apply it yet. The whole exchange is one commit-batch, so a sweep
+                    // must not shrink a swept horde's OWN volley - its body count is read at commit ([`land`], and
+                    // the multiplier in [`engage`]). `exchange` applies these clears after `land`, alongside every
+                    // other blow in the batch, so simultaneity holds (Spec 1.9).
                     felled.push(Hit {
                         attacker,
                         target: j,
@@ -821,7 +836,15 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
         if board.units[t].horde {
             felled[t] += hits; // one blow, one body - Might buys nothing against a pack
         } else {
-            let per = board.units[a].might.saturating_sub(board.units[t].armor);
+            // A horde attacker swings as ONE volley: every living body lands together, so its blow is the whole
+            // body count times Might. Armour stops each little hit, so it is subtracted **per body** - a swarm of
+            // Might-1 bodies does nothing to an armoured target, however many of them there are.
+            let per_body = board.units[a].might.saturating_sub(board.units[t].armor);
+            let per = if board.units[a].horde {
+                per_body * board.units[a].health.max(1)
+            } else {
+                per_body
+            };
             damage[t] += per * hits;
         }
     }
@@ -853,6 +876,7 @@ fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows>
         .iter()
         .filter(|&&(a, t)| {
             !board.units[a].fallen
+                && !board.units[a].horde // a horde swings ONE volley (body-count x Might); it does not pour extra
                 && board.units[a].tempo > 0
                 && contacts.iter().any(|c| c.attacker == a && c.target == t)
         })
@@ -1194,7 +1218,12 @@ fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool
         Vec::new()
     };
     let mut hits = land(board, &contacts, &sweeps, &extra);
-    hits.extend(sweep_hits); // horde kills are recorded in area_strike, not land
+    // Apply the sweep's horde clears NOW - after `land` has read every attacker's body count at commit, so a horde
+    // swept in this same batch still delivered its full volley (commit-batch simultaneity, Spec 1.9).
+    for h in &sweep_hits {
+        board.units[h.target].health = board.units[h.target].health.saturating_sub(h.hits);
+    }
+    hits.extend(sweep_hits); // horde kills are recorded in area_strike for the transcript
     hits
 }
 
