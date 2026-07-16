@@ -942,20 +942,36 @@ fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> 
 /// One pass of bodies reaching for the slippers: they commit, the slipper answers as it declared, the blows
 /// land. Returns the contacts that stuck (a slipper that Evaded broke them all).
 ///
-/// This is used **twice** - once for the front line ([`SubPhase::Intercept`]) and once for the back line
-/// ([`SubPhase::Volley`]) - and the two are separate sub-phases for a reason that is pure tempo economy: **if
-/// the front already killed the slipper, the back does not waste its shot on a corpse.** That saved card is the
-/// whole reason the boundary earns its place under the razor.
+/// This is used **twice** - once for the front line (Intercept) and once for the back line (Volley) - and the two
+/// are separate sub-phases for a reason that is pure tempo economy: **if the front already killed the slipper, the
+/// back does not waste its shot on a corpse.** That saved card is the whole reason the boundary earns its place
+/// under the razor.
+///
+/// A catcher reaches with its **own weapon shape**. An *aimed* catcher engages one slipper, which may Evade to
+/// break the edge. An **area** catcher **volleys the whole crossing** - the Crossing-ring sweep footprint: one
+/// card blankets every crosser it is catching, **unevadably** (a salvo across the charge - a horde crosser is
+/// cleared outright, anyone else takes an unanswerable contact). So an area weapon defends a charge exactly as it
+/// attacks one, and single-ranged-vs-single-melee resolves like a bypassed vanguard: the back volleys the crosser,
+/// in its true shape, before the crosser can land.
 fn reach_for_slippers(
     board: &mut Board,
     catchers: &[(usize, usize)], // (catcher, slipper)
     movers: &[(usize, u8, Answer)],
 ) -> Vec<Hit> {
-    let engagements: Vec<Engage> = catchers
+    // The live (catcher, slipper) pairs this pass - a fallen catcher or slipper, or a spent catcher, reaches for
+    // nothing.
+    let live: Vec<(usize, usize)> = catchers
         .iter()
-        .filter(|&&(f, s)| {
+        .copied()
+        .filter(|&(f, s)| {
             !board.units[f].fallen && !board.units[s].fallen && board.units[f].tempo > 0
         })
+        .collect();
+
+    // AIMED catchers engage one slipper each; that slipper may Evade to break the edge.
+    let engagements: Vec<Engage> = live
+        .iter()
+        .filter(|&&(f, _)| !board.units[f].aoe)
         .map(|&(f, s)| Engage {
             attacker: f,
             target: s,
@@ -964,15 +980,63 @@ fn reach_for_slippers(
         .collect();
     let reaching = engage(board, &engagements);
 
-    // The slipper answers, seeing exactly what was committed. Evade pays in full and breaks every edge; Push and
-    // Abort spend nothing and eat the blows.
+    // The slipper answers, seeing exactly what was committed. Evade pays in full and breaks every AIMED edge;
+    // Push and Abort spend nothing and eat the blows. (An area volley below is not an edge you can slip.)
     let dodges: Vec<Dodge> = (0..board.units.len())
         .map(|i| match movers.iter().find(|&&(m, _, _)| m == i) {
             Some(&(_, _, Answer::Evade)) => Dodge::Slip,
             _ => Dodge::Stand,
         })
         .collect();
-    let landed = resolve_evade(&mut board.units, &reaching, &dodges);
+    let mut landed = resolve_evade(&mut board.units, &reaching, &dodges);
+
+    // AREA catchers volley the whole crossing (the Crossing-ring sweep footprint): one card, every crosser they
+    // catch, unevadably. A horde crosser is cleared outright (recorded, applied after `land` so it counts at full
+    // size in this batch); anyone else takes an unanswerable contact. This is the same "an area strike hits a whole
+    // band" rule as Clash/Raid/Melee, applied to the band of bodies mid-crossing.
+    let mut sweepers: Vec<usize> = live
+        .iter()
+        .filter(|&&(f, _)| board.units[f].aoe)
+        .map(|&(f, _)| f)
+        .collect();
+    sweepers.sort_unstable();
+    sweepers.dedup();
+    let mut felled: Vec<Hit> = Vec::new();
+    for f in sweepers {
+        if board.units[f].tempo == 0 {
+            continue;
+        }
+        board.units[f].tempo -= 1; // one card blankets the whole crossing
+        let might = board.units[f].might;
+        let caught: Vec<usize> = live
+            .iter()
+            .filter(|&&(g, _)| g == f)
+            .map(|&(_, s)| s)
+            .collect();
+        for s in caught {
+            if board.units[s].fallen {
+                continue;
+            }
+            if board.units[s].horde {
+                if might > board.units[s].armor {
+                    let bodies = board.units[s].health;
+                    if bodies > 0 {
+                        felled.push(Hit {
+                            attacker: f,
+                            target: s,
+                            hits: bodies,
+                        });
+                    }
+                }
+            } else {
+                landed.push(Contact {
+                    attacker: f,
+                    target: s,
+                    bid: 0, // an area volley cannot be evaded and nobody answers along it
+                });
+            }
+        }
+    }
 
     // An Abort turns and lays about it - at EVERY body that caught it, evenly. Not "the first one in the list":
     // picking one by iteration order would make who dies depend on who sits at index 0 (Spec 1.9). Splitting the
@@ -1003,7 +1067,15 @@ fn reach_for_slippers(
             });
         }
     }
-    land(board, &landed, &[], &ripostes)
+
+    let mut hits = land(board, &landed, &[], &ripostes);
+    // Apply the volley's horde clears AFTER `land` read commit-time bodies, so an aborter's riposte still lands
+    // and a swept horde still counted at full size in this batch (commit-batch simultaneity, Spec 1.9).
+    for h in &felled {
+        board.units[h.target].health = board.units[h.target].health.saturating_sub(h.hits);
+    }
+    hits.extend(felled);
+    hits
 }
 
 /// The enemy of a side.

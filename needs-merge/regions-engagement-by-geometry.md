@@ -53,7 +53,10 @@ which of three engagements happens. All three run the same little primitive.
 **AoE is the *width* of that reach, never extra reach.** A sweep catches every enemy the same
 single-target attack could have reached: a **Clash** sweeps the whole enemy **front line**; a
 **Raid** sweeps the whole **back line** you now stand among; a **Melee** sweeps **every** enemy in
-the region, front and back, because a body that got *inside* is past the screen entirely.
+the region, front and back, because a body that got *inside* is past the screen entirely; and a
+**Volley** (an area weapon catching a crossing body) sweeps the whole **charge** -- every crosser it
+is catching, **unevadably**. An area weapon reaches with the same shape on *defence* as on *offence*,
+so a lone Salvo scatters a charging horde exactly as it would sweep a standing one.
 
 ## 3. Reach, and why unscreened is no advantage
 
@@ -143,7 +146,9 @@ its place only by letting a death in it silence something after it.
   1. **Intercept** -- the enemy **vanguard** reaches for it (a death here silences the volley *and*
      the strike).
   2. **Volley** -- the enemy **rearguard** looses at survivors the spears did not drop (a death
-     silences the strike). Front before back, so a corpse is never shot twice.
+     silences the strike). Front before back, so a corpse is never shot twice. An **area** rearguard
+     volleys as a **sweep** -- one card scatters the whole charge (a horde crosser cleared outright),
+     so a lone artillery piece defends a charge from range instead of being overrun.
   3. **Land & strike** -- survivors strike the back they came for and **remain as outriders** for the
      next round's Inner ring.
 - **Outer ring -- across the gap.** **Fire** (every rearguard looses -- a death silences the target's
