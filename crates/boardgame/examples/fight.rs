@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Answer, Board, Post};
+use rules::combat::regions::{Act, Answer, Board, Post, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -294,8 +294,21 @@ impl Fight {
             for line in crossings(before, &acts) {
                 self.log.push(line);
             }
-            for line in narrate(before, self.state.board()) {
+            // The two-stage damage-pile model, mirroring the grit mechanic. First the POOL ADDITIONS: re-run the
+            // deterministic resolution on a throwaway clone (it never touches `self.state`) purely to harvest the
+            // strike transcript, then say who added to whose pile - source-attributed, sweeps included. Then the
+            // resulting HEALTH FLIPS, read from the before/after board diff.
+            let additions = pool_additions(before, &acts);
+            let events = narrate(before, self.state.board());
+            let drew_blood = !additions.is_empty() || !events.is_empty();
+            for line in additions {
                 self.log.push(line);
+            }
+            for line in events {
+                self.log.push(line);
+            }
+            if !drew_blood {
+                self.log.push("  (no blood drawn)".into());
             }
         }
         if self.state.round() != round_before {
@@ -406,10 +419,56 @@ fn join_counts(names: &[String]) -> String {
         .join(", ")
 }
 
-/// **What the last round actually did to the board**, read from a before/after diff - the events the player
-/// never sees otherwise, because the whole round (foes included) resolves inside one `apply`. One line per thing
-/// that changed: a body that moved, took damage, or fell. Indented so the history can colour them apart from the
-/// declarations that caused them.
+/// **The pool additions** - stage one of the damage-pile model, mirroring the grit mechanic: one line per
+/// `(attacker -> target)` saying who added how much to whose pile, *before* any card flips. Built by re-running
+/// the deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
+/// resolved, so it re-derives the exact strikes) and reading the [`Hit`] transcript `play_round` returns. Blows
+/// from the same attacker on the same target are summed into one line; a sweep records each caught body, so an
+/// AoE striker is attributed to every body it hit (a horde included). Indices are stable across the clone, so
+/// names are read from `before`.
+fn pool_additions(before: &Board, acts: &[Act]) -> Vec<String> {
+    let mut clone = before.clone();
+    let transcript = play_round(&mut clone, acts);
+
+    // Sum hits per (attacker, target), preserving first-appearance order so the log reads in strike order.
+    let mut order: Vec<(usize, usize)> = Vec::new();
+    let mut totals: Vec<u32> = Vec::new();
+    for log in &transcript {
+        for hit in &log.hits {
+            let key = (hit.attacker, hit.target);
+            match order.iter().position(|k| *k == key) {
+                Some(p) => totals[p] += hit.hits,
+                None => {
+                    order.push(key);
+                    totals.push(hit.hits);
+                }
+            }
+        }
+    }
+
+    order
+        .iter()
+        .zip(totals)
+        .map(|(&(a, t), hits)| {
+            let attacker = &before.units[a].name;
+            let target = &before.units[t].name;
+            if before.units[t].horde {
+                // A sweep clears bodies rather than banking Might: attribute the bodies felled.
+                format!("  {attacker} fells {hits} of {target}")
+            } else {
+                // Might per blow, summed over the blows this attacker landed on this target.
+                let amount = before.units[a].might * hits;
+                format!("  {attacker} adds {amount} to {target}")
+            }
+        })
+        .collect()
+}
+
+/// **What the last round actually did to the board**, read from a before/after diff - stage two of the damage
+/// model (the resulting card flips) plus the moves the player never sees otherwise, because the whole round (foes
+/// included) resolves inside one `apply`. One line per thing that changed: a body that moved, lost a health card,
+/// or fell. The *source* of the loss is carried by the [`pool_additions`] lines above, so these say only the
+/// resulting flip. Indented so the history can colour them apart from the declarations that caused them.
 fn narrate(before: &Board, after: &Board) -> Vec<String> {
     let mut out = Vec::new();
     for i in 0..after.units.len() {
@@ -429,28 +488,16 @@ fn narrate(before: &Board, after: &Board) -> Vec<String> {
             };
             out.push(format!("  {name} {where_to}"));
         }
-        // Bled: a horde loses whole bodies; anyone else loses hp.
+        // Flipped: a horde loses whole bodies; anyone else loses health cards. The pile that caused it is named in
+        // the pool-addition lines above, so this shows only the resulting flip.
         if au.health < bu.health {
-            let d = bu.health - au.health;
-            if au.horde {
-                out.push(format!(
-                    "  {name} loses {d} ({} -> {} bodies)",
-                    bu.health, au.health
-                ));
-            } else {
-                out.push(format!(
-                    "  {name} takes {d} ({} -> {} hp)",
-                    bu.health, au.health
-                ));
-            }
+            let kind = if au.horde { "bodies" } else { "hp" };
+            out.push(format!("  {name}: {} -> {} {kind}", bu.health, au.health));
         }
         // Fell.
         if au.fallen && !bu.fallen {
             out.push(format!("  {name} is down"));
         }
-    }
-    if out.is_empty() {
-        out.push("  (no blood drawn)".into());
     }
     out
 }

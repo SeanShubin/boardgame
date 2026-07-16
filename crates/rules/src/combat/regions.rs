@@ -490,6 +490,15 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
 
 // ---- resolution ----------------------------------------------------------------------------------------
 
+/// One strike, recorded for the combat log: `attacker` landed `hits` blows on `target`. A renderer attributes
+/// the round's damage from these (Might per blow is read from the attacker).
+#[derive(Clone, Copy, Debug)]
+pub struct Hit {
+    pub attacker: usize,
+    pub target: usize,
+    pub hits: u32,
+}
+
 /// What happened in one sub-phase - enough for a transcript or a renderer to say *why* the board changed.
 #[derive(Clone, Debug, Default)]
 pub struct SubPhaseLog {
@@ -510,6 +519,10 @@ pub struct SubPhaseLog {
     /// Every body's **post** at this boundary. Same reason: without it a promotion that happens in the last
     /// sub-phase appears to have been true all round.
     pub posts: Vec<Post>,
+    /// **Every strike that landed in this sub-phase**, source-attributed: who hit whom, and how many blows. A
+    /// renderer reads Might per blow from the attacker to say *where* each body's damage came from (a sweep
+    /// records one `Hit` per swept contact, so an area strike is attributed to its sweeper too).
+    pub hits: Vec<Hit>,
 }
 
 fn slip_price(bid: u32, f_def: u32) -> u32 {
@@ -601,15 +614,19 @@ fn dodges_against(board: &Board, reaching: &[Contact]) -> Vec<Dodge> {
 /// It deliberately does **not** carry the product's "one sweep clears the whole pack" horde rule: region-wide,
 /// that let one Salvo delete sixteen bodies for a single card and collapsed seven of eight encounters to a
 /// round-one wipe. A horde takes a sweep like anything else, spilling body to body.
+///
+/// Returns the aimed sweep contacts (normal bodies, resolved in [`land`]) and, separately, the horde kills as
+/// [`Hit`]s: a horde is cleared here directly rather than through `land`, so its attribution is recorded here or
+/// nowhere. The kills are recording-only - the health was already zeroed - so a renderer can name the sweeper.
 fn area_strike(
     board: &mut Board,
     attacker: usize,
     region: u8,
     tier: Post,
     both_tiers: bool,
-) -> Vec<Contact> {
+) -> (Vec<Contact>, Vec<Hit>) {
     if board.units[attacker].fallen || board.units[attacker].tempo == 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     board.units[attacker].tempo -= 1;
     let side = board.units[attacker].side;
@@ -627,6 +644,7 @@ fn area_strike(
         .collect();
 
     let mut contacts = Vec::new();
+    let mut felled = Vec::new();
     for j in caught {
         if board.units[j].horde {
             // **A pack is many bodies, and an area strike catches every one of them.**
@@ -639,7 +657,16 @@ fn area_strike(
             //
             // A sweep clears it. Armour aside, there is nowhere in a pack to not be.
             if might > board.units[j].armor {
+                let bodies = board.units[j].health;
                 board.units[j].health = 0;
+                if bodies > 0 {
+                    // Recording-only: the kill just happened; note who dealt it so a sweep is attributable.
+                    felled.push(Hit {
+                        attacker,
+                        target: j,
+                        hits: bodies,
+                    });
+                }
             }
         } else {
             contacts.push(Contact {
@@ -649,7 +676,7 @@ fn area_strike(
             });
         }
     }
-    contacts
+    (contacts, felled)
 }
 
 /// **How far an area strike reaches.** The rule is [`FrontLine`](AreaReach::FrontLine), and it follows from one
@@ -729,7 +756,7 @@ pub fn set_area_reach(reach: AreaReach) {
 /// - **Normal body:** each strike banks `max(0, Might - armor)` into the per-round pile; a Health card flips
 ///   every time the pile clears Grit. The pile closes at the Reset (`combat::refresh_round`), unchanged.
 /// - **Horde:** each strike fells exactly **one** body. A sweep clears the pack outright ([`area_strike`]).
-fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) {
+fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) -> Vec<Hit> {
     // Collect every blow first, apply nothing yet: an order-free, commit-based batch, so a blow lands even if
     // its striker dies to a simultaneous one.
     let n = board.units.len();
@@ -750,10 +777,19 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
         strikes.push((b.unit, b.target, cards));
     }
 
+    // The source-attributed transcript: one entry per landed strike (`hits > 0`), so a renderer can say WHERE a
+    // body's damage came from. Recorded whether or not the blow flips a card - banked sub-Grit damage still came
+    // from that attacker.
+    let mut log: Vec<Hit> = Vec::new();
     for (a, t, hits) in strikes {
         if hits == 0 {
             continue;
         }
+        log.push(Hit {
+            attacker: a,
+            target: t,
+            hits,
+        });
         if board.units[t].horde {
             felled[t] += hits; // one blow, one body - Might buys nothing against a pack
         } else {
@@ -776,6 +812,7 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
             }
         }
     }
+    log
 }
 
 /// One body attacking another: `(attacker, target)`.
@@ -861,7 +898,7 @@ fn reach_for_slippers(
     board: &mut Board,
     catchers: &[(usize, usize)], // (catcher, slipper)
     movers: &[(usize, u8, Answer)],
-) -> Vec<Contact> {
+) -> Vec<Hit> {
     let engagements: Vec<Engage> = catchers
         .iter()
         .filter(|&&(f, s)| {
@@ -914,8 +951,7 @@ fn reach_for_slippers(
             });
         }
     }
-    land(board, &landed, &[], &ripostes);
-    landed
+    land(board, &landed, &[], &ripostes)
 }
 
 /// The enemy of a side.
@@ -974,8 +1010,10 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .collect();
     if !melees.is_empty() {
         let before = living(board);
-        exchange(board, &melees, true, true);
-        logs.push(close(board, &before));
+        let hits = exchange(board, &melees, true, true);
+        let mut lg = close(board, &before);
+        lg.hits = hits;
+        logs.push(lg);
     }
     // Clearing a zone's formation with intruders takes it - flip those intruders to the owning side. Resolved
     // once here, at the end of the Inner Ring: clear a zone's defenders and it is yours.
@@ -1012,11 +1050,15 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     }
 
     let before = living(board);
-    reach_for_slippers(board, &front_catchers, &movers);
-    logs.push(close(board, &before));
+    let hits = reach_for_slippers(board, &front_catchers, &movers);
+    let mut lg = close(board, &before);
+    lg.hits = hits;
+    logs.push(lg);
     let before = living(board);
-    reach_for_slippers(board, &back_catchers, &movers);
-    logs.push(close(board, &before));
+    let hits = reach_for_slippers(board, &back_catchers, &movers);
+    let mut lg = close(board, &before);
+    lg.hits = hits;
+    logs.push(lg);
 
     // LAND: survivors that got through leave their post and arrive. Into an enemy zone they become intruders
     // (loose inside the ranks, no post); a rally into a friendly zone joins that formation, non-intruder.
@@ -1059,8 +1101,10 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             _ => None,
         })
         .collect();
-    exchange(board, &raids, false, false);
-    logs.push(close(board, &before));
+    let hits = exchange(board, &raids, false, false);
+    let mut lg = close(board, &before);
+    lg.hits = hits;
+    logs.push(lg);
 
     // ---- OUTER RING: ACROSS THE GAP (Fire then Clash) -------------------------------------------------
     //
@@ -1080,8 +1124,10 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
                 _ => None,
             })
             .collect();
-        exchange(board, &attacks, true, false);
-        logs.push(close(board, &before));
+        let hits = exchange(board, &attacks, true, false);
+        let mut lg = close(board, &before);
+        lg.hits = hits;
+        logs.push(lg);
     }
 
     logs
@@ -1090,13 +1136,16 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
 /// One Engage -> Evade -> Strike exchange - **the product's inner three, unchanged.** Area strikes split off and
 /// sweep their target's region: the tier aimed at, or - when `sweep_whole` - both tiers (an in-region melee, past
 /// the screen).
-fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool) {
+fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool) -> Vec<Hit> {
     let mut sweeps: Vec<Contact> = Vec::new();
+    let mut sweep_hits: Vec<Hit> = Vec::new();
     let mut aimed: Vec<Engage> = Vec::new();
     for &(a, t) in attacks {
         if board.units[a].aoe {
             let (region, tier) = (board.regions[t], board.posts[t]);
-            sweeps.extend(area_strike(board, a, region, tier, sweep_whole));
+            let (contacts, felled) = area_strike(board, a, region, tier, sweep_whole);
+            sweeps.extend(contacts);
+            sweep_hits.extend(felled);
         } else {
             aimed.push(Engage {
                 attacker: a,
@@ -1115,7 +1164,9 @@ fn exchange(board: &mut Board, attacks: &[Attack], pour: bool, sweep_whole: bool
     } else {
         Vec::new()
     };
-    land(board, &contacts, &sweeps, &extra);
+    let mut hits = land(board, &contacts, &sweeps, &extra);
+    hits.extend(sweep_hits); // horde kills are recorded in area_strike, not land
+    hits
 }
 
 // ---- the doom oracle -----------------------------------------------------------------------------------
