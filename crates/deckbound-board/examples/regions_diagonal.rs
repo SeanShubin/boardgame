@@ -113,40 +113,53 @@ fn fmt_score((score, exact): (Option<Score>, bool)) -> String {
 /// **Does this warband pass `behavior`?** `Ok(())` if it does; `Err(reason)` naming the first test that failed.
 /// Every behavior first requires the full party to win under `Combat`; then its own necessity test:
 ///
-/// - `VanguardCarries`: melee-only wins, ranged-only loses.
-/// - `RearguardCarries`: ranged-only wins, melee-only loses.
-/// - `RaidNecessary`: the full party under `ClashOnly` loses (the raid was load-bearing).
-/// - `CombinedArms`: melee-only loses, ranged-only loses, single-target-only loses, AND the full party under
-///   `ClashOnly` loses - so ranged, melee, an **area** strike, and the raid are ALL load-bearing at once.
+/// - `Concentration`: single-target-only wins, area-only loses.
+/// - `Range`: ranged-only wins, melee-only loses.
+/// - `Sweep`: area-only wins, single-target-only loses.
+/// - `Raid`: the full party under `ClashOnly` loses (the raid is load-bearing).
+/// - `CombinedArms` (the capstone): melee-only, ranged-only, AND single-only all lose, AND `ClashOnly` loses -
+///   so ranged, melee, an area strike, and the raid are ALL load-bearing at once.
+///
+/// The four corner strategies are orthogonal: each is a DIFFERENT control failing while its own strategy
+/// suffices, so none subsumes another. The capstone is *meant* to subsume them (the graduation exam).
 fn behavior_passes(
     behavior: Behavior,
     kits: &[Combatant],
     melee: &[Combatant],
     ranged: &[Combatant],
     single: &[Combatant],
+    area: &[Combatant],
     foes: &[Combatant],
 ) -> Result<(), String> {
     if !winnable::<Combat>(kits, foes) {
         return Err("full party loses under Combat".to_string());
     }
     match behavior {
-        Behavior::VanguardCarries => {
-            if !winnable::<Combat>(melee, foes) {
-                return Err("melee-only party loses (the vanguard should carry it)".to_string());
+        Behavior::Concentration => {
+            if !winnable::<Combat>(single, foes) {
+                return Err("single-only party loses (concentration should carry it)".to_string());
             }
-            if winnable::<Combat>(ranged, foes) {
-                return Err("ranged-only party wins (the vanguard is not load-bearing)".to_string());
+            if winnable::<Combat>(area, foes) {
+                return Err("area-only party wins (concentration is not necessary)".to_string());
             }
         }
-        Behavior::RearguardCarries => {
+        Behavior::Range => {
             if !winnable::<Combat>(ranged, foes) {
-                return Err("ranged-only party loses (the rearguard should carry it)".to_string());
+                return Err("ranged-only party loses (range should carry it)".to_string());
             }
             if winnable::<Combat>(melee, foes) {
-                return Err("melee-only party wins (the rearguard is not load-bearing)".to_string());
+                return Err("melee-only party wins (range is not necessary)".to_string());
             }
         }
-        Behavior::RaidNecessary => {
+        Behavior::Sweep => {
+            if !winnable::<Combat>(area, foes) {
+                return Err("area-only party loses (a sweep should carry it)".to_string());
+            }
+            if winnable::<Combat>(single, foes) {
+                return Err("single-only party wins (a sweep is not necessary)".to_string());
+            }
+        }
+        Behavior::Raid => {
             if winnable::<ClashOnly>(kits, foes) {
                 return Err(
                     "full party wins under ClashOnly (the raid is not necessary)".to_string(),
@@ -161,9 +174,7 @@ fn behavior_passes(
                 return Err("ranged-only party wins (melee damage is not necessary)".to_string());
             }
             if winnable::<Combat>(single, foes) {
-                return Err(
-                    "single-target-only party wins (an area strike is not necessary)".to_string(),
-                );
+                return Err("single-only party wins (an area strike is not necessary)".to_string());
             }
             if winnable::<ClashOnly>(kits, foes) {
                 return Err(
@@ -198,6 +209,8 @@ fn main() {
         .collect();
     // The single-target-only sub-party (no area strike): Raider + Marksman.
     let single: Vec<Combatant> = kits.iter().filter(|k| !k.aoe).cloned().collect();
+    // The area sub-party (an area strike): Bastion + Bombardier.
+    let area: Vec<Combatant> = kits.iter().filter(|k| k.aoe).cloned().collect();
 
     println!("SOLOS - each must be soloable by exactly ONE kit (its keystone's counter).\n");
     let mut solo_ok = 0;
@@ -248,7 +261,8 @@ fn main() {
     };
     println!("\n  {solo_ok}/4 solos.{note}\n");
 
-    println!("CORNERS - each must pass its assigned behavior.\n");
+    println!("STRATEGY CORNERS + CAPSTONE - each must pass its assigned behavior.\n");
+    let party_total = catalog::ENCOUNTERS.iter().filter(|e| e.party).count();
     let mut corner_ok = 0;
     for e in catalog::ENCOUNTERS.iter().filter(|e| e.party) {
         let foes = foes_of(e);
@@ -256,7 +270,8 @@ fn main() {
             println!("  {:<20} (no behavior assigned - skipped)", e.location);
             continue;
         };
-        let verdict = match behavior_passes(behavior, &kits, &melee, &ranged, &single, &foes) {
+        let verdict = match behavior_passes(behavior, &kits, &melee, &ranged, &single, &area, &foes)
+        {
             Ok(()) => {
                 corner_ok += 1;
                 "OK".to_string()
@@ -280,9 +295,9 @@ fn main() {
     } else {
         ""
     };
-    println!("\n  {corner_ok}/4 corners.{note}");
+    println!("\n  {corner_ok}/{party_total} party fights (4 corners + capstone).{note}");
     println!(
-        "\nSCORE: {solo_ok}/4 solos, {corner_ok}/4 corners   ({} ms)",
+        "\nSCORE: {solo_ok}/4 solos, {corner_ok}/{party_total} party fights   ({} ms)",
         t0.elapsed().as_millis()
     );
 }

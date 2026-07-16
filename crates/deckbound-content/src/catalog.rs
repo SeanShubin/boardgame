@@ -321,34 +321,39 @@ pub fn creature_ability_description(name: &str) -> &'static str {
 /// search (see the `regions_diagonal` / `regions_tune_corners` examples). A corner PASSES its behavior iff the
 /// full party wins under `Combat` AND the behavior's own necessity test holds:
 ///
-/// - [`VanguardCarries`](Behavior::VanguardCarries): the melee-only sub-party wins; the ranged-only one loses.
-/// - [`RearguardCarries`](Behavior::RearguardCarries): the ranged-only sub-party wins; the melee-only one loses.
-/// - [`RaidNecessary`](Behavior::RaidNecessary): the full party under the clash-only control loses (the raid
-///   was load-bearing).
-/// - [`CombinedArms`](Behavior::CombinedArms): the whole toolkit is load-bearing at once - the melee-only
-///   sub-party loses (ranged damage is necessary), the ranged-only sub-party loses (melee damage is
-///   necessary), AND the full party under the clash-only control loses (the raid is necessary).
+/// The **four corner strategies** are orthogonal - each is a *different* control failing, so none subsumes
+/// another - and the **centre** is the capstone that deliberately requires them all:
+///
+/// - [`Concentration`](Behavior::Concentration): the single-target sub-party wins; the area-only one loses.
+/// - [`Range`](Behavior::Range): the ranged-only sub-party wins; the melee-only one loses.
+/// - [`Sweep`](Behavior::Sweep): the area sub-party wins; the single-target-only one loses.
+/// - [`Raid`](Behavior::Raid): the full party under the clash-only control loses (the raid is load-bearing).
+/// - [`CombinedArms`](Behavior::CombinedArms): melee-only, ranged-only, AND single-only all lose, AND clash-only
+///   loses - every strategy at once. The centre cell; *meant* to subsume the corners (the graduation exam).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Behavior {
-    /// The front line has to carry it: melee-only wins, ranged-only loses.
-    VanguardCarries,
-    /// The back line has to carry it: ranged-only wins, melee-only loses.
-    RearguardCarries,
-    /// The raid is load-bearing: clash-only loses.
-    RaidNecessary,
-    /// The whole toolkit is load-bearing at once: melee-only loses (ranged is necessary), ranged-only loses
-    /// (melee is necessary), and clash-only loses (the raid is necessary). The capstone corner.
+    /// **Concentration** - one overwhelming blow. Single-target wins; area-only loses (small hits wiped by Grit).
+    Concentration,
+    /// **Range** - answer from range, don't trade. Ranged-only wins; melee-only loses (it closes and dies).
+    Range,
+    /// **Sweep** - clear a group with an area strike. Area wins; single-target-only loses (it can't drown them).
+    Sweep,
+    /// **Raid** - infiltrate past a screen. Clash-only loses (the raid is load-bearing).
+    Raid,
+    /// **CombinedArms** - the capstone (the centre): every strategy at once. Melee-only, ranged-only, and
+    /// single-only all lose, AND clash-only loses - so ranged, melee, an area strike, and the raid are ALL
+    /// necessary together. It is *meant* to subsume the four corner strategies.
     CombinedArms,
 }
 
-/// A location **encounter** — the foes stationed at a place on the map. Two tiers, both keyed to the
-/// four creatures ([`CREATURES`]):
+/// A location **encounter** — the foes stationed at a place on the map. Three tiers:
 ///
-/// - A **solo** encounter (`party: false`) rings the inn: a single creature — its [`keystone`] — soloable
-///   by the one kit that answers its lock. The four adjacent map cells.
-/// - A **party** encounter (`party: true`) holds a corner: it fields **all four** creatures, with the
-///   [`keystone`] as the bulk (a `×2` stack), so no lone hero clears every lock-type — you need the whole
-///   party — yet the fight leans on the kit that answers the keystone.
+/// - A **solo** (`party: false`) rings the centre: a single creature — its [`keystone`] — soloable by the one
+///   kit that answers its lock. The four adjacent cells.
+/// - A **strategy corner** (`party: true`, a non-`CombinedArms` [`behavior`]): a warband that a party can only
+///   break with one **strategy** (concentrate / range / sweep / raid) - the four corner cells.
+/// - The **capstone** (`party: true`, [`CombinedArms`](Behavior::CombinedArms)): the centre cell, demanding every
+///   strategy at once.
 ///
 /// No "favours" line is printed: which kit to bring is inferred from the foes' postures on the table.
 #[derive(Clone, Copy, Debug)]
@@ -369,9 +374,10 @@ pub struct Encounter {
     pub foes: &'static [(&'static str, u32)],
 }
 
-/// Every non-inn location's encounter. Solos ring the inn (adjacent cells); party fights hold the
-/// corners. Ashfen Crossing (the inn) has none, so this covers the other eight.
-pub const ENCOUNTERS: [Encounter; 8] = [
+/// The 3x3 map of encounters: **four solos** ring the centre (adjacent cells, one creature each), **four
+/// strategy corners** hold the corners, and the **capstone** sits at the centre - Ashfen Crossing, the old inn,
+/// now the graduation exam that demands every strategy at once. Nine in all.
+pub const ENCOUNTERS: [Encounter; 9] = [
     // --- solos: one creature, soloable only by its answering kit ---------------------------------
     Encounter {
         location: "Cinderwatch Keep",
@@ -409,38 +415,48 @@ pub const ENCOUNTERS: [Encounter; 8] = [
         behavior: None,
         foes: &[("The Brood", 1)],
     },
-    // --- corners: a warband the full party must break, each leaning on one kit (tuned) -----------
+    // --- corners: the four orthogonal STRATEGY lessons (each a different control fails) -----------
+    Encounter {
+        location: "Emberfall Hollow",
+        title: "The Emberfall Bulwark",
+        flavor: "Twin wardens bar the burning hollow, their guard so heavy that scattered blows are shrugged off - only one concentrated strike dents them.",
+        keystone: "The Wall",
+        party: true,
+        behavior: Some(Behavior::Concentration),
+        foes: &[("The Wall", 2)],
+    },
+    Encounter {
+        location: "Greywater Ford",
+        title: "Ambush at the Ford",
+        flavor: "A blade-master lashes from the reeds of the ford - close in and it cuts you down, so answer it from range.",
+        keystone: "The Duelist",
+        party: true,
+        behavior: Some(Behavior::Range),
+        foes: &[("The Duelist", 3)],
+    },
+    Encounter {
+        location: "Ninefold Deep",
+        title: "Horror of the Ninefold Deep",
+        flavor: "The deep churns: swarm upon swarm boils up out of the dark - no single blade can stem the tide, only an area strike clears it.",
+        keystone: "The Swarm",
+        party: true,
+        behavior: Some(Behavior::Sweep),
+        foes: &[("The Swarm", 2)],
+    },
     Encounter {
         location: "The Hollow Rampart",
         title: "Breach of the Rampart",
         flavor: "Wardens anchor the breach while a marksman picks the party off from the rubble behind - you must slip a blade past the wall to silence it.",
         keystone: "The Sniper",
         party: true,
-        behavior: Some(Behavior::RaidNecessary),
+        behavior: Some(Behavior::Raid),
         foes: &[("The Wall", 4), ("The Sniper", 1)],
     },
+    // --- the centre: the capstone, every strategy at once (the graduation exam) --------------------
     Encounter {
-        location: "Greywater Ford",
-        title: "Ambush at the Ford",
-        flavor: "An ambush at the crossing: a duelist lashing from the reeds, a warden and a swarm barring the ford.",
-        keystone: "The Duelist",
-        party: true,
-        behavior: Some(Behavior::RearguardCarries),
-        foes: &[("The Duelist", 3)],
-    },
-    Encounter {
-        location: "Emberfall Hollow",
-        title: "The Emberfall Bulwark",
-        flavor: "Twin wardens bar the burning hollow; neither will fall to a single hand.",
-        keystone: "The Wall",
-        party: true,
-        behavior: Some(Behavior::VanguardCarries),
-        foes: &[("The Wall", 2)],
-    },
-    Encounter {
-        location: "Ninefold Deep",
-        title: "Horror of the Ninefold Deep",
-        flavor: "The deep churns: a swarm overruns the front, two wardens anchor the line, a sniper marks you from the dark - first-strike the swarm from range, slip a blade to the sniper, then break the wall.",
+        location: "Ashfen Crossing",
+        title: "The Last Stand at Ashfen",
+        flavor: "Everything at once at the crossroads: a swarm overruns the front, wardens anchor the line, a sniper marks you from the dark - first-strike the swarm, slip a blade to the sniper, break the wall.",
         keystone: "The Sniper",
         party: true,
         behavior: Some(Behavior::CombinedArms),

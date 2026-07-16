@@ -72,22 +72,24 @@ fn behavior_passes(
     kits: &[Combatant],
     melee: &[Combatant],
     ranged: &[Combatant],
+    single: &[Combatant],
+    area: &[Combatant],
     foes: &[Combatant],
 ) -> bool {
     if !winnable::<Combat>(kits, foes) {
         return false;
     }
     match behavior {
-        Behavior::VanguardCarries => {
-            winnable::<Combat>(melee, foes) && !winnable::<Combat>(ranged, foes)
+        Behavior::Concentration => {
+            winnable::<Combat>(single, foes) && !winnable::<Combat>(area, foes)
         }
-        Behavior::RearguardCarries => {
-            winnable::<Combat>(ranged, foes) && !winnable::<Combat>(melee, foes)
-        }
-        Behavior::RaidNecessary => !winnable::<ClashOnly>(kits, foes),
+        Behavior::Range => winnable::<Combat>(ranged, foes) && !winnable::<Combat>(melee, foes),
+        Behavior::Sweep => winnable::<Combat>(area, foes) && !winnable::<Combat>(single, foes),
+        Behavior::Raid => !winnable::<ClashOnly>(kits, foes),
         Behavior::CombinedArms => {
             !winnable::<Combat>(melee, foes)
                 && !winnable::<Combat>(ranged, foes)
+                && !winnable::<Combat>(single, foes)
                 && !winnable::<ClashOnly>(kits, foes)
         }
     }
@@ -133,6 +135,8 @@ fn main() {
         .filter(|k| k.ranged && !k.melee)
         .cloned()
         .collect();
+    let single: Vec<Combatant> = kits.iter().filter(|k| !k.aoe).cloned().collect();
+    let area: Vec<Combatant> = kits.iter().filter(|k| k.aoe).cloned().collect();
     let creatures: Vec<&Creature> = catalog::CREATURES.iter().collect();
 
     let mut solved = 0;
@@ -160,7 +164,7 @@ fn main() {
                 .flat_map(|(c, &q)| std::iter::repeat_n(beast(c), q as usize))
                 .collect();
             tried += 1;
-            if behavior_passes(behavior, &kits, &melee, &ranged, &foes) {
+            if behavior_passes(behavior, &kits, &melee, &ranged, &single, &area, &foes) {
                 found = Some((counts, foes.len()));
                 break;
             }
