@@ -652,10 +652,11 @@ impl Fight {
         }
         if self.state.round() != round_before {
             match Combat::outcome(&self.state) {
-                Some(o) => self.log.push(format!("=== {o:?} ===")),
-                None => self
-                    .log
-                    .push(format!("--- round {} ---", self.state.round())),
+                Some(o) => self.log.push(format!("========== {o:?} ==========")),
+                None => self.log.push(format!(
+                    "================= round {} =================",
+                    self.state.round()
+                )),
             }
         }
     }
@@ -680,10 +681,28 @@ fn strike_verb(u: &Combatant) -> &'static str {
     }
 }
 
+/// A `SubPhaseLog` phase string to its **coordinate** in the ring structure: `(ring number, ring NAME, sub-phase
+/// number, sub-phase name)`, nearest-first. So the log addresses every event as `ring.subphase`, and a reader
+/// always knows where in the round they are.
+fn phase_coord(phase: &'static str) -> (u8, &'static str, u8, &'static str) {
+    match phase {
+        "Inner Ring: Outriders" => (1, "INNER", 1, "Outriders"),
+        "Crossing Ring: Intercept" => (2, "CROSSING", 1, "Intercept"),
+        "Crossing Ring: Volley" => (2, "CROSSING", 2, "Volley"),
+        "Crossing Ring: Raid" => (2, "CROSSING", 4, "Raid"),
+        "Outer Ring: Fire" => (3, "OUTER", 1, "Fire"),
+        "Outer Ring: Clash" => (3, "OUTER", 2, "Clash"),
+        other => (0, "", 0, other),
+    }
+}
+
 /// **The round, phase by phase - every state change spelled out, none left invisible.** Re-runs the
 /// deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
-/// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE
-/// it happened in: the Inner Ring, the Crossing Ring's Intercept / Volley / Raid, the Outer Ring's Fire / Clash.
+/// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns.
+///
+/// Output is a **coordinate language**: a `[ring N] NAME` header when a ring opens, a `ring.subphase Subphase`
+/// header per active sub-phase, and every event line prefixed with its **exchange step** (`reach` / `dodge` /
+/// `strike` / `absorb` / `move` / `death`) - so any line locates itself as `round . ring.subphase . step`.
 ///
 /// **The completeness rule: a body's every mutable field is snapshotted each phase, and a change to any of them
 /// prints a line.** Tempo, Health, rank and region are all diffed against the phase before, so no spend, flip,
@@ -714,12 +733,17 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
     };
 
     let mut out = Vec::new();
+    let mut current_ring = 0u8; // emit a "[ring N] NAME" header only when the ring changes
     let mut prev_hp: Vec<u32> = before.units.iter().map(|u| u.health).collect();
     let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.cadence).collect(); // Reset stands tempo up to Cadence
     let mut prev_rk: Vec<Rank> = before.ranks.clone();
     let mut prev_rg: Vec<u8> = before.regions.clone();
     for log in &transcript {
-        let mut lines: Vec<String> = Vec::new();
+        // Each event tagged with its exchange step; rendered under the sub-phase header with a step column.
+        let mut lines: Vec<(&'static str, String)> = Vec::new();
+        // The crossing LAND (through/aborted) is its own sub-phase (2.3), even though the resolver attaches it to
+        // the Volley log - so it does not read as a "volley".
+        let mut land_lines: Vec<String> = Vec::new();
 
         // --- Strikes: sum blows per (attacker -> target) in strike order, then one line each. ---
         let mut order: Vec<(usize, usize)> = Vec::new();
@@ -820,7 +844,7 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 };
                 format!("for {dmg} damage ({how})")
             };
-            lines.push(format!("    {an} {verb} {tn}: {reach}{body}"));
+            lines.push(("strike", format!("{an} {verb} {tn}: {reach}{body}")));
         }
 
         // --- Tempo spent with NO blow behind it - the slip contest, ordered CAUSE BEFORE EFFECT. Resolution is
@@ -848,11 +872,14 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 } else {
                     format!("Finesse {f}")
                 };
-                lines.push(format!(
-                    "    {} reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
-                    before.units[i].name,
-                    before.units[r.target].name,
-                    r.bid
+                lines.push((
+                    "reach",
+                    format!(
+                        "{} reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
+                        before.units[i].name,
+                        before.units[r.target].name,
+                        r.bid
+                    ),
                 ));
             }
         }
@@ -878,12 +905,16 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 // values on the page (multiply, never divide): "4 reach clears the 2 reaching it".
                 let f = before.units[i].finesse.max(1);
                 let dodge = spent * f;
-                lines.push(format!(
-                    "    {name}: flips {spent} tempo at Finesse {f} to generate {dodge} reach, dodging the {worst} reaching it"
+                lines.push((
+                    "dodge",
+                    format!(
+                        "{name}: flips {spent} tempo at Finesse {f} to generate {dodge} reach, dodging the {worst} reaching it"
+                    ),
                 ));
             } else {
-                lines.push(format!(
-                    "    {name}: flips {spent} tempo, no reach connects"
+                lines.push((
+                    "reach",
+                    format!("{name}: flips {spent} tempo, no reach connects"),
                 ));
             }
         }
@@ -895,14 +926,11 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 Some(Answer::Push) => "pushes through the line",
                 _ => "slips through the line",
             };
-            lines.push(format!(
-                "    {name}: {verb}, now {}",
-                rank_word(log.ranks[i])
-            ));
+            land_lines.push(format!("{name}: {verb}, now {}", rank_word(log.ranks[i])));
         }
         for &i in &log.aborted {
-            lines.push(format!(
-                "    {}: turns and fights at the line",
+            land_lines.push(format!(
+                "{}: turns and fights at the line",
                 before.units[i].name
             ));
         }
@@ -949,14 +977,20 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 } else {
                     String::new()
                 };
-                lines.push(format!(
-                    "    {name}: flips {flipped} health at Grit {grit} to absorb {absorbed} damage{over}{remain}"
+                lines.push((
+                    "absorb",
+                    format!(
+                        "{name}: flips {flipped} health at Grit {grit} to absorb {absorbed} damage{over}{remain}"
+                    ),
                 ));
             } else if dmg_to[i] > 0 {
                 // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-phase closes.
-                lines.push(format!(
-                    "    {name}: takes {} damage - under Grit {grit}, no health flips (discarded)",
-                    dmg_to[i]
+                lines.push((
+                    "absorb",
+                    format!(
+                        "{name}: takes {} damage - under Grit {grit}, no health flips (discarded)",
+                        dmg_to[i]
+                    ),
                 ));
             }
         }
@@ -977,23 +1011,35 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             if prev_rk[i] == Rank::Outrider && log.ranks[i] != Rank::Outrider {
                 // Its host formation was wiped, so the outrider state dissolved.
                 if region_changed {
-                    lines.push(format!(
-                        "    {name}: outrider dissolves - rejoins its own line as {}",
-                        rank_word(log.ranks[i])
+                    lines.push((
+                        "move",
+                        format!(
+                            "{name}: outrider dissolves - rejoins its own line as {}",
+                            rank_word(log.ranks[i])
+                        ),
                     ));
                 } else {
-                    lines.push(format!(
-                        "    {name}: outrider dissolves - reforms as {} where it stands",
-                        rank_word(log.ranks[i])
+                    lines.push((
+                        "move",
+                        format!(
+                            "{name}: outrider dissolves - reforms as {} where it stands",
+                            rank_word(log.ranks[i])
+                        ),
                     ));
                 }
             } else if region_changed {
-                lines.push(format!(
-                    "    {name}: moves across the line (now {})",
-                    rank_word(log.ranks[i])
+                lines.push((
+                    "move",
+                    format!(
+                        "{name}: moves across the line (now {})",
+                        rank_word(log.ranks[i])
+                    ),
                 ));
             } else {
-                lines.push(format!("    {name}: becomes {}", rank_word(log.ranks[i])));
+                lines.push((
+                    "move",
+                    format!("{name}: becomes {}", rank_word(log.ranks[i])),
+                ));
             }
         }
 
@@ -1001,9 +1047,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         for &i in &log.fallen {
             let name = &before.units[i].name;
             if before.units[i].horde {
-                lines.push(format!("    {name}: no bodies remaining, wiped out"));
+                lines.push(("death", format!("{name}: no bodies remaining, wiped out")));
             } else {
-                lines.push(format!("    {name}: no health remaining, downed"));
+                lines.push(("death", format!("{name}: no health remaining, downed")));
             }
         }
 
@@ -1011,9 +1057,38 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         prev_tp = log.tempo.clone();
         prev_rk = log.ranks.clone();
         prev_rg = log.regions.clone();
-        if !lines.is_empty() {
-            out.push(format!("  {}", log.phase)); // the phase header, above its events
-            out.extend(lines);
+        if !lines.is_empty() || !land_lines.is_empty() {
+            // The coordinate: a ring header when the ring opens, then numbered sub-phases, then the step column.
+            let (rn, rname, sn, sname) = phase_coord(log.phase);
+            if rn != current_ring {
+                out.push(format!("[ring {rn}] {rname}"));
+                current_ring = rn;
+            }
+            if !lines.is_empty() {
+                out.push(format!("  {rn}.{sn} {sname}"));
+                // Order events by exchange step (reach -> dodge -> strike -> absorb -> move -> death) so the line
+                // reads in the order it resolves, then print each in its step column.
+                let rank = |s: &str| match s {
+                    "reach" => 0,
+                    "dodge" => 1,
+                    "strike" => 2,
+                    "absorb" => 3,
+                    "move" => 4,
+                    _ => 5, // death, and anything else, last
+                };
+                let mut evs = lines;
+                evs.sort_by_key(|(s, _)| rank(s));
+                for (step, text) in evs {
+                    out.push(format!("      {step:<6} {text}"));
+                }
+            }
+            // The Land (2.3): the crossers that arrived or turned back, all `move`.
+            if !land_lines.is_empty() {
+                out.push("  2.3 Land".to_string());
+                for text in land_lines {
+                    out.push(format!("      {:<6} {text}", "move"));
+                }
+            }
         }
     }
     out
