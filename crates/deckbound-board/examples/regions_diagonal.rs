@@ -19,16 +19,10 @@
 use std::time::Instant;
 
 use deckbound_board::units::{beast, kit};
+use deckbound_board::verify::{GRANT_CAP, insight_class, solver_wins};
 use deckbound_content::catalog::{self, Behavior, Encounter};
-use rules::combat::game::{ClashOnly, Combat, Score, Scorer, State, greedy_playout};
+use rules::combat::game::{ClashOnly, Combat, Score, Scorer, State};
 use rules::combat::resolve::Combatant;
-use rules::core::{Game, Outcome, Solvable, Solver, Verdict};
-
-/// Stop doubling the node grant past this ceiling. A position we cannot decisively settle within it is treated
-/// as **not cleanly winnable** - a warband we cannot solve is not one to lean a lesson on. This makes the search
-/// total and bounded (no unbounded hang), at the cost of calling a genuinely-winnable-but-enormous position a
-/// loss, which is the safe direction for a balance gate.
-const GRANT_CAP: u64 = 20_000_000;
 
 fn foes_of(e: &Encounter) -> Vec<Combatant> {
     let mut out = Vec::new();
@@ -40,62 +34,9 @@ fn foes_of(e: &Encounter) -> Vec<Combatant> {
     out
 }
 
-/// **Can these heroes win under game `G`?** `G` is `Combat` or `ClashOnly` - a control is the same heroes under a
-/// different Game. There is no setup: the party stands on region 0, the foes on region 1, and the solver searches
-/// the rounds with one shared memo across the tree. The verdict is ground out with an escalating grant (doubling
-/// on `Evaluating`) up to [`GRANT_CAP`]; past the cap a still-`Evaluating` position is called NOT winnable.
-fn winnable<G>(heroes: &[Combatant], foes: &[Combatant]) -> bool
-where
-    G: Solvable + Game<State = State>,
-{
-    let mut units: Vec<Combatant> = heroes.to_vec();
-    units.extend_from_slice(foes);
-    let s = State::new(units);
-
-    let mut o = Solver::<G>::new();
-    let mut grant = 1u64;
-    loop {
-        o.grant(grant);
-        match o.verdict(&s) {
-            Verdict::Winnable => return true,
-            Verdict::Doomed => return false,
-            Verdict::Evaluating => {
-                if grant >= GRANT_CAP {
-                    eprintln!(
-                        "  [cap] still Evaluating at {GRANT_CAP} nodes - treating as NOT winnable"
-                    );
-                    return false;
-                }
-                grant = grant.saturating_mul(2);
-            }
-        }
-    }
-}
-
-/// **Can these heroes win playing GREEDILY?** Both sides run the one-ply disruption heuristic
-/// ([`greedy_playout`]) - no search, no insight. The "can you win without thinking?" baseline; paired with
-/// [`winnable`], the gap between them is where a real read is needed. One deterministic playout (bounded by the
-/// draw cap), so it is effectively free.
-fn greedy_wins(heroes: &[Combatant], foes: &[Combatant]) -> bool {
-    let mut units: Vec<Combatant> = heroes.to_vec();
-    units.extend_from_slice(foes);
-    matches!(greedy_playout(State::new(units)), Outcome::Win)
-}
-
-/// The insight class of a `(solver, greedy)` pair: **T**rivial (greedy already wins), **I**nsight (only the solver
-/// wins - a real read is needed), **X** impossible (neither wins). `greedy wins & solver loses` cannot happen -
-/// greedy is a legal line - so those three are exhaustive.
-fn insight_class(heroes: &[Combatant], foes: &[Combatant]) -> char {
-    match (winnable::<Combat>(heroes, foes), greedy_wins(heroes, foes)) {
-        (_, true) => 'T',
-        (true, false) => 'I',
-        (false, false) => 'X',
-    }
-}
-
 /// **The best route these heroes can take to a win** under the priority order (win > fewest downed > fewest
 /// rounds > least hp), or `None` if they cannot win. Informative only - it does **not** gate the diagonal, it just
-/// says *how cleanly* the win comes. Budgeted with the same escalating grant as [`winnable`]; at the cap the
+/// says *how cleanly* the win comes. Budgeted with the same escalating grant as [`solver_wins`]; at the cap the
 /// answer may be a provisional `<=` bound.
 fn best_score(heroes: &[Combatant], foes: &[Combatant]) -> (Option<Score>, bool) {
     let mut units: Vec<Combatant> = heroes.to_vec();
@@ -152,52 +93,52 @@ fn behavior_passes(
     area: &[Combatant],
     foes: &[Combatant],
 ) -> Result<(), String> {
-    if !winnable::<Combat>(kits, foes) {
+    if !solver_wins::<Combat>(kits, foes) {
         return Err("full party loses under Combat".to_string());
     }
     match behavior {
         Behavior::Concentration => {
-            if !winnable::<Combat>(single, foes) {
+            if !solver_wins::<Combat>(single, foes) {
                 return Err("single-only party loses (concentration should carry it)".to_string());
             }
-            if winnable::<Combat>(area, foes) {
+            if solver_wins::<Combat>(area, foes) {
                 return Err("area-only party wins (concentration is not necessary)".to_string());
             }
         }
         Behavior::Range => {
-            if !winnable::<Combat>(ranged, foes) {
+            if !solver_wins::<Combat>(ranged, foes) {
                 return Err("ranged-only party loses (range should carry it)".to_string());
             }
-            if winnable::<Combat>(melee, foes) {
+            if solver_wins::<Combat>(melee, foes) {
                 return Err("melee-only party wins (range is not necessary)".to_string());
             }
         }
         Behavior::Sweep => {
-            if !winnable::<Combat>(area, foes) {
+            if !solver_wins::<Combat>(area, foes) {
                 return Err("area-only party loses (a sweep should carry it)".to_string());
             }
-            if winnable::<Combat>(single, foes) {
+            if solver_wins::<Combat>(single, foes) {
                 return Err("single-only party wins (a sweep is not necessary)".to_string());
             }
         }
         Behavior::Raid => {
-            if winnable::<ClashOnly>(kits, foes) {
+            if solver_wins::<ClashOnly>(kits, foes) {
                 return Err(
                     "full party wins under ClashOnly (the raid is not necessary)".to_string(),
                 );
             }
         }
         Behavior::CombinedArms => {
-            if winnable::<Combat>(melee, foes) {
+            if solver_wins::<Combat>(melee, foes) {
                 return Err("melee-only party wins (ranged damage is not necessary)".to_string());
             }
-            if winnable::<Combat>(ranged, foes) {
+            if solver_wins::<Combat>(ranged, foes) {
                 return Err("ranged-only party wins (melee damage is not necessary)".to_string());
             }
-            if winnable::<Combat>(single, foes) {
+            if solver_wins::<Combat>(single, foes) {
                 return Err("single-only party wins (an area strike is not necessary)".to_string());
             }
-            if winnable::<ClashOnly>(kits, foes) {
+            if solver_wins::<ClashOnly>(kits, foes) {
                 return Err(
                     "full party wins under ClashOnly (the raid is not necessary)".to_string(),
                 );
@@ -303,7 +244,7 @@ fn main() {
         let winners: Vec<&str> = kits
             .iter()
             .zip(&names)
-            .filter(|(k, _)| winnable::<Combat>(std::slice::from_ref(*k), &foes))
+            .filter(|(k, _)| solver_wins::<Combat>(std::slice::from_ref(*k), &foes))
             .map(|(_, n)| *n)
             .collect();
         let verdict = if winners == vec![want] {
