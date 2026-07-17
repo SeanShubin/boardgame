@@ -635,6 +635,36 @@ fn act_answer(a: &Act) -> Option<Answer> {
     }
 }
 
+/// The verb for a body's attack, by **reach x shape** - so the log line carries melee/ranged and single/area in
+/// the verb itself, no tag needed. A horde keeps its shape verb; the `x N bodies` in the damage clause marks the
+/// volley.
+fn strike_verb(u: &Combatant) -> &'static str {
+    match (u.ranged && !u.melee, u.aoe) {
+        (true, true) => "salvos on",
+        (true, false) => "fires on",
+        (false, true) => "sweeps",
+        (false, false) => "strikes",
+    }
+}
+
+/// A target named with its **rank** - and, for a rearguard, whether it is **screened** - from the player's view (a
+/// party body is "your", a foe "their"). So a strike says what kind of body it hit and why it was reachable there:
+/// a Clash lands on a vanguard, a Raid on a (screened) rearguard, a Melee on an outrider.
+fn target_desc(board: &Board, t: usize) -> String {
+    let poss = if board.units[t].side == Side::Party {
+        "your"
+    } else {
+        "their"
+    };
+    let rank = match board.ranks[t] {
+        Rank::Vanguard => "vanguard",
+        Rank::Outrider => "outrider",
+        Rank::Rearguard if board.is_screened(t) => "screened rearguard",
+        Rank::Rearguard => "exposed rearguard",
+    };
+    format!("{poss} {rank}")
+}
+
 /// **The round, phase by phase - every state change spelled out, none left invisible.** Re-runs the
 /// deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
 /// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE
@@ -695,6 +725,10 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         let mut tempo_said: Vec<usize> = Vec::new();
         for (&(a, t), &n) in order.iter().zip(&blows) {
             let (an, tn) = (&before.units[a].name, &before.units[t].name);
+            // Reach x shape rides the VERB; the target's rank rides its NAME. So the line shows melee/ranged,
+            // single/area, and what kind of body it hit - without a tag.
+            let verb = strike_verb(&before.units[a]);
+            let tdesc = target_desc(before, t);
             let mult = if before.units[a].horde {
                 prev_hp[a].max(1) // body count ENTERING this phase - what `land` and the bid both read
             } else {
@@ -702,7 +736,7 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             };
             // The reach clause (once per attacker): tempo flipped x Finesse x bodies = the reach it generated, plus
             // any tempo poured for extra strikes. Recovered from the recorded bid, so it always matches `land`.
-            let cost = if tempo_said.contains(&a) {
+            let reach = if tempo_said.contains(&a) {
                 String::new()
             } else {
                 tempo_said.push(a);
@@ -731,13 +765,13 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                             r.bid
                         )
                     }
-                    None if before.units[a].aoe => format!("flips {total} tempo to sweep, "),
+                    // A sweep forms no reach contest (unevadable); the verb already says it swept.
                     None => format!("flips {total} tempo, "),
                 }
             };
-            if before.units[t].horde {
+            let body = if before.units[t].horde {
                 // A blow fells bodies of a pack (one per blow; a sweep records the whole pack) - no pile, no Might.
-                lines.push(format!("    {an}: {cost}fells {n} of {tn}"));
+                format!("fells {n} bodies")
             } else {
                 // Banked damage = (Might - armor) per blow; a horde attacker swings its whole body count at once.
                 let per_blow = before.units[a].might.saturating_sub(before.units[t].armor);
@@ -754,18 +788,14 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 };
                 let how = if before.units[a].horde {
                     format!("{base} x {mult} bodies")
+                } else if n > 1 {
+                    format!("{base}, {n} strikes")
                 } else {
                     base
                 };
-                let strikes = if n > 1 && !before.units[a].horde {
-                    format!(" ({n} strikes)")
-                } else {
-                    String::new()
-                };
-                lines.push(format!(
-                    "    {an}: {cost}strikes {tn} at {how} for {dmg} damage{strikes}"
-                ));
-            }
+                format!("for {dmg} damage ({how})")
+            };
+            lines.push(format!("    {an} {verb} {tn} ({tdesc}): {reach}{body}"));
         }
 
         // --- Tempo spent with NO blow behind it - the slip contest, ordered CAUSE BEFORE EFFECT. Resolution is
@@ -794,10 +824,11 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     format!("Finesse {f}")
                 };
                 lines.push(format!(
-                    "    {}: flips {cards} tempo at {fclause} to generate {} reach, but {} dodges it",
+                    "    {} ({}) reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
                     before.units[i].name,
-                    r.bid,
-                    before.units[r.target].name
+                    target_desc(before, i), // which tier caught the crosser: vanguard intercept vs rearguard volley
+                    before.units[r.target].name,
+                    r.bid
                 ));
             }
         }
