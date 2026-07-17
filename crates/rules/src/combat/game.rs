@@ -124,9 +124,11 @@ impl State {
 /// or a real opponent, not a scripted environment, and cannot be searched single-agent. [`Decider::deterministic`]
 /// is that gate - the solver may only plug in a Decider that answers `true`.
 pub trait Decider {
-    /// The act this body commits this round, given the board. A living body always has at least [`Act::Hold`], so
-    /// this is total. `&mut self` lets a stateful policy (a seeded RNG) advance; a pure one ignores it.
-    fn commit(&mut self, board: &Board, body: usize) -> Act;
+    /// The act this body commits this round, or `None` if this policy **defers to an interactive driver** - a
+    /// human at a UI supplies the act out of band (a click), so the loop polls again next frame. An *autonomous*
+    /// policy always returns `Some`. `&mut self` lets a stateful policy (a seeded RNG) advance; a pure one ignores
+    /// it.
+    fn commit(&mut self, board: &Board, body: usize) -> Option<Act>;
 
     /// Whether this policy is reproducible - same board, same act, no hidden state. A solver may plug in a Decider
     /// as its foe environment **only** when this is `true`.
@@ -139,11 +141,62 @@ pub trait Decider {
 pub struct Instinct;
 
 impl Decider for Instinct {
-    fn commit(&mut self, board: &Board, body: usize) -> Act {
-        foe_act(board, body).unwrap_or(Act::Hold)
+    fn commit(&mut self, board: &Board, body: usize) -> Option<Act> {
+        Some(foe_act(board, body).unwrap_or(Act::Hold))
     }
     fn deterministic(&self) -> bool {
         true
+    }
+}
+
+/// **Human** - the policy that never decides autonomously: [`commit`](Decider::commit) always returns `None`, so
+/// an interactive driver supplies the act (a click). Not deterministic from the code's view - a person is free to
+/// pick anything, so a solver can never plug a human in as its environment.
+pub struct Human;
+
+impl Decider for Human {
+    fn commit(&mut self, _board: &Board, _body: usize) -> Option<Act> {
+        None
+    }
+    fn deterministic(&self) -> bool {
+        false
+    }
+}
+
+/// **Random** - a stochastic policy, standing in for the whole *weighted-random* class: it commits a uniformly
+/// random legal act. A seeded xorshift drives it, so a given seed replays identically, yet the choice is **not** a
+/// pure function of the board (it advances RNG state) - so [`deterministic`](Decider::deterministic) is `false`
+/// and a solver may not plug it in. The abstraction is deliberately blind to the *distribution* (uniform here, or
+/// any weighting): that is exactly what makes instinct, random, and human interchangeable behind [`Decider`].
+pub struct Random {
+    state: u64,
+}
+
+impl Random {
+    pub fn new(seed: u64) -> Self {
+        Random { state: seed | 1 } // a nonzero state - xorshift is stuck at 0
+    }
+
+    fn next(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+}
+
+impl Decider for Random {
+    fn commit(&mut self, board: &Board, body: usize) -> Option<Act> {
+        let opts = legal_acts(board, body);
+        if opts.is_empty() {
+            return Some(Act::Hold);
+        }
+        Some(opts[(self.next() % opts.len() as u64) as usize])
+    }
+    fn deterministic(&self) -> bool {
+        false
     }
 }
 
@@ -164,7 +217,9 @@ impl Game for Combat {
                 .into_iter()
                 .map(Choice::Act)
                 .collect(),
-            Some(&i) => vec![Choice::Act(Instinct.commit(&state.board, i))],
+            Some(&i) => vec![Choice::Act(
+                Instinct.commit(&state.board, i).unwrap_or(Act::Hold),
+            )],
             None => Vec::new(),
         }
     }
@@ -445,6 +500,50 @@ mod tests {
         for o in &opts {
             assert!(matches!(o, Choice::Act(_)), "an action, never a placement");
         }
+    }
+
+    /// **The play loop is decider-agnostic** - a body's act comes from its [`Decider`], and the loop that walks a
+    /// fight never learns which kind it asked. Playing every body by [`Instinct`] reproduces the scripted fight;
+    /// swapping the party to a [`Random`] policy still drives a legal fight to a verdict through the *same* loop.
+    /// This is the whole point of the abstraction: instinct, random, and human are interchangeable here.
+    #[test]
+    fn any_decider_drives_the_same_loop() {
+        // The autonomous play loop: while the deciding body's Decider commits (Some), apply and advance. (A Human
+        // would return None here and hand off to an interactive driver; this headless loop uses only autonomous
+        // policies.)
+        fn play(mut s: State, deciders: &mut [Box<dyn Decider>]) -> Outcome {
+            loop {
+                if let Some(o) = Combat::outcome(&s) {
+                    return o;
+                }
+                let i = s
+                    .deciding()
+                    .expect("a non-terminal state has a deciding body");
+                let act = deciders[i]
+                    .commit(s.board(), i)
+                    .expect("an autonomous decider always commits");
+                s = Combat::apply(&s, &Choice::Act(act));
+            }
+        }
+        let board = || {
+            State::new(vec![
+                unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false),
+                unit("Weakling", Side::Foe, [1, 2, 1, 1, 1], true, false),
+            ])
+        };
+        // Instinct is deterministic: the same all-Instinct fight twice reaches the same verdict.
+        let mut d1: [Box<dyn Decider>; 2] = [Box::new(Instinct), Box::new(Instinct)];
+        let mut d2: [Box<dyn Decider>; 2] = [Box::new(Instinct), Box::new(Instinct)];
+        assert_eq!(
+            play(board(), &mut d1),
+            play(board(), &mut d2),
+            "a deterministic policy replays identically"
+        );
+        // A Random party against an Instinct foe drives the SAME loop to a legal verdict, blind to the policy
+        // (bounded by the 5-round draw cap, so it always terminates).
+        let mut mixed: [Box<dyn Decider>; 2] = [Box::new(Random::new(1)), Box::new(Instinct)];
+        let out = play(board(), &mut mixed);
+        assert!(matches!(out, Outcome::Win | Outcome::Loss | Outcome::Draw));
     }
 
     /// Options are only ever the PARTY's - the foe is never offered a choice, because it is scripted inside
