@@ -32,7 +32,9 @@ Verified: **4/4 solos + 5/5 party fights** (`regions_diagonal`); 52 rules tests.
 ## 3. Acts and engagement (geometry, not menus)
 
 Each round every body -- heroes and foes (a foe's is one scripted instinct) -- declares one **Act**:
-**Clash**, **Raid**, **Melee**, **Slip**, or **Hold**. You pick a *target*; where it stands decides which:
+**Clash**, **Cross**, **Melee**, or **Hold**. A **Cross** is one crossing into the enemy line with an optional
+on-arrival strike: `Cross(Some(back-target))` is a **Raid** (strike that rearguard as you land),
+`Cross(None)` is a plain **Slip** (just cross and stand). You pick a *target*; where it stands decides which:
 
 | Target is...                                            | Engagement                                        | Who            |
 | ------------------------------------------------------- | ------------------------------------------------- | -------------- |
@@ -88,8 +90,10 @@ Undecided in **5 rounds = Draw = loss**.
 
 ## 7. Movement and the Outrider
 
-- **Slip**: only a **Vanguard** crosses, into the enemy line, becoming an **Outrider**. **One-way -- no
-  retreat.** (A Raid is a melee crossing that also strikes a rearguard; same gauntlet.)
+- **Cross**: only a **Vanguard** crosses, into the enemy line, becoming an **Outrider**. **One-way -- no
+  retreat.** One act: with a rearguard target it is a **Raid** (strikes on arrival, same gauntlet); with no
+  target a plain **Slip** (just cross). A raid's on-arrival strike reaches the **back line only** -- a front
+  body you **Clash** -- so it never hands melee a Crossing-ring pre-emption of the Outer Clash.
 - Answers to a crossing: **Evade** (pay the slip, untouched), **Push** (pay nothing, eat the blows),
   **Abort** (turn and fight, give up the ground).
 - **Dissolution** (at the Inner Ring boundary): an Outrider whose host formation is wiped is "an
