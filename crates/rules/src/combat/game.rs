@@ -28,7 +28,7 @@
 
 use std::collections::HashMap;
 
-use super::regions::{Act, Board, MAX_ROUNDS, Rank, foe_act, legal_acts, play_round};
+use super::regions::{Act, Board, MAX_ROUNDS, Rank, foe_act, greedy_act, legal_acts, play_round};
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
 
@@ -258,6 +258,24 @@ fn resolve_round(s: &mut State) {
     s.round += 1;
     s.pending = vec![None; s.board.units.len()];
     s.next = s.next_undeclared(0).unwrap_or(s.order.len());
+}
+
+/// **Play a whole fight out under the greedy heuristic on BOTH sides** - every body (hero and foe) commits
+/// [`greedy_act`], no search. This is the "can you win WITHOUT thinking?" baseline: a party driven by the same
+/// one-ply disruption read the foes use. Deterministic and cheap (one playout, bounded by the 5-round draw cap).
+/// Paired with the solver's verdict, the gap between them is exactly where player insight earns a win the greedy
+/// line cannot.
+pub fn greedy_playout(mut state: State) -> Outcome {
+    loop {
+        if let Some(o) = Combat::outcome(&state) {
+            return o;
+        }
+        let i = state
+            .deciding()
+            .expect("a non-terminal state has a deciding body");
+        let act = greedy_act(state.board(), i).unwrap_or(Act::Hold);
+        state = Combat::apply(&state, &Choice::Act(act));
+    }
 }
 
 // ---- the best-route scorer -----------------------------------------------------------------------------

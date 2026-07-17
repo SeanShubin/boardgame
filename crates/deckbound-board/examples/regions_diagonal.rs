@@ -20,9 +20,9 @@ use std::time::Instant;
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Behavior, Encounter};
-use rules::combat::game::{ClashOnly, Combat, Score, Scorer, State};
+use rules::combat::game::{ClashOnly, Combat, Score, Scorer, State, greedy_playout};
 use rules::combat::resolve::Combatant;
-use rules::core::{Game, Solvable, Solver, Verdict};
+use rules::core::{Game, Outcome, Solvable, Solver, Verdict};
 
 /// Stop doubling the node grant past this ceiling. A position we cannot decisively settle within it is treated
 /// as **not cleanly winnable** - a warband we cannot solve is not one to lean a lesson on. This makes the search
@@ -69,6 +69,27 @@ where
                 grant = grant.saturating_mul(2);
             }
         }
+    }
+}
+
+/// **Can these heroes win playing GREEDILY?** Both sides run the one-ply disruption heuristic
+/// ([`greedy_playout`]) - no search, no insight. The "can you win without thinking?" baseline; paired with
+/// [`winnable`], the gap between them is where a real read is needed. One deterministic playout (bounded by the
+/// draw cap), so it is effectively free.
+fn greedy_wins(heroes: &[Combatant], foes: &[Combatant]) -> bool {
+    let mut units: Vec<Combatant> = heroes.to_vec();
+    units.extend_from_slice(foes);
+    matches!(greedy_playout(State::new(units)), Outcome::Win)
+}
+
+/// The insight class of a `(solver, greedy)` pair: **T**rivial (greedy already wins), **I**nsight (only the solver
+/// wins - a real read is needed), **X** impossible (neither wins). `greedy wins & solver loses` cannot happen -
+/// greedy is a legal line - so those three are exhaustive.
+fn insight_class(heroes: &[Combatant], foes: &[Combatant]) -> char {
+    match (winnable::<Combat>(heroes, foes), greedy_wins(heroes, foes)) {
+        (_, true) => 'T',
+        (true, false) => 'I',
+        (false, false) => 'X',
     }
 }
 
@@ -186,8 +207,68 @@ fn behavior_passes(
     Ok(())
 }
 
+/// Print the `(solver, greedy)` insight class of each sub-party a corner leans on. A **win** sub-party ideally
+/// reads `[I]` - the strategy is genuinely needed, because greedy play *without* it loses; a **lose** sub-party
+/// ideally reads `[X]` - the wrong tool truly cannot win. The off-cases are the tuning signal: `[T]` on a win means
+/// the corner is trivially winnable (it teaches nothing - greedy already wins); `[I]` on a lose means the wrong
+/// tool can be *cheesed* with a non-obvious line though greedy fails (Greywater's old melee, before the Reaver).
+fn insight_report(
+    behavior: Behavior,
+    kits: &[Combatant],
+    melee: &[Combatant],
+    ranged: &[Combatant],
+    single: &[Combatant],
+    area: &[Combatant],
+    foes: &[Combatant],
+) {
+    let rows: Vec<(&str, &[Combatant], bool)> = match behavior {
+        Behavior::Concentration => {
+            vec![
+                ("full", kits, true),
+                ("single", single, true),
+                ("area", area, false),
+            ]
+        }
+        Behavior::Range => {
+            vec![
+                ("full", kits, true),
+                ("ranged", ranged, true),
+                ("melee", melee, false),
+            ]
+        }
+        Behavior::Sweep => {
+            vec![
+                ("full", kits, true),
+                ("area", area, true),
+                ("single", single, false),
+            ]
+        }
+        Behavior::Raid => vec![("full", kits, true)],
+        Behavior::CombinedArms => vec![
+            ("full", kits, true),
+            ("melee", melee, false),
+            ("ranged", ranged, false),
+            ("single", single, false),
+        ],
+    };
+    for (label, party, should_win) in rows {
+        let c = insight_class(party, foes);
+        let note = match (should_win, c) {
+            (true, 'I') => "insight needed - good",
+            (true, 'T') => "trivial - greedy already wins, lesson not forced",
+            (true, _) => "IMPOSSIBLE - a sub-party that must win cannot!",
+            (false, 'X') => "impossible - good",
+            (false, 'I') => "cheesable - greedy loses, but an expert line wins",
+            (false, _) => "TRIVIAL WIN - a control that must lose wins by greedy!",
+        };
+        let want = if should_win { "win " } else { "lose" };
+        println!("    {label:<7} want {want} [{c}]  {note}");
+    }
+}
+
 fn main() {
     let deep = std::env::args().any(|a| a == "scores" || a == "--scores");
+    let insight = std::env::args().any(|a| a == "insight" || a == "--insight");
     println!("regions_diagonal - does the encounter set still teach what it is meant to?");
     println!(
         "(driving the pure `rules` crate through the generic Game + Solver{})\n",
@@ -296,6 +377,20 @@ fn main() {
         ""
     };
     println!("\n  {corner_ok}/{party_total} party fights (4 corners + capstone).{note}");
+
+    if insight {
+        println!(
+            "\nINSIGHT GRID - can each sub-party win with a SOLVER but not GREEDILY?\n  [I] insight needed (solver wins, greedy loses)   [T] trivial (greedy wins)   [X] impossible (neither)\n"
+        );
+        for e in catalog::ENCOUNTERS.iter().filter(|e| e.party) {
+            if let Some(behavior) = e.behavior {
+                let foes = foes_of(e);
+                println!("  {} ({behavior:?})", e.location);
+                insight_report(behavior, &kits, &melee, &ranged, &single, &area, &foes);
+            }
+        }
+    }
+
     println!(
         "\nSCORE: {solo_ok}/4 solos, {corner_ok}/{party_total} party fights   ({} ms)",
         t0.elapsed().as_millis()

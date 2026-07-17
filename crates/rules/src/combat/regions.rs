@@ -532,15 +532,14 @@ fn disruption(board: &Board, i: usize, act: &Act) -> Disruption {
     }
 }
 
-/// **The one act a single scripted foe takes** - the disruption heuristic applied to the board. `None` if `i` is
-/// not a living foe (a hero chooses; a corpse does nothing). This is the whole of a creature's decision, so it is
-/// the single option [`super::game`] offers when a foe reaches the declaration cursor - a creature "declares" like
-/// a hero, its turn just has exactly one legal move, the one its instinct dictates.
-pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
-    if board.units[i].side != Side::Foe || board.units[i].fallen {
+/// **The greedy disruption act for ANY living body** - the same one-ply heuristic the scripted foes run, but
+/// side-agnostic, so it also drives a *naive* hero (a party that plays without insight). `None` only if `i` is
+/// fallen. Picks the act of greatest [`Disruption`], with a deterministic tiebreak.
+pub fn greedy_act(board: &Board, i: usize) -> Option<Act> {
+    if board.units[i].fallen {
         return None;
     }
-    // Deterministic tiebreak among equal-disruption acts: strike the softest hero (lowest hp), then the leftmost
+    // Deterministic tiebreak among equal-disruption acts: strike the softest enemy (lowest hp), then the leftmost
     // (lowest index); a targetless act sorts last so a real strike always wins the tie. A final act-kind order
     // (clash over a pushed raid over an evaded one over a slip over hold) settles two acts on the same target.
     let target_hp = |act: &Act| match act {
@@ -564,6 +563,16 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
                 .then_with(|| act_pref(b).cmp(&act_pref(a)))
         })
         .or(Some(Act::Hold))
+}
+
+/// **The one act a single scripted foe takes** - [`greedy_act`] restricted to foes (a hero chooses; a corpse does
+/// nothing). This is the single option [`super::game`] offers when a foe reaches the declaration cursor - a
+/// creature "declares" like a hero, its turn just has exactly one legal move, the one its instinct dictates.
+pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
+    if board.units[i].side != Side::Foe {
+        return None;
+    }
+    greedy_act(board, i)
 }
 
 /// **Who would intercept a crossing** - the enemy vanguard(s) that reach for `mover` if it crosses to region
