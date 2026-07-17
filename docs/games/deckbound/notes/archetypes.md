@@ -23,7 +23,7 @@ diverse.
 | ---------------------- | --------------------------- | ------------------------------------------------------------------------------------------- |
 | **Sovereign** *(solo)* | everything                  | self-sufficient one-army; broad max investment, self-recovers, engages crowds               |
 | **Bulwark**            | Body toughness + Speed      | the wall — **Holds**: **absorbs** (toughness) and **drags** Runners (Speed); little offense |
-| **Vanguard**           | Power + Speed               | front-line killer; mutual-sub-phase duels and runs                                         |
+| **Vanguard**           | Power + Speed               | front-line killer; mutual-sub-phase duels and runs                                          |
 | **Skirmisher**         | Speed + Precision           | Runner / assassin; slips to the enemy back line, exploits weak spots                        |
 | **Channeler**          | elemental / ranged delivery | AoE and status from the back line; glass cannon, needs a wall                               |
 | **Tactician**          | Mind                        | the stance, **recovery**, enabling allies' Precision, sealing enemy Minds                   |

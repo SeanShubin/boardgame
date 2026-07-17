@@ -48,13 +48,13 @@ table*. A row that can't be filled cleanly is a hole; as of now the only blanks 
 
 ### Tempo & the gauntlet
 
-| Element                          | How                                                      | When                               | Lives                                          |
-| -------------------------------- | -------------------------------------------------------- | ---------------------------------- | ---------------------------------------------- |
+| Element                          | How                                                      | When                               | Lives                                         |
+| -------------------------------- | -------------------------------------------------------- | ---------------------------------- | --------------------------------------------- |
 | **Tempo** (per-round Speed pool) | a **derivable number**                                   | spent at resolve; resets round-end | **head** = Speed − sub-phases visible in play |
-| **First-strike order**           | *derived* — compare leftover tempo                       | resolve                            | head (= two tempo numbers)                     |
-| **Pre-emption**                  | *derived* — a lethal first-strike, or a **stagger** card | resolve                            | head (who's felled before they swing)          |
-| **Gauntlet drag pool**           | a **derivable number** = sum of Guards' Speeds           | resolve                            | head (= sum of visible Guard Speeds)           |
-| **Overextended / Exposed**       | a **marker** (tempo gone negative)                       | resolve; clears round-end          | table                                          |
+| **First-strike order**           | *derived* — compare leftover tempo                       | resolve                            | head (= two tempo numbers)                    |
+| **Pre-emption**                  | *derived* — a lethal first-strike, or a **stagger** card | resolve                            | head (who's felled before they swing)         |
+| **Gauntlet drag pool**           | a **derivable number** = sum of Guards' Speeds           | resolve                            | head (= sum of visible Guard Speeds)          |
+| **Overextended / Exposed**       | a **marker** (tempo gone negative)                       | resolve; clears round-end          | table                                         |
 
 ### Actions, effects, damage
 

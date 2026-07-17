@@ -472,7 +472,7 @@ thematic rule for who dies how:
 
 | Rank                       | Dies to                                                                                                            | Safe from                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| **Front** (is the line)    | direct sub-phase (enemy Front clash); a slipped enemy Flank striking from behind                                  | being flanked while it holds — it faces forward                       |
+| **Front** (is the line)    | direct sub-phase (enemy Front clash); a slipped enemy Flank striking from behind                                   | being flanked while it holds — it faces forward                       |
 | **Flank** (left the line)  | the wall's **catch / parting hit** at the line · the enemy **Back's** ranged fire · an enemy **Flank** in the open | the committed enemy **Front** — a holding line cannot wheel and chase |
 | **Back** (behind the line) | a Flank that **slips past** its wall · its own **Front wiped**, then enemy Fronts pour through                     | everything, *while its line holds*                                    |
 

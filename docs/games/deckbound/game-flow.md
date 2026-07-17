@@ -52,7 +52,7 @@ the optional module is on; otherwise a same-range sub-phase is a single Trade.
 | **Encounter** | one fight; a sequence of **Rounds** until clear or retreat; foes drawn from the **threat deck** (a deck recipe scaled by level)                                   | `progression §2 / §4.1`                              |
 | **Round**     | one **Standoff → Fray → Volley → Breach → Reckoning** pass, ending in the **Lull** (refresh)                                                                      | **Spec §4 / §4.6**                                   |
 | **Phase**     | Standoff (reveal) · Fray · Volley · Breach · Reckoning · Lull — order-independent *within* each                                                                   | **Spec §4.6** (TERM *Phase 1 / Phase 2*)             |
-| **Trade**     | a same-range sub-phase's deterministic resolution: simultaneous mutual base damage                                                                               | **Spec §4.2**                                        |
+| **Trade**     | a same-range sub-phase's deterministic resolution: simultaneous mutual base damage                                                                                | **Spec §4.2**                                        |
 | **Clash**     | the **optional** 1v1 mix-up that replaces a Trade; a sequence of **Beats**; ends-on-strike; builds **Force**                                                      | **Spec §1.0**                                        |
 | **Beat**      | the single RPS matchup: both pick a card, reveal at once, resolve                                                                                                 | **Spec §1.0**                                        |
 

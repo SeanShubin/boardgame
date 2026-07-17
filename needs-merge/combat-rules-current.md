@@ -34,12 +34,12 @@ Verified: **4/4 solos + 5/5 party fights** (`regions_diagonal`); 52 rules tests.
 Each round every body -- heroes and foes (a foe's is one scripted instinct) -- declares one **Act**:
 **Clash**, **Raid**, **Melee**, **Slip**, or **Hold**. You pick a *target*; where it stands decides which:
 
-| Target is... | Engagement | Who |
-| --- | --- | --- |
-| enemy **Vanguard**, across the gap | **Clash** | any weapon |
-| **screened Rearguard** (its side has a living vanguard) | **Raid** (cross in; the front intercepts) | **melee** only |
-| **exposed Rearguard** (its vanguard has fallen) | **Clash** by anyone, **and** raidable by melee | -- |
-| enemy in your **own** line (an Outrider) | **Melee** (no screen between intermingled bodies) | any weapon |
+| Target is...                                            | Engagement                                        | Who            |
+| ------------------------------------------------------- | ------------------------------------------------- | -------------- |
+| enemy **Vanguard**, across the gap                      | **Clash**                                         | any weapon     |
+| **screened Rearguard** (its side has a living vanguard) | **Raid** (cross in; the front intercepts)         | **melee** only |
+| **exposed Rearguard** (its vanguard has fallen)         | **Clash** by anyone, **and** raidable by melee    | --             |
+| enemy in your **own** line (an Outrider)                | **Melee** (no screen between intermingled bodies) | any weapon     |
 
 - **AoE = width, never extra reach**: a Clash sweeps the whole front line, a Raid the whole back line,
   a Melee the whole region (past the screen), a Volley the whole crossing. A body you could not

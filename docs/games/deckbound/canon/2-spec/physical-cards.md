@@ -107,15 +107,15 @@ divider's depth recovers the nesting.
 **RULE.** Exactly the following is **mechanical** (survives pack-up) versus
 **transitory** (rebuilt on layout, never packed):
 
-| Mechanical (card-encoded, survives pack-up) | Transitory (rebuilt on layout) |
-| --- | --- |
-| The set of cards and their identities | Screen x/y of every pile and card (the app-persistence layer) |
-| Each card's facing (Health damage = face-down; a moved day-copy = face-down) | The focused / grown / fanned-to-front card |
-| Each card's zone (a character's location = which location zone holds its location card) | Selection / highlight |
-| Within-zone order where order is a rule (a draw deck) | The drill-in navigation stack (which zone you're inside) |
-| The day (a counted event/day track, PC.5) | Mid-drag: the card in hand, drop-zone highlights, ghosts |
-| | The combat log / play-by-play (regenerated, not state) |
-| | Undo history, hover, animation/tween |
+| Mechanical (card-encoded, survives pack-up)                                             | Transitory (rebuilt on layout)                                |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| The set of cards and their identities                                                   | Screen x/y of every pile and card (the app-persistence layer) |
+| Each card's facing (Health damage = face-down; a moved day-copy = face-down)            | The focused / grown / fanned-to-front card                    |
+| Each card's zone (a character's location = which location zone holds its location card) | Selection / highlight                                         |
+| Within-zone order where order is a rule (a draw deck)                                   | The drill-in navigation stack (which zone you're inside)      |
+| The day (a counted event/day track, PC.5)                                               | Mid-drag: the card in hand, drop-zone highlights, ghosts      |
+|                                                                                         | The combat log / play-by-play (regenerated, not state)        |
+|                                                                                         | Undo history, hover, animation/tween                          |
 
 **WHY.** The split is forced by PC.1: a fact is mechanical iff it is on a card.
 Positions, focus, and the log are *views of* the state, not the state. Naming the

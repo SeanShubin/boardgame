@@ -215,14 +215,14 @@ parallel world, just a different renderer choice behind the same `Game`.
 The test for each deckbound-named thing now in the generic crates: *find the game-agnostic service
 hiding inside it.* The service stays in the renderer; the meaning moves behind the seam.
 
-| In `card-render` / `card-model` today | Generic service it becomes (stays) | Meaning (moves to deckbound, via TableView/apply) |
-|---|---|---|
-| `ArenaCombat`/`ArenaState`/`drive_arena` | render an interactive sub-zone from a view; send clicks as actions | "this zone is an arena"; evolve it via `apply` |
-| `CombatRequest`/`ManualCombatRequest` | already generic: `ActionRequests` | "this action starts a fight" |
-| phase/tempo/strike/evade labels | draw a card: title + stat lines from the view | the words/numbers are deckbound's view content |
-| `catalog` (stat/strike/creature cards) | — (no generic service) | pure deckbound content |
-| `sample_table()` fixtures | — (a renderer ships no world) | deckbound's opening `TableView` |
-| `character_recipe`/`current_day`/`advance_day` | — (game-state queries) | deckbound state; renderer only shows cards |
+| In `card-render` / `card-model` today          | Generic service it becomes (stays)                                 | Meaning (moves to deckbound, via TableView/apply) |
+| ---------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------- |
+| `ArenaCombat`/`ArenaState`/`drive_arena`       | render an interactive sub-zone from a view; send clicks as actions | "this zone is an arena"; evolve it via `apply`    |
+| `CombatRequest`/`ManualCombatRequest`          | already generic: `ActionRequests`                                  | "this action starts a fight"                      |
+| phase/tempo/strike/evade labels                | draw a card: title + stat lines from the view                      | the words/numbers are deckbound's view content    |
+| `catalog` (stat/strike/creature cards)         | — (no generic service)                                             | pure deckbound content                            |
+| `sample_table()` fixtures                      | — (a renderer ships no world)                                      | deckbound's opening `TableView`                   |
+| `character_recipe`/`current_day`/`advance_day` | — (game-state queries)                                             | deckbound state; renderer only shows cards        |
 
 Payoff: once the arena is "just another zone the view declares and the player acts on,"
 `card-render` needs **zero** combat knowledge — the arena becomes emergent from the `Game` trait.

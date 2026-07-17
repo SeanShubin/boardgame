@@ -25,10 +25,10 @@ control (the **best fixed formation**). The answer was no, exhaustively -- so re
 cut as decoration. `v2_regions` re-asks the identical question, with the identical control, with
 a **priced** move:
 
-| | winnable from the best fixed setup? | winnable only by moving? |
-|---|---|---|
-| 4 **solo** encounters | all 4 | **0** |
-| 4 **party** encounters | 1 | **3** -- Greywater Ford, Emberfall Hollow, Ninefold Deep |
+|                        | winnable from the best fixed setup? | winnable only by moving?                                 |
+| ---------------------- | ----------------------------------- | -------------------------------------------------------- |
+| 4 **solo** encounters  | all 4                               | **0**                                                    |
+| 4 **party** encounters | 1                                   | **3** -- Greywater Ford, Emberfall Hollow, Ninefold Deep |
 
 **Three of the four party encounters are unwinnable from every fixed setup, and winnable by
 moving.** That is the result `v2_remarshal` could not find with a *free* move. Pricing the move
@@ -40,11 +40,11 @@ on its own rather than being stipulated.
 
 ### The tractability fear (§9) was unfounded
 
-| | measured |
-|---|---|
-| nodes, all 8 encounters | **836** |
-| worst single memo | **577 states** |
-| wall clock, all 8 | **~110 ms** |
+|                         | measured       |
+| ----------------------- | -------------- |
+| nodes, all 8 encounters | **836**        |
+| worst single memo       | **577 states** |
+| wall clock, all 8       | **~110 ms**    |
 
 Against the **24x** baseline `v2_remarshal` measured for a per-round `3^heroes` re-declaration,
 this is nothing. Three things did it, and all three were predicted in §9:
@@ -122,13 +122,13 @@ to body). **The brake belongs in the horde rule, not in the region rule.**
 Before redesigning, note that the two sources of truth have drifted apart on precisely the
 three axes this redesign touches. This is worth fixing regardless of what we decide.
 
-| | Spec (`canon/2-spec` §4, §4.6) | Product (`deckbound-board`) |
-|---|---|---|
-| **When is the formation declared?** | Re-declared **every round** (§4 step 1, "Marshal (hidden, simultaneous -- every round)") | **Once.** `arena.rs:1145`: *"Marshal happens ONCE. Its card is discarded, not rotated"* -- the round wraps Breach -> Intercept with no formation step |
-| **The attack contest** | A **single simultaneous blind bid**; defender must strictly beat it | **Three one-way mini-phases**: Engage (attacker commits) -> Evade (target *sees the commitment* and pays the exact `slip_cost`, or stands) -> Strike. No blind bid anywhere |
-| **When does unapplied damage clear?** | At **every sub-phase** boundary (§4.6 "every pile wipes at its own sub-phase boundary") | At the **Round Reset**. `combat.rs:447`: the sub-phase boundary *"is where the dead stop fighting, not where wounds close"* |
-| **Groups** | Full system (§4.5): sum-to-block, min-to-slip, spillover, bodyguarding | Not built. Only `horde` exists; *"heroes are ungrouped in the UI"* |
-| **Armor** | Deferred to gear (§2.2: "there is no cut today") | **Built** -- a per-strike floor |
+|                                       | Spec (`canon/2-spec` §4, §4.6)                                                           | Product (`deckbound-board`)                                                                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **When is the formation declared?**   | Re-declared **every round** (§4 step 1, "Marshal (hidden, simultaneous -- every round)") | **Once.** `arena.rs:1145`: *"Marshal happens ONCE. Its card is discarded, not rotated"* -- the round wraps Breach -> Intercept with no formation step                       |
+| **The attack contest**                | A **single simultaneous blind bid**; defender must strictly beat it                      | **Three one-way mini-phases**: Engage (attacker commits) -> Evade (target *sees the commitment* and pays the exact `slip_cost`, or stands) -> Strike. No blind bid anywhere |
+| **When does unapplied damage clear?** | At **every sub-phase** boundary (§4.6 "every pile wipes at its own sub-phase boundary")  | At the **Round Reset**. `combat.rs:447`: the sub-phase boundary *"is where the dead stop fighting, not where wounds close"*                                                 |
+| **Groups**                            | Full system (§4.5): sum-to-block, min-to-slip, spillover, bodyguarding                   | Not built. Only `horde` exists; *"heroes are ungrouped in the UI"*                                                                                                          |
+| **Armor**                             | Deferred to gear (§2.2: "there is no cut today")                                         | **Built** -- a per-strike floor                                                                                                                                             |
 
 Two of those product decisions are *better than the spec* and this design keeps them. One of
 them is the whole problem.
@@ -217,11 +217,11 @@ ladder**, so the only geometry the game can express is "front" and "behind the f
 
 Make each one a **directed edge** instead:
 
-| Today's rank | What it actually asserts | The edge |
-|---|---|---|
-| **Vanguard** (hold the line) | my body is between you and them | **Defend(ally)** |
+| Today's rank                       | What it actually asserts              | The edge                                |
+| ---------------------------------- | ------------------------------------- | --------------------------------------- |
+| **Vanguard** (hold the line)       | my body is between you and them       | **Defend(ally)**                        |
 | **Rearguard** (deal from the back) | I act from behind someone else's body | **Support(ally)**, and *being Defended* |
-| **Outrider** (break the line) | I am coming for *that specific one* | **Press(enemy)** |
+| **Outrider** (break the line)      | I am coming for *that specific one*   | **Press(enemy)**                        |
 
 Now "the back is shielded while the front lives" stops being a global rule about ranks and becomes
 a fact you can point at: *the Marksman is shielded because the Bastion declared Defend(Marksman),
@@ -338,12 +338,12 @@ The Outrider's "exposed both ways" is no longer a special property of a role. It
 Apply the razor from §3 -- *a sub-phase exists only so a death in it can silence something later* --
 and ask of each candidate boundary: **what does a death here silence?**
 
-| Sub-phase | What happens | A death here silences... | Was |
-|---|---|---|---|
-| **1. Cross** | Everything that punishes movement, all trading in one pile: **parting blows** from the region you are leaving; the **screen contest** with everyone defending your destination; **fire** from the destination's occupants, who see you coming in the open. | ...the crosser's **Arrival**. It never lands. | Intercept **+** Volley (merged, §3) |
-| **2. Arrive** | Survivors of the crossing land in their destination and strike. | ...the victim's **Contact** action. *The raider kills the cannon before it fires.* This is the Outrider's entire purpose, preserved exactly. | Raid |
-| **3. Contact** | Everyone now co-located with an enemy trades: the arrivals, and everyone who never moved. | ...a screener, which **opens the ground behind it**. | Clash |
-| **4. Breach** | The blows that were waiting on ground that just opened: a screen chain whose screeners died in 1-3 is now open, and anyone pressing a target behind it **gets through free** -- no crossing cost, because the line broke. | (nothing -- it is the last) | Breach |
+| Sub-phase      | What happens                                                                                                                                                                                                                                               | A death here silences...                                                                                                                     | Was                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **1. Cross**   | Everything that punishes movement, all trading in one pile: **parting blows** from the region you are leaving; the **screen contest** with everyone defending your destination; **fire** from the destination's occupants, who see you coming in the open. | ...the crosser's **Arrival**. It never lands.                                                                                                | Intercept **+** Volley (merged, §3) |
+| **2. Arrive**  | Survivors of the crossing land in their destination and strike.                                                                                                                                                                                            | ...the victim's **Contact** action. *The raider kills the cannon before it fires.* This is the Outrider's entire purpose, preserved exactly. | Raid                                |
+| **3. Contact** | Everyone now co-located with an enemy trades: the arrivals, and everyone who never moved.                                                                                                                                                                  | ...a screener, which **opens the ground behind it**.                                                                                         | Clash                               |
+| **4. Breach**  | The blows that were waiting on ground that just opened: a screen chain whose screeners died in 1-3 is now open, and anyone pressing a target behind it **gets through free** -- no crossing cost, because the line broke.                                  | (nothing -- it is the last)                                                                                                                  | Breach                              |
 
 **Four, down from five.** Every one of them is justified by a *named silencing*, and no boundary
 exists for any other reason.
@@ -356,12 +356,12 @@ duel). **Contact** fixes that collision for free.
 This is the check that matters. Take the *old* formation shape (Vanguards defending Rearguards,
 Outriders pressing Rearguards) in *round 1* (everyone apart, everyone closing):
 
-| New schedule | Reduces to |
-|---|---|
+| New schedule                                                                                                                                                                                                                         | Reduces to                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
 | **Cross** -- nobody is in contact yet, so no parting blows. Enemy Vanguards defend their Rearguard, so my Outrider pressing that Rearguard must beat them; the Rearguard, being the destination's occupant, fires on it as it comes. | **Intercept + Volley**, exactly |
-| **Arrive** -- my Outrider lands and strikes the Rearguard. | **Raid**, exactly |
-| **Contact** -- the fronts are co-located and trade; the Rearguards fire (no crossing) at the front. | **Clash**, exactly |
-| **Breach** -- the front fell, so `V->R` and `R->R` open. | **Breach**, exactly |
+| **Arrive** -- my Outrider lands and strikes the Rearguard.                                                                                                                                                                           | **Raid**, exactly               |
+| **Contact** -- the fronts are co-located and trade; the Rearguards fire (no crossing) at the front.                                                                                                                                  | **Clash**, exactly              |
+| **Breach** -- the front fell, so `V->R` and `R->R` open.                                                                                                                                                                             | **Breach**, exactly             |
 
 The new model *is* the old model in round 1. It is a strict generalization: same fiction, same
 sub-phases, same opportunity costs (the Rearguard that spends its shot on the crosser in **Cross**
@@ -449,10 +449,10 @@ The solver's memo key is `(per-unit (health, tempo, fallen, pending, rank), roun
 And the *count* of formation states goes **down**, if regions are canonicalized:
 
 | bodies on field | rank states (`3^n`) | region states (`Bell(n)`) |
-|---|---|---|
-| 4 | 81 | **15** |
-| 6 | 729 | **203** |
-| 8 | 6561 | **4140** |
+| --------------- | ------------------- | ------------------------- |
+| 4               | 81                  | **15**                    |
+| 6               | 729                 | **203**                   |
+| 8               | 6561                | **4140**                  |
 
 `Bell(n) < 3^n` for every `n <= 8`, which covers every real encounter. **The partition is a
 cheaper state than the rank assignment.** This is precisely why the region *labels* must never

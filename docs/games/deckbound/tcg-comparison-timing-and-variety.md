@@ -120,16 +120,16 @@ GA is the interesting case: it **keeps MTG's engine and adds governors.**
 
 Every axis tells the same story: **MTG open → GA throttled → Deckbound bounded-by-construction.**
 
-| Axis | Magic | Grand Archive | Deckbound |
-|---|---|---|---|
-| Interaction mechanism | Open LIFO stack + continuous priority | LIFO stack, priority **windowed** at phase starts | **No stack**; fixed sub-phase schedule |
-| When you act vs. info reveal | **After** reveal (reactive), always | **After** reveal, but only in Fast windows | **Before** reveal (**anticipatory**) |
-| Reactivity is… | Universal / default | **Opt-in per card** (Fast); creatures Slow | **Forbidden** by C4 |
-| Escalation | Unbounded counter-wars | Bounded (stack empties, pass in succession) | **One bid, higher wins** — no raise-war |
-| Resource variance | Mana screw / flood | Decoupled via Material Deck (inferred: low) | **Zero** — no random draw for players |
-| Combos | Multiplicative, unbounded | Chained but throttled (Slow default) | **Additive/commutative**, bounded |
-| Where variety lives | Emergent from huge card pool | Champion + elements/classes + card types | **Designed** Roles/Suits + built-in RPS |
-| Hand-playable without a computer? | No | Barely (timestamps, negation) | **Yes, by mandate** (#7) |
+| Axis                              | Magic                                 | Grand Archive                                     | Deckbound                               |
+| --------------------------------- | ------------------------------------- | ------------------------------------------------- | --------------------------------------- |
+| Interaction mechanism             | Open LIFO stack + continuous priority | LIFO stack, priority **windowed** at phase starts | **No stack**; fixed sub-phase schedule  |
+| When you act vs. info reveal      | **After** reveal (reactive), always   | **After** reveal, but only in Fast windows        | **Before** reveal (**anticipatory**)    |
+| Reactivity is…                    | Universal / default                   | **Opt-in per card** (Fast); creatures Slow        | **Forbidden** by C4                     |
+| Escalation                        | Unbounded counter-wars                | Bounded (stack empties, pass in succession)       | **One bid, higher wins** — no raise-war |
+| Resource variance                 | Mana screw / flood                    | Decoupled via Material Deck (inferred: low)       | **Zero** — no random draw for players   |
+| Combos                            | Multiplicative, unbounded             | Chained but throttled (Slow default)              | **Additive/commutative**, bounded       |
+| Where variety lives               | Emergent from huge card pool          | Champion + elements/classes + card types          | **Designed** Roles/Suits + built-in RPS |
+| Hand-playable without a computer? | No                                    | Barely (timestamps, negation)                     | **Yes, by mandate** (#7)                |
 
 **GA and Deckbound are directional allies against MTG.** They disagree only on *degree*. GA
 throttles the reactive engine; Deckbound removes it. Both *agree* that variety must not be

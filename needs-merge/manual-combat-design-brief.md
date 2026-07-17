@@ -227,13 +227,13 @@ input today — this is the surface to redirect.** There is no `policy::greedy` 
 predictable human stand-in" (`policy.rs:11`). The 5 consult sites, all in `combat.rs`, run synchronously
 inside `apply(Deploy)` with **no resting point**:
 
-| `combat.rs` site | policy call | Decision |
-|---|---|---|
-| `:394` (in `declare_side`) | `governing_target(...)` | **which enemy each unit aims at + whether to hold tempo** (the richest decision) |
-| folded into `:394` | `team_can_crack` / `choose_target` | focus-fire viability; finish-lowest-Health-first |
-| `:488` (in `apply_side`) | `role_evades(role)` | endure-vs-evade role gate (Vanguard never evades) |
-| `:491` | `should_avoid(...)` | **does this defender evade this blow** (only if it would flip a card + affordable) |
-| `:567` | `should_strike_back(...)` | **does this soaker retaliate** |
+| `combat.rs` site           | policy call                        | Decision                                                                           |
+| -------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `:394` (in `declare_side`) | `governing_target(...)`            | **which enemy each unit aims at + whether to hold tempo** (the richest decision)   |
+| folded into `:394`         | `team_can_crack` / `choose_target` | focus-fire viability; finish-lowest-Health-first                                   |
+| `:488` (in `apply_side`)   | `role_evades(role)`                | endure-vs-evade role gate (Vanguard never evades)                                  |
+| `:491`                     | `should_avoid(...)`                | **does this defender evade this blow** (only if it would flip a card + affordable) |
+| `:567`                     | `should_strike_back(...)`          | **does this soaker retaliate**                                                     |
 
 `step(&mut State)` (`combat.rs:701`) takes **no** decision argument — it pulls everything from `policy`.
 Injection strategy (per the resolver's own header `combat.rs:293`): thread a decision-source into
