@@ -425,6 +425,10 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // would fire in the Outer Ring, so being unscreened is never an advantage either - a screen is
                 // what buys a back its first shot. (Raid pushed first so a scripted raider prefers the earlier,
                 // silencing reach.)
+                //
+                // A raid reaches the BACK line only (a front body you Clash directly). Letting a raid strike a
+                // front body on arrival hands melee a Crossing-ring pre-emption of the Outer Clash - a ranged-style
+                // "fire first" that broke the Swarm's answer-from-range solo (measured: it went 2-kit soft).
                 if board.ranks[t] == Rank::Rearguard && u.melee {
                     out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
                 }
