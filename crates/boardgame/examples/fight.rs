@@ -1132,10 +1132,17 @@ fn act_label(b: &Board, a: &Act) -> String {
         Answer::Push => "push",
         Answer::Abort => "abort",
     };
+    // Name the target WITH its current health, so two same-named bodies in different states (e.g. two Walls at 2 hp
+    // and 4 hp) read as the distinct choices they are. A horde's health is its body count.
+    let who = |t: usize| {
+        let u = &b.units[t];
+        let kind = if u.horde { "bodies" } else { "hp" };
+        format!("{} ({} {kind})", u.name, u.health)
+    };
     match a {
-        Act::Clash(t) => format!("Clash {}", b.units[*t].name),
-        Act::Raid(t, x) => format!("Raid {} / {}", b.units[*t].name, ans(x)),
-        Act::Melee(t) => format!("Melee {}", b.units[*t].name),
+        Act::Clash(t) => format!("Clash {}", who(*t)),
+        Act::Raid(t, x) => format!("Raid {} / {}", who(*t), ans(x)),
+        Act::Melee(t) => format!("Melee {}", who(*t)),
         Act::Slip(r, x) => format!("Slip -> {} / {}", region_letter(*r), ans(x)),
         Act::Hold => "Hold".into(),
     }

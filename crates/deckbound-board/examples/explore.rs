@@ -12,7 +12,7 @@
 use std::io::{self, Write};
 
 use deckbound_board::units::{beast, kit};
-use deckbound_content::catalog::{self, Creature, Encounter};
+use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, Score, Scorer, State};
 use rules::combat::regions::{Act, Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
@@ -59,10 +59,16 @@ fn show_board(b: &Board) -> String {
 
 fn label(b: &Board, c: &Choice) -> String {
     let Choice::Act(a) = c;
+    // Name the target with its hp (bodies, for a horde), so two same-named bodies in different states read apart.
+    let who = |t: usize| {
+        let u = &b.units[t];
+        let kind = if u.horde { "bodies" } else { "hp" };
+        format!("{} ({} {kind})", u.name, u.health)
+    };
     match a {
-        Act::Clash(t) => format!("Clash {}", b.units[*t].name),
-        Act::Raid(t, ans) => format!("Raid {} ({ans:?})", b.units[*t].name),
-        Act::Melee(t) => format!("Melee {}", b.units[*t].name),
+        Act::Clash(t) => format!("Clash {}", who(*t)),
+        Act::Raid(t, ans) => format!("Raid {} ({ans:?})", who(*t)),
+        Act::Melee(t) => format!("Melee {}", who(*t)),
         Act::Slip(r, ans) => format!("Slip to region {} ({ans:?})", (b'A' + r) as char),
         Act::Hold => "Hold".to_string(),
     }
