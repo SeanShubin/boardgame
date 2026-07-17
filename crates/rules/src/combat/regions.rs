@@ -1302,6 +1302,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     if let Some(last) = logs.last_mut() {
         last.through = landing.through.clone();
         last.aborted = landing.aborted.clone();
+        // The land happens AFTER this phase's snapshot, so fold its rank/region moves back into it - otherwise a
+        // crossing reads its PRE-land rank here (a raider still a Vanguard) and the real change to Outrider surfaces
+        // a phase late as a spurious second move. One crossing, one phase. (Same fix as dissolution.)
+        last.ranks = board.ranks.clone();
+        last.regions = board.regions.clone();
     }
 
     // The raiders that got through strike the rearguard they came for - before it can fire in the Outer Ring. Tempo-gated:
@@ -2174,6 +2179,40 @@ mod tests {
             reach.bid,
             wall_cards * b.units[1].finesse,
             "with its bid = cards x Finesse (1 tempo x Finesse 2 = 2)"
+        );
+    }
+
+    /// **A crossing is one event, in one phase.** The land moves a raider (rank -> Outrider, into the enemy region)
+    /// AFTER the Crossing-ring snapshot is taken, so that move must be folded back into it. Otherwise the crossing
+    /// reads its PRE-land rank (a raider still a Vanguard) and the real change resurfaces a phase later as a
+    /// spurious second move. Assert the Volley snapshot already shows the landed Outrider in the enemy region.
+    #[test]
+    fn a_crossing_lands_in_its_own_phase() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [6, 8, 3, 3, 2], true, false), // 0 - crosses (Push), tanky enough to land
+                unit("Wall", Side::Foe, [1, 4, 6, 1, 2], true, false), // 1 - the screen, region 1
+                unit("Mage", Side::Foe, [5, 2, 1, 2, 2], false, true), // 2 - the cannon it came for
+            ],
+            vec![0, 1, 1],
+        );
+        let logs = play_round(&mut b, &[Act::Raid(2, Answer::Push), Act::Hold, Act::Hold]);
+        let volley = logs
+            .iter()
+            .find(|l| l.phase == "Crossing Ring: Volley")
+            .expect("a Volley phase");
+        assert!(
+            volley.through.contains(&0),
+            "the Raider crossed in the Volley phase"
+        );
+        assert_eq!(
+            volley.ranks[0],
+            Rank::Outrider,
+            "and its snapshot ALREADY shows it landed as an Outrider"
+        );
+        assert_eq!(
+            volley.regions[0], 1,
+            "in the enemy region, this phase - not a phase later"
         );
     }
 
