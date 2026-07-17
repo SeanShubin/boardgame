@@ -223,6 +223,7 @@ impl Fight {
         };
         f.snapshot_max();
         f.rebuild_scorer();
+        f.log_roster(); // list ranks at the top, before any forced declarations are logged
         f.reposition();
         f.sync_log();
         f
@@ -237,6 +238,47 @@ impl Fight {
     /// Record every unit's full health for this encounter, so the table can show max vs current.
     fn snapshot_max(&mut self) {
         self.max_health = self.state.board().units.iter().map(|u| u.health).collect();
+    }
+
+    /// The opening roster: every combatant's starting **rank**, plus its (static) reach and shape. Ranks are
+    /// listed once here and thereafter only NARRATED when they change (a crossing makes an Outrider, a dissolution
+    /// sends one home). Reach and shape never change, so listing them once grounds the strike verbs (`fires`,
+    /// `sweeps`, ...) without repeating on every line.
+    fn log_roster(&mut self) {
+        let loc = self.enc().location; // &'static, so it holds no borrow of self
+        let rows: Vec<String> = {
+            let b = self.state.board();
+            let mut rows = vec![
+                format!("=== {loc} ==="),
+                "Combatants (rank / reach / shape):".to_string(),
+            ];
+            for i in 0..b.units.len() {
+                let u = &b.units[i];
+                let mark = if u.side == Side::Party { " " } else { "*" };
+                let rank = match b.ranks[i] {
+                    Rank::Vanguard => "vanguard",
+                    Rank::Rearguard => "rearguard",
+                    Rank::Outrider => "outrider",
+                };
+                let reach = if u.ranged && !u.melee {
+                    "ranged"
+                } else {
+                    "melee"
+                };
+                let shape = if u.aoe { "area" } else { "single" };
+                let horde = if u.horde {
+                    format!(" (horde x{})", u.health)
+                } else {
+                    String::new()
+                };
+                rows.push(format!(
+                    "  {mark}{:<12} {rank:<10} {reach:<6} {shape}{horde}",
+                    u.name
+                ));
+            }
+            rows
+        };
+        self.log.extend(rows);
     }
 
     fn enc(&self) -> &'static Encounter {
@@ -254,6 +296,7 @@ impl Fight {
         self.rebuild_scorer();
         self.log.clear();
         self.history.clear(); // a new roster invalidates every prior decision point
+        self.log_roster();
         self.reposition();
         self.sync_log();
     }
@@ -647,24 +690,6 @@ fn strike_verb(u: &Combatant) -> &'static str {
     }
 }
 
-/// A target named with its **rank** - and, for a rearguard, whether it is **screened** - from the player's view (a
-/// party body is "your", a foe "their"). So a strike says what kind of body it hit and why it was reachable there:
-/// a Clash lands on a vanguard, a Raid on a (screened) rearguard, a Melee on an outrider.
-fn target_desc(board: &Board, t: usize) -> String {
-    let poss = if board.units[t].side == Side::Party {
-        "your"
-    } else {
-        "their"
-    };
-    let rank = match board.ranks[t] {
-        Rank::Vanguard => "vanguard",
-        Rank::Outrider => "outrider",
-        Rank::Rearguard if board.is_screened(t) => "screened rearguard",
-        Rank::Rearguard => "exposed rearguard",
-    };
-    format!("{poss} {rank}")
-}
-
 /// **The round, phase by phase - every state change spelled out, none left invisible.** Re-runs the
 /// deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
 /// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns, reporting everything UNDER THE PHASE
@@ -725,10 +750,9 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         let mut tempo_said: Vec<usize> = Vec::new();
         for (&(a, t), &n) in order.iter().zip(&blows) {
             let (an, tn) = (&before.units[a].name, &before.units[t].name);
-            // Reach x shape rides the VERB; the target's rank rides its NAME. So the line shows melee/ranged,
-            // single/area, and what kind of body it hit - without a tag.
+            // Reach x shape rides the VERB (melee/ranged, single/area). Rank is NOT tagged here - it is listed in
+            // the opening roster and narrated when it changes.
             let verb = strike_verb(&before.units[a]);
-            let tdesc = target_desc(before, t);
             let mult = if before.units[a].horde {
                 prev_hp[a].max(1) // body count ENTERING this phase - what `land` and the bid both read
             } else {
@@ -795,7 +819,7 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 };
                 format!("for {dmg} damage ({how})")
             };
-            lines.push(format!("    {an} {verb} {tn} ({tdesc}): {reach}{body}"));
+            lines.push(format!("    {an} {verb} {tn}: {reach}{body}"));
         }
 
         // --- Tempo spent with NO blow behind it - the slip contest, ordered CAUSE BEFORE EFFECT. Resolution is
@@ -824,9 +848,8 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     format!("Finesse {f}")
                 };
                 lines.push(format!(
-                    "    {} ({}) reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
+                    "    {} reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
                     before.units[i].name,
-                    target_desc(before, i), // which tier caught the crosser: vanguard intercept vs rearguard volley
                     before.units[r.target].name,
                     r.bid
                 ));
