@@ -794,8 +794,17 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 }
             };
             let body = if before.units[t].horde {
-                // A blow fells bodies of a pack (one per blow; a sweep records the whole pack) - no pile, no Might.
-                format!("fells {n} bodies")
+                // A horde has no Grit pile - it is 1-Health bodies. The fell count comes from HOW it was hit, so
+                // say which and show the gate: a sweep clears the WHOLE pack if Might beats armor (both operands on
+                // the page); an aimed blow fells one body per blow, and Might buys nothing there.
+                if before.units[a].aoe {
+                    format!(
+                        "fells the whole pack, {n} bodies (Might {} > armor {})",
+                        before.units[a].might, before.units[t].armor
+                    )
+                } else {
+                    format!("fells {n} bodies (one body per blow, {n} blows)")
+                }
             } else {
                 // Banked damage = (Might - armor) per blow; a horde attacker swings its whole body count at once.
                 let per_blow = before.units[a].might.saturating_sub(before.units[t].armor);
