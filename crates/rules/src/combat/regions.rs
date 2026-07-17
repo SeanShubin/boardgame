@@ -94,7 +94,7 @@
 use std::collections::HashMap;
 
 use super::resolve::{
-    Combatant, Contact, Dodge, Engage, Instinct, Side, can_answer, end_sub_phase, refresh_round,
+    Combatant, Contact, Dodge, Engage, Side, can_answer, end_sub_phase, refresh_round,
     resolve_evade, slip_cost,
 };
 
@@ -341,9 +341,9 @@ const ANSWERS: [Answer; 3] = [Answer::Evade, Answer::Push, Answer::Abort];
 ///
 /// "Same position" is region + rank (what decides *how* it is reached - Melee / Raid / Clash);
 /// "same body" is every stat that shapes the exchange (health, might, grit, cadence, finesse, armor), the reach
-/// and shape flags (melee, ranged, aoe, horde), the side, AND the **instinct** (two same-stat foes that will
-/// script differently are genuinely different bodies). `tempo`/`pending` are absent on purpose: both re-derive at
-/// the round Reset, so at any state a search visits they equal cadence / zero.
+/// and shape flags (melee, ranged, aoe, horde), and the side. (There is no instinct to compare any more: every foe
+/// runs the one disruption heuristic, so two same-stat foes script identically.) `tempo`/`pending` are absent on
+/// purpose: both re-derive at the round Reset, so at any state a search visits they equal cadence / zero.
 fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
     let (x, y) = (&board.units[a], &board.units[b]);
     !x.fallen
@@ -361,7 +361,6 @@ fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
         && x.ranged == y.ranged
         && x.aoe == y.aoe
         && x.horde == y.horde
-        && x.instinct == y.instinct
 }
 
 /// **Every legal action for unit `i`** - the count-adaptive candidate list (spec 4.1: a choice is offered only
@@ -450,38 +449,120 @@ pub fn foe_acts(board: &Board) -> Vec<Option<Act>> {
     (0..board.units.len()).map(|i| foe_act(board, i)).collect()
 }
 
-/// **The one act a single scripted foe takes** - its instinct applied to the board. `None` if `i` is not a living
-/// foe (a hero chooses; a corpse does nothing). This is the whole of a creature's decision, so it is the single
-/// option [`super::game`] offers when a foe reaches the declaration cursor - a creature "declares" like a hero,
-/// its turn just has exactly one legal move.
+/// **How much visible disruption an act does to the enemy, this turn** - the whole of a creature's instinct,
+/// ranked lexicographically: enemies **downed**, then their health cards **flipped**, then **positional**
+/// advantage. Higher is better on every field. There is no per-creature switch: the *same* greedy read runs for
+/// every creature, so behaviour EMERGES from stats - a low-Might wall flips little whatever it does and holds to
+/// keep its own back screened; a hard striker flips most by reaching a soft back, so it raids. One ply, no solver.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Disruption {
+    downs: u32,
+    flips: u32,
+    positional: i32,
+}
+
+/// A cheap analytic read of the `(downs, flips)` an aimed strike from `a` onto `t` banks this round - Might per
+/// blow over the target's Grit, across the strikes the attacker's tempo buys (the opening blow the reach pays for,
+/// plus one per poured card). No resolution: a heuristic estimate, not the solver.
+fn strike_yield(board: &Board, a: usize, t: usize) -> (u32, u32) {
+    let (att, tar) = (&board.units[a], &board.units[t]);
+    let per_blow = att.might.saturating_sub(tar.armor);
+    if per_blow == 0 {
+        return (0, 0);
+    }
+    let strikes = 1 + att.tempo.saturating_sub(reach_cards(&board.units, a, t));
+    if tar.horde {
+        // No spill: an aimed blow fells one body per penetrating strike, a sweep clears the whole pack.
+        if per_blow < tar.grit.max(1) {
+            return (0, 0);
+        }
+        let felled = if att.aoe {
+            tar.health
+        } else {
+            strikes.min(tar.health)
+        };
+        (u32::from(felled >= tar.health), felled)
+    } else {
+        let flips = (per_blow * strikes / tar.grit.max(1)).min(tar.health);
+        (u32::from(flips >= tar.health), flips)
+    }
+}
+
+/// The positional advantage of `act` for foe `i` - the term that keeps a creature in the rank its stats are built
+/// for, which a one-ply flip count cannot see. Reaching an enemy back is already paid for by the flips it banks,
+/// so this only prices what leaving costs. Two costs, both on a **crossing** (the one act that changes rank):
+///
+/// - **Screening** - abandoning a post that still screens a friendly rearguard exposes it to the enemy.
+/// - **Role-fit** - a crossing trades a vanguard for an outrider. That rank pays off for a **striker** (offence
+///   over defence, Might above Grit), loose in the enemy back; a **tank** (Grit >= Might) is worth far more
+///   holding the front, so leaving its best rank is a cost.
+///
+/// Together they are the emergent form of "a wall never abandons its post": no creature is *told* to hold - a
+/// Might-1 body simply scores holding above a raid worth a single flip, because the raid throws away a rank its
+/// stats were made for.
+fn positional(board: &Board, i: usize, act: &Act) -> i32 {
+    if !matches!(act, Act::Cross(..)) {
+        return 0; // only a crossing leaves the post / changes rank
+    }
+    let u = &board.units[i];
+    let (region, side) = (board.regions[i], u.side);
+    let mut cost = 0;
+    let screens_a_back = board
+        .in_region(region)
+        .into_iter()
+        .any(|j| board.units[j].side == side && board.ranks[j] == Rank::Rearguard);
+    if screens_a_back && board.vanguard(region, side) == [i] {
+        cost -= 1; // last of the screen: leaving unguards the back behind it
+    }
+    if u.might <= u.grit {
+        cost -= 1; // a tank out of the vanguard is a tank wasted
+    }
+    cost
+}
+
+fn disruption(board: &Board, i: usize, act: &Act) -> Disruption {
+    let (downs, flips) = match act {
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _) => strike_yield(board, i, *t),
+        Act::Cross(None, _) | Act::Hold => (0, 0),
+    };
+    Disruption {
+        downs,
+        flips,
+        positional: positional(board, i, act),
+    }
+}
+
+/// **The one act a single scripted foe takes** - the disruption heuristic applied to the board. `None` if `i` is
+/// not a living foe (a hero chooses; a corpse does nothing). This is the whole of a creature's decision, so it is
+/// the single option [`super::game`] offers when a foe reaches the declaration cursor - a creature "declares" like
+/// a hero, its turn just has exactly one legal move, the one its instinct dictates.
 pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
     if board.units[i].side != Side::Foe || board.units[i].fallen {
         return None;
     }
-    let acts = legal_acts(board, i);
-    let softest = |t: usize| (board.units[t].health, board.units[t].grit);
-    // The one behavioural switch, dispatched on the creature's card instinct.
-    let allowed = |a: &&Act| match board.units[i].instinct {
-        // Hunt anything: a clash, an in-region melee (dig out an outrider, or - if it is the outrider - strike a
-        // host), or a raid PUSHED through a line. The aggressive default - it will leave its own post to do it.
-        Instinct::HuntWeakest => {
-            matches!(
-                a,
-                Act::Clash(_) | Act::Melee(_) | Act::Cross(Some(_), Answer::Push)
-            )
-        }
-        // Hold the line: a clash, or an in-region melee - both fight in place. NEVER a raid or a slip, so the
-        // body behind this one stays screened. What makes a wall a wall.
-        Instinct::HoldTheLine => matches!(a, Act::Clash(_) | Act::Melee(_)),
+    // Deterministic tiebreak among equal-disruption acts: strike the softest hero (lowest hp), then the leftmost
+    // (lowest index); a targetless act sorts last so a real strike always wins the tie. A final act-kind order
+    // (clash over a pushed raid over an evaded one over a slip over hold) settles two acts on the same target.
+    let target_hp = |act: &Act| match act {
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _) => (board.units[*t].health, *t),
+        _ => (u32::MAX, usize::MAX),
     };
-    acts.iter()
-        .filter(allowed)
-        .filter_map(|a| match a {
-            Act::Clash(t) | Act::Cross(Some(t), _) | Act::Melee(t) => Some((softest(*t), *a)),
-            _ => None,
+    let act_pref = |act: &Act| match act {
+        Act::Clash(_) | Act::Melee(_) => 0u8,
+        Act::Cross(_, Answer::Push) => 1,
+        Act::Cross(_, Answer::Evade) => 2,
+        Act::Cross(_, Answer::Abort) => 3,
+        Act::Hold => 4,
+    };
+    legal_acts(board, i)
+        .into_iter()
+        .max_by(|a, b| {
+            disruption(board, i, a)
+                .cmp(&disruption(board, i, b))
+                // lower hp / index / act-pref preferred, so reverse them into the max
+                .then_with(|| target_hp(b).cmp(&target_hp(a)))
+                .then_with(|| act_pref(b).cmp(&act_pref(a)))
         })
-        .min_by_key(|&(k, _)| k)
-        .map(|(_, a)| a)
         .or(Some(Act::Hold))
 }
 
@@ -2389,22 +2470,23 @@ mod tests {
         );
     }
 
-    /// **HoldTheLine: a wall never abandons its post** - it clashes or melees in place, never raids or slips.
+    /// **A tank holds its post - emergently, with no instinct tag.** A wall (Grit >= Might) is worth far more
+    /// screening the front than loose in the enemy back, so the disruption heuristic's role-fit term scores holding
+    /// above any raid on the creature's stats alone. What makes a wall a wall is now its numbers, not a flag.
     #[test]
-    fn a_hold_the_line_creature_never_leaves_its_region() {
-        let mut b = Board::new(
+    fn a_tank_holds_the_line_without_being_told() {
+        let b = Board::new(
             vec![
                 unit("Softie", Side::Party, [1, 1, 1, 1, 1], false, true),
-                unit("Wall", Side::Foe, [3, 6, 3, 2, 2], true, false),
+                unit("Wall", Side::Foe, [3, 6, 3, 2, 2], true, false), // Might 3 <= Grit 3: a tank
                 unit("Cannon", Side::Foe, [5, 2, 1, 2, 2], false, true),
             ],
             vec![0, 1, 1],
         );
-        b.units[1].instinct = Instinct::HoldTheLine;
         let hold = foe_acts(&b);
         assert!(
             !matches!(hold[1], Some(Act::Cross(..))),
-            "a HoldTheLine wall must never raid or slip: {:?}",
+            "a tank must never raid or slip out of the vanguard: {:?}",
             hold[1]
         );
         assert!(
