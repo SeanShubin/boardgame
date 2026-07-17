@@ -651,17 +651,63 @@ impl Fight {
         let round_before = before_state.round();
 
         if let Some(idx) = acting {
-            // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read apart.
+            // The first commit of a round opens the [declare] phase - the closed selection, every body locking its
+            // act before anything resolves. (Detected by an all-undeclared pending: the round has just reset.)
+            if before_state.pending().iter().all(|p| p.is_none()) {
+                self.log.push("[declare]".to_string());
+            }
+            // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read apart. The
+            // mark is the ONLY thing that says a foe was scripted - the act itself reads as a choice, because a
+            // Decider (instinct, random, or human) commits it the same way.
             let mark = if before.units[idx].side == Side::Party {
                 ""
             } else {
                 "*"
             };
-            self.log.push(format!(
-                "{mark}{}: {}",
-                before.units[idx].name,
-                describe(before, c)
-            ));
+            let name = &before.units[idx].name;
+            match c {
+                // A crossing is TWO commits with the interception revealed between them (fork B): the honest
+                // structure a human meets, even though the model carries the whole Cross in one Act. Commit the
+                // cross, reveal the line's catch, commit the answer.
+                Choice::Act(Act::Cross(target, answer)) => {
+                    let dest = before
+                        .occupied()
+                        .into_iter()
+                        .find(|&r| r != before.regions[idx])
+                        .unwrap_or(before.regions[idx]);
+                    let intent = match target {
+                        Some(t) => format!("raid {}", before.units[*t].name),
+                        None => "slip into the enemy line".to_string(),
+                    };
+                    self.log
+                        .push(format!("      commit  {mark}{name} -> {intent}"));
+                    let caught: Vec<String> = catchers(before, idx, dest)
+                        .into_iter()
+                        .map(|j| before.units[j].name.clone())
+                        .collect();
+                    if caught.is_empty() {
+                        self.log.push(format!(
+                            "      reveal  the line does not reach {name} - it crosses clean"
+                        ));
+                    } else {
+                        self.log.push(format!(
+                            "      reveal  the line catches {name}: {}",
+                            join_counts(&caught)
+                        ));
+                    }
+                    let ans = match answer {
+                        Answer::Evade => "evade",
+                        Answer::Push => "push - eat the blows",
+                        Answer::Abort => "abort - turn and fight",
+                    };
+                    self.log
+                        .push(format!("      commit  {mark}{name} -> {ans}"));
+                }
+                _ => self.log.push(format!(
+                    "      commit  {mark}{name} -> {}",
+                    describe(before, c)
+                )),
+            }
         }
 
         // The full act vector this apply would resolve with, if it is the round-closer: every body's pending
