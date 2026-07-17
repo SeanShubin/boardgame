@@ -18,7 +18,8 @@
 //! `Raid(target, Answer)`; the two beats are purely how the choice is presented.
 //!
 //! Space-efficient by intent: a compact unit table with stat abbreviations (M/V/G/C/F = Might / Vitality /
-//! Grit / Cadence / Finesse), region letters, and F/b/o ranks (front vanguard / back rearguard / loose outrider).
+//! Grit / Cadence / Finesse) and F/b/o ranks (front vanguard / back rearguard / loose outrider). There are two
+//! lines - yours and theirs - so a crossing reads as "into their line", not a region letter.
 //!
 //! **Back** steps to the previous decision - a pointer move over the kept solver memo, so nothing is recomputed,
 //! and the log unwinds with it (a first Back also just closes an open crossing). Two files mirror the session
@@ -660,17 +661,6 @@ impl Fight {
     }
 }
 
-/// The region an act carries its actor into, if it moves at all - the renderer's copy of the private
-/// `Act::destination`, so the UI can tell a slipper from a stander without reaching into the rules.
-fn act_destination(before: &Board, i: usize, a: &Act) -> Option<u8> {
-    let here = before.regions[i];
-    match a {
-        Act::Raid(t, _) => (before.regions[*t] != here).then(|| before.regions[*t]),
-        Act::Slip(r, _) => (*r != here).then_some(*r),
-        _ => None,
-    }
-}
-
 fn act_answer(a: &Act) -> Option<Answer> {
     match a {
         Act::Raid(_, x) | Act::Slip(_, x) => Some(*x),
@@ -902,16 +892,13 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
         for &i in &log.through {
             let name = &before.units[i].name;
             let verb = match act_answer(&acts[i]) {
-                Some(Answer::Push) => "pushes through to",
-                _ => "slips through to",
+                Some(Answer::Push) => "pushes through the line",
+                _ => "slips through the line",
             };
-            if let Some(dest) = act_destination(before, i, &acts[i]) {
-                lines.push(format!(
-                    "    {name}: {verb} region {}, now {}",
-                    region_letter(dest),
-                    rank_word(log.ranks[i])
-                ));
-            }
+            lines.push(format!(
+                "    {name}: {verb}, now {}",
+                rank_word(log.ranks[i])
+            ));
         }
         for &i in &log.aborted {
             lines.push(format!(
@@ -991,9 +978,8 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 // Its host formation was wiped, so the outrider state dissolved.
                 if region_changed {
                     lines.push(format!(
-                        "    {name}: outrider dissolves - rejoins the line as {} in region {}",
-                        rank_word(log.ranks[i]),
-                        region_letter(log.regions[i])
+                        "    {name}: outrider dissolves - rejoins its own line as {}",
+                        rank_word(log.ranks[i])
                     ));
                 } else {
                     lines.push(format!(
@@ -1003,8 +989,7 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 }
             } else if region_changed {
                 lines.push(format!(
-                    "    {name}: moves to region {} (now {})",
-                    region_letter(log.regions[i]),
+                    "    {name}: moves across the line (now {})",
                     rank_word(log.ranks[i])
                 ));
             } else {
@@ -1111,10 +1096,6 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> State {
 
 // ---- choice / board formatting -------------------------------------------------------------------------
 
-fn region_letter(r: u8) -> char {
-    (b'A' + r) as char
-}
-
 /// A choice label. The active body is shown once above the options and marked on the table, so it is never
 /// repeated per action.
 fn describe(b: &Board, c: &Choice) -> String {
@@ -1139,7 +1120,7 @@ fn act_label(b: &Board, a: &Act) -> String {
         Act::Clash(t) => format!("Clash {}", who(*t)),
         Act::Raid(t, x) => format!("Raid {} / {}", who(*t), ans(x)),
         Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Slip(r, x) => format!("Slip -> {} / {}", region_letter(*r), ans(x)),
+        Act::Slip(_, x) => format!("Slip into their line / {}", ans(x)),
         Act::Hold => "Hold".into(),
     }
 }
@@ -1171,8 +1152,8 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
                 });
             }
             Act::Slip(r, _) => {
-                let region = *r;
-                let label = format!("Slip toward region {}", region_letter(region));
+                let region = *r; // the one enemy region a slip can reach; kept for the drill, not the label
+                let label = "Slip into their line".to_string();
                 let mut answers = Vec::new();
                 while let Some(Choice::Act(Act::Slip(r2, ans))) = options.get(i) {
                     if *r2 != region {
@@ -1384,7 +1365,7 @@ fn screen_text(f: &Fight) -> String {
 
     // The unit table - same columns and widths as the UI.
     writeln!(s, "\nUNITS").ok();
-    let cols = ["unit", "rg", "M", "V", "G", "C", "F", "hp", "tp", "kind"];
+    let cols = ["unit", "rk", "M", "V", "G", "C", "F", "hp", "tp", "kind"];
     let w = [16usize, 4, 3, 3, 3, 3, 3, 4, 4, 10];
     let row = |cells: &[String]| -> String {
         cells
@@ -1399,15 +1380,12 @@ fn screen_text(f: &Fight) -> String {
         let u = &b.units[i];
         let mark = if active == Some(i) { "> " } else { "  " };
         let side = if u.side == Side::Party { "" } else { "*" };
-        let place = format!(
-            "{}{}",
-            region_letter(b.regions[i]),
-            match b.ranks[i] {
-                Rank::Vanguard => "F",
-                Rank::Rearguard => "b",
-                Rank::Outrider => "o",
-            }
-        );
+        let place = match b.ranks[i] {
+            Rank::Vanguard => "F",
+            Rank::Rearguard => "b",
+            Rank::Outrider => "o",
+        }
+        .to_string();
         let mut kind = String::new();
         for (flag, tag) in [
             (u.melee, "me "),
@@ -1446,7 +1424,7 @@ fn screen_text(f: &Fight) -> String {
     }
     writeln!(
         s,
-        "(M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round, horde=bodies;  rg = region+rank, F vanguard / b rearguard / o outrider)"
+        "(M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round, horde=bodies;  rk = rank, F vanguard / b rearguard / o outrider (loose in their line))"
     )
     .ok();
 
@@ -1609,7 +1587,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         // header row
         row_cells(
             t,
-            &["unit", "rg", "M", "V", "G", "C", "F", "hp", "tp", "kind"],
+            &["unit", "rk", "M", "V", "G", "C", "F", "hp", "tp", "kind"],
             MUTED,
             12.0,
         );
@@ -1627,15 +1605,12 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
                 Color::srgb(0.95, 0.72, 0.72)
             };
             let side = if u.side == Side::Party { "" } else { "*" };
-            let place = format!(
-                "{}{}",
-                region_letter(b.regions[i]),
-                match b.ranks[i] {
-                    Rank::Vanguard => "F",
-                    Rank::Rearguard => "b",
-                    Rank::Outrider => "o",
-                }
-            );
+            let place = match b.ranks[i] {
+                Rank::Vanguard => "F",
+                Rank::Rearguard => "b",
+                Rank::Outrider => "o",
+            }
+            .to_string();
             let mut kind = String::new();
             if u.melee {
                 kind.push_str("me ");
@@ -1676,7 +1651,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         }
         text(
             t,
-            "M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round (horde = bodies)   rg = region+rank (F vanguard / b rearguard / o outrider)",
+            "M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round (horde = bodies)   rk = rank (F vanguard / b rearguard / o outrider)",
             10.0,
             MUTED,
         );

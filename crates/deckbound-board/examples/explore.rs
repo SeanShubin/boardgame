@@ -65,7 +65,7 @@ fn label(b: &Board, c: &Choice) -> String {
         Act::Clash(t) => format!("Clash {}", who(*t)),
         Act::Raid(t, ans) => format!("Raid {} ({ans:?})", who(*t)),
         Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Slip(r, ans) => format!("Slip to region {} ({ans:?})", (b'A' + r) as char),
+        Act::Slip(_, ans) => format!("Slip into their line ({ans:?})"),
         Act::Hold => "Hold".to_string(),
     }
 }
