@@ -1446,7 +1446,7 @@ fn screen_text(f: &Fight) -> String {
     }
     writeln!(
         s,
-        "(M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round, horde=bodies;  rg = region+post, F front / b back)"
+        "(M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round, horde=bodies;  rg = region+rank, F vanguard / b rearguard / o outrider)"
     )
     .ok();
 
@@ -1676,7 +1676,7 @@ fn unit_table(p: &mut ChildSpawnerCommands, f: &Fight) {
         }
         text(
             t,
-            "M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round (horde = bodies)   rg = region+post",
+            "M might  V vitality  G grit  C cadence  F finesse  hp current health  tp tempo/round (horde = bodies)   rg = region+rank (F vanguard / b rearguard / o outrider)",
             10.0,
             MUTED,
         );
