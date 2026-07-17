@@ -33,7 +33,7 @@ use bevy::prelude::*;
 
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
-use rules::combat::game::{Choice, Combat, Score, Scorer, State};
+use rules::combat::game::{Choice, Combat, Decider, Human, Instinct, Score, Scorer, State};
 use rules::combat::regions::{Act, Answer, Board, Rank, catchers, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
@@ -163,6 +163,12 @@ struct Fight {
     /// Restart / Next re-field the same solo kit.
     requested_kit: Option<String>,
     state: State,
+    /// **Who decides each body**, indexed by body: a party body is a [`Human`] (the player at the UI), a foe an
+    /// [`Instinct`]. The play loop ([`reposition`](Fight::reposition)) polls the deciding body's Decider and never
+    /// learns which kind it asked - a scripted foe, a random one, or the human all commit the same way. Rebuilt
+    /// with the roster. (The current policies are stateless, so Back need not rewind them; a stateful policy like
+    /// `Random` would have to be snapshotted into [`Step`].) `Send + Sync` because the `Fight` is a Bevy resource.
+    deciders: Vec<Box<dyn Decider + Send + Sync>>,
     /// The legal options right now. Their scores are computed lazily, a slice per frame - never on the click.
     options: Vec<Choice>,
     /// The player-facing grouping of `options` into narrative entries (crossings collapsed to one beat). Rebuilt
@@ -204,6 +210,7 @@ impl Fight {
             encounter,
             state: build(encounter, requested_kit.as_deref()),
             requested_kit,
+            deciders: Vec::new(),
             options: Vec::new(),
             entries: Vec::new(),
             drill: None,
@@ -223,11 +230,31 @@ impl Fight {
             dirty: true,
         };
         f.snapshot_max();
+        f.build_deciders();
         f.rebuild_scorer();
         f.log_roster(); // list ranks at the top, before any forced declarations are logged
         f.reposition();
         f.sync_log();
         f
+    }
+
+    /// Assign each body its [`Decider`]: the party plays by hand ([`Human`] - the loop defers to a click), the
+    /// foes by [`Instinct`] (the deterministic scripted policy, the same one the solver plugs in as its
+    /// environment, so its verdict stays true to the fight). Rebuilt whenever the roster changes.
+    fn build_deciders(&mut self) {
+        self.deciders = self
+            .state
+            .board()
+            .units
+            .iter()
+            .map(|u| -> Box<dyn Decider + Send + Sync> {
+                if u.side == Side::Party {
+                    Box::new(Human)
+                } else {
+                    Box::new(Instinct)
+                }
+            })
+            .collect();
     }
 
     /// (Re)build the best-route scorer with the fight-start Vitality as its hp reference - called once per roster
@@ -289,6 +316,7 @@ impl Fight {
     fn reset(&mut self) {
         self.state = build(self.encounter, self.requested_kit.as_deref());
         self.snapshot_max();
+        self.build_deciders();
         // A new roster (Restart or Next encounter) is the ONE thing that invalidates the memos: the state key
         // omits unit stats, so a key from one encounter must never answer for another. Start fresh here - the one
         // place the units change. Ordinary moves keep the memo (see `reposition`).
@@ -305,17 +333,32 @@ impl Fight {
     /// **The position changed** - list the new options and arm the lazy compute. Nothing is searched here, so a
     /// click returns instantly and the board is drawn at once; the scores fill in over the next frames.
     fn reposition(&mut self) {
-        // Auto-advance a forced single option so the UI only ever shows real decisions. A FOE reaches the
-        // declaration cursor exactly here - its turn has one legal act - so this is where creature declarations
-        // (and any forced hero move) get applied and, crucially, LOGGED, through the same path a click takes.
+        // Poll the deciding body's Decider until it defers. An AUTONOMOUS policy (a foe's [`Instinct`]) commits its
+        // act here and now - this is where creature declarations get applied and, crucially, LOGGED, through the
+        // same `apply_choice` path a click takes. A [`Human`] defers (`commit` -> None): the loop stops and shows
+        // its real options, unless there is only one (a forced move), which it auto-advances so the UI only ever
+        // presents a genuine decision. The loop never learns which kind of Decider it asked.
         loop {
-            let opts = Combat::options(&self.state);
-            if opts.len() == 1 && Combat::outcome(&self.state).is_none() {
-                let c = opts[0].clone();
-                self.apply_choice(&c);
-            } else {
-                self.options = opts;
+            if Combat::outcome(&self.state).is_some() {
+                self.options = Combat::options(&self.state);
                 break;
+            }
+            let Some(i) = self.state.deciding() else {
+                self.options = Combat::options(&self.state);
+                break;
+            };
+            match self.deciders[i].commit(self.state.board(), i) {
+                Some(act) => self.apply_choice(&Choice::Act(act)),
+                None => {
+                    let opts = Combat::options(&self.state);
+                    if opts.len() == 1 {
+                        let c = opts[0].clone();
+                        self.apply_choice(&c);
+                    } else {
+                        self.options = opts;
+                        break;
+                    }
+                }
             }
         }
         // Group the flat options into narrative entries, and drop any half-open crossing decision: a new position
