@@ -3,7 +3,7 @@
 //! corner tuner, the explorer, the fight UI) builds its units here, so the mapping - especially a creature's
 //! **instinct** - is defined once and cannot drift.
 
-use deckbound_content::catalog::{self, Creature};
+use deckbound_content::catalog::{self, Creature, Encounter};
 use rules::combat::resolve::{Combatant, Instinct, Side};
 
 /// A hero kit as a combatant (heroes have no instinct - a player drives them).
@@ -43,4 +43,22 @@ pub fn beast(c: &Creature) -> Combatant {
         .with_aoe(c.aoe)
         .as_horde(c.horde)
         .with_instinct(instinct_of(c.ability))
+}
+
+/// Build an encounter's foes with **distinct display names**. When a creature is fielded more than once, its
+/// copies are numbered - "The Wall 1", "The Wall 2", ... - so the unit table, the log, and the option list can
+/// tell them apart; a creature fielded once keeps its plain name. **Display-only**: the resolver never reads a
+/// name (the solver's memo key is stats/rank), so numbering changes nothing about play or balance.
+pub fn encounter_beasts(e: &Encounter) -> Vec<Combatant> {
+    let mut out = Vec::new();
+    for (c, q) in catalog::encounter_foes(e) {
+        for i in 0..q {
+            let mut b = beast(c);
+            if q > 1 {
+                b.name = format!("{} {}", c.name, i + 1);
+            }
+            out.push(b);
+        }
+    }
+    out
 }

@@ -11,7 +11,7 @@
 
 use std::io::{self, Write};
 
-use deckbound_board::units::{beast, kit};
+use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, Score, Scorer, State};
 use rules::combat::regions::{Act, Board, Rank};
@@ -20,11 +20,7 @@ use rules::core::{Game, Solver, Verdict, decisions_within};
 
 fn fight(e: &Encounter) -> State {
     let mut units: Vec<Combatant> = catalog::ROSTER.iter().copied().map(kit).collect();
-    for (c, q) in catalog::encounter_foes(e) {
-        for _ in 0..q {
-            units.push(beast(c));
-        }
-    }
+    units.extend(encounter_beasts(e)); // numbered when duplicated, so copies read apart
     State::new(units)
 }
 

@@ -30,7 +30,7 @@
 
 use bevy::prelude::*;
 
-use deckbound_board::units::{beast, kit};
+use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, Score, Scorer, State};
 use rules::combat::regions::{Act, Answer, Board, Rank, catchers, play_round};
@@ -1105,11 +1105,7 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> State {
     } else {
         vec![kit(solo_kit(encounter, requested_kit).1)]
     };
-    for (c, q) in catalog::encounter_foes(e) {
-        for _ in 0..q {
-            units.push(beast(c));
-        }
-    }
+    units.extend(encounter_beasts(e)); // numbered when duplicated, so two Walls read apart
     State::new(units)
 }
 
