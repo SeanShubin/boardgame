@@ -1167,9 +1167,13 @@ fn reach_for_slippers(
         }
     }
 
-    // An Abort turns and lays about it - at EVERY body that caught it, evenly. Not "the first one in the list":
-    // picking one by iteration order would make who dies depend on who sits at index 0 (Spec 1.9). Splitting the
-    // pool is symmetric in the catchers, so it needs no tie-break and cannot be gamed by re-seating.
+    // An Abort turns and lays about it - spending its WHOLE tempo as strikes, one tempo per strike, spread across
+    // the bodies that caught it. The old code divided the pool evenly (`tempo / catchers`) and dropped the
+    // remainder, which had two bugs against the intent ("one tempo per strike, any or all of them"): an indivisible
+    // pool WASTED tempo (3 tempo, 2 catchers -> 1 each, the third lost), and being caught by MORE bodies than you
+    // have tempo answered NO ONE (2 tempo, 3 catchers -> 0 each). Now you always spend every card: outnumbered, you
+    // answer as many as your tempo allows; with tempo to spare, the extra strikes pile on. WHICH catchers to favour
+    // is the aborter's decision - not yet a phase, so the default spreads round-robin in the order they caught you.
     let mut ripostes: Vec<Blows> = Vec::new();
     for &(i, _, answer) in movers {
         if answer != Answer::Abort
@@ -1184,16 +1188,21 @@ fn reach_for_slippers(
             .filter(|c| c.target == i)
             .map(|c| c.attacker)
             .collect();
-        let each = board.units[i].tempo / caught_by.len().max(1) as u32;
-        if each == 0 {
+        if caught_by.is_empty() {
             continue;
         }
-        for c in caught_by {
-            ripostes.push(Blows {
-                unit: i,
-                target: c,
-                cards: each,
-            });
+        let mut strikes = vec![0u32; caught_by.len()];
+        for s in 0..board.units[i].tempo {
+            strikes[(s as usize) % caught_by.len()] += 1; // one tempo -> one strike, round-robin
+        }
+        for (idx, &c) in caught_by.iter().enumerate() {
+            if strikes[idx] > 0 {
+                ripostes.push(Blows {
+                    unit: i,
+                    target: c,
+                    cards: strikes[idx],
+                });
+            }
         }
     }
 
