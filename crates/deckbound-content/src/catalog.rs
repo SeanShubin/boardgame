@@ -209,7 +209,7 @@ pub const CREATURES: [Creature; 5] = [
         // trade with - clear the charge from range with an area strike (answered by the Bombardier).
         name: "The Swarm",
         ability: "Overrun",
-        stats: [3, 4, 2, 2, 2],
+        stats: [3, 4, 1, 2, 2],
         melee: true,
         ranged: false,
         aoe: false,

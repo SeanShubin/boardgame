@@ -793,14 +793,19 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     None => format!("flips {total} tempo, "),
                 }
             };
-            let body = if before.units[t].horde && before.units[a].aoe {
-                // A sweep clears the WHOLE pack at once - but only if it penetrates the pack's Grit (each body is a
-                // Grit-strong card). Both operands of that gate on the page.
-                format!(
-                    "fells the whole pack, {n} bodies (Might {} >= Grit {})",
-                    before.units[a].might,
-                    before.units[t].grit.max(1)
-                )
+            let body = if before.units[t].horde {
+                // A horde's bodies are separate Grit-strong pools, no spill. A blow fells a body iff it penetrates
+                // (Might - armor >= Grit); a sweep clears the WHOLE pack at once, an aimed blow one body per blow.
+                // Both operands of the gate on the page.
+                let g = before.units[t].grit.max(1);
+                let m = before.units[a].might;
+                if m.saturating_sub(before.units[t].armor) < g {
+                    format!("cannot dent the pack (Might {m} < Grit {g})")
+                } else if before.units[a].aoe {
+                    format!("fells the whole pack, {n} bodies (Might {m} >= Grit {g})")
+                } else {
+                    format!("fells {n} bodies (Might {m} >= Grit {g}, one per blow)")
+                }
             } else {
                 // Aimed fire on a horde banks into its Grit pile like any body (a horde is defence-normal now).
                 // Banked damage = (Might - armor) per blow; a horde attacker swings its whole body count at once.
@@ -915,14 +920,14 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             ));
         }
 
-        // --- Absorb / flips: the pile closes each sub-phase, so pair damage with the cards it flipped. A horde is
-        // defence-normal now - each body is a Grit-strong Health card - so it flips bodies here just like a body
-        // flips Health cards; only a SWEEP fells a pack outright (narrated on the strike line, skipped here). First
-        // total the banked damage per target - same formula as the strike lines - so the two always agree. ---
+        // --- Absorb / flips (normal bodies): the pile closes each sub-phase, so pair damage with the cards it
+        // flipped. A HORDE is not here - its bodies are felled per penetrating blow (the strike line), not piled -
+        // so it is skipped. First total the banked damage per target (armor per blow, a horde attacker's whole body
+        // count at once) - same formula as the strike lines - so the two always agree. ---
         let mut dmg_to = vec![0u32; log.health.len()];
         for h in &log.hits {
-            if before.units[h.target].horde && before.units[h.attacker].aoe {
-                continue; // a sweep fells the pack outright; it does not bank into the pile
+            if before.units[h.target].horde {
+                continue; // a horde takes body-fells (per blow), not pile damage
             }
             let per_blow = before.units[h.attacker]
                 .might
@@ -935,18 +940,15 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
             dmg_to[h.target] += per_blow * bodies * h.hits;
         }
         for i in 0..log.health.len() {
+            if before.units[i].horde {
+                continue; // felled per blow on the strike line, not a Grit pile
+            }
             let (h0, h1) = (prev_hp[i], log.health[i]);
             let name = &before.units[i].name;
             let grit = before.units[i].grit.max(1);
-            let horde = before.units[i].horde;
-            let noun = if horde { "bodies" } else { "health" };
-            // A sweep-felled pack lost bodies with no pile damage - the "fells the whole pack" strike line said it.
-            if horde && dmg_to[i] == 0 {
-                continue;
-            }
             if h1 < h0 {
-                // Flip a card (a body, for a horde) at Grit each to ABSORB damage. Flipped x Grit is what the cards
-                // soaked; the pile closes each sub-phase, so any damage past that is discarded.
+                // Flip a Health card at Grit each to ABSORB damage. Flipped x Grit is what the cards soaked; the
+                // pile closes each sub-phase, so any damage past that is discarded.
                 let flipped = h0 - h1;
                 let absorbed = flipped * grit;
                 let overflow = dmg_to[i].saturating_sub(absorbed);
@@ -956,17 +958,17 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                     String::new()
                 };
                 let remain = if h1 > 0 {
-                    format!(", {h1} {noun} left")
+                    format!(", {h1} health left")
                 } else {
                     String::new()
                 };
                 lines.push(format!(
-                    "    {name}: flips {flipped} {noun} at Grit {grit} to absorb {absorbed} damage{over}{remain}"
+                    "    {name}: flips {flipped} health at Grit {grit} to absorb {absorbed} damage{over}{remain}"
                 ));
             } else if dmg_to[i] > 0 {
-                // Banked damage that flipped nothing: short of Grit, and the pile clears when this sub-phase closes.
+                // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-phase closes.
                 lines.push(format!(
-                    "    {name}: takes {} damage - under Grit {grit}, nothing flips (discarded)",
+                    "    {name}: takes {} damage - under Grit {grit}, no health flips (discarded)",
                     dmg_to[i]
                 ));
             }
