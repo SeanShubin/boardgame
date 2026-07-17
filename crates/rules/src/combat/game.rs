@@ -8,9 +8,12 @@
 //!
 //! **Declare** (each round, one choice per living body - heroes *and* foes): every body declares its [`Act`]
 //! through the same loop. A hero's [`options`](Game::options) are its real choices; a **foe's are a single
-//! option** - the act its instinct dictates ([`foe_act`]) - so a foe "declares" too, but the driver has nothing
-//! to pick and auto-advances it. When the last body declares, [`apply`](Game::apply) resolves the whole round
-//! ([`play_round`]) from the acts everyone committed.
+//! option** - the act committed by the [`Decider`] this game plugs in for its foes (a deterministic [`Instinct`]
+//! policy) - so a foe "declares" too, but the driver has nothing to pick and auto-advances it. When the last body
+//! declares, [`apply`](Game::apply) resolves the whole round ([`play_round`]) from the acts everyone committed.
+//!
+//! Where a decision *comes from* lives behind [`Decider`], so nothing downstream (resolution, narration, the
+//! solver) can tell a scripted foe from a random one or a human - the abstraction is the whole point.
 //!
 //! Everything flows through one system: a creature is not folded into `apply` as a hidden script, it takes its
 //! turn like a hero, its turn just has one legal move. That keeps this a **single-agent reachability** machine
@@ -111,6 +114,39 @@ impl State {
     }
 }
 
+/// **A Decider is where a body's committed act comes from** - the abstraction the rest of the machine stays blind
+/// behind. The same three kinds share it: [`Instinct`] (deterministic, scripted), a weighted-random policy, and a
+/// human at the UI. Resolution ([`play_round`]) and narration only ever see the committed [`Act`], never *which*
+/// Decider produced it - so one body of code plays a scripted foe, a random one, or a human indistinguishably.
+///
+/// **Only a deterministic Decider can be a solver's environment.** The solver searches the party against a *fixed*
+/// foe policy it **plugs in** (never one it inspects from the live game); a weighted or human foe is a distribution
+/// or a real opponent, not a scripted environment, and cannot be searched single-agent. [`Decider::deterministic`]
+/// is that gate - the solver may only plug in a Decider that answers `true`.
+pub trait Decider {
+    /// The act this body commits this round, given the board. A living body always has at least [`Act::Hold`], so
+    /// this is total. `&mut self` lets a stateful policy (a seeded RNG) advance; a pure one ignores it.
+    fn commit(&mut self, board: &Board, body: usize) -> Act;
+
+    /// Whether this policy is reproducible - same board, same act, no hidden state. A solver may plug in a Decider
+    /// as its foe environment **only** when this is `true`.
+    fn deterministic(&self) -> bool;
+}
+
+/// **Instinct** - the deterministic scripted policy. A body commits the single act its instinct dictates
+/// ([`foe_act`]). This is the policy the [`Combat`] game plugs in for its foes, and the one a solver searches
+/// against: pure, reproducible, one act per board.
+pub struct Instinct;
+
+impl Decider for Instinct {
+    fn commit(&mut self, board: &Board, body: usize) -> Act {
+        foe_act(board, body).unwrap_or(Act::Hold)
+    }
+    fn deterministic(&self) -> bool {
+        true
+    }
+}
+
 /// The regions combat as a [`Game`].
 pub struct Combat;
 
@@ -120,13 +156,15 @@ impl Game for Combat {
 
     fn options(state: &State) -> Vec<Choice> {
         match state.order.get(state.next) {
-            // A hero's real acts to choose among; a foe's single scripted act (its instinct's pick), so it
-            // flows through the same loop but the driver has nothing to decide and auto-advances it.
+            // A hero's real acts to choose among; a foe's single scripted act, produced by the deterministic
+            // policy this game plugs in ([`Instinct`]) - so it flows through the same loop, but the driver has
+            // nothing to decide and auto-advances it. Swapping that policy is the only thing that changes a foe's
+            // behaviour; nothing downstream can tell which Decider committed the act.
             Some(&i) if state.board.units[i].side == Side::Party => legal_acts(&state.board, i)
                 .into_iter()
                 .map(Choice::Act)
                 .collect(),
-            Some(&i) => vec![Choice::Act(foe_act(&state.board, i).unwrap_or(Act::Hold))],
+            Some(&i) => vec![Choice::Act(Instinct.commit(&state.board, i))],
             None => Vec::new(),
         }
     }
