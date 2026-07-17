@@ -663,7 +663,7 @@ impl Fight {
 
 fn act_answer(a: &Act) -> Option<Answer> {
     match a {
-        Act::Raid(_, x) | Act::Slip(_, x) => Some(*x),
+        Act::Cross(_, x) => Some(*x),
         _ => None,
     }
 }
@@ -1118,27 +1118,35 @@ fn act_label(b: &Board, a: &Act) -> String {
     };
     match a {
         Act::Clash(t) => format!("Clash {}", who(*t)),
-        Act::Raid(t, x) => format!("Raid {} / {}", who(*t), ans(x)),
+        Act::Cross(Some(t), x) => format!("Raid {} / {}", who(*t), ans(x)),
         Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Slip(_, x) => format!("Slip into their line / {}", ans(x)),
+        Act::Cross(None, x) => format!("Slip into their line / {}", ans(x)),
         Act::Hold => "Hold".into(),
     }
 }
 
-/// Group the flat option list into narrative entries: consecutive `Raid(same target)` / `Slip(same region)`
-/// answers collapse into one crossing (legal_acts emits a crossing's three answers together, so they are always
-/// adjacent), everything else stays a direct choice. Order is preserved.
+/// Group the flat option list into narrative entries: a crossing's three answers collapse into one entry - a
+/// `Cross(Some(target))` raid (grouped per target) or a `Cross(None)` slip - since legal_acts emits them adjacent.
+/// Everything else stays a direct choice. Order is preserved.
 fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
+    // A crossing always heads for the one enemy region (where the foes stand); the drill uses `dest` to name the
+    // catchers that would intercept it.
+    let enemy_region = board
+        .units
+        .iter()
+        .position(|u| u.side == Side::Foe)
+        .map(|i| board.regions[i])
+        .unwrap_or(0);
     let mut entries = Vec::new();
     let mut i = 0;
     while i < options.len() {
         let Choice::Act(a) = &options[i];
         match a {
-            Act::Raid(t, _) => {
-                let (target, dest) = (*t, board.regions[*t]);
+            Act::Cross(Some(t), _) => {
+                let target = *t;
                 let label = format!("Raid {}", board.units[target].name);
                 let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Raid(t2, ans))) = options.get(i) {
+                while let Some(Choice::Act(Act::Cross(Some(t2), ans))) = options.get(i) {
                     if *t2 != target {
                         break;
                     }
@@ -1147,24 +1155,20 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
                 }
                 entries.push(Entry::Crossing {
                     label,
-                    dest,
+                    dest: board.regions[target],
                     answers,
                 });
             }
-            Act::Slip(r, _) => {
-                let region = *r; // the one enemy region a slip can reach; kept for the drill, not the label
+            Act::Cross(None, _) => {
                 let label = "Slip into their line".to_string();
                 let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Slip(r2, ans))) = options.get(i) {
-                    if *r2 != region {
-                        break;
-                    }
+                while let Some(Choice::Act(Act::Cross(None, ans))) = options.get(i) {
                     answers.push((*ans, i));
                     i += 1;
                 }
                 entries.push(Entry::Crossing {
                     label,
-                    dest: region,
+                    dest: enemy_region,
                     answers,
                 });
             }

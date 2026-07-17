@@ -63,9 +63,9 @@ fn label(b: &Board, c: &Choice) -> String {
     };
     match a {
         Act::Clash(t) => format!("Clash {}", who(*t)),
-        Act::Raid(t, ans) => format!("Raid {} ({ans:?})", who(*t)),
+        Act::Cross(Some(t), ans) => format!("Raid {} ({ans:?})", who(*t)),
+        Act::Cross(None, ans) => format!("Cross into their line ({ans:?})"),
         Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Slip(_, ans) => format!("Slip into their line ({ans:?})"),
         Act::Hold => "Hold".to_string(),
     }
 }

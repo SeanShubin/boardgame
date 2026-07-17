@@ -168,38 +168,37 @@ pub enum Act {
     /// Strike an enemy **vanguard**. Free - nothing is in the way. Melee or ranged, any region, because a region
     /// is a formation and not a place.
     Clash(usize),
-    /// **Slip their front to strike an enemy rearguard**, and end the round standing inside their formation - in
-    /// melee range of the vanguard you just went around. Thems the consequences.
+    /// **Cross into the enemy's line** - slip past their front and stand inside their formation as an
+    /// [`Outrider`](Rank::Outrider). It is one crossing with an optional on-arrival strike:
+    /// - `Cross(Some(t), _)` also strikes **rearguard** `t` as it lands (a **raid**; melee only; the strike lands
+    ///   in the Crossing Ring, *before* `t` fires in the Outer Ring - the whole worth of reaching the back line).
+    /// - `Cross(None, _)` just crosses and stands (a repositioning **slip**), striking nobody this round.
     ///
-    /// Melee only. You land as an [`Outrider`](Rank::Outrider): the rank is not a role you pick but *what
-    /// reaching a screened body costs*.
-    Raid(usize, Answer),
+    /// A raid reaches the BACK line only (a front body you [`Clash`](Act::Clash)). **Committed: an outrider cannot
+    /// cross back out.** The [`Answer`] is how you take the interception (evade / push / abort).
+    Cross(Option<usize>, Answer),
     /// **Strike a body in your OWN region** - an enemy outrider loose in your ranks, or (if you are the outrider)
     /// any host body. No screen applies in-region: the ranks stopped protecting anyone the moment a body got
     /// inside them. Not a crossing, so it carries no evade-answer.
     Melee(usize),
-    /// **Slip into the enemy's ground** - cross the gap and stand in their formation, promoting to an
-    /// [`Outrider`](Rank::Outrider). The same contest as a raid, only without a declared target. **Committed: an
-    /// outrider cannot slip back out.**
-    Slip(u8, Answer),
     /// Nothing.
     Hold,
 }
 
 impl Act {
-    /// The region this act moves you to, if it moves you at all.
+    /// The region this act moves you to, if it moves you at all. A [`Cross`](Act::Cross) always heads for the one
+    /// enemy region (the single occupied region that is not your own); everything else stays put.
     fn destination(self, board: &Board, i: usize) -> Option<u8> {
         let here = board.regions[i];
         match self {
-            Act::Raid(t, _) => (board.regions[t] != here).then(|| board.regions[t]),
-            Act::Slip(r, _) => (r != here).then_some(r),
+            Act::Cross(_, _) => board.occupied().into_iter().find(|&r| r != here),
             _ => None,
         }
     }
 
     fn answer(self) -> Option<Answer> {
         match self {
-            Act::Raid(_, a) | Act::Slip(_, a) => Some(a),
+            Act::Cross(_, a) => Some(a),
             _ => None,
         }
     }
@@ -212,15 +211,9 @@ impl Act {
         };
         match self {
             Act::Clash(t) => format!("Clash {}", board.units[t].name),
-            Act::Raid(t, a) => format!("Raid {} ({})", board.units[t].name, how(a)),
+            Act::Cross(Some(t), a) => format!("Raid {} ({})", board.units[t].name, how(a)),
+            Act::Cross(None, a) => format!("Cross into their line ({})", how(a)),
             Act::Melee(t) => format!("Melee {}", board.units[t].name),
-            Act::Slip(r, a) => {
-                let where_to = match board.in_region(r).first() {
-                    Some(&i) => format!("to {}", board.units[i].name),
-                    None => format!("to open ground {}", (b'A' + r) as char),
-                };
-                format!("Slip away {where_to} ({})", how(a))
-            }
             Act::Hold => "Hold".to_string(),
         }
     }
@@ -416,7 +409,7 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // A **screened** rearguard: reach it only by RAIDING across, past the front that guards it (melee
                 // only). The front intercepts the raid in the Crossing Ring - that is the whole worth of the screen.
                 if u.melee {
-                    out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
+                    out.extend(ANSWERS.map(|a| Act::Cross(Some(t), a)));
                 }
             } else {
                 // A vanguard, OR an **exposed** rearguard whose front has fallen. Either is clashable across the
@@ -430,20 +423,18 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // front body on arrival hands melee a Crossing-ring pre-emption of the Outer Clash - a ranged-style
                 // "fire first" that broke the Swarm's answer-from-range solo (measured: it went 2-kit soft).
                 if board.ranks[t] == Rank::Rearguard && u.melee {
-                    out.extend(ANSWERS.map(|a| Act::Raid(t, a)));
+                    out.extend(ANSWERS.map(|a| Act::Cross(Some(t), a)));
                 }
                 out.push(Act::Clash(t));
             }
         }
     }
 
-    // Slip - the one movement, and **only the Vanguard crosses**. The front line is who charges into the enemy's
-    // ground (promoting to outrider); a Rearguard stays back and fires (it reaches an enemy back by outliving the
-    // enemy front, not by slipping), and an outrider is committed - there is no retreat.
-    if board.ranks[i] == Rank::Vanguard {
-        for r in board.occupied().into_iter().filter(|&r| r != here) {
-            out.extend(ANSWERS.map(|a| Act::Slip(r, a)));
-        }
+    // Cross with NO target - the plain slip, the one movement, and **only the Vanguard crosses**. The front line
+    // is who charges into the enemy's ground (promoting to outrider); a Rearguard stays back and fires, and an
+    // outrider is committed - there is no retreat. The destination is the one enemy region, so it needs no target.
+    if board.ranks[i] == Rank::Vanguard && board.occupied().iter().any(|&r| r != here) {
+        out.extend(ANSWERS.map(|a| Act::Cross(None, a)));
     }
 
     out.push(Act::Hold);
@@ -476,7 +467,7 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
         Instinct::HuntWeakest => {
             matches!(
                 a,
-                Act::Clash(_) | Act::Melee(_) | Act::Raid(_, Answer::Push)
+                Act::Clash(_) | Act::Melee(_) | Act::Cross(Some(_), Answer::Push)
             )
         }
         // Hold the line: a clash, or an in-region melee - both fight in place. NEVER a raid or a slip, so the
@@ -486,7 +477,7 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
     acts.iter()
         .filter(allowed)
         .filter_map(|a| match a {
-            Act::Clash(t) | Act::Raid(t, _) | Act::Melee(t) => Some((softest(*t), *a)),
+            Act::Clash(t) | Act::Cross(Some(t), _) | Act::Melee(t) => Some((softest(*t), *a)),
             _ => None,
         })
         .min_by_key(|&(k, _)| k)
@@ -1322,7 +1313,9 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         .iter()
         .filter(|&&(i, _, _)| through[i] && !board.units[i].fallen && board.units[i].tempo > 0)
         .filter_map(|&(i, _, _)| match acts[i] {
-            Act::Raid(t, _) if !board.units[t].fallen && board.regions[t] == board.regions[i] => {
+            Act::Cross(Some(t), _)
+                if !board.units[t].fallen && board.regions[t] == board.regions[i] =>
+            {
                 Some((i, t))
             }
             _ => None,
@@ -1761,7 +1754,7 @@ mod tests {
             "but not clash the screened cannon"
         );
         assert!(
-            acts.iter().any(|a| matches!(a, Act::Raid(1, _))),
+            acts.iter().any(|a| matches!(a, Act::Cross(Some(1), _))),
             "to reach the cannon it must raid the wall"
         );
     }
@@ -1773,7 +1766,7 @@ mod tests {
         let acts = legal_acts(&b, 2);
         for answer in ANSWERS {
             assert!(
-                acts.contains(&Act::Raid(1, answer)),
+                acts.contains(&Act::Cross(Some(1), answer)),
                 "{answer:?} must be on the menu"
             );
         }
@@ -1796,7 +1789,7 @@ mod tests {
             "it shoots their front freely"
         );
         assert!(
-            !acts.iter().any(|a| matches!(a, Act::Raid(..))),
+            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _))),
             "but cannot raid the mage"
         );
         assert!(
@@ -1853,7 +1846,11 @@ mod tests {
         let cannon = b.units[1].health;
         play_round(
             &mut b,
-            &[Act::Clash(2), Act::Clash(2), Act::Raid(1, Answer::Evade)],
+            &[
+                Act::Clash(2),
+                Act::Clash(2),
+                Act::Cross(Some(1), Answer::Evade),
+            ],
         );
         assert!(
             b.units[1].health < cannon || b.units[1].fallen,
@@ -1877,7 +1874,11 @@ mod tests {
         let ogre = b.units[2].health;
         play_round(
             &mut b,
-            &[Act::Clash(2), Act::Clash(2), Act::Raid(1, Answer::Push)],
+            &[
+                Act::Clash(2),
+                Act::Clash(2),
+                Act::Cross(Some(1), Answer::Push),
+            ],
         );
         assert_eq!(b.regions[2], 0, "it went through regardless");
         assert!(
@@ -1901,7 +1902,11 @@ mod tests {
         let cannon = b.units[1].health;
         play_round(
             &mut b,
-            &[Act::Clash(2), Act::Clash(2), Act::Raid(1, Answer::Evade)],
+            &[
+                Act::Clash(2),
+                Act::Clash(2),
+                Act::Cross(Some(1), Answer::Evade),
+            ],
         );
         assert_eq!(
             b.regions[2], 0,
@@ -1920,7 +1925,11 @@ mod tests {
         let cannon = b.units[1].health;
         let logs = play_round(
             &mut b,
-            &[Act::Clash(2), Act::Clash(2), Act::Raid(1, Answer::Abort)],
+            &[
+                Act::Clash(2),
+                Act::Clash(2),
+                Act::Cross(Some(1), Answer::Abort),
+            ],
         );
         assert!(
             logs.iter().any(|l| l.aborted.contains(&2)),
@@ -1946,7 +1955,11 @@ mod tests {
         let raider = b.units[0].health;
         play_round(
             &mut b,
-            &[Act::Raid(2, Answer::Push), Act::Clash(0), Act::Clash(0)],
+            &[
+                Act::Cross(Some(2), Answer::Push),
+                Act::Clash(0),
+                Act::Clash(0),
+            ],
         );
         assert_eq!(b.regions[0], 1, "it got through");
         assert!(
@@ -1969,9 +1982,9 @@ mod tests {
             vec![0, 0, 1, 1],
         );
         let acts = [
-            Act::Raid(3, Answer::Evade),
+            Act::Cross(Some(3), Answer::Evade),
             Act::Clash(2),
-            Act::Raid(1, Answer::Evade),
+            Act::Cross(Some(1), Answer::Evade),
             Act::Clash(0),
         ];
         assert!(
@@ -2000,7 +2013,10 @@ mod tests {
         );
         // Round 1: the Raider crosses in for the Mage and lands as an outrider in region 1. The hosts hold, so
         // the tough-Grit Mage survives the raid strike and is still there to be dug out next round.
-        play_round(&mut b, &[Act::Raid(2, Answer::Push), Act::Hold, Act::Hold]);
+        play_round(
+            &mut b,
+            &[Act::Cross(Some(2), Answer::Push), Act::Hold, Act::Hold],
+        );
         assert_eq!(b.regions[0], 1, "it is in the enemy zone");
         assert_eq!(b.ranks[0], Rank::Outrider, "and is an outrider there");
 
@@ -2011,7 +2027,7 @@ mod tests {
             "an outrider melees in-region: {acts:?}"
         );
         assert!(
-            !acts.iter().any(|a| matches!(a, Act::Raid(..))),
+            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _))),
             "it does not raid - it is already inside"
         );
         // It can reach the Mage directly now, past the (still-standing) Wall's screen.
@@ -2150,7 +2166,10 @@ mod tests {
             vec![0, 1, 1],
         );
         let (raider_tp, wall_tp) = (b.units[0].cadence, b.units[1].cadence);
-        let logs = play_round(&mut b, &[Act::Raid(2, Answer::Evade), Act::Hold, Act::Hold]);
+        let logs = play_round(
+            &mut b,
+            &[Act::Cross(Some(2), Answer::Evade), Act::Hold, Act::Hold],
+        );
         let intercept = logs
             .iter()
             .find(|l| l.phase == "Crossing Ring: Intercept")
@@ -2201,7 +2220,10 @@ mod tests {
             ],
             vec![0, 1, 1],
         );
-        let logs = play_round(&mut b, &[Act::Raid(2, Answer::Push), Act::Hold, Act::Hold]);
+        let logs = play_round(
+            &mut b,
+            &[Act::Cross(Some(2), Answer::Push), Act::Hold, Act::Hold],
+        );
         let volley = logs
             .iter()
             .find(|l| l.phase == "Crossing Ring: Volley")
@@ -2261,7 +2283,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Raid(2, Answer::Evade),
+                Act::Cross(Some(2), Answer::Evade),
                 Act::Clash(0),
                 Act::Clash(0),
                 Act::Clash(0),
@@ -2362,7 +2384,7 @@ mod tests {
         let acts = foe_acts(&b);
         assert_eq!(
             acts[2],
-            Some(Act::Raid(1, Answer::Push)),
+            Some(Act::Cross(Some(1), Answer::Push)),
             "it goes through the line for the soft body behind it"
         );
     }
@@ -2381,7 +2403,7 @@ mod tests {
         b.units[1].instinct = Instinct::HoldTheLine;
         let hold = foe_acts(&b);
         assert!(
-            !matches!(hold[1], Some(Act::Raid(..)) | Some(Act::Slip(..))),
+            !matches!(hold[1], Some(Act::Cross(..))),
             "a HoldTheLine wall must never raid or slip: {:?}",
             hold[1]
         );
@@ -2411,11 +2433,11 @@ mod tests {
             vec![0, 0, 0, 1, 1, 1],
         );
         let acts = vec![
-            Act::Raid(5, Answer::Evade), // the Raider crosses in for their back line
+            Act::Cross(Some(5), Answer::Evade), // the Raider crosses in for their back line
             Act::Clash(3),
             Act::Clash(4),
             Act::Clash(0),
-            Act::Raid(2, Answer::Push), // the Duelist pushes through for our cannon
+            Act::Cross(Some(2), Answer::Push), // the Duelist pushes through for our cannon
             Act::Clash(1),
         ];
         (b, acts)
@@ -2441,7 +2463,7 @@ mod tests {
             };
             let remap = |a: Act| match a {
                 Act::Clash(t) => Act::Clash(inv[t]),
-                Act::Raid(t, x) => Act::Raid(inv[t], x),
+                Act::Cross(Some(t), x) => Act::Cross(Some(inv[t]), x),
                 Act::Melee(t) => Act::Melee(inv[t]),
                 other => other,
             };

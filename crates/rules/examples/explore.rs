@@ -14,7 +14,7 @@ use std::io::{self, Write};
 use rules::combat::game::{Choice, Combat, State};
 use rules::combat::regions::{Act, Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
-use rules::core::{Game, Solvable, Solver, Verdict, decisions_within};
+use rules::core::{Game, Solver, Verdict, decisions_within};
 
 fn u(name: &str, side: Side, stats: [u8; 5], melee: bool, ranged: bool) -> Combatant {
     Combatant::from_stats(name, side, stats, 0, melee, ranged)
@@ -54,9 +54,9 @@ fn label(b: &Board, c: &Choice) -> String {
     let Choice::Act(a) = c;
     match a {
         Act::Clash(t) => format!("Clash {}", b.units[*t].name),
-        Act::Raid(t, ans) => format!("Raid {} ({:?})", b.units[*t].name, ans),
+        Act::Cross(Some(t), ans) => format!("Raid {} ({ans:?})", b.units[*t].name),
+        Act::Cross(None, ans) => format!("Cross into their line ({ans:?})"),
         Act::Melee(t) => format!("Melee {}", b.units[*t].name),
-        Act::Slip(r, ans) => format!("Slip to region {} ({:?})", (b'A' + r) as char, ans),
         Act::Hold => "Hold".to_string(),
     }
 }

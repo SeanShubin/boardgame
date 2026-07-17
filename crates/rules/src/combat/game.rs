@@ -485,9 +485,7 @@ impl Game for ClashOnly {
             .is_some_and(|i| state.board().units[i].side == Side::Party);
         Combat::options(state)
             .into_iter()
-            .filter(|c| {
-                !restrict || !matches!(c, Choice::Act(Act::Raid(..)) | Choice::Act(Act::Slip(..)))
-            })
+            .filter(|c| !restrict || !matches!(c, Choice::Act(Act::Cross(..))))
             .collect()
     }
     fn apply(state: &State, choice: &Choice) -> State {
@@ -564,15 +562,16 @@ mod solve_tests {
         ]);
         let full = Combat::options(&s);
         assert!(
-            full.iter().any(|c| matches!(c, Choice::Act(Act::Raid(..)))),
-            "the full game offers a raid at the screened cannon"
+            full.iter()
+                .any(|c| matches!(c, Choice::Act(Act::Cross(Some(_), _)))),
+            "the full game offers a raid (a cross with a target) at the screened cannon"
         );
         let control = ClashOnly::options(&s);
         assert!(
             control
                 .iter()
-                .all(|c| !matches!(c, Choice::Act(Act::Raid(..)) | Choice::Act(Act::Slip(..)))),
-            "but the clash-only control offers no slip of any kind"
+                .all(|c| !matches!(c, Choice::Act(Act::Cross(..)))),
+            "but the clash-only control offers no crossing of any kind"
         );
         assert!(
             !control.is_empty(),
