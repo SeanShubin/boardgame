@@ -881,14 +881,29 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                         } else {
                             format!("Finesse {f}")
                         };
+                        // The dodge FLOOR the reach had to clear: the TARGET's utmost dodge - its whole tempo x its
+                        // Finesse (no body multiplier, even for a horde). `reach_cards` sizes the bid to meet this,
+                        // and the reacher wins ties - so a connecting strike shows BOTH compared numbers (the reach,
+                        // and the dodge it beat), not just its own reach. This is why the tempo cannot be smaller:
+                        // below the floor the target simply slips the blow, so only tempo ABOVE it can pour.
+                        let tf = before.units[t].finesse.max(1);
+                        let tt = prev_tp[t];
+                        let against = if tt == 0 {
+                            format!(" ({tn} has no tempo to dodge)")
+                        } else {
+                            format!(
+                                " - clears {tn}'s top dodge {} ({tt} tempo x F{tf}), reacher wins ties",
+                                tt * tf
+                            )
+                        };
                         let pour = total.saturating_sub(rt);
                         let poured = if pour > 0 {
-                            format!("pours {pour} more tempo, ")
+                            format!(", then pours {pour} more tempo")
                         } else {
                             String::new()
                         };
                         format!(
-                            "flips {rt} tempo at {fclause} to generate {} reach, {poured}",
+                            "flips {rt} tempo at {fclause} = {} reach{against}{poured}, ",
                             r.bid
                         )
                     }
