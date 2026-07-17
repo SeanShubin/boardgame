@@ -175,12 +175,13 @@ pub struct Creature {
 
 /// The creatures. Four are a **clean diagonal** - each beaten by exactly one kit (Wall->Raider,
 /// Duelist->Marksman, Swarm->Bombardier, Brood->Bastion) as a consequence of the numbers, not a keyword (see
-/// [`creature_counter`]). The **Sniper** is the fifth - a **corner-only priority threat** with no solo, answered
-/// not by a lone kit but by a melee slip past a cleared screen.
+/// [`creature_counter`]). Two more are **corner-only threats** with no solo: the **Sniper** (a back-line priority
+/// answered by a melee slip past a cleared screen) and the **Reaver** (a glass-cannon blade-master fielded in
+/// threes for the Range corner - too deadly to trade with, too fragile to survive a volley).
 ///
 /// The two hordes split by position: the **Swarm** is the *melee front* horde (overruns the vanguard - answered
 /// from range), the **Brood** the *ranged back* horde (spits from cover - answered by going in and sweeping).
-pub const CREATURES: [Creature; 5] = [
+pub const CREATURES: [Creature; 6] = [
     Creature {
         name: "The Wall",
         ability: "Bulwark",
@@ -240,6 +241,21 @@ pub const CREATURES: [Creature; 5] = [
         aoe: false,
         horde: false,
         pos: None,
+    },
+    Creature {
+        // A **glass-cannon blade-master** - all edge, no armour. Might 7 cuts down anything it reaches, even
+        // through a tank, so closing to trade is death; Vitality 2 means a single ranged volley drops it before it
+        // can swing. Fielded in THREES: enough that a lone melee's turn-and-fight riposte, capped by its tempo,
+        // can never clear the whole line. The Range corner's foe - "answer from range, do NOT close." A corner
+        // threat, not a solo (no lone kit is its clean counter).
+        name: "The Reaver",
+        ability: "Flurry",
+        stats: [7, 2, 1, 2, 2],
+        melee: true,
+        ranged: false,
+        aoe: false,
+        horde: false,
+        pos: Some("Vanguard"),
     },
 ];
 
@@ -435,11 +451,11 @@ pub const ENCOUNTERS: [Encounter; 9] = [
     Encounter {
         location: "Greywater Ford",
         title: "Ambush at the Ford",
-        flavor: "A blade-master lashes from the reeds of the ford - close in and it cuts you down, so answer it from range.",
-        keystone: "The Duelist",
+        flavor: "Blade-masters burst from the reeds of the ford - close in and they cut you down, so answer them from range before they reach you.",
+        keystone: "The Reaver",
         party: true,
         behavior: Some(Behavior::Range),
-        foes: &[("The Duelist", 3)],
+        foes: &[("The Reaver", 3)],
     },
     Encounter {
         location: "Ninefold Deep",
