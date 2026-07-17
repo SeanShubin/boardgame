@@ -1,8 +1,12 @@
 # Combat: two formations, engagement by geometry
 
 **Status: SHIPPED** (implemented in `crates/rules/src/combat`, balanced, verified). Author: one
-instance, updated 2026-07-15. This is the current combat model; it supersedes the multi-region
+instance, updated 2026-07-16. This is the current combat model; it supersedes the multi-region
 "regions" exploration this file used to describe, and the earlier five-beat rank schedule.
+
+*2026-07-16 revisions folded in:* Slip and Raid merged into one **Cross** act ([§8](#8-movement-the-one-way-cross-slip-and-raid-are-one-act));
+the horde **defence** reworked to **separate per-body Grit pools, no spill** ([§5](#5-hordes-one-body-many-bodies));
+the roster is Swarm (melee front) / Brood (ranged back) / Sniper, no "Storm" ([§11](#11-the-balance-ladder-all-stats--7)).
 
 **The shape in one breath.** Two formations face off -- the party and the foes -- each a single
 group with a **Vanguard** (its melee front) and a **Rearguard** (its ranged back). There is no setup
@@ -88,6 +92,9 @@ which of three engagements happens. All three run the same little primitive.
 | **Raid**   | an enemy **Rearguard**, across the gap                 | that back -- you cross in | **melee** only |
 | **Melee**  | an enemy in your **own** region (an outrider is loose) | anyone in-region          | any weapon     |
 
+A **Raid** and a plain **Slip** (a cross with no target) are the same act -- `Act::Cross(Option<target>,
+Answer)` -- since both cross the gap and land you as an outrider; see [§8](#8-movement-the-one-way-cross-slip-and-raid-are-one-act).
+
 **The one primitive** (the "inner three"):
 
 1. **Target** -- declare who you reach for.
@@ -146,7 +153,7 @@ with one region per side, mostly coincided with the win and mishandled a mutual 
 
 ## 5. Hordes: one body, many bodies
 
-A **horde** (the Swarm, the Storm) is a single body whose **Health is a body count** -- one-Health
+A **horde** (the Swarm, the Brood) is a single body whose **Health is a body count** -- one-Health
 members swinging together. Its size is spent as **damage** and **reach**, never as tempo (it
 refreshes to Cadence like anyone).
 
@@ -159,15 +166,20 @@ refreshes to Cadence like anyone).
   own attacks pin their target even on a small Cadence. But its **evade** stays the ordinary flat cost
   (x1, never x bodies): numbers never help it hide -- missing one body just hits another. **A horde is
   a great catcher and a poor evader.**
-- **As a target:** an aimed blow fells **one** body per strike (Might buys nothing against a pack); an
-  **area strike clears the whole pack** at once (if Might > armour). That is the horde's counter --
-  sweep it before it swings. A sweep and the horde's own volley are in the **same commit-batch**, so
-  the sweep does *not* shrink that round's volley: the horde still hits at full strength as it dies
-  (Spec 1.9).
+- **As a target: separate per-body Grit pools, no spill** (reworked; supersedes the old "aimed fells
+  one, ungated / sweep clears if Might > armour"). Each body is its own one-Health, **Grit-strong**
+  pool. An **aimed** blow fells at most **one** body, and only if it **penetrates** that body's Grit
+  (`Might - armor >= Grit`); overkill and sub-Grit both waste, so **to fell another body you spend
+  another blow** (tempo per body). A **sweep** hits every body at once and clears the **whole pack**
+  for one card -- but only if it penetrates. So **width, not power, is the cheap answer to a swarm**,
+  and **Grit is a pure penetration gate** (who can dent it at all). A sweep and the horde's own volley
+  share the **commit-batch**, so the sweep does not shrink that round's volley: it hits full-strength
+  as it dies (Spec 1.9).
 
-This is why the Swarm answers to the Bastion (a tanky melee sweep that goes *in* after it) and the
-Storm to the Bombardier (a ranged sweep that first-strikes the front horde), while a single-target
-attacker cannot out-race either.
+This is why the Swarm (a **melee front** horde) answers to the **Bombardier** -- a ranged sweep that
+first-strikes it from outside, before it can clash -- and the Brood (a **ranged back** horde) to the
+**Bastion** -- a tanky melee sweep that goes *in* after it -- while a single-target attacker, capped at
+one body per blow, cannot out-race either.
 
 ## 6. The timing principle: whatever connects first, goes first
 
@@ -214,13 +226,22 @@ not just the Reset -- so only blows within *one* strike combine, and Grit is a r
 must cross *there*, not wear down over a round. (This is why a Wall's Bulwark needs one overwhelming
 strike.) A fight undecided in **5 rounds** is a Draw, which counts as a loss.
 
-## 8. Movement: the one-way slip
+## 8. Movement: the one-way Cross (Slip and Raid are one act)
 
-**Slip** is the only movement, and it is a **one-way commitment**. A body crosses the gap into the
-enemy region and becomes an **Outrider**; there is **no retreat** back out. (Reaching a screened back
-and going loose in the enemy ranks are the same mechanic -- a raid *is* a slip with a declared
-target.) The crossing is opposed by the enemy formation reaching for you as you cross in -- which is
-where a pushed slipper's damage comes from. An outrider leaves enemy ground only when the formation it
+**Cross** is the only movement, and it is a **one-way commitment**. A body crosses the gap into the
+enemy line and becomes an **Outrider**; there is **no retreat** back out. Reaching a screened back and
+going loose in the enemy ranks are the **same mechanic**, so Slip and Raid are **one act** --
+`Act::Cross(Option<target>, Answer)`:
+
+- `Cross(Some(rearguard))` = a **Raid**: it strikes that back-line body on arrival (Crossing ring,
+  before the body fires). The on-arrival target is the **back line only** -- a front body you
+  **Clash** -- so a raid never gives melee a Crossing-ring pre-emption of the Outer Clash.
+- `Cross(None)` = a plain **Slip**: cross and stand, striking nobody this round.
+
+(Merging them is balance-neutral: under perfect information a target chosen on arrival is equivalent to
+one declared up front, so the solver already searched it.) The crossing is opposed by the enemy
+formation reaching for you as you cross in -- which is where a pushed crosser's damage comes from. An
+outrider leaves enemy ground only when the formation it
 was loose among is destroyed (its state **dissolves** and it rejoins its own line) or by dying.
 (Retreat and the both-ends "crossing in reverse" were removed with the retreat itself -- another rule
 that did not change a win.)
@@ -238,7 +259,7 @@ carrying variety on spec:
 - **The collapsed-vanguard advantage.** An exposed rearguard used to *fire first and be unraidable* --
   a reward for being unscreened. Now it is raidable (see [§3](#3-reach-and-why-unscreened-is-no-advantage)).
 - **Intruder retreat.** An outrider could slip back home; nothing ever needed it, so a raid is now a
-  one-way commitment (see [§8](#8-movement-the-one-way-slip)).
+  one-way commitment (see [§8](#8-movement-the-one-way-cross-slip-and-raid-are-one-act)).
 - **The "screen necessary" lesson.** It could not be expressed: with two rearguards and generalist
   melee vanguards, no single body is ever decisively necessary. Replaced by the CombinedArms capstone
   below.
@@ -254,30 +275,36 @@ foe multiplies branching by one), so the generic `Solver` (winnable / evaluating
 regions + round + declare cursor + pending declarations (the `Rank` carries the outrider state, so no
 separate flag); **tempo and the damage pile are excluded** -- both are transient scratch inside
 `play_round`, never a state variable. The one control newtype is **`ClashOnly`** (the party may not
-raid), used to prove a raid load-bearing.
+Cross -- no raid, no slip), used to prove a raid load-bearing.
 
 ## 11. The balance ladder (all stats <= 7)
 
 **Stats** `[Might, Vitality, Grit, Cadence, Finesse]`: Raider `[6,6,1,2,2]` · Marksman `[5,2,1,2,2]` ·
 Bastion `[1,3,3,1,2]` · Bombardier `[3,3,1,1,2]` -- Wall `[1,4,6,1,2]` · Duelist `[6,5,1,2,2]` ·
-Swarm `[1,7,1,1,1]` (ranged horde) · Storm `[3,4,1,2,2]` (melee horde). For a horde, Vitality is the
-body count, and its volley is that count x Might (see [§5](#5-hordes-one-body-many-bodies)).
+Swarm `[3,4,1,2,2]` (**melee front** horde) · Brood `[1,7,1,1,1]` (**ranged back** horde) · Sniper
+`[5,1,1,2,3]` (ranged single, corner-only). For a horde, Vitality is the body count, and its volley is
+that count x Might (see [§5](#5-hordes-one-body-many-bodies)).
 
 **Solos** -- each creature soloable by exactly its counter kit: Duelist->Marksman, Wall->Raider,
-Swarm->Bastion, Storm->Bombardier.
+**Swarm->Bombardier** (clear the front horde from range), **Brood->Bastion** (go in and sweep the back
+horde). The Sniper has no solo -- it is a corner-only priority threat.
 
-**Corners** -- three single-mechanic lessons plus a capstone, each scored by control comparison:
+**Nine encounters** -- a 3x3 map: the 4 solos, 4 **orthogonal strategy corners**, and the
+**CombinedArms capstone** at the centre. Each corner needs the full party to win under `Combat` AND its
+own necessity test (a different control failing while its own strategy suffices, so none subsumes
+another); scored by search. Exact warbands live in `crates/deckbound-content/src/catalog.rs`.
 
-| Corner             | Behavior             | Passes iff (full party wins, and...)                         | Warband                       |
-| ------------------ | -------------------- | ------------------------------------------------------------ | ----------------------------- |
-| Emberfall Hollow   | **VanguardCarries**  | melee-only wins, ranged-only loses                           | `Wall x2`                     |
-| Greywater Ford     | **RearguardCarries** | ranged-only wins, melee-only loses                           | `Duelist x3`                  |
-| The Hollow Rampart | **RaidNecessary**    | `ClashOnly` loses                                            | `Wall x3, Swarm x1`           |
-| Ninefold Deep      | **CombinedArms**     | melee-only loses AND ranged-only loses AND `ClashOnly` loses | `Wall x2, Swarm x2, Storm x1` |
+| Encounter          | Behavior          | Passes iff (full party wins, and...)                                     | Warband                        |
+| ------------------ | ----------------- | ------------------------------------------------------------------------ | ------------------------------ |
+| Emberfall Hollow   | **Concentration** | single-only wins, area-only loses                                        | `Wall x2`                      |
+| Greywater Ford     | **Range**         | ranged-only wins, melee-only loses                                       | `Duelist x3`                   |
+| Ninefold Deep      | **Sweep**         | area-only wins, single-only loses                                        | `Swarm x2`                     |
+| The Hollow Rampart | **Raid**          | `ClashOnly` loses (the raid is load-bearing)                             | `Wall x4, Sniper x1`           |
+| Ashfen Crossing    | **CombinedArms**  | melee-only, ranged-only, AND single-only all lose, AND `ClashOnly` loses | `Swarm x1, Wall x2, Sniper x1` |
 
-CombinedArms is the graduation exam: it demands ranged *and* melee damage *and* a raid all at once --
-reachable where "screen necessary" was not, because capabilities are not redundant the way bodies
-are. Verified: `regions_diagonal` reads **4/4 solos + 4/4 corners in ~30 ms**.
+CombinedArms (the capstone) is the graduation exam: ranged *and* melee damage *and* a raid all at once,
+so it *deliberately subsumes* the four corners. Verified: `regions_diagonal` reads **4/4 solos + 5/5
+party fights in ~25 ms**.
 
 ---
 
