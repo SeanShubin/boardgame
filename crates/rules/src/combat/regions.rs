@@ -734,16 +734,13 @@ fn area_strike(
     let mut felled = Vec::new();
     for j in caught {
         if board.units[j].horde {
-            // **A pack is many bodies, and an area strike catches every one of them.**
+            // **A pack is many bodies, and an area strike catches every one of them at once.**
             //
-            // This is the second axis, and it is independent of reach: *which* bodies in the region a sweep
-            // touches is settled by the tier; *how much of a body* it touches is settled here. A horde is one
-            // `Combatant` whose Health is its body count, so an aimed blow felling `Might`-many bodies looks
-            // like damage - but a sweep landing on the same one body deals `Might` **once**, which made a sweep
-            // strictly WORSE against a pack than an aimed blow. Exactly backwards.
-            //
-            // A sweep clears it. Armour aside, there is nowhere in a pack to not be.
-            if might > board.units[j].armor {
+            // Width is the sweep's axis: it hits every body in the tier simultaneously. Each body is a one-Health,
+            // Grit-strong unit, so the sweep clears the WHOLE pack iff a single blow **penetrates** that Grit
+            // (`Might - armor >= Grit`). A tough enough horde shrugs a weak sweep off entirely - and is ground down
+            // instead by aimed fire, which banks into its pile a Grit at a time ([`land`]).
+            if might.saturating_sub(board.units[j].armor) >= board.units[j].grit.max(1) {
                 let bodies = board.units[j].health;
                 if bodies > 0 {
                     // Record the clear but DO NOT apply it yet. The whole exchange is one commit-batch, so a sweep
@@ -830,27 +827,24 @@ pub fn set_area_reach(reach: AreaReach) {
 /// (`combat::strike_target` still has this flaw, and the shipped rank model still calls it - so the live game
 /// has the same order-dependence whenever two bodies clash one. Out of scope here; flagged, not touched.)
 ///
-/// # Why this does not call `combat::resolve_strike`
+/// # The damage model: a horde is a normal body for DEFENCE
 ///
-/// **An aimed blow fells ONE body of a pack.** `combat`'s model spills - a horde is one [`Combatant`] whose
-/// Health is its body count, so `Might` damage takes `Might` bodies off it in a single strike. That reads as
-/// damage, but it makes a **Might-7 aimed blow a better horde-killer than a sweep**, which inverts the two
-/// horde locks and no stat tuning can flip them back.
+/// **Each of a horde's Health cards is a body, of the same Grit.** A `[6 Vitality, 4 Grit, horde]` foe is six
+/// one-Health bodies each `Grit 4` strong, acting in unison. So damage resolves *identically* to a normal body:
+/// each strike banks `max(0, Might - armor)` into the pile, and a Health card flips - **a body dies** - every
+/// time the pile clears Grit. Aimed fire grinds the pack down one Grit at a time; Might is not wasted on it.
 ///
-/// One blow kills one of them. That is also the more natural fiction: you stab one, you do not scythe seven.
-/// **Width against a pack is what a sweep is FOR** - it catches every body at once, whatever its Might - and if
-/// an aimed blow can do the same thing by being big, the sweep has no job.
+/// A horde's difference is on **offence** (it swings its whole body count at once, below) and in **width**: a
+/// [sweep](area_strike) hits every body at once, so it clears the pack in a stroke - but only if it *penetrates*,
+/// `Might - armor >= Grit`. That is the sweep's job (breadth), not extra depth against one body.
 ///
-/// So the damage model here is:
-/// - **Normal body:** each strike banks `max(0, Might - armor)` into the per-round pile; a Health card flips
-///   every time the pile clears Grit. The pile closes at the Reset (`combat::refresh_round`), unchanged.
-/// - **Horde:** each strike fells exactly **one** body. A sweep clears the pack outright ([`area_strike`]).
+/// - **Normal body / horde:** bank `max(0, Might - armor)` per blow; a Health card (a body, for a horde) flips
+///   each time the pile clears Grit. The pile closes each sub-phase, so an unfinished wound is not inflicted.
 fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) -> Vec<Hit> {
     // Collect every blow first, apply nothing yet: an order-free, commit-based batch, so a blow lands even if
     // its striker dies to a simultaneous one.
     let n = board.units.len();
-    let mut damage = vec![0u32; n]; // banked Might, for a normal body
-    let mut felled = vec![0u32; n]; // bodies struck off, for a horde
+    let mut damage = vec![0u32; n]; // banked Might, against the Grit pile (a horde included)
 
     // Gather every strike as `(attacker, target, hits)` first, so nothing is applied while we are still reading.
     let mut strikes: Vec<(usize, usize, u32)> = Vec::new();
@@ -879,28 +873,23 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
             target: t,
             hits,
         });
-        if board.units[t].horde {
-            felled[t] += hits; // one blow, one body - Might buys nothing against a pack
+        // A horde attacker swings as ONE volley: every living body lands together, so its blow is the whole body
+        // count times Might. Armour stops each little hit, so it is subtracted **per body** - a swarm of Might-1
+        // bodies does nothing to an armoured target, however many of them there are. (The TARGET's horde-ness does
+        // not matter here: each of its bodies is a Grit-strong Health card, banked below like any other.)
+        let per_body = board.units[a].might.saturating_sub(board.units[t].armor);
+        let per = if board.units[a].horde {
+            per_body * board.units[a].health.max(1)
         } else {
-            // A horde attacker swings as ONE volley: every living body lands together, so its blow is the whole
-            // body count times Might. Armour stops each little hit, so it is subtracted **per body** - a swarm of
-            // Might-1 bodies does nothing to an armoured target, however many of them there are.
-            let per_body = board.units[a].might.saturating_sub(board.units[t].armor);
-            let per = if board.units[a].horde {
-                per_body * board.units[a].health.max(1)
-            } else {
-                per_body
-            };
-            damage[t] += per * hits;
-        }
+            per_body
+        };
+        damage[t] += per * hits;
     }
 
     for i in 0..n {
-        if board.units[i].horde {
-            board.units[i].health = board.units[i].health.saturating_sub(felled[i]);
-        } else if damage[i] > 0 {
-            // The grit pile: bank the Might, flip a Health card each time it clears the bar. It closes at the
-            // Reset and only there, so a wound you cannot finish this round is a wound you did not inflict.
+        if damage[i] > 0 {
+            // The grit pile: bank the Might, flip a Health card (a body, for a horde) each time it clears the bar.
+            // It closes at the sub-phase boundary, so a wound you cannot finish is a wound you did not inflict.
             let bar = board.units[i].grit.max(1);
             board.units[i].pending += damage[i];
             while board.units[i].pending >= bar && board.units[i].health > 0 {
@@ -1070,7 +1059,8 @@ fn reach_for_slippers(
                 continue;
             }
             if board.units[s].horde {
-                if might > board.units[s].armor {
+                // A sweep clears the whole crossing pack iff it penetrates Grit (see `area_strike`).
+                if might.saturating_sub(board.units[s].armor) >= board.units[s].grit.max(1) {
                     let bodies = board.units[s].health;
                     if bodies > 0 {
                         felled.push(Hit {
@@ -2294,36 +2284,43 @@ mod tests {
         );
     }
 
-    /// **A sweep clears a pack; an aimed blow does not.** The horde axis, independent of reach.
+    /// **A horde is a normal body for defence: each Health card is a body of the same Grit.** A sweep clears the
+    /// WHOLE pack at once - but only if it **penetrates** Grit; a weaker sweep does nothing; and aimed fire grinds
+    /// the pack down a Grit at a time (it does not clear it in a stroke). Grit is the dial.
     #[test]
-    fn a_sweep_clears_a_pack_and_an_aimed_blow_does_not() {
-        let felled = |stats: [u8; 5], aoe: bool, pack: u32| -> u32 {
+    fn a_horde_defends_by_grit_and_a_sweep_must_penetrate_it() {
+        // (attacker stats, aoe, horde Grit, pack) -> bodies felled in one round of Clash.
+        let felled = |stats: [u8; 5], aoe: bool, grit: u8, pack: u32| -> u32 {
             let mut b = Board::new(
                 vec![
                     unit("Hero", Side::Party, stats, true, true).with_aoe(aoe),
-                    unit("Horde", Side::Foe, [1, pack as u8, 1, 1, 1], true, false).as_horde(true),
+                    unit("Horde", Side::Foe, [1, pack as u8, grit, 1, 1], true, false)
+                        .as_horde(true),
                 ],
                 vec![0, 1],
             );
             play_round(&mut b, &[Act::Clash(1), Act::Hold]);
             pack - b.units[1].health
         };
-        for pack in [8, 20, 40] {
+        // A sweep that PENETRATES Grit clears the whole pack, however big.
+        for pack in [8, 20] {
             assert_eq!(
-                felled([1, 3, 3, 1, 2], true, pack),
+                felled([5, 3, 1, 1, 2], true, 4, pack),
                 pack,
-                "Sweep clears a pack of {pack}"
-            );
-            assert_eq!(
-                felled([3, 3, 1, 1, 2], true, pack),
-                pack,
-                "Salvo clears a pack of {pack}"
+                "a Might-5 sweep clears a Grit-4 pack of {pack}"
             );
         }
-        let raider = felled([7, 6, 1, 2, 2], false, 8);
+        // A sweep that does NOT reach Grit clears nothing - Grit now bites.
+        assert_eq!(
+            felled([3, 3, 1, 1, 2], true, 4, 8),
+            0,
+            "a Might-3 sweep cannot dent a Grit-4 pack"
+        );
+        // An aimed blow grinds by Grit (banks Might into the pile, a body per Grit) - it does not clear the pack.
+        let aimed = felled([6, 6, 1, 2, 2], false, 4, 20);
         assert!(
-            raider <= 2,
-            "an aimed blow fells one body per strike, not Might-many: {raider}"
+            (1..20).contains(&aimed),
+            "an aimed blow grinds a few bodies (Grit-gated), not the whole pack: {aimed}"
         );
     }
 
