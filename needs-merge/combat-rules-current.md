@@ -68,7 +68,7 @@ blow must cross Grit *there*; unfinished damage is discarded).
 1. **Declaration** -- every body declares one Act.
 2. **Inner Ring** (Outriders, distance 0) -- one **simultaneous** strike, melee and ranged together, no
    screen (a melee sweep here catches the whole region). Death check. Then **dissolution** (see 7).
-3. **Crossing Ring** (declared Raid/Slip): **Intercept** (front reaches; you answer) -> **Volley** (back
+3. **Crossing Ring** (a declared **Cross**): **Intercept** (front reaches; you answer) -> **Volley** (back
    fires; an area weapon volleys as a sweep) -> **Land** (survivors arrive as Outriders) -> **Raid
    strike** (a landed raider hits its target before it fires). Death check at each.
 4. **Outer Ring** (across the gap): **Fire** (Rearguards, ranged first) -> **Clash** (Vanguards). Death
