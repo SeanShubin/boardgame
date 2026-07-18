@@ -603,18 +603,19 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
     // is who charges into the enemy's ground (promoting to outrider); a Rearguard stays back and fires, and an
     // outrider is committed - there is no retreat. The destination is the one enemy region, so it needs no target.
     //
-    // Offered ONLY when the enemy has a REARGUARD to reach. Going outrider is worth a crossing only if there is a
-    // back behind their front to threaten; against a backless enemy a slip reaches nothing a `Clash` does not
-    // already reach and only exposes you - a legal but always-dominated line, so it is kept off the menu. This
-    // prunes the option for its two menu readers (the solver's search and the UI), NOT the resolver: `play_round`
-    // still resolves a hand-built backless slip, because it never consults `legal_acts`. (Raids are already gated
-    // on a reachable back, so only this unconditional slip needs the guard.)
+    // Offered ONLY when the enemy has a SCREENED back to reach. Going outrider is worth a crossing only if there is
+    // a body behind their front you cannot already touch: a screened rearguard. A backless enemy (no rearguard) or
+    // an EXPOSED one (a rearguard whose vanguard has fallen) is already clashable directly, so a slip toward it
+    // reaches nothing a `Clash` does not - a legal but always-dominated line, kept off the menu. This prunes the
+    // option for its two menu readers (the solver's search and the UI), NOT the resolver: `play_round` still
+    // resolves a hand-built slip, because it never consults `legal_acts`. (Raids are already gated on a reachable
+    // back, so only this unconditional slip needs the guard.)
     if board.ranks[i] == Rank::Vanguard
         && let Some(dest) = board.occupied().into_iter().find(|&r| r != here)
         && board
             .in_region(dest)
             .into_iter()
-            .any(|j| board.units[j].side != u.side && board.ranks[j] == Rank::Rearguard)
+            .any(|j| board.units[j].side != u.side && board.is_screened(j))
     {
         out.extend(crossing_acts(board, i, None));
     }
@@ -2128,6 +2129,46 @@ mod tests {
             b.ranks[0],
             Rank::Outrider,
             "and promotes it to outrider, menu or no menu"
+        );
+    }
+
+    /// **Only a SCREENED back earns a slip.** A screened rearguard (a live vanguard in front of it) is worth
+    /// crossing for - you cannot Clash it. An EXPOSED rearguard (its vanguard fallen, here simply absent) is
+    /// clashable directly, so the slip toward it is dominated and stays off the menu, exactly like a backless enemy.
+    #[test]
+    fn only_a_screened_back_offers_the_slip() {
+        // Screened: the Wall fronts the Mage, so the Mage cannot be Clashed - a slip is worth offering.
+        let screened = Board::new(
+            vec![
+                unit("Raider", Side::Party, [4, 4, 1, 3, 2], true, false),
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        assert!(
+            legal_acts(&screened, 0)
+                .iter()
+                .any(|a| matches!(a, Act::Cross(None, _))),
+            "a screened back must offer the slip"
+        );
+        // Exposed: the Mage stands alone (no vanguard), so it is directly clashable - no slip.
+        let exposed = Board::new(
+            vec![
+                unit("Raider", Side::Party, [4, 4, 1, 3, 2], true, false),
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),
+            ],
+            vec![0, 1],
+        );
+        assert!(
+            !legal_acts(&exposed, 0)
+                .iter()
+                .any(|a| matches!(a, Act::Cross(None, _))),
+            "an exposed back must not offer the slip"
+        );
+        assert!(
+            legal_acts(&exposed, 0).contains(&Act::Clash(1)),
+            "but the exposed back is clashable directly"
         );
     }
 
