@@ -602,7 +602,20 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
     // Cross with NO target - the plain slip, the one movement, and **only the Vanguard crosses**. The front line
     // is who charges into the enemy's ground (promoting to outrider); a Rearguard stays back and fires, and an
     // outrider is committed - there is no retreat. The destination is the one enemy region, so it needs no target.
-    if board.ranks[i] == Rank::Vanguard && board.occupied().iter().any(|&r| r != here) {
+    //
+    // Offered ONLY when the enemy has a REARGUARD to reach. Going outrider is worth a crossing only if there is a
+    // back behind their front to threaten; against a backless enemy a slip reaches nothing a `Clash` does not
+    // already reach and only exposes you - a legal but always-dominated line, so it is kept off the menu. This
+    // prunes the option for its two menu readers (the solver's search and the UI), NOT the resolver: `play_round`
+    // still resolves a hand-built backless slip, because it never consults `legal_acts`. (Raids are already gated
+    // on a reachable back, so only this unconditional slip needs the guard.)
+    if board.ranks[i] == Rank::Vanguard
+        && let Some(dest) = board.occupied().into_iter().find(|&r| r != here)
+        && board
+            .in_region(dest)
+            .into_iter()
+            .any(|j| board.units[j].side != u.side && board.ranks[j] == Rank::Rearguard)
+    {
         out.extend(crossing_acts(board, i, None));
     }
 
@@ -2084,6 +2097,38 @@ mod tests {
                 "strike-back only targets the catchers: {al:?}"
             );
         }
+    }
+
+    /// **A backless enemy offers no plain slip - but the resolver still resolves one.** The menu (what the solver
+    /// and UI read from `legal_acts`) drops `Cross(None)` when there is no enemy rearguard to reach; the engine
+    /// (`play_round`), which never consults the menu, resolves a hand-built backless slip exactly as before.
+    #[test]
+    fn a_backless_enemy_hides_the_slip_but_the_engine_still_resolves_it() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [4, 4, 1, 3, 2], true, false),
+                unit("Brute", Side::Foe, [3, 4, 1, 2, 2], true, false), // lone melee front: no rearguard
+            ],
+            vec![0, 1],
+        );
+        // Off the MENU: no plain slip is offered when nothing sits behind their front.
+        assert!(
+            !legal_acts(&b, 0)
+                .iter()
+                .any(|a| matches!(a, Act::Cross(None, _))),
+            "a backless enemy must not offer a plain slip"
+        );
+        // Still in the ENGINE: hand it a backless slip and it crosses just the same.
+        play_round(&mut b, &[Act::Cross(None, Answer::Push), Act::Hold]);
+        assert_eq!(
+            b.regions[0], 1,
+            "the resolver still crosses a hand-built slip"
+        );
+        assert_eq!(
+            b.ranks[0],
+            Rank::Outrider,
+            "and promotes it to outrider, menu or no menu"
+        );
     }
 
     /// **An archer cannot raid**: slipping a shield wall to knife the mage is not done with a bow.
