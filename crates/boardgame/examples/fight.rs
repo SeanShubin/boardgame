@@ -726,10 +726,10 @@ impl Fight {
         let mut acts: Vec<Act> = before_state
             .pending()
             .iter()
-            .map(|p| p.unwrap_or(Act::Hold))
+            .map(|p| p.clone().unwrap_or(Act::Hold))
             .collect();
         if let (Some(idx), Choice::Act(a)) = (acting, c) {
-            acts[idx] = *a;
+            acts[idx] = a.clone();
         }
 
         self.state = Combat::apply(&self.state, c);
