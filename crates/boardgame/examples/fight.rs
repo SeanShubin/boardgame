@@ -696,9 +696,20 @@ impl Fight {
                         ));
                     }
                     let ans = match answer {
-                        Answer::Evade => "evade",
-                        Answer::Push => "push - eat the blows",
-                        Answer::Abort => "abort - turn and fight",
+                        Answer::Evade => "evade".to_string(),
+                        Answer::Push => "push - eat the blows".to_string(),
+                        Answer::Abort(alloc) => {
+                            let who: Vec<String> = alloc
+                                .iter()
+                                .filter(|&&(_, n)| n > 0)
+                                .map(|&(cc, n)| format!("{} x{n}", before.units[cc].name))
+                                .collect();
+                            if who.is_empty() {
+                                "abort - turn and fight".to_string()
+                            } else {
+                                format!("abort - strike {}", who.join(", "))
+                            }
+                        }
                     };
                     self.log
                         .push(format!("      commit  {mark}{name} -> {ans}"));
@@ -751,9 +762,9 @@ impl Fight {
     }
 }
 
-fn act_answer(a: &Act) -> Option<Answer> {
+fn act_answer(a: &Act) -> Option<&Answer> {
     match a {
-        Act::Cross(_, x) => Some(*x),
+        Act::Cross(_, x) => Some(x),
         _ => None,
     }
 }
@@ -1286,7 +1297,7 @@ fn act_label(b: &Board, a: &Act) -> String {
     let ans = |x: &Answer| match x {
         Answer::Evade => "evade",
         Answer::Push => "push",
-        Answer::Abort => "abort",
+        Answer::Abort(_) => "abort",
     };
     // Name the target WITH its current health, so two same-named bodies in different states (e.g. two Walls at 2 hp
     // and 4 hp) read as the distinct choices they are. A horde's health is its body count.
@@ -1329,7 +1340,7 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
                     if *t2 != target {
                         break;
                     }
-                    answers.push((*ans, i));
+                    answers.push((ans.clone(), i));
                     i += 1;
                 }
                 entries.push(Entry::Crossing {
@@ -1342,7 +1353,7 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
                 let label = "Slip into their line".to_string();
                 let mut answers = Vec::new();
                 while let Some(Choice::Act(Act::Cross(None, ans))) = options.get(i) {
-                    answers.push((*ans, i));
+                    answers.push((ans.clone(), i));
                     i += 1;
                 }
                 entries.push(Entry::Crossing {
@@ -1376,12 +1387,23 @@ fn opt_counts(paths: Option<Paths>) -> String {
 }
 
 /// How each crossing answer reads once you know who caught you - the `Abort` option is named after the actual
-/// catcher ("Turn and fight The Wall"), not the abstract verb.
-fn answer_label(a: Answer, catchers: &str) -> String {
+/// bodies its strike-back targets ("Turn and fight: The Wall x2"), so the several allocations read apart.
+fn answer_label(a: &Answer, board: &Board, catchers: &str) -> String {
     match a {
         Answer::Evade => "Evade the line".into(),
         Answer::Push => "Push through, take the hits".into(),
-        Answer::Abort => format!("Turn and fight {catchers}"),
+        Answer::Abort(alloc) => {
+            let who: Vec<String> = alloc
+                .iter()
+                .filter(|&&(_, n)| n > 0)
+                .map(|&(c, n)| format!("{} x{n}", board.units[c].name))
+                .collect();
+            if who.is_empty() {
+                format!("Turn and fight {catchers}")
+            } else {
+                format!("Turn and fight: {}", who.join(", "))
+            }
+        }
     }
 }
 
@@ -1633,11 +1655,12 @@ fn screen_text(f: &Fight) -> String {
             drill.label, drill.catchers
         )
         .ok();
-        for (n, &(ans, opt)) in drill.answers.iter().enumerate() {
+        for (n, (ans, opt)) in drill.answers.iter().enumerate() {
+            let opt = *opt;
             writeln!(
                 s,
                 "[{n}] {:<28} {:<12} {:<22} {}",
-                answer_label(ans, &drill.catchers),
+                answer_label(ans, f.state.board(), &drill.catchers),
                 vtag(f.opt_verdict[opt]),
                 opt_counts(f.opt_paths[opt]),
                 fmt_route(f.opt_score[opt], f.opt_score_done[opt])
@@ -2037,11 +2060,12 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
             WARN,
         );
         text(p, "how do you answer?", 11.0, MUTED);
-        for &(ans, opt) in &drill.answers {
+        for (ans, opt) in &drill.answers {
+            let opt = *opt;
             choice_button(
                 p,
                 Hit::Option(opt),
-                answer_label(ans, &drill.catchers),
+                answer_label(ans, f.state.board(), &drill.catchers),
                 opt_counts(f.opt_paths[opt]),
                 fmt_route(f.opt_score[opt], f.opt_score_done[opt]),
                 f.opt_verdict[opt],

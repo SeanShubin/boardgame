@@ -95,7 +95,7 @@ use std::collections::HashMap;
 
 use super::resolve::{
     Combatant, Contact, Dodge, Engage, Side, can_answer, end_sub_phase, refresh_round,
-    resolve_evade, slip_cost,
+    resolve_evade, resolve_evade_pooled, slip_cost,
 };
 
 /// A pour of extra tempo along a contact: `unit` spends `cards` more strikes of Might on `target`, beyond the
@@ -149,21 +149,32 @@ pub enum Rank {
 ///
 /// A vanguard can never simply **stop** you. It can only make you pay - in tempo, in blood, or in the chance you
 /// gave up to turn and fight it instead.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// **The three crossing outcomes - now the leaves of a bid, not a flat declaration.** Evade/Push/Abort are read
+/// off *where you put your tempo* around the catchers' strikes: before them (Evade), never (Push), or after them
+/// (Abort). Abort carries the after-spend explicitly: the strike-back allocation, a list of `(catcher, strikes)`
+/// - one tempo per strike, spread however you choose across the bodies that caught you. Spending anything is what
+/// makes it an Abort (you stopped to trade, so you are repelled); spending nothing is a Push.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Answer {
-    /// **Pay [`combat::slip_cost`] in full.** Through, untouched - and poorer. There is no partial evade: by now
-    /// the price is known exactly, so underpaying is never a gamble, only a waste.
+    /// **Out-bid the whole catch pool** ([`combat::slip_cost_pooled`]): `tempo x Finesse` strictly beating the
+    /// summed bids against you. Through, untouched - and poorer. All-or-nothing: beat the pool or you are caught by
+    /// every catcher.
     Evade,
-    /// **Take the hit and go anyway.** Spend nothing on the crossing, eat every blow they land, and arrive - hurt,
-    /// but with your whole pool still in hand to swing with.
+    /// **Take the hit and go anyway.** Spend nothing striking back, eat every blow they land, and arrive - hurt,
+    /// but with your whole pool still in hand for next round.
     Push,
-    /// **Turn and fight.** Give up the ground, take the hits, and spend your tempo swinging back at whoever caught
-    /// you. This is the "repelled" outcome - but *chosen*, not imposed.
-    Abort,
+    /// **Turn and fight.** Give up the ground and spend tempo swinging back at whoever caught you: the allocation
+    /// is `(catcher, strikes)` pairs, one tempo per strike. This is the "repelled" outcome - chosen, not imposed.
+    /// The resolver applies each pair only to a catcher that actually caught you and is still standing; strikes
+    /// aimed elsewhere are dropped.
+    Abort(Vec<(usize, u32)>),
 }
 
 /// What a body does with its round. **The only thing it declares.**
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// No longer `Copy`: a [`Cross`](Act::Cross)'s [`Answer`] may carry a strike-back allocation (a `Vec`), so an act
+/// is cloned, not blitted. The cost is nil - acts are declared once per body per round.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Act {
     /// Strike an enemy **vanguard**. Free - nothing is in the way. Melee or ranged, any region, because a region
     /// is a formation and not a place.
@@ -188,7 +199,7 @@ pub enum Act {
 impl Act {
     /// The region this act moves you to, if it moves you at all. A [`Cross`](Act::Cross) always heads for the one
     /// enemy region (the single occupied region that is not your own); everything else stays put.
-    fn destination(self, board: &Board, i: usize) -> Option<u8> {
+    fn destination(&self, board: &Board, i: usize) -> Option<u8> {
         let here = board.regions[i];
         match self {
             Act::Cross(_, _) => board.occupied().into_iter().find(|&r| r != here),
@@ -196,26 +207,41 @@ impl Act {
         }
     }
 
-    fn answer(self) -> Option<Answer> {
+    fn answer(&self) -> Option<&Answer> {
         match self {
             Act::Cross(_, a) => Some(a),
             _ => None,
         }
     }
 
-    pub fn label(self, board: &Board) -> String {
-        let how = |a: Answer| match a {
-            Answer::Evade => "evade the line",
-            Answer::Push => "push through, take the hits",
-            Answer::Abort => "turn and fight if caught",
+    pub fn label(&self, board: &Board) -> String {
+        let how = |a: &Answer| match a {
+            Answer::Evade => "evade the line".to_string(),
+            Answer::Push => "push through, take the hits".to_string(),
+            Answer::Abort(alloc) => strike_back_label(board, alloc),
         };
         match self {
-            Act::Clash(t) => format!("Clash {}", board.units[t].name),
-            Act::Cross(Some(t), a) => format!("Raid {} ({})", board.units[t].name, how(a)),
+            Act::Clash(t) => format!("Clash {}", board.units[*t].name),
+            Act::Cross(Some(t), a) => format!("Raid {} ({})", board.units[*t].name, how(a)),
             Act::Cross(None, a) => format!("Cross into their line ({})", how(a)),
-            Act::Melee(t) => format!("Melee {}", board.units[t].name),
+            Act::Melee(t) => format!("Melee {}", board.units[*t].name),
             Act::Hold => "Hold".to_string(),
         }
+    }
+}
+
+/// A legible phrase for a strike-back allocation: who it hits and how hard. Empty (nobody struck) reads as a bare
+/// stand, which the legal-act enumeration never emits (an empty Abort is a Push) but a hand-built act might.
+fn strike_back_label(board: &Board, alloc: &[(usize, u32)]) -> String {
+    let live: Vec<String> = alloc
+        .iter()
+        .filter(|&&(_, cards)| cards > 0)
+        .map(|&(c, cards)| format!("{} x{}", board.units[c].name, cards))
+        .collect();
+    if live.is_empty() {
+        "turn and fight".to_string()
+    } else {
+        format!("turn and fight: {}", live.join(", "))
     }
 }
 
@@ -332,8 +358,152 @@ pub fn canonical(regions: &[u8]) -> Vec<u8> {
 
 // ---- what a body may declare ---------------------------------------------------------------------------
 
-/// The three ways to answer a line reaching for you. Every slip offers all three - that is the point.
-const ANSWERS: [Answer; 3] = [Answer::Evade, Answer::Push, Answer::Abort];
+/// **Every crossing this body may declare to `target`** - the Evade/Push/Abort leaves, with the Abort branch
+/// expanded into concrete strike-back allocations. This is where the crossing's branching factor is set, so it is
+/// deliberately pruned:
+///
+/// - **Uncontested** (nothing predicted to catch you): the three answers all just cross, so only one option is
+///   emitted (a plain [`Push`](Answer::Push)) - no wasted branching on equivalents.
+/// - **Contested**: [`Evade`](Answer::Evade) (out-bid the pool), [`Push`](Answer::Push) (eat it, cross), and one
+///   [`Abort`](Answer::Abort) per candidate allocation from [`strikeback_candidates`] (spread, and focus-each).
+///
+/// Catchers are **predicted geometrically** ([`predicted_catchers`], no `foe_act`), because this runs *inside*
+/// [`legal_acts`], which the scripted foes call through [`greedy_act`] - a `foe_act`-based prediction here would
+/// recurse. Over-predicting a catcher only mints an allocation the resolver later drops; it is never unsound.
+fn crossing_acts(board: &Board, i: usize, target: Option<usize>) -> Vec<Act> {
+    let here = board.regions[i];
+    let Some(dest) = board.occupied().into_iter().find(|&r| r != here) else {
+        return vec![Act::Cross(target, Answer::Push)]; // no enemy ground: degenerate, just cross
+    };
+    let cs = predicted_catchers(board, i, dest);
+    if cs.is_empty() {
+        return vec![Act::Cross(target, Answer::Push)]; // uncontested: every answer is the same crossing
+    }
+    let mut out = vec![
+        Act::Cross(target, Answer::Evade),
+        Act::Cross(target, Answer::Push),
+    ];
+    for alloc in strikeback_candidates(board, i, &cs) {
+        out.push(Act::Cross(target, Answer::Abort(alloc)));
+    }
+    out
+}
+
+/// **Who would catch a crossing to `dest`, by geometry alone** - the enemy vanguard holding either zone the
+/// crossing touches (the one left and the one entered). Unlike [`catchers`] it does NOT consult `foe_act` (so it
+/// cannot recurse when called from within [`legal_acts`]); it therefore over-includes a foe that will actually be
+/// in transit. That is safe for minting strike-back candidates: a pair aimed at a non-catcher is dropped in
+/// [`reach_for_slippers`].
+fn predicted_catchers(board: &Board, mover: usize, dest: u8) -> Vec<usize> {
+    let enemy = other_side(board.units[mover].side);
+    let mut out = Vec::new();
+    for zone in [board.regions[mover], dest] {
+        if board.owner(zone) != Some(enemy) {
+            continue;
+        }
+        for f in board.vanguard(zone, enemy) {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+    }
+    out
+}
+
+/// **Strikes to fell catcher `c` under `mover`'s Might** - the min tempo a focus needs to silence it, so a
+/// strike-back allocation never over-invests in one body when the tempo could threaten another. `u32::MAX` when
+/// `mover` cannot penetrate `c`'s Grit at all (no number of strikes helps - do not focus there).
+fn down_cost(board: &Board, mover: usize, c: usize) -> u32 {
+    let per = board.units[mover]
+        .might
+        .saturating_sub(board.units[c].armor);
+    if per == 0 {
+        return u32::MAX;
+    }
+    if board.units[c].horde {
+        // one PENETRATING blow fells one body; a sub-Grit blow fells none however many you throw.
+        if per >= board.units[c].grit.max(1) {
+            board.units[c].health.max(1)
+        } else {
+            u32::MAX
+        }
+    } else {
+        // the pile banks `per` a strike and flips a card each Grit crossed; felling clears health x Grit in total.
+        (board.units[c].health.max(1) * board.units[c].grit.max(1)).div_ceil(per)
+    }
+}
+
+/// **The strike-back allocations worth searching** for a mover caught by `catchers` - the pruned free-allocation
+/// space (spec: ignore expenditures with no observable effect). Two shapes, each a concrete `(catcher, strikes)`
+/// list summing to at most the mover's tempo:
+///
+/// - **Spread**: one tempo per catcher, round-robin - threaten every catcher at once.
+/// - **Focus-each**: for each catcher, spend the min-to-down it, then spill the remainder to the others in turn -
+///   concentrate to actually silence one (or two) rather than dent all.
+///
+/// A catcher the mover cannot hurt (`down_cost == MAX`) is never focused and takes no spill. Duplicates collapse,
+/// so a single-catcher crossing yields exactly one allocation. The human UI may offer any allocation on top of
+/// these; this bounded set is only what the solver enumerates.
+fn strikeback_candidates(
+    board: &Board,
+    mover: usize,
+    catchers: &[usize],
+) -> Vec<Vec<(usize, u32)>> {
+    let t = board.units[mover].tempo;
+    if t == 0 || catchers.is_empty() || !board.units[mover].melee {
+        return Vec::new();
+    }
+    let pairs = |alloc: &[u32]| -> Vec<(usize, u32)> {
+        catchers
+            .iter()
+            .zip(alloc)
+            .filter(|&(_, &n)| n > 0)
+            .map(|(&c, &n)| (c, n))
+            .collect()
+    };
+    let mut out: Vec<Vec<(usize, u32)>> = Vec::new();
+
+    // Spread: round-robin one tempo at a time.
+    let mut spread = vec![0u32; catchers.len()];
+    for s in 0..t {
+        spread[(s as usize) % catchers.len()] += 1;
+    }
+    out.push(pairs(&spread));
+
+    // Focus-each: prioritise one catcher (min-to-down), then spill by index to the rest.
+    for fi in 0..catchers.len() {
+        let mut alloc = vec![0u32; catchers.len()];
+        let mut left = t;
+        let order = std::iter::once(fi).chain((0..catchers.len()).filter(move |&j| j != fi));
+        for j in order {
+            if left == 0 {
+                break;
+            }
+            let cost = down_cost(board, mover, catchers[j]);
+            if cost == u32::MAX {
+                continue; // cannot hurt this one - do not sink tempo into it
+            }
+            let spend = cost.min(left);
+            alloc[j] += spend;
+            left -= spend;
+        }
+        // Tempo to spare (everyone downable and then some): pile the rest on the first catcher we can hurt.
+        if left > 0
+            && let Some(j) =
+                (0..catchers.len()).find(|&j| down_cost(board, mover, catchers[j]) != u32::MAX)
+        {
+            alloc[j] += left;
+        }
+        let p = pairs(&alloc);
+        if !p.is_empty() {
+            out.push(p);
+        }
+    }
+
+    out.sort();
+    out.dedup();
+    out
+}
 
 /// **Are `a` and `b` interchangeable targets?** - the same position AND the same body, so a strike aimed at one
 /// yields an isomorphic successor to the same strike aimed at the other. Two such foes are the same target, and
@@ -408,7 +578,7 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // A **screened** rearguard: reach it only by RAIDING across, past the front that guards it (melee
                 // only). The front intercepts the raid in the Crossing Ring - that is the whole worth of the screen.
                 if u.melee {
-                    out.extend(ANSWERS.map(|a| Act::Cross(Some(t), a)));
+                    out.extend(crossing_acts(board, i, Some(t)));
                 }
             } else {
                 // A vanguard, OR an **exposed** rearguard whose front has fallen. Either is clashable across the
@@ -422,7 +592,7 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // front body on arrival hands melee a Crossing-ring pre-emption of the Outer Clash - a ranged-style
                 // "fire first" that broke the Swarm's answer-from-range solo (measured: it went 2-kit soft).
                 if board.ranks[t] == Rank::Rearguard && u.melee {
-                    out.extend(ANSWERS.map(|a| Act::Cross(Some(t), a)));
+                    out.extend(crossing_acts(board, i, Some(t)));
                 }
                 out.push(Act::Clash(t));
             }
@@ -433,7 +603,7 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
     // is who charges into the enemy's ground (promoting to outrider); a Rearguard stays back and fires, and an
     // outrider is committed - there is no retreat. The destination is the one enemy region, so it needs no target.
     if board.ranks[i] == Rank::Vanguard && board.occupied().iter().any(|&r| r != here) {
-        out.extend(ANSWERS.map(|a| Act::Cross(None, a)));
+        out.extend(crossing_acts(board, i, None));
     }
 
     out.push(Act::Hold);
@@ -550,7 +720,7 @@ pub fn greedy_act(board: &Board, i: usize) -> Option<Act> {
         Act::Clash(_) | Act::Melee(_) => 0u8,
         Act::Cross(_, Answer::Push) => 1,
         Act::Cross(_, Answer::Evade) => 2,
-        Act::Cross(_, Answer::Abort) => 3,
+        Act::Cross(_, Answer::Abort(_)) => 3,
         Act::Hold => 4,
     };
     legal_acts(board, i)
@@ -1090,7 +1260,7 @@ fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> 
 fn reach_for_slippers(
     board: &mut Board,
     catchers: &[(usize, usize)], // (catcher, slipper)
-    movers: &[(usize, u8, Answer)],
+    movers: &[(usize, u8, &Answer)],
 ) -> (Vec<Hit>, Vec<Reach>) {
     // The live (catcher, slipper) pairs this pass - a fallen catcher or slipper, or a spent catcher, reaches for
     // nothing.
@@ -1117,12 +1287,15 @@ fn reach_for_slippers(
     // The slipper answers, seeing exactly what was committed. Evade pays in full and breaks every AIMED edge;
     // Push and Abort spend nothing and eat the blows. (An area volley below is not an edge you can slip.)
     let dodges: Vec<Dodge> = (0..board.units.len())
-        .map(|i| match movers.iter().find(|&&(m, _, _)| m == i) {
-            Some(&(_, _, Answer::Evade)) => Dodge::Slip,
-            _ => Dodge::Stand,
+        .map(|i| {
+            let evading = movers
+                .iter()
+                .any(|&(m, _, a)| m == i && matches!(a, Answer::Evade));
+            if evading { Dodge::Slip } else { Dodge::Stand }
         })
         .collect();
-    let mut landed = resolve_evade(&mut board.units, &reaching, &dodges);
+    // The crossing pools: a slipper must out-bid the WHOLE line reaching it, not merely the worst single catcher.
+    let mut landed = resolve_evade_pooled(&mut board.units, &reaching, &dodges);
     // Record the aimed contest NOW, before the unevadable area contacts join `landed` - so `evaded` reflects the
     // genuine slip contest only.
     let reaches = reaches_of(&reaching, &landed);
@@ -1176,20 +1349,16 @@ fn reach_for_slippers(
         }
     }
 
-    // An Abort turns and lays about it - spending its WHOLE tempo as strikes, one tempo per strike, spread across
-    // the bodies that caught it. The old code divided the pool evenly (`tempo / catchers`) and dropped the
-    // remainder, which had two bugs against the intent ("one tempo per strike, any or all of them"): an indivisible
-    // pool WASTED tempo (3 tempo, 2 catchers -> 1 each, the third lost), and being caught by MORE bodies than you
-    // have tempo answered NO ONE (2 tempo, 3 catchers -> 0 each). Now you always spend every card: outnumbered, you
-    // answer as many as your tempo allows; with tempo to spare, the extra strikes pile on. WHICH catchers to favour
-    // is the aborter's decision - not yet a phase, so the default spreads round-robin in the order they caught you.
+    // An Abort turns and lays about it - spending tempo as strikes at the bodies that caught it, per the
+    // strike-back allocation the aborter DECLARED (the `(catcher, strikes)` pairs on `Answer::Abort`). One tempo
+    // per strike; `land` charges Might per blow and caps the total at the tempo actually left. A pair lands only
+    // if that catcher truly caught this mover and still stands - a stale or mis-aimed pair (a catcher already
+    // felled, or one that never reached) is simply dropped, wasting the tempo it named rather than mislanding.
+    // Spending nothing here is a Push (the mover carries `Answer::Push`, never an empty Abort).
     let mut ripostes: Vec<Blows> = Vec::new();
-    for &(i, _, answer) in movers {
-        if answer != Answer::Abort
-            || board.units[i].fallen
-            || board.units[i].tempo == 0
-            || !board.units[i].melee
-        {
+    for &(i, _, a) in movers {
+        let Answer::Abort(alloc) = a else { continue };
+        if board.units[i].fallen || board.units[i].tempo == 0 || !board.units[i].melee {
             continue;
         }
         let caught_by: Vec<usize> = landed
@@ -1197,21 +1366,15 @@ fn reach_for_slippers(
             .filter(|c| c.target == i)
             .map(|c| c.attacker)
             .collect();
-        if caught_by.is_empty() {
-            continue;
-        }
-        let mut strikes = vec![0u32; caught_by.len()];
-        for s in 0..board.units[i].tempo {
-            strikes[(s as usize) % caught_by.len()] += 1; // one tempo -> one strike, round-robin
-        }
-        for (idx, &c) in caught_by.iter().enumerate() {
-            if strikes[idx] > 0 {
-                ripostes.push(Blows {
-                    unit: i,
-                    target: c,
-                    cards: strikes[idx],
-                });
+        for &(c, cards) in alloc {
+            if cards == 0 || board.units[c].fallen || !caught_by.contains(&c) {
+                continue;
             }
+            ripostes.push(Blows {
+                unit: i,
+                target: c,
+                cards,
+            });
         }
     }
 
@@ -1331,7 +1494,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // so a front-killed crosser is not volleyed. A friendly zone never reaches for its own, so a rally between
     // friendly zones is free; but an outrider pulling OUT of enemy ranks is opposed by the ranks it leaves (the
     // crossing in reverse).
-    let movers: Vec<(usize, u8, Answer)> = (0..board.units.len())
+    let movers: Vec<(usize, u8, &Answer)> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen)
         .filter_map(|i| Some((i, acts[i].destination(board, i)?, acts[i].answer()?)))
         .collect();
@@ -1380,7 +1543,7 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         if board.units[i].fallen {
             continue;
         }
-        if answer == Answer::Abort {
+        if matches!(answer, Answer::Abort(_)) {
             landing.aborted.push(i);
             continue; // it turned and fought; it never left
         }
@@ -1600,7 +1763,7 @@ impl Oracle {
         let mut win = false;
         for pick in 0..count(&choices) {
             let mut acts = assemble(board, &others, &choices, pick, &foes);
-            acts[hero] = act;
+            acts[hero] = act.clone();
             let mut b = board.clone();
             play_round(&mut b, &acts);
             if self.winnable(&b, round + 1, false) {
@@ -1705,11 +1868,11 @@ fn assemble(
             continue;
         }
         let radix: usize = choices[..k].iter().map(|c| c.len().max(1)).product();
-        acts[i] = choices[k][(pick / radix) % choices[k].len()];
+        acts[i] = choices[k][(pick / radix) % choices[k].len()].clone();
     }
     for (i, a) in foes.iter().enumerate() {
         if let Some(a) = a {
-            acts[i] = *a;
+            acts[i] = a.clone();
         }
     }
     acts
@@ -1863,10 +2026,62 @@ mod tests {
     fn a_slipper_always_has_all_three_answers() {
         let b = wall_and_cannon();
         let acts = legal_acts(&b, 2);
-        for answer in ANSWERS {
+        assert!(
+            acts.contains(&Act::Cross(Some(1), Answer::Evade)),
+            "Evade must be on the menu"
+        );
+        assert!(
+            acts.contains(&Act::Cross(Some(1), Answer::Push)),
+            "Push must be on the menu"
+        );
+        assert!(
+            acts.iter().any(
+                |a| matches!(a, Act::Cross(Some(1), Answer::Abort(alloc)) if !alloc.is_empty())
+            ),
+            "at least one Abort (strike-back) must be on the menu"
+        );
+    }
+
+    /// **The strike-back is a real allocation, not a fixed spread.** Caught by two walls, a raider is offered both
+    /// a FOCUS (pour its whole tempo onto one, to silence it) and a SPREAD (a blow at each) - the pruned free
+    /// space the solver searches. Walls are Grit 3, so downing one costs the raider's whole 3 tempo: focus and
+    /// spread genuinely diverge.
+    #[test]
+    fn strike_back_offers_focus_and_spread() {
+        let b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [4, 4, 1, 3, 2], true, false),
+                unit("WallA", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("WallB", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Mage", Side::Foe, [3, 3, 1, 1, 2], false, true),
+            ],
+            vec![0, 1, 1, 1],
+        );
+        // The raid on the screened Mage (unit 3), caught by both walls (units 1 and 2).
+        let allocs: Vec<Vec<(usize, u32)>> = legal_acts(&b, 0)
+            .into_iter()
+            .filter_map(|a| match a {
+                Act::Cross(Some(3), Answer::Abort(alloc)) => Some(alloc),
+                _ => None,
+            })
+            .collect();
+        // A FOCUS: the whole 3 tempo onto a single wall.
+        assert!(
+            allocs.contains(&vec![(1, 3)]) && allocs.contains(&vec![(2, 3)]),
+            "a focus onto each wall must be offered, got {allocs:?}"
+        );
+        // A SPREAD: a strike at each wall in the same allocation.
+        assert!(
+            allocs.iter().any(|al| al.len() == 2),
+            "a spread across both walls must be offered, got {allocs:?}"
+        );
+        // Every allocation spends at most the raider's tempo (3), and only on the catchers.
+        for al in &allocs {
+            let total: u32 = al.iter().map(|&(_, n)| n).sum();
+            assert!(total <= 3, "an allocation cannot overspend tempo: {al:?}");
             assert!(
-                acts.contains(&Act::Cross(Some(1), answer)),
-                "{answer:?} must be on the menu"
+                al.iter().all(|&(c, _)| c == 1 || c == 2),
+                "strike-back only targets the catchers: {al:?}"
             );
         }
     }
@@ -2027,7 +2242,7 @@ mod tests {
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Abort),
+                Act::Cross(Some(1), Answer::Abort(vec![(0, 1)])),
             ],
         );
         assert!(
@@ -2366,7 +2581,9 @@ mod tests {
     }
 
     /// **Width comes free once the reach is paid for.** A melee area striker that crosses in sweeps the whole
-    /// region it lands in - both tiers, because an outrider is past the screen.
+    /// region it lands in - both tiers, because an outrider is past the screen. It **pushes** in: paying the reach
+    /// in blood keeps its whole pool in hand to sweep with (an Evade against the pooled back-line volley would drain
+    /// the very tempo the sweep needs).
     #[test]
     fn a_raider_with_an_area_strike_sweeps_the_region_it_lands_in() {
         let mut b = Board::new(
@@ -2382,7 +2599,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Cross(Some(2), Answer::Evade),
+                Act::Cross(Some(2), Answer::Push),
                 Act::Clash(0),
                 Act::Clash(0),
                 Act::Clash(0),
@@ -2572,7 +2789,7 @@ mod tests {
                 perm.iter().map(|&o| b.units[o].clone()).collect(),
                 perm.iter().map(|&o| b.regions[o]).collect(),
             );
-            let shuffled_acts: Vec<Act> = perm.iter().map(|&o| remap(acts[o])).collect();
+            let shuffled_acts: Vec<Act> = perm.iter().map(|&o| remap(acts[o].clone())).collect();
             play_round(&mut shuffled, &shuffled_acts);
 
             for old in 0..n {

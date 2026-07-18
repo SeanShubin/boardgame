@@ -193,7 +193,7 @@ impl Decider for Random {
         if opts.is_empty() {
             return Some(Act::Hold);
         }
-        Some(opts[(self.next() % opts.len() as u64) as usize])
+        Some(opts[(self.next() % opts.len() as u64) as usize].clone())
     }
     fn deterministic(&self) -> bool {
         false
@@ -228,7 +228,7 @@ impl Game for Combat {
         let mut s = state.clone();
         let Choice::Act(act) = choice;
         let unit = s.order[s.next];
-        s.pending[unit] = Some(*act);
+        s.pending[unit] = Some(act.clone());
         match s.next_undeclared(s.next + 1) {
             Some(n) => s.next = n,
             None => resolve_round(&mut s),
@@ -251,7 +251,7 @@ impl Game for Combat {
 /// decision. (A body that somehow reached resolution undeclared defaults to [`Act::Hold`].)
 fn resolve_round(s: &mut State) {
     let acts: Vec<Act> = (0..s.board.units.len())
-        .map(|i| s.pending[i].unwrap_or(Act::Hold))
+        .map(|i| s.pending[i].clone().unwrap_or(Act::Hold))
         .collect();
     play_round(&mut s.board, &acts);
 

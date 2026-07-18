@@ -139,6 +139,55 @@ pub fn slip_cost(units: &[Combatant], contacts: &[Contact], defender: usize) -> 
     Some(worst / units[defender].finesse.max(1) + 1)
 }
 
+/// **The pooled slip cost - the crossing rule.** A crosser is opposed by *every* catcher at once, and it must
+/// out-bid the **whole pool**, not merely the worst single catcher: the price is enough cards that
+/// `cards x finesse` strictly exceeds the **sum** of every bid reaching it. This is what makes many catchers (and
+/// a horde, whose single bid already carries its body-count) genuinely hard to slip - "only one of you has to
+/// catch me" cuts the other way once they pool. `None` when nothing is reaching you.
+///
+/// The clash exchange keeps the worst-single [`slip_cost`]; only the crossing pools, because only a crossing is
+/// contested at both ends by a whole line at once.
+pub fn slip_cost_pooled(units: &[Combatant], contacts: &[Contact], defender: usize) -> Option<u32> {
+    let pool: u32 = contacts
+        .iter()
+        .filter(|c| c.target == defender)
+        .map(|c| c.bid)
+        .sum();
+    if pool == 0 {
+        return None;
+    }
+    Some(pool / units[defender].finesse.max(1) + 1)
+}
+
+/// **Evade, pooled** - [`resolve_evade`] with the crossing's whole-pool price ([`slip_cost_pooled`]). A slip pays
+/// to beat the summed bid and breaks every engagement reaching that unit; one it cannot afford is not a slip at
+/// all, and the unit stands (caught by all).
+pub fn resolve_evade_pooled(
+    units: &mut [Combatant],
+    contacts: &[Contact],
+    dodges: &[Dodge],
+) -> Vec<Contact> {
+    let mut slipped = vec![false; units.len()];
+    for (i, dodge) in dodges.iter().enumerate() {
+        if *dodge != Dodge::Slip {
+            continue;
+        }
+        let Some(cost) = slip_cost_pooled(units, contacts, i) else {
+            continue;
+        };
+        if cost > units[i].tempo {
+            continue;
+        }
+        units[i].tempo -= cost;
+        slipped[i] = true;
+    }
+    contacts
+        .iter()
+        .filter(|c| !slipped[c.target])
+        .copied()
+        .collect()
+}
+
 /// Whether `unit` has an enemy in a **melee edge** it can answer along: the body it engaged, or - the mutual
 /// rule - a body that engaged *it* with a melee reach (a shot from range is never answered).
 ///
