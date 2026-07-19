@@ -129,10 +129,12 @@ chance at the crosser in Phase 1. REVEAL.
 **Step 6 - DECLARE rearguard evade bids.** A targeted rearguard bids tempo to
 evade the outrider on it. REVEAL; resolve.
 
-**Step 7 - RESOLVE the raid.** Outrider strikes land, plus declared extra
-strikes. A struck rearguard may declare **retaliation** - as many strikes as it
-has tempo for, but **only against bodies that struck it in melee** (an outrider
-in its face; never a body firing from across the gap). REVEAL; land; check downed.
+**Step 7 - RESOLVE the raid.** Outrider strikes land, plus declared extra strikes;
+check downed. The rearguard does **not** retaliate: it already had its one shot at
+this body - the volley in step 4. Being reached is the raid's whole reward - a bow
+is helpless with a blade inside its guard - so the archer's defense was to kill the
+crosser *before* it arrived, not after. (No separate defender-retaliation rule is
+needed; see "no redundant strike-backs" under Global rules.)
 
 ### Phase 3 - The Clash (the formations trade)
 
@@ -144,8 +146,11 @@ here they are targets only. REVEAL.
 **Step 9 - DECLARE evade bids.** Each targeted body bids tempo to evade. REVEAL;
 resolve.
 
-**Step 10 - RESOLVE the clash.** Strikes land, plus extra strikes, plus melee
-retaliation along any melee edge. Check downed.
+**Step 10 - RESOLVE the clash.** Strikes land, plus declared extra strikes; check
+downed. There is no separate retaliation: a body that wants to answer an attacker
+simply **declared a clash at it** (step 8), and a mutual clash already trades both
+ways. A body that declared elsewhere, or held, spent its turn there. Fight what you
+declared.
 
 ### Round end
 
@@ -158,12 +163,20 @@ first-shot phase slot).
 
 - **Engaging melee earns one free blow; ranged is one-way.** Whoever engages in
   melee - the vanguard catching, the crosser that *halts* to fight, anyone who
-  clashes - lands one free opening strike (the clash itself) and can be answered
-  in kind. A body firing from **range** lands its shot but is **never answered**:
-  you cannot strike back at something you never reached. This one rule is behind
-  the catcher's free blow, the crosser's free blow *only when it halts* (fleeing
-  through earns nothing - it did not engage), and a rearguard's immunity to a
-  crosser's strike-back.
+  clashes - lands one free opening strike (the clash itself). "Answered in kind"
+  means the other side likewise *engages* (a mutual clash it declared, or a
+  crosser that halts) - not a bolt-on retaliation. A body firing from **range**
+  lands its shot but is **never answered**: you cannot strike back at something you
+  never reached. This one rule is behind the catcher's free blow, the crosser's
+  free blow *only when it halts* (fleeing through earns nothing - it did not
+  engage), and a rearguard's immunity to a crosser's strike-back.
+- **No redundant strike-backs.** Each body's one defensive chance is already spent
+  in an earlier phase: the vanguard's catch, the rearguard's volley, everyone's
+  declared clash. So a *strike-back* rule is added only where a body has **no
+  earlier chance** - and the only such body is the **crosser**, whose entire turn
+  is the crossing. That is why the halt strike-back exists and nothing else does; a
+  reached rearguard does not answer (it shot during the volley), and a clash is
+  answered by declaring your own clash, not by a separate rule.
 - **Area strikes never target and never retaliate.** An area (aoe) body's strike
   is *always* the untargeted regional sweep - it hits every enemy in the tier it
   is aimed at, unevadably, for one tempo. It is never a declared single-target
@@ -180,17 +193,17 @@ first-shot phase slot).
 |---|---|---|---|
 | I1 | Inner | prior outriders + hosts | point-blank targets (any tier, no screen) |
 | I2 | Inner | targeted bodies | evade bids |
-| I3 | Inner | attackers + defenders | strikes + extras + retaliation; then dissolve |
+| I3 | Inner | attackers + defenders | strikes + extras (mutual, both declared); then dissolve |
 | 1 | Crossing | vanguard | cross or not |
 | 2 | Crossing | vanguard + rearguard | intercept (melee, halts) or volley (ranged, hits) |
 | 3 | Crossing | catchers + crossers | two contests: front (halted?) and back (hit?); evade tempo split between them |
 | 4 | Crossing | catchers; crossers | free opening each + extras; crosser push (0) or halt (own free blow + paid, melee catchers only) |
 | 5 | Raid | outriders | which rearguard/host to strike |
 | 6 | Raid | targeted rearguard | evade bid |
-| 7 | Raid | outriders + rearguard | extra strikes; rearguard retaliation |
+| 7 | Raid | outriders | extra strikes (rearguard does NOT retaliate - it volleyed in step 4) |
 | 8 | Clash | vanguard + rearguard | clash target |
 | 9 | Clash | targeted bodies | evade bid |
-| 10 | Clash | attackers + defenders | extra strikes; melee retaliation |
+| 10 | Clash | attackers | extra strikes (a mutual clash is answered by declaring it, step 8 - no separate retaliation) |
 
 ## Implementation status (2026-07-18, after M1)
 
@@ -208,14 +221,16 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 4 strikes + push/halt + free-blow | partial | push/halt + strike-back allocation shipped (M1); strike-back restricted to **melee catchers** (one-way rule); the crosser's **free blow on halt** now lands; **TODO:** catcher extra strikes; the two-contest split (back = damage only) |
 | 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
 | 6 rearguard evade | folded | evade exists but automatic, not a declared bid |
-| 7 outrider strike + rearguard retaliation | pending | defender retaliation is only the aborter's today; a ranged back does not yet retaliate at point-blank |
+| 7 outrider strike (no retaliation) | done (rule dropped) | the rearguard does not retaliate - it had its shot in the volley (step 4); no defender-retaliation rule needed (see "no redundant strike-backs") |
 | 8 clash targets | done | Outer Ring clash, up front |
 | 9 clash evade | folded | automatic |
 | 10 land + downed | done | |
 | aoe never targets/retaliates | done | sweep already untargeted; strike-back now excludes aoe (candidates + resolver); pour/clash route aoe to `area_strike` |
 
-The distance left is four structural rules - elective catching split into
-interception vs volley (2), the two-contest bid with evade split (3), decoupled
-outrider targeting (5), and defender retaliation (7). (The crosser's free blow on
-halt, the melee-only strike-back, and the aoe never-target/retaliate invariant are
-now done.) Everything else is presentation over a model that already plays it.
+The distance left is two structural rules - elective catching split into
+interception vs volley (2), and decoupled outrider targeting (5) - plus the small
+evade-priority split within the already-working two-contest crossing (3). Defender
+retaliation (7/10) is **dropped**: covered by earlier phases (the volley, the
+declared clash). The crosser's free blow on halt, the melee-only strike-back, and
+the aoe never-target/retaliate invariant are done. Everything else is presentation
+over a model that already plays it.
