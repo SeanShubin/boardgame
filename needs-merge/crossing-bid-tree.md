@@ -82,42 +82,63 @@ legible policy that governs every foe beat.
   catcher caught you.
 - Spent is spent, win or lose. A failed evade is doubly punishing: the tempo is
   gone AND you are caught.
+- **The vanguard and the rearguard are two SEPARATE contests, not one pool.**
+  They answer different questions - the vanguard's interception asks *am I
+  halted?* (a caught crosser faces push/halt), the rearguard's volley asks *am I
+  hit?* (damage only; a volley never halts). Each pools within itself; the crosser
+  **allocates its evade tempo between the two** (slip the line, dodge the arrows,
+  or split). Pooling them would conflate a movement contest with a damage contest.
+  See [round-sequence.md](round-sequence.md) Phase 1 for the step-by-step form.
 
-### The opening strike -- double duty (defender's edge)
-If the raider is caught, **each catcher lands exactly one free strike**, however
-many cards it bid to catch. The catch bid pulls double duty: it is both the
-contest bid and the opening blow. The raider gets **no** free strike -- it spent
-its tempo trying to evade, the catchers spent theirs trying to strike, so the
-asymmetry is earned, not fiat. Opening strikes do **Might** damage (Grit/armor
-apply, can flip a health card, like any strike).
+### The free blow -- the engagement rule
+The general rule (it subsumes the old "double duty" framing): **engaging in melee
+earns one free opening strike - the clash itself - and a melee engagement can be
+answered; a ranged shot lands but is never answered.**
 
-Worked example (a catcher): 3 cards to catch + 3 extra cards
-= 1 opening strike (from the catch) + 3 extra strikes = **4 strikes**, from 6 cards.
+- A **vanguard catcher** engages in melee (catching *is* the clash), so it lands
+  one free strike however many cards it bid - the catch bid is both the contest
+  bid and the blow.
+- The **caught crosser** earns its free blow **only if it halts** (engages back):
+  stopping to fight puts it in the same two-way melee, so it gets its own one free
+  strike, at a catcher of its choice. If it **pushes** (flees through) it earns
+  nothing - it did not engage. That is the trade between ignoring and stopping.
+- A **rearguard volley** is a ranged shot: it lands one-way and can never be
+  struck back at. A crosser reaches a rearguard only by getting *through* to it
+  (becoming an outrider), never by halting - so a halt's strike-back hits **only
+  the vanguard** in melee with it.
 
-### Beat 4 -- extra strikes (simultaneous, hidden)
+Opening strikes do **Might** damage (Grit/armor apply, can flip a health card).
+
+Worked example (a catcher): 3 cards to catch + 3 extra = 1 opening (from the
+catch) + 3 extra = **4 strikes** from 6 cards. A crosser that halts against it:
+1 free blow + however many extra strikes it pays for.
+
+### Beat 4 -- strikes and the answer (simultaneous, hidden)
 Only reached if the raider was caught.
-- Each extra tempo card = one strike, weighted by **Might** (`tempo cards x Might`
-  per the normal strike/damage step).
-- **Catchers** may pile on: extra cards -> more strikes on the raider.
-- **Raider** retaliates: allocate K cards as strikes across the catchers that
-  caught it ("they came to me"). This is the original riposte-allocation ask.
-  - `K > 0`  -> the raider stopped to trade -> **repelled** (Abort): it stays home.
-  - `K == 0` -> **Push**: it eats the hits and crosses to outrider if it lives.
-- Simultaneity: when the raider picks its beat-4 spend it knows the **opening**
-  damage it took, but NOT how hard the catchers are about to press (their extra
-  bids reveal at the same time).
+- Each extra tempo card = one strike, **Might**-weighted.
+- **Catchers** may pile on: a vanguard adds melee strikes, a rearguard looses more
+  shots (still one-way).
+- **Caught crosser** declares its posture:
+  - **push** -> eats the hits, crosses to outrider if it lives; earns **no** blow
+    (it fled, it did not engage).
+  - **halt** -> stays (repelled), earns **one free blow** plus K paid strikes,
+    allocated across the catchers **in melee with it only** (the vanguard) - never
+    a rearguard it never reached.
+- Simultaneity: picking its posture, the crosser knows the **opening** damage it
+  took but NOT the catchers' extra bids (revealed together).
 - Draws from the same per-body pool as the evade bid, so contesting evade hard
   leaves less to strike back with.
 
 ### Derived labels
-`Answer` as a stored primitive goes away. The model stores an **evade bid** and a
-**strike-back allocation**; the log derives the label:
+`Answer` as a stored primitive goes away. The model stores an **evade bid** and,
+for a caught crosser, its declared **posture** (push / halt) with a **strike-back
+allocation**; the log derives the label:
 
-| beat-3 result | strike-back | label |
-|---|---|---|
-| beat the pool | (n/a)       | Evade |
-| caught        | 0           | Push  |
-| caught        | > 0         | Abort |
+| beat-3 result | posture | label | crosser's blow |
+|---|---|---|---|
+| beat the pool | (n/a)   | Evade | none (untouched) |
+| caught        | push    | Push  | none (fled) |
+| caught        | halt    | Abort | one free blow + paid strike-back (melee catchers only) |
 
 ## Foe behavior: the behavior card
 
