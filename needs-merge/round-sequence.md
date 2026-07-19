@@ -246,8 +246,8 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 0 Inner Ring (prior outriders) | done | resolved first in `play_round`: a distance-zero brawl (both tiers, no screen), then `dissolve` |
 | 1 crossings | done | up-front `Cross`, vanguard-only |
 | 2 elective catch + volley split | pending | catching is automatic geometry today, and not yet split into melee-interception (halts) vs ranged-volley (hits) (M2) |
-| 3 cross the vanguard | partial | separate front pooled pass, push/halt, free blow, melee-only strike-back all shipped (M1 + engagement batch); **TODO:** unfuse the front `Slip` choice from the back so it is genuinely independent |
-| 4 cross the rearguard | partial | separate back pooled volley pass shipped and damage-only in effect; **TODO:** the independent `Dodge`/`Eat` choice (today it rides the one shared `Evade`, front-first) - the evade-priority split |
+| 3 cross the vanguard | done | `Act::Cross(_, Answer, _)` - slip/push/halt, free blow, melee-only strike-back; decides through-vs-stay |
+| 4 cross the rearguard | done | `Act::Cross(_, _, Volley)` - dodge/eat, damage only, chosen INDEPENDENTLY of the front (the evade-priority split); `legal_acts` enumerates Front x Volley |
 | 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
 | 6 rearguard evade | folded (by design) | the raid is evadable - a reached back may dodge (spending firing tempo); the outrider disrupts either way. Evade exists but automatic, not yet a declared bid |
 | 7 outrider strike (no retaliation) | done (rule dropped) | the rearguard does not retaliate - it had its shot in the volley (step 4); no defender-retaliation rule needed (see "no redundant strike-backs") |
@@ -258,8 +258,6 @@ missing; "pending" means a genuine rule is not yet modeled.
 
 The distance left:
 
-- **Evade-priority split (3/4)** - unfuse the front `Slip` from the back `Dodge`
-  so the two crossings are chosen independently. *Being implemented now.*
 - **Elective catching (2)** - the one real enrichment: let the foe choose whom to
   catch / how hard (the behavior-card foe policy). Optional; automatic catching
   already gives the strategy its shape.
