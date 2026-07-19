@@ -1369,6 +1369,10 @@ fn reach_for_slippers(
     // if that catcher truly caught this mover and still stands - a stale or mis-aimed pair (a catcher already
     // felled, or one that never reached) is simply dropped, wasting the tempo it named rather than mislanding.
     // Spending nothing here is a Push (the mover carries `Answer::Push`, never an empty Abort).
+    //
+    // **Strike-back reaches only catchers that struck in MELEE** (the one-way rule, same as `can_answer`): you
+    // cannot swing back at a rearguard that volleyed you from range - you never reached it. So this pass ripostes
+    // the front line (vanguard, `melee`); the back-line volley pass, whose catchers are ranged, ripostes nobody.
     let mut ripostes: Vec<Blows> = Vec::new();
     for &(i, _, a) in movers {
         let Answer::Abort(alloc) = a else { continue };
@@ -1381,8 +1385,12 @@ fn reach_for_slippers(
             .map(|c| c.attacker)
             .collect();
         for &(c, cards) in alloc {
-            if cards == 0 || board.units[c].fallen || !caught_by.contains(&c) {
-                continue;
+            if cards == 0
+                || board.units[c].fallen
+                || !caught_by.contains(&c)
+                || !board.units[c].melee
+            {
+                continue; // a ranged catcher (a volleying rearguard) is never answered
             }
             ripostes.push(Blows {
                 unit: i,
@@ -2338,6 +2346,34 @@ mod tests {
         assert_eq!(b.regions[2], 1, "it never left its own ground");
         assert_ne!(b.ranks[2], Rank::Outrider, "and it is no outrider");
         assert_eq!(b.units[1].health, cannon, "and it never reached the cannon");
+    }
+
+    /// **A volleying rearguard is never answered** (the one-way rule). Even a hand-built Abort that names the
+    /// ranged Archer as a strike-back target lands nothing on it - you cannot swing back at a body that shot you
+    /// from range. The resolver enforces this whatever the allocation says.
+    #[test]
+    fn strike_back_never_answers_a_ranged_catcher() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [5, 5, 1, 4, 2], true, false),
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Archer", Side::Foe, [4, 3, 1, 2, 2], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        let archer = b.units[2].health;
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(2), Answer::Abort(vec![(2, 4)])), // names the ranged Archer
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        assert_eq!(
+            b.units[2].health, archer,
+            "the strike-back cannot reach the rearguard that volleyed from range"
+        );
     }
 
     /// **The back line volleys an incoming raider.** The cannons defend themselves - front (Intercept) then back
