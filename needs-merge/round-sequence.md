@@ -24,6 +24,32 @@ are hidden from the player.
 Read the sequence below as the full rules. What a solver or UI *shows* is this
 same sequence with the dominated choices pruned.
 
+## Design intent: the two shapes
+
+The sequence exists to produce two recognizable strategic shapes. Every rule is
+judged by whether it serves them with a **thematically coherent cost** - not by
+being mechanically clever. The mechanics stay flexible; what must hold is that the
+costs read true.
+
+**The opening shape (round one).** The vanguard's crossers strike ahead to
+**disrupt** the enemy's soft-but-dangerous rearguard - assassinate it if they can,
+but at minimum tie it up - buying the main army safety from that fire. The price is
+real: a crosser becomes an outrider, exposed inside the enemy ranks and liable to
+be wiped out earlier than it would have been in formation. Behind that screen the
+vanguards (and whatever tempo the rearguards keep) exchange their damage; and once
+an enemy vanguard collapses, its rearguard is exposed and gets cleaned up.
+
+**The ongoing shape (later rounds).** Everyone pays the consequences of where they
+stand. Outriders are the sharpest expression of it: loose inside the enemy, they
+wreak havoc but are vulnerable to everyone at once.
+
+**Disruption, not a guaranteed kill.** Reaching a rearguard does NOT guarantee a
+hit - it may still dodge (the raid strike is evadable, by design). The outrider's
+job is to disrupt the rearguard's damage: by killing it, *or* by keeping it
+occupied - burning its tempo, threatening it - until the enemy vanguard falls and
+the exposed rearguard is reached and finished. The kill is only one form of the
+disruption, which is why the raid is not guaranteed.
+
 ## Terminology
 
 - **Vanguard** - front rank, strikes in **melee**.
@@ -127,7 +153,10 @@ the fresh arrivals. Vanguard and rearguard declare nothing here; they had their
 chance at the crosser in Phase 1. REVEAL.
 
 **Step 6 - DECLARE rearguard evade bids.** A targeted rearguard bids tempo to
-evade the outrider on it. REVEAL; resolve.
+evade the outrider on it. Reaching the back is **not** a guaranteed hit - the
+rearguard may dodge, spending tempo it then cannot fire with. That is the point: an
+outrider disrupts whether or not it lands the blow (a dodged raid still burned the
+rearguard's tempo). REVEAL; resolve.
 
 **Step 7 - RESOLVE the raid.** Outrider strikes land, plus declared extra strikes;
 check downed. The rearguard does **not** retaliate: it already had its one shot at
@@ -220,7 +249,7 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 3 bids (two contests) | partial | M1 runs front and back as separate pooled passes, but the crosser can't split evade between them - it's one `{0, beat-pool}` posture applied to both, and the back pass still gates push/halt rather than damage-only |
 | 4 strikes + push/halt + free-blow | partial | push/halt + strike-back allocation shipped (M1); strike-back restricted to **melee catchers** (one-way rule); the crosser's **free blow on halt** now lands; **TODO:** catcher extra strikes; the two-contest split (back = damage only) |
 | 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
-| 6 rearguard evade | folded | evade exists but automatic, not a declared bid |
+| 6 rearguard evade | folded (by design) | the raid is evadable - a reached back may dodge (spending firing tempo); the outrider disrupts either way. Evade exists but automatic, not yet a declared bid |
 | 7 outrider strike (no retaliation) | done (rule dropped) | the rearguard does not retaliate - it had its shot in the volley (step 4); no defender-retaliation rule needed (see "no redundant strike-backs") |
 | 8 clash targets | done | Outer Ring clash, up front |
 | 9 clash evade | folded | automatic |
