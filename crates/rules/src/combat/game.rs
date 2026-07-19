@@ -718,7 +718,7 @@ mod solve_tests {
         let full = Combat::options(&s);
         assert!(
             full.iter()
-                .any(|c| matches!(c, Choice::Act(Act::Cross(Some(_), _)))),
+                .any(|c| matches!(c, Choice::Act(Act::Cross(Some(_), _, _)))),
             "the full game offers a raid (a cross with a target) at the screened cannon"
         );
         let control = ClashOnly::options(&s);

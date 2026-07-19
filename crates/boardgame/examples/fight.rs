@@ -34,7 +34,7 @@ use bevy::prelude::*;
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, Decider, Human, Instinct, Score, Scorer, State};
-use rules::combat::regions::{Act, Answer, Board, Rank, catchers, play_round};
+use rules::combat::regions::{Act, Answer, Board, Rank, Volley, catchers, play_round};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -124,7 +124,7 @@ enum Entry {
     Crossing {
         label: String,
         dest: u8,
-        answers: Vec<(Answer, usize)>,
+        answers: Vec<(Answer, Volley, usize)>,
     },
 }
 
@@ -137,7 +137,7 @@ struct Drill {
     /// crossing skips the drill entirely and just crosses.
     catchers: String,
     /// Each answer and the underlying `options` index that applies it.
-    answers: Vec<(Answer, usize)>,
+    answers: Vec<(Answer, Volley, usize)>,
 }
 
 /// **One undo point** - the whole decision-point state, snapshotted so Back is a pointer move with **nothing
@@ -556,9 +556,9 @@ impl Fight {
             // Unopposed: no one to answer, so there is no second beat - cross cleanly and move on.
             let opt = answers
                 .iter()
-                .find(|(a, _)| *a == Answer::Push)
+                .find(|(a, _, _)| *a == Answer::Push)
                 .or_else(|| answers.first())
-                .map(|&(_, i)| i);
+                .map(|&(_, _, i)| i);
             if let Some(i) = opt {
                 self.choose(i);
             }
@@ -574,19 +574,22 @@ impl Fight {
 
     /// The best verdict achievable across a crossing's answers (Winnable if any answer is, Doomed only if every
     /// answer is), or `None` while any is still computing - what the collapsed crossing card shows.
-    fn agg_verdict(&self, members: &[(Answer, usize)]) -> Option<Verdict> {
+    fn agg_verdict(&self, members: &[(Answer, Volley, usize)]) -> Option<Verdict> {
         if members
             .iter()
-            .any(|&(_, i)| self.opt_verdict[i] == Some(Verdict::Winnable))
+            .any(|&(_, _, i)| self.opt_verdict[i] == Some(Verdict::Winnable))
         {
             return Some(Verdict::Winnable);
         }
-        if members.iter().any(|&(_, i)| self.opt_verdict[i].is_none()) {
+        if members
+            .iter()
+            .any(|&(_, _, i)| self.opt_verdict[i].is_none())
+        {
             return None;
         }
         if members
             .iter()
-            .all(|&(_, i)| self.opt_verdict[i] == Some(Verdict::Doomed))
+            .all(|&(_, _, i)| self.opt_verdict[i] == Some(Verdict::Doomed))
         {
             Some(Verdict::Doomed)
         } else {
@@ -596,12 +599,12 @@ impl Fight {
 
     /// The win/loss line counts summed over a crossing's answers (every line reachable by crossing, whatever the
     /// answer). `=` when every answer's tally is exhausted, `>=` while any is still a lower bound.
-    fn agg_counts(&self, members: &[(Answer, usize)]) -> String {
-        if members.iter().any(|&(_, i)| self.opt_paths[i].is_none()) {
+    fn agg_counts(&self, members: &[(Answer, Volley, usize)]) -> String {
+        if members.iter().any(|&(_, _, i)| self.opt_paths[i].is_none()) {
             return "counting lines...".into();
         }
         let (mut wins, mut losses, mut complete) = (0u64, 0u64, true);
-        for &(_, i) in members {
+        for &(_, _, i) in members {
             let p = self.opt_paths[i].unwrap();
             wins = wins.saturating_add(p.wins);
             losses = losses.saturating_add(p.losses);
@@ -612,10 +615,10 @@ impl Fight {
 
     /// The best route achievable across a crossing's answers - the min [`Score`] over them (whichever answer plays
     /// out best), and whether every answer's search is exhausted (so the min is exact, not a provisional `<=`).
-    fn agg_route(&self, members: &[(Answer, usize)]) -> (Option<Score>, bool) {
+    fn agg_route(&self, members: &[(Answer, Volley, usize)]) -> (Option<Score>, bool) {
         let mut best: Option<Score> = None;
         let mut done = true;
-        for &(_, i) in members {
+        for &(_, _, i) in members {
             done &= self.opt_score_done[i];
             if let Some(s) = self.opt_score[i] {
                 best = Some(best.map_or(s, |b| b.min(s)));
@@ -669,7 +672,7 @@ impl Fight {
                 // A crossing is TWO commits with the interception revealed between them (fork B): the honest
                 // structure a human meets, even though the model carries the whole Cross in one Act. Commit the
                 // cross, reveal the line's catch, commit the answer.
-                Choice::Act(Act::Cross(target, answer)) => {
+                Choice::Act(Act::Cross(target, answer, volley)) => {
                     let dest = before
                         .occupied()
                         .into_iter()
@@ -695,8 +698,8 @@ impl Fight {
                             join_counts(&caught)
                         ));
                     }
-                    let ans = match answer {
-                        Answer::Evade => "evade".to_string(),
+                    let front = match answer {
+                        Answer::Evade => "slip the line".to_string(),
                         Answer::Push => "push - eat the blows".to_string(),
                         Answer::Abort(alloc) => {
                             let who: Vec<String> = alloc
@@ -711,8 +714,12 @@ impl Fight {
                             }
                         }
                     };
+                    let back = match volley {
+                        Volley::Dodge => "dodge the arrows",
+                        Volley::Eat => "eat the arrows",
+                    };
                     self.log
-                        .push(format!("      commit  {mark}{name} -> {ans}"));
+                        .push(format!("      commit  {mark}{name} -> {front}; {back}"));
                 }
                 _ => self.log.push(format!(
                     "      commit  {mark}{name} -> {}",
@@ -764,7 +771,7 @@ impl Fight {
 
 fn act_answer(a: &Act) -> Option<&Answer> {
     match a {
-        Act::Cross(_, x) => Some(x),
+        Act::Cross(_, x, _) => Some(x),
         _ => None,
     }
 }
@@ -1294,10 +1301,17 @@ fn describe(b: &Board, c: &Choice) -> String {
 }
 
 fn act_label(b: &Board, a: &Act) -> String {
-    let ans = |x: &Answer| match x {
-        Answer::Evade => "evade",
-        Answer::Push => "push",
-        Answer::Abort(_) => "abort",
+    let ans = |x: &Answer, v: &Volley| {
+        let front = match x {
+            Answer::Evade => "slip",
+            Answer::Push => "push",
+            Answer::Abort(_) => "abort",
+        };
+        let back = match v {
+            Volley::Dodge => "dodge",
+            Volley::Eat => "eat",
+        };
+        format!("{front}/{back}")
     };
     // Name the target WITH its current health, so two same-named bodies in different states (e.g. two Walls at 2 hp
     // and 4 hp) read as the distinct choices they are. A horde's health is its body count.
@@ -1308,9 +1322,9 @@ fn act_label(b: &Board, a: &Act) -> String {
     };
     match a {
         Act::Clash(t) => format!("Clash {}", who(*t)),
-        Act::Cross(Some(t), x) => format!("Raid {} / {}", who(*t), ans(x)),
+        Act::Cross(Some(t), x, v) => format!("Raid {} / {}", who(*t), ans(x, v)),
         Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Cross(None, x) => format!("Slip into their line / {}", ans(x)),
+        Act::Cross(None, x, v) => format!("Slip into their line / {}", ans(x, v)),
         Act::Hold => "Hold".into(),
     }
 }
@@ -1332,15 +1346,15 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
     while i < options.len() {
         let Choice::Act(a) = &options[i];
         match a {
-            Act::Cross(Some(t), _) => {
+            Act::Cross(Some(t), _, _) => {
                 let target = *t;
                 let label = format!("Raid {}", board.units[target].name);
                 let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Cross(Some(t2), ans))) = options.get(i) {
+                while let Some(Choice::Act(Act::Cross(Some(t2), ans, vol))) = options.get(i) {
                     if *t2 != target {
                         break;
                     }
-                    answers.push((ans.clone(), i));
+                    answers.push((ans.clone(), *vol, i));
                     i += 1;
                 }
                 entries.push(Entry::Crossing {
@@ -1349,11 +1363,11 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
                     answers,
                 });
             }
-            Act::Cross(None, _) => {
+            Act::Cross(None, _, _) => {
                 let label = "Slip into their line".to_string();
                 let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Cross(None, ans))) = options.get(i) {
-                    answers.push((ans.clone(), i));
+                while let Some(Choice::Act(Act::Cross(None, ans, vol))) = options.get(i) {
+                    answers.push((ans.clone(), *vol, i));
                     i += 1;
                 }
                 entries.push(Entry::Crossing {
@@ -1388,10 +1402,10 @@ fn opt_counts(paths: Option<Paths>) -> String {
 
 /// How each crossing answer reads once you know who caught you - the `Abort` option is named after the actual
 /// bodies its strike-back targets ("Turn and fight: The Wall x2"), so the several allocations read apart.
-fn answer_label(a: &Answer, board: &Board, catchers: &str) -> String {
-    match a {
-        Answer::Evade => "Evade the line".into(),
-        Answer::Push => "Push through, take the hits".into(),
+fn answer_label(a: &Answer, vol: Volley, board: &Board, catchers: &str) -> String {
+    let front = match a {
+        Answer::Evade => "Slip the line".to_string(),
+        Answer::Push => "Push through, take the hits".to_string(),
         Answer::Abort(alloc) => {
             let who: Vec<String> = alloc
                 .iter()
@@ -1404,7 +1418,12 @@ fn answer_label(a: &Answer, board: &Board, catchers: &str) -> String {
                 format!("Turn and fight: {}", who.join(", "))
             }
         }
-    }
+    };
+    let back = match vol {
+        Volley::Dodge => " + dodge the arrows",
+        Volley::Eat => "",
+    };
+    format!("{front}{back}")
 }
 
 // ---- input ---------------------------------------------------------------------------------------------
@@ -1655,12 +1674,12 @@ fn screen_text(f: &Fight) -> String {
             drill.label, drill.catchers
         )
         .ok();
-        for (n, (ans, opt)) in drill.answers.iter().enumerate() {
-            let opt = *opt;
+        for (n, (ans, vol, opt)) in drill.answers.iter().enumerate() {
+            let (vol, opt) = (*vol, *opt);
             writeln!(
                 s,
                 "[{n}] {:<28} {:<12} {:<22} {}",
-                answer_label(ans, f.state.board(), &drill.catchers),
+                answer_label(ans, vol, f.state.board(), &drill.catchers),
                 vtag(f.opt_verdict[opt]),
                 opt_counts(f.opt_paths[opt]),
                 fmt_route(f.opt_score[opt], f.opt_score_done[opt])
@@ -2060,12 +2079,12 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
             WARN,
         );
         text(p, "how do you answer?", 11.0, MUTED);
-        for (ans, opt) in &drill.answers {
-            let opt = *opt;
+        for (ans, vol, opt) in &drill.answers {
+            let (vol, opt) = (*vol, *opt);
             choice_button(
                 p,
                 Hit::Option(opt),
-                answer_label(ans, f.state.board(), &drill.catchers),
+                answer_label(ans, vol, f.state.board(), &drill.catchers),
                 opt_counts(f.opt_paths[opt]),
                 fmt_route(f.opt_score[opt], f.opt_score_done[opt]),
                 f.opt_verdict[opt],

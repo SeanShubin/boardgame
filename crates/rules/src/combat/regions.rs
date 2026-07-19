@@ -149,25 +149,36 @@ pub enum Rank {
 ///
 /// A vanguard can never simply **stop** you. It can only make you pay - in tempo, in blood, or in the chance you
 /// gave up to turn and fight it instead.
-/// **The three crossing outcomes - now the leaves of a bid, not a flat declaration.** Evade/Push/Abort are read
-/// off *where you put your tempo* around the catchers' strikes: before them (Evade), never (Push), or after them
-/// (Abort). Abort carries the after-spend explicitly: the strike-back allocation, a list of `(catcher, strikes)`
-/// - one tempo per strike, spread however you choose across the bodies that caught you. Spending anything is what
-/// makes it an Abort (you stopped to trade, so you are repelled); spending nothing is a Push.
+/// **How a crosser answers the VANGUARD** (the interception - the first of the two independent crossings, and the
+/// only one that decides through-vs-stay). Read off *where you put your tempo* around the catchers' strikes:
+/// before them (Evade = slip the line), never (Push), or after them (Abort). Abort carries the after-spend
+/// explicitly: the strike-back allocation, a list of `(catcher, strikes)`, one tempo per strike, across the melee
+/// bodies that caught you. Spending anything makes it an Abort (you stopped to trade, so you are repelled);
+/// spending nothing is a Push. The REARGUARD is answered separately - see [`Volley`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Answer {
-    /// **Out-bid the whole catch pool** ([`combat::slip_cost_pooled`]): `tempo x Finesse` strictly beating the
-    /// summed bids against you. Through, untouched - and poorer. All-or-nothing: beat the pool or you are caught by
-    /// every catcher.
+    /// **Slip the line:** out-bid the whole vanguard catch pool ([`combat::slip_cost_pooled`]) - `tempo x Finesse`
+    /// strictly beating the summed bids. Through the front untouched, and poorer. All-or-nothing.
     Evade,
-    /// **Take the hit and go anyway.** Spend nothing striking back, eat every blow they land, and arrive - hurt,
-    /// but with your whole pool still in hand for next round.
+    /// **Take the catch and go anyway.** Spend nothing striking back, eat the vanguard's blows, and arrive.
     Push,
-    /// **Turn and fight.** Give up the ground and spend tempo swinging back at whoever caught you: the allocation
-    /// is `(catcher, strikes)` pairs, one tempo per strike. This is the "repelled" outcome - chosen, not imposed.
-    /// The resolver applies each pair only to a catcher that actually caught you and is still standing; strikes
-    /// aimed elsewhere are dropped.
+    /// **Turn and fight.** Give up the ground and spend tempo swinging back at the melee bodies that caught you:
+    /// `(catcher, strikes)` pairs, one tempo per strike. The "repelled" outcome - chosen, not imposed. The resolver
+    /// applies each pair only to a catcher that actually caught you in melee and is still standing.
     Abort(Vec<(usize, u32)>),
+}
+
+/// **How a crosser answers the REARGUARD** (the volley - the second, independent crossing). A volley only ever
+/// *damages*; it never halts. Chosen independently of the [`Answer`] to the vanguard - that is the evade-priority
+/// split: slip the line but eat the arrows, or take the catch but dodge the arrows, whichever the tempo and the
+/// threats favour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Volley {
+    /// **Dodge the arrows:** out-bid the whole rearguard shot pool ([`combat::slip_cost_pooled`]). No volley
+    /// damage - but the dodge tempo is spent.
+    Dodge,
+    /// **Eat the arrows:** spend nothing on the volley, take the shots, keep the tempo.
+    Eat,
 }
 
 /// What a body does with its round. **The only thing it declares.**
@@ -186,8 +197,9 @@ pub enum Act {
     /// - `Cross(None, _)` just crosses and stands (a repositioning **slip**), striking nobody this round.
     ///
     /// A raid reaches the BACK line only (a front body you [`Clash`](Act::Clash)). **Committed: an outrider cannot
-    /// cross back out.** The [`Answer`] is how you take the interception (evade / push / abort).
-    Cross(Option<usize>, Answer),
+    /// cross back out.** The two crossings are answered independently: [`Answer`] takes the vanguard interception
+    /// (slip / push / halt), [`Volley`] takes the rearguard volley (dodge / eat).
+    Cross(Option<usize>, Answer, Volley),
     /// **Strike a body in your OWN region** - an enemy outrider loose in your ranks, or (if you are the outrider)
     /// any host body. No screen applies in-region: the ranks stopped protecting anyone the moment a body got
     /// inside them. Not a crossing, so it carries no evade-answer.
@@ -202,28 +214,44 @@ impl Act {
     fn destination(&self, board: &Board, i: usize) -> Option<u8> {
         let here = board.regions[i];
         match self {
-            Act::Cross(_, _) => board.occupied().into_iter().find(|&r| r != here),
+            Act::Cross(..) => board.occupied().into_iter().find(|&r| r != here),
             _ => None,
         }
     }
 
-    fn answer(&self) -> Option<&Answer> {
+    /// The vanguard answer (the interception), if this act is a crossing.
+    fn front(&self) -> Option<&Answer> {
         match self {
-            Act::Cross(_, a) => Some(a),
+            Act::Cross(_, a, _) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// The rearguard answer (the volley), if this act is a crossing.
+    fn volley(&self) -> Option<Volley> {
+        match self {
+            Act::Cross(_, _, v) => Some(*v),
             _ => None,
         }
     }
 
     pub fn label(&self, board: &Board) -> String {
-        let how = |a: &Answer| match a {
-            Answer::Evade => "evade the line".to_string(),
-            Answer::Push => "push through, take the hits".to_string(),
-            Answer::Abort(alloc) => strike_back_label(board, alloc),
+        let how = |a: &Answer, v: Volley| {
+            let front = match a {
+                Answer::Evade => "slip the line".to_string(),
+                Answer::Push => "push through".to_string(),
+                Answer::Abort(alloc) => strike_back_label(board, alloc),
+            };
+            let back = match v {
+                Volley::Dodge => "dodge the arrows",
+                Volley::Eat => "eat the arrows",
+            };
+            format!("{front}, {back}")
         };
         match self {
             Act::Clash(t) => format!("Clash {}", board.units[*t].name),
-            Act::Cross(Some(t), a) => format!("Raid {} ({})", board.units[*t].name, how(a)),
-            Act::Cross(None, a) => format!("Cross into their line ({})", how(a)),
+            Act::Cross(Some(t), a, v) => format!("Raid {} ({})", board.units[*t].name, how(a, *v)),
+            Act::Cross(None, a, v) => format!("Cross into their line ({})", how(a, *v)),
             Act::Melee(t) => format!("Melee {}", board.units[*t].name),
             Act::Hold => "Hold".to_string(),
         }
@@ -358,33 +386,45 @@ pub fn canonical(regions: &[u8]) -> Vec<u8> {
 
 // ---- what a body may declare ---------------------------------------------------------------------------
 
-/// **Every crossing this body may declare to `target`** - the Evade/Push/Abort leaves, with the Abort branch
-/// expanded into concrete strike-back allocations. This is where the crossing's branching factor is set, so it is
-/// deliberately pruned:
+/// **Every crossing this body may declare to `target`** - the product of the two independent crossings, the
+/// vanguard [`Answer`] and the rearguard [`Volley`]. This is where the crossing's branching factor is set, so both
+/// axes are deliberately pruned:
 ///
-/// - **Uncontested** (nothing predicted to catch you): the three answers all just cross, so only one option is
-///   emitted (a plain [`Push`](Answer::Push)) - no wasted branching on equivalents.
-/// - **Contested**: [`Evade`](Answer::Evade) (out-bid the pool), [`Push`](Answer::Push) (eat it, cross), and one
-///   [`Abort`](Answer::Abort) per candidate allocation from [`strikeback_candidates`] (spread, and focus-each).
+/// - **Front (vanguard).** Uncontested (nothing predicted to catch you) -> one option, a plain
+///   [`Push`](Answer::Push, Volley::Eat). Contested -> [`Evade`](Answer::Evade, Volley::Dodge) (slip), [`Push`](Answer::Push, Volley::Eat) (take it, cross),
+///   and one [`Abort`](Answer::Abort) per candidate allocation from [`strikeback_candidates`].
+/// - **Back (rearguard).** Only a real choice when a rearguard is predicted to volley - then [`Dodge`](Volley::Dodge)
+///   and [`Eat`](Volley::Eat); otherwise only [`Eat`](Volley::Eat) (dodging nothing is dominated).
 ///
-/// Catchers are **predicted geometrically** ([`predicted_catchers`], no `foe_act`), because this runs *inside*
-/// [`legal_acts`], which the scripted foes call through [`greedy_act`] - a `foe_act`-based prediction here would
-/// recurse. Over-predicting a catcher only mints an allocation the resolver later drops; it is never unsound.
+/// The two are enumerated as a **product** - the evade-priority split means every front-answer pairs with every
+/// back-answer. Catchers/volleyers are **predicted geometrically** (no `foe_act`), because this runs *inside*
+/// [`legal_acts`], which the scripted foes call through [`greedy_act`] - a `foe_act`-based prediction would recurse.
+/// Over-prediction only mints an option the resolver later no-ops; it is never unsound.
 fn crossing_acts(board: &Board, i: usize, target: Option<usize>) -> Vec<Act> {
     let here = board.regions[i];
     let Some(dest) = board.occupied().into_iter().find(|&r| r != here) else {
-        return vec![Act::Cross(target, Answer::Push)]; // no enemy ground: degenerate, just cross
+        return vec![Act::Cross(target, Answer::Push, Volley::Eat)]; // no enemy ground: degenerate
     };
     let cs = predicted_catchers(board, i, dest);
-    if cs.is_empty() {
-        return vec![Act::Cross(target, Answer::Push)]; // uncontested: every answer is the same crossing
-    }
-    let mut out = vec![
-        Act::Cross(target, Answer::Evade),
-        Act::Cross(target, Answer::Push),
-    ];
-    for alloc in strikeback_candidates(board, i, &cs) {
-        out.push(Act::Cross(target, Answer::Abort(alloc)));
+    let fronts: Vec<Answer> = if cs.is_empty() {
+        vec![Answer::Push] // uncontested front: every answer is the same crossing
+    } else {
+        let mut f = vec![Answer::Evade, Answer::Push];
+        for alloc in strikeback_candidates(board, i, &cs) {
+            f.push(Answer::Abort(alloc));
+        }
+        f
+    };
+    let volleys: &[Volley] = if predicted_volley(board, i, dest) {
+        &[Volley::Dodge, Volley::Eat]
+    } else {
+        &[Volley::Eat] // no volleyer: dodging is dominated
+    };
+    let mut out = Vec::new();
+    for front in &fronts {
+        for &v in volleys {
+            out.push(Act::Cross(target, front.clone(), v));
+        }
     }
     out
 }
@@ -408,6 +448,19 @@ fn predicted_catchers(board: &Board, mover: usize, dest: u8) -> Vec<usize> {
         }
     }
     out
+}
+
+/// **Would a rearguard volley a crossing to `dest`?** - geometry only, like [`predicted_catchers`]. When none
+/// would, dodging avoids nothing, so [`crossing_acts`] offers only [`Volley::Eat`].
+fn predicted_volley(board: &Board, mover: usize, dest: u8) -> bool {
+    let enemy = other_side(board.units[mover].side);
+    [board.regions[mover], dest].iter().any(|&zone| {
+        board.owner(zone) == Some(enemy)
+            && board
+                .in_region(zone)
+                .into_iter()
+                .any(|j| board.units[j].side == enemy && board.ranks[j] == Rank::Rearguard)
+    })
 }
 
 /// **Strikes to fell catcher `c` under `mover`'s Might** - the min tempo a focus needs to silence it, so a
@@ -708,8 +761,8 @@ fn positional(board: &Board, i: usize, act: &Act) -> i32 {
 
 fn disruption(board: &Board, i: usize, act: &Act) -> Disruption {
     let (downs, flips) = match act {
-        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _) => strike_yield(board, i, *t),
-        Act::Cross(None, _) | Act::Hold => (0, 0),
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) => strike_yield(board, i, *t),
+        Act::Cross(None, _, _) | Act::Hold => (0, 0),
     };
     Disruption {
         downs,
@@ -729,14 +782,14 @@ pub fn greedy_act(board: &Board, i: usize) -> Option<Act> {
     // (lowest index); a targetless act sorts last so a real strike always wins the tie. A final act-kind order
     // (clash over a pushed raid over an evaded one over a slip over hold) settles two acts on the same target.
     let target_hp = |act: &Act| match act {
-        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _) => (board.units[*t].health, *t),
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) => (board.units[*t].health, *t),
         _ => (u32::MAX, usize::MAX),
     };
     let act_pref = |act: &Act| match act {
         Act::Clash(_) | Act::Melee(_) => 0u8,
-        Act::Cross(_, Answer::Push) => 1,
-        Act::Cross(_, Answer::Evade) => 2,
-        Act::Cross(_, Answer::Abort(_)) => 3,
+        Act::Cross(_, Answer::Push, _) => 1,
+        Act::Cross(_, Answer::Evade, _) => 2,
+        Act::Cross(_, Answer::Abort(_), _) => 3,
         Act::Hold => 4,
     };
     legal_acts(board, i)
@@ -1276,7 +1329,8 @@ fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> 
 fn reach_for_slippers(
     board: &mut Board,
     catchers: &[(usize, usize)], // (catcher, slipper)
-    movers: &[(usize, u8, &Answer)],
+    movers: &[(usize, u8, &Answer, Volley)],
+    is_front: bool, // the Intercept pass (vanguard) vs the Volley pass (rearguard)
 ) -> (Vec<Hit>, Vec<Reach>) {
     // The live (catcher, slipper) pairs this pass - a fallen catcher or slipper, or a spent catcher, reaches for
     // nothing.
@@ -1300,13 +1354,20 @@ fn reach_for_slippers(
         .collect();
     let reaching = engage(board, &engagements);
 
-    // The slipper answers, seeing exactly what was committed. Evade pays in full and breaks every AIMED edge;
-    // Push and Abort spend nothing and eat the blows. (An area volley below is not an edge you can slip.)
+    // The slipper answers, seeing exactly what was committed - and it answers the TWO crossings independently. In
+    // the Intercept pass a mover slips iff its vanguard [`Answer`] is `Evade`; in the Volley pass iff its rearguard
+    // [`Volley`] is `Dodge`. That is the evade-priority split: front and back are separate spends. (An area volley
+    // below is not an edge you can slip.)
     let dodges: Vec<Dodge> = (0..board.units.len())
         .map(|i| {
-            let evading = movers
-                .iter()
-                .any(|&(m, _, a)| m == i && matches!(a, Answer::Evade));
+            let evading = movers.iter().any(|&(m, _, front, volley)| {
+                m == i
+                    && if is_front {
+                        matches!(front, Answer::Evade)
+                    } else {
+                        volley == Volley::Dodge
+                    }
+            });
             if evading { Dodge::Slip } else { Dodge::Stand }
         })
         .collect();
@@ -1370,9 +1431,11 @@ fn reach_for_slippers(
     // that struck it in MELEE (the one-way rule, same as `can_answer`): you cannot swing back at a rearguard that
     // volleyed you from across the gap. So this pass answers the front line (vanguard); the back-line volley pass,
     // whose catchers are ranged, answers nobody. Push (`Answer::Push`) earns no blow - it fled, it did not engage.
+    // (Naturally front-only: in the Volley pass every catcher is a ranged rearguard, so `melee_caught` below is
+    // empty and no strike-back or free blow is built. The `is_front` flag is not needed to gate it.)
     let mut ripostes: Vec<Blows> = Vec::new();
     let mut free_blows: Vec<Contact> = Vec::new();
-    for &(i, _, a) in movers {
+    for &(i, _, a, _) in movers {
         let Answer::Abort(alloc) = a else { continue };
         // An AREA body never strikes back (it only ever sweeps); a corpse and a non-melee body cannot. Note the
         // absence of a `tempo == 0` guard: the free blow costs no tempo, so even a crosser that spent its whole
@@ -1539,14 +1602,23 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // so a front-killed crosser is not volleyed. A friendly zone never reaches for its own, so a rally between
     // friendly zones is free; but an outrider pulling OUT of enemy ranks is opposed by the ranks it leaves (the
     // crossing in reverse).
-    let movers: Vec<(usize, u8, &Answer)> = (0..board.units.len())
+    // A mover carries both crossing answers: the vanguard `Answer` (front) and the rearguard `Volley` (back),
+    // keyed to their respective passes below.
+    let movers: Vec<(usize, u8, &Answer, Volley)> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen)
-        .filter_map(|i| Some((i, acts[i].destination(board, i)?, acts[i].answer()?)))
+        .filter_map(|i| {
+            Some((
+                i,
+                acts[i].destination(board, i)?,
+                acts[i].front()?,
+                acts[i].volley()?,
+            ))
+        })
         .collect();
 
     let mut front_catchers: Vec<(usize, usize)> = Vec::new();
     let mut back_catchers: Vec<(usize, usize)> = Vec::new();
-    for &(i, dest, _) in &movers {
+    for &(i, dest, _, _) in &movers {
         let enemy = other_side(board.units[i].side);
         for zone in [board.regions[i], dest] {
             if board.owner(zone) != Some(enemy) {
@@ -1562,14 +1634,14 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     }
 
     let before = living(board);
-    let (hits, reaches) = reach_for_slippers(board, &front_catchers, &movers);
+    let (hits, reaches) = reach_for_slippers(board, &front_catchers, &movers, true);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Intercept";
     lg.hits = hits;
     lg.reaches = reaches;
     logs.push(lg);
     let before = living(board);
-    let (hits, reaches) = reach_for_slippers(board, &back_catchers, &movers);
+    let (hits, reaches) = reach_for_slippers(board, &back_catchers, &movers, false);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Volley";
     lg.hits = hits;
@@ -1584,11 +1656,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         ranks: board.ranks.clone(),
         ..Default::default()
     };
-    for &(i, dest, answer) in &movers {
+    for &(i, dest, front, _volley) in &movers {
         if board.units[i].fallen {
             continue;
         }
-        if matches!(answer, Answer::Abort(_)) {
+        // Through-vs-stay is decided by the VANGUARD answer only; the volley never halts.
+        if matches!(front, Answer::Abort(_)) {
             landing.aborted.push(i);
             continue; // it turned and fought; it never left
         }
@@ -1618,9 +1691,9 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     let before = living(board);
     let raids: Vec<Attack> = movers
         .iter()
-        .filter(|&&(i, _, _)| through[i] && !board.units[i].fallen && board.units[i].tempo > 0)
-        .filter_map(|&(i, _, _)| match acts[i] {
-            Act::Cross(Some(t), _)
+        .filter(|&&(i, _, _, _)| through[i] && !board.units[i].fallen && board.units[i].tempo > 0)
+        .filter_map(|&(i, _, _, _)| match acts[i] {
+            Act::Cross(Some(t), _, _)
                 if !board.units[t].fallen && board.regions[t] == board.regions[i] =>
             {
                 Some((i, t))
@@ -2061,7 +2134,7 @@ mod tests {
             "but not clash the screened cannon"
         );
         assert!(
-            acts.iter().any(|a| matches!(a, Act::Cross(Some(1), _))),
+            acts.iter().any(|a| matches!(a, Act::Cross(Some(1), _, _))),
             "to reach the cannon it must raid the wall"
         );
     }
@@ -2072,16 +2145,16 @@ mod tests {
         let b = wall_and_cannon();
         let acts = legal_acts(&b, 2);
         assert!(
-            acts.contains(&Act::Cross(Some(1), Answer::Evade)),
+            acts.contains(&Act::Cross(Some(1), Answer::Evade, Volley::Dodge)),
             "Evade must be on the menu"
         );
         assert!(
-            acts.contains(&Act::Cross(Some(1), Answer::Push)),
+            acts.contains(&Act::Cross(Some(1), Answer::Push, Volley::Eat)),
             "Push must be on the menu"
         );
         assert!(
             acts.iter().any(
-                |a| matches!(a, Act::Cross(Some(1), Answer::Abort(alloc)) if !alloc.is_empty())
+                |a| matches!(a, Act::Cross(Some(1), Answer::Abort(alloc), _) if !alloc.is_empty())
             ),
             "at least one Abort (strike-back) must be on the menu"
         );
@@ -2106,7 +2179,7 @@ mod tests {
         let allocs: Vec<Vec<(usize, u32)>> = legal_acts(&b, 0)
             .into_iter()
             .filter_map(|a| match a {
-                Act::Cross(Some(3), Answer::Abort(alloc)) => Some(alloc),
+                Act::Cross(Some(3), Answer::Abort(alloc), _) => Some(alloc),
                 _ => None,
             })
             .collect();
@@ -2147,11 +2220,14 @@ mod tests {
         assert!(
             !legal_acts(&b, 0)
                 .iter()
-                .any(|a| matches!(a, Act::Cross(None, _))),
+                .any(|a| matches!(a, Act::Cross(None, _, _))),
             "a backless enemy must not offer a plain slip"
         );
         // Still in the ENGINE: hand it a backless slip and it crosses just the same.
-        play_round(&mut b, &[Act::Cross(None, Answer::Push), Act::Hold]);
+        play_round(
+            &mut b,
+            &[Act::Cross(None, Answer::Push, Volley::Eat), Act::Hold],
+        );
         assert_eq!(
             b.regions[0], 1,
             "the resolver still crosses a hand-built slip"
@@ -2180,7 +2256,7 @@ mod tests {
         assert!(
             legal_acts(&screened, 0)
                 .iter()
-                .any(|a| matches!(a, Act::Cross(None, _))),
+                .any(|a| matches!(a, Act::Cross(None, _, _))),
             "a screened back must offer the slip"
         );
         // Exposed: the Mage stands alone (no vanguard), so it is directly clashable - no slip.
@@ -2194,7 +2270,7 @@ mod tests {
         assert!(
             !legal_acts(&exposed, 0)
                 .iter()
-                .any(|a| matches!(a, Act::Cross(None, _))),
+                .any(|a| matches!(a, Act::Cross(None, _, _))),
             "an exposed back must not offer the slip"
         );
         assert!(
@@ -2220,7 +2296,7 @@ mod tests {
             "it shoots their front freely"
         );
         assert!(
-            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _))),
+            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _, _))),
             "but cannot raid the mage"
         );
         assert!(
@@ -2280,7 +2356,7 @@ mod tests {
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Evade),
+                Act::Cross(Some(1), Answer::Evade, Volley::Dodge),
             ],
         );
         assert!(
@@ -2308,7 +2384,7 @@ mod tests {
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Push),
+                Act::Cross(Some(1), Answer::Push, Volley::Eat),
             ],
         );
         assert_eq!(b.regions[2], 0, "it went through regardless");
@@ -2336,7 +2412,7 @@ mod tests {
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Evade),
+                Act::Cross(Some(1), Answer::Evade, Volley::Dodge),
             ],
         );
         assert_eq!(
@@ -2359,7 +2435,7 @@ mod tests {
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Abort(vec![(0, 1)])),
+                Act::Cross(Some(1), Answer::Abort(vec![(0, 1)]), Volley::Eat),
             ],
         );
         assert!(
@@ -2388,7 +2464,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Cross(Some(2), Answer::Abort(vec![(2, 4)])), // names the ranged Archer
+                Act::Cross(Some(2), Answer::Abort(vec![(2, 4)]), Volley::Eat), // names the ranged Archer
                 Act::Hold,
                 Act::Hold,
             ],
@@ -2396,6 +2472,62 @@ mod tests {
         assert_eq!(
             b.units[2].health, archer,
             "the strike-back cannot reach the rearguard that volleyed from range"
+        );
+    }
+
+    /// **The two crossings are chosen independently** (the evade-priority split). Against a weak front and a lethal
+    /// back, the crosser can PUSH the line (eat the trivial catch) yet DODGE the arrows - a combination the old
+    /// single `Answer` could not express. Dodging the volley, decided independently of the front, is the difference
+    /// between living and dying.
+    #[test]
+    fn the_two_crossings_are_chosen_independently() {
+        let make = || {
+            Board::new(
+                vec![
+                    unit("Raider", Side::Party, [3, 6, 1, 4, 2], true, false),
+                    unit("Wall", Side::Foe, [1, 4, 6, 1, 2], true, false), // weak Might-1 front
+                    unit("Archer", Side::Foe, [5, 3, 1, 2, 2], false, true), // lethal back
+                ],
+                vec![0, 1, 1],
+            )
+        };
+        // Both volley answers are on the menu when a rearguard volleys.
+        let acts = legal_acts(&make(), 0);
+        assert!(
+            acts.iter()
+                .any(|a| matches!(a, Act::Cross(Some(2), _, Volley::Dodge))),
+            "dodge must be offered"
+        );
+        assert!(
+            acts.iter()
+                .any(|a| matches!(a, Act::Cross(Some(2), _, Volley::Eat))),
+            "eat must be offered"
+        );
+        // Push the (weak) line but DODGE the (lethal) arrows.
+        let mut b = make();
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Dodge),
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        let dodged = b.units[0].health;
+        // Same front answer, but EAT the arrows: the volley now lands.
+        let mut b2 = make();
+        play_round(
+            &mut b2,
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        let ate = b2.units[0].health;
+        assert!(
+            dodged > ate,
+            "dodging the volley (independently of the front) saves health: dodged={dodged} ate={ate}"
         );
     }
 
@@ -2417,7 +2549,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Cross(Some(2), Answer::Abort(vec![])),
+                Act::Cross(Some(2), Answer::Abort(vec![]), Volley::Eat),
                 Act::Hold,
                 Act::Hold,
             ],
@@ -2443,7 +2575,7 @@ mod tests {
         assert!(
             !legal_acts(&b, 0)
                 .iter()
-                .any(|a| matches!(a, Act::Cross(_, Answer::Abort(alloc)) if !alloc.is_empty())),
+                .any(|a| matches!(a, Act::Cross(_, Answer::Abort(alloc), _) if !alloc.is_empty())),
             "an area body must not be offered a strike-back"
         );
         let mut b2 = b.clone();
@@ -2451,7 +2583,7 @@ mod tests {
         play_round(
             &mut b2,
             &[
-                Act::Cross(Some(2), Answer::Abort(vec![(1, 3)])),
+                Act::Cross(Some(2), Answer::Abort(vec![(1, 3)]), Volley::Eat),
                 Act::Hold,
                 Act::Hold,
             ],
@@ -2478,7 +2610,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Cross(Some(2), Answer::Push),
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
                 Act::Clash(0),
                 Act::Clash(0),
             ],
@@ -2504,9 +2636,9 @@ mod tests {
             vec![0, 0, 1, 1],
         );
         let acts = [
-            Act::Cross(Some(3), Answer::Evade),
+            Act::Cross(Some(3), Answer::Evade, Volley::Dodge),
             Act::Clash(2),
-            Act::Cross(Some(1), Answer::Evade),
+            Act::Cross(Some(1), Answer::Evade, Volley::Dodge),
             Act::Clash(0),
         ];
         assert!(
@@ -2537,7 +2669,11 @@ mod tests {
         // the tough-Grit Mage survives the raid strike and is still there to be dug out next round.
         play_round(
             &mut b,
-            &[Act::Cross(Some(2), Answer::Push), Act::Hold, Act::Hold],
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
+                Act::Hold,
+                Act::Hold,
+            ],
         );
         assert_eq!(b.regions[0], 1, "it is in the enemy zone");
         assert_eq!(b.ranks[0], Rank::Outrider, "and is an outrider there");
@@ -2549,7 +2685,7 @@ mod tests {
             "an outrider melees in-region: {acts:?}"
         );
         assert!(
-            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _))),
+            !acts.iter().any(|a| matches!(a, Act::Cross(Some(_), _, _))),
             "it does not raid - it is already inside"
         );
         // It can reach the Mage directly now, past the (still-standing) Wall's screen.
@@ -2690,7 +2826,11 @@ mod tests {
         let (raider_tp, wall_tp) = (b.units[0].cadence, b.units[1].cadence);
         let logs = play_round(
             &mut b,
-            &[Act::Cross(Some(2), Answer::Evade), Act::Hold, Act::Hold],
+            &[
+                Act::Cross(Some(2), Answer::Evade, Volley::Dodge),
+                Act::Hold,
+                Act::Hold,
+            ],
         );
         let intercept = logs
             .iter()
@@ -2744,7 +2884,11 @@ mod tests {
         );
         let logs = play_round(
             &mut b,
-            &[Act::Cross(Some(2), Answer::Push), Act::Hold, Act::Hold],
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
+                Act::Hold,
+                Act::Hold,
+            ],
         );
         let volley = logs
             .iter()
@@ -2807,7 +2951,7 @@ mod tests {
         play_round(
             &mut b,
             &[
-                Act::Cross(Some(2), Answer::Push),
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
                 Act::Clash(0),
                 Act::Clash(0),
                 Act::Clash(0),
@@ -2908,7 +3052,7 @@ mod tests {
         let acts = foe_acts(&b);
         assert_eq!(
             acts[2],
-            Some(Act::Cross(Some(1), Answer::Push)),
+            Some(Act::Cross(Some(1), Answer::Push, Volley::Eat)),
             "it goes through the line for the soft body behind it"
         );
     }
@@ -2958,11 +3102,11 @@ mod tests {
             vec![0, 0, 0, 1, 1, 1],
         );
         let acts = vec![
-            Act::Cross(Some(5), Answer::Evade), // the Raider crosses in for their back line
+            Act::Cross(Some(5), Answer::Evade, Volley::Dodge), // the Raider crosses in for their back line
             Act::Clash(3),
             Act::Clash(4),
             Act::Clash(0),
-            Act::Cross(Some(2), Answer::Push), // the Duelist pushes through for our cannon
+            Act::Cross(Some(2), Answer::Push, Volley::Eat), // the Duelist pushes through for our cannon
             Act::Clash(1),
         ];
         (b, acts)
@@ -2988,7 +3132,7 @@ mod tests {
             };
             let remap = |a: Act| match a {
                 Act::Clash(t) => Act::Clash(inv[t]),
-                Act::Cross(Some(t), x) => Act::Cross(Some(inv[t]), x),
+                Act::Cross(Some(t), x, v) => Act::Cross(Some(inv[t]), x, v),
                 Act::Melee(t) => Act::Melee(inv[t]),
                 other => other,
             };

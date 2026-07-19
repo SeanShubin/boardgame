@@ -54,8 +54,8 @@ fn label(b: &Board, c: &Choice) -> String {
     let Choice::Act(a) = c;
     match a {
         Act::Clash(t) => format!("Clash {}", b.units[*t].name),
-        Act::Cross(Some(t), ans) => format!("Raid {} ({ans:?})", b.units[*t].name),
-        Act::Cross(None, ans) => format!("Cross into their line ({ans:?})"),
+        Act::Cross(Some(t), ans, _) => format!("Raid {} ({ans:?})", b.units[*t].name),
+        Act::Cross(None, ans, _) => format!("Cross into their line ({ans:?})"),
         Act::Melee(t) => format!("Melee {}", b.units[*t].name),
         Act::Hold => "Hold".to_string(),
     }
