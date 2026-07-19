@@ -110,39 +110,39 @@ different ways, declared together but resolved apart:
 
 Several of either may pick one crosser. REVEAL.
 
-**Step 3 - DECLARE the crossing bids (two contests, not one).** The vanguard and
-the rearguard answer *different questions*, so they are two independent pooled
-contests - never one combined pool:
+The crossing is now **two independent crossings**, resolved in order - the line,
+then the volley. They answer different questions, and the crosser's choice at each
+is made **independently** of the other (that is the evade-priority split: slip the
+line but eat the arrows, or take the catch but dodge the arrows, whichever the
+tempo and the threats favour).
 
-- **Interception - "am I halted?"** The vanguard on the crosser pool their catch
-  bids (`tempo x Finesse x bodies`, summed); the crosser bids tempo to slip the
-  front. Beat the pool -> through the front untouched; fall short -> **caught**
-  (into Step 4's push/halt).
-- **Volley - "am I hit?"** The rearguard on the crosser pool their shot bids the
-  same way; the crosser bids tempo to dodge. Beat the pool -> dodged; fall short
-  -> **hit**. Either way it keeps crossing - a volley *damages*, it does not halt.
+**Step 3 - CROSS THE VANGUARD (the interception - "am I halted?").** The only
+crossing that decides through-vs-stay. The vanguard on the crosser pool their catch
+bids (`tempo x Finesse x bodies`, summed); the crosser independently bids tempo to
+**slip**. REVEAL.
 
-The crosser **allocates its evade tempo between the two** - slip the line, dodge
-the arrows, or split, and sometimes it can only afford one. REVEAL; resolve both.
+- **Slipped** (beat the pool): through the front, untouched by it.
+- **Caught** (fell short): each catcher lands its one free opening strike (Might)
+  and may declare **extra** melee strikes; then the crosser declares its posture -
+  - **push**: flee through, no strike-back (it did not engage), or
+  - **halt**: stay and engage - it earns its own **one free blow** at a catcher of
+    its choice plus any paid strike-back, reaching the **melee vanguard only**.
 
-**Step 4 - RESOLVE strikes, then DECLARE the answer.** Everyone who connected
-lands its **one free opening strike** (Might): each intercepting vanguard (a
-melee clash) and each hitting rearguard (a shot). Then, by the engagement rule
-(see Global rules):
+  Land; check downed. *A crosser taking lethal damage should halt: spend its tempo
+  on the bodies that caught it rather than waste it arriving as an outrider it will
+  not survive to use.*
 
-- **Catchers.** A vanguard may declare **extra** melee strikes, one tempo each; a
-  rearguard may loose **extra** shots the same way. Neither can be answered across
-  the gap.
-- **The caught crosser** declares its posture, and the posture decides its blow:
-  - **push** - flee *through*: no strike-back at all (it did not stop to fight).
-  - **halt** - *engage*: it stays, and because it is now in a two-way melee it
-    earns its own **one free blow** at a catcher of its choice, then may spend
-    remaining tempo on more. Its strike-back reaches **only the vanguard in melee
-    with it** - never a rearguard it never touched.
+**Step 4 - CROSS THE REARGUARD (the volley - "am I hit?").** Decided
+**independently** of step 3, and it only ever **damages** - a volley never halts.
+The rearguard on the crosser pool their shot bids; the crosser independently bids
+tempo to **dodge**. REVEAL.
 
-REVEAL; land all strikes; check downed. *A crosser taking lethal damage should
-halt: as a corpse-in-waiting it should spend its tempo on the bodies that caught
-it rather than waste it arriving as an outrider it will not survive to use.*
+- **Dodged** (beat the pool): no volley damage (but the dodge tempo is spent).
+- **Hit** (fell short): each volleying rearguard lands its shot (Might) and may
+  loose **extra** shots - one-way, never answered.
+
+A crosser felled by the vanguard in step 3 is already gone and is not volleyed
+(the razor: the front kill saves the back its shot). Land; check downed.
 
 ### Phase 2 - The Raid (the arrivals strike the back)
 
@@ -225,8 +225,8 @@ first-shot phase slot).
 | I3 | Inner | attackers + defenders | strikes + extras (mutual, both declared); then dissolve |
 | 1 | Crossing | vanguard | cross or not |
 | 2 | Crossing | vanguard + rearguard | intercept (melee, halts) or volley (ranged, hits) |
-| 3 | Crossing | catchers + crossers | two contests: front (halted?) and back (hit?); evade tempo split between them |
-| 4 | Crossing | catchers; crossers | free opening each + extras; crosser push (0) or halt (own free blow + paid, melee catchers only) |
+| 3 | Crossing | vanguard + crosser | cross the vanguard: catch-bid vs slip; if caught -> push or halt (free blow + paid, melee only). Decides through vs stay |
+| 4 | Crossing | rearguard + crosser | cross the rearguard: volley-bid vs dodge; damage only, never halts. Chosen independently of step 3 |
 | 5 | Raid | outriders | which rearguard/host to strike |
 | 6 | Raid | targeted rearguard | evade bid |
 | 7 | Raid | outriders | extra strikes (rearguard does NOT retaliate - it volleyed in step 4) |
@@ -246,8 +246,8 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 0 Inner Ring (prior outriders) | done | resolved first in `play_round`: a distance-zero brawl (both tiers, no screen), then `dissolve` |
 | 1 crossings | done | up-front `Cross`, vanguard-only |
 | 2 elective catch + volley split | pending | catching is automatic geometry today, and not yet split into melee-interception (halts) vs ranged-volley (hits) (M2) |
-| 3 bids (two contests) | partial | M1 runs front and back as separate pooled passes, but the crosser can't split evade between them - it's one `{0, beat-pool}` posture applied to both, and the back pass still gates push/halt rather than damage-only |
-| 4 strikes + push/halt + free-blow | partial | push/halt + strike-back allocation shipped (M1); strike-back restricted to **melee catchers** (one-way rule); the crosser's **free blow on halt** now lands; **TODO:** catcher extra strikes; the two-contest split (back = damage only) |
+| 3 cross the vanguard | partial | separate front pooled pass, push/halt, free blow, melee-only strike-back all shipped (M1 + engagement batch); **TODO:** unfuse the front `Slip` choice from the back so it is genuinely independent |
+| 4 cross the rearguard | partial | separate back pooled volley pass shipped and damage-only in effect; **TODO:** the independent `Dodge`/`Eat` choice (today it rides the one shared `Evade`, front-first) - the evade-priority split |
 | 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
 | 6 rearguard evade | folded (by design) | the raid is evadable - a reached back may dodge (spending firing tempo); the outrider disrupts either way. Evade exists but automatic, not yet a declared bid |
 | 7 outrider strike (no retaliation) | done (rule dropped) | the rearguard does not retaliate - it had its shot in the volley (step 4); no defender-retaliation rule needed (see "no redundant strike-backs") |
@@ -256,10 +256,18 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 10 land + downed | done | |
 | aoe never targets/retaliates | done | sweep already untargeted; strike-back now excludes aoe (candidates + resolver); pour/clash route aoe to `area_strike` |
 
-The distance left is two structural rules - elective catching split into
-interception vs volley (2), and decoupled outrider targeting (5) - plus the small
-evade-priority split within the already-working two-contest crossing (3). Defender
-retaliation (7/10) is **dropped**: covered by earlier phases (the volley, the
-declared clash). The crosser's free blow on halt, the melee-only strike-back, and
-the aoe never-target/retaliate invariant are done. Everything else is presentation
-over a model that already plays it.
+The distance left:
+
+- **Evade-priority split (3/4)** - unfuse the front `Slip` from the back `Dodge`
+  so the two crossings are chosen independently. *Being implemented now.*
+- **Elective catching (2)** - the one real enrichment: let the foe choose whom to
+  catch / how hard (the behavior-card foe policy). Optional; automatic catching
+  already gives the strategy its shape.
+- **Decoupled outrider targeting (5)** - *presentation only*: against deterministic
+  foes, declaring the raid target up front (today's bundled `Cross(Some(t))`) is
+  equivalent to picking it on arrival. A UI two-beat, no rule change.
+
+Defender retaliation (7/10) is **dropped** (covered by the volley and the declared
+clash). The crosser's free blow on halt, the melee-only strike-back, and the aoe
+never-target/retaliate invariant are done. Everything else is presentation over a
+model that already plays it.
