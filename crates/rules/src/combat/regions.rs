@@ -2475,6 +2475,51 @@ mod tests {
         );
     }
 
+    /// **Backs the worked example in round-sequence.md.** Round 1: the Raider raids the Sniper - pushes the Wall,
+    /// dodges the volley - reaches the back as an outrider and kills it. Round 2: the Inner Ring, outrider vs Wall.
+    /// If these outcomes change, the doc's sample log is stale.
+    #[test]
+    fn worked_round_example() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [3, 5, 1, 4, 1], true, false),
+                unit("Wall", Side::Foe, [1, 3, 1, 2, 1], true, false),
+                unit("Sniper", Side::Foe, [3, 2, 1, 2, 1], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        // Round 1: raid the Sniper - PUSH the Wall, DODGE the volley.
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Dodge),
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        assert_eq!(
+            b.units[0].health, 4,
+            "Raider took the Wall's 1, dodged the Sniper"
+        );
+        assert!(b.units[2].fallen, "the raid killed the Sniper");
+        assert_eq!(
+            b.ranks[0],
+            Rank::Outrider,
+            "Raider is now an outrider inside"
+        );
+        // Round 2: the Inner Ring - Raider (outrider) vs the Wall, point-blank.
+        play_round(&mut b, &[Act::Melee(1), Act::Melee(0), Act::Hold]);
+        assert!(
+            b.units[1].fallen,
+            "the Raider felled the Wall in the inner ring"
+        );
+        // The Wall spends its whole pool point-blank (opening + one poured strike) = 2 before it dies.
+        assert_eq!(
+            b.units[0].health, 2,
+            "the Wall's parting blows cost the Raider 2"
+        );
+    }
+
     /// **The two crossings are chosen independently** (the evade-priority split). Against a weak front and a lethal
     /// back, the crosser can PUSH the line (eat the trivial catch) yet DODGE the arrows - a combination the old
     /// single `Answer` could not express. Dodging the volley, decided independently of the front, is the difference

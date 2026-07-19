@@ -234,6 +234,76 @@ first-shot phase slot).
 | 9 | Clash | targeted bodies | evade bid |
 | 10 | Clash | attackers | extra strikes (a mutual clash is answered by declaring it, step 8 - no separate retaliation) |
 
+## A worked round (illustrative log)
+
+A two-round fight showing the crossing (both contests), the two shapes, and the
+Inner Ring - each block tagged with the step above it realizes. **Illustrative**:
+faithful to the mechanics and the numbers, but a clean rendering, not the app's
+exact transcript. Every body has **Finesse 1** and **Grit 1**, so a bid = tempo
+spent and a flip = one point of Might penetrated (kept trivial on purpose).
+
+```
+The board (party vs foes):
+  Raider   me   Might 3  Vit 5  Grit 1  Cadence 4   (melee vanguard)
+  Wall     *    Might 1  Vit 3  Grit 1  Cadence 2   (melee vanguard - screens)
+  Sniper   *    Might 3  Vit 2  Grit 1  Cadence 2   (ranged rearguard - behind the Wall)
+
+================================ ROUND 1 ================================
+
+DECLARE
+  Raider -> Raid the Sniper                                      [Step 1]
+  the line answers: Wall intercepts Raider, Sniper volleys it    [Step 2]
+
+CROSS THE VANGUARD  (the interception - decides through vs stay)  [Step 3]
+  Wall bids 1 to catch (1 tempo x Finesse 1).  Raider would pay
+  pool 1 / Finesse 1 + 1 = 2 tempo to slip -> declines: PUSH.
+  Caught. Wall's opening strike: Might 1 penetrates Grit 1 -> Raider flips 1
+  (5 -> 4 hp).  (Push, so no strike-back.)
+
+CROSS THE REARGUARD  (the volley - damage only, chosen independently)  [Step 4]
+  Sniper bids 1 to volley.  Raider DODGES: pays 2 tempo (4 -> 2) -> arrows miss.
+  >> the evade-priority split: Raider ATE the trivial line but DODGED the
+     deadly volley - a combination one welded answer could not make.
+  Through the front -> Raider is now an Outrider beside the Sniper (4 hp).
+
+THE RAID  (the arrival strikes the back)                         [Steps 5-7]
+  The Sniper has only 1 tempo left (it spent one volleying) - not enough to
+  dodge the raid, which needs 2 -> it cannot dodge.                [Step 6]
+  Raider strikes: Might 3 penetrates Grit 1 -> Sniper flips 2 (2 -> 0).
+  *** The Sniper is DOWN. ***                                    [Step 7]
+
+  (Round 1 ends: Sniper dead. Raider stands as an Outrider inside the foe
+   line, beside the Wall - exposed, but it silenced the dangerous back. That
+   is the opening shape.)
+
+================================ ROUND 2 ================================
+
+THE INNER RING  (the outrider and its host, point-blank)         [Phase 0]
+  Tempo resets. Raider (Outrider) and the Wall trade at distance zero - no
+  screen, both declared a melee.
+  Raider melees Wall: Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). DOWN.
+  Wall melees Raider: at point-blank it spends its whole pool - one opening
+  strike plus one poured - Might 1 each -> Raider flips 2 (4 -> 2).
+  The Wall's formation is gone -> the Raider DISSOLVES, rejoining its own line.
+
+========================== WIN ==========================
+```
+
+**The road not taken (Step 3, if the Raider had HALTED instead of Push):**
+
+```
+CROSS THE VANGUARD  (halt)                                       [Step 3]
+  Raider HALTS - it engages, so it earns one FREE blow at the Wall:
+    Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). Wall DOWN.
+  But it STAYS home - it does not become an outrider and never reaches the
+  Sniper this round. (Its Step 4 volley answer is still its own choice.)
+```
+
+That is the crosser's core decision in one line: **push** to advance (reach and
+silence the back, at the cost of exposure) versus **halt** to fight the line
+(kill the front, but give up the ground) - the two shapes, chosen a body at a
+time.
+
 ## Implementation status (2026-07-18, after M1)
 
 Where the shipped `rules::combat` model stands against this sequence. "Folded"
