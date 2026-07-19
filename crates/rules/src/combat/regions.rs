@@ -1365,39 +1365,53 @@ fn reach_for_slippers(
         }
     }
 
-    // An Abort turns and lays about it - spending tempo as strikes at the bodies that caught it, per the
-    // strike-back allocation the aborter DECLARED (the `(catcher, strikes)` pairs on `Answer::Abort`). One tempo
-    // per strike; `land` charges Might per blow and caps the total at the tempo actually left. A pair lands only
-    // if that catcher truly caught this mover and still stands - a stale or mis-aimed pair (a catcher already
-    // felled, or one that never reached) is simply dropped, wasting the tempo it named rather than mislanding.
-    // Spending nothing here is a Push (the mover carries `Answer::Push`, never an empty Abort).
-    //
-    // **Strike-back reaches only catchers that struck in MELEE** (the one-way rule, same as `can_answer`): you
-    // cannot swing back at a rearguard that volleyed you from range - you never reached it. So this pass ripostes
-    // the front line (vanguard, `melee`); the back-line volley pass, whose catchers are ranged, ripostes nobody.
+    // An Abort turns and fights: the crosser HALTS, and by the engagement rule stopping to fight earns it one FREE
+    // blow (the mutual clash) plus whatever paid strikes its declared allocation buys. Both reach only catchers
+    // that struck it in MELEE (the one-way rule, same as `can_answer`): you cannot swing back at a rearguard that
+    // volleyed you from across the gap. So this pass answers the front line (vanguard); the back-line volley pass,
+    // whose catchers are ranged, answers nobody. Push (`Answer::Push`) earns no blow - it fled, it did not engage.
     let mut ripostes: Vec<Blows> = Vec::new();
+    let mut free_blows: Vec<Contact> = Vec::new();
     for &(i, _, a) in movers {
         let Answer::Abort(alloc) = a else { continue };
-        // No riposte from a non-melee or an AREA body: an aoe body never strikes back (it only ever sweeps).
-        if board.units[i].fallen
-            || board.units[i].tempo == 0
-            || !board.units[i].melee
-            || board.units[i].aoe
-        {
+        // An AREA body never strikes back (it only ever sweeps); a corpse and a non-melee body cannot. Note the
+        // absence of a `tempo == 0` guard: the free blow costs no tempo, so even a crosser that spent its whole
+        // pool failing to evade still gets its one reflexive clash when it halts.
+        if board.units[i].fallen || !board.units[i].melee || board.units[i].aoe {
             continue;
         }
-        let caught_by: Vec<usize> = landed
+        let melee_caught: Vec<usize> = landed
             .iter()
             .filter(|c| c.target == i)
             .map(|c| c.attacker)
+            .filter(|&c| !board.units[c].fallen && board.units[c].melee)
             .collect();
+        if melee_caught.is_empty() {
+            continue; // caught only from range: nothing to turn and fight
+        }
+        // The FREE blow: one no-tempo strike (the clash) at the melee catcher it committed most to (its focus),
+        // lowest index breaking ties.
+        let focus = melee_caught
+            .iter()
+            .copied()
+            .max_by_key(|&c| {
+                let paid = alloc
+                    .iter()
+                    .find(|&&(cc, _)| cc == c)
+                    .map_or(0, |&(_, n)| n);
+                (paid, std::cmp::Reverse(c))
+            })
+            .unwrap();
+        free_blows.push(Contact {
+            attacker: i,
+            target: focus,
+            bid: 0,
+        });
+        // Then the PAID strike-back: one tempo per strike, only at the melee catchers it named (`land` caps the
+        // total at the tempo actually left; a stale or mis-aimed pair is simply dropped).
         for &(c, cards) in alloc {
-            if cards == 0
-                || board.units[c].fallen
-                || !caught_by.contains(&c)
-                || !board.units[c].melee
-            {
-                continue; // a ranged catcher (a volleying rearguard) is never answered
+            if cards == 0 || !melee_caught.contains(&c) {
+                continue;
             }
             ripostes.push(Blows {
                 unit: i,
@@ -1406,6 +1420,8 @@ fn reach_for_slippers(
             });
         }
     }
+    // The crosser's free blows join the opening-strike batch - one blow each, no tempo, alongside the catchers'.
+    landed.extend(free_blows);
 
     let mut hits = land(board, &landed, &[], &ripostes);
     // Apply the volley's horde clears AFTER `land` read commit-time bodies, so an aborter's riposte still lands
@@ -2380,6 +2396,35 @@ mod tests {
         assert_eq!(
             b.units[2].health, archer,
             "the strike-back cannot reach the rearguard that volleyed from range"
+        );
+    }
+
+    /// **Halting earns a free blow.** A crosser that halts is engaging, so it lands one free strike (no tempo) at
+    /// a melee catcher even with an EMPTY paid allocation - the mutual clash. The Wall takes damage it would not
+    /// have taken from a mere stand.
+    #[test]
+    fn halting_lands_one_free_blow() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [5, 5, 1, 3, 2], true, false),
+                unit("Wall", Side::Foe, [1, 3, 2, 1, 2], true, false),
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        let wall = b.units[1].health;
+        // Halt with NO paid strike-back: only the free clash should land.
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(2), Answer::Abort(vec![])),
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        assert!(
+            b.units[1].health < wall,
+            "halting lands its one free blow on the melee catcher, empty allocation or not"
         );
     }
 
