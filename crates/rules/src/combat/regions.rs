@@ -450,7 +450,9 @@ fn strikeback_candidates(
     catchers: &[usize],
 ) -> Vec<Vec<(usize, u32)>> {
     let t = board.units[mover].tempo;
-    if t == 0 || catchers.is_empty() || !board.units[mover].melee {
+    // No strike-back for a non-melee body (nothing to swing) or an AREA body: an aoe strike is always the
+    // untargeted sweep and is **never used in retaliation** (the aoe invariant). A caught area crosser pushes.
+    if t == 0 || catchers.is_empty() || !board.units[mover].melee || board.units[mover].aoe {
         return Vec::new();
     }
     let pairs = |alloc: &[u32]| -> Vec<(usize, u32)> {
@@ -1376,7 +1378,12 @@ fn reach_for_slippers(
     let mut ripostes: Vec<Blows> = Vec::new();
     for &(i, _, a) in movers {
         let Answer::Abort(alloc) = a else { continue };
-        if board.units[i].fallen || board.units[i].tempo == 0 || !board.units[i].melee {
+        // No riposte from a non-melee or an AREA body: an aoe body never strikes back (it only ever sweeps).
+        if board.units[i].fallen
+            || board.units[i].tempo == 0
+            || !board.units[i].melee
+            || board.units[i].aoe
+        {
             continue;
         }
         let caught_by: Vec<usize> = landed
@@ -2373,6 +2380,40 @@ mod tests {
         assert_eq!(
             b.units[2].health, archer,
             "the strike-back cannot reach the rearguard that volleyed from range"
+        );
+    }
+
+    /// **An area body never strikes back** (the aoe invariant: aoe is always the untargeted sweep, never a
+    /// retaliation). It is offered no strike-back on the menu, and the resolver drops a hand-built one.
+    #[test]
+    fn an_area_body_never_strikes_back() {
+        let b = Board::new(
+            vec![
+                unit("Sweeper", Side::Party, [4, 4, 1, 3, 2], true, false).with_aoe(true),
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        assert!(
+            !legal_acts(&b, 0)
+                .iter()
+                .any(|a| matches!(a, Act::Cross(_, Answer::Abort(alloc)) if !alloc.is_empty())),
+            "an area body must not be offered a strike-back"
+        );
+        let mut b2 = b.clone();
+        let wall = b2.units[1].health;
+        play_round(
+            &mut b2,
+            &[
+                Act::Cross(Some(2), Answer::Abort(vec![(1, 3)])),
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        assert_eq!(
+            b2.units[1].health, wall,
+            "an area body's Abort lands no strike-back"
         );
     }
 
