@@ -34,7 +34,9 @@ use bevy::prelude::*;
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
 use rules::combat::game::{Choice, Combat, Decider, Human, Instinct, Score, Scorer, State};
-use rules::combat::regions::{Act, Answer, Board, Rank, Volley, catchers, play_round};
+use rules::combat::regions::{
+    Act, Answer, Board, Rank, Volley, catchers, foe_catch, greedy_act, play_round,
+};
 use rules::combat::resolve::{Combatant, Side};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -61,8 +63,37 @@ const FRAME_BUDGET: u64 = 12_000;
 /// ">=" lower bound in the meantime.
 const STEP_NODES: u64 = 4_000;
 
+/// **Self-play's party policy**: the side-agnostic greedy - the same one-ply disruption read the scripted foes
+/// run ([`greedy_act`]), plus the mission-focus catch instinct ([`foe_catch`] at pour 0). This is exactly the
+/// greedy baseline the diagonal's insight classes measure, so an `auto` transcript is the "won without thinking"
+/// (or lost-without-thinking) line, end to end.
+struct Greedy;
+
+impl Decider for Greedy {
+    fn commit(&mut self, board: &Board, body: usize) -> Option<Act> {
+        Some(greedy_act(board, body).unwrap_or(Act::Hold))
+    }
+    fn commit_catch(
+        &mut self,
+        board: &Board,
+        body: usize,
+        crossers: &[usize],
+    ) -> Option<Option<(usize, u32)>> {
+        Some(foe_catch(board, body, crossers).map(|m| (m, 0)))
+    }
+    fn deterministic(&self) -> bool {
+        true
+    }
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    // `auto` anywhere in the args = SELF-PLAY: the party is driven by the same deterministic greedy the foes run
+    // ([`Instinct`]), so the whole fight resolves on startup and `fight-log.txt` holds a complete transcript -
+    // the headless way to check the log against the round-sequence doc, no clicks needed.
+    let args: Vec<String> = std::env::args()
+        .filter(|a| a != "auto" && a != "--auto")
+        .collect();
+    let auto = std::env::args().any(|a| a == "auto" || a == "--auto");
     let idx: usize = args.get(1).and_then(|a| a.parse().ok()).unwrap_or_else(|| {
         catalog::ENCOUNTERS
             .iter()
@@ -100,7 +131,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(FELT))
-        .insert_resource(Fight::new(idx, requested_kit))
+        .insert_resource(Fight::new(idx, requested_kit, auto))
         .add_systems(Startup, (camera, rebuild).chain())
         .add_systems(Update, (on_click, grind, rebuild.run_if(is_dirty)).chain())
         .run();
@@ -200,16 +231,20 @@ struct Fight {
     /// Each unit's Vitality (its full health), snapshotted at the start so the table can show max **and** current
     /// health - the live `health` field only ever holds the current value, so the maximum has to be kept here.
     max_health: Vec<u32>,
+    /// **Self-play**: the party is driven by [`Instinct`] instead of [`Human`], so the fight resolves without
+    /// clicks and `fight-log.txt` holds a complete transcript (the log-vs-doc check, headless).
+    auto: bool,
     log: Vec<String>,
     dirty: bool,
 }
 
 impl Fight {
-    fn new(encounter: usize, requested_kit: Option<String>) -> Self {
+    fn new(encounter: usize, requested_kit: Option<String>, auto: bool) -> Self {
         let mut f = Fight {
             encounter,
             state: build(encounter, requested_kit.as_deref()),
             requested_kit,
+            auto,
             deciders: Vec::new(),
             options: Vec::new(),
             entries: Vec::new(),
@@ -240,8 +275,12 @@ impl Fight {
 
     /// Assign each body its [`Decider`]: the party plays by hand ([`Human`] - the loop defers to a click), the
     /// foes by [`Instinct`] (the deterministic scripted policy, the same one the solver plugs in as its
-    /// environment, so its verdict stays true to the fight). Rebuilt whenever the roster changes.
+    /// environment, so its verdict stays true to the fight). Under `auto` (self-play) the party runs [`Greedy`] -
+    /// the side-agnostic one-ply disruption read, i.e. the exact greedy baseline the insight classes measure -
+    /// so the whole fight resolves on startup, leaving a complete transcript in `fight-log.txt`. Rebuilt whenever
+    /// the roster changes.
     fn build_deciders(&mut self) {
+        let auto = self.auto;
         self.deciders = self
             .state
             .board()
@@ -249,7 +288,11 @@ impl Fight {
             .iter()
             .map(|u| -> Box<dyn Decider + Send + Sync> {
                 if u.side == Side::Party {
-                    Box::new(Human)
+                    if auto {
+                        Box::new(Greedy)
+                    } else {
+                        Box::new(Human)
+                    }
                 } else {
                     Box::new(Instinct)
                 }
