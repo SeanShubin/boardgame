@@ -107,9 +107,22 @@ crossing - declares its **catch**:
 A catch is an engagement **in addition to** the body's act, priced in tempo -
 never a replacement for its strike (measured: making the catch consume the act
 collapsed two balance corners). An **area** catcher's catch sweeps the whole
-enemy crossing band (area is width). Scripted foes declare by the catch instinct
-(`foe_catch`: always answer a crossing, at the crosser you most disrupt); a
-player - and the solver - may catch anyone, or decline and bank the tempo.
+enemy crossing band (area is width).
+
+The catch declaration also names its **pour** - the strike-phase extras: if the
+contact sticks, the catcher spends `pour` more tempo, one strike per card
+(contact established, so Finesse is irrelevant - only Might), clamped to the
+live pool. The menu offers pour 0 and the **finishing pour** (exactly the extras
+that down the caught body, counting the opening blow); the resolver honors any
+declared amount. Scripted foes declare by the catch instinct (`foe_catch`:
+always answer a crossing, at the crosser you most disrupt) at **pour 0 -
+mission-focus**: their spare tempo fires at their own declared act instead. A
+creature that *executes* runners (pours to finish) is a behavior-card trait to
+assign deliberately - measured: making every catcher an executioner by default
+put the Sniper on a knife edge (finishing the spent crosser closed the Raid
+corner; weakening it to block the finish broke Ashfen's clash-only guard).
+Lethality is physics; who uses it is personality. A player - and the solver -
+may catch anyone at either pour, or decline and bank the tempo.
 
 ### Resolution - the three rings, nearest-first
 
@@ -320,10 +333,11 @@ split), with zero re-tuning.
 
 What remains, deliberately deferred:
 
-- **Bid sizing** - every bid (catch, slip, dodge, raid-evade) auto-sizes today
-  (`reach_cards` / min-to-beat-the-pool): the *whom* is declared, the *how hard*
-  is computed. Freeing the amounts is behavior-card territory (foes) and a
-  decision-richness add (party).
+- **Bid sizing** - the contest bids (catch-bid, slip, dodge, raid-evade)
+  auto-size today (`reach_cards` / min-to-beat-the-pool): the *whom* is declared,
+  the contest's *how hard* is computed. The **pour is now declared** (pour 0 or
+  the finishing pour, on the catch itself); freeing the remaining amounts is
+  behavior-card territory (foes) and a decision-richness add (party).
 - **Decoupled raid targeting** - *presentation only*: the raid target rides the
   `Cross` act; against deterministic foes that is equivalent to naming it on
   arrival. A UI two-beat if wanted; no rule change.
@@ -366,6 +380,13 @@ a creature may carry a rule for how it splits, but need not have one.
 Open calls were resolved conservatively: ranged fire keeps preceding the melee
 clash ("an arrow lands before a swordsman closes"), and the pooled contest is
 the crossing's rule. Promote-to-canon criterion was "deltas in, diagonal green" -
-both hold; this document now describes the shipped model. (In flight: the
-catcher's strike-phase pile-on - implemented with a finish-the-runner default,
-currently under balance measurement; see the working tree.)
+both hold; this document now describes the shipped model.
+
+4. **The pile-on** (the strike-phase extras) - first implemented as an always-
+   finish resolver instinct: MEASURED and rejected (Raid corner X; the counter-
+   knob broke Ashfen's clash-only guard - the Sniper cannot be both lethal
+   enough to demand silencing and an executioner of the spent runner who comes
+   to silence it). Resolved by moving the pour to the DECLARATION (pour 0 or the
+   finishing pour): physics untouched, allocation is policy. Foes default to
+   mission-focus; an executioner is a future behavior-card trait. Diagonal held
+   4/4 + 5/5 with the party's pours fully searchable.
