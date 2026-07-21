@@ -5,15 +5,16 @@
 //! this, and *watch* the consequence a choice at a time - long before a probe or a UI is built around it. The
 //! same walk is what a debug view in the application would show.
 //!
-//! It drives the combat [`Combat`] game over a small hand-built fight (no catalog - this crate has no deps).
+//! It drives the eight-step combat game ([`StepCombat`]) over a small hand-built fight (no catalog - this
+//! crate has no deps).
 //!
 //! Run: `cargo run -p rules --example explore`
 
 use std::io::{self, Write};
 
-use rules::combat::game::{Choice, Combat, State};
-use rules::combat::regions::{Act, Board, Rank};
+use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
+use rules::combat::step_game::{Phase, StepChoice, StepCombat as Combat, StepState as State};
 use rules::core::{Game, Solver, Verdict, decisions_within};
 
 fn u(name: &str, side: Side, stats: [u8; 5], melee: bool, ranged: bool) -> Combatant {
@@ -50,27 +51,24 @@ fn show_board(b: &Board) -> String {
         .join(" ")
 }
 
-fn label(b: &Board, c: &Choice) -> String {
-    let a = match c {
-        Choice::Catch(Some((m, pour))) => {
-            let extra = if *pour > 0 {
-                format!(" (pour {pour})")
-            } else {
-                String::new()
-            };
-            return format!("Catch {}{extra}", b.units[*m].name);
+/// What this choice does at this step, in words.
+fn label(phase: Phase, b: &Board, c: &StepChoice) -> String {
+    let who = |t: usize| format!("{}({})", b.units[t].name, b.units[t].health);
+    match (phase, c) {
+        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
+        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+            format!("Advance on the exposed {}", who(*t))
         }
-        Choice::Catch(None) => return "Let them pass".to_string(),
-        Choice::Act(a) => a,
-    };
-    match a {
-        Act::Clash(t) => format!("Clash {}", b.units[*t].name),
-        Act::Cross(Some(t), ans, _) => format!("Raid {} ({ans:?})", b.units[*t].name),
-        Act::Cross(None, ans, _) => format!("Cross into their line ({ans:?})"),
-        Act::Melee(t) => format!("Melee {}", b.units[*t].name),
-        Act::Retreat(Some(t)) => format!("Strike {} and withdraw", b.units[*t].name),
-        Act::Retreat(None) => "Withdraw".to_string(),
-        Act::Hold => "Hold".to_string(),
+        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
+        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
 
@@ -107,7 +105,17 @@ fn main() {
             println!("\n=== {o:?} ===");
             return;
         }
-        println!("round {}   {}", state.round(), show_board(state.board()));
+        let deciding = state
+            .deciding()
+            .map(|i| state.board().units[i].name.clone())
+            .unwrap_or_default();
+        println!(
+            "round {}  step {:?}  {} declares   {}",
+            state.round(),
+            state.phase(),
+            deciding,
+            show_board(state.board())
+        );
         println!("  position verdict: {:?}", verdict(&state));
 
         let opts = Combat::options(&state);
@@ -121,7 +129,7 @@ fn main() {
             let beyond = decisions_within::<Combat>(&next, 8);
             println!(
                 "  [{i}] {:<34} -> {v:?}, {beyond} decisions within 8 plies",
-                label(state.board(), c)
+                label(state.phase(), state.board(), c)
             );
         }
         print!("choose (or q): ");

@@ -13,9 +13,11 @@ use std::io::{self, Write};
 
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
-use rules::combat::game::{Choice, Combat, Score, Scorer, State};
-use rules::combat::regions::{Act, Board, Rank};
+use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
+use rules::combat::step_game::{
+    Phase, Score, StepChoice, StepCombat as Combat, StepScorer as Scorer, StepState as State,
+};
 use rules::core::{Game, Solver, Verdict, decisions_within};
 
 fn fight(e: &Encounter) -> State {
@@ -53,33 +55,29 @@ fn show_board(b: &Board) -> String {
         .join(" ")
 }
 
-fn label(b: &Board, c: &Choice) -> String {
-    let a = match c {
-        Choice::Catch(Some((m, pour))) => {
-            let extra = if *pour > 0 {
-                format!(" (pour {pour})")
-            } else {
-                String::new()
-            };
-            return format!("Catch {}{extra}", b.units[*m].name);
-        }
-        Choice::Catch(None) => return "Let them pass".to_string(),
-        Choice::Act(a) => a,
-    };
-    // Name the target with its hp (bodies, for a horde), so two same-named bodies in different states read apart.
+/// What this choice does at this step, in words. Targets carry hp (bodies, for a horde) so two same-named
+/// bodies in different states read apart.
+fn label(phase: Phase, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| {
         let u = &b.units[t];
         let kind = if u.horde { "bodies" } else { "hp" };
         format!("{} ({} {kind})", u.name, u.health)
     };
-    match a {
-        Act::Clash(t) => format!("Clash {}", who(*t)),
-        Act::Cross(Some(t), ans, _) => format!("Raid {} ({ans:?})", who(*t)),
-        Act::Cross(None, ans, _) => format!("Cross into their line ({ans:?})"),
-        Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Retreat(Some(t)) => format!("Strike {} and withdraw", b.units[*t].name),
-        Act::Retreat(None) => "Withdraw".to_string(),
-        Act::Hold => "Hold".to_string(),
+    match (phase, c) {
+        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
+        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+            format!("Advance on the exposed {}", who(*t))
+        }
+        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
+        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
 
@@ -148,7 +146,17 @@ fn main() {
             println!("\n*** {o:?} ***");
             return;
         }
-        println!("round {}   {}", state.round(), show_board(state.board()));
+        let deciding = state
+            .deciding()
+            .map(|i| state.board().units[i].name.clone())
+            .unwrap_or_default();
+        println!(
+            "round {}  step {:?}  {} declares   {}",
+            state.round(),
+            state.phase(),
+            deciding,
+            show_board(state.board())
+        );
         let (v, states, nodes) = solve(&state);
         println!(
             "  verdict here: {v:?}   best route: {}   (solved graph: {states} distinct positions, {nodes} nodes walked)",
@@ -164,7 +172,7 @@ fn main() {
             let next = Combat::apply(&state, c);
             println!(
                 "  [{i}] {:<32} -> {:?}, best {}, {} decisions within 6 plies",
-                label(state.board(), c),
+                label(state.phase(), state.board(), c),
                 verdict(&next),
                 fmt_score(best_route(&next, &start_hp)),
                 decisions_within::<Combat>(&next, 6)

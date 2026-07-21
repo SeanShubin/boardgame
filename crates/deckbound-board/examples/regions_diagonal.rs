@@ -1,8 +1,7 @@
 //! **The balance diagonal, over the `rules` crate.** Does the encounter set still teach what it is meant to?
 //!
-//! This is the verification that the pure `rules` port reproduces the balance work: it drives
-//! [`rules::combat`] (the regions model, behind the generic `Game`) via the generic [`Solver`], instead of the
-//! old `deckbound_board::regions` copy.
+//! Drives [`rules::combat::step_game`] - the eight-step round, behind the generic `Game` - via the generic
+//! [`Solver`], through the same shared verify machinery the `tests/diagonal.rs` gate asserts.
 //!
 //! - Each **solo** must be soloable by EXACTLY ONE kit - the one its keystone is built to be weak to.
 //! - Each **corner** must pass its assigned [`Behavior`] - the lesson it is built to teach, scored by search:
@@ -21,8 +20,11 @@ use std::time::Instant;
 use deckbound_board::units::{beast, kit};
 use deckbound_board::verify::{GRANT_CAP, insight_class, solver_wins};
 use deckbound_content::catalog::{self, Behavior, Encounter};
-use rules::combat::game::{ClashOnly, Combat, Score, Scorer, State};
 use rules::combat::resolve::Combatant;
+use rules::combat::step_game::{
+    Score, StepClashOnly as ClashOnly, StepCombat as Combat, StepScorer as Scorer,
+    StepState as State,
+};
 
 fn foes_of(e: &Encounter) -> Vec<Combatant> {
     let mut out = Vec::new();

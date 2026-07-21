@@ -10,8 +10,8 @@
 //! read is needed), `X` impossible (neither). `greedy wins & solver loses` cannot happen (greedy is a legal line),
 //! so the three are exhaustive.
 
-use rules::combat::game::{Combat, State, greedy_playout};
 use rules::combat::resolve::Combatant;
+use rules::combat::step_game::{StepCombat, StepState, greedy_step_playout};
 use rules::core::{Game, Outcome, Solvable, Solver, Verdict};
 
 /// Stop doubling the node grant past this ceiling. A position we cannot decisively settle within it is treated as
@@ -19,66 +19,13 @@ use rules::core::{Game, Outcome, Solvable, Solver, Verdict};
 /// lesson on a search that never finished).
 pub const GRANT_CAP: u64 = 20_000_000;
 
-/// **Can these heroes force a win under game `G`?** `G` is `Combat` or a control like `ClashOnly`. The verdict is
-/// ground out with an escalating grant (doubling on `Evaluating`) up to [`GRANT_CAP`]; past the cap a still
-/// undecided position is called NOT winnable.
+/// **Can these heroes force a win under game `G`?** `G` is [`StepCombat`] or a control like `StepClashOnly`. The
+/// verdict is ground out with an escalating grant (doubling on `Evaluating`) up to [`GRANT_CAP`]; past the cap a
+/// still undecided position is called NOT winnable.
 pub fn solver_wins<G>(heroes: &[Combatant], foes: &[Combatant]) -> bool
 where
-    G: Solvable + Game<State = State>,
+    G: Solvable + Game<State = StepState>,
 {
-    let mut units: Vec<Combatant> = heroes.to_vec();
-    units.extend_from_slice(foes);
-    let s = State::new(units);
-
-    let mut o = Solver::<G>::new();
-    let mut grant = 1u64;
-    loop {
-        o.grant(grant);
-        match o.verdict(&s) {
-            Verdict::Winnable => return true,
-            Verdict::Doomed => return false,
-            Verdict::Evaluating => {
-                if grant >= GRANT_CAP {
-                    return false;
-                }
-                grant = grant.saturating_mul(2);
-            }
-        }
-    }
-}
-
-/// **Can these heroes win playing GREEDILY?** Both sides run the one-ply disruption heuristic
-/// ([`greedy_playout`]) - no search, no insight. One deterministic playout (bounded by the draw cap), so it is
-/// effectively free.
-pub fn greedy_wins(heroes: &[Combatant], foes: &[Combatant]) -> bool {
-    let mut units: Vec<Combatant> = heroes.to_vec();
-    units.extend_from_slice(foes);
-    matches!(greedy_playout(State::new(units)), Outcome::Win)
-}
-
-/// The insight class of these heroes vs these foes: `T`rivial (greedy wins), `I`nsight (only the solver wins), `X`
-/// impossible (neither).
-pub fn insight_class(heroes: &[Combatant], foes: &[Combatant]) -> char {
-    match (
-        solver_wins::<Combat>(heroes, foes),
-        greedy_wins(heroes, foes),
-    ) {
-        (_, true) => 'T',
-        (true, false) => 'I',
-        (false, false) => 'X',
-    }
-}
-
-// ---- the STEP-MACHINE twins (the in-flight model, measured side by side) -------------------------------
-
-/// **Can these heroes force a win under the STEP machine?** The twin of [`solver_wins`], driving `G` =
-/// [`rules::combat::step_game::StepCombat`] or a control like `StepClashOnly` - same escalating grant, same
-/// cap, same safe direction.
-pub fn solver_wins_steps<G>(heroes: &[Combatant], foes: &[Combatant]) -> bool
-where
-    G: Solvable + Game<State = rules::combat::step_game::StepState>,
-{
-    use rules::combat::step_game::StepState;
     let mut units: Vec<Combatant> = heroes.to_vec();
     units.extend_from_slice(foes);
     let s = StepState::new(units);
@@ -100,20 +47,21 @@ where
     }
 }
 
-/// **Can these heroes win the STEP machine playing greedily?** The twin of [`greedy_wins`].
-pub fn greedy_wins_steps(heroes: &[Combatant], foes: &[Combatant]) -> bool {
-    use rules::combat::step_game::{StepState, greedy_step_playout};
+/// **Can these heroes win playing GREEDILY?** Both sides run the scripted step policy
+/// ([`greedy_step_playout`]) - no search, no insight. One deterministic playout (bounded by the draw cap), so it
+/// is effectively free.
+pub fn greedy_wins(heroes: &[Combatant], foes: &[Combatant]) -> bool {
     let mut units: Vec<Combatant> = heroes.to_vec();
     units.extend_from_slice(foes);
     matches!(greedy_step_playout(StepState::new(units)), Outcome::Win)
 }
 
-/// The step machine's insight class - same letters, same meaning.
-pub fn insight_class_steps(heroes: &[Combatant], foes: &[Combatant]) -> char {
-    use rules::combat::step_game::StepCombat;
+/// The insight class of these heroes vs these foes: `T`rivial (greedy wins), `I`nsight (only the solver wins), `X`
+/// impossible (neither).
+pub fn insight_class(heroes: &[Combatant], foes: &[Combatant]) -> char {
     match (
-        solver_wins_steps::<StepCombat>(heroes, foes),
-        greedy_wins_steps(heroes, foes),
+        solver_wins::<StepCombat>(heroes, foes),
+        greedy_wins(heroes, foes),
     ) {
         (_, true) => 'T',
         (true, false) => 'I',

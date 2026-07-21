@@ -3,8 +3,8 @@
 //! against the real, post-death board. This is what the wave model could not express: step 8 aims at a rearguard
 //! whose screen fell at step 3 *this round*.
 //!
-//! **Additive and inert**: the shipped game ([`super::game::Combat`]) still drives everything; this is stage B
-//! of the step-machine restructure. Stage C points the measurements here and swaps the consumers.
+//! **The shipped decision layer** - the diagonal gate, the fight UI and the self-play baseline all drive this
+//! machine. (The wave model it replaced is deleted; its physics live on in `regions`/`steps`.)
 //!
 //! The same house architecture as the wave model, re-derived for steps:
 //! - **One loop for everyone**: heroes and foes declare through the same cursor; a foe's wave entry is a single
@@ -14,7 +14,9 @@
 //!   as they go), so a body that poured its pool early simply vanishes from later waves.
 //! - **Validity is resolver-enforced** ([`super::steps`]): a stale declaration drops, never mislands.
 
-use super::regions::{Act, Board, MAX_ROUNDS, Rank, canonical, foe_catch, interchangeable};
+use super::regions::{
+    Board, MAX_ROUNDS, Rank, canonical, foe_catch, interchangeable, wants_to_cross,
+};
 use super::resolve::{Combatant, Side, refresh_round};
 use super::steps::{
     resolve_advance, resolve_cross, resolve_early, resolve_inner, resolve_late, resolve_raid,
@@ -294,14 +296,14 @@ pub fn step_policy(state: &StepState, i: usize) -> StepChoice {
         Phase::Withdraw => StepChoice::Move(false), // instinct is havoc: stay in
         Phase::Cross => {
             // Cross iff the one-ply greedy would cross: the same read the wave model's script used.
-            let crossing = matches!(super::regions::greedy_act(b, i), Some(Act::Cross(..)));
+            let crossing = wants_to_cross(b, i);
             StepChoice::Move(crossing)
         }
         Phase::Early => {
             // The interception window: a body that intends to cross holds its swing; otherwise strike the
             // max-disruption enemy vanguard now (foes strike early - vanguard deaths first is the schedule's
             // whole point).
-            if matches!(super::regions::greedy_act(b, i), Some(Act::Cross(..))) {
+            if wants_to_cross(b, i) {
                 StepChoice::Strike(None)
             } else {
                 StepChoice::Strike(foe_catch(b, i, &candidates))
@@ -428,6 +430,122 @@ impl Solvable for StepClashOnly {
     type Key = StepKey;
     fn key(state: &StepState) -> StepKey {
         StepCombat::key(state)
+    }
+}
+
+/// A winning route's cost, ranked **lexicographically** in the player's stated priority: you must **win**
+/// (an unwinnable route has no `Score` at all), then fewest **heroes downed**, then fewest **rounds taken**,
+/// then fewest **hero Health cards flipped**. The derived `Ord` compares the fields in declaration order - which
+/// IS that priority - so `min` over routes picks the best one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Score {
+    /// Party bodies fallen at the win (first priority: keep everyone standing).
+    pub downed: u32,
+    /// Rounds taken to reach the win (second: win sooner).
+    pub rounds: u32,
+    /// Total party Health cards flipped over the route, measured against the fight-start Vitality passed to
+    /// [`StepScorer::new`] (third: take the least damage).
+    pub hp_lost: u32,
+}
+
+/// **The best-route scorer**: the lexicographically minimal [`Score`] (win > fewest downed > fewest rounds >
+/// least hp lost) over ALL winning lines, budgeted and resumable, provisional (`<=`) until a walk completes
+/// unaborted.
+pub struct StepScorer {
+    memo: std::collections::HashMap<StepKey, Option<Score>>,
+    start_hp: Vec<u32>,
+    nodes: u64,
+    walk: u64,
+    budget: u64,
+    aborted: bool,
+}
+
+impl StepScorer {
+    /// `start_hp` is the party's full Vitality (index-aligned); `budget` bounds one walk.
+    pub fn new(start_hp: Vec<u32>, budget: u64) -> Self {
+        StepScorer {
+            memo: std::collections::HashMap::new(),
+            start_hp,
+            nodes: 0,
+            walk: 0,
+            budget,
+            aborted: false,
+        }
+    }
+
+    pub fn nodes(&self) -> u64 {
+        self.nodes
+    }
+    pub fn aborted(&self) -> bool {
+        self.aborted
+    }
+
+    /// Allow the next walk `nodes` positions and clear the abort flag; the memo survives.
+    pub fn grant(&mut self, nodes: u64) {
+        self.walk = 0;
+        self.budget = nodes;
+        self.aborted = false;
+    }
+
+    fn score_of(&self, state: &StepState) -> Score {
+        let b = state.board();
+        let (mut downed, mut hp_lost) = (0u32, 0u32);
+        for (i, u) in b.units.iter().enumerate() {
+            if u.side != Side::Party {
+                continue;
+            }
+            if u.fallen {
+                downed += 1;
+            }
+            let start = self.start_hp.get(i).copied().unwrap_or(u.health);
+            hp_lost += start.saturating_sub(u.health);
+        }
+        Score {
+            downed,
+            rounds: (state.round() as u32).saturating_sub(1),
+            hp_lost,
+        }
+    }
+
+    /// The best [`Score`](Score) achievable from `state`, or `None` (unwinnable, or budget ran out -
+    /// [`aborted`](StepScorer::aborted) tells them apart).
+    pub fn best(&mut self, state: &StepState) -> Option<Score> {
+        match StepCombat::outcome(state) {
+            Some(Outcome::Win) => return Some(self.score_of(state)),
+            Some(_) => return None,
+            None => {}
+        }
+        if self.walk >= self.budget {
+            self.aborted = true;
+            return None;
+        }
+        let key = StepCombat::key(state);
+        if let Some(v) = self.memo.get(&key) {
+            return *v;
+        }
+        self.nodes += 1;
+        self.walk += 1;
+
+        // Each node judges its OWN subtree's completeness (stash the caller's abort flag) - the same rule that
+        // keeps the winnable oracle honest: an incomplete subtree is never memoized.
+        let outer = self.aborted;
+        self.aborted = false;
+
+        let mut best: Option<Score> = None;
+        for opt in StepCombat::options(state) {
+            let next = StepCombat::apply(state, &opt);
+            if let Some(s) = self.best(&next) {
+                best = Some(match best {
+                    Some(b) if b <= s => b,
+                    _ => s,
+                });
+            }
+        }
+        if !self.aborted {
+            self.memo.insert(key, best);
+        }
+        self.aborted |= outer;
+        best
     }
 }
 

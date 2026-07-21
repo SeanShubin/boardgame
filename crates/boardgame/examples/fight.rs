@@ -33,9 +33,9 @@ use bevy::prelude::*;
 
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
-use rules::combat::game::Score;
 use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
+use rules::combat::step_game::Score;
 use rules::combat::step_game::{Phase, StepChoice, StepCombat, StepScorer, StepState, step_policy};
 use rules::combat::steps::{StepScript, play_steps};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};

@@ -8,9 +8,7 @@
 //! cheesable).
 
 use deckbound_board::units::{beast, kit};
-use deckbound_board::verify::{
-    insight_class_steps as insight_class, solver_wins_steps as solver_wins,
-};
+use deckbound_board::verify::{insight_class, solver_wins};
 use deckbound_content::catalog::{self};
 use rules::combat::resolve::Combatant;
 use rules::combat::step_game::{StepClashOnly as ClashOnly, StepCombat as Combat};

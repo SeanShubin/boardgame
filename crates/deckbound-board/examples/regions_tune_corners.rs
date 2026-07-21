@@ -14,8 +14,10 @@ use std::time::Instant;
 
 use deckbound_board::units::{beast, kit};
 use deckbound_content::catalog::{self, Behavior, Creature};
-use rules::combat::game::{ClashOnly, Combat, State};
 use rules::combat::resolve::Combatant;
+use rules::combat::step_game::{
+    StepClashOnly as ClashOnly, StepCombat as Combat, StepState as State,
+};
 use rules::core::{Game, Solvable, Solver, Verdict};
 
 /// Stop doubling the node grant past this ceiling. A warband we cannot decisively settle within it is treated as
