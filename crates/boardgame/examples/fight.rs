@@ -347,8 +347,27 @@ impl Fight {
                 self.options = Combat::options(&self.state);
                 break;
             };
-            match self.deciders[i].commit(self.state.board(), i) {
-                Some(act) => self.apply_choice(&Choice::Act(act)),
+            // The pending decision is an ACT or (once the crossings stand revealed) a CATCH - the same Decider
+            // answers both, and the loop stays blind to which kind of policy it asked.
+            let committed = if self.state.catching() {
+                let crossers: Vec<usize> = self
+                    .state
+                    .crossers()
+                    .into_iter()
+                    .filter(|&m| {
+                        self.state.board().units[m].side != self.state.board().units[i].side
+                    })
+                    .collect();
+                self.deciders[i]
+                    .commit_catch(self.state.board(), i, &crossers)
+                    .map(Choice::Catch)
+            } else {
+                self.deciders[i]
+                    .commit(self.state.board(), i)
+                    .map(Choice::Act)
+            };
+            match committed {
+                Some(c) => self.apply_choice(&c),
                 None => {
                     let opts = Combat::options(&self.state);
                     if opts.len() == 1 {
@@ -721,6 +740,23 @@ impl Fight {
                     self.log
                         .push(format!("      commit  {mark}{name} -> {front}; {back}"));
                 }
+                // A catch declaration (the CATCH WAVE): the crossings stand revealed, and this body answers -
+                // intercept/volley a named crosser, or let them pass.
+                Choice::Catch(Some(m)) => {
+                    let verb = if before.ranks[idx] == Rank::Rearguard {
+                        "volley"
+                    } else {
+                        "intercept"
+                    };
+                    self.log.push(format!(
+                        "      commit  {mark}{name} -> {verb} the crossing {}",
+                        before.units[*m].name
+                    ));
+                }
+                Choice::Catch(None) => {
+                    self.log
+                        .push(format!("      commit  {mark}{name} -> let them pass"));
+                }
                 _ => self.log.push(format!(
                     "      commit  {mark}{name} -> {}",
                     describe(before, c)
@@ -728,15 +764,22 @@ impl Fight {
             }
         }
 
-        // The full act vector this apply would resolve with, if it is the round-closer: every body's pending
-        // declaration, plus the one being made now. When it is NOT the closer this is unused.
+        // The full act + catch vectors this apply would resolve with, if it is the round-closer: every body's
+        // pending declarations, plus the one being made now. When it is NOT the closer these are unused.
         let mut acts: Vec<Act> = before_state
             .pending()
             .iter()
             .map(|p| p.clone().unwrap_or(Act::Hold))
             .collect();
-        if let (Some(idx), Choice::Act(a)) = (acting, c) {
-            acts[idx] = a.clone();
+        let mut catches: Vec<Option<usize>> = before_state
+            .pending_catches()
+            .iter()
+            .map(|p| p.flatten())
+            .collect();
+        match (acting, c) {
+            (Some(idx), Choice::Act(a)) => acts[idx] = a.clone(),
+            (Some(idx), Choice::Catch(m)) => catches[idx] = *m,
+            _ => {}
         }
 
         self.state = Combat::apply(&self.state, c);
@@ -748,7 +791,7 @@ impl Fight {
             // The round, phase by phase: re-run the deterministic resolution on a throwaway clone (it never
             // touches `self.state`) and walk the transcript, so every pool addition, card flip, crossing and death
             // is logged UNDER the ring it happened in.
-            let events = narrate_round(before, &acts);
+            let events = narrate_round(before, &acts, &catches);
             if events.is_empty() {
                 self.log.push("  (no blood drawn)".into());
             } else {
@@ -829,9 +872,9 @@ fn phase_coord(phase: &'static str) -> (u8, &'static str, u8, &'static str) {
 ///
 /// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
 /// stable across the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
-fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
+fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec<String> {
     let mut clone = before.clone();
-    let transcript = play_round(&mut clone, acts);
+    let transcript = play_round(&mut clone, acts, catches);
 
     let rank_word = |r: Rank| match r {
         Rank::Vanguard => "a Vanguard",
@@ -1303,7 +1346,15 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> State {
 /// A choice label. The active body is shown once above the options and marked on the table, so it is never
 /// repeated per action.
 fn describe(b: &Board, c: &Choice) -> String {
-    let Choice::Act(a) = c;
+    let a = match c {
+        Choice::Catch(Some(m)) => {
+            let u = &b.units[*m];
+            let kind = if u.horde { "bodies" } else { "hp" };
+            return format!("Catch the crossing {} ({} {kind})", u.name, u.health);
+        }
+        Choice::Catch(None) => return "Let them pass".to_string(),
+        Choice::Act(a) => a,
+    };
     act_label(b, a)
 }
 
@@ -1353,7 +1404,12 @@ fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut i = 0;
     while i < options.len() {
-        let Choice::Act(a) = &options[i];
+        let Choice::Act(a) = &options[i] else {
+            // A catch-wave choice (intercept / volley / let them pass): a direct entry, no drill.
+            entries.push(Entry::Direct(i));
+            i += 1;
+            continue;
+        };
         match a {
             Act::Cross(Some(t), _, _) => {
                 let target = *t;

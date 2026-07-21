@@ -846,31 +846,64 @@ pub fn foe_act(board: &Board, i: usize) -> Option<Act> {
     greedy_act(board, i)
 }
 
-/// **Who would intercept a crossing** - the enemy vanguard(s) that reach for `mover` if it crosses to region
-/// `dest`. This is the resolver's own interception rule (the front line at each enemy-owned zone the crossing
-/// touches), surfaced so a narrative UI can name *who* catches you *before* you commit an [`Answer`] - matching
-/// the order the fiction hands you the decision (declare the crossing, see who caught you, then answer).
-///
-/// Deterministic, so it can be shown at declaration time: a foe already committed to its own crossing (per
-/// [`foe_act`]) is in transit and cannot hold the line, exactly as the resolver's [`play_round`] would find. Meant
-/// for a hero's crossing (the catchers are foes); an empty result means the crossing is unopposed.
-pub fn catchers(board: &Board, mover: usize, dest: u8) -> Vec<usize> {
-    let enemy = other_side(board.units[mover].side);
-    let mut out = Vec::new();
-    for zone in [board.regions[mover], dest] {
-        if board.owner(zone) != Some(enemy) {
-            continue; // a friendly zone lets its own pass; only an enemy formation reaches for a crosser
-        }
-        for f in board.vanguard(zone, enemy) {
-            let in_transit = foe_act(board, f)
-                .and_then(|a| a.destination(board, f))
-                .is_some();
-            if !in_transit && !out.contains(&f) {
-                out.push(f);
-            }
-        }
+/// **The catch instinct - which enemy crosser this body intercepts,** the deterministic policy a scripted foe
+/// declares in the CATCH WAVE (and the default a greedy party plays). One catch per catcher: it picks the crosser
+/// it would most disrupt (downs, then flips - the same [`Disruption`] read as everything else), lowest index
+/// breaking ties, and it always catches when an enemy crosses - a formation does not watch a runner go by.
+/// `None` when no enemy is crossing (or this body cannot strike at all).
+pub fn foe_catch(board: &Board, catcher: usize, crossers: &[usize]) -> Option<usize> {
+    let u = &board.units[catcher];
+    if u.fallen || (!u.melee && !u.ranged) {
+        return None;
     }
-    out
+    crossers
+        .iter()
+        .copied()
+        .filter(|&m| !board.units[m].fallen && board.units[m].side != u.side)
+        .max_by_key(|&m| {
+            let (downs, flips) = strike_yield(board, catcher, m);
+            (downs, flips, std::cmp::Reverse(m))
+        })
+}
+
+/// **Who would intercept a crossing** - the enemy vanguard(s) that would *declare a catch* on `mover` if it
+/// crosses. Catching is a DECLARED choice (the catch wave), so this predicts the scripted foes' declarations:
+/// every enemy vanguard not itself crossing (per [`foe_act`]) follows [`foe_catch`], which always catches.
+/// Surfaced so a narrative UI can name *who* catches you *before* you commit an [`Answer`] - matching the order
+/// the fiction hands you the decision (declare the crossing, see who caught you, then answer). Meant for a hero's
+/// crossing (the catchers are foes); an empty result means the front does not contest it.
+pub fn catchers(board: &Board, mover: usize, _dest: u8) -> Vec<usize> {
+    (0..board.units.len())
+        .filter(|&f| {
+            !board.units[f].fallen
+                && board.units[f].side != board.units[mover].side
+                && board.ranks[f] == Rank::Vanguard
+                && foe_act(board, f)
+                    .map(|a| a.destination(board, f).is_none())
+                    .unwrap_or(false)
+                && foe_catch(board, f, &[mover]) == Some(mover)
+        })
+        .collect()
+}
+
+/// **The default catch declarations for a whole round** - every eligible body (living, Vanguard/Rearguard, not
+/// itself crossing) declaring by [`foe_catch`]. This is what the scripted foes play, what a greedy (no-search)
+/// party plays, and the convenient porting shim for a driver that has no catch wave of its own.
+pub fn default_catches(board: &Board, acts: &[Act]) -> Vec<Option<usize>> {
+    let crossers: Vec<usize> = (0..board.units.len())
+        .filter(|&i| !board.units[i].fallen && acts[i].destination(board, i).is_some())
+        .collect();
+    (0..board.units.len())
+        .map(|e| {
+            if board.units[e].fallen
+                || acts[e].destination(board, e).is_some()
+                || board.ranks[e] == Rank::Outrider
+            {
+                return None;
+            }
+            foe_catch(board, e, &crossers)
+        })
+        .collect()
 }
 
 // ---- resolution ----------------------------------------------------------------------------------------
@@ -1314,38 +1347,9 @@ fn living(board: &Board) -> Vec<bool> {
     board.units.iter().map(|u| !u.fallen).collect()
 }
 
-/// **A body that is slipping is in NEITHER line.** It has left the front and not yet arrived anywhere - it is a
-/// third position, in transit, and while it is there it can neither screen nor be screened.
-///
-/// So it **cannot catch another slipper**: you are outside the line the moment you leave it. Without this, a
-/// body could be running across open ground and simultaneously holding the wall it just abandoned.
-fn in_transit(board: &Board, acts: &[Act], i: usize) -> bool {
-    !board.units[i].fallen && acts[i].destination(board, i).is_some()
-}
-
-/// The bodies of `side` **actually holding the line** in `region` right now: posted at the front, and not off
-/// slipping somewhere.
-fn holding_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> {
-    board
-        .vanguard(region, side)
-        .into_iter()
-        .filter(|&f| !in_transit(board, acts, f))
-        .collect()
-}
-
-/// The bodies of `side` **at the back** of `region`, not off slipping - the cannons that get to volley an
-/// incoming raider before it lands.
-fn back_line(board: &Board, acts: &[Act], region: u8, side: Side) -> Vec<usize> {
-    board
-        .in_region(region)
-        .into_iter()
-        .filter(|&i| {
-            board.units[i].side == side
-                && board.ranks[i] == Rank::Rearguard
-                && !in_transit(board, acts, i)
-        })
-        .collect()
-}
+// (The automatic screen sweep - `in_transit` / `holding_line` / `back_line` - is gone: catching is a DECLARED
+// choice now (the catch wave), so the catcher sets are built from `catches` in `play_round`. The old "a body in
+// transit cannot hold the line" rule is free: a crossing body is not eligible to declare a catch at all.)
 
 /// One pass of bodies reaching for the slippers: they commit, the slipper answers as it declared, the blows
 /// land. Returns the contacts that stuck (a slipper that Evaded broke them all).
@@ -1583,7 +1587,7 @@ fn home_of(board: &Board, side: Side, avoid: u8) -> Option<u8> {
 /// (Intruders, distance zero, a single simultaneous strike), the **Crossing Ring** (closing into a formation),
 /// and the **Outer Ring** (Across the gap - Fire then Clash). Each ring resolves in **strikes**, and deaths
 /// finalize at each strike boundary, so a body killed early is silenced in every later strike (the razor).
-pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
+pub fn play_round(board: &mut Board, acts: &[Act], catches: &[Option<usize>]) -> Vec<SubPhaseLog> {
     refresh_round(&mut board.units);
     let mut logs = Vec::new();
 
@@ -1671,19 +1675,42 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
         })
         .collect();
 
+    // **CATCHING IS DECLARED, AND ADDITIVE.** The catcher sets come from the round's CATCH WAVE (`catches`), not
+    // from geometry: a body intercepts (vanguard) or volleys (rearguard) the ONE enemy crosser its catch names -
+    // or nobody, if it declined. The catch is an engagement in ADDITION to the body's own act, priced in tempo
+    // (the measured delta-2 finding: making a catch consume the act collapsed the corners). Resolver-enforced
+    // validity, menu-independent: a fallen/crossing catcher, an outrider, or a catch naming a non-mover simply
+    // drops. An AREA catcher's catch is a sweep across the whole enemy crossing band - area is width, so naming
+    // any crosser catches them all.
+    let is_mover: Vec<bool> = {
+        let mut v = vec![false; board.units.len()];
+        for &(i, _, _, _) in &movers {
+            v[i] = true;
+        }
+        v
+    };
     let mut front_catchers: Vec<(usize, usize)> = Vec::new();
     let mut back_catchers: Vec<(usize, usize)> = Vec::new();
-    for &(i, dest, _, _) in &movers {
-        let enemy = other_side(board.units[i].side);
-        for zone in [board.regions[i], dest] {
-            if board.owner(zone) != Some(enemy) {
-                continue; // only an enemy-owned zone reaches for a crosser; a friendly zone lets its own pass
-            }
-            for f in holding_line(board, acts, zone, enemy) {
-                front_catchers.push((f, i));
-            }
-            for c in back_line(board, acts, zone, enemy) {
-                back_catchers.push((c, i));
+    for f in 0..board.units.len() {
+        let Some(named) = catches[f] else { continue };
+        if board.units[f].fallen || is_mover[f] {
+            continue;
+        }
+        let valid = |t: usize| {
+            is_mover[t] && !board.units[t].fallen && board.units[t].side != board.units[f].side
+        };
+        let targets: Vec<usize> = if board.units[f].aoe {
+            (0..board.units.len()).filter(|&t| valid(t)).collect()
+        } else if valid(named) {
+            vec![named]
+        } else {
+            Vec::new()
+        };
+        for t in targets {
+            match board.ranks[f] {
+                Rank::Vanguard => front_catchers.push((f, t)),
+                Rank::Rearguard => back_catchers.push((f, t)),
+                Rank::Outrider => {} // an outrider holds no line to catch from - it fights the Inner Ring
             }
         }
     }
@@ -1938,7 +1965,8 @@ impl Oracle {
             let mut acts = assemble(board, &others, &choices, pick, &foes);
             acts[hero] = act.clone();
             let mut b = board.clone();
-            play_round(&mut b, &acts);
+            let catches = default_catches(&b, &acts);
+            play_round(&mut b, &acts, &catches);
             if self.winnable(&b, round + 1, false) {
                 win = true;
                 break;
@@ -2007,7 +2035,8 @@ impl Oracle {
         for pick in 0..count(&choices) {
             let acts = assemble(board, &heroes, &choices, pick, &foes);
             let mut b = board.clone();
-            play_round(&mut b, &acts);
+            let catches = default_catches(&b, &acts);
+            play_round(&mut b, &acts, &catches);
             if self.winnable(&b, round + 1, no_slip) {
                 win = true;
                 break;
@@ -2057,6 +2086,14 @@ mod tests {
 
     fn unit(name: &str, side: Side, stats: [u8; 5], melee: bool, ranged: bool) -> Combatant {
         Combatant::from_stats(name, side, stats, 0, melee, ranged)
+    }
+
+    /// Play a round under the DEFAULT catch declarations ([`default_catches`]: every eligible body catches per
+    /// the instinct) - the auto-catch behavior most of these tests were written against, now stated explicitly.
+    /// A test about the catch wave itself calls [`play_round`] with its own `catches`.
+    fn round(b: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
+        let catches = default_catches(b, acts);
+        play_round(b, acts, &catches)
     }
 
     /// A wall in front, a cannon behind it, one enemy - the smallest board that has a formation at all. Posts are
@@ -2165,7 +2202,7 @@ mod tests {
         );
         let mut rounds = 0;
         while b.outcome().is_none() && rounds < MAX_ROUNDS {
-            play_round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
+            round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
             rounds += 1;
         }
         assert_eq!(
@@ -2279,7 +2316,7 @@ mod tests {
             "a backless enemy must not offer a plain slip"
         );
         // Still in the ENGINE: hand it a backless slip and it crosses just the same.
-        play_round(
+        round(
             &mut b,
             &[Act::Cross(None, Answer::Push, Volley::Eat), Act::Hold],
         );
@@ -2406,7 +2443,7 @@ mod tests {
     fn evading_the_line_reaches_the_body_behind_it() {
         let mut b = wall_and_cannon();
         let cannon = b.units[1].health;
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Clash(2),
@@ -2434,7 +2471,7 @@ mod tests {
     fn pushing_through_costs_blood_instead_of_tempo() {
         let mut b = wall_and_cannon();
         let ogre = b.units[2].health;
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Clash(2),
@@ -2462,7 +2499,7 @@ mod tests {
             vec![0, 0, 1],
         );
         let cannon = b.units[1].health;
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Clash(2),
@@ -2485,7 +2522,7 @@ mod tests {
     fn aborting_keeps_you_where_you_are_and_swings_back() {
         let mut b = wall_and_cannon();
         let cannon = b.units[1].health;
-        let logs = play_round(
+        let logs = round(
             &mut b,
             &[
                 Act::Clash(2),
@@ -2516,7 +2553,7 @@ mod tests {
             vec![0, 1, 1],
         );
         let archer = b.units[2].health;
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Abort(vec![(2, 4)]), Volley::Eat), // names the ranged Archer
@@ -2544,7 +2581,7 @@ mod tests {
             vec![0, 1, 1],
         );
         // Round 1: raid the Sniper - PUSH the Wall, DODGE the volley.
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Dodge),
@@ -2563,7 +2600,7 @@ mod tests {
             "Raider is now an outrider inside"
         );
         // Round 2: the Inner Ring - Raider (outrider) vs the Wall, point-blank.
-        play_round(&mut b, &[Act::Melee(1), Act::Melee(0), Act::Hold]);
+        round(&mut b, &[Act::Melee(1), Act::Melee(0), Act::Hold]);
         assert!(
             b.units[1].fallen,
             "the Raider felled the Wall in the inner ring"
@@ -2590,7 +2627,7 @@ mod tests {
             vec![0, 0, 1, 1],
         );
         // Round 1: cross in (the worked example's raid - push the Wall, dodge the volley, kill the Sniper).
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(3), Answer::Push, Volley::Dodge),
@@ -2612,7 +2649,7 @@ mod tests {
         );
         // Round 2: strike the Wall AND withdraw. The strike is a full inner-ring melee; the Wall's own declared
         // strike still lands (the price of the ring); then the Raider walks out while the Wall still stands.
-        let logs = play_round(
+        let logs = round(
             &mut b,
             &[Act::Retreat(Some(2)), Act::Hold, Act::Melee(0), Act::Hold],
         );
@@ -2652,7 +2689,7 @@ mod tests {
         // Put the fragile Scout inside as an outrider by hand (tests share module access).
         b.regions[0] = 1;
         b.ranks[0] = Rank::Outrider;
-        play_round(&mut b, &[Act::Retreat(None), Act::Melee(0), Act::Hold]);
+        round(&mut b, &[Act::Retreat(None), Act::Melee(0), Act::Hold]);
         assert!(b.units[0].fallen, "the Brute fells it in the ring");
         assert_eq!(b.regions[0], 1, "and it never made it home");
     }
@@ -2685,7 +2722,7 @@ mod tests {
         );
         // Push the (weak) line but DODGE the (lethal) arrows.
         let mut b = make();
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Dodge),
@@ -2696,7 +2733,7 @@ mod tests {
         let dodged = b.units[0].health;
         // Same front answer, but EAT the arrows: the volley now lands.
         let mut b2 = make();
-        play_round(
+        round(
             &mut b2,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Eat),
@@ -2726,7 +2763,7 @@ mod tests {
         );
         let wall = b.units[1].health;
         // Halt with NO paid strike-back: only the free clash should land.
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Abort(vec![]), Volley::Eat),
@@ -2760,7 +2797,7 @@ mod tests {
         );
         let mut b2 = b.clone();
         let wall = b2.units[1].health;
-        play_round(
+        round(
             &mut b2,
             &[
                 Act::Cross(Some(2), Answer::Abort(vec![(1, 3)]), Volley::Eat),
@@ -2787,7 +2824,7 @@ mod tests {
             vec![0, 1, 1],
         );
         let raider = b.units[0].health;
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Eat),
@@ -2802,11 +2839,13 @@ mod tests {
         );
     }
 
-    /// **A body in transit cannot hold the line it just left.** While it is crossing it can neither screen nor be
-    /// screened - so it cannot catch a body coming the other way into the ground it abandoned.
+    /// **A body in transit cannot catch a body coming the other way.** Under declared catching this is free: a
+    /// crossing body is not eligible for the catch wave at all, so even a catch NAMING the other crosser (hand-
+    /// built here) drops at the resolver - it holds no line while it runs. The transcript proves it: no
+    /// engagement (or blow) runs from the crossing Guard to the crossing Ogre.
     #[test]
     fn a_body_in_transit_cannot_hold_the_line_it_just_left() {
-        let b = Board::new(
+        let mut b = Board::new(
             vec![
                 unit("Guard", Side::Party, [3, 4, 1, 2, 2], true, false),
                 unit("Cannon", Side::Party, [4, 2, 1, 2, 2], false, true),
@@ -2815,20 +2854,25 @@ mod tests {
             ],
             vec![0, 0, 1, 1],
         );
-        let acts = [
-            Act::Cross(Some(3), Answer::Evade, Volley::Dodge),
-            Act::Clash(2),
-            Act::Cross(Some(1), Answer::Evade, Volley::Dodge),
-            Act::Clash(0),
-        ];
-        assert!(
-            in_transit(&b, &acts, 0),
-            "the Guard is in transit, not on the line"
+        let logs = play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(3), Answer::Evade, Volley::Dodge),
+                Act::Clash(2),
+                Act::Cross(Some(1), Answer::Evade, Volley::Dodge),
+                Act::Clash(0),
+            ],
+            // The Guard (itself crossing) hand-declares a catch on the Ogre: the resolver must drop it.
+            &[Some(2), None, None, None],
         );
-        assert!(
-            holding_line(&b, &acts, 0, Side::Party).is_empty(),
-            "so it is NOT holding the line it just left"
-        );
+        for lg in &logs {
+            assert!(
+                !lg.reaches.iter().any(|r| r.attacker == 0 && r.target == 2)
+                    && !lg.hits.iter().any(|h| h.attacker == 0 && h.target == 2),
+                "the crossing Guard reaches for nobody - it holds no line while it runs ({})",
+                lg.phase
+            );
+        }
     }
 
     // ---- PERSISTENT OUTRIDERS + DISSOLUTION (the new idea) ---------------------------------------------
@@ -2847,7 +2891,7 @@ mod tests {
         );
         // Round 1: the Raider crosses in for the Mage and lands as an outrider in region 1. The hosts hold, so
         // the tough-Grit Mage survives the raid strike and is still there to be dug out next round.
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Eat),
@@ -2896,7 +2940,7 @@ mod tests {
             Some(Side::Foe),
             "region 1 is the foe's while its Scout lives"
         );
-        play_round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
+        round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
         assert!(b.units[1].fallen, "the Scout is dead");
         assert_ne!(
             b.ranks[0],
@@ -2926,7 +2970,7 @@ mod tests {
             vec![0, 1, 1],
         );
         b.ranks[1] = Rank::Outrider; // the Raider raided region 1 last round
-        play_round(&mut b, &[Act::Hold, Act::Melee(2), Act::Hold]);
+        round(&mut b, &[Act::Hold, Act::Melee(2), Act::Hold]);
         assert!(b.units[2].fallen, "the Scout is dead");
         assert_ne!(
             b.ranks[1],
@@ -2953,7 +2997,7 @@ mod tests {
             vec![0, 1],
         );
         let start_foe = b.units[1].health;
-        let logs = play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+        let logs = round(&mut b, &[Act::Clash(1), Act::Hold]);
         assert!(
             logs.iter().all(|l| !l.phase.is_empty()),
             "every emitted phase is stamped with its name"
@@ -3004,7 +3048,7 @@ mod tests {
             vec![0, 1, 1],
         );
         let (raider_tp, wall_tp) = (b.units[0].cadence, b.units[1].cadence);
-        let logs = play_round(
+        let logs = round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Evade, Volley::Dodge),
@@ -3062,7 +3106,7 @@ mod tests {
             ],
             vec![0, 1, 1],
         );
-        let logs = play_round(
+        let logs = round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Eat),
@@ -3104,7 +3148,7 @@ mod tests {
             vec![0, 1, 1],
         );
         let (wall, mage) = (b.units[1].health, b.units[2].health);
-        play_round(&mut b, &[Act::Clash(1), Act::Clash(0), Act::Hold]);
+        round(&mut b, &[Act::Clash(1), Act::Clash(0), Act::Hold]);
         assert!(b.units[1].health < wall, "it sweeps their front line");
         assert_eq!(
             b.units[2].health, mage,
@@ -3128,7 +3172,7 @@ mod tests {
             vec![0, 1, 1, 1],
         );
         let (mage, seer) = (b.units[2].health, b.units[3].health);
-        play_round(
+        round(
             &mut b,
             &[
                 Act::Cross(Some(2), Answer::Push, Volley::Eat),
@@ -3158,7 +3202,7 @@ mod tests {
         );
         b.ranks[0] = Rank::Outrider; // loose inside the foe zone
         let (wall, mage) = (b.units[1].health, b.units[2].health);
-        play_round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
+        round(&mut b, &[Act::Melee(1), Act::Hold, Act::Hold]);
         assert!(
             b.units[1].health < wall,
             "it sweeps the front it is standing among"
@@ -3184,7 +3228,7 @@ mod tests {
                 ],
                 vec![0, 1],
             );
-            play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+            round(&mut b, &[Act::Clash(1), Act::Hold]);
             pack - b.units[1].health
         };
         // A sweep that PENETRATES Grit clears the whole pack, however big.
@@ -3299,7 +3343,7 @@ mod tests {
         let n = b.units.len();
 
         let mut base = b.clone();
-        play_round(&mut base, &acts);
+        round(&mut base, &acts);
 
         for shift in 1..n {
             let perm: Vec<usize> = (0..n).map(|i| (i + shift) % n).collect();
@@ -3323,7 +3367,7 @@ mod tests {
                 perm.iter().map(|&o| b.regions[o]).collect(),
             );
             let shuffled_acts: Vec<Act> = perm.iter().map(|&o| remap(acts[o].clone())).collect();
-            play_round(&mut shuffled, &shuffled_acts);
+            round(&mut shuffled, &shuffled_acts);
 
             for old in 0..n {
                 let new = inv[old];
@@ -3361,9 +3405,9 @@ mod tests {
             )
         };
         let mut a = build([("Hero", Side::Party), ("X", Side::Foe), ("Y", Side::Foe)]);
-        play_round(&mut a, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
+        round(&mut a, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
         let mut b = build([("Hero", Side::Party), ("Y", Side::Foe), ("X", Side::Foe)]);
-        play_round(&mut b, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
+        round(&mut b, &[Act::Hold, Act::Clash(0), Act::Clash(0)]);
         assert_eq!(
             (a.units[1].health, a.units[2].health),
             (b.units[2].health, b.units[1].health),
@@ -3377,7 +3421,7 @@ mod tests {
         let (b, acts) = messy();
         let run = || {
             let mut x = b.clone();
-            play_round(&mut x, &acts);
+            round(&mut x, &acts);
             (
                 x.units
                     .iter()
@@ -3399,7 +3443,7 @@ mod tests {
             if b.outcome().is_some() {
                 break;
             }
-            play_round(&mut b, &acts);
+            round(&mut b, &acts);
             for (i, u) in b.units.iter().enumerate() {
                 assert!(u.health <= start[i], "{} healed itself", u.name);
                 assert_eq!(
@@ -3422,7 +3466,7 @@ mod tests {
             ],
             vec![0, 1],
         );
-        play_round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
+        round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
         assert!(b.units[0].fallen && b.units[1].fallen, "both blows landed");
         assert_eq!(b.outcome(), Some(false), "a mutual wipe is not a party win");
     }
@@ -3456,7 +3500,7 @@ mod tests {
         );
         let boulder = b.units[1].health;
         for _ in 0..MAX_ROUNDS {
-            play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+            round(&mut b, &[Act::Clash(1), Act::Hold]);
         }
         assert_eq!(
             b.units[1].health, boulder,
@@ -3472,7 +3516,7 @@ mod tests {
             if b.outcome().is_some() {
                 return;
             }
-            play_round(&mut b, &acts);
+            round(&mut b, &acts);
         }
         assert!(b.outcome().is_some() || b.alive(Side::Party) && b.alive(Side::Foe));
     }
@@ -3488,7 +3532,7 @@ mod tests {
             vec![0, 1],
         );
         let (attacker, defender) = (b.units[0].health, b.units[1].health);
-        play_round(&mut b, &[Act::Clash(1), Act::Hold]);
+        round(&mut b, &[Act::Clash(1), Act::Hold]);
         assert!(b.units[1].health < defender, "the blow lands");
         assert_eq!(
             b.units[0].health, attacker,
@@ -3502,7 +3546,7 @@ mod tests {
             ],
             vec![0, 1],
         );
-        play_round(&mut c, &[Act::Clash(1), Act::Clash(0)]);
+        round(&mut c, &[Act::Clash(1), Act::Clash(0)]);
         assert!(
             c.units[0].health < attacker && c.units[1].health < defender,
             "both declared the fight, so both pay for it"
@@ -3523,7 +3567,7 @@ mod tests {
             if b.outcome().is_some() {
                 break;
             }
-            play_round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
+            round(&mut b, &[Act::Clash(1), Act::Clash(0)]);
         }
         assert_eq!(b.outcome(), Some(true), "the Raider wins");
     }

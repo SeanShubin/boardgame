@@ -28,30 +28,50 @@
 
 use std::collections::HashMap;
 
-use super::regions::{Act, Board, MAX_ROUNDS, Rank, foe_act, greedy_act, legal_acts, play_round};
+use super::regions::{
+    Act, Board, MAX_ROUNDS, Rank, foe_act, foe_catch, greedy_act, legal_acts, play_round,
+};
 use super::resolve::{Combatant, Side};
 use crate::core::{Game, Outcome};
 
-/// A choice in the combat game: a body declares its act for the round. There is no setup - the formation is
-/// fixed at construction (one region per side), so a fight opens on round 1's first declaration.
+/// A choice in the combat game. There is no setup - the formation is fixed at construction (one region per
+/// side), so a fight opens on round 1's first declaration. A round is **two declare waves**:
+///
+/// 1. **The act wave** - every living body declares its [`Act`]. When the last declares, the crossings stand
+///    revealed.
+/// 2. **The catch wave** (only if somebody crossed) - each eligible body (living, Vanguard or Rearguard, not
+///    itself crossing) declares its **catch**: intercept/volley ONE enemy crosser, or let them pass. A catch is
+///    an engagement in ADDITION to the body's act, priced in tempo - the measured rule (making it consume the
+///    act collapsed the balance corners).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Choice {
-    /// A round: this body does `act`.
+    /// This body does `act` this round.
     Act(Act),
+    /// This body catches `Some(crosser)` - or `None`, letting them pass. Declared in the catch wave, once the
+    /// crossings are revealed.
+    Catch(Option<usize>),
 }
 
-/// The whole position: the bodies, their formation, whose declaration is pending, and the round.
+/// The whole position: the bodies, their formation, whose declaration is pending (and in which wave), and the
+/// round.
 #[derive(Clone, Debug)]
 pub struct State {
     board: Board,
     /// The **declaration order** every round: the party (seat order) then the foes. Every body that acts appears
-    /// here once; the `next` cursor walks it, skipping the fallen and the already-declared.
+    /// here once; the `next` cursor walks it, skipping the fallen and the already-declared. The same order runs
+    /// both waves.
     order: Vec<usize>,
-    /// The declaration cursor: an index into `order`, the next living body that has not yet declared this round.
-    /// A foe reaches this cursor like a hero - it just has one legal act.
+    /// The declaration cursor: an index into `order` - in the act wave, the next living body that has not yet
+    /// declared; in the catch wave, the next eligible catcher that has not yet declared its catch.
     next: usize,
     /// Each unit's declared act this round (`None` until declared); reset each round.
     pending: Vec<Option<Act>>,
+    /// Each unit's declared CATCH this round: `None` = not yet declared; `Some(None)` = declines (lets them
+    /// pass); `Some(Some(m))` = intercepts/volleys crosser `m`. Reset each round.
+    catches: Vec<Option<Option<usize>>>,
+    /// Whether the round is in its **catch wave** (all acts declared, crossings revealed, catches being
+    /// declared). `false` during the act wave.
+    catching: bool,
     round: usize,
 }
 
@@ -76,6 +96,8 @@ impl State {
             order,
             next: 0,
             pending: vec![None; n],
+            catches: vec![None; n],
+            catching: false,
             round: 1,
         };
         s.next = s.next_undeclared(0).unwrap_or(s.order.len());
@@ -91,6 +113,48 @@ impl State {
             .map(|off| from + off)
     }
 
+    /// The bodies that DECLARED A CROSSING this round - the movers the catch wave answers. Meaningful once the
+    /// act wave is complete (the crossings stand revealed).
+    pub fn crossers(&self) -> Vec<usize> {
+        (0..self.board.units.len())
+            .filter(|&i| {
+                !self.board.units[i].fallen && matches!(self.pending[i], Some(Act::Cross(..)))
+            })
+            .collect()
+    }
+
+    /// The enemy crossers body `e` could catch - what its catch-wave menu offers.
+    fn catchable_by(&self, e: usize) -> Vec<usize> {
+        self.crossers()
+            .into_iter()
+            .filter(|&m| self.board.units[m].side != self.board.units[e].side)
+            .collect()
+    }
+
+    /// Whether `e` is an **eligible catcher** this round: living, holding a line (Vanguard or Rearguard - an
+    /// outrider fights the Inner Ring and holds no line), not itself crossing, with an enemy crosser to answer.
+    fn eligible_catcher(&self, e: usize) -> bool {
+        !self.board.units[e].fallen
+            && matches!(self.board.ranks[e], Rank::Vanguard | Rank::Rearguard)
+            && !matches!(self.pending[e], Some(Act::Cross(..)))
+            && !self.catchable_by(e).is_empty()
+    }
+
+    /// The next eligible catcher at or after `from` that has not declared its catch, or `None` if the wave is
+    /// complete.
+    fn next_uncaught(&self, from: usize) -> Option<usize> {
+        self.order[from..]
+            .iter()
+            .position(|&i| self.eligible_catcher(i) && self.catches[i].is_none())
+            .map(|off| from + off)
+    }
+
+    /// Whether the round is in its **catch wave** - all acts declared, catches being declared. A driver uses this
+    /// to present the pending decision as a catch, not an act.
+    pub fn catching(&self) -> bool {
+        self.catching
+    }
+
     /// Read-only view of the board, for a driver or renderer.
     pub fn board(&self) -> &Board {
         &self.board
@@ -104,6 +168,12 @@ impl State {
     /// contest would have caught - which the board alone cannot explain.
     pub fn pending(&self) -> &[Option<Act>] {
         &self.pending
+    }
+
+    /// The catches declared **so far this round**, indexed by unit (`None` = not yet declared; `Some(None)` =
+    /// declined; `Some(Some(m))` = catches crosser `m`). Same reconstruction duty as [`pending`](State::pending).
+    pub fn pending_catches(&self) -> &[Option<Option<usize>>] {
+        &self.catches
     }
 
     /// The **body whose declaration is pending** right now - the body (hero or foe) declaring its act this round.
@@ -130,6 +200,16 @@ pub trait Decider {
     /// it.
     fn commit(&mut self, board: &Board, body: usize) -> Option<Act>;
 
+    /// The CATCH this body commits in the catch wave - `Some(Some(m))` to intercept/volley crosser `m`,
+    /// `Some(None)` to let them pass, or `None` to **defer to an interactive driver** (a human clicks it).
+    /// `crossers` is the enemy crossers on this body's menu.
+    fn commit_catch(
+        &mut self,
+        board: &Board,
+        body: usize,
+        crossers: &[usize],
+    ) -> Option<Option<usize>>;
+
     /// Whether this policy is reproducible - same board, same act, no hidden state. A solver may plug in a Decider
     /// as its foe environment **only** when this is `true`.
     fn deterministic(&self) -> bool;
@@ -144,6 +224,14 @@ impl Decider for Instinct {
     fn commit(&mut self, board: &Board, body: usize) -> Option<Act> {
         Some(foe_act(board, body).unwrap_or(Act::Hold))
     }
+    fn commit_catch(
+        &mut self,
+        board: &Board,
+        body: usize,
+        crossers: &[usize],
+    ) -> Option<Option<usize>> {
+        Some(foe_catch(board, body, crossers))
+    }
     fn deterministic(&self) -> bool {
         true
     }
@@ -156,6 +244,14 @@ pub struct Human;
 
 impl Decider for Human {
     fn commit(&mut self, _board: &Board, _body: usize) -> Option<Act> {
+        None
+    }
+    fn commit_catch(
+        &mut self,
+        _board: &Board,
+        _body: usize,
+        _crossers: &[usize],
+    ) -> Option<Option<usize>> {
         None
     }
     fn deterministic(&self) -> bool {
@@ -195,6 +291,17 @@ impl Decider for Random {
         }
         Some(opts[(self.next() % opts.len() as u64) as usize].clone())
     }
+    fn commit_catch(
+        &mut self,
+        _board: &Board,
+        _body: usize,
+        crossers: &[usize],
+    ) -> Option<Option<usize>> {
+        // Uniform over the whole menu: each crosser, plus letting them pass.
+        let n = crossers.len() as u64 + 1;
+        let pick = self.next() % n;
+        Some(crossers.get(pick as usize).copied())
+    }
     fn deterministic(&self) -> bool {
         false
     }
@@ -208,30 +315,70 @@ impl Game for Combat {
     type Choice = Choice;
 
     fn options(state: &State) -> Vec<Choice> {
-        match state.order.get(state.next) {
-            // A hero's real acts to choose among; a foe's single scripted act, produced by the deterministic
-            // policy this game plugs in ([`Instinct`]) - so it flows through the same loop, but the driver has
-            // nothing to decide and auto-advances it. Swapping that policy is the only thing that changes a foe's
-            // behaviour; nothing downstream can tell which Decider committed the act.
-            Some(&i) if state.board.units[i].side == Side::Party => legal_acts(&state.board, i)
-                .into_iter()
-                .map(Choice::Act)
-                .collect(),
-            Some(&i) => vec![Choice::Act(
-                Instinct.commit(&state.board, i).unwrap_or(Act::Hold),
-            )],
-            None => Vec::new(),
+        let Some(&i) = state.order.get(state.next) else {
+            return Vec::new();
+        };
+        if state.catching {
+            // The CATCH WAVE: a hero's real choices - intercept/volley one enemy crosser, or let them pass; a
+            // foe's single scripted catch ([`Instinct`]'s policy, [`foe_catch`]). Same loop, same auto-advance.
+            if state.board.units[i].side == Side::Party {
+                let mut out: Vec<Choice> = state
+                    .catchable_by(i)
+                    .into_iter()
+                    .map(|m| Choice::Catch(Some(m)))
+                    .collect();
+                out.push(Choice::Catch(None)); // let them pass
+                out
+            } else {
+                vec![Choice::Catch(foe_catch(
+                    &state.board,
+                    i,
+                    &state.catchable_by(i),
+                ))]
+            }
+        } else {
+            // The ACT WAVE: a hero's real acts to choose among; a foe's single scripted act, produced by the
+            // deterministic policy this game plugs in ([`Instinct`]) - so it flows through the same loop, but the
+            // driver has nothing to decide and auto-advances it. Swapping that policy is the only thing that
+            // changes a foe's behaviour; nothing downstream can tell which Decider committed the act.
+            if state.board.units[i].side == Side::Party {
+                legal_acts(&state.board, i)
+                    .into_iter()
+                    .map(Choice::Act)
+                    .collect()
+            } else {
+                vec![Choice::Act(
+                    Instinct.commit(&state.board, i).unwrap_or(Act::Hold),
+                )]
+            }
         }
     }
 
     fn apply(state: &State, choice: &Choice) -> State {
         let mut s = state.clone();
-        let Choice::Act(act) = choice;
         let unit = s.order[s.next];
-        s.pending[unit] = Some(act.clone());
-        match s.next_undeclared(s.next + 1) {
-            Some(n) => s.next = n,
-            None => resolve_round(&mut s),
+        match choice {
+            Choice::Act(act) => {
+                s.pending[unit] = Some(act.clone());
+                if let Some(n) = s.next_undeclared(s.next + 1) {
+                    s.next = n;
+                } else {
+                    // Every act declared: the crossings stand revealed. Open the catch wave if anyone is
+                    // eligible to answer them; otherwise the round resolves at once.
+                    s.catching = true;
+                    match s.next_uncaught(0) {
+                        Some(n) => s.next = n,
+                        None => resolve_round(&mut s),
+                    }
+                }
+            }
+            Choice::Catch(c) => {
+                s.catches[unit] = Some(*c);
+                match s.next_uncaught(s.next + 1) {
+                    Some(n) => s.next = n,
+                    None => resolve_round(&mut s),
+                }
+            }
         }
         s
     }
@@ -246,17 +393,23 @@ impl Game for Combat {
     }
 }
 
-/// The whole round resolves as one transition from the acts **everyone** committed - heroes and foes alike are in
-/// `pending` now, so there is nothing left to script here. Afterwards the cursor resets to the next round's first
-/// decision. (A body that somehow reached resolution undeclared defaults to [`Act::Hold`].)
+/// The whole round resolves as one transition from the acts AND catches **everyone** committed - heroes and foes
+/// alike are in `pending`/`catches` now, so there is nothing left to script here. Afterwards the cursor resets to
+/// the next round's first act. (A body that somehow reached resolution undeclared defaults to [`Act::Hold`] and
+/// no catch.)
 fn resolve_round(s: &mut State) {
     let acts: Vec<Act> = (0..s.board.units.len())
         .map(|i| s.pending[i].clone().unwrap_or(Act::Hold))
         .collect();
-    play_round(&mut s.board, &acts);
+    let catches: Vec<Option<usize>> = (0..s.board.units.len())
+        .map(|i| s.catches[i].flatten())
+        .collect();
+    play_round(&mut s.board, &acts, &catches);
 
     s.round += 1;
     s.pending = vec![None; s.board.units.len()];
+    s.catches = vec![None; s.board.units.len()];
+    s.catching = false;
     s.next = s.next_undeclared(0).unwrap_or(s.order.len());
 }
 
@@ -273,8 +426,15 @@ pub fn greedy_playout(mut state: State) -> Outcome {
         let i = state
             .deciding()
             .expect("a non-terminal state has a deciding body");
-        let act = greedy_act(state.board(), i).unwrap_or(Act::Hold);
-        state = Combat::apply(&state, &Choice::Act(act));
+        let choice = if state.catching() {
+            // The greedy catch is the same instinct the foes run: always answer a crossing, at the crosser you
+            // most disrupt. (Insight over this baseline - declining a catch to save the tempo - is exactly what
+            // the solver can find and the greedy line cannot.)
+            Choice::Catch(foe_catch(state.board(), i, &state.catchable_by(i)))
+        } else {
+            Choice::Act(greedy_act(state.board(), i).unwrap_or(Act::Hold))
+        };
+        state = Combat::apply(&state, &choice);
     }
 }
 

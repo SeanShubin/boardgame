@@ -54,7 +54,11 @@ fn show_board(b: &Board) -> String {
 }
 
 fn label(b: &Board, c: &Choice) -> String {
-    let Choice::Act(a) = c;
+    let a = match c {
+        Choice::Catch(Some(m)) => return format!("Catch {}", b.units[*m].name),
+        Choice::Catch(None) => return "Let them pass".to_string(),
+        Choice::Act(a) => a,
+    };
     // Name the target with its hp (bodies, for a horde), so two same-named bodies in different states read apart.
     let who = |t: usize| {
         let u = &b.units[t];
