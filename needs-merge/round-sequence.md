@@ -343,13 +343,29 @@ the diagonal gate:
    retreat" tenet was demoted (a means to simplicity, not a goal). The Inner
    Ring alone proved a sufficient price.
 2. **Catch = the clash you declared (one act, one strike)** - REVERTED on
-   measurement: consuming the catcher's act collapsed the Sweep and Raid corners
-   to unwinnable. The finding: **a catch is a tempo spend, not an act spend** -
-   the defense's interception must be additive to its offense.
-3. **The catch wave** - the correct form of (2): a genuine second declaration
-   per body. Landed clean; the solver searches it, foes play the catch instinct.
+   measurement: the Sweep and Raid corners collapsed to unwinnable.
+   **CAVEAT (added 2026-07-20): that experiment was CONFOUNDED.** It bundled
+   three changes - (a) the catch consumes the catcher's act, (b) no strike-phase
+   extras for catchers (the pile-on was unimplemented, so a cheap catch left the
+   rest of the pool STRANDED - an implementation artifact, not a property of the
+   act-consuming design), and (c) catch targeting moved from everyone-catches to
+   only-your-declared-target. The collapse condemns that bundle; the clean
+   comparison (act-consuming WITH the strike-phase pour) was never run. With the
+   pour in place, the two models differ only in **split-freedom**: whether one
+   body may divide its pool across two targets in the same round.
+3. **The catch wave** - a genuine second declaration per body, additive and
+   tempo-priced. Landed clean; the solver searches it, foes play the catch
+   instinct.
+
+**Canon ruling (2026-07-20): the additive model, with split-freedom.** A body may
+be in as many engagements as its tempo funds - its act, a catch, and the pours -
+and may split its pool across targets if it can afford to (at high Finesse that
+may even be the strong play). The only requirement on creatures is DETERMINISM:
+a creature may carry a rule for how it splits, but need not have one.
 
 Open calls were resolved conservatively: ranged fire keeps preceding the melee
 clash ("an arrow lands before a swordsman closes"), and the pooled contest is
 the crossing's rule. Promote-to-canon criterion was "deltas in, diagonal green" -
-both hold; this document now describes the shipped model.
+both hold; this document now describes the shipped model. (In flight: the
+catcher's strike-phase pile-on - implemented with a finish-the-runner default,
+currently under balance measurement; see the working tree.)
