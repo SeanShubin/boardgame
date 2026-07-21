@@ -673,10 +673,26 @@ impl Fight {
         let round_before = before_state.round();
 
         if let Some(idx) = acting {
-            // The first commit of a round opens the [declare] phase - the closed selection, every body locking its
-            // act before anything resolves. (Detected by an all-undeclared pending: the round has just reset.)
-            if before_state.pending().iter().all(|p| p.is_none()) {
-                self.log.push("[declare]".to_string());
+            // The first commit of a round opens the ACT WAVE - the closed selection, every body locking its act
+            // before anything resolves. (Detected by an all-undeclared pending: the round has just reset.)
+            if !before_state.catching() && before_state.pending().iter().all(|p| p.is_none()) {
+                self.log
+                    .push(format!("[round {round_before} - declare acts]"));
+            }
+            // The first catch commit opens the CATCH WAVE: every act stands revealed (the crossings included),
+            // and each body holding a line answers them. (Detected by an all-undeclared catches.)
+            if matches!(c, Choice::Catch(_))
+                && before_state.pending_catches().iter().all(|p| p.is_none())
+            {
+                let crossing: Vec<String> = before_state
+                    .crossers()
+                    .into_iter()
+                    .map(|m| before.units[m].name.clone())
+                    .collect();
+                self.log.push(format!(
+                    "[round {round_before} - declare catches: {} crossing]",
+                    join_counts(&crossing)
+                ));
             }
             // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read apart. The
             // mark is the ONLY thing that says a foe was scripted - the act itself reads as a choice, because a
@@ -688,60 +704,9 @@ impl Fight {
             };
             let name = &before.units[idx].name;
             match c {
-                // A crossing is TWO commits with the interception revealed between them (fork B): the honest
-                // structure a human meets, even though the model carries the whole Cross in one Act. Commit the
-                // cross, reveal the line's catch, commit the answer.
-                Choice::Act(Act::Cross(target, answer, volley)) => {
-                    let dest = before
-                        .occupied()
-                        .into_iter()
-                        .find(|&r| r != before.regions[idx])
-                        .unwrap_or(before.regions[idx]);
-                    let intent = match target {
-                        Some(t) => format!("raid {}", before.units[*t].name),
-                        None => "slip into the enemy line".to_string(),
-                    };
-                    self.log
-                        .push(format!("      commit  {mark}{name} -> {intent}"));
-                    let caught: Vec<String> = catchers(before, idx, dest)
-                        .into_iter()
-                        .map(|j| before.units[j].name.clone())
-                        .collect();
-                    if caught.is_empty() {
-                        self.log.push(format!(
-                            "      reveal  the line does not reach {name} - it crosses clean"
-                        ));
-                    } else {
-                        self.log.push(format!(
-                            "      reveal  the line catches {name}: {}",
-                            join_counts(&caught)
-                        ));
-                    }
-                    let front = match answer {
-                        Answer::Evade => "slip the line".to_string(),
-                        Answer::Push => "push - eat the blows".to_string(),
-                        Answer::Abort(alloc) => {
-                            let who: Vec<String> = alloc
-                                .iter()
-                                .filter(|&&(_, n)| n > 0)
-                                .map(|&(cc, n)| format!("{} x{n}", before.units[cc].name))
-                                .collect();
-                            if who.is_empty() {
-                                "abort - turn and fight".to_string()
-                            } else {
-                                format!("abort - strike {}", who.join(", "))
-                            }
-                        }
-                    };
-                    let back = match volley {
-                        Volley::Dodge => "dodge the arrows",
-                        Volley::Eat => "eat the arrows",
-                    };
-                    self.log
-                        .push(format!("      commit  {mark}{name} -> {front}; {back}"));
-                }
-                // A catch declaration (the CATCH WAVE): the crossings stand revealed, and this body answers -
-                // intercept/volley a named crosser, or let them pass.
+                // A catch declaration (the CATCH WAVE): intercept/volley a named crosser, or let them pass. This
+                // is the REAL interception reveal - each catcher's declaration is its own logged commit, so who
+                // reaches for whom is a record, not a prediction.
                 Choice::Catch(Some(m)) => {
                     let verb = if before.ranks[idx] == Rank::Rearguard {
                         "volley"
@@ -757,6 +722,9 @@ impl Fight {
                     self.log
                         .push(format!("      commit  {mark}{name} -> let them pass"));
                 }
+                // Every act - a crossing included - is ONE commit line: the act's own label already carries the
+                // crossing's declared answers (front and volley). The interception itself is no longer predicted
+                // here; the catch wave above logs the real declarations.
                 _ => self.log.push(format!(
                     "      commit  {mark}{name} -> {}",
                     describe(before, c)
@@ -1099,8 +1067,11 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec
                 before.units[i].name
             ));
         }
+        // Withdrawals are an INNER-RING boundary event (1.2), not a crossing land - kept apart so they print
+        // under the ring they actually happen in.
+        let mut withdraw_lines: Vec<String> = Vec::new();
         for &i in &log.withdrew {
-            land_lines.push(format!(
+            withdraw_lines.push(format!(
                 "{}: withdraws from the enemy ranks, rejoining its line as {}",
                 before.units[i].name,
                 rank_word(log.ranks[i])
@@ -1171,8 +1142,8 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec
         // crosser's new rank was shown on its crossing line; anything else that moved or changed rank is caught
         // here, so no repositioning is silent. ---
         for i in 0..log.ranks.len() {
-            if log.through.contains(&i) {
-                continue; // its move was narrated as a crossing
+            if log.through.contains(&i) || log.withdrew.contains(&i) {
+                continue; // its move was narrated as a crossing / a withdrawal
             }
             let rank_changed = prev_rk[i] != log.ranks[i];
             let region_changed = prev_rg[i] != log.regions[i];
@@ -1229,7 +1200,7 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec
         prev_tp = log.tempo.clone();
         prev_rk = log.ranks.clone();
         prev_rg = log.regions.clone();
-        if !lines.is_empty() || !land_lines.is_empty() {
+        if !lines.is_empty() || !land_lines.is_empty() || !withdraw_lines.is_empty() {
             // The coordinate: a ring header when the ring opens, then numbered sub-phases, then the step column.
             let (rn, rname, sn, sname) = phase_coord(log.phase);
             if rn != current_ring {
@@ -1252,6 +1223,13 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec
                 evs.sort_by_key(|(s, _)| rank(s));
                 for (step, text) in evs {
                     out.push(format!("      {step:<6} {text}"));
+                }
+            }
+            // The Withdraw (1.2): outriders leaving the enemy ranks at the Inner Ring boundary, all `move`.
+            if !withdraw_lines.is_empty() {
+                out.push("  1.2 Withdraw".to_string());
+                for text in withdraw_lines {
+                    out.push(format!("      {:<6} {text}", "move"));
                 }
             }
             // The Land (2.3): the crossers that arrived or turned back, all `move`.

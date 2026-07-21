@@ -1,9 +1,12 @@
 # The round sequence
 
-Status: design spec, 2026-07-18. The canonical step-by-step procedure for one
-combat round, written so a human can run it at a table. The crossing's bid math
-lives in [crossing-bid-tree.md](crossing-bid-tree.md); this document is the
-*frame* - the order of play, and who may do what when.
+Status: **the shipped model**, 2026-07-20. The canonical step-by-step procedure
+for one combat round, written so a human can run it at a table - and it is what
+`rules::combat` actually runs: the two declare waves are the `Game`'s structure,
+the rings are `play_round`'s schedule, and the combat log (`scripts/combat.sh` /
+`scripts\combat.ps1`, mirrored to `fight-log.txt`) prints these coordinates. The
+crossing's bid math lives in [crossing-bid-tree.md](crossing-bid-tree.md); this
+document is the *frame* - the order of play, and who may do what when.
 
 ## Two principles, stated once
 
@@ -65,132 +68,103 @@ disruption, which is why the raid is not guaranteed.
   two-way (it can be answered); a **ranged** shot is one-way (it cannot). See the
   engagement rule under Global rules.
 
-## The round: the inner ring, then three phases
+## The round: two declare waves, then the rings resolve
 
-The round is the three distance **rings**, resolved **nearest-first** - Inner
-(distance zero) -> Crossing (closing) -> Outer (across the gap). The ring order
-*is* the silencing rule: a body killed in an earlier ring is gone from every
-later ring's strikes. The rings are the resolution *order*; the declare/reveal
-steps below are the *decisions* layered on each ring.
+A round is **two declare/reveal waves** (the decisions), then one deterministic
+resolution through the three distance **rings**, nearest-first (the schedule).
+The combat log prints these exact coordinates - `[round N - declare acts]`,
+`[round N - declare catches]`, then `[ring 1] INNER` / `[ring 2] CROSSING` /
+`[ring 3] OUTER` with numbered sub-phases - so a transcript line always locates
+itself as *round . wave-or-ring . sub-phase*.
 
-### Phase 0 - The Inner Ring (bodies already point-blank)
+### Wave 1 - declare acts
 
-Resolved FIRST, and first for a reason: a body killed here is gone from every
-later phase, so an **outrider** still loose inside an enemy formation from a prior
-round can open a hole in the line *before* this round's crossings are declared.
+Every living body (hero and foe, through one loop) declares its one **act**:
 
-The outrider and the host bodies around it are at distance zero - no screen, no
-closing, so no ranged-first: one point-blank brawl. It runs the **same
-declare/reveal shape as the Clash** (Phase 3): declare targets (each outrider a
-host; each host an outrider), declare evade bids, then resolve with strikes, extra
-strikes, and retaliation - except that at distance zero *everything* is reachable
-(both tiers, no screen) and even a rearguard firing point-blank **can** be
-answered (the one-way rule is a *distance* rule; nothing here is out of reach).
-Afterwards, an outrider whose host formation is now wiped **dissolves** - it
-rejoins its own line at its weapon rank.
+- **Clash** an enemy across the gap (a vanguard, or an exposed rearguard);
+- **Cross** into the enemy line - a raid (with an on-arrival target) or a bare
+  slip - carrying its two crossing answers, declared independently: the
+  [`Answer`] to the vanguard (slip / push / halt-with-strike-back) and the
+  [`Volley`] answer to the rearguard (dodge / eat) - the evade-priority split;
+- **Melee** a body in its own region (an intruder, or - as an outrider - a host);
+- **Retreat** (outrider only): strike or not, then withdraw at the Inner Ring
+  boundary;
+- **Hold**.
 
-A newly-arrived outrider does **not** act here - it reaches distance zero only
-after the crossing, so it strikes in Phase 2. **Each outrider acts once per
-round:** a prior-round one here, a this-round one in Phase 2; a survivor becomes a
-prior-round outrider and acts here *next* round.
+REVEAL: when the last body declares, every act stands revealed - **the crossings
+included**.
 
-An outrider may also **withdraw** here: strike (or not), then rejoin its own line
-at the Inner Ring boundary, at weapon rank - free, because the ring it just stood
-was the price (see "Withdrawal is priced, not banned" under Global rules).
+### Wave 2 - declare catches (only if somebody crossed)
 
-### Phase 1 - The Crossing (the front closes the gap)
+Catching is **elective, and additive**. Each eligible body - living, holding a
+line (**Vanguard or Rearguard**; an outrider holds no line), and not itself
+crossing - declares its **catch**:
 
-**Step 1 - DECLARE crossings.** Each side's **vanguard** bodies declare whether
-they cross (no target yet - a crossing commits to *going*, not yet to *whom* to
-hit). REVEAL.
+- **intercept** (a vanguard) or **volley** (a rearguard) ONE named enemy
+  crosser - several catchers may gang one crosser;
+- or **let them pass**.
 
-**Step 2 - DECLARE interceptions and volleys.** A crosser is opposed in two
-different ways, declared together but resolved apart:
+A catch is an engagement **in addition to** the body's act, priced in tempo -
+never a replacement for its strike (measured: making the catch consume the act
+collapsed two balance corners). An **area** catcher's catch sweeps the whole
+enemy crossing band (area is width). Scripted foes declare by the catch instinct
+(`foe_catch`: always answer a crossing, at the crosser you most disrupt); a
+player - and the solver - may catch anyone, or decline and bank the tempo.
 
-- Each enemy **vanguard** declares which crosser, if any, it **intercepts** - a
-  melee catch, trying to *halt* it.
-- Each enemy **rearguard** declares which crosser, if any, it **volleys** - a
-  ranged shot, trying to *hit* it before it reaches.
+### Resolution - the three rings, nearest-first
 
-Several of either may pick one crosser. REVEAL.
+The ring order *is* the silencing rule: a body killed in an earlier ring is gone
+from every later ring's strikes. Deaths finalize at each sub-phase boundary;
+damage piles close there too.
 
-The crossing is now **two independent crossings**, resolved in order - the line,
-then the volley. They answer different questions, and the crosser's choice at each
-is made **independently** of the other (that is the evade-priority split: slip the
-line but eat the arrows, or take the catch but dodge the arrows, whichever the
-tempo and the threats favour).
+**[ring 1] INNER - bodies already point-blank.**
+- **1.1 Outriders**: every prior-round outrider and its hosts trade the strikes
+  they declared (`Melee`, and a `Retreat`'s optional strike) - one simultaneous
+  exchange, no screen, both tiers reachable, melee and ranged together (nobody
+  is closing, so no ranged-first). First for a reason: a kill here opens a hole
+  in the line before the crossings run. Afterwards an outrider whose host
+  formation is wiped **dissolves** - it rejoins its own line at weapon rank.
+- **1.2 Withdraw**: every surviving outrider that declared a `Retreat` leaves -
+  rejoining its own line at weapon rank, free; the ring it just stood was the
+  price. A body felled in 1.1 never leaves.
 
-**Step 3 - CROSS THE VANGUARD (the interception - "am I halted?").** The only
-crossing that decides through-vs-stay. The vanguard on the crosser pool their catch
-bids (`tempo x Finesse x bodies`, summed); the crosser independently bids tempo to
-**slip**. REVEAL.
+**[ring 2] CROSSING - this round's crossers close into a formation.** Two
+independent contests, then the land, then the raid:
+- **2.1 Intercept** - "am I halted?", the only contest that decides
+  through-vs-stay. The declared vanguard catchers pool their bids
+  (`tempo x Finesse x bodies`, summed); the crosser's `Answer` decides:
+  **slip** (out-bid the whole pool: through untouched), **push** (caught - eat
+  each catcher's free opening strike, cross anyway), or **halt** (caught - stay,
+  earn one free blow at a melee catcher plus the declared paid strike-back;
+  melee catchers only, never a rearguard it never reached).
+- **2.2 Volley** - "am I hit?", damage only, never halts. The declared rearguard
+  catchers pool their shots; the crosser's `Volley` answer decides: **dodge**
+  (out-bid the pool, tempo spent) or **eat** (shots land, one-way, never
+  answered). A crosser felled in 2.1 is not volleyed - the front kill saves the
+  back its shot.
+- **2.3 Land** - survivors that pushed or slipped arrive: into an enemy region
+  as an **Outrider**; a halted crosser stays home.
+- **2.4 Raid** - each arrival strikes the back-line target its `Cross` named,
+  before that target can fire in the Outer Ring. Evadable: a reached rearguard
+  may still dodge, spending tempo it then cannot fire with - the outrider
+  disrupts whether or not the blow lands. No retaliation: the rearguard had its
+  shot in 2.2.
 
-- **Slipped** (beat the pool): through the front, untouched by it.
-- **Caught** (fell short): each catcher lands its one free opening strike (Might)
-  and may declare **extra** melee strikes; then the crosser declares its posture -
-  - **push**: flee through, no strike-back (it did not engage), or
-  - **halt**: stay and engage - it earns its own **one free blow** at a catcher of
-    its choice plus any paid strike-back, reaching the **melee vanguard only**.
-
-  Land; check downed. *A crosser taking lethal damage should halt: spend its tempo
-  on the bodies that caught it rather than waste it arriving as an outrider it will
-  not survive to use.*
-
-**Step 4 - CROSS THE REARGUARD (the volley - "am I hit?").** Decided
-**independently** of step 3, and it only ever **damages** - a volley never halts.
-The rearguard on the crosser pool their shot bids; the crosser independently bids
-tempo to **dodge**. REVEAL.
-
-- **Dodged** (beat the pool): no volley damage (but the dodge tempo is spent).
-- **Hit** (fell short): each volleying rearguard lands its shot (Might) and may
-  loose **extra** shots - one-way, never answered.
-
-A crosser felled by the vanguard in step 3 is already gone and is not volleyed
-(the razor: the front kill saves the back its shot). Land; check downed.
-
-### Phase 2 - The Raid (the arrivals strike the back)
-
-**Step 5 - DECLARE outrider targets.** Each of **this round's new outriders** (the
-crossers that pushed through) declares its target: a rearguard (or any host body
-in its region). Prior-round outriders already acted in Phase 0 - here it is only
-the fresh arrivals. Vanguard and rearguard declare nothing here; they had their
-chance at the crosser in Phase 1. REVEAL.
-
-**Step 6 - DECLARE rearguard evade bids.** A targeted rearguard bids tempo to
-evade the outrider on it. Reaching the back is **not** a guaranteed hit - the
-rearguard may dodge, spending tempo it then cannot fire with. That is the point: an
-outrider disrupts whether or not it lands the blow (a dodged raid still burned the
-rearguard's tempo). REVEAL; resolve.
-
-**Step 7 - RESOLVE the raid.** Outrider strikes land, plus declared extra strikes;
-check downed. The rearguard does **not** retaliate: it already had its one shot at
-this body - the volley in step 4. Being reached is the raid's whole reward - a bow
-is helpless with a blade inside its guard - so the archer's defense was to kill the
-crosser *before* it arrived, not after. (No separate defender-retaliation rule is
-needed; see "no redundant strike-backs" under Global rules.)
-
-### Phase 3 - The Clash (the formations trade)
-
-**Step 8 - DECLARE clash targets.** Each **vanguard and rearguard** declares a
-target: an enemy vanguard, an outrider loose in its ranks, or an **unscreened**
-rearguard (one whose vanguard has fallen). Outriders already acted in Phase 2;
-here they are targets only. REVEAL.
-
-**Step 9 - DECLARE evade bids.** Each targeted body bids tempo to evade. REVEAL;
-resolve.
-
-**Step 10 - RESOLVE the clash.** Strikes land, plus declared extra strikes; check
-downed. There is no separate retaliation: a body that wants to answer an attacker
-simply **declared a clash at it** (step 8), and a mutual clash already trades both
-ways. A body that declared elsewhere, or held, spent its turn there. Fight what you
-declared.
+**[ring 3] OUTER - the standing formations trade across the gap.**
+- **3.1 Fire** - every rearguard's declared `Clash` lands (holding off IS being
+  quicker: an arrow lands before a swordsman closes). An exposed rearguard keeps
+  this first-shot slot even with its vanguard fallen.
+- **3.2 Clash** - every vanguard's declared `Clash` lands. There is no separate
+  retaliation anywhere in the round: a body answers an attacker by having
+  declared its own strike at it - a mutual clash trades both ways. Fight what
+  you declared.
 
 ### Round end
 
 Tempo refreshes to Cadence (leftover does not carry). Damage piles close - an
 unfinished wound is gone. Deaths finalize; a rearguard whose vanguard just fell
 is now **exposed** (directly clashable next round, but it keeps its rank and its
-first-shot phase slot).
+3.1 first-shot slot).
 
 ## Global rules that cut across the steps
 
@@ -228,32 +202,30 @@ first-shot phase slot).
   only make it pay, in tempo (evade), in blood (push), or in the ground it gives
   up (halt).
 
-## The declare/reveal steps at a glance
+## The round at a glance
 
-| # | Phase | Who declares | What |
-|---|---|---|---|
-| I1 | Inner | prior outriders + hosts | point-blank targets (any tier, no screen) |
-| I2 | Inner | targeted bodies | evade bids |
-| I3 | Inner | attackers + defenders | strikes + extras (mutual, both declared); then dissolve |
-| I4 | Inner | outriders | withdraw (free rank change at the boundary; the ring was the price) |
-| 1 | Crossing | vanguard | cross or not |
-| 2 | Crossing | vanguard + rearguard | intercept (melee, halts) or volley (ranged, hits) |
-| 3 | Crossing | vanguard + crosser | cross the vanguard: catch-bid vs slip; if caught -> push or halt (free blow + paid, melee only). Decides through vs stay |
-| 4 | Crossing | rearguard + crosser | cross the rearguard: volley-bid vs dodge; damage only, never halts. Chosen independently of step 3 |
-| 5 | Raid | outriders | which rearguard/host to strike |
-| 6 | Raid | targeted rearguard | evade bid |
-| 7 | Raid | outriders | extra strikes (rearguard does NOT retaliate - it volleyed in step 4) |
-| 8 | Clash | vanguard + rearguard | clash target |
-| 9 | Clash | targeted bodies | evade bid |
-| 10 | Clash | attackers | extra strikes (a mutual clash is answered by declaring it, step 8 - no separate retaliation) |
+| Coordinate | Who | What |
+|---|---|---|
+| wave 1 - declare acts | every living body | one act: Clash / Cross (with its two crossing answers) / Melee / Retreat / Hold. Reveal: crossings stand |
+| wave 2 - declare catches | each living V/R not itself crossing | intercept (V) / volley (R) ONE named enemy crosser, or let them pass. Additive, tempo-priced; aoe sweeps the band |
+| 1.1 Outriders | prior outriders + hosts | point-blank exchange (declared Melee / Retreat strikes); both tiers, no screen; then dissolve |
+| 1.2 Withdraw | retreating outriders | survivors rejoin their own line at weapon rank - free; the ring was the price |
+| 2.1 Intercept | vanguard catchers vs crossers | pooled catch-bid vs the crosser's Answer: slip / push / halt (free blow + paid strike-back, melee catchers only). Decides through-vs-stay |
+| 2.2 Volley | rearguard catchers vs crossers | pooled shot vs the crosser's Volley answer: dodge / eat. Damage only, never halts; independent of 2.1 |
+| 2.3 Land | surviving crossers | arrive as Outriders (halted crossers stayed home) |
+| 2.4 Raid | the arrivals | strike the named back-line target, before it fires; evadable; no retaliation (it volleyed in 2.2) |
+| 3.1 Fire | rearguards | declared Clash lands (an arrow lands before a swordsman closes; an exposed back keeps this slot) |
+| 3.2 Clash | vanguards | declared Clash lands; a mutual clash is the only "retaliation" - fight what you declared |
 
 ## A worked round (illustrative log)
 
-A two-round fight showing the crossing (both contests), the two shapes, and the
-Inner Ring - each block tagged with the step above it realizes. **Illustrative**:
-faithful to the mechanics and the numbers, but a clean rendering, not the app's
-exact transcript. Every body has **Finesse 1** and **Grit 1**, so a bid = tempo
-spent and a flip = one point of Might penetrated (kept trivial on purpose).
+A two-round fight showing the two waves, the crossing (both contests), the two
+shapes, and the Inner Ring - each block tagged with the wave or ring.sub-phase it
+realizes, the same coordinates the combat log prints. **Illustrative**: faithful
+to the mechanics and the numbers (backed by the `worked_round_example` test), but
+a clean rendering, not the app's exact transcript. Every body has **Finesse 1**
+and **Grit 1**, so a bid = tempo spent and a flip = one point of Might penetrated
+(kept trivial on purpose).
 
 ```
 The board (party vs foes):
@@ -261,55 +233,75 @@ The board (party vs foes):
   Wall     *    Might 1  Vit 3  Grit 1  Cadence 2   (melee vanguard - screens)
   Sniper   *    Might 3  Vit 2  Grit 1  Cadence 2   (ranged rearguard - behind the Wall)
 
-================================ ROUND 1 ================================
+[round 1 - declare acts]                                         [wave 1]
+  commit  Raider  -> Raid the Sniper (push through; dodge the arrows)
+  commit  *Wall   -> Hold        (holding its ground this round, for clean numbers)
+  commit  *Sniper -> Hold
+  reveal: the Raider is crossing.
 
-DECLARE
-  Raider -> Raid the Sniper                                      [Step 1]
-  the line answers: Wall intercepts Raider, Sniper volleys it    [Step 2]
+[round 1 - declare catches: Raider crossing]                     [wave 2]
+  commit  *Wall   -> intercept the crossing Raider
+  commit  *Sniper -> volley the crossing Raider
 
-CROSS THE VANGUARD  (the interception - decides through vs stay)  [Step 3]
-  Wall bids 1 to catch (1 tempo x Finesse 1).  Raider would pay
-  pool 1 / Finesse 1 + 1 = 2 tempo to slip -> declines: PUSH.
-  Caught. Wall's opening strike: Might 1 penetrates Grit 1 -> Raider flips 1
-  (5 -> 4 hp).  (Push, so no strike-back.)
-
-CROSS THE REARGUARD  (the volley - damage only, chosen independently)  [Step 4]
-  Sniper bids 1 to volley.  Raider DODGES: pays 2 tempo (4 -> 2) -> arrows miss.
-  >> the evade-priority split: Raider ATE the trivial line but DODGED the
-     deadly volley - a combination one welded answer could not make.
-  Through the front -> Raider is now an Outrider beside the Sniper (4 hp).
-
-THE RAID  (the arrival strikes the back)                         [Steps 5-7]
-  The Sniper has only 1 tempo left (it spent one volleying) - not enough to
-  dodge the raid, which needs 2 -> it cannot dodge.                [Step 6]
-  Raider strikes: Might 3 penetrates Grit 1 -> Sniper flips 2 (2 -> 0).
-  *** The Sniper is DOWN. ***                                    [Step 7]
+[ring 2] CROSSING
+  2.1 Intercept  ("am I halted?")
+    Wall bids 1 to catch (1 tempo x Finesse 1).  Raider would pay
+    pool 1 / Finesse 1 + 1 = 2 tempo to slip -> it declared PUSH instead.
+    Caught. Wall's opening strike: Might 1 penetrates Grit 1 -> Raider flips 1
+    (5 -> 4 hp).  (Push, so no strike-back.)
+  2.2 Volley  ("am I hit?" - independent of 2.1)
+    Sniper bids 1 to volley.  Raider declared DODGE: pays 2 tempo (4 -> 2) ->
+    arrows miss.
+    >> the evade-priority split: Raider ATE the trivial line but DODGED the
+       deadly volley - a combination one welded answer could not make.
+  2.3 Land
+    Raider: pushes through the line, now an Outrider beside the Sniper (4 hp).
+  2.4 Raid
+    The Sniper has only 1 tempo left (it spent one volleying) - not enough to
+    dodge the raid, which needs 2 -> it cannot dodge.
+    Raider strikes: Might 3 penetrates Grit 1 -> Sniper flips 2 (2 -> 0).
+    *** The Sniper is DOWN. ***
 
   (Round 1 ends: Sniper dead. Raider stands as an Outrider inside the foe
    line, beside the Wall - exposed, but it silenced the dangerous back. That
    is the opening shape.)
 
-================================ ROUND 2 ================================
+[round 2 - declare acts]                                         [wave 1]
+  commit  Raider  -> Melee the Wall
+  commit  *Wall   -> Melee the Raider
+  (nobody crossing -> no catch wave)
 
-THE INNER RING  (the outrider and its host, point-blank)         [Phase 0]
-  Tempo resets. Raider (Outrider) and the Wall trade at distance zero - no
-  screen, both declared a melee.
-  Raider melees Wall: Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). DOWN.
-  Wall melees Raider: at point-blank it spends its whole pool - one opening
-  strike plus one poured - Might 1 each -> Raider flips 2 (4 -> 2).
-  The Wall's formation is gone -> the Raider DISSOLVES, rejoining its own line.
+[ring 1] INNER
+  1.1 Outriders  (the outrider and its host, point-blank)
+    Tempo resets. No screen; both declared their melee.
+    Raider melees Wall: Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). DOWN.
+    Wall melees Raider: at point-blank it spends its whole pool - one opening
+    strike plus one poured - Might 1 each -> Raider flips 2 (4 -> 2).
+    The Wall's formation is gone -> the Raider DISSOLVES, rejoining its own line.
 
 ========================== WIN ==========================
 ```
 
-**The road not taken (Step 3, if the Raider had HALTED instead of Push):**
+**The road not taken (2.1, if the Raider had declared HALT instead of Push):**
 
 ```
-CROSS THE VANGUARD  (halt)                                       [Step 3]
-  Raider HALTS - it engages, so it earns one FREE blow at the Wall:
-    Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). Wall DOWN.
-  But it STAYS home - it does not become an outrider and never reaches the
-  Sniper this round. (Its Step 4 volley answer is still its own choice.)
+  2.1 Intercept  (halt)
+    Raider HALTS - it engages, so it earns one FREE blow at the Wall:
+      Might 3 penetrates Grit 1 -> Wall flips 3 (3 -> 0). Wall DOWN.
+    But it STAYS home - it does not become an outrider and never reaches the
+    Sniper this round. (Its 2.2 volley answer is still its own choice.)
+```
+
+**And the round-trip (round 2, if the Raider had declared Retreat instead):**
+
+```
+[ring 1] INNER
+  1.1 Outriders
+    Raider strikes the Wall on its way out (a Retreat's strike is a normal
+    inner-ring melee); the Wall's declared blows land on the Raider - the
+    price of leaving.
+  1.2 Withdraw
+    Raider: withdraws from the enemy ranks, rejoining its line as a Vanguard.
 ```
 
 That is the crosser's core decision in one line: **push** to advance (reach and
@@ -317,90 +309,47 @@ silence the back, at the cost of exposure) versus **halt** to fight the line
 (kill the front, but give up the ground) - the two shapes, chosen a body at a
 time.
 
-## Implementation status (2026-07-18, after M1)
+## Implementation status (2026-07-20)
 
-Where the shipped `rules::combat` model stands against this sequence. "Folded"
-means the model already produces the same outcome by carrying the decision on the
-up-front act (equivalent against deterministic foes), so only UI theater is
-missing; "pending" means a genuine rule is not yet modeled.
+**The sequence above IS the shipped model** (`rules::combat`): the two declare
+waves are literally the `Game`'s structure (`Choice::Act` / `Choice::Catch`),
+resolution runs the rings in `play_round`, and the combat log prints the same
+coordinates. The diagonal gate held 4/4 solos + 5/5 party fights through every
+delta (withdrawal; the catch wave; the free blow on halt; the evade-priority
+split), with zero re-tuning.
 
-| Step | Status | Note |
-|---|---|---|
-| 0 Inner Ring (prior outriders) | done | resolved first in `play_round`: a distance-zero brawl (both tiers, no screen), then `dissolve` |
-| I4 withdrawal (O->V) | done | `Act::Retreat(Option<target>)`: optional inner-ring strike, then rejoin at the boundary; diagonal held 4/4 + 5/5 with it searchable |
-| 1 crossings | done | up-front `Cross`, vanguard-only |
-| 2 elective catch + volley split | done | the CATCH WAVE: a second declaration per round - each eligible body (V/R, living, not crossing) names ONE enemy crosser to intercept (vanguard) / volley (rearguard), or declines; tempo-priced, additive to its act. `Choice::Catch`, `foe_catch` instinct, solver searches the party's real catch options; diagonal held |
-| 3 cross the vanguard | done | `Act::Cross(_, Answer, _)` - slip/push/halt, free blow, melee-only strike-back; decides through-vs-stay |
-| 4 cross the rearguard | done | `Act::Cross(_, _, Volley)` - dodge/eat, damage only, chosen INDEPENDENTLY of the front (the evade-priority split); `legal_acts` enumerates Front x Volley |
-| 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
-| 6 rearguard evade | folded (by design) | the raid is evadable - a reached back may dodge (spending firing tempo); the outrider disrupts either way. Evade exists but automatic, not yet a declared bid |
-| 7 outrider strike (no retaliation) | done (rule dropped) | the rearguard does not retaliate - it had its shot in the volley (step 4); no defender-retaliation rule needed (see "no redundant strike-backs") |
-| 8 clash targets | done | Outer Ring clash, up front |
-| 9 clash evade | folded | automatic |
-| 10 land + downed | done | |
-| aoe never targets/retaliates | done | sweep already untargeted; strike-back now excludes aoe (candidates + resolver); pour/clash route aoe to `area_strike` |
+What remains, deliberately deferred:
 
-The distance left:
+- **Bid sizing** - every bid (catch, slip, dodge, raid-evade) auto-sizes today
+  (`reach_cards` / min-to-beat-the-pool): the *whom* is declared, the *how hard*
+  is computed. Freeing the amounts is behavior-card territory (foes) and a
+  decision-richness add (party).
+- **Decoupled raid targeting** - *presentation only*: the raid target rides the
+  `Cross` act; against deterministic foes that is equivalent to naming it on
+  arrival. A UI two-beat if wanted; no rule change.
+- **Clash evade as a choice** - a clashed body's evade is the automatic greedy
+  (`dodges_against`); making it a declared bid is the same fold-out the crossing
+  got, if playtesting ever wants it.
 
-- **Decoupled outrider targeting (5)** - *presentation only*: against deterministic
-  foes, declaring the raid target up front (today's bundled `Cross(Some(t))`) is
-  equivalent to picking it on arrival. A UI two-beat, no rule change.
-- **Catch-bid sizing / behavior cards** - the catch wave declares WHOM to catch;
-  how hard (the bid) still auto-sizes (`reach_cards`). Sizing it, and richer foe
-  catch policies, is behavior-card territory.
+## History (how this model settled, 2026-07-20)
 
-Elective catching (2) is **done** - the catch wave, a genuine second declaration
-per round, measured green. Defender retaliation (7/10) is **dropped** (covered by
-the volley and the declared clash). The crosser's free blow on halt, the melee-only
-strike-back, and the aoe never-target/retaliate invariant are done. Everything else
-is presentation over a model that already plays it.
+The sequence grew from a brainstorm that factored combat into one **Interaction
+primitive** (target -> contact bid -> strike with free opening + paid extras ->
+resolve) applied over a **rank-pair schedule** - position IS rank, given one
+region per side. Its deltas were implemented and measured one at a time against
+the diagonal gate:
 
-## Brainstorming
+1. **Withdrawal (O->V)** - landed clean; the "a crossing is committed, no
+   retreat" tenet was demoted (a means to simplicity, not a goal). The Inner
+   Ring alone proved a sufficient price.
+2. **Catch = the clash you declared (one act, one strike)** - REVERTED on
+   measurement: consuming the catcher's act collapsed the Sweep and Raid corners
+   to unwinnable. The finding: **a catch is a tempo spend, not an act spend** -
+   the defense's interception must be additive to its offense.
+3. **The catch wave** - the correct form of (2): a genuine second declaration
+   per body. Landed clean; the solver searches it, foes play the catch instinct.
 
-*Status 2026-07-20: adopted as the target model, pending balance verification of
-each delta. The Interaction primitive matches the engine's existing
-engage/evade/land physics; the rank-pair schedule replaces rings+regions (position
-IS rank, given one region per side). Deltas being implemented and measured one at
-a time: (1) O->V withdrawal - DONE, diagonal held, tenet demoted; open calls
-resolved conservatively unless overridden: ranged fire keeps preceding the melee
-clash ("an arrow lands before a swordsman closes"), and the pooled contest is the
-universal rule. Promote to canon when the deltas are in and the diagonal holds.*
-
-*MEASURED FINDING (2026-07-20), delta 2 attempt - "catch = the clash you
-declared, one act one strike": REVERTED. Making the catch CONSUME the catcher's
-act (its declared Clash resolves as the interception and never strikes again)
-collapsed two corners to unwinnable - Sweep (the area tool itself loses) and Raid
-(the full party loses) - because the party's razor-thin wins depended on the
-defense's catch/volley being an ADDITIONAL, tempo-priced engagement, not a
-replacement for its offense. This is not a tuning miss; it is a semantic
-disagreement with the sequence above: steps 2-4 price the catch in TEMPO, and
-step 8 is a separate declaration - a body may both catch and clash in one round,
-budgeted by its pool. The brainstorm agrees (each step has its own declarations).*
-
-*RESOLVED same day: the per-step declaration surface is BUILT - the round is now
-two declare waves (acts, then catches), with the catch a genuine second
-declaration per body, tempo-priced and additive. The solver searches the party's
-real catch choices (whom, or declining); scripted foes and the greedy baseline
-play the catch instinct (`foe_catch`: always answer, at the crosser you most
-disrupt). Diagonal held 4/4 + 5/5 with the wave fully searchable. Steps 1-2 of
-the sequence are now literally the machine's structure.*
-- Interaction
-  - Target
-    - Everyone declare valid targets, then reveal
-  - Contact
-    - Tempo bids for evading vs. catch.  Finesse matters, must strictly beat catch.  Then reveal
-  - Strike
-    - May ignore hit
-    - May stop and redirect bit to strike
-    - May spend additional tempo for additional strike per temp (contact already established, finesse irrelevant)
-  - Resolve
-    - Check for downed
-- Steps
-  - Interactions on Outriders vs Rearguard and Vanguard, an Reguard and Vanguard vs Outriders
-  - Outriders may change to vanguard (no cost)
-  - Interactions between vanguard and vanguard
-  - Vanguard may change to Outriders if they did not strike
-  - Interactions from Rearguard to Outriders (one way)
-  - Interactions from Outriders to Rearguard (one way)
-  - Interactions from Rearguard and Vanguard to Vanguard
-  - Interactions from Rearguard and Vanguard to Rearguard (if no enemy vanguard)
+Open calls were resolved conservatively: ranged fire keeps preceding the melee
+clash ("an arrow lands before a swordsman closes"), and the pooled contest is
+the crossing's rule. Promote-to-canon criterion was "deltas in, diagonal green" -
+both hold; this document now describes the shipped model.
