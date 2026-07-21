@@ -360,11 +360,27 @@ model that already plays it.
 each delta. The Interaction primitive matches the engine's existing
 engage/evade/land physics; the rank-pair schedule replaces rings+regions (position
 IS rank, given one region per side). Deltas being implemented and measured one at
-a time: (1) O->V withdrawal - DONE, diagonal held, tenet demoted; (2) catch =
-ordinary clash + crossing = rank change gated on not striking - next; open calls
+a time: (1) O->V withdrawal - DONE, diagonal held, tenet demoted; open calls
 resolved conservatively unless overridden: ranged fire keeps preceding the melee
 clash ("an arrow lands before a swordsman closes"), and the pooled contest is the
 universal rule. Promote to canon when the deltas are in and the diagonal holds.*
+
+*MEASURED FINDING (2026-07-20), delta 2 attempt - "catch = the clash you
+declared, one act one strike": REVERTED. Making the catch CONSUME the catcher's
+act (its declared Clash resolves as the interception and never strikes again)
+collapsed two corners to unwinnable - Sweep (the area tool itself loses) and Raid
+(the full party loses) - because the party's razor-thin wins depended on the
+defense's catch/volley being an ADDITIONAL, tempo-priced engagement, not a
+replacement for its offense. This is not a tuning miss; it is a semantic
+disagreement with the sequence above: steps 2-4 price the catch in TEMPO, and
+step 8 is a separate declaration - a body may both catch and clash in one round,
+budgeted by its pool. The brainstorm agrees (each step has its own declarations).
+So the faithful implementation of elective catching is a genuine SECOND
+declaration per body (whom to catch, distinct from whom to strike), i.e. the
+per-step declaration surface - not a consolidation of the two into one act. The
+current auto-catch code is the closer approximation of canon (it prices catches
+in tempo); what it lacks is only the CHOICE of whom to catch / declining, which
+is the behavior-card layer's job.*
 - Interaction
   - Target
     - Everyone declare valid targets, then reveal
