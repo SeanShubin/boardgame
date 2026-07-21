@@ -1,19 +1,19 @@
-//! **The step machine's RESOLVER** - the eight-step round schedule, resolved from pre-supplied per-step
-//! declarations. **Additive and inert**: nothing shipped calls it yet; it is stage A of the step-machine
-//! restructure (see `needs-merge/round-sequence.md`, "IN FLIGHT: the step machine"). The decision layer - the
-//! per-step declare/reveal waves in the `Game`, the foe scripts, the solver - is stage B; until it lands, a
-//! [`StepScript`] is built by hand (tests) or by a driver.
+//! **The step machine's RESOLVER** - the eight-step round schedule, one resolver per step, plus
+//! [`play_steps`] composing them over a pre-supplied [`StepScript`]. **Additive and inert**: the shipped game
+//! still runs the wave model; this is stage A/B scaffolding of the step-machine restructure (see
+//! `needs-merge/round-sequence.md`, "IN FLIGHT: the step machine"). The decision layer ([`super::step_game`])
+//! calls the per-step resolvers as each declare/reveal wave completes, so **later declarations react to earlier
+//! deaths in the same round** - the design intent the wave model could not express (targets declared up front
+//! could never aim at a rearguard whose screen fell mid-round).
 //!
-//! The eight steps, each declare -> reveal -> resolve, deaths closing at every step so **later targeting can
-//! react to earlier deaths in the same round** - the design intent the wave model could not express (targets
-//! declared up front could never aim at a rearguard whose screen fell mid-round):
+//! The eight steps:
 //!
 //! | # | who -> whom | resolution |
 //! |---|---|---|
 //! | 1 | O->RV, RV->O | in-region, both tiers, no screen, mutual; aoe sweeps the region; pours |
 //! | 2 | O -> V | withdraw, free - step 1 was the price |
 //! | 3 | V->V | the EARLY front trade / interception window; pours |
-//! | 4 | V -> O | the crossing: only a vanguard that declared NO strike this round; uncontested walk |
+//! | 4 | V -> O | the crossing: only a vanguard that declared NO line strike this round; uncontested walk |
 //! | 5 | R->O | the volley: one-way, opening blow only |
 //! | 6 | O->R | the raid: THIS round's arrivals only, opening blow only |
 //! | 7 | RV->V | the LATE front trade: fire + held-back vanguards ("halt" is emergent); pours |
@@ -32,8 +32,8 @@ use super::regions::{
 };
 use super::resolve::refresh_round;
 
-/// **One round's declarations, per step** - what the decision layer (stage B) will collect wave by wave, and what
-/// a test builds by hand. Every list is `(actor, target)` except the movement steps. Invalid entries drop at the
+/// **One round's declarations, per step** - what the decision layer collects wave by wave, and what a test
+/// builds by hand. Every list is `(actor, target)` except the movement steps. Invalid entries drop at the
 /// resolver; an absent body simply passes.
 #[derive(Clone, Debug, Default)]
 pub struct StepScript {
@@ -43,7 +43,7 @@ pub struct StepScript {
     pub withdraw: Vec<usize>,
     /// Step 3: the early front trade - vanguard at enemy vanguard.
     pub early: Vec<Attack>,
-    /// Step 4: the crossings - vanguards walking into the enemy region (must have declared NO strike).
+    /// Step 4: the crossings - vanguards walking into the enemy region (must have declared NO line strike).
     pub cross: Vec<usize>,
     /// Step 5: the volley - rearguard at enemy outrider.
     pub volley: Vec<Attack>,
@@ -70,18 +70,17 @@ impl StepScript {
     }
 }
 
-/// Resolve one exchange step: filter the declarations to the pairs valid RIGHT NOW (deaths from earlier steps
-/// have closed), run the shared physics, close the step, tag it. An empty step logs nothing.
+/// Resolve one exchange step: filter to the pairs valid RIGHT NOW (deaths from earlier steps have closed), run
+/// the shared physics, close the step, tag it. An empty step resolves to nothing.
 fn step(
     board: &mut Board,
-    logs: &mut Vec<SubPhaseLog>,
     phase: &'static str,
     attacks: Vec<Attack>,
     pour: bool,
     sweep_whole: bool,
-) {
+) -> Option<SubPhaseLog> {
     if attacks.is_empty() {
-        return;
+        return None;
     }
     let before = living(board);
     let (hits, reaches) = exchange(board, &attacks, pour, sweep_whole);
@@ -89,10 +88,10 @@ fn step(
     lg.phase = phase;
     lg.hits = hits;
     lg.reaches = reaches;
-    logs.push(lg);
+    Some(lg)
 }
 
-/// The pairs of `list` valid at this moment: both alive, enemies, and passing `ok(actor, target)`.
+/// The pairs of `list` valid at this moment: both alive, enemies, actor funded, and passing `ok`.
 fn valid(board: &Board, list: &[Attack], ok: impl Fn(usize, usize) -> bool) -> Vec<Attack> {
     list.iter()
         .copied()
@@ -106,61 +105,67 @@ fn valid(board: &Board, list: &[Attack], ok: impl Fn(usize, usize) -> bool) -> V
         .collect()
 }
 
-/// **Play one whole round through the eight-step schedule.** Returns the per-step transcript, one
-/// [`SubPhaseLog`] per step that did anything, with the step's own phase label.
-pub fn play_steps(board: &mut Board, s: &StepScript) -> Vec<SubPhaseLog> {
-    refresh_round(&mut board.units);
-    let mut logs = Vec::new();
-
-    // ---- STEP 1: the inner brawl - in-region, both tiers, no screen, mutual. --------------------------
-    let inner = valid(board, &s.inner, |a, t| board.regions[a] == board.regions[t]);
-    step(board, &mut logs, "Step 1: Inner", inner, true, true);
-    // An outrider whose host formation was wiped here dissolves - it rejoins its own line at the boundary.
+/// **Step 1 - the inner brawl**: in-region, both tiers, no screen, mutual; then outriders of a wiped host
+/// dissolve at the boundary.
+pub fn resolve_inner(board: &mut Board, attacks: &[Attack]) -> Option<SubPhaseLog> {
+    let inner = valid(board, attacks, |a, t| board.regions[a] == board.regions[t]);
+    let mut lg = step(board, "Step 1: Inner", inner, true, true);
     dissolve(board);
+    // Dissolution moves bodies at this boundary; fold it into the step's snapshot so the transcript reads it here.
+    if let Some(lg) = lg.as_mut() {
+        lg.ranks = board.ranks.clone();
+        lg.regions = board.regions.clone();
+    }
+    lg
+}
 
-    // ---- STEP 2: withdrawal - free; step 1 was the price. ---------------------------------------------
+/// **Step 2 - withdrawal**: a surviving outrider rejoins its own line at weapon rank, free - step 1 was the
+/// price. A corpse never leaves; a dissolved body is home already.
+pub fn resolve_withdraw(board: &mut Board, who: &[usize]) -> Option<SubPhaseLog> {
     let mut withdrew: Vec<usize> = Vec::new();
-    for &i in &s.withdraw {
+    for &i in who {
         if board.units[i].fallen || board.ranks[i] != Rank::Outrider {
-            continue; // a corpse never leaves; a dissolved body is home already
+            continue;
         }
         board.regions[i] =
             home_of(board, board.units[i].side, board.regions[i]).unwrap_or(board.regions[i]);
         board.ranks[i] = Board::weapon_rank(&board.units[i]);
         withdrew.push(i);
     }
-    if !withdrew.is_empty() || !logs.is_empty() {
-        // Fold the boundary moves (dissolution + withdrawal) into the step-1 snapshot, or record them alone.
-        if let Some(lg) = logs.last_mut() {
-            lg.ranks = board.ranks.clone();
-            lg.regions = board.regions.clone();
-            lg.withdrew = withdrew;
-        } else if !withdrew.is_empty() {
-            let mut lg = SubPhaseLog {
-                phase: "Step 2: Withdraw",
-                health: board.units.iter().map(|u| u.health).collect(),
-                tempo: board.units.iter().map(|u| u.tempo).collect(),
-                ranks: board.ranks.clone(),
-                regions: board.regions.clone(),
-                withdrew,
-                ..Default::default()
-            };
-            lg.fallen = Vec::new();
-            logs.push(lg);
-        }
+    if withdrew.is_empty() {
+        return None;
     }
+    Some(SubPhaseLog {
+        phase: "Step 2: Withdraw",
+        health: board.units.iter().map(|u| u.health).collect(),
+        tempo: board.units.iter().map(|u| u.tempo).collect(),
+        ranks: board.ranks.clone(),
+        regions: board.regions.clone(),
+        withdrew,
+        ..Default::default()
+    })
+}
 
-    // ---- STEP 3: the early front trade - the interception window. -------------------------------------
-    let early = valid(board, &s.early, |a, t| {
+/// **Step 3 - the early front trade**: vanguard at enemy vanguard, pours. The interception window: strike the
+/// body you predict will run, blind - the crossing declares at step 4, after this resolves.
+pub fn resolve_early(board: &mut Board, attacks: &[Attack]) -> Option<SubPhaseLog> {
+    let early = valid(board, attacks, |a, t| {
         board.ranks[a] == Rank::Vanguard && board.ranks[t] == Rank::Vanguard
     });
-    step(board, &mut logs, "Step 3: Early Trade", early, true, false);
+    step(board, "Step 3: Early Trade", early, true, false)
+}
 
-    // ---- STEP 4: the crossings - an uncontested walk, gated on having declared no strike. --------------
+/// **Step 4 - the crossing**: an uncontested walk into the enemy region, landing as an Outrider. Gated on
+/// `struck` (declared any line strike this round - the raid exempt); dead men don't walk. Returns who landed.
+pub fn resolve_cross(
+    board: &mut Board,
+    who: &[usize],
+    struck: &[bool],
+) -> (Vec<usize>, Option<SubPhaseLog>) {
     let mut landed: Vec<usize> = Vec::new();
-    for &i in &s.cross {
-        if board.units[i].fallen || board.ranks[i] != Rank::Vanguard || s.declared_strike(i) {
-            continue; // dead men don't walk; you cannot fight and run
+    for &i in who {
+        if board.units[i].fallen || board.ranks[i] != Rank::Vanguard || struck[i] {
+            continue;
         }
         let Some(dest) = board
             .occupied()
@@ -169,56 +174,90 @@ pub fn play_steps(board: &mut Board, s: &StepScript) -> Vec<SubPhaseLog> {
         else {
             continue;
         };
-        let into_enemy =
-            board.owner(dest) != Some(board.units[i].side) && board.owner(dest).is_some();
-        if !into_enemy {
+        if board.owner(dest).is_none() || board.owner(dest) == Some(board.units[i].side) {
             continue;
         }
         board.regions[i] = dest;
         board.ranks[i] = Rank::Outrider;
         landed.push(i);
     }
-    if !landed.is_empty() {
-        logs.push(SubPhaseLog {
-            phase: "Step 4: Crossing",
-            through: landed.clone(),
-            health: board.units.iter().map(|u| u.health).collect(),
-            tempo: board.units.iter().map(|u| u.tempo).collect(),
-            ranks: board.ranks.clone(),
-            regions: board.regions.clone(),
-            ..Default::default()
-        });
+    if landed.is_empty() {
+        return (landed, None);
     }
+    let lg = SubPhaseLog {
+        phase: "Step 4: Crossing",
+        through: landed.clone(),
+        health: board.units.iter().map(|u| u.health).collect(),
+        tempo: board.units.iter().map(|u| u.tempo).collect(),
+        ranks: board.ranks.clone(),
+        regions: board.regions.clone(),
+        ..Default::default()
+    };
+    (landed, Some(lg))
+}
 
-    // ---- STEP 5: the volley - one-way, opening blow only. ----------------------------------------------
-    let volley = valid(board, &s.volley, |a, t| {
+/// **Step 5 - the volley**: rearguard at enemy outrider, one-way, opening blow only.
+pub fn resolve_volley(board: &mut Board, attacks: &[Attack]) -> Option<SubPhaseLog> {
+    let volley = valid(board, attacks, |a, t| {
         board.ranks[a] == Rank::Rearguard && board.ranks[t] == Rank::Outrider
     });
-    step(board, &mut logs, "Step 5: Volley", volley, false, false);
+    step(board, "Step 5: Volley", volley, false, false)
+}
 
-    // ---- STEP 6: the raid - THIS round's arrivals strike a back-line target, opening blow only. --------
-    let raid = valid(board, &s.raid, |a, t| {
-        landed.contains(&a)
-            && board.ranks[t] == Rank::Rearguard
-            && board.regions[t] == board.regions[a]
+/// **Step 6 - the raid**: THIS round's arrivals (per `arrived`) strike a back-line target in their region,
+/// opening blow only. Prior-round outriders acted at step 1.
+pub fn resolve_raid(
+    board: &mut Board,
+    attacks: &[Attack],
+    arrived: &[bool],
+) -> Option<SubPhaseLog> {
+    let raid = valid(board, attacks, |a, t| {
+        arrived[a] && board.ranks[t] == Rank::Rearguard && board.regions[t] == board.regions[a]
     });
-    step(board, &mut logs, "Step 6: Raid", raid, false, false);
+    step(board, "Step 6: Raid", raid, false, false)
+}
 
-    // ---- STEP 7: the late front trade - fire, and every vanguard that held back. -----------------------
-    let late = valid(board, &s.late, |a, t| {
+/// **Step 7 - the late front trade**: vanguard or rearguard at enemy vanguard, pours. Fire, and every vanguard
+/// that held back - a would-be crosser that took its lumps and stayed swings here ("halt", emergent).
+pub fn resolve_late(board: &mut Board, attacks: &[Attack]) -> Option<SubPhaseLog> {
+    let late = valid(board, attacks, |a, t| {
         matches!(board.ranks[a], Rank::Vanguard | Rank::Rearguard)
             && board.ranks[t] == Rank::Vanguard
     });
-    step(board, &mut logs, "Step 7: Late Trade", late, true, false);
+    step(board, "Step 7: Late Trade", late, true, false)
+}
 
-    // ---- STEP 8: the advance - only on a back whose screen has fallen BY NOW (same-round reactive). ----
-    let advance = valid(board, &s.advance, |a, t| {
+/// **Step 8 - the advance**: vanguard or rearguard at an enemy rearguard with NO living vanguard **at this
+/// step** - the same-round payoff of a collapsed front. Pours.
+pub fn resolve_advance(board: &mut Board, attacks: &[Attack]) -> Option<SubPhaseLog> {
+    let advance = valid(board, attacks, |a, t| {
         matches!(board.ranks[a], Rank::Vanguard | Rank::Rearguard)
             && board.ranks[t] == Rank::Rearguard
             && !board.is_screened(t)
     });
-    step(board, &mut logs, "Step 8: Advance", advance, true, false);
+    step(board, "Step 8: Advance", advance, true, false)
+}
 
+/// **Play one whole round through the eight-step schedule** from a pre-supplied script. Returns the per-step
+/// transcript, one [`SubPhaseLog`] per step that did anything, with the step's own phase label.
+pub fn play_steps(board: &mut Board, s: &StepScript) -> Vec<SubPhaseLog> {
+    refresh_round(&mut board.units);
+    let struck: Vec<bool> = (0..board.units.len())
+        .map(|i| s.declared_strike(i))
+        .collect();
+    let mut logs = Vec::new();
+    logs.extend(resolve_inner(board, &s.inner));
+    logs.extend(resolve_withdraw(board, &s.withdraw));
+    logs.extend(resolve_early(board, &s.early));
+    let (landed, lg) = resolve_cross(board, &s.cross, &struck);
+    logs.extend(lg);
+    let arrived: Vec<bool> = (0..board.units.len())
+        .map(|i| landed.contains(&i))
+        .collect();
+    logs.extend(resolve_volley(board, &s.volley));
+    logs.extend(resolve_raid(board, &s.raid, &arrived));
+    logs.extend(resolve_late(board, &s.late));
+    logs.extend(resolve_advance(board, &s.advance));
     logs
 }
 
@@ -268,8 +307,8 @@ mod tests {
         assert!(!b.units[2].fallen, "so the Sniper was never raided");
     }
 
-    /// **You cannot fight and run** - a vanguard that declared ANY strike this round cannot cross, even if the
-    /// strike whiffed. The declaration is the commitment.
+    /// **You cannot fight and run** - a vanguard that declared ANY line strike this round cannot cross, even if
+    /// the strike whiffed. The declaration is the commitment.
     #[test]
     fn a_striking_vanguard_cannot_cross() {
         let mut b = board();

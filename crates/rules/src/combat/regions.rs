@@ -580,7 +580,7 @@ fn strikeback_candidates(
 /// and shape flags (melee, ranged, aoe, horde), and the side. (There is no instinct to compare any more: every foe
 /// runs the one disruption heuristic, so two same-stat foes script identically.) `tempo`/`pending` are absent on
 /// purpose: both re-derive at the round Reset, so at any state a search visits they equal cadence / zero.
-fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
+pub(super) fn interchangeable(board: &Board, a: usize, b: usize) -> bool {
     let (x, y) = (&board.units[a], &board.units[b]);
     !x.fallen
         && !y.fallen
