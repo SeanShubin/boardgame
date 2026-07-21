@@ -9,13 +9,11 @@
 //!
 //! Each option also shows its **best route** - `best Nd/Nr/Nhp` = the single best line through it under the stated
 //! priority (win, then fewest heroes **d**owned, then fewest **r**ounds, then least **hp** flipped), `<=` while
-//! that search is still a provisional bound. The header shows the best route from the position itself.
-//!
-//! **Crossings are two beats, in fiction order.** A Raid or Slip is not shown pre-answered; it is one card. Pick
-//! it and - because the foes are deterministic, so who intercepts you is known - the UI names who caught you
-//! (`The Wall catches you at the line`) and *then* asks how to answer: Evade, Push, or turn and fight the catcher.
-//! An unopposed crossing skips the second beat and just crosses. Under the hood the solver still sees the atomic
-//! `Raid(target, Answer)`; the two beats are purely how the choice is presented.
+//! that search is still a provisional bound. The header shows the best route from the position itself. Once every
+//! option's route search settles, the option(s) whose route ties the minimum are **marked** (`*`, green) and the
+//! rest dim - the comparison is done for you, no reading `Nd/Nr/Nhp` cells against each other. The mark waits for
+//! ALL searches on purpose: a provisional `<=` bound could still improve past a settled rival, so an early mark
+//! could lie.
 //!
 //! Space-efficient by intent: a compact unit table with stat abbreviations (M/V/G/C/F = Might / Vitality /
 //! Grit / Cadence / Finesse) and F/b/o ranks (front vanguard / back rearguard / loose outrider). There are two
@@ -1363,14 +1361,22 @@ fn screen_text(f: &Fight) -> String {
     } else {
         let (k, name) = phase_coord(f.state.phase());
         writeln!(s, "step {k}/8 - {name}").ok();
+        // The same best-route mark the buttons carry: settled minimum only, lone option unmarked.
+        let (best, all_done) = f.best_route();
+        let marking = all_done && best.is_some() && f.options.len() > 1;
         for (n, c) in f.options.iter().enumerate() {
             writeln!(
                 s,
-                "[{n}] {:<28} {:<12} {:<22} {}",
+                "[{n}] {:<28} {:<12} {:<22} {}{}",
                 describe(f.state.phase(), b, c),
                 vtag(f.opt_verdict[n]),
                 opt_counts(f.opt_paths[n]),
-                fmt_route(f.opt_score[n], f.opt_score_done[n])
+                fmt_route(f.opt_score[n], f.opt_score_done[n]),
+                if marking && f.opt_score[n] == best {
+                    "  <- best"
+                } else {
+                    ""
+                }
             )
             .ok();
         }
@@ -1645,13 +1651,16 @@ fn log_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
 }
 
 /// One clickable choice row: its title and counts on the left, its verdict tag (and the border colour) on the
-/// right. Shared by direct options, collapsed crossings, and crossing answers so they all read the same.
+/// right. `is_best` marks a route that ties the minimum over all options once every route search has settled:
+/// its route line gets a `*` and the "good" colour while the others dim - so the best move reads at a glance,
+/// no cell-by-cell comparison.
 fn choice_button(
     p: &mut ChildSpawnerCommands,
     hit: Hit,
     title: String,
     counts: String,
     route: String,
+    is_best: bool,
     v: Option<Verdict>,
 ) {
     let border = v.map(verdict_color).unwrap_or(WARN); // amber while still evaluating
@@ -1682,7 +1691,13 @@ fn choice_button(
         .with_children(|left| {
             text(left, title, 14.0, INK);
             text(left, counts, 11.0, MUTED);
-            text(left, route, 11.0, GOOD); // the best route through this option, in the "good" colour
+            // The best route through this option: marked and green when it ties the minimum across all
+            // options, dimmed otherwise (and while the searches are still settling).
+            if is_best {
+                text(left, format!("* {route}"), 11.0, GOOD);
+            } else {
+                text(left, route, 11.0, MUTED);
+            }
         });
         text(row, vtag, 12.0, border);
     });
@@ -1739,10 +1754,14 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     }
     text(
         p,
-        "each shows: solver verdict, then winning / losing lines through it (a tie is a loss)",
+        "each shows: solver verdict, winning / losing lines (a tie is a loss); * = the best route of these",
         11.0,
         MUTED,
     );
+    // Mark the option(s) whose best route ties the minimum - only once EVERY route search has settled, so a
+    // provisional bound can neither steal the mark nor hide it. A lone option earns no mark (nothing to beat).
+    let (best, all_done) = f.best_route();
+    let marking = all_done && best.is_some() && f.options.len() > 1;
     for (n, c) in f.options.iter().enumerate() {
         choice_button(
             p,
@@ -1750,6 +1769,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
             describe(f.state.phase(), f.state.board(), c),
             opt_counts(f.opt_paths[n]),
             fmt_route(f.opt_score[n], f.opt_score_done[n]),
+            marking && f.opt_score[n] == best,
             f.opt_verdict[n],
         );
     }
