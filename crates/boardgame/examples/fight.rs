@@ -33,11 +33,11 @@ use bevy::prelude::*;
 
 use deckbound_board::units::{encounter_beasts, kit};
 use deckbound_content::catalog::{self, Encounter};
-use rules::combat::game::{Choice, Combat, Decider, Human, Instinct, Score, Scorer, State};
-use rules::combat::regions::{
-    Act, Answer, Board, Rank, Volley, catchers, foe_catch, greedy_act, play_round,
-};
+use rules::combat::game::Score;
+use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
+use rules::combat::step_game::{Phase, StepChoice, StepCombat, StepScorer, StepState, step_policy};
+use rules::combat::steps::{StepScript, play_steps};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
 // ---- palette -------------------------------------------------------------------------------------------
@@ -62,29 +62,6 @@ const FRAME_BUDGET: u64 = 12_000;
 /// so verdicts settle and tallies fill in over a handful of frames, and a still-incomplete tally is an honest
 /// ">=" lower bound in the meantime.
 const STEP_NODES: u64 = 4_000;
-
-/// **Self-play's party policy**: the side-agnostic greedy - the same one-ply disruption read the scripted foes
-/// run ([`greedy_act`]), plus the mission-focus catch instinct ([`foe_catch`] at pour 0). This is exactly the
-/// greedy baseline the diagonal's insight classes measure, so an `auto` transcript is the "won without thinking"
-/// (or lost-without-thinking) line, end to end.
-struct Greedy;
-
-impl Decider for Greedy {
-    fn commit(&mut self, board: &Board, body: usize) -> Option<Act> {
-        Some(greedy_act(board, body).unwrap_or(Act::Hold))
-    }
-    fn commit_catch(
-        &mut self,
-        board: &Board,
-        body: usize,
-        crossers: &[usize],
-    ) -> Option<Option<(usize, u32)>> {
-        Some(foe_catch(board, body, crossers).map(|m| (m, 0)))
-    }
-    fn deterministic(&self) -> bool {
-        true
-    }
-}
 
 fn main() {
     // `auto` anywhere in the args = SELF-PLAY: the party is driven by the same deterministic greedy the foes run
@@ -147,44 +124,24 @@ fn camera(mut commands: Commands) {
 /// pre-answered options; it is one entry that, when picked, reveals who caught you and asks how to answer -
 /// matching the order the fiction hands you the decision. Everything else is a direct choice.
 #[derive(Clone)]
-enum Entry {
-    /// A plain choice - index into [`Fight::options`].
-    Direct(usize),
-    /// A crossing that fans out into an [`Answer`] once you see the interception. `dest` is the region crossed to
-    /// (to find the catchers); `answers` pairs each answer with its underlying `options` index.
-    Crossing {
-        label: String,
-        dest: u8,
-        answers: Vec<(Answer, Volley, usize)>,
-    },
-}
-
-/// **Beat two of a crossing:** the player declared a Raid/Slip, the line caught them, and now they answer it. Held
-/// only while that second decision is open; cleared the moment an answer is chosen or the crossing is cancelled.
-struct Drill {
-    /// The crossing's own label, e.g. `Raid The Swarm`.
-    label: String,
-    /// Who caught the crosser, already joined for display (e.g. `The Wall x3`). Never empty - an unopposed
-    /// crossing skips the drill entirely and just crosses.
-    catchers: String,
-    /// Each answer and the underlying `options` index that applies it.
-    answers: Vec<(Answer, Volley, usize)>,
-}
-
 /// **One undo point** - the whole decision-point state, snapshotted so Back is a pointer move with **nothing
 /// recomputed**: the solver/counter memos are kept across moves (their key is a pure function of the position, so
 /// a restored position is already solved), and the scored options are captured here too, so undo restores
-/// instantly without even a re-scan. `log_len` is the log height to unwind the history stack back to.
-struct Step {
-    state: State,
+/// instantly without even a re-scan. `log_len` is the log height to unwind the history stack back to. The
+/// step machine resolves MID-round, so the round-start narration inputs (`round_board`, `script`, `wave_mark`)
+/// snapshot too.
+struct UndoPoint {
+    state: StepState,
     log_len: usize,
-    options: Vec<Choice>,
-    entries: Vec<Entry>,
+    options: Vec<StepChoice>,
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
     opt_score: Vec<Option<Score>>,
     opt_score_done: Vec<bool>,
     verdict: Option<Verdict>,
+    round_board: Board,
+    script: StepScript,
+    wave_mark: Option<(usize, Phase)>,
 }
 
 #[derive(Resource)]
@@ -193,22 +150,11 @@ struct Fight {
     /// The kit requested on the command line for a solo encounter (`None` = the keystone's counter). Kept so
     /// Restart / Next re-field the same solo kit.
     requested_kit: Option<String>,
-    state: State,
-    /// **Who decides each body**, indexed by body: a party body is a [`Human`] (the player at the UI), a foe an
-    /// [`Instinct`]. The play loop ([`reposition`](Fight::reposition)) polls the deciding body's Decider and never
-    /// learns which kind it asked - a scripted foe, a random one, or the human all commit the same way. Rebuilt
-    /// with the roster. (The current policies are stateless, so Back need not rewind them; a stateful policy like
-    /// `Random` would have to be snapshotted into [`Step`].) `Send + Sync` because the `Fight` is a Bevy resource.
-    deciders: Vec<Box<dyn Decider + Send + Sync>>,
+    state: StepState,
     /// The legal options right now. Their scores are computed lazily, a slice per frame - never on the click.
-    options: Vec<Choice>,
-    /// The player-facing grouping of `options` into narrative entries (crossings collapsed to one beat). Rebuilt
-    /// with the options; scoring still runs over the flat `options`, this only changes how they are shown.
-    entries: Vec<Entry>,
-    /// Set while a crossing's second beat is open (the player picked Raid/Slip and must answer the line).
-    drill: Option<Drill>,
-    /// The undo stack: one [`Step`] per decision the player has taken, most recent last. Back pops it.
-    history: Vec<Step>,
+    options: Vec<StepChoice>,
+    /// The undo stack: one [`UndoPoint`] per decision the player has taken, most recent last. Back pops it.
+    history: Vec<UndoPoint>,
     /// Each option's verdict and win/loss tally; `None` means "still computing" (shown as `...`).
     opt_verdict: Vec<Option<Verdict>>,
     opt_paths: Vec<Option<Paths>>,
@@ -221,9 +167,9 @@ struct Fight {
     /// A solver, counter, and best-route scorer kept ACROSS frames, so their memos survive and the work converges
     /// instead of restarting. Rebuilt only when the roster changes (the scorer's hp reference is the fight-start
     /// Vitality, fixed for the fight).
-    solver: Solver<Combat>,
-    counter: PathCounter<Combat>,
-    scorer: Scorer,
+    solver: Solver<StepCombat>,
+    counter: PathCounter<StepCombat>,
+    scorer: StepScorer,
     /// Round-robin cursors over the options, so each option's tally and each option's best-route search get a fair
     /// share of refinement each frame - no single hard one starves the others.
     refine: usize,
@@ -231,24 +177,30 @@ struct Fight {
     /// Each unit's Vitality (its full health), snapshotted at the start so the table can show max **and** current
     /// health - the live `health` field only ever holds the current value, so the maximum has to be kept here.
     max_health: Vec<u32>,
-    /// **Self-play**: the party is driven by [`Instinct`] instead of [`Human`], so the fight resolves without
-    /// clicks and `fight-log.txt` holds a complete transcript (the log-vs-doc check, headless).
+    /// **Self-play**: the party is driven by [`step_policy`] (the same per-step greedy the foes run), so the
+    /// fight resolves without clicks and `fight-log.txt` holds a complete transcript.
     auto: bool,
+    /// The board as it stood at the START of the current round - the input `narrate` re-simulates from once the
+    /// round resolves. (Steps resolve live, so the state's own board is already mid-round.)
+    round_board: Board,
+    /// The declarations accumulated this round, per step - the other narration input.
+    script: StepScript,
+    /// The last wave header logged, `(round, phase)` - so each wave's header prints exactly once.
+    wave_mark: Option<(usize, Phase)>,
     log: Vec<String>,
     dirty: bool,
 }
 
 impl Fight {
     fn new(encounter: usize, requested_kit: Option<String>, auto: bool) -> Self {
+        let state = build(encounter, requested_kit.as_deref());
+        let round_board = state.board().clone();
         let mut f = Fight {
             encounter,
-            state: build(encounter, requested_kit.as_deref()),
+            state,
             requested_kit,
             auto,
-            deciders: Vec::new(),
             options: Vec::new(),
-            entries: Vec::new(),
-            drill: None,
             history: Vec::new(),
             opt_verdict: Vec::new(),
             opt_paths: Vec::new(),
@@ -257,15 +209,17 @@ impl Fight {
             verdict: None,
             solver: Solver::new(),
             counter: PathCounter::new(),
-            scorer: Scorer::new(Vec::new(), 0),
+            scorer: StepScorer::new(Vec::new(), 0),
             refine: 0,
             refine_score: 0,
             max_health: Vec::new(),
+            round_board,
+            script: StepScript::default(),
+            wave_mark: None,
             log: Vec::new(),
             dirty: true,
         };
         f.snapshot_max();
-        f.build_deciders();
         f.rebuild_scorer();
         f.log_roster(); // list ranks at the top, before any forced declarations are logged
         f.reposition();
@@ -273,37 +227,10 @@ impl Fight {
         f
     }
 
-    /// Assign each body its [`Decider`]: the party plays by hand ([`Human`] - the loop defers to a click), the
-    /// foes by [`Instinct`] (the deterministic scripted policy, the same one the solver plugs in as its
-    /// environment, so its verdict stays true to the fight). Under `auto` (self-play) the party runs [`Greedy`] -
-    /// the side-agnostic one-ply disruption read, i.e. the exact greedy baseline the insight classes measure -
-    /// so the whole fight resolves on startup, leaving a complete transcript in `fight-log.txt`. Rebuilt whenever
-    /// the roster changes.
-    fn build_deciders(&mut self) {
-        let auto = self.auto;
-        self.deciders = self
-            .state
-            .board()
-            .units
-            .iter()
-            .map(|u| -> Box<dyn Decider + Send + Sync> {
-                if u.side == Side::Party {
-                    if auto {
-                        Box::new(Greedy)
-                    } else {
-                        Box::new(Human)
-                    }
-                } else {
-                    Box::new(Instinct)
-                }
-            })
-            .collect();
-    }
-
     /// (Re)build the best-route scorer with the fight-start Vitality as its hp reference - called once per roster
     /// (the reference is fixed for the whole fight, so the scorer memo stays valid across moves).
     fn rebuild_scorer(&mut self) {
-        self.scorer = Scorer::new(self.max_health.clone(), 0);
+        self.scorer = StepScorer::new(self.max_health.clone(), 0);
     }
 
     /// Record every unit's full health for this encounter, so the table can show max vs current.
@@ -358,8 +285,10 @@ impl Fight {
 
     fn reset(&mut self) {
         self.state = build(self.encounter, self.requested_kit.as_deref());
+        self.round_board = self.state.board().clone();
+        self.script = StepScript::default();
+        self.wave_mark = None;
         self.snapshot_max();
-        self.build_deciders();
         // A new roster (Restart or Next encounter) is the ONE thing that invalidates the memos: the state key
         // omits unit stats, so a key from one encounter must never answer for another. Start fresh here - the one
         // place the units change. Ordinary moves keep the memo (see `reposition`).
@@ -376,57 +305,34 @@ impl Fight {
     /// **The position changed** - list the new options and arm the lazy compute. Nothing is searched here, so a
     /// click returns instantly and the board is drawn at once; the scores fill in over the next frames.
     fn reposition(&mut self) {
-        // Poll the deciding body's Decider until it defers. An AUTONOMOUS policy (a foe's [`Instinct`]) commits its
-        // act here and now - this is where creature declarations get applied and, crucially, LOGGED, through the
-        // same `apply_choice` path a click takes. A [`Human`] defers (`commit` -> None): the loop stops and shows
-        // its real options, unless there is only one (a forced move), which it auto-advances so the UI only ever
-        // presents a genuine decision. The loop never learns which kind of Decider it asked.
+        // Advance the waves until a party body has a GENUINE decision. A foe (or, under `auto`, everyone) commits
+        // its scripted per-step choice ([`step_policy`]) here and now - this is where creature declarations get
+        // applied and, crucially, LOGGED, through the same `apply_choice` path a click takes. A single-option
+        // wave entry auto-advances so the UI only ever presents a real choice.
         loop {
-            if Combat::outcome(&self.state).is_some() {
-                self.options = Combat::options(&self.state);
+            if StepCombat::outcome(&self.state).is_some() {
+                self.options = Vec::new();
                 break;
             }
             let Some(i) = self.state.deciding() else {
-                self.options = Combat::options(&self.state);
+                self.options = Vec::new();
                 break;
             };
-            // The pending decision is an ACT or (once the crossings stand revealed) a CATCH - the same Decider
-            // answers both, and the loop stays blind to which kind of policy it asked.
-            let committed = if self.state.catching() {
-                let crossers: Vec<usize> = self
-                    .state
-                    .crossers()
-                    .into_iter()
-                    .filter(|&m| {
-                        self.state.board().units[m].side != self.state.board().units[i].side
-                    })
-                    .collect();
-                self.deciders[i]
-                    .commit_catch(self.state.board(), i, &crossers)
-                    .map(Choice::Catch)
+            let scripted = self.auto || self.state.board().units[i].side != Side::Party;
+            if scripted {
+                let c = step_policy(&self.state, i);
+                self.apply_choice(&c);
+                continue;
+            }
+            let opts = StepCombat::options(&self.state);
+            if opts.len() == 1 {
+                let c = opts[0].clone();
+                self.apply_choice(&c);
             } else {
-                self.deciders[i]
-                    .commit(self.state.board(), i)
-                    .map(Choice::Act)
-            };
-            match committed {
-                Some(c) => self.apply_choice(&c),
-                None => {
-                    let opts = Combat::options(&self.state);
-                    if opts.len() == 1 {
-                        let c = opts[0].clone();
-                        self.apply_choice(&c);
-                    } else {
-                        self.options = opts;
-                        break;
-                    }
-                }
+                self.options = opts;
+                break;
             }
         }
-        // Group the flat options into narrative entries, and drop any half-open crossing decision: a new position
-        // is a fresh set of beats.
-        self.entries = build_entries(self.state.board(), &self.options);
-        self.drill = None;
         self.opt_verdict = vec![None; self.options.len()];
         self.opt_paths = vec![None; self.options.len()];
         self.opt_score = vec![None; self.options.len()];
@@ -449,7 +355,7 @@ impl Fight {
     /// so worst-case frame time is bounded no matter how hard the position - a brutal search just takes more
     /// frames. Returns whether anything changed (redraw if so).
     fn grind(&mut self) -> bool {
-        if Combat::outcome(&self.state).is_some() {
+        if StepCombat::outcome(&self.state).is_some() {
             return false;
         }
         let mut spent = 0u64;
@@ -471,7 +377,7 @@ impl Fight {
                 break;
             }
             if self.opt_verdict[i].is_none() {
-                let next = Combat::apply(&self.state, &self.options[i]);
+                let next = StepCombat::apply(&self.state, &self.options[i]);
                 self.solver.grant(STEP_NODES);
                 if let v @ (Verdict::Winnable | Verdict::Doomed) = self.solver.verdict(&next) {
                     self.opt_verdict[i] = Some(v);
@@ -498,7 +404,7 @@ impl Fight {
                 self.refine = (self.refine + 1) % n;
                 looked += 1;
                 if !self.opt_paths[i].is_some_and(|p| p.complete) {
-                    let next = Combat::apply(&self.state, &self.options[i]);
+                    let next = StepCombat::apply(&self.state, &self.options[i]);
                     self.counter.grant(half);
                     self.opt_paths[i] = Some(self.counter.count(&next));
                     changed = true;
@@ -513,7 +419,7 @@ impl Fight {
                 self.refine_score = (self.refine_score + 1) % n;
                 looked += 1;
                 if !self.opt_score_done[i] {
-                    let next = Combat::apply(&self.state, &self.options[i]);
+                    let next = StepCombat::apply(&self.state, &self.options[i]);
                     self.scorer.grant(remaining - half);
                     self.opt_score[i] = self.scorer.best(&next);
                     self.opt_score_done[i] = !self.scorer.aborted();
@@ -533,24 +439,25 @@ impl Fight {
     }
 
     fn choose(&mut self, i: usize) {
-        if i >= self.options.len() || Combat::outcome(&self.state).is_some() {
+        if i >= self.options.len() || StepCombat::outcome(&self.state).is_some() {
             return;
         }
         // Snapshot this decision point for Back BEFORE we mutate: a pointer into the (memoized) tree plus the log
         // height, so undo restores instantly with nothing recomputed. One entry per player decision - the forced
         // and foe declarations that `reposition` auto-advances are part of this same step, not their own.
-        self.history.push(Step {
+        self.history.push(UndoPoint {
             state: self.state.clone(),
             log_len: self.log.len(),
             options: self.options.clone(),
-            entries: self.entries.clone(),
             opt_verdict: self.opt_verdict.clone(),
             opt_paths: self.opt_paths.clone(),
             opt_score: self.opt_score.clone(),
             opt_score_done: self.opt_score_done.clone(),
             verdict: self.verdict,
+            round_board: self.round_board.clone(),
+            script: self.script.clone(),
+            wave_mark: self.wave_mark,
         });
-        self.drill = None;
         let c = self.options[i].clone();
         self.apply_choice(&c);
         self.reposition();
@@ -562,22 +469,20 @@ impl Fight {
     /// solver/counter memos are kept (a restored position is already solved), the scored options come straight
     /// out of the snapshot, and the log stack unwinds to the height it had at that point.
     fn undo(&mut self) {
-        if self.drill.take().is_some() {
-            self.dirty = true; // just close the crossing; the move itself has not been made yet
-            return;
-        }
         let Some(step) = self.history.pop() else {
             return; // nothing to undo
         };
         self.state = step.state;
         self.log.truncate(step.log_len);
         self.options = step.options;
-        self.entries = step.entries;
         self.opt_verdict = step.opt_verdict;
         self.opt_paths = step.opt_paths;
         self.opt_score = step.opt_score;
         self.opt_score_done = step.opt_score_done;
         self.verdict = step.verdict;
+        self.round_board = step.round_board;
+        self.script = step.script;
+        self.wave_mark = step.wave_mark;
         self.refine = 0;
         self.refine_score = 0;
         self.sync_log();
@@ -593,100 +498,6 @@ impl Fight {
             body.push('\n');
         }
         let _ = std::fs::write(LOG_FILE, body);
-    }
-
-    /// **Pick a crossing (beat one).** Work out who would catch the crosser - deterministically, since the foes
-    /// are scripted - and either open the answer beat (if the line reaches you) or, when the crossing is
-    /// unopposed, just cross (Push spends nothing and there is nothing to answer).
-    fn enter_crossing(&mut self, entry: usize) {
-        let Some(Entry::Crossing {
-            label,
-            dest,
-            answers,
-        }) = self.entries.get(entry).cloned()
-        else {
-            return;
-        };
-        let Some(mover) = self.state.deciding() else {
-            return;
-        };
-        let names: Vec<String> = catchers(self.state.board(), mover, dest)
-            .into_iter()
-            .map(|j| self.state.board().units[j].name.clone())
-            .collect();
-        if names.is_empty() {
-            // Unopposed: no one to answer, so there is no second beat - cross cleanly and move on.
-            let opt = answers
-                .iter()
-                .find(|(a, _, _)| *a == Answer::Push)
-                .or_else(|| answers.first())
-                .map(|&(_, _, i)| i);
-            if let Some(i) = opt {
-                self.choose(i);
-            }
-            return;
-        }
-        self.drill = Some(Drill {
-            label,
-            catchers: join_counts(&names),
-            answers,
-        });
-        self.dirty = true;
-    }
-
-    /// The best verdict achievable across a crossing's answers (Winnable if any answer is, Doomed only if every
-    /// answer is), or `None` while any is still computing - what the collapsed crossing card shows.
-    fn agg_verdict(&self, members: &[(Answer, Volley, usize)]) -> Option<Verdict> {
-        if members
-            .iter()
-            .any(|&(_, _, i)| self.opt_verdict[i] == Some(Verdict::Winnable))
-        {
-            return Some(Verdict::Winnable);
-        }
-        if members
-            .iter()
-            .any(|&(_, _, i)| self.opt_verdict[i].is_none())
-        {
-            return None;
-        }
-        if members
-            .iter()
-            .all(|&(_, _, i)| self.opt_verdict[i] == Some(Verdict::Doomed))
-        {
-            Some(Verdict::Doomed)
-        } else {
-            Some(Verdict::Evaluating)
-        }
-    }
-
-    /// The win/loss line counts summed over a crossing's answers (every line reachable by crossing, whatever the
-    /// answer). `=` when every answer's tally is exhausted, `>=` while any is still a lower bound.
-    fn agg_counts(&self, members: &[(Answer, Volley, usize)]) -> String {
-        if members.iter().any(|&(_, _, i)| self.opt_paths[i].is_none()) {
-            return "counting lines...".into();
-        }
-        let (mut wins, mut losses, mut complete) = (0u64, 0u64, true);
-        for &(_, _, i) in members {
-            let p = self.opt_paths[i].unwrap();
-            wins = wins.saturating_add(p.wins);
-            losses = losses.saturating_add(p.losses);
-            complete &= p.complete;
-        }
-        counts_line(wins, losses, complete)
-    }
-
-    /// The best route achievable across a crossing's answers - the min [`Score`] over them (whichever answer plays
-    /// out best), and whether every answer's search is exhausted (so the min is exact, not a provisional `<=`).
-    fn agg_route(&self, members: &[(Answer, Volley, usize)]) -> (Option<Score>, bool) {
-        let mut best: Option<Score> = None;
-        let mut done = true;
-        for &(_, _, i) in members {
-            done &= self.opt_score_done[i];
-            if let Some(s) = self.opt_score[i] {
-                best = Some(best.map_or(s, |b| b.min(s)));
-            }
-        }
-        (best, done)
     }
 
     /// The best route from **this position** - the min over all options' best routes, and whether all are done.
@@ -707,117 +518,66 @@ impl Fight {
     /// - when the choice closes a round - narrates the slip contests and the net damage. Because foes now declare
     /// through this same path, their attacks appear in the log with no reconstruction: a hero that falls has the
     /// creature that felled it named a line or two above.
-    fn apply_choice(&mut self, c: &Choice) {
-        // Snapshot the whole STATE: the board says what changed, and `pending()` says the acts it changed FROM -
-        // the only way to explain damage a slip contest dealt (no declared attack accounts for it).
-        let before_state = self.state.clone();
-        let before = before_state.board();
-        let acting = before_state.deciding();
-        let round_before = before_state.round();
+    fn apply_choice(&mut self, c: &StepChoice) {
+        let round_before = self.state.round();
+        let phase = self.state.phase();
+        let acting = self.state.deciding();
 
         if let Some(idx) = acting {
-            // The first commit of a round opens the ACT WAVE - the closed selection, every body locking its act
-            // before anything resolves. (Detected by an all-undeclared pending: the round has just reset.)
-            if !before_state.catching() && before_state.pending().iter().all(|p| p.is_none()) {
+            // A wave header the first time this round reaches this step's declarations - the round.step
+            // coordinate every commit below belongs to.
+            if self.wave_mark != Some((round_before, phase)) {
+                self.wave_mark = Some((round_before, phase));
+                let (k, name) = phase_coord(phase);
                 self.log
-                    .push(format!("[round {round_before} - declare acts]"));
+                    .push(format!("[round {round_before} - step {k}/8: {name}]"));
             }
-            // The first catch commit opens the CATCH WAVE: every act stands revealed (the crossings included),
-            // and each body holding a line answers them. (Detected by an all-undeclared catches.)
-            if matches!(c, Choice::Catch(_))
-                && before_state.pending_catches().iter().all(|p| p.is_none())
-            {
-                let crossing: Vec<String> = before_state
-                    .crossers()
-                    .into_iter()
-                    .map(|m| before.units[m].name.clone())
-                    .collect();
-                self.log.push(format!(
-                    "[round {round_before} - declare catches: {} crossing]",
-                    join_counts(&crossing)
-                ));
-            }
-            // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read apart. The
-            // mark is the ONLY thing that says a foe was scripted - the act itself reads as a choice, because a
-            // Decider (instinct, random, or human) commits it the same way.
-            let mark = if before.units[idx].side == Side::Party {
+            // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read
+            // apart. The mark is the ONLY thing that says a body was scripted.
+            let b = self.state.board();
+            let mark = if b.units[idx].side == Side::Party {
                 ""
             } else {
                 "*"
             };
-            let name = &before.units[idx].name;
-            match c {
-                // A catch declaration (the CATCH WAVE): intercept/volley a named crosser, or let them pass. This
-                // is the REAL interception reveal - each catcher's declaration is its own logged commit, so who
-                // reaches for whom is a record, not a prediction.
-                Choice::Catch(Some((m, pour))) => {
-                    let verb = if before.ranks[idx] == Rank::Rearguard {
-                        "volley"
-                    } else {
-                        "intercept"
-                    };
-                    let how = if *pour > 0 {
-                        format!(", pouring {pour} to finish")
-                    } else {
-                        String::new()
-                    };
-                    self.log.push(format!(
-                        "      commit  {mark}{name} -> {verb} the crossing {}{how}",
-                        before.units[*m].name
-                    ));
+            let name = &b.units[idx].name;
+            self.log.push(format!(
+                "      commit  {mark}{name} -> {}",
+                describe(phase, b, c)
+            ));
+            // Accumulate the declaration into this round's script - the narration re-simulates from it when the
+            // round resolves. (Passes and stays accumulate nothing.)
+            match (phase, c) {
+                (Phase::Inner, StepChoice::Strike(Some(t))) => self.script.inner.push((idx, *t)),
+                (Phase::Withdraw, StepChoice::Move(true)) => self.script.withdraw.push(idx),
+                (Phase::Early, StepChoice::Strike(Some(t))) => self.script.early.push((idx, *t)),
+                (Phase::Cross, StepChoice::Move(true)) => self.script.cross.push(idx),
+                (Phase::Volley, StepChoice::Strike(Some(t))) => self.script.volley.push((idx, *t)),
+                (Phase::Raid, StepChoice::Strike(Some(t))) => self.script.raid.push((idx, *t)),
+                (Phase::Late, StepChoice::Strike(Some(t))) => self.script.late.push((idx, *t)),
+                (Phase::Advance, StepChoice::Strike(Some(t))) => {
+                    self.script.advance.push((idx, *t))
                 }
-                Choice::Catch(None) => {
-                    self.log
-                        .push(format!("      commit  {mark}{name} -> let them pass"));
-                }
-                // Every act - a crossing included - is ONE commit line: the act's own label already carries the
-                // crossing's declared answers (front and volley). The interception itself is no longer predicted
-                // here; the catch wave above logs the real declarations.
-                _ => self.log.push(format!(
-                    "      commit  {mark}{name} -> {}",
-                    describe(before, c)
-                )),
+                _ => {}
             }
         }
 
-        // The full act + catch vectors this apply would resolve with, if it is the round-closer: every body's
-        // pending declarations, plus the one being made now. When it is NOT the closer these are unused.
-        let mut acts: Vec<Act> = before_state
-            .pending()
-            .iter()
-            .map(|p| p.clone().unwrap_or(Act::Hold))
-            .collect();
-        let mut catches: Vec<Option<(usize, u32)>> = before_state
-            .pending_catches()
-            .iter()
-            .map(|p| p.flatten())
-            .collect();
-        match (acting, c) {
-            (Some(idx), Choice::Act(a)) => acts[idx] = a.clone(),
-            (Some(idx), Choice::Catch(m)) => catches[idx] = *m,
-            _ => {}
-        }
+        self.state = StepCombat::apply(&self.state, c);
 
-        self.state = Combat::apply(&self.state, c);
-
-        // A round resolves on exactly one apply - the one where the round counter advances. (There is no setup,
-        // so the fight opens on round 1 and every advance is a resolved round that may have drawn blood.)
-        let resolved = self.state.round() != round_before;
-        if resolved {
-            // The round, phase by phase: re-run the deterministic resolution on a throwaway clone (it never
-            // touches `self.state`) and walk the transcript, so every pool addition, card flip, crossing and death
-            // is logged UNDER the ring it happened in.
-            let events = narrate_round(before, &acts, &catches);
+        // A round resolves on exactly one apply - the one where the round counter advances. Narrate it by
+        // re-running the deterministic resolution from the round-start board and this round's script (a
+        // throwaway clone; identical to what just resolved live), so every strike, flip, move and death is
+        // logged under the step it happened in.
+        if self.state.round() != round_before {
+            let events = narrate_steps(&self.round_board, &self.script);
             if events.is_empty() {
                 self.log.push("  (no blood drawn)".into());
             } else {
-                for line in events {
-                    self.log.push(line);
-                }
+                self.log.extend(events);
             }
-        }
-        if self.state.round() != round_before {
-            match Combat::outcome(&self.state) {
+            self.round_board = self.state.board().clone();
+            self.script = StepScript::default();
+            match StepCombat::outcome(&self.state) {
                 Some(o) => self.log.push(format!("========== {o:?} ==========")),
                 None => self.log.push(format!(
                     "================= round {} =================",
@@ -825,13 +585,6 @@ impl Fight {
                 )),
             }
         }
-    }
-}
-
-fn act_answer(a: &Act) -> Option<&Answer> {
-    match a {
-        Act::Cross(_, x, _) => Some(x),
-        _ => None,
     }
 }
 
@@ -847,18 +600,34 @@ fn strike_verb(u: &Combatant) -> &'static str {
     }
 }
 
-/// A `SubPhaseLog` phase string to its **coordinate** in the ring structure: `(ring number, ring NAME, sub-phase
-/// number, sub-phase name)`, nearest-first. So the log addresses every event as `ring.subphase`, and a reader
-/// always knows where in the round they are.
-fn phase_coord(phase: &'static str) -> (u8, &'static str, u8, &'static str) {
+/// A [`Phase`] to its **step coordinate** `(number, name)` - the wave headers' vocabulary, matched one-for-one
+/// by the round-sequence doc.
+fn phase_coord(p: Phase) -> (u8, &'static str) {
+    match p {
+        Phase::Inner => (1, "Inner"),
+        Phase::Withdraw => (2, "Withdraw"),
+        Phase::Early => (3, "Early Trade"),
+        Phase::Cross => (4, "Crossing"),
+        Phase::Volley => (5, "Volley"),
+        Phase::Raid => (6, "Raid"),
+        Phase::Late => (7, "Late Trade"),
+        Phase::Advance => (8, "Advance"),
+    }
+}
+
+/// A `SubPhaseLog` phase string (the step resolvers' labels) to the same step coordinate - so the narration and
+/// the wave headers speak one language.
+fn step_coord(phase: &'static str) -> (u8, &'static str) {
     match phase {
-        "Inner Ring: Outriders" => (1, "INNER", 1, "Outriders"),
-        "Crossing Ring: Intercept" => (2, "CROSSING", 1, "Intercept"),
-        "Crossing Ring: Volley" => (2, "CROSSING", 2, "Volley"),
-        "Crossing Ring: Raid" => (2, "CROSSING", 4, "Raid"),
-        "Outer Ring: Fire" => (3, "OUTER", 1, "Fire"),
-        "Outer Ring: Clash" => (3, "OUTER", 2, "Clash"),
-        other => (0, "", 0, other),
+        "Step 1: Inner" => (1, "Inner"),
+        "Step 2: Withdraw" => (2, "Withdraw"),
+        "Step 3: Early Trade" => (3, "Early Trade"),
+        "Step 4: Crossing" => (4, "Crossing"),
+        "Step 5: Volley" => (5, "Volley"),
+        "Step 6: Raid" => (6, "Raid"),
+        "Step 7: Late Trade" => (7, "Late Trade"),
+        "Step 8: Advance" => (8, "Advance"),
+        other => (0, other),
     }
 }
 
@@ -888,9 +657,9 @@ fn phase_coord(phase: &'static str) -> (u8, &'static str, u8, &'static str) {
 ///
 /// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
 /// stable across the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
-fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<(usize, u32)>]) -> Vec<String> {
+fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
     let mut clone = before.clone();
-    let transcript = play_round(&mut clone, acts, catches);
+    let transcript = play_steps(&mut clone, script);
 
     let rank_word = |r: Rank| match r {
         Rank::Vanguard => "a Vanguard",
@@ -899,17 +668,13 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<(usize, u32)>])
     };
 
     let mut out = Vec::new();
-    let mut current_ring = 0u8; // emit a "[ring N] NAME" header only when the ring changes
     let mut prev_hp: Vec<u32> = before.units.iter().map(|u| u.health).collect();
     let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.cadence).collect(); // Reset stands tempo up to Cadence
     let mut prev_rk: Vec<Rank> = before.ranks.clone();
     let mut prev_rg: Vec<u8> = before.regions.clone();
     for log in &transcript {
-        // Each event tagged with its exchange step; rendered under the sub-phase header with a step column.
+        // Each event tagged with its exchange step; rendered under the step's header with a step column.
         let mut lines: Vec<(&'static str, String)> = Vec::new();
-        // The crossing LAND (through/aborted) is its own sub-phase (2.3), even though the resolver attaches it to
-        // the Volley log - so it does not read as a "volley".
-        let mut land_lines: Vec<String> = Vec::new();
 
         // --- Strikes: sum blows per (attacker -> target) in strike order, then one line each. ---
         let mut order: Vec<(usize, usize)> = Vec::new();
@@ -1100,29 +865,27 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<(usize, u32)>])
             }
         }
 
-        // --- Crossings that resolved this phase (the Land step attaches through/aborted to the Volley log). ---
+        // --- Movements this step owns: the crossings (the step-4 log) and the withdrawals (the step-2 log).
+        // Each step is its own transcript entry now, so its moves print in its OWN section as ordinary `move`
+        // lines - no borrowed sub-phase headers.
         for &i in &log.through {
-            let name = &before.units[i].name;
-            let verb = match act_answer(&acts[i]) {
-                Some(Answer::Push) => "pushes through the line",
-                _ => "slips through the line",
-            };
-            land_lines.push(format!("{name}: {verb}, now {}", rank_word(log.ranks[i])));
-        }
-        for &i in &log.aborted {
-            land_lines.push(format!(
-                "{}: turns and fights at the line",
-                before.units[i].name
+            lines.push((
+                "move",
+                format!(
+                    "{}: walks into their line, now {}",
+                    before.units[i].name,
+                    rank_word(log.ranks[i])
+                ),
             ));
         }
-        // Withdrawals are an INNER-RING boundary event (1.2), not a crossing land - kept apart so they print
-        // under the ring they actually happen in.
-        let mut withdraw_lines: Vec<String> = Vec::new();
         for &i in &log.withdrew {
-            withdraw_lines.push(format!(
-                "{}: withdraws from the enemy ranks, rejoining its line as {}",
-                before.units[i].name,
-                rank_word(log.ranks[i])
+            lines.push((
+                "move",
+                format!(
+                    "{}: withdraws from the enemy ranks, rejoining its line as {}",
+                    before.units[i].name,
+                    rank_word(log.ranks[i])
+                ),
             ));
         }
 
@@ -1248,80 +1011,31 @@ fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<(usize, u32)>])
         prev_tp = log.tempo.clone();
         prev_rk = log.ranks.clone();
         prev_rg = log.regions.clone();
-        if !lines.is_empty() || !land_lines.is_empty() || !withdraw_lines.is_empty() {
-            // The coordinate: a ring header when the ring opens, then numbered sub-phases, then the step column.
-            let (rn, rname, sn, sname) = phase_coord(log.phase);
-            if rn != current_ring {
-                out.push(format!("[ring {rn}] {rname}"));
-                current_ring = rn;
-            }
-            if !lines.is_empty() {
-                out.push(format!("  {rn}.{sn} {sname}"));
-                // Order events by exchange step (reach -> dodge -> strike -> absorb -> move -> death) so the line
-                // reads in the order it resolves, then print each in its step column.
-                let rank = |s: &str| match s {
-                    "reach" => 0,
-                    "dodge" => 1,
-                    "strike" => 2,
-                    "absorb" => 3,
-                    "move" => 4,
-                    _ => 5, // death, and anything else, last
-                };
-                let mut evs = lines;
-                evs.sort_by_key(|(s, _)| rank(s));
-                for (step, text) in evs {
-                    out.push(format!("      {step:<6} {text}"));
-                }
-            }
-            // The Withdraw (1.2): outriders leaving the enemy ranks at the Inner Ring boundary, all `move`.
-            if !withdraw_lines.is_empty() {
-                out.push("  1.2 Withdraw".to_string());
-                for text in withdraw_lines {
-                    out.push(format!("      {:<6} {text}", "move"));
-                }
-            }
-            // The Land (2.3): the crossers that arrived or turned back, all `move`.
-            if !land_lines.is_empty() {
-                out.push("  2.3 Land".to_string());
-                for text in land_lines {
-                    out.push(format!("      {:<6} {text}", "move"));
-                }
+        if !lines.is_empty() {
+            // The coordinate: this step's own header, then the events in resolution order, each in its step
+            // column - so any line reads as round . step K/8 . event-kind.
+            let (k, name) = step_coord(log.phase);
+            out.push(format!("  [step {k}/8] {name}"));
+            let rank = |s: &str| match s {
+                "reach" => 0,
+                "dodge" => 1,
+                "strike" => 2,
+                "absorb" => 3,
+                "move" => 4,
+                _ => 5, // death, and anything else, last
+            };
+            let mut evs = lines;
+            evs.sort_by_key(|(s, _)| rank(s));
+            for (step, text) in evs {
+                out.push(format!("      {step:<6} {text}"));
             }
         }
     }
     out
 }
 
-/// Join names, collapsing repeats into "The Swarm x2" so a pack reads as one catcher, not a wall of text.
-fn join_counts(names: &[String]) -> String {
-    let mut order: Vec<String> = Vec::new();
-    let mut counts: Vec<usize> = Vec::new();
-    for n in names {
-        match order.iter().position(|o| o == n) {
-            Some(p) => counts[p] += 1,
-            None => {
-                order.push(n.clone());
-                counts.push(1);
-            }
-        }
-    }
-    order
-        .iter()
-        .zip(counts)
-        .map(|(n, c)| {
-            if c > 1 {
-                format!("{n} x{c}")
-            } else {
-                n.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// The tempo a body has to spend in a round: its Cadence pool (`refresh_round`), hordes included. A horde no
-/// longer swarms with body-count tempo - its size now shows up as a body-count volley of damage and a body-count
-/// reach, not extra tempo (see `rules::combat::regions::land` / `engage`).
+/// The tempo a body has to spend in a round: its Cadence pool (`refresh_round`), hordes included - a horde's
+/// size shows up as a body-count volley of damage and a body-count reach, not extra tempo.
 fn round_tempo(u: &Combatant) -> u32 {
     u.cadence
 }
@@ -1356,7 +1070,7 @@ fn solo_kit(
 /// Build the state for an encounter. A **party** encounter musters the whole roster; a **solo** encounter is
 /// fielded by exactly ONE kit ([`solo_kit`]) - the requirement that a solo is a single-kit test, matching the
 /// diagonal, not the full party.
-fn build(encounter: usize, requested_kit: Option<&str>) -> State {
+fn build(encounter: usize, requested_kit: Option<&str>) -> StepState {
     let e = &catalog::ENCOUNTERS[encounter % catalog::ENCOUNTERS.len()];
     let mut units: Vec<Combatant> = if e.party {
         catalog::ROSTER.iter().copied().map(kit).collect()
@@ -1364,121 +1078,37 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> State {
         vec![kit(solo_kit(encounter, requested_kit).1)]
     };
     units.extend(encounter_beasts(e)); // numbered when duplicated, so two Walls read apart
-    State::new(units)
+    StepState::new(units)
 }
 
 // ---- choice / board formatting -------------------------------------------------------------------------
 
-/// A choice label. The active body is shown once above the options and marked on the table, so it is never
-/// repeated per action.
-fn describe(b: &Board, c: &Choice) -> String {
-    let a = match c {
-        Choice::Catch(Some((m, pour))) => {
-            let u = &b.units[*m];
-            let kind = if u.horde { "bodies" } else { "hp" };
-            let how = if *pour > 0 {
-                format!(" and pour {pour} to finish")
-            } else {
-                String::new()
-            };
-            return format!("Catch the crossing {} ({} {kind}){how}", u.name, u.health);
-        }
-        Choice::Catch(None) => return "Let them pass".to_string(),
-        Choice::Act(a) => a,
-    };
-    act_label(b, a)
-}
-
-fn act_label(b: &Board, a: &Act) -> String {
-    let ans = |x: &Answer, v: &Volley| {
-        let front = match x {
-            Answer::Evade => "slip",
-            Answer::Push => "push",
-            Answer::Abort(_) => "abort",
-        };
-        let back = match v {
-            Volley::Dodge => "dodge",
-            Volley::Eat => "eat",
-        };
-        format!("{front}/{back}")
-    };
-    // Name the target WITH its current health, so two same-named bodies in different states (e.g. two Walls at 2 hp
-    // and 4 hp) read as the distinct choices they are. A horde's health is its body count.
+/// A choice label, per the current step. The active body is shown once above the options and marked on the
+/// table, so it is never repeated per action. Targets are named WITH current health, so two same-named bodies in
+/// different states read as the distinct choices they are.
+fn describe(phase: Phase, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| {
         let u = &b.units[t];
         let kind = if u.horde { "bodies" } else { "hp" };
         format!("{} ({} {kind})", u.name, u.health)
     };
-    match a {
-        Act::Clash(t) => format!("Clash {}", who(*t)),
-        Act::Cross(Some(t), x, v) => format!("Raid {} / {}", who(*t), ans(x, v)),
-        Act::Melee(t) => format!("Melee {}", who(*t)),
-        Act::Retreat(Some(t)) => format!("Strike {} and withdraw", who(*t)),
-        Act::Retreat(None) => "Withdraw to your own line".into(),
-        Act::Cross(None, x, v) => format!("Slip into their line / {}", ans(x, v)),
-        Act::Hold => "Hold".into(),
-    }
-}
-
-/// Group the flat option list into narrative entries: a crossing's three answers collapse into one entry - a
-/// `Cross(Some(target))` raid (grouped per target) or a `Cross(None)` slip - since legal_acts emits them adjacent.
-/// Everything else stays a direct choice. Order is preserved.
-fn build_entries(board: &Board, options: &[Choice]) -> Vec<Entry> {
-    // A crossing always heads for the one enemy region (where the foes stand); the drill uses `dest` to name the
-    // catchers that would intercept it.
-    let enemy_region = board
-        .units
-        .iter()
-        .position(|u| u.side == Side::Foe)
-        .map(|i| board.regions[i])
-        .unwrap_or(0);
-    let mut entries = Vec::new();
-    let mut i = 0;
-    while i < options.len() {
-        let Choice::Act(a) = &options[i] else {
-            // A catch-wave choice (intercept / volley / let them pass): a direct entry, no drill.
-            entries.push(Entry::Direct(i));
-            i += 1;
-            continue;
-        };
-        match a {
-            Act::Cross(Some(t), _, _) => {
-                let target = *t;
-                let label = format!("Raid {}", board.units[target].name);
-                let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Cross(Some(t2), ans, vol))) = options.get(i) {
-                    if *t2 != target {
-                        break;
-                    }
-                    answers.push((ans.clone(), *vol, i));
-                    i += 1;
-                }
-                entries.push(Entry::Crossing {
-                    label,
-                    dest: board.regions[target],
-                    answers,
-                });
-            }
-            Act::Cross(None, _, _) => {
-                let label = "Slip into their line".to_string();
-                let mut answers = Vec::new();
-                while let Some(Choice::Act(Act::Cross(None, ans, vol))) = options.get(i) {
-                    answers.push((ans.clone(), *vol, i));
-                    i += 1;
-                }
-                entries.push(Entry::Crossing {
-                    label,
-                    dest: enemy_region,
-                    answers,
-                });
-            }
-            _ => {
-                entries.push(Entry::Direct(i));
-                i += 1;
-            }
+    match (phase, c) {
+        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
+        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Phase::Late, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+            format!("Advance on the exposed {}", who(*t))
         }
+        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
+        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
-    entries
 }
 
 /// The win/loss line-count line, with the completeness sign: `=` once the tally is exhausted (the whole subtree
@@ -1496,43 +1126,13 @@ fn opt_counts(paths: Option<Paths>) -> String {
     }
 }
 
-/// How each crossing answer reads once you know who caught you - the `Abort` option is named after the actual
-/// bodies its strike-back targets ("Turn and fight: The Wall x2"), so the several allocations read apart.
-fn answer_label(a: &Answer, vol: Volley, board: &Board, catchers: &str) -> String {
-    let front = match a {
-        Answer::Evade => "Slip the line".to_string(),
-        Answer::Push => "Push through, take the hits".to_string(),
-        Answer::Abort(alloc) => {
-            let who: Vec<String> = alloc
-                .iter()
-                .filter(|&&(_, n)| n > 0)
-                .map(|&(c, n)| format!("{} x{n}", board.units[c].name))
-                .collect();
-            if who.is_empty() {
-                format!("Turn and fight {catchers}")
-            } else {
-                format!("Turn and fight: {}", who.join(", "))
-            }
-        }
-    };
-    let back = match vol {
-        Volley::Dodge => " + dodge the arrows",
-        Volley::Eat => "",
-    };
-    format!("{front}{back}")
-}
-
 // ---- input ---------------------------------------------------------------------------------------------
 
 #[derive(Component, Clone, Copy)]
 enum Hit {
-    /// Apply `options[usize]` directly (a direct choice, or a chosen crossing answer).
+    /// Apply `options[usize]` directly.
     Option(usize),
-    /// Open the second beat of `entries[usize]` (a crossing): show who caught you, then the answers.
-    Crossing(usize),
-    /// Cancel an open crossing and return to the top-level options.
-    Back,
-    /// Step back one decision (close a crossing first, else pop the undo stack).
+    /// Step back one decision (pop the undo stack).
     Undo,
     Reset,
     Next,
@@ -1559,11 +1159,6 @@ fn on_click(mut f: ResMut<Fight>, q: Query<(&Interaction, &Hit), Changed<Interac
         }
         match *hit {
             Hit::Option(k) => f.choose(k),
-            Hit::Crossing(k) => f.enter_crossing(k),
-            Hit::Back => {
-                f.drill = None;
-                f.dirty = true;
-            }
             Hit::Undo => f.undo(),
             Hit::Reset => f.reset(),
             Hit::Next => {
@@ -1668,7 +1263,7 @@ fn screen_text(f: &Fight) -> String {
     let e = f.enc();
 
     writeln!(s, "{} - {}", e.location, e.title).ok();
-    match (Combat::outcome(&f.state), f.verdict) {
+    match (StepCombat::outcome(&f.state), f.verdict) {
         (Some(o), _) => writeln!(s, "*** {o:?} ***").ok(),
         (None, Some(v)) => writeln!(s, "round {}   position: {v:?}", f.state.round()).ok(),
         (None, None) => writeln!(s, "round {}   position: computing...", f.state.round()).ok(),
@@ -1676,7 +1271,7 @@ fn screen_text(f: &Fight) -> String {
     if let Some(i) = f.state.deciding() {
         writeln!(s, "acting: {}", b.units[i].name).ok();
     }
-    if Combat::outcome(&f.state).is_none() {
+    if StepCombat::outcome(&f.state).is_none() {
         let (done, n) = (f.scored_count(), f.options.len());
         if f.verdict.is_none() || done < n {
             writeln!(s, "scoring options... {done}/{n} done").ok();
@@ -1748,9 +1343,9 @@ fn screen_text(f: &Fight) -> String {
     )
     .ok();
 
-    // The options - same order and content as the buttons, including the two-beat crossings.
+    // The options - same order and content as the buttons, labelled by the current step.
     writeln!(s, "\nOPTIONS").ok();
-    if Combat::outcome(&f.state).is_none() {
+    if StepCombat::outcome(&f.state).is_none() {
         let (rs, rd) = f.best_route();
         writeln!(
             s,
@@ -1760,50 +1355,21 @@ fn screen_text(f: &Fight) -> String {
         .ok();
     }
     let vtag = |v: Option<Verdict>| v.map(|x| format!("{x:?}")).unwrap_or_else(|| "...".into());
-    if Combat::outcome(&f.state).is_some() {
+    if StepCombat::outcome(&f.state).is_some() {
         writeln!(s, "the fight is over.").ok();
-    } else if let Some(drill) = &f.drill {
-        // Beat two: the line caught you, now answer it.
-        writeln!(
-            s,
-            "{} - {} catches you at the line. How do you answer?",
-            drill.label, drill.catchers
-        )
-        .ok();
-        for (n, (ans, vol, opt)) in drill.answers.iter().enumerate() {
-            let (vol, opt) = (*vol, *opt);
+    } else {
+        let (k, name) = phase_coord(f.state.phase());
+        writeln!(s, "step {k}/8 - {name}").ok();
+        for (n, c) in f.options.iter().enumerate() {
             writeln!(
                 s,
                 "[{n}] {:<28} {:<12} {:<22} {}",
-                answer_label(ans, vol, f.state.board(), &drill.catchers),
-                vtag(f.opt_verdict[opt]),
-                opt_counts(f.opt_paths[opt]),
-                fmt_route(f.opt_score[opt], f.opt_score_done[opt])
+                describe(f.state.phase(), b, c),
+                vtag(f.opt_verdict[n]),
+                opt_counts(f.opt_paths[n]),
+                fmt_route(f.opt_score[n], f.opt_score_done[n])
             )
             .ok();
-        }
-        writeln!(s, "[<] choose a different action").ok();
-    } else {
-        // Beat one: entries, crossings collapsed to one line.
-        for (k, entry) in f.entries.iter().enumerate() {
-            let (title, v, counts, route) = match entry {
-                Entry::Direct(opt) => (
-                    describe(b, &f.options[*opt]),
-                    vtag(f.opt_verdict[*opt]),
-                    opt_counts(f.opt_paths[*opt]),
-                    fmt_route(f.opt_score[*opt], f.opt_score_done[*opt]),
-                ),
-                Entry::Crossing { label, answers, .. } => {
-                    let (rs, rd) = f.agg_route(answers);
-                    (
-                        format!("{label}  >"),
-                        vtag(f.agg_verdict(answers)),
-                        f.agg_counts(answers),
-                        fmt_route(rs, rd),
-                    )
-                }
-            };
-            writeln!(s, "[{k}] {title:<28} {v:<12} {counts:<22} {route}").ok();
         }
     }
 
@@ -1845,7 +1411,7 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
                 .collect();
             text(h, format!("solo - {}", solo.join(", ")), 12.0, MUTED);
         }
-        let status = match (Combat::outcome(&f.state), f.verdict) {
+        let status = match (StepCombat::outcome(&f.state), f.verdict) {
             (Some(o), _) => (
                 format!("*** {o:?} ***"),
                 verdict_color(f.verdict.unwrap_or(Verdict::Evaluating)),
@@ -1866,7 +1432,7 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
             text(h, format!("acting: {who}"), 13.0, GOOD);
         }
         // The best route from HERE, under the priority order - the headline number to steer by.
-        if Combat::outcome(&f.state).is_none() {
+        if StepCombat::outcome(&f.state).is_none() {
             let (rs, rd) = f.best_route();
             text(
                 h,
@@ -1876,7 +1442,7 @@ fn header(p: &mut ChildSpawnerCommands, f: &Fight) {
             );
         }
         // What you are waiting on: a live progress line, so a busy UI is never a silent one.
-        if Combat::outcome(&f.state).is_none() {
+        if StepCombat::outcome(&f.state).is_none() {
             let n = f.options.len();
             let done = f.scored_count();
             if f.verdict.is_none() || done < n {
@@ -2143,7 +1709,7 @@ fn fmt_route(score: Option<Score>, done: bool) -> String {
 
 /// The options, each a clickable button carrying its verdict and win/loss line counts.
 fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
-    if Combat::outcome(&f.state).is_some() {
+    if StepCombat::outcome(&f.state).is_some() {
         text(p, "your options", 16.0, INK);
         text(
             p,
@@ -2153,85 +1719,36 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         );
         return;
     }
-    // The active hero, once and prominently - every option below belongs to it, so it is not repeated per row.
-    // (It is also marked with a > on its row in the unit table.)
+    // The active hero and the STEP it is deciding, once and prominently - every option below belongs to both,
+    // so neither is repeated per row. (The hero is also marked with a > on its row in the unit table.)
+    let (k, name) = phase_coord(f.state.phase());
     match f.state.deciding() {
         Some(i) => {
             let u = &f.state.board().units[i];
-            text(p, format!("> {} is choosing an action", u.name), 17.0, GOOD);
+            text(
+                p,
+                format!("> {} decides - step {k}/8: {name}", u.name),
+                17.0,
+                GOOD,
+            );
         }
         None => text(p, "your options", 16.0, INK),
     }
-    // Beat two of a crossing: the line caught you - narrate who, then offer the answers (Abort named after the
-    // catcher). Nothing has been applied yet, so a "choose again" card backs out to beat one.
-    if let Some(drill) = &f.drill {
-        text(
-            p,
-            format!(
-                "{} - {} catches you at the line.",
-                drill.label, drill.catchers
-            ),
-            14.0,
-            WARN,
-        );
-        text(p, "how do you answer?", 11.0, MUTED);
-        for (ans, vol, opt) in &drill.answers {
-            let (vol, opt) = (*vol, *opt);
-            choice_button(
-                p,
-                Hit::Option(opt),
-                answer_label(ans, vol, f.state.board(), &drill.catchers),
-                opt_counts(f.opt_paths[opt]),
-                fmt_route(f.opt_score[opt], f.opt_score_done[opt]),
-                f.opt_verdict[opt],
-            );
-        }
-        p.spawn((
-            Button,
-            Hit::Back,
-            Node {
-                padding: UiRect::axes(Val::Px(9.0), Val::Px(6.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(PANEL),
-            BorderColor::all(MUTED.with_alpha(0.4)),
-        ))
-        .with_children(|b| text(b, "< choose a different action", 12.0, MUTED));
-        return;
-    }
-
     text(
         p,
         "each shows: solver verdict, then winning / losing lines through it (a tie is a loss)",
         11.0,
         MUTED,
     );
-
-    // Beat one: the entries. A crossing is one card ("Raid X  >"); picking it opens beat two.
-    for (k, entry) in f.entries.iter().enumerate() {
-        match entry {
-            Entry::Direct(opt) => choice_button(
-                p,
-                Hit::Option(*opt),
-                describe(f.state.board(), &f.options[*opt]),
-                opt_counts(f.opt_paths[*opt]),
-                fmt_route(f.opt_score[*opt], f.opt_score_done[*opt]),
-                f.opt_verdict[*opt],
-            ),
-            Entry::Crossing { label, answers, .. } => {
-                let (rs, rd) = f.agg_route(answers);
-                choice_button(
-                    p,
-                    Hit::Crossing(k),
-                    format!("{label}  >"),
-                    f.agg_counts(answers),
-                    fmt_route(rs, rd),
-                    f.agg_verdict(answers),
-                )
-            }
-        }
+    for (n, c) in f.options.iter().enumerate() {
+        choice_button(
+            p,
+            Hit::Option(n),
+            describe(f.state.phase(), f.state.board(), c),
+            opt_counts(f.opt_paths[n]),
+            fmt_route(f.opt_score[n], f.opt_score_done[n]),
+            f.opt_verdict[n],
+        );
     }
 }
 
