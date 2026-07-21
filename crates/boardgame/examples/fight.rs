@@ -707,14 +707,19 @@ impl Fight {
                 // A catch declaration (the CATCH WAVE): intercept/volley a named crosser, or let them pass. This
                 // is the REAL interception reveal - each catcher's declaration is its own logged commit, so who
                 // reaches for whom is a record, not a prediction.
-                Choice::Catch(Some(m)) => {
+                Choice::Catch(Some((m, pour))) => {
                     let verb = if before.ranks[idx] == Rank::Rearguard {
                         "volley"
                     } else {
                         "intercept"
                     };
+                    let how = if *pour > 0 {
+                        format!(", pouring {pour} to finish")
+                    } else {
+                        String::new()
+                    };
                     self.log.push(format!(
-                        "      commit  {mark}{name} -> {verb} the crossing {}",
+                        "      commit  {mark}{name} -> {verb} the crossing {}{how}",
                         before.units[*m].name
                     ));
                 }
@@ -739,7 +744,7 @@ impl Fight {
             .iter()
             .map(|p| p.clone().unwrap_or(Act::Hold))
             .collect();
-        let mut catches: Vec<Option<usize>> = before_state
+        let mut catches: Vec<Option<(usize, u32)>> = before_state
             .pending_catches()
             .iter()
             .map(|p| p.flatten())
@@ -840,7 +845,7 @@ fn phase_coord(phase: &'static str) -> (u8, &'static str, u8, &'static str) {
 ///
 /// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
 /// stable across the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
-fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<usize>]) -> Vec<String> {
+fn narrate_round(before: &Board, acts: &[Act], catches: &[Option<(usize, u32)>]) -> Vec<String> {
     let mut clone = before.clone();
     let transcript = play_round(&mut clone, acts, catches);
 
@@ -1325,10 +1330,15 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> State {
 /// repeated per action.
 fn describe(b: &Board, c: &Choice) -> String {
     let a = match c {
-        Choice::Catch(Some(m)) => {
+        Choice::Catch(Some((m, pour))) => {
             let u = &b.units[*m];
             let kind = if u.horde { "bodies" } else { "hp" };
-            return format!("Catch the crossing {} ({} {kind})", u.name, u.health);
+            let how = if *pour > 0 {
+                format!(" and pour {pour} to finish")
+            } else {
+                String::new()
+            };
+            return format!("Catch the crossing {} ({} {kind}){how}", u.name, u.health);
         }
         Choice::Catch(None) => return "Let them pass".to_string(),
         Choice::Act(a) => a,

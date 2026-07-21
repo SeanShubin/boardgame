@@ -52,7 +52,14 @@ fn show_board(b: &Board) -> String {
 
 fn label(b: &Board, c: &Choice) -> String {
     let a = match c {
-        Choice::Catch(Some(m)) => return format!("Catch {}", b.units[*m].name),
+        Choice::Catch(Some((m, pour))) => {
+            let extra = if *pour > 0 {
+                format!(" (pour {pour})")
+            } else {
+                String::new()
+            };
+            return format!("Catch {}{extra}", b.units[*m].name);
+        }
         Choice::Catch(None) => return "Let them pass".to_string(),
         Choice::Act(a) => a,
     };

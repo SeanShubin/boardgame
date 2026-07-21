@@ -886,10 +886,29 @@ pub fn catchers(board: &Board, mover: usize, _dest: u8) -> Vec<usize> {
         .collect()
 }
 
+/// **The finishing pour** - the one pour size the catch menu offers beyond zero: exactly the extra strikes that
+/// would DOWN `target` counting the catch's opening blow (min-to-down), when such a number exists. `None` for an
+/// aoe or horde catcher (neither pours - a sweep is one card, a horde is one volley), when the opening blow alone
+/// already fells the target, or when no number of strikes can (Grit/armor beyond the catcher's Might). This is
+/// the MENU's prune, not a physics cap: the resolver accepts any declared pour and clamps it to the live pool.
+pub fn finishing_pour(board: &Board, catcher: usize, target: usize) -> Option<u32> {
+    let u = &board.units[catcher];
+    if u.aoe || u.horde {
+        return None;
+    }
+    let need = down_cost(board, catcher, target);
+    if need == u32::MAX || need <= 1 {
+        return None;
+    }
+    Some(need - 1)
+}
+
 /// **The default catch declarations for a whole round** - every eligible body (living, Vanguard/Rearguard, not
-/// itself crossing) declaring by [`foe_catch`]. This is what the scripted foes play, what a greedy (no-search)
-/// party plays, and the convenient porting shim for a driver that has no catch wave of its own.
-pub fn default_catches(board: &Board, acts: &[Act]) -> Vec<Option<usize>> {
+/// itself crossing) declaring by [`foe_catch`], with **no pour** (mission-focus: the spare tempo fires at its
+/// declared act instead; a creature that FINISHES the runner is a behavior-card trait, not the default). This is
+/// what the scripted foes play, what a greedy (no-search) party plays, and the convenient porting shim for a
+/// driver that has no catch wave of its own.
+pub fn default_catches(board: &Board, acts: &[Act]) -> Vec<Option<(usize, u32)>> {
     let crossers: Vec<usize> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen && acts[i].destination(board, i).is_some())
         .collect();
@@ -901,7 +920,7 @@ pub fn default_catches(board: &Board, acts: &[Act]) -> Vec<Option<usize>> {
             {
                 return None;
             }
-            foe_catch(board, e, &crossers)
+            foe_catch(board, e, &crossers).map(|m| (m, 0))
         })
         .collect()
 }
@@ -1370,6 +1389,7 @@ fn reach_for_slippers(
     catchers: &[(usize, usize)], // (catcher, slipper)
     movers: &[(usize, u8, &Answer, Volley)],
     is_front: bool, // the Intercept pass (vanguard) vs the Volley pass (rearguard)
+    catches: &[Option<(usize, u32)>], // the declared catches, for each stuck contact's declared POUR
 ) -> (Vec<Hit>, Vec<Reach>) {
     // The live (catcher, slipper) pairs this pass - a fallen catcher or slipper, or a spent catcher, reaches for
     // nothing.
@@ -1415,6 +1435,31 @@ fn reach_for_slippers(
     // Record the aimed contest NOW, before the unevadable area contacts join `landed` - so `evaded` reflects the
     // genuine slip contest only.
     let reaches = reaches_of(&reaching, &landed);
+
+    // **The catcher's PILE-ON** - the strike phase of the Interaction primitive: a catcher whose contact stuck
+    // may spend additional tempo, one strike per card, on the body it caught (contact is established, so Finesse
+    // is irrelevant - only Might). **The amount is DECLARED on the catch** (`catches[f] = Some((target, pour))`),
+    // not an instinct of the resolver: the scripted default is mission-focus (pour 0 - the spare tempo fires at
+    // the body's own declared act instead), a finishing pour is a choice the menu offers ([`finishing_pour`]) and
+    // a behavior card may someday script. The resolver honors any declared amount, clamped to the live pool by
+    // `land`; it lands only along a contact that actually STUCK (an evaded catch pours nothing). A HORDE never
+    // pours (its blow is the one body-count volley) and an AREA catcher never pours (a sweep is always one card)
+    // - both the clash's own rules, unchanged here.
+    let mut pours: Vec<Blows> = Vec::new();
+    for c in &landed {
+        let f = c.attacker;
+        let Some((named, pour)) = catches[f] else {
+            continue;
+        };
+        if pour == 0 || named != c.target || board.units[f].aoe || board.units[f].horde {
+            continue;
+        }
+        pours.push(Blows {
+            unit: f,
+            target: c.target,
+            cards: pour,
+        });
+    }
 
     // AREA catchers volley the whole crossing (the Crossing-ring sweep footprint): one card, every crosser they
     // catch, unevadably. A horde crosser is cleared outright (recorded, applied after `land` so it counts at full
@@ -1525,7 +1570,10 @@ fn reach_for_slippers(
     // The crosser's free blows join the opening-strike batch - one blow each, no tempo, alongside the catchers'.
     landed.extend(free_blows);
 
-    let mut hits = land(board, &landed, &[], &ripostes);
+    // The pile-on pours and the halting crossers' strike-backs are both `extra` blows in the same commit batch.
+    let mut extras = pours;
+    extras.extend(ripostes);
+    let mut hits = land(board, &landed, &[], &extras);
     // Apply the volley's horde clears AFTER `land` read commit-time bodies, so an aborter's riposte still lands
     // and a swept horde still counted at full size in this batch (commit-batch simultaneity, Spec 1.9).
     for h in &felled {
@@ -1587,7 +1635,11 @@ fn home_of(board: &Board, side: Side, avoid: u8) -> Option<u8> {
 /// (Intruders, distance zero, a single simultaneous strike), the **Crossing Ring** (closing into a formation),
 /// and the **Outer Ring** (Across the gap - Fire then Clash). Each ring resolves in **strikes**, and deaths
 /// finalize at each strike boundary, so a body killed early is silenced in every later strike (the razor).
-pub fn play_round(board: &mut Board, acts: &[Act], catches: &[Option<usize>]) -> Vec<SubPhaseLog> {
+pub fn play_round(
+    board: &mut Board,
+    acts: &[Act],
+    catches: &[Option<(usize, u32)>],
+) -> Vec<SubPhaseLog> {
     refresh_round(&mut board.units);
     let mut logs = Vec::new();
 
@@ -1692,7 +1744,9 @@ pub fn play_round(board: &mut Board, acts: &[Act], catches: &[Option<usize>]) ->
     let mut front_catchers: Vec<(usize, usize)> = Vec::new();
     let mut back_catchers: Vec<(usize, usize)> = Vec::new();
     for f in 0..board.units.len() {
-        let Some(named) = catches[f] else { continue };
+        let Some((named, _)) = catches[f] else {
+            continue;
+        };
         if board.units[f].fallen || is_mover[f] {
             continue;
         }
@@ -1716,14 +1770,14 @@ pub fn play_round(board: &mut Board, acts: &[Act], catches: &[Option<usize>]) ->
     }
 
     let before = living(board);
-    let (hits, reaches) = reach_for_slippers(board, &front_catchers, &movers, true);
+    let (hits, reaches) = reach_for_slippers(board, &front_catchers, &movers, true, catches);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Intercept";
     lg.hits = hits;
     lg.reaches = reaches;
     logs.push(lg);
     let before = living(board);
-    let (hits, reaches) = reach_for_slippers(board, &back_catchers, &movers, false);
+    let (hits, reaches) = reach_for_slippers(board, &back_catchers, &movers, false, catches);
     let mut lg = close(board, &before);
     lg.phase = "Crossing Ring: Volley";
     lg.hits = hits;
@@ -2315,10 +2369,12 @@ mod tests {
                 .any(|a| matches!(a, Act::Cross(None, _, _))),
             "a backless enemy must not offer a plain slip"
         );
-        // Still in the ENGINE: hand it a backless slip and it crosses just the same.
-        round(
+        // Still in the ENGINE: hand it a backless slip and it crosses just the same. Catches explicitly empty -
+        // this test is about the menu-vs-engine split, not the catch (a catching Brute would pile on and fell it).
+        play_round(
             &mut b,
             &[Act::Cross(None, Answer::Push, Volley::Eat), Act::Hold],
+            &[None, None],
         );
         assert_eq!(
             b.regions[0], 1,
@@ -2471,12 +2527,14 @@ mod tests {
     fn pushing_through_costs_blood_instead_of_tempo() {
         let mut b = wall_and_cannon();
         let ogre = b.units[2].health;
+        // Dodge the volley: the lesson here is the FRONT's price (the catch it eats pushing), so keep the
+        // Marksman's pile-on - which would finish it - out of the frame.
         round(
             &mut b,
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Push, Volley::Eat),
+                Act::Cross(Some(1), Answer::Push, Volley::Dodge),
             ],
         );
         assert_eq!(b.regions[2], 0, "it went through regardless");
@@ -2494,7 +2552,9 @@ mod tests {
             vec![
                 unit("Bastion", Side::Party, [3, 3, 3, 1, 2], true, false),
                 unit("Marksman", Side::Party, [5, 2, 1, 2, 2], false, true),
-                unit("Runt", Side::Foe, [5, 5, 2, 2, 2], true, false), // Cadence 2: it can pay, but only just
+                // Cadence 2: it can pay, but only just. Vitality 6: deep enough that the Marksman's pile-on
+                // cannot finish it once its evade spend leaves it standing for the volley.
+                unit("Runt", Side::Foe, [5, 6, 2, 2, 2], true, false),
             ],
             vec![0, 0, 1],
         );
@@ -2522,12 +2582,14 @@ mod tests {
     fn aborting_keeps_you_where_you_are_and_swings_back() {
         let mut b = wall_and_cannon();
         let cannon = b.units[1].health;
+        // Dodge the volley: the lesson is the turn-and-fight at the LINE; eaten, the Marksman's pile-on would
+        // fell the aborter mid-band and hide it.
         let logs = round(
             &mut b,
             &[
                 Act::Clash(2),
                 Act::Clash(2),
-                Act::Cross(Some(1), Answer::Abort(vec![(0, 1)]), Volley::Eat),
+                Act::Cross(Some(1), Answer::Abort(vec![(0, 1)]), Volley::Dodge),
             ],
         );
         assert!(
@@ -2748,6 +2810,81 @@ mod tests {
         );
     }
 
+    /// **The catcher's pile-on is DECLARED.** A catcher whose contact stuck pours the extra strikes its catch
+    /// declaration named - the strike phase of the Interaction primitive (contact established, one tempo per
+    /// strike, Might only). Here: bid 2 to catch, opening blow 2 damage, one declared pour fells the 4-health
+    /// crosser at the line - and the undeclared remainder stays in the pool for the Wall's own act.
+    #[test]
+    fn a_declared_pour_finishes_the_crosser_at_the_line() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [2, 4, 1, 2, 1], true, false),
+                unit("Wall", Side::Foe, [2, 6, 3, 4, 1], true, false), // Cadence 4: pool to spare
+                unit("Mage", Side::Foe, [3, 3, 1, 2, 1], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        // The menu's finishing prune agrees: down = 2 strikes, so the offered pour is 1.
+        assert_eq!(finishing_pour(&b, 1, 0), Some(1));
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(2), Answer::Push, Volley::Eat),
+                Act::Hold,
+                Act::Hold,
+            ],
+            &[None, Some((0, 1)), None], // the Wall catches AND pours 1; the Mage stands down
+        );
+        assert!(
+            b.units[0].fallen,
+            "opening blow + the declared pour fell the crosser at the line"
+        );
+        assert_eq!(b.regions[0], 0, "it never landed");
+        // Bid 2 (reach_cards prices the 2-tempo, Finesse-1 crosser out) + 1 poured = 3 of 4 tempo spent.
+        assert_eq!(
+            b.units[1].tempo, 1,
+            "the Wall poured exactly what it declared, and kept the rest"
+        );
+    }
+
+    /// **A declared pour is clamped to the live pool, and pour 0 pours nothing.** The resolver honors the
+    /// declaration, not more: an over-declared pour spends what remains after the bid; the mission-focus default
+    /// (pour 0) lands only the opening blow.
+    #[test]
+    fn a_declared_pour_is_clamped_and_zero_pours_nothing() {
+        let make = || {
+            Board::new(
+                vec![
+                    unit("Raider", Side::Party, [2, 6, 2, 2, 1], true, false),
+                    unit("Wall", Side::Foe, [2, 6, 3, 4, 1], true, false),
+                    unit("Mage", Side::Foe, [3, 3, 1, 2, 1], false, true),
+                ],
+                vec![0, 1, 1],
+            )
+        };
+        let acts = [
+            Act::Cross(Some(2), Answer::Push, Volley::Eat),
+            Act::Hold,
+            Act::Hold,
+        ];
+        // Pour 0 (mission-focus): opening blow only - 2 damage vs Grit 2 = 1 flip.
+        let mut b = make();
+        play_round(&mut b, &acts, &[None, Some((0, 0)), None]);
+        assert_eq!(b.units[0].health, 5, "pour 0: only the opening blow lands");
+        // Pour 5 declared, but bid 2 leaves only 2 in the pool: clamped to 2 extras -> 3 strikes, 6 damage,
+        // 3 flips - not the 6 flips the raw declaration named.
+        let mut b = make();
+        play_round(&mut b, &acts, &[None, Some((0, 5)), None]);
+        assert_eq!(
+            b.units[0].health, 3,
+            "an over-declared pour spends only what the pool still holds"
+        );
+        assert_eq!(
+            b.units[1].tempo, 0,
+            "the Wall's whole pool went into the catch"
+        );
+    }
+
     /// **Halting earns a free blow.** A crosser that halts is engaging, so it lands one free strike (no tempo) at
     /// a melee catcher even with an EMPTY paid allocation - the mutual clash. The Wall takes damage it would not
     /// have taken from a mere stand.
@@ -2817,7 +2954,10 @@ mod tests {
     fn the_back_line_volleys_an_incoming_raider() {
         let mut b = Board::new(
             vec![
-                unit("Raider", Side::Party, [7, 6, 1, 3, 2], true, false),
+                // Vitality 10: deep enough that the Mage's pile-on cannot FINISH it (that rule has its own
+                // test) - the instinct reads health as of the volley pass, AFTER the wall's intercept blow
+                // banked - so this one still shows what it always did: shot on the way in, and through.
+                unit("Raider", Side::Party, [7, 10, 1, 3, 2], true, false),
                 unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
                 unit("Mage", Side::Foe, [4, 3, 1, 2, 2], false, true),
             ],
@@ -2863,7 +3003,7 @@ mod tests {
                 Act::Clash(0),
             ],
             // The Guard (itself crossing) hand-declares a catch on the Ogre: the resolver must drop it.
-            &[Some(2), None, None, None],
+            &[Some((2, 0)), None, None, None],
         );
         for lg in &logs {
             assert!(
