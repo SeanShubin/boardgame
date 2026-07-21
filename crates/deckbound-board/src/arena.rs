@@ -2222,10 +2222,10 @@ mod tests {
         assert_eq!(commit_label(&board, arena), "Commit");
     }
 
-    /// **Reaching buys ONE blow; the tempo you keep back buys the rest - and the pile spans the round.** The
-    /// Raider (Might 7) reaches The Wall (Grit 9) with one card, stands its ground, then pours its
-    /// remaining card in: 7 + 7 = 14 into one pile, which crosses 9 and turns a Health card. That is the only
-    /// way anything cracks a Wall.
+    /// **Reaching buys ONE blow; the tempo you keep back buys the rest.** The Raider (Might 6) reaches The
+    /// Wall (Grit 6) with one card, stands its ground, then pours its remaining card in: 6 + 6 = 12 into one
+    /// pile, which crosses the Grit-6 bar twice and turns two Health cards. That is the only way anything
+    /// cracks a Wall.
     #[test]
     fn one_card_of_reach_plus_one_blow_cracks_the_wall() {
         let mut board = sample_table();
@@ -2285,23 +2285,23 @@ mod tests {
             .iter()
             .position(|c| c.label == "Strike 1 more")
             .expect("one card left to swing with");
-        // The card must count the free opening blow: one MORE card is 2 blows, 14 damage, which cracks 9.
+        // The card must count the free opening blow: one MORE card is 2 blows, 12 damage, two Grit-6 bars.
         assert_eq!(
             choices[one_more].consequence,
-            "14 damage: The Wall loses 1 health"
+            "12 damage: The Wall loses 2 health"
         );
         choose(&mut board, one_more);
         commit(&mut board, arena);
 
         assert_eq!(
             wall(&board).health,
-            hp0 - 1,
-            "the opening blow (7) plus one more (7) = 14, which crosses Grit 9"
+            hp0 - 2,
+            "the opening blow (6) plus one more (6) = 12, which crosses Grit 6 twice"
         );
         assert_eq!(
             wall(&board).pending,
-            5,
-            "the remainder is an open wound - it keeps until the Reset"
+            0,
+            "12 divides the Grit-6 bar evenly - no open wound remains"
         );
     }
 

@@ -487,8 +487,8 @@ pub const ENCOUNTERS: [Encounter; 9] = [
     },
 ];
 
-/// The encounter stationed at `location`, or `None` for a location with no encounter (the inn, Ashfen
-/// Crossing).
+/// The encounter stationed at `location`, or `None` for an unknown location. Every one of the nine map
+/// cells carries one - Ashfen Crossing (the old inn, the party's home cell) holds the capstone.
 pub fn encounter_for(location: &str) -> Option<&'static Encounter> {
     ENCOUNTERS.iter().find(|e| e.location == location)
 }

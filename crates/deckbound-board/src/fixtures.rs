@@ -592,7 +592,7 @@ mod tests {
         //   Rules     5 leaf phases + a label, and the Engage sub-deck's 5 + a label
         //   Progress  a Zone label (Day 0; the 4 move markers also come out of Heroes)
         //   Events    the Day Passed x12 reserve + a label
-        //   Bestiary  4 creature `foe` stacks x4 + a label
+        //   Bestiary  6 creature `foe` stacks x4 + a label
         assert_eq!(
             t.card_count(),
             (4 * 4 + 1)
@@ -603,7 +603,7 @@ mod tests {
                 + ((5 + 1) + (5 + 1))
                 + 1
                 + (12 + 1)
-                + (4 * 4 + 1)
+                + (6 * 4 + 1)
         );
     }
 
@@ -749,16 +749,21 @@ mod tests {
     #[test]
     fn creature_intention_reproduces_the_roster_positions() {
         let intent = |name: &str| catalog::creature_intention(catalog::creature(name).unwrap());
-        assert_eq!(intent("The Wall"), "Vanguard"); // M1 < T9
+        assert_eq!(intent("The Wall"), "Vanguard"); // M1 < G6
         assert_eq!(intent("The Duelist"), "Vanguard"); // authored pos override
-        assert_eq!(intent("The Swarm"), "Rearguard"); // ranged
-        assert_eq!(intent("The Storm"), "Vanguard"); // authored pos override
-        // Each creature's posture points at exactly one answering kit — the clean diagonal.
+        assert_eq!(intent("The Swarm"), "Vanguard"); // authored pos override (melee front horde)
+        assert_eq!(intent("The Brood"), "Rearguard"); // ranged
+        assert_eq!(intent("The Sniper"), "Rearguard"); // ranged
+        assert_eq!(intent("The Reaver"), "Vanguard"); // authored pos override
+        // Each keystone's posture points at exactly one answering kit — the clean diagonal. (The Sniper and
+        // the Reaver are corner threats, not solos: no lone counter kit.)
         let counter = |name: &str| catalog::creature_counter(catalog::creature(name).unwrap());
         assert_eq!(counter("The Wall"), "Raider");
         assert_eq!(counter("The Duelist"), "Marksman");
-        assert_eq!(counter("The Swarm"), "Bastion");
-        assert_eq!(counter("The Storm"), "Bombardier");
+        assert_eq!(counter("The Swarm"), "Bombardier");
+        assert_eq!(counter("The Brood"), "Bastion");
+        assert_eq!(counter("The Sniper"), "");
+        assert_eq!(counter("The Reaver"), "");
     }
 
     /// Each non-inn place stations its encounter as a single **header** card — no physical foe cards. The
@@ -805,7 +810,10 @@ mod tests {
             "the corner header lists the doubled keystone: {corner_detail}"
         );
         // The Bestiary backs them with a `×4` stack per creature type (+ its Zone label).
-        assert_eq!(t.physical_card_count(deck(&t, "Bestiary")), 4 * 4 + 1);
+        assert_eq!(
+            t.physical_card_count(deck(&t, "Bestiary")),
+            catalog::CREATURES.len() * 4 + 1
+        );
     }
 
     /// Each encounter location stations an **app-only** Rumors card (a `Virtual` readout, not counted in the
@@ -858,7 +866,7 @@ mod tests {
 
     /// Combat instantiates the virtual foes as **real cards** split off the Bestiary stacks, and returns
     /// them afterward — conservation-clean both ways (PC.2). A corner fields its tuned foe list; a solo its
-    /// one keystone; the inn nothing.
+    /// one keystone; the capstone its whole combined-arms warband.
     #[test]
     fn manual_combat_instantiates_foes_from_the_bestiary_and_returns_them() {
         let mut t = sample_table();
@@ -924,15 +932,17 @@ mod tests {
             1,
             "solo = one keystone"
         );
-        assert!(
+        // Ashfen Crossing — the old inn — now stations the capstone: Swarm x1 + Wall x2 + Sniper x1.
+        assert_eq!(
             t.instantiate_from_bank(
                 bestiary,
                 arena,
                 &deckbound_content::catalog::encounter_roster("Ashfen Crossing")
             )
             .unwrap()
-            .is_empty(),
-            "the inn has no encounter"
+            .len(),
+            4,
+            "the capstone fields its whole warband"
         );
     }
 
@@ -1363,7 +1373,7 @@ mod tests {
         let mut t = sample_table();
         let total = t.card_count();
 
-        // The Raider: Might 7, Vitality 6, Grit 1, Cadence 2, Finesse 2, carrying Jab.
+        // The Raider: Might 6, Vitality 6, Grit 1, Cadence 2, Finesse 2, carrying Jab.
         let (cdeck, name) = party_member(&t, 0);
 
         // A top-level character deck, marked as reflecting the hero, spelling its stats as name+number.
@@ -1377,7 +1387,7 @@ mod tests {
             names,
             [
                 "Might",
-                "7",
+                "6",
                 "Vitality",
                 "6",
                 "Grit",
