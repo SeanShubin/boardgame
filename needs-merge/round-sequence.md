@@ -94,6 +94,10 @@ after the crossing, so it strikes in Phase 2. **Each outrider acts once per
 round:** a prior-round one here, a this-round one in Phase 2; a survivor becomes a
 prior-round outrider and acts here *next* round.
 
+An outrider may also **withdraw** here: strike (or not), then rejoin its own line
+at the Inner Ring boundary, at weapon rank - free, because the ring it just stood
+was the price (see "Withdrawal is priced, not banned" under Global rules).
+
 ### Phase 1 - The Crossing (the front closes the gap)
 
 **Step 1 - DECLARE crossings.** Each side's **vanguard** bodies declare whether
@@ -211,7 +215,15 @@ first-shot phase slot).
   is aimed at, unevadably, for one tempo. It is never a declared single-target
   strike, never an extra strike poured onto one body, and never a retaliation. An
   area body participates in whichever phase it acts as a **sweep**, nothing else.
-- **A crossing is committed.** Once through, an outrider cannot cross back out.
+- **Withdrawal is priced, not banned.** An outrider may withdraw: strike in the
+  Inner Ring (or not) and rejoin its own line at the boundary, at weapon rank. The
+  rank change itself is FREE - the price is standing one more Inner Ring among the
+  hosts, where every body around it had its declared chance to strike. Raids can
+  therefore be round-trips; whether one is worth it is a read of the ring you must
+  survive to leave. *(Demoted 2026-07-20: "a crossing is committed, no retreat."
+  Commitment was a means to simplicity, not a goal - the schedule now prices the
+  exit instead of banning it. Measured: the diagonal held 4/4 + 5/5 with
+  withdrawal in the search space, so the ring alone is a sufficient price.)*
 - **The screen is a price, not a wall.** A vanguard can never *stop* a crosser -
   only make it pay, in tempo (evade), in blood (push), or in the ground it gives
   up (halt).
@@ -223,6 +235,7 @@ first-shot phase slot).
 | I1 | Inner | prior outriders + hosts | point-blank targets (any tier, no screen) |
 | I2 | Inner | targeted bodies | evade bids |
 | I3 | Inner | attackers + defenders | strikes + extras (mutual, both declared); then dissolve |
+| I4 | Inner | outriders | withdraw (free rank change at the boundary; the ring was the price) |
 | 1 | Crossing | vanguard | cross or not |
 | 2 | Crossing | vanguard + rearguard | intercept (melee, halts) or volley (ranged, hits) |
 | 3 | Crossing | vanguard + crosser | cross the vanguard: catch-bid vs slip; if caught -> push or halt (free blow + paid, melee only). Decides through vs stay |
@@ -314,6 +327,7 @@ missing; "pending" means a genuine rule is not yet modeled.
 | Step | Status | Note |
 |---|---|---|
 | 0 Inner Ring (prior outriders) | done | resolved first in `play_round`: a distance-zero brawl (both tiers, no screen), then `dissolve` |
+| I4 withdrawal (O->V) | done | `Act::Retreat(Option<target>)`: optional inner-ring strike, then rejoin at the boundary; diagonal held 4/4 + 5/5 with it searchable |
 | 1 crossings | done | up-front `Cross`, vanguard-only |
 | 2 elective catch + volley split | pending | catching is automatic geometry today, and not yet split into melee-interception (halts) vs ranged-volley (hits) (M2) |
 | 3 cross the vanguard | done | `Act::Cross(_, Answer, _)` - slip/push/halt, free blow, melee-only strike-back; decides through-vs-stay |
@@ -339,3 +353,35 @@ Defender retaliation (7/10) is **dropped** (covered by the volley and the declar
 clash). The crosser's free blow on halt, the melee-only strike-back, and the aoe
 never-target/retaliate invariant are done. Everything else is presentation over a
 model that already plays it.
+
+## Brainstorming
+
+*Status 2026-07-20: adopted as the target model, pending balance verification of
+each delta. The Interaction primitive matches the engine's existing
+engage/evade/land physics; the rank-pair schedule replaces rings+regions (position
+IS rank, given one region per side). Deltas being implemented and measured one at
+a time: (1) O->V withdrawal - DONE, diagonal held, tenet demoted; (2) catch =
+ordinary clash + crossing = rank change gated on not striking - next; open calls
+resolved conservatively unless overridden: ranged fire keeps preceding the melee
+clash ("an arrow lands before a swordsman closes"), and the pooled contest is the
+universal rule. Promote to canon when the deltas are in and the diagonal holds.*
+- Interaction
+  - Target
+    - Everyone declare valid targets, then reveal
+  - Contact
+    - Tempo bids for evading vs. catch.  Finesse matters, must strictly beat catch.  Then reveal
+  - Strike
+    - May ignore hit
+    - May stop and redirect bit to strike
+    - May spend additional tempo for additional strike per temp (contact already established, finesse irrelevant)
+  - Resolve
+    - Check for downed
+- Steps
+  - Interactions on Outriders vs Rearguard and Vanguard, an Reguard and Vanguard vs Outriders
+  - Outriders may change to vanguard (no cost)
+  - Interactions between vanguard and vanguard
+  - Vanguard may change to Outriders if they did not strike
+  - Interactions from Rearguard to Outriders (one way)
+  - Interactions from Outriders to Rearguard (one way)
+  - Interactions from Rearguard and Vanguard to Vanguard
+  - Interactions from Rearguard and Vanguard to Rearguard (if no enemy vanguard)
