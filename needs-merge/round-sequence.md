@@ -345,6 +345,64 @@ What remains, deliberately deferred:
   (`dodges_against`); making it a declared bid is the same fold-out the crossing
   got, if playtesting ever wants it.
 
+## IN FLIGHT: the step machine (design pin, 2026-07-21)
+
+The next restructure, approved and being built in stages: the round becomes the
+**eight-step schedule literally** - each step its own declare -> reveal ->
+resolve, so targeting can REACT to earlier deaths in the same round (the design
+intent behind resolving vanguard deaths first: a collapsed front's rearguard is
+advanced upon THIS round, step 8). The crossing's bespoke contest machinery
+dissolves into ordinary steps.
+
+**The eight steps** (each: eligible bodies declare a target or pass; reveal;
+resolve by the Interaction primitive; deaths close):
+
+| # | Who -> whom | Notes |
+|---|---|---|
+| 1 | O->RV, RV->O | in-region, both tiers, no screen, mutual; aoe sweeps the region. Prior-round outriders act here |
+| 2 | O may move to V | withdraw, free - step 1 was the price |
+| 3 | V->V | the EARLY front trade - and the interception window: strike the body you predict will run. Blind: crossing is declared at step 4, after this resolves (a real feint layer for humans; solver-neutral vs scripted foes) |
+| 4 | V may move to O | only a vanguard that DECLARED NO STRIKE this round (steps 1/3); walks uncontested - the step-3 window and the step-5 volley are the price. Lands as Outrider |
+| 5 | R->O | the volley: one-way strikes at outriders, fresh or old |
+| 6 | O->R | the raid: THIS round's arrivals strike a back-line target (prior-round outriders acted at step 1) |
+| 7 | RV->V | the LATE front trade: rearguard fire + every vanguard that held back (a would-be crosser that took its lumps and stayed swings HERE - "halt" is emergent, not a rule) |
+| 8 | RV->R | only against a rearguard with NO living vanguard **at this step** - the same-round advance on a collapsed front |
+
+**What dissolves** (each replaced by ordinary steps): the `Answer` enum
+(slip/push/halt), `Volley` (dodge/eat), the pooled line contest, the free blow
+on halt, the strike-back allocation, the catch wave, `crossing_acts` and the
+catcher-prediction menus. Evade/push/halt re-emerge as: evade = the ordinary
+contact dodge against step-3 strikes; push = crossing at step 4 after taking
+them; halt = staying and swinging at step 7.
+
+**Tempo economics pin** (each step maps to an already-measured behavior, so the
+balance test isolates the STRUCTURAL deltas): mutual melee steps (1, 3, 7, 8)
+pour the striker's remaining pool (today's clash/inner rule); the volley (5)
+and the raid (6) land the opening blow only (today's volley/raid rule; declared
+pours per strike are a follow-up). Contact bids stay auto-sized; defense stays
+the automatic greedy dodge (the declared dodge-vs-eat choice dissolves with the
+crossing contest - re-add as decision-richness if playtesting misses it). A body
+may act in any step it can fund (the additive canon); all-in pours make
+one-strike-per-round emergent for low-Cadence bodies, exactly today's shape.
+
+**Foe script per step** (deterministic): derive from the same greedy read -
+strike early (step 3) when clashing, pass-then-cross when raiding, volley at
+step 5 when an enemy outrider stands, fire at step 7 otherwise, advance at step
+8 when a back stands exposed.
+
+**Build stages** (house pattern - additive and inert until measured):
+A. `combat/steps.rs`: the step-schedule RESOLVER (`play_steps(board, script)`)
+   reusing the same physics (`exchange`/`land`), driven by pre-supplied
+   per-step declarations; unit tests prove the reorder semantics (an early kill
+   prevents the crossing; the same-round advance; halt-via-step-7).
+B. The decision machine: per-step declaration waves in the `Game`, foe scripts,
+   solver over the step choices, log follows (specific steps and sub-steps).
+C. Measure (diagonal), swap consumers, delete the dissolved machinery.
+
+**Named risks going in**: raids cheapen (only the volley directly opposes a
+crossing); the screen's deterrence becomes ordinary step-3 pressure; solver
+branching across eight waves must stay tractable. Stop-rule as always.
+
 ## History (how this model settled, 2026-07-20)
 
 The sequence grew from a brainstorm that factored combat into one **Interaction
