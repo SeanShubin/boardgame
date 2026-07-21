@@ -564,11 +564,14 @@ impl Fight {
 
         self.state = StepCombat::apply(&self.state, c);
 
-        // A round resolves on exactly one apply - the one where the round counter advances. Narrate it by
-        // re-running the deterministic resolution from the round-start board and this round's script (a
-        // throwaway clone; identical to what just resolved live), so every strike, flip, move and death is
-        // logged under the step it happened in.
-        if self.state.round() != round_before {
+        // A round resolves on exactly one apply - the one where the round counter advances, OR the one that
+        // decides the fight mid-round (seek stops at a decided board BEFORE the counter moves, so the killing
+        // round never trips the rollover). Either way the accumulated script has just been consumed by
+        // resolution - narrate it by re-running the deterministic resolution from the round-start board and
+        // this round's script (a throwaway clone; identical to what just resolved live), so every strike,
+        // flip, move and death is logged under the step it happened in. The steps a mid-round end never
+        // reached hold no declarations and narrate as nothing.
+        if self.state.round() != round_before || StepCombat::outcome(&self.state).is_some() {
             let events = narrate_steps(&self.round_board, &self.script);
             if events.is_empty() {
                 self.log.push("  (no blood drawn)".into());
