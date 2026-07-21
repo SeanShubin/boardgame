@@ -1324,7 +1324,7 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
 }
 
 /// One body attacking another: `(attacker, target)`.
-type Attack = (usize, usize);
+pub(super) type Attack = (usize, usize);
 
 /// The blows a body pours **into the target it declared**, once its reach is paid for. No pour without a
 /// declaration: a body that declared `Hold` holds.
@@ -1348,7 +1348,7 @@ fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows>
 /// Close a sub-phase: **finalize deaths** and snapshot the boundary. Finalizing here is how the ground behind a
 /// broken line opens up *within* a round - a rearguard whose vanguard just fell becomes exposed (clashable) the
 /// moment that death is settled, no promotion needed.
-fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
+pub(super) fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
     end_sub_phase(&mut board.units);
     SubPhaseLog {
         fallen: (0..board.units.len())
@@ -1362,7 +1362,7 @@ fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
     }
 }
 
-fn living(board: &Board) -> Vec<bool> {
+pub(super) fn living(board: &Board) -> Vec<bool> {
     board.units.iter().map(|u| !u.fallen).collect()
 }
 
@@ -1600,7 +1600,7 @@ fn other_side(s: Side) -> Side {
 ///
 /// (This replaced the old *promotion* - "clearing a zone takes the ground" - a multi-region leftover that, with
 /// one region per side, mostly just coincided with the win and mishandled a mutual raid.)
-fn dissolve(board: &mut Board) {
+pub(super) fn dissolve(board: &mut Board) {
     for r in board.occupied() {
         let bodies = board.in_region(r);
         if bodies.iter().any(|&i| board.ranks[i] != Rank::Outrider) {
@@ -1620,7 +1620,7 @@ fn dissolve(board: &mut Board) {
 
 /// A region OTHER than `avoid` where `side` still stands as a **formation** (a living non-outrider body), or
 /// `None` if `side` holds no line to rejoin.
-fn home_of(board: &Board, side: Side, avoid: u8) -> Option<u8> {
+pub(super) fn home_of(board: &Board, side: Side, avoid: u8) -> Option<u8> {
     (0..board.units.len())
         .find(|&i| {
             !board.units[i].fallen
@@ -1877,7 +1877,7 @@ pub fn play_round(
 /// One Engage -> Evade -> Strike exchange - **the product's inner three, unchanged.** Area strikes split off and
 /// sweep their target's region: the tier aimed at, or - when `sweep_whole` - both tiers (an in-region melee, past
 /// the screen).
-fn exchange(
+pub(super) fn exchange(
     board: &mut Board,
     attacks: &[Attack],
     pour: bool,
