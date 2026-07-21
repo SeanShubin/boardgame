@@ -196,14 +196,21 @@ pub enum Act {
     ///   in the Crossing Ring, *before* `t` fires in the Outer Ring - the whole worth of reaching the back line).
     /// - `Cross(None, _)` just crosses and stands (a repositioning **slip**), striking nobody this round.
     ///
-    /// A raid reaches the BACK line only (a front body you [`Clash`](Act::Clash)). **Committed: an outrider cannot
-    /// cross back out.** The two crossings are answered independently: [`Answer`] takes the vanguard interception
-    /// (slip / push / halt), [`Volley`] takes the rearguard volley (dodge / eat).
+    /// A raid reaches the BACK line only (a front body you [`Clash`](Act::Clash)). The two crossings are answered
+    /// independently: [`Answer`] takes the vanguard interception (slip / push / halt), [`Volley`] takes the
+    /// rearguard volley (dodge / eat). The way back out is [`Retreat`](Act::Retreat) - withdrawal is priced by the
+    /// Inner Ring, not banned.
     Cross(Option<usize>, Answer, Volley),
     /// **Strike a body in your OWN region** - an enemy outrider loose in your ranks, or (if you are the outrider)
     /// any host body. No screen applies in-region: the ranks stopped protecting anyone the moment a body got
     /// inside them. Not a crossing, so it carries no evade-answer.
     Melee(usize),
+    /// **Withdraw from the enemy ranks** (outrider only): optionally strike `t` in the Inner Ring like a
+    /// [`Melee`](Act::Melee), then rejoin your own line at the Inner Ring boundary, at weapon rank. The change
+    /// itself is FREE - the price is standing the Inner Ring among the hosts, where every body around you had its
+    /// declared chance to strike. (This demotes the old "a crossing is committed, no retreat" rule: commitment was
+    /// a means to simplicity, not a goal - the schedule prices the exit instead of banning it.)
+    Retreat(Option<usize>),
     /// Nothing.
     Hold,
 }
@@ -253,6 +260,10 @@ impl Act {
             Act::Cross(Some(t), a, v) => format!("Raid {} ({})", board.units[*t].name, how(a, *v)),
             Act::Cross(None, a, v) => format!("Cross into their line ({})", how(a, *v)),
             Act::Melee(t) => format!("Melee {}", board.units[*t].name),
+            Act::Retreat(Some(t)) => {
+                format!("Strike {} and withdraw", board.units[*t].name)
+            }
+            Act::Retreat(None) => "Withdraw to your own line".to_string(),
             Act::Hold => "Hold".to_string(),
         }
     }
@@ -626,6 +637,11 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
                 // **In your own region.** The two are intermingled (one of you is an outrider), so there is no
                 // screen between you: any weapon reaches any enemy body here.
                 out.push(Act::Melee(t));
+                // An OUTRIDER may also strike this body and then WITHDRAW - the fighting exit. Same inner-ring
+                // strike as the Melee; the rejoin happens free at the boundary (the ring was the price).
+                if board.ranks[i] == Rank::Outrider {
+                    out.push(Act::Retreat(Some(t)));
+                }
             } else if board.ranks[t] == Rank::Outrider {
                 // A loose enemy body in another region is dealt with in-region by the formation that hosts it,
                 // never reached across the gap. Not a target from here.
@@ -654,9 +670,16 @@ pub fn legal_acts(board: &Board, i: usize) -> Vec<Act> {
         }
     }
 
+    // An outrider may WITHDRAW without striking: rejoin its own line at the Inner Ring boundary, free - the ring
+    // it stands in is the price of leaving.
+    if board.ranks[i] == Rank::Outrider {
+        out.push(Act::Retreat(None));
+    }
+
     // Cross with NO target - the plain slip, the one movement, and **only the Vanguard crosses**. The front line
     // is who charges into the enemy's ground (promoting to outrider); a Rearguard stays back and fires, and an
-    // outrider is committed - there is no retreat. The destination is the one enemy region, so it needs no target.
+    // outrider that wants back out declares a Retreat. The destination is the one enemy region, so it needs no
+    // target.
     //
     // Offered ONLY when the enemy has a SCREENED back to reach. Going outrider is worth a crossing only if there is
     // a body behind their front you cannot already touch: a screened rearguard. A backless enemy (no rearguard) or
@@ -761,8 +784,10 @@ fn positional(board: &Board, i: usize, act: &Act) -> i32 {
 
 fn disruption(board: &Board, i: usize, act: &Act) -> Disruption {
     let (downs, flips) = match act {
-        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) => strike_yield(board, i, *t),
-        Act::Cross(None, _, _) | Act::Hold => (0, 0),
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) | Act::Retreat(Some(t)) => {
+            strike_yield(board, i, *t)
+        }
+        Act::Cross(None, _, _) | Act::Retreat(None) | Act::Hold => (0, 0),
     };
     Disruption {
         downs,
@@ -782,7 +807,9 @@ pub fn greedy_act(board: &Board, i: usize) -> Option<Act> {
     // (lowest index); a targetless act sorts last so a real strike always wins the tie. A final act-kind order
     // (clash over a pushed raid over an evaded one over a slip over hold) settles two acts on the same target.
     let target_hp = |act: &Act| match act {
-        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) => (board.units[*t].health, *t),
+        Act::Clash(t) | Act::Melee(t) | Act::Cross(Some(t), _, _) | Act::Retreat(Some(t)) => {
+            (board.units[*t].health, *t)
+        }
         _ => (u32::MAX, usize::MAX),
     };
     let act_pref = |act: &Act| match act {
@@ -790,7 +817,12 @@ pub fn greedy_act(board: &Board, i: usize) -> Option<Act> {
         Act::Cross(_, Answer::Push, _) => 1,
         Act::Cross(_, Answer::Evade, _) => 2,
         Act::Cross(_, Answer::Abort(_), _) => 3,
-        Act::Hold => 4,
+        // A scripted foe prefers staying in (Melee, pref 0) over the fighting exit on an equal-disruption tie: an
+        // outrider's instinct is havoc, so it withdraws only when withdrawal out-DISRUPTS staying (it never does
+        // under the current metric). Emergent, not fiat - the option is on its menu like anyone's.
+        Act::Retreat(Some(_)) => 4,
+        Act::Retreat(None) => 5,
+        Act::Hold => 6,
     };
     legal_acts(board, i)
         .into_iter()
@@ -893,6 +925,9 @@ pub struct SubPhaseLog {
     pub through: Vec<usize>,
     /// Turned and fought instead: it stayed where it was.
     pub aborted: Vec<usize>,
+    /// **Withdrew from the enemy ranks** at the Inner Ring boundary - an outrider that declared a
+    /// [`Retreat`](Act::Retreat) and lived to make it, rejoining its own line at weapon rank.
+    pub withdrew: Vec<usize>,
     /// Promoted from back to front, because the front ahead of it collapsed.
     pub promoted: Vec<usize>,
     pub fallen: Vec<usize>,
@@ -1561,10 +1596,12 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // closing - the crossing happened on an earlier round, so everyone is already point-blank and intermingled.
     // No distance, so no order. An outrider is past the screen, so a melee sweep here catches EVERY enemy in the
     // region, both tiers.
+    // A Retreat's optional strike is the SAME inner-ring strike as a Melee - the fighting exit swings first, and
+    // leaves at the boundary below.
     let melees: Vec<Attack> = (0..board.units.len())
         .filter(|&i| !board.units[i].fallen && board.units[i].tempo > 0)
         .filter_map(|i| match acts[i] {
-            Act::Melee(t)
+            Act::Melee(t) | Act::Retreat(Some(t))
                 if !board.units[t].fallen
                     && board.regions[t] == board.regions[i]
                     && board.units[t].side != board.units[i].side =>
@@ -1574,7 +1611,11 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
             _ => None,
         })
         .collect();
-    if !melees.is_empty() {
+    // Every declared withdrawal this round - resolved at the boundary, whether or not any strike ran.
+    let retreating: Vec<usize> = (0..board.units.len())
+        .filter(|&i| !board.units[i].fallen && matches!(acts[i], Act::Retreat(_)))
+        .collect();
+    if !melees.is_empty() || !retreating.is_empty() {
         let before = living(board);
         let (hits, reaches) = exchange(board, &melees, true, true);
         let mut lg = close(board, &before);
@@ -1586,12 +1627,26 @@ pub fn play_round(board: &mut Board, acts: &[Act]) -> Vec<SubPhaseLog> {
     // Outriders whose host formation is now gone are outriders of nothing - the state dissolves and they rejoin
     // their own line (see `dissolve`). Resolved once here, at the Inner Ring boundary where the havoc lands.
     dissolve(board);
-    // Dissolution moves bodies (rank + region), so fold the result back into the Inner Ring's snapshot - it is an
-    // Inner-Ring-boundary event, and a transcript must not read it as having happened a phase later. (When no
-    // Inner strike ran, no formation was wiped this round, so dissolution is a no-op and there is nothing to fold.)
+    // WITHDRAWAL: a declared Retreat that survived the ring rejoins its own line now, at weapon rank - free,
+    // because the ring it just stood was the price (every host had its declared chance at it). A body dissolution
+    // already moved is home already; one felled in the ring never leaves.
+    let mut withdrew: Vec<usize> = Vec::new();
+    for &i in &retreating {
+        if board.units[i].fallen || board.ranks[i] != Rank::Outrider {
+            continue;
+        }
+        board.regions[i] =
+            home_of(board, board.units[i].side, board.regions[i]).unwrap_or(board.regions[i]); // last of its side: the line re-forms where it stands
+        board.ranks[i] = Board::weapon_rank(&board.units[i]);
+        withdrew.push(i);
+    }
+    // Dissolution and withdrawal move bodies (rank + region), so fold the result back into the Inner Ring's
+    // snapshot - they are Inner-Ring-boundary events, and a transcript must not read them as having happened a
+    // phase later. (When no Inner strike or withdrawal ran, both are no-ops and there is nothing to fold.)
     if let Some(inner) = logs.last_mut() {
         inner.ranks = board.ranks.clone();
         inner.regions = board.regions.clone();
+        inner.withdrew = withdrew;
     }
 
     // ---- CROSSING RING: CROSSINGS (closing into a formation) -------------------------------------------
@@ -2520,7 +2575,87 @@ mod tests {
         );
     }
 
-    /// **The two crossings are chosen independently** (the evade-priority split). Against a weak front and a lethal
+    /// **Withdrawal: the way back out is priced, not banned.** An outrider may strike in the Inner Ring and then
+    /// rejoin its own line at the boundary - free, because the ring was the price (the hosts had their declared
+    /// chance). This is the demotion of "a crossing is committed": raids become round-trips.
+    #[test]
+    fn an_outrider_may_withdraw_after_the_inner_ring() {
+        let mut b = Board::new(
+            vec![
+                unit("Raider", Side::Party, [3, 5, 1, 4, 1], true, false),
+                unit("Archer", Side::Party, [2, 3, 1, 1, 1], false, true), // holds the home line
+                unit("Wall", Side::Foe, [1, 6, 6, 2, 1], true, false), // Grit 6: survives the exit strike
+                unit("Sniper", Side::Foe, [3, 2, 1, 2, 1], false, true),
+            ],
+            vec![0, 0, 1, 1],
+        );
+        // Round 1: cross in (the worked example's raid - push the Wall, dodge the volley, kill the Sniper).
+        play_round(
+            &mut b,
+            &[
+                Act::Cross(Some(3), Answer::Push, Volley::Dodge),
+                Act::Hold,
+                Act::Hold,
+                Act::Hold,
+            ],
+        );
+        assert_eq!(b.ranks[0], Rank::Outrider, "in, loose in their ranks");
+        // The withdrawal is on the menu, in both forms.
+        let acts = legal_acts(&b, 0);
+        assert!(
+            acts.contains(&Act::Retreat(None)),
+            "bare withdrawal offered"
+        );
+        assert!(
+            acts.contains(&Act::Retreat(Some(2))),
+            "the fighting exit offered"
+        );
+        // Round 2: strike the Wall AND withdraw. The strike is a full inner-ring melee; the Wall's own declared
+        // strike still lands (the price of the ring); then the Raider walks out while the Wall still stands.
+        let logs = play_round(
+            &mut b,
+            &[Act::Retreat(Some(2)), Act::Hold, Act::Melee(0), Act::Hold],
+        );
+        assert!(
+            b.units[2].health < 6 && !b.units[2].fallen,
+            "the fighting exit swung, and the Wall still stands (no dissolution)"
+        );
+        assert_eq!(
+            b.units[0].health,
+            4 - 2,
+            "and still paid the ring: the Wall's declared blows landed on the way out"
+        );
+        assert_eq!(b.regions[0], 0, "home again");
+        assert_eq!(
+            b.ranks[0],
+            Rank::Vanguard,
+            "back in its own line, at weapon rank"
+        );
+        assert!(
+            logs.iter().any(|l| l.withdrew.contains(&0)),
+            "the transcript records the withdrawal at the Inner Ring boundary"
+        );
+    }
+
+    /// **A body felled in the Inner Ring never leaves.** Withdrawal resolves at the boundary, AFTER the ring's
+    /// strikes - a corpse declared a Retreat, but corpses rejoin nothing.
+    #[test]
+    fn a_felled_withdrawer_does_not_go_home() {
+        let mut b = Board::new(
+            vec![
+                unit("Scout", Side::Party, [1, 1, 1, 1, 1], true, false),
+                unit("Brute", Side::Foe, [5, 4, 1, 3, 1], true, false),
+                unit("Mage", Side::Foe, [3, 2, 1, 2, 1], false, true),
+            ],
+            vec![0, 1, 1],
+        );
+        // Put the fragile Scout inside as an outrider by hand (tests share module access).
+        b.regions[0] = 1;
+        b.ranks[0] = Rank::Outrider;
+        play_round(&mut b, &[Act::Retreat(None), Act::Melee(0), Act::Hold]);
+        assert!(b.units[0].fallen, "the Brute fells it in the ring");
+        assert_eq!(b.regions[0], 1, "and it never made it home");
+    }
     /// back, the crosser can PUSH the line (eat the trivial catch) yet DODGE the arrows - a combination the old
     /// single `Answer` could not express. Dodging the volley, decided independently of the front, is the difference
     /// between living and dying.
@@ -3179,6 +3314,7 @@ mod tests {
                 Act::Clash(t) => Act::Clash(inv[t]),
                 Act::Cross(Some(t), x, v) => Act::Cross(Some(inv[t]), x, v),
                 Act::Melee(t) => Act::Melee(inv[t]),
+                Act::Retreat(Some(t)) => Act::Retreat(Some(inv[t])),
                 other => other,
             };
 

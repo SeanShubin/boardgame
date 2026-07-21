@@ -66,6 +66,8 @@ fn label(b: &Board, c: &Choice) -> String {
         Act::Cross(Some(t), ans, _) => format!("Raid {} ({ans:?})", who(*t)),
         Act::Cross(None, ans, _) => format!("Cross into their line ({ans:?})"),
         Act::Melee(t) => format!("Melee {}", who(*t)),
+        Act::Retreat(Some(t)) => format!("Strike {} and withdraw", b.units[*t].name),
+        Act::Retreat(None) => "Withdraw".to_string(),
         Act::Hold => "Hold".to_string(),
     }
 }

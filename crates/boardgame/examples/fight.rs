@@ -1056,6 +1056,13 @@ fn narrate_round(before: &Board, acts: &[Act]) -> Vec<String> {
                 before.units[i].name
             ));
         }
+        for &i in &log.withdrew {
+            land_lines.push(format!(
+                "{}: withdraws from the enemy ranks, rejoining its line as {}",
+                before.units[i].name,
+                rank_word(log.ranks[i])
+            ));
+        }
 
         // --- Absorb / flips (normal bodies): the pile closes each sub-phase, so pair damage with the cards it
         // flipped. A HORDE is not here - its bodies are felled per penetrating blow (the strike line), not piled -
@@ -1324,6 +1331,8 @@ fn act_label(b: &Board, a: &Act) -> String {
         Act::Clash(t) => format!("Clash {}", who(*t)),
         Act::Cross(Some(t), x, v) => format!("Raid {} / {}", who(*t), ans(x, v)),
         Act::Melee(t) => format!("Melee {}", who(*t)),
+        Act::Retreat(Some(t)) => format!("Strike {} and withdraw", who(*t)),
+        Act::Retreat(None) => "Withdraw to your own line".into(),
         Act::Cross(None, x, v) => format!("Slip into their line / {}", ans(x, v)),
         Act::Hold => "Hold".into(),
     }
