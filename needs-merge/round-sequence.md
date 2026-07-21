@@ -329,7 +329,7 @@ missing; "pending" means a genuine rule is not yet modeled.
 | 0 Inner Ring (prior outriders) | done | resolved first in `play_round`: a distance-zero brawl (both tiers, no screen), then `dissolve` |
 | I4 withdrawal (O->V) | done | `Act::Retreat(Option<target>)`: optional inner-ring strike, then rejoin at the boundary; diagonal held 4/4 + 5/5 with it searchable |
 | 1 crossings | done | up-front `Cross`, vanguard-only |
-| 2 elective catch + volley split | pending | catching is automatic geometry today, and not yet split into melee-interception (halts) vs ranged-volley (hits) (M2) |
+| 2 elective catch + volley split | done | the CATCH WAVE: a second declaration per round - each eligible body (V/R, living, not crossing) names ONE enemy crosser to intercept (vanguard) / volley (rearguard), or declines; tempo-priced, additive to its act. `Choice::Catch`, `foe_catch` instinct, solver searches the party's real catch options; diagonal held |
 | 3 cross the vanguard | done | `Act::Cross(_, Answer, _)` - slip/push/halt, free blow, melee-only strike-back; decides through-vs-stay |
 | 4 cross the rearguard | done | `Act::Cross(_, _, Volley)` - dodge/eat, damage only, chosen INDEPENDENTLY of the front (the evade-priority split); `legal_acts` enumerates Front x Volley |
 | 5 outrider targets back | different | today the raid target is bundled into `Cross(Some(t))` and resolved in the crossing ring, not a separate post-crossing beat |
@@ -342,17 +342,18 @@ missing; "pending" means a genuine rule is not yet modeled.
 
 The distance left:
 
-- **Elective catching (2)** - the one real enrichment: let the foe choose whom to
-  catch / how hard (the behavior-card foe policy). Optional; automatic catching
-  already gives the strategy its shape.
 - **Decoupled outrider targeting (5)** - *presentation only*: against deterministic
   foes, declaring the raid target up front (today's bundled `Cross(Some(t))`) is
   equivalent to picking it on arrival. A UI two-beat, no rule change.
+- **Catch-bid sizing / behavior cards** - the catch wave declares WHOM to catch;
+  how hard (the bid) still auto-sizes (`reach_cards`). Sizing it, and richer foe
+  catch policies, is behavior-card territory.
 
-Defender retaliation (7/10) is **dropped** (covered by the volley and the declared
-clash). The crosser's free blow on halt, the melee-only strike-back, and the aoe
-never-target/retaliate invariant are done. Everything else is presentation over a
-model that already plays it.
+Elective catching (2) is **done** - the catch wave, a genuine second declaration
+per round, measured green. Defender retaliation (7/10) is **dropped** (covered by
+the volley and the declared clash). The crosser's free blow on halt, the melee-only
+strike-back, and the aoe never-target/retaliate invariant are done. Everything else
+is presentation over a model that already plays it.
 
 ## Brainstorming
 
@@ -374,13 +375,15 @@ defense's catch/volley being an ADDITIONAL, tempo-priced engagement, not a
 replacement for its offense. This is not a tuning miss; it is a semantic
 disagreement with the sequence above: steps 2-4 price the catch in TEMPO, and
 step 8 is a separate declaration - a body may both catch and clash in one round,
-budgeted by its pool. The brainstorm agrees (each step has its own declarations).
-So the faithful implementation of elective catching is a genuine SECOND
-declaration per body (whom to catch, distinct from whom to strike), i.e. the
-per-step declaration surface - not a consolidation of the two into one act. The
-current auto-catch code is the closer approximation of canon (it prices catches
-in tempo); what it lacks is only the CHOICE of whom to catch / declining, which
-is the behavior-card layer's job.*
+budgeted by its pool. The brainstorm agrees (each step has its own declarations).*
+
+*RESOLVED same day: the per-step declaration surface is BUILT - the round is now
+two declare waves (acts, then catches), with the catch a genuine second
+declaration per body, tempo-priced and additive. The solver searches the party's
+real catch choices (whom, or declining); scripted foes and the greedy baseline
+play the catch instinct (`foe_catch`: always answer, at the crosser you most
+disrupt). Diagonal held 4/4 + 5/5 with the wave fully searchable. Steps 1-2 of
+the sequence are now literally the machine's structure.*
 - Interaction
   - Target
     - Everyone declare valid targets, then reveal
