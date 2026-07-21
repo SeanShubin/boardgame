@@ -68,3 +68,55 @@ pub fn insight_class(heroes: &[Combatant], foes: &[Combatant]) -> char {
         (false, false) => 'X',
     }
 }
+
+// ---- the STEP-MACHINE twins (the in-flight model, measured side by side) -------------------------------
+
+/// **Can these heroes force a win under the STEP machine?** The twin of [`solver_wins`], driving `G` =
+/// [`rules::combat::step_game::StepCombat`] or a control like `StepClashOnly` - same escalating grant, same
+/// cap, same safe direction.
+pub fn solver_wins_steps<G>(heroes: &[Combatant], foes: &[Combatant]) -> bool
+where
+    G: Solvable + Game<State = rules::combat::step_game::StepState>,
+{
+    use rules::combat::step_game::StepState;
+    let mut units: Vec<Combatant> = heroes.to_vec();
+    units.extend_from_slice(foes);
+    let s = StepState::new(units);
+
+    let mut o = Solver::<G>::new();
+    let mut grant = 1u64;
+    loop {
+        o.grant(grant);
+        match o.verdict(&s) {
+            Verdict::Winnable => return true,
+            Verdict::Doomed => return false,
+            Verdict::Evaluating => {
+                if grant >= GRANT_CAP {
+                    return false;
+                }
+                grant = grant.saturating_mul(2);
+            }
+        }
+    }
+}
+
+/// **Can these heroes win the STEP machine playing greedily?** The twin of [`greedy_wins`].
+pub fn greedy_wins_steps(heroes: &[Combatant], foes: &[Combatant]) -> bool {
+    use rules::combat::step_game::{StepState, greedy_step_playout};
+    let mut units: Vec<Combatant> = heroes.to_vec();
+    units.extend_from_slice(foes);
+    matches!(greedy_step_playout(StepState::new(units)), Outcome::Win)
+}
+
+/// The step machine's insight class - same letters, same meaning.
+pub fn insight_class_steps(heroes: &[Combatant], foes: &[Combatant]) -> char {
+    use rules::combat::step_game::StepCombat;
+    match (
+        solver_wins_steps::<StepCombat>(heroes, foes),
+        greedy_wins_steps(heroes, foes),
+    ) {
+        (_, true) => 'T',
+        (true, false) => 'I',
+        (false, false) => 'X',
+    }
+}

@@ -398,6 +398,39 @@ impl Solvable for StepCombat {
     }
 }
 
+/// The **clash-only control for the step machine**: the same game, but the party may never cross - the step
+/// analog of [`super::game::ClashOnly`], for the "is the raid load-bearing?" experiments. A five-line newtype
+/// filtering `options`, exactly as the seam intends.
+pub struct StepClashOnly;
+
+impl Game for StepClashOnly {
+    type State = StepState;
+    type Choice = StepChoice;
+    fn options(state: &StepState) -> Vec<StepChoice> {
+        let restrict = state.phase() == Phase::Cross
+            && state
+                .deciding()
+                .is_some_and(|i| state.board().units[i].side == Side::Party);
+        StepCombat::options(state)
+            .into_iter()
+            .filter(|c| !restrict || !matches!(c, StepChoice::Move(true)))
+            .collect()
+    }
+    fn apply(state: &StepState, choice: &StepChoice) -> StepState {
+        StepCombat::apply(state, choice)
+    }
+    fn outcome(state: &StepState) -> Option<Outcome> {
+        StepCombat::outcome(state)
+    }
+}
+
+impl Solvable for StepClashOnly {
+    type Key = StepKey;
+    fn key(state: &StepState) -> StepKey {
+        StepCombat::key(state)
+    }
+}
+
 /// **Play a whole fight out under the per-step greedy on BOTH sides** - the step machine's "can you win WITHOUT
 /// thinking?" baseline, the analog of the wave model's `greedy_playout`.
 pub fn greedy_step_playout(mut state: StepState) -> Outcome {
