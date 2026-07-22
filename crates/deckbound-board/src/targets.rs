@@ -113,7 +113,9 @@ pub fn table_md() -> String {
         }
         md.push_str("|\n");
     }
-    md
+    // Emit through the repo's one table style, so the committed doc is byte-identical to what the
+    // tree-wide `pad_tables` pass would produce - the golden test and the formatter can never fight.
+    mdtable::pad_tables(&md)
 }
 
 /// **The 3x3, as a card for the sidebar** — who reaches whom, and *when*. Same [`rows`] the reference doc is

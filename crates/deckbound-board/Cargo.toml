@@ -13,6 +13,9 @@ cardtable-model = { workspace = true }
 # finesse bids and the three mini-phases — is implemented FRESH in this crate's `combat` module. The product
 # depends on this stable leaf, never on the `deckbound` sample crate.
 deckbound-content = { workspace = true }
+# Markdown table padding - so the generated reference doc is emitted already in the repo's padded table
+# style, and the tree-wide `pad_tables` pass never fights the byte-exact golden test on it.
+mdtable = { workspace = true }
 # The pure, dep-free game rules (the regions combat as a `Game`). The probes drive this now; the local
 # `regions` copy is retired.
 rules = { workspace = true }

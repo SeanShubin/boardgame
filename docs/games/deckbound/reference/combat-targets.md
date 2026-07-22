@@ -12,22 +12,22 @@ empty target rank simply voids that pairing, for every rank, with no exception.
 is mutual - the body you engaged did not choose the fight, and you could have let it pass. A ranged
 contact is one-way: you cannot punch an archer at range.
 
-| Sub-phase | Attacker | Reach | Target | Answerable | Condition |
-|---|---|---|---|---|---|
-| Intercept | Vanguard | melee | Outrider | yes | - |
-| Volley | Rearguard | ranged | Outrider | no | - |
-| Raid | Outrider | melee | Rearguard | yes | - |
-| Clash | Rearguard | ranged | Vanguard | no | - |
-| Clash | Vanguard | melee | Vanguard | yes | - |
-| Breach | Vanguard | melee | Rearguard | yes | only once the target's own Vanguard has fallen (the screen) |
-| Breach | Outrider | melee | Vanguard | yes | - |
-| Breach | Outrider | melee | Outrider | yes | - |
-| Breach | Rearguard | ranged | Rearguard | no | only once the target's own Vanguard has fallen (the screen) |
+| Sub-phase | Attacker  | Reach  | Target    | Answerable | Condition                                                   |
+| --------- | --------- | ------ | --------- | ---------- | ----------------------------------------------------------- |
+| Intercept | Vanguard  | melee  | Outrider  | yes        | -                                                           |
+| Volley    | Rearguard | ranged | Outrider  | no         | -                                                           |
+| Raid      | Outrider  | melee  | Rearguard | yes        | -                                                           |
+| Clash     | Rearguard | ranged | Vanguard  | no         | -                                                           |
+| Clash     | Vanguard  | melee  | Vanguard  | yes        | -                                                           |
+| Breach    | Vanguard  | melee  | Rearguard | yes        | only once the target's own Vanguard has fallen (the screen) |
+| Breach    | Outrider  | melee  | Vanguard  | yes        | -                                                           |
+| Breach    | Outrider  | melee  | Outrider  | yes        | -                                                           |
+| Breach    | Rearguard | ranged | Rearguard | no         | only once the target's own Vanguard has fallen (the screen) |
 
 ## The 3x3, by *when*
 
-| Attacker \ Target | Vanguard | Outrider | Rearguard |
-|---|---|---|---|
-| **Vanguard** | Clash | Intercept | Breach |
-| **Outrider** | Breach | Breach | Raid |
-| **Rearguard** | Clash | Volley | Breach |
+| Attacker \ Target | Vanguard | Outrider  | Rearguard |
+| ----------------- | -------- | --------- | --------- |
+| **Vanguard**      | Clash    | Intercept | Breach    |
+| **Outrider**      | Breach   | Breach    | Raid      |
+| **Rearguard**     | Clash    | Volley    | Breach    |
