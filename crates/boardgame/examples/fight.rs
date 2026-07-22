@@ -34,7 +34,7 @@ use deckbound_content::catalog::{self, Encounter};
 use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
 use rules::combat::step_game::Score;
-use rules::combat::step_game::{Phase, StepChoice, StepCombat, StepScorer, StepState, step_policy};
+use rules::combat::step_game::{Step, StepChoice, StepCombat, StepScorer, StepState, step_policy};
 use rules::combat::steps::{StepScript, play_steps};
 use rules::core::{Game, PathCounter, Paths, Solver, Verdict};
 
@@ -139,7 +139,7 @@ struct UndoPoint {
     verdict: Option<Verdict>,
     round_board: Board,
     script: StepScript,
-    wave_mark: Option<(usize, Phase)>,
+    wave_mark: Option<(usize, Step)>,
 }
 
 #[derive(Resource)]
@@ -183,8 +183,8 @@ struct Fight {
     round_board: Board,
     /// The declarations accumulated this round, per step - the other narration input.
     script: StepScript,
-    /// The last wave header logged, `(round, phase)` - so each wave's header prints exactly once.
-    wave_mark: Option<(usize, Phase)>,
+    /// The last wave header logged, `(round, step)` - so each wave's header prints exactly once.
+    wave_mark: Option<(usize, Step)>,
     log: Vec<String>,
     dirty: bool,
 }
@@ -518,15 +518,15 @@ impl Fight {
     /// creature that felled it named a line or two above.
     fn apply_choice(&mut self, c: &StepChoice) {
         let round_before = self.state.round();
-        let phase = self.state.phase();
+        let step = self.state.step();
         let acting = self.state.deciding();
 
         if let Some(idx) = acting {
             // A wave header the first time this round reaches this step's declarations - the round.step
             // coordinate every commit below belongs to.
-            if self.wave_mark != Some((round_before, phase)) {
-                self.wave_mark = Some((round_before, phase));
-                let (k, name) = phase_coord(phase);
+            if self.wave_mark != Some((round_before, step)) {
+                self.wave_mark = Some((round_before, step));
+                let (k, name) = step_coord(step);
                 self.log
                     .push(format!("[round {round_before} - step {k}/8: {name}]"));
             }
@@ -541,21 +541,21 @@ impl Fight {
             let name = &b.units[idx].name;
             self.log.push(format!(
                 "      commit  {mark}{name} -> {}",
-                describe(phase, b, c)
+                describe(step, b, c)
             ));
             // Accumulate the declaration into this round's script - the narration re-simulates from it when the
             // round resolves. (Passes and stays accumulate nothing.)
-            match (phase, c) {
-                (Phase::Inner, StepChoice::Strike(Some(t))) => self.script.inner.push((idx, *t)),
-                (Phase::Withdraw, StepChoice::Move(true)) => self.script.withdraw.push(idx),
-                (Phase::Early, StepChoice::Strike(Some(t))) => self.script.early.push((idx, *t)),
-                (Phase::Cross, StepChoice::Move(true)) => self.script.cross.push(idx),
-                (Phase::Volley, StepChoice::Strike(Some(t))) => self.script.volley.push((idx, *t)),
-                (Phase::Raid, StepChoice::Strike(Some(t))) => self.script.raid.push((idx, *t)),
-                (Phase::Late, StepChoice::Strike(Some(t))) => self.script.late.push((idx, *t)),
-                (Phase::Advance, StepChoice::Strike(Some(t))) => {
-                    self.script.advance.push((idx, *t))
+            match (step, c) {
+                (Step::Havoc, StepChoice::Strike(Some(t))) => self.script.havoc.push((idx, *t)),
+                (Step::Withdraw, StepChoice::Move(true)) => self.script.withdraw.push(idx),
+                (Step::Skirmish, StepChoice::Strike(Some(t))) => {
+                    self.script.skirmish.push((idx, *t))
                 }
+                (Step::Cross, StepChoice::Move(true)) => self.script.cross.push(idx),
+                (Step::Volley, StepChoice::Strike(Some(t))) => self.script.volley.push((idx, *t)),
+                (Step::Raid, StepChoice::Strike(Some(t))) => self.script.raid.push((idx, *t)),
+                (Step::Assault, StepChoice::Strike(Some(t))) => self.script.assault.push((idx, *t)),
+                (Step::Advance, StepChoice::Strike(Some(t))) => self.script.advance.push((idx, *t)),
                 _ => {}
             }
         }
@@ -601,51 +601,51 @@ fn strike_verb(u: &Combatant) -> &'static str {
     }
 }
 
-/// A [`Phase`] to its **step coordinate** `(number, name)` - the wave headers' vocabulary, matched one-for-one
+/// A [`Step`] to its **step coordinate** `(number, name)` - the wave headers' vocabulary, matched one-for-one
 /// by the round-sequence doc.
-fn phase_coord(p: Phase) -> (u8, &'static str) {
+fn step_coord(p: Step) -> (u8, &'static str) {
     match p {
-        Phase::Inner => (1, "Inner"),
-        Phase::Withdraw => (2, "Withdraw"),
-        Phase::Early => (3, "Early Trade"),
-        Phase::Cross => (4, "Crossing"),
-        Phase::Volley => (5, "Volley"),
-        Phase::Raid => (6, "Raid"),
-        Phase::Late => (7, "Late Trade"),
-        Phase::Advance => (8, "Advance"),
+        Step::Havoc => (1, "Havoc"),
+        Step::Withdraw => (2, "Withdraw"),
+        Step::Skirmish => (3, "Skirmish"),
+        Step::Cross => (4, "Crossing"),
+        Step::Volley => (5, "Defensive Volley"),
+        Step::Raid => (6, "Raid"),
+        Step::Assault => (7, "Assault"),
+        Step::Advance => (8, "Advance"),
     }
 }
 
-/// A `SubPhaseLog` phase string (the step resolvers' labels) to the same step coordinate - so the narration and
+/// A `StepLog` step string (the step resolvers' labels) to the same step coordinate - so the narration and
 /// the wave headers speak one language.
-fn step_coord(phase: &'static str) -> (u8, &'static str) {
-    match phase {
-        "Step 1: Inner" => (1, "Inner"),
+fn label_coord(step: &'static str) -> (u8, &'static str) {
+    match step {
+        "Step 1: Havoc" => (1, "Havoc"),
         "Step 2: Withdraw" => (2, "Withdraw"),
-        "Step 3: Early Trade" => (3, "Early Trade"),
+        "Step 3: Skirmish" => (3, "Skirmish"),
         "Step 4: Crossing" => (4, "Crossing"),
-        "Step 5: Volley" => (5, "Volley"),
+        "Step 5: Defensive Volley" => (5, "Defensive Volley"),
         "Step 6: Raid" => (6, "Raid"),
-        "Step 7: Late Trade" => (7, "Late Trade"),
+        "Step 7: Assault" => (7, "Assault"),
         "Step 8: Advance" => (8, "Advance"),
         other => (0, other),
     }
 }
 
-/// **The round, phase by phase - every state change spelled out, none left invisible.** Re-runs the
+/// **The round, step by step - every state change spelled out, none left invisible.** Re-runs the
 /// deterministic resolution on a throwaway clone of the pre-round board (identical to what `self.state` just
-/// resolved) and walks the [`SubPhaseLog`] transcript `play_round` returns.
+/// resolved) and walks the [`StepLog`] transcript `play_round` returns.
 ///
 /// Output is a **coordinate language**: a `[ring N] NAME` header when a ring opens, a `ring.subphase Subphase`
-/// header per active sub-phase, and every event line prefixed with its **exchange step** (`reach` / `dodge` /
-/// `strike` / `absorb` / `move` / `death`) - so any line locates itself as `round . ring.subphase . step`.
+/// header per active sub-step, and every event line prefixed with its **exchange step** (`reach` / `dodge` /
+/// `strike` / `absorb` / `move` / `downed`) - so any line locates itself as `round . step . event-kind`.
 ///
-/// **The completeness rule: a body's every mutable field is snapshotted each phase, and a change to any of them
-/// prints a line.** Tempo, Health, rank and region are all diffed against the phase before, so no spend, flip,
+/// **The completeness rule: a body's every mutable field is snapshotted each step, and a change to any of them
+/// prints a line.** Tempo, Health, rank and region are all diffed against the step before, so no spend, flip,
 /// crossing or dissolution can happen silently. A tempo spend with no blow behind it (a slipper paying to evade,
 /// a catcher whose target slipped away) was exactly the kind of change that used to hide; now it does not.
 ///
-/// Within a phase, in order:
+/// Within a step, in order:
 /// - **Strikes** - one line per attacker: the tempo it spent (reaching + pouring), the Might, and the damage it
 ///   banked (`(Might - armor)` per blow, a horde swinging its whole body count at once; against a horde it *fells
 ///   bodies* instead).
@@ -656,8 +656,8 @@ fn step_coord(phase: &'static str) -> (u8, &'static str) {
 /// - **Rank / region** changes not already narrated (a dissolved outrider rejoining its line).
 /// - **Deaths**.
 ///
-/// Snapshots enter the first phase at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
-/// stable across the clone, so names / stats are read from `before`. A phase that did nothing prints nothing.
+/// Snapshots enter the first step at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
+/// stable across the clone, so names / stats are read from `before`. A step that did nothing prints nothing.
 fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
     let mut clone = before.clone();
     let transcript = play_steps(&mut clone, script);
@@ -692,7 +692,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
         }
         // Each strike, in the pool -> flow vocabulary: the attacker FLIPS tempo (at its Finesse) to GENERATE the
         // reach that lands the contact, then STRIKES for damage (Might per blow). The reach/tempo is a per-attacker
-        // fact - a sweep hits many for one flip - so it is stated once, on the attacker's first strike this phase.
+        // fact - a sweep hits many for one flip - so it is stated once, on the attacker's first strike this step.
         let mut tempo_said: Vec<usize> = Vec::new();
         for (&(a, t), &n) in order.iter().zip(&blows) {
             let (an, tn) = (&before.units[a].name, &before.units[t].name);
@@ -700,7 +700,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             // the opening roster and narrated when it changes.
             let verb = strike_verb(&before.units[a]);
             let mult = if before.units[a].horde {
-                prev_hp[a].max(1) // body count ENTERING this phase - what `land` and the bid both read
+                prev_hp[a].max(1) // body count ENTERING this step - what `land` and the bid both read
             } else {
                 1
             };
@@ -868,7 +868,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
 
         // --- Movements this step owns: the crossings (the step-4 log) and the withdrawals (the step-2 log).
         // Each step is its own transcript entry now, so its moves print in its OWN section as ordinary `move`
-        // lines - no borrowed sub-phase headers.
+        // lines - no borrowed sub-step headers.
         for &i in &log.through {
             lines.push((
                 "move",
@@ -890,7 +890,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             ));
         }
 
-        // --- Absorb / flips (normal bodies): the pile closes each sub-phase, so pair damage with the cards it
+        // --- Absorb / flips (normal bodies): the pile closes each sub-step, so pair damage with the cards it
         // flipped. A HORDE is not here - its bodies are felled per penetrating blow (the strike line), not piled -
         // so it is skipped. First total the banked damage per target (armor per blow, a horde attacker's whole body
         // count at once) - same formula as the strike lines - so the two always agree. ---
@@ -918,7 +918,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             let grit = before.units[i].grit.max(1);
             if h1 < h0 {
                 // Flip a Health card at Grit each to ABSORB damage. Flipped x Grit is what the cards soaked; the
-                // pile closes each sub-phase, so any damage past that is discarded.
+                // pile closes each sub-step, so any damage past that is discarded.
                 let flipped = h0 - h1;
                 let absorbed = flipped * grit;
                 let overflow = dmg_to[i].saturating_sub(absorbed);
@@ -939,7 +939,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                     ),
                 ));
             } else if dmg_to[i] > 0 {
-                // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-phase closes.
+                // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-step closes.
                 lines.push((
                     "absorb",
                     format!(
@@ -998,13 +998,13 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             }
         }
 
-        // --- Deaths this phase. ---
+        // --- Deaths this step. ---
         for &i in &log.fallen {
             let name = &before.units[i].name;
             if before.units[i].horde {
-                lines.push(("death", format!("{name}: no bodies remaining, wiped out")));
+                lines.push(("downed", format!("{name}: no bodies remaining, wiped out")));
             } else {
-                lines.push(("death", format!("{name}: no health remaining, downed")));
+                lines.push(("downed", format!("{name}: no health remaining")));
             }
         }
 
@@ -1015,7 +1015,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
         if !lines.is_empty() {
             // The coordinate: this step's own header, then the events in resolution order, each in its step
             // column - so any line reads as round . step K/8 . event-kind.
-            let (k, name) = step_coord(log.phase);
+            let (k, name) = label_coord(log.step);
             out.push(format!("  [step {k}/8] {name}"));
             let rank = |s: &str| match s {
                 "reach" => 0,
@@ -1023,7 +1023,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                 "strike" => 2,
                 "absorb" => 3,
                 "move" => 4,
-                _ => 5, // death, and anything else, last
+                _ => 5, // downed, and anything else, last
             };
             let mut evs = lines;
             evs.sort_by_key(|(s, _)| rank(s));
@@ -1087,27 +1087,27 @@ fn build(encounter: usize, requested_kit: Option<&str>) -> StepState {
 /// A choice label, per the current step. The active body is shown once above the options and marked on the
 /// table, so it is never repeated per action. Targets are named WITH current health, so two same-named bodies in
 /// different states read as the distinct choices they are.
-fn describe(phase: Phase, b: &Board, c: &StepChoice) -> String {
+fn describe(step: Step, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| {
         let u = &b.units[t];
         let kind = if u.horde { "bodies" } else { "hp" };
         format!("{} ({} {kind})", u.name, u.health)
     };
-    match (phase, c) {
-        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
-        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Phase::Late, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
-        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+    match (step, c) {
+        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Step::Assault, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some(t))) => {
             format!("Advance on the exposed {}", who(*t))
         }
         (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
         (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
-        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
-        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
-        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
-        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Step::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Step::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
         (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
@@ -1359,7 +1359,7 @@ fn screen_text(f: &Fight) -> String {
     if StepCombat::outcome(&f.state).is_some() {
         writeln!(s, "the fight is over.").ok();
     } else {
-        let (k, name) = phase_coord(f.state.phase());
+        let (k, name) = step_coord(f.state.step());
         writeln!(s, "step {k}/8 - {name}").ok();
         // The same best-route mark the buttons carry: settled minimum only, lone option unmarked.
         let (best, all_done) = f.best_route();
@@ -1368,7 +1368,7 @@ fn screen_text(f: &Fight) -> String {
             writeln!(
                 s,
                 "[{n}] {:<28} {:<12} {:<22} {}{}",
-                describe(f.state.phase(), b, c),
+                describe(f.state.step(), b, c),
                 vtag(f.opt_verdict[n]),
                 opt_counts(f.opt_paths[n]),
                 fmt_route(f.opt_score[n], f.opt_score_done[n]),
@@ -1611,7 +1611,7 @@ fn history_color(line: &str) -> Color {
         if line.contains("Win") { GOOD } else { BAD }
     } else if line.starts_with("---") {
         MUTED // a round marker
-    } else if line.ends_with("is down") {
+    } else if line.trim_start().starts_with("downed") {
         BAD // a body fell
     } else if line.starts_with('*') {
         FOE // a foe's declaration: "*The Wall: Clash Marksman"
@@ -1739,7 +1739,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
     }
     // The active hero and the STEP it is deciding, once and prominently - every option below belongs to both,
     // so neither is repeated per row. (The hero is also marked with a > on its row in the unit table.)
-    let (k, name) = phase_coord(f.state.phase());
+    let (k, name) = step_coord(f.state.step());
     match f.state.deciding() {
         Some(i) => {
             let u = &f.state.board().units[i];
@@ -1766,7 +1766,7 @@ fn options_panel(p: &mut ChildSpawnerCommands, f: &Fight) {
         choice_button(
             p,
             Hit::Option(n),
-            describe(f.state.phase(), f.state.board(), c),
+            describe(f.state.step(), f.state.board(), c),
             opt_counts(f.opt_paths[n]),
             fmt_route(f.opt_score[n], f.opt_score_done[n]),
             marking && f.opt_score[n] == best,

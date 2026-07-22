@@ -16,7 +16,7 @@ use deckbound_content::catalog::{self, Encounter};
 use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
 use rules::combat::step_game::{
-    Phase, Score, StepChoice, StepCombat as Combat, StepScorer as Scorer, StepState as State,
+    Score, Step, StepChoice, StepCombat as Combat, StepScorer as Scorer, StepState as State,
 };
 use rules::core::{Game, Solver, Verdict, decisions_within};
 
@@ -57,26 +57,26 @@ fn show_board(b: &Board) -> String {
 
 /// What this choice does at this step, in words. Targets carry hp (bodies, for a horde) so two same-named
 /// bodies in different states read apart.
-fn label(phase: Phase, b: &Board, c: &StepChoice) -> String {
+fn label(step: Step, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| {
         let u = &b.units[t];
         let kind = if u.horde { "bodies" } else { "hp" };
         format!("{} ({} {kind})", u.name, u.health)
     };
-    match (phase, c) {
-        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
-        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+    match (step, c) {
+        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some(t))) => {
             format!("Advance on the exposed {}", who(*t))
         }
         (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
         (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
-        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
-        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
-        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
-        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Step::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Step::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
         (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
@@ -153,7 +153,7 @@ fn main() {
         println!(
             "round {}  step {:?}  {} declares   {}",
             state.round(),
-            state.phase(),
+            state.step(),
             deciding,
             show_board(state.board())
         );
@@ -172,7 +172,7 @@ fn main() {
             let next = Combat::apply(&state, c);
             println!(
                 "  [{i}] {:<32} -> {:?}, best {}, {} decisions within 6 plies",
-                label(state.phase(), state.board(), c),
+                label(state.step(), state.board(), c),
                 verdict(&next),
                 fmt_score(best_route(&next, &start_hp)),
                 decisions_within::<Combat>(&next, 6)

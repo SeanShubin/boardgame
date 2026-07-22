@@ -19,41 +19,43 @@ use super::regions::{
 };
 use super::resolve::{Combatant, Side, refresh_round};
 use super::steps::{
-    resolve_advance, resolve_cross, resolve_early, resolve_inner, resolve_late, resolve_raid,
+    resolve_advance, resolve_assault, resolve_cross, resolve_havoc, resolve_raid, resolve_skirmish,
     resolve_volley, resolve_withdraw,
 };
 use crate::core::{Game, Outcome, Solvable};
 
 /// The eight steps of a round, in schedule order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Phase {
-    /// Step 1: in-region strikes - prior-round outriders and their hosts, both tiers, no screen.
-    Inner,
+pub enum Step {
+    /// Step 1: havoc - prior-round outriders and their hosts trade in-region, both tiers, no screen.
+    Havoc,
     /// Step 2: outriders may withdraw to their own line, free - step 1 was the price.
     Withdraw,
-    /// Step 3: the early front trade - and the interception window (crossings declare NEXT step, blind here).
-    Early,
+    /// Step 3: the skirmish - the fast early front trade, and the interception window (crossings declare NEXT
+    /// step, blind here).
+    Skirmish,
     /// Step 4: vanguards that declared no line strike may cross - an uncontested walk, landing as an Outrider.
     Cross,
-    /// Step 5: rearguards volley enemy outriders - one-way, opening blow only.
+    /// Step 5: the defensive volley - rearguards fire on enemy outriders, one-way, opening blow only.
     Volley,
     /// Step 6: this round's arrivals strike a back-line target - opening blow only.
     Raid,
-    /// Step 7: the late front trade - fire, and every vanguard that held back ("halt" is emergent).
-    Late,
+    /// Step 7: the assault - all firepower to bear: rearguard fire, and every vanguard that held back
+    /// ("halt" is emergent).
+    Assault,
     /// Step 8: the advance - a rearguard whose screen has fallen BY NOW is reachable (same-round collapse).
     Advance,
 }
 
-const PHASES: [Phase; 8] = [
-    Phase::Inner,
-    Phase::Withdraw,
-    Phase::Early,
-    Phase::Cross,
-    Phase::Volley,
-    Phase::Raid,
-    Phase::Late,
-    Phase::Advance,
+const STEPS: [Step; 8] = [
+    Step::Havoc,
+    Step::Withdraw,
+    Step::Skirmish,
+    Step::Cross,
+    Step::Volley,
+    Step::Raid,
+    Step::Assault,
+    Step::Advance,
 ];
 
 /// One body's declaration at the current step.
@@ -72,7 +74,7 @@ pub struct StepState {
     board: Board,
     /// The declaration order within every wave: the party (seat order) then the foes.
     order: Vec<usize>,
-    phase: Phase,
+    step: Step,
     /// Cursor into `order`: the next eligible body of the current wave that has not declared.
     next: usize,
     /// This step's declarations (per body); cleared when the step resolves.
@@ -98,7 +100,7 @@ impl StepState {
         let mut s = StepState {
             board: Board::new(units, regions),
             order,
-            phase: Phase::Inner,
+            step: Step::Havoc,
             next: 0,
             decls: vec![None; n],
             struck: vec![false; n],
@@ -115,8 +117,8 @@ impl StepState {
     pub fn round(&self) -> usize {
         self.round
     }
-    pub fn phase(&self) -> Phase {
-        self.phase
+    pub fn step(&self) -> Step {
+        self.step
     }
 
     /// The body whose declaration is pending, or `None` on a terminal state.
@@ -148,23 +150,23 @@ impl StepState {
     /// enforces the same rule again at resolution.)
     fn reaches(&self, i: usize, t: usize) -> bool {
         let b = &self.board;
-        match self.phase {
-            Phase::Inner => b.regions[i] == b.regions[t],
-            Phase::Early => b.ranks[i] == Rank::Vanguard && b.ranks[t] == Rank::Vanguard,
-            Phase::Volley => b.ranks[i] == Rank::Rearguard && b.ranks[t] == Rank::Outrider,
-            Phase::Raid => {
+        match self.step {
+            Step::Havoc => b.regions[i] == b.regions[t],
+            Step::Skirmish => b.ranks[i] == Rank::Vanguard && b.ranks[t] == Rank::Vanguard,
+            Step::Volley => b.ranks[i] == Rank::Rearguard && b.ranks[t] == Rank::Outrider,
+            Step::Raid => {
                 self.arrived[i] && b.ranks[t] == Rank::Rearguard && b.regions[t] == b.regions[i]
             }
-            Phase::Late => {
+            Step::Assault => {
                 matches!(b.ranks[i], Rank::Vanguard | Rank::Rearguard)
                     && b.ranks[t] == Rank::Vanguard
             }
-            Phase::Advance => {
+            Step::Advance => {
                 matches!(b.ranks[i], Rank::Vanguard | Rank::Rearguard)
                     && b.ranks[t] == Rank::Rearguard
                     && !b.is_screened(t)
             }
-            Phase::Withdraw | Phase::Cross => false,
+            Step::Withdraw | Step::Cross => false,
         }
     }
 
@@ -175,9 +177,9 @@ impl StepState {
         if b.units[i].fallen {
             return false;
         }
-        match self.phase {
-            Phase::Withdraw => b.ranks[i] == Rank::Outrider,
-            Phase::Cross => {
+        match self.step {
+            Step::Withdraw => b.ranks[i] == Rank::Outrider,
+            Step::Cross => {
                 // A vanguard that declared no line strike, with an enemy region to walk into - and a reason:
                 // the menu offers the crossing only when the enemy holds a SCREENED back (the dominated-slip
                 // prune, unchanged; an exposed back is reached by the step-8 advance instead).
@@ -209,16 +211,16 @@ impl StepState {
             }
             // The wave is complete: resolve this step against the live board, then move on.
             self.resolve_phase();
-            if self.phase == Phase::Advance {
+            if self.step == Step::Advance {
                 // Round over: the reset - tempo stands back up, commitments clear, a new round opens.
                 self.round += 1;
                 refresh_round(&mut self.board.units);
                 self.struck = vec![false; self.board.units.len()];
                 self.arrived = vec![false; self.board.units.len()];
-                self.phase = Phase::Inner;
+                self.step = Step::Havoc;
             } else {
-                let idx = PHASES.iter().position(|&p| p == self.phase).unwrap();
-                self.phase = PHASES[idx + 1];
+                let idx = STEPS.iter().position(|&p| p == self.step).unwrap();
+                self.step = STEPS[idx + 1];
             }
             self.decls = vec![None; self.board.units.len()];
             self.next = 0;
@@ -245,32 +247,32 @@ impl StepState {
                 _ => None,
             })
             .collect();
-        match self.phase {
-            Phase::Inner => {
-                resolve_inner(&mut self.board, &strikes);
+        match self.step {
+            Step::Havoc => {
+                resolve_havoc(&mut self.board, &strikes);
             }
-            Phase::Withdraw => {
+            Step::Withdraw => {
                 resolve_withdraw(&mut self.board, &movers);
             }
-            Phase::Early => {
-                resolve_early(&mut self.board, &strikes);
+            Step::Skirmish => {
+                resolve_skirmish(&mut self.board, &strikes);
             }
-            Phase::Cross => {
+            Step::Cross => {
                 let (landed, _) = resolve_cross(&mut self.board, &movers, &self.struck);
                 for i in landed {
                     self.arrived[i] = true;
                 }
             }
-            Phase::Volley => {
+            Step::Volley => {
                 resolve_volley(&mut self.board, &strikes);
             }
-            Phase::Raid => {
+            Step::Raid => {
                 resolve_raid(&mut self.board, &strikes, &self.arrived);
             }
-            Phase::Late => {
-                resolve_late(&mut self.board, &strikes);
+            Step::Assault => {
+                resolve_assault(&mut self.board, &strikes);
             }
-            Phase::Advance => {
+            Step::Advance => {
                 resolve_advance(&mut self.board, &strikes);
             }
         }
@@ -292,14 +294,14 @@ impl StepState {
 pub fn step_policy(state: &StepState, i: usize) -> StepChoice {
     let b = state.board();
     let candidates = state.targets(i);
-    match state.phase() {
-        Phase::Withdraw => StepChoice::Move(false), // instinct is havoc: stay in
-        Phase::Cross => {
+    match state.step() {
+        Step::Withdraw => StepChoice::Move(false), // instinct is havoc: stay in
+        Step::Cross => {
             // Cross iff the one-ply greedy would cross: the same read the wave model's script used.
             let crossing = wants_to_cross(b, i);
             StepChoice::Move(crossing)
         }
-        Phase::Early => {
+        Step::Skirmish => {
             // The interception window: a body that intends to cross holds its swing; otherwise strike the
             // max-disruption enemy vanguard now (foes strike early - vanguard deaths first is the schedule's
             // whole point).
@@ -329,8 +331,8 @@ impl Game for StepCombat {
         if state.board.units[i].side != Side::Party {
             return vec![step_policy(state, i)];
         }
-        match state.phase {
-            Phase::Withdraw | Phase::Cross => {
+        match state.step {
+            Step::Withdraw | Step::Cross => {
                 vec![StepChoice::Move(true), StepChoice::Move(false)]
             }
             _ => {
@@ -348,7 +350,7 @@ impl Game for StepCombat {
     fn apply(state: &StepState, choice: &StepChoice) -> StepState {
         let mut s = state.clone();
         let i = s.order[s.next];
-        if matches!(choice, StepChoice::Strike(Some(_))) && !matches!(s.phase, Phase::Raid) {
+        if matches!(choice, StepChoice::Strike(Some(_))) && !matches!(s.step, Step::Raid) {
             // A declared line strike commits the body: it cannot cross this round. (The raid is exempt - it
             // presupposes the crossing already made.)
             s.struck[i] = true;
@@ -370,7 +372,7 @@ type StepKey = (
     Vec<(u32, bool, Rank, u32)>,
     Vec<u8>,
     usize,
-    Phase,
+    Step,
     u8,
     Vec<Option<StepChoice>>,
     Vec<bool>,
@@ -391,7 +393,7 @@ impl Solvable for StepCombat {
             per,
             canonical(&state.board.regions),
             state.round,
-            state.phase,
+            state.step,
             state.next as u8,
             state.decls.clone(),
             state.struck.clone(),
@@ -409,7 +411,7 @@ impl Game for StepClashOnly {
     type State = StepState;
     type Choice = StepChoice;
     fn options(state: &StepState) -> Vec<StepChoice> {
-        let restrict = state.phase() == Phase::Cross
+        let restrict = state.step() == Step::Cross
             && state
                 .deciding()
                 .is_some_and(|i| state.board().units[i].side == Side::Party);
@@ -610,12 +612,12 @@ mod tests {
             unit("Sniper", Side::Foe, [5, 9, 1, 2, 3], false, true),
         ]);
         // Round 1, step Early: the Raider strikes the Wall.
-        assert_eq!(s.phase(), Phase::Early);
+        assert_eq!(s.step(), Step::Skirmish);
         assert_eq!(s.deciding(), Some(0));
         s = StepCombat::apply(&s, &StepChoice::Strike(Some(1)));
         // The wave rolls through the foes and the step resolves; the Raider - committed to the line - is never
-        // eligible at Cross, so by the time the party would decide again the phase is past it.
-        while s.deciding() == Some(0) && s.phase() == Phase::Cross {
+        // eligible at Cross, so by the time the party would decide again the step is past it.
+        while s.deciding() == Some(0) && s.step() == Step::Cross {
             unreachable!("a committed striker must not be asked about crossing");
         }
         assert!(s.round() >= 1);
@@ -631,7 +633,7 @@ mod tests {
             unit("Wall", Side::Foe, [1, 1, 6, 1, 2], true, false),
             unit("Sniper", Side::Foe, [5, 6, 1, 2, 3], false, true),
         ]);
-        assert_eq!(s.phase(), Phase::Early);
+        assert_eq!(s.step(), Step::Skirmish);
         s = StepCombat::apply(&s, &StepChoice::Strike(Some(1))); // the wall dies at step 3
         // Walk the waves forward to the party's next decision.
         while let Some(i) = s.deciding() {
@@ -645,7 +647,7 @@ mod tests {
         // ADVANCE wave must have offered the Sniper to anyone eligible. Prove it structurally: by the time the
         // round rolled over, the Sniper is unscreened and alive - and a fresh round's Early wave has no enemy
         // vanguard, so the party's first offer is the ADVANCE at the exposed Sniper.
-        while s.phase() != Phase::Advance || s.deciding().is_none() {
+        while s.step() != Step::Advance || s.deciding().is_none() {
             let Some(i) = s.deciding() else { break };
             if s.board().units[i].side == Side::Party {
                 s = StepCombat::apply(&s, &StepChoice::Strike(None));
@@ -657,7 +659,7 @@ mod tests {
                 break;
             }
         }
-        if s.phase() == Phase::Advance {
+        if s.step() == Step::Advance {
             if let Some(i) = s.deciding() {
                 assert!(
                     s.targets(i).contains(&2),

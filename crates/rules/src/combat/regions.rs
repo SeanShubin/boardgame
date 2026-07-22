@@ -1,6 +1,6 @@
 //! **The combat model's PHYSICS and geometry** - the board (formations, regions, ranks), the shared exchange
 //! machinery every step resolves through (engage -> evade -> land, the grit pile, area strikes), the transcript
-//! types ([`SubPhaseLog`], [`Hit`], [`Reach`]), and the one-ply instinct reads ([`foe_catch`],
+//! types ([`StepLog`], [`Hit`], [`Reach`]), and the one-ply instinct reads ([`foe_catch`],
 //! [`wants_to_cross`]) the scripted policies are built from.
 //!
 //! The DECISION layer lives in [`super::step_game`] (the eight-step round as a `Game`) and the per-step
@@ -52,7 +52,7 @@ pub const MAX_ROUNDS: usize = 5;
 ///
 /// **A rearguard whose vanguard has collapsed is not promoted to vanguard.** This is the collapsed-vanguard rule,
 /// and it is the hinge the whole design turns on: the back **stays** a back. It becomes *targetable* - anyone may
-/// now clash it directly, no raid required (force, not fiat) - but it **keeps its phase slot**, so it still
+/// now clash it directly, no raid required (force, not fiat) - but it **keeps its step slot**, so it still
 /// shoots *before* the front swings. That is what makes range mean something: a lone archer is perfectly
 /// targetable and gets **the first hit** anyway. (Promotion-*to-vanguard* destroyed exactly this - it turned
 /// every unscreened cannon into just another front-line body - so only the *outrider* promotion survives.)
@@ -115,7 +115,7 @@ impl Board {
     /// do the screening.
     ///
     /// An **outrider** is never screened (it is not a rearguard - it is loose inside the enemy ranks, adjacent to
-    /// everyone), and a rearguard with no vanguard left is exposed: still a rearguard (it keeps its phase slot),
+    /// everyone), and a rearguard with no vanguard left is exposed: still a rearguard (it keeps its step slot),
     /// simply now reachable.
     pub fn is_screened(&self, target: usize) -> bool {
         self.ranks[target] == Rank::Rearguard
@@ -331,13 +331,13 @@ fn reaches_of(reaching: &[Contact], landed: &[Contact]) -> Vec<Reach> {
         .collect()
 }
 
-/// What happened in one sub-phase - enough for a transcript or a renderer to say *why* the board changed.
+/// What happened in one step - enough for a transcript or a renderer to say *why* the board changed.
 #[derive(Clone, Debug, Default)]
-pub struct SubPhaseLog {
-    /// **Which step of the round this is** - e.g. `"Inner"`, `"Cross"`, `"Late Trade"`. Set by the step
+pub struct StepLog {
+    /// **Which step of the round this is** - e.g. `"Step 1: Havoc"`, `"Step 4: Crossing"`, `"Step 7: Assault"`. Set by the step
     /// resolvers ([`super::steps`]) so a transcript can say *where* in the round every strike and card-flip
     /// happened, not just *that* it happened. Empty on a log built outside the step schedule.
-    pub phase: &'static str,
+    pub step: &'static str,
     /// Got through - standing somewhere new now.
     pub through: Vec<usize>,
     /// Turned and fought instead: it stayed where it was.
@@ -351,25 +351,25 @@ pub struct SubPhaseLog {
     /// **Every body's health at this boundary** - a snapshot, so a transcript can show what the board looked
     /// like *here* rather than at the end of the round.
     ///
-    /// Without it a caller can only read the *final* board, and every sub-phase line prints identically - which
+    /// Without it a caller can only read the *final* board, and every step line prints identically - which
     /// hid the fact that all the damage was landing in one place. A log you cannot trust to say *when* is worse
     /// than no log.
     pub health: Vec<u32>,
     /// **Every body's Tempo at this boundary** - a snapshot, same shape and motive as `health`. The diff against
-    /// the phase before it is what a body *spent* this phase (a reach, a pour, a slip); without it a transcript
+    /// the step before it is what a body *spent* this step (a reach, a pour, a slip); without it a transcript
     /// can say a blow landed but never what it cost to land.
     pub tempo: Vec<u32>,
     /// Every body's **rank** at this boundary. Same reason: without it a promotion that happens in the last
-    /// sub-phase appears to have been true all round.
+    /// step appears to have been true all round.
     pub ranks: Vec<Rank>,
     /// Every body's **region** at this boundary. Same snapshot discipline: a crossing or a dissolution moves a
-    /// body, and a transcript that only reads the final board cannot say *which phase* it moved in.
+    /// body, and a transcript that only reads the final board cannot say *which step* it moved in.
     pub regions: Vec<u8>,
-    /// **Every strike that landed in this sub-phase**, source-attributed: who hit whom, and how many blows. A
+    /// **Every strike that landed in this step**, source-attributed: who hit whom, and how many blows. A
     /// renderer reads Might per blow from the attacker to say *where* each body's damage came from (a sweep
     /// records one `Hit` per swept contact, so an area strike is attributed to its sweeper too).
     pub hits: Vec<Hit>,
-    /// **Every contested reach this sub-phase**, with its bid and whether it was slipped ([`Reach`]). Carries the
+    /// **Every contested reach this step**, with its bid and whether it was slipped ([`Reach`]). Carries the
     /// slip-contest numbers a `Hit` cannot: an evaded reach lands nothing, so this is where the bid it committed -
     /// and, read against the target's Finesse, the slip that beat it - become legible.
     pub reaches: Vec<Reach>,
@@ -617,7 +617,7 @@ pub fn set_area_reach(reach: AreaReach) {
 ///   penetrates. That breadth is the sweep's whole job against a horde.
 ///
 /// (A **normal** body is the familiar pile: bank `max(0, Might - armor)` per blow, flip a Health card each time
-/// the pile clears Grit. The pile closes each sub-phase, so an unfinished wound is not inflicted.)
+/// the pile clears Grit. The pile closes each step, so an unfinished wound is not inflicted.)
 fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Blows]) -> Vec<Hit> {
     // Collect every blow first, apply nothing yet: an order-free, commit-based batch, so a blow lands even if
     // its striker dies to a simultaneous one.
@@ -676,7 +676,7 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
             board.units[i].health = board.units[i].health.saturating_sub(felled[i]);
         } else if damage[i] > 0 {
             // The grit pile: bank the Might, flip a Health card each time it clears the bar. It closes at the
-            // sub-phase boundary, so a wound you cannot finish is a wound you did not inflict.
+            // step boundary, so a wound you cannot finish is a wound you did not inflict.
             let bar = board.units[i].grit.max(1);
             board.units[i].pending += damage[i];
             while board.units[i].pending >= bar && board.units[i].health > 0 {
@@ -710,12 +710,12 @@ fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows>
         .collect()
 }
 
-/// Close a sub-phase: **finalize deaths** and snapshot the boundary. Finalizing here is how the ground behind a
+/// Close a step: **finalize deaths** and snapshot the boundary. Finalizing here is how the ground behind a
 /// broken line opens up *within* a round - a rearguard whose vanguard just fell becomes exposed (clashable) the
 /// moment that death is settled, no promotion needed.
-pub(super) fn close(board: &mut Board, before: &[bool]) -> SubPhaseLog {
+pub(super) fn close(board: &mut Board, before: &[bool]) -> StepLog {
     end_sub_phase(&mut board.units);
-    SubPhaseLog {
+    StepLog {
         fallen: (0..board.units.len())
             .filter(|&i| before[i] && board.units[i].fallen)
             .collect(),
@@ -736,7 +736,7 @@ pub(super) fn living(board: &Board) -> Vec<bool> {
 /// the last of it) is an outrider of nothing. The state ends: the body reverts to its weapon rank and, if its
 /// side still holds a **line** elsewhere, **rejoins it** - there is no ground to garrison in a two-formation
 /// fight, only a line to hold. A body that is the *last* of its side simply becomes the formation where it
-/// stands. Called at the Inner Ring boundary, where an outrider's havoc is what wipes a formation.
+/// stands. Called at the havoc (step 1) boundary, where an outrider's havoc is what wipes a formation.
 ///
 /// (This replaced the old *promotion* - "clearing a zone takes the ground" - a multi-region leftover that, with
 /// one region per side, mostly just coincided with the win and mishandled a mutual raid.)
@@ -1010,7 +1010,7 @@ mod tests {
         );
     }
 
-    /// The grit pile closes at the sub-phase boundary: banked sub-Grit damage is discarded, so a wound you
+    /// The grit pile closes at the step boundary: banked sub-Grit damage is discarded, so a wound you
     /// cannot finish within the batch is a wound you did not inflict.
     #[test]
     fn the_grit_pile_closes_at_the_boundary() {

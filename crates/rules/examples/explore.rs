@@ -14,7 +14,7 @@ use std::io::{self, Write};
 
 use rules::combat::regions::{Board, Rank};
 use rules::combat::resolve::{Combatant, Side};
-use rules::combat::step_game::{Phase, StepChoice, StepCombat as Combat, StepState as State};
+use rules::combat::step_game::{Step, StepChoice, StepCombat as Combat, StepState as State};
 use rules::core::{Game, Solver, Verdict, decisions_within};
 
 fn u(name: &str, side: Side, stats: [u8; 5], melee: bool, ranged: bool) -> Combatant {
@@ -52,22 +52,22 @@ fn show_board(b: &Board) -> String {
 }
 
 /// What this choice does at this step, in words.
-fn label(phase: Phase, b: &Board, c: &StepChoice) -> String {
+fn label(step: Step, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| format!("{}({})", b.units[t].name, b.units[t].health);
-    match (phase, c) {
-        (Phase::Inner, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Phase::Early, StepChoice::Strike(Some(t))) => format!("Strike {} (early)", who(*t)),
-        (Phase::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Phase::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Phase::Advance, StepChoice::Strike(Some(t))) => {
+    match (step, c) {
+        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some(t))) => {
             format!("Advance on the exposed {}", who(*t))
         }
         (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
         (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
-        (Phase::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
-        (Phase::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
-        (Phase::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
-        (Phase::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Step::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Step::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
         (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
@@ -112,7 +112,7 @@ fn main() {
         println!(
             "round {}  step {:?}  {} declares   {}",
             state.round(),
-            state.phase(),
+            state.step(),
             deciding,
             show_board(state.board())
         );
@@ -129,7 +129,7 @@ fn main() {
             let beyond = decisions_within::<Combat>(&next, 8);
             println!(
                 "  [{i}] {:<34} -> {v:?}, {beyond} decisions within 8 plies",
-                label(state.phase(), state.board(), c)
+                label(state.step(), state.board(), c)
             );
         }
         print!("choose (or q): ");
