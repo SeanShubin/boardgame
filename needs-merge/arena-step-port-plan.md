@@ -1,6 +1,11 @@
 # Porting the production combat arena to the step machine
 
-Status: staged plan, 2026-07-22. The production card-table app (`crates/boardgame` bin ->
+Status: **EXECUTED 2026-07-22** (one shot, as revised below). The arena runs the canon step
+machine; the parallel stack (deckbound-board combat/battle/solver, Marshal/Muster, the v2
+tooling examples) is deleted; the no-drift gate
+(`arena::tests::the_card_path_reproduces_the_engine_exactly`) locks the card path to the
+engine byte-for-byte; verify.sh and the wasm build are green. Kept as the record of the
+pins and the reasoning. Originally: staged plan, 2026-07-22. The production card-table app (`crates/boardgame` bin ->
 `deckbound_board::CardTableGame`) still fights through the OLD combat stack; the canon round
 sequence (`docs/games/deckbound/combat-round-sequence.md`, the eight-step machine in
 `crates/rules/src/combat`) runs only in the dev fight simulator and the balance gate. This
