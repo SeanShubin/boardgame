@@ -94,6 +94,7 @@ impl Plugin for LoggingPlugin {
                     log_view,
                     log_layout,
                     log_scene,
+                    mirror_scene,
                     log_combat,
                     drain_drop_trace,
                 ),
@@ -625,6 +626,207 @@ fn log_click(
 /// actually saw; it had to be inferred from the arena's cards. Everything the screen says is written here:
 /// which phase and step each track is on, the prompt, the decision being asked for (with each option's
 /// consequence, or the reason it is barred), and the combat log lines themselves.
+
+/// **The current-screen snapshot** - `ui-scene.txt`, rewritten whenever the modal scene changes, so "what
+/// does the screen look like RIGHT NOW" is always answerable from one file, completely and unambiguously:
+/// every tile with its named attention state, every choice with its status, the controls, the prompt. The
+/// append history lives in `ui-state.log`; this file is the present tense. (Native only.)
+fn mirror_scene(scene: Res<SceneState>, mut last: Local<String>) {
+    if cfg!(target_arch = "wasm32") {
+        return;
+    }
+    let text = match &scene.0 {
+        Some(s) => scene_text(s),
+        None => "(no modal scene - the felt is showing)
+"
+        .to_string(),
+    };
+    if *last != text {
+        let _ = std::fs::write("ui-scene.txt", &text);
+        *last = text;
+    }
+}
+
+/// Serialize a [`Scene`] to the snapshot text - generic vocabulary only (the renderer's own terms), never a
+/// game meaning.
+fn scene_text(s: &cardtable_model::Scene) -> String {
+    use cardtable_model::{Highlight, Outlook, SceneBody, Team, Tile};
+    let hl = |h: Highlight| match h {
+        Highlight::Idle => "idle",
+        Highlight::Dim => "dim (nothing to do here)",
+        Highlight::Available => "AVAILABLE (awaiting your order)",
+        Highlight::Settled => "settled (ordered - tap to change)",
+        Highlight::Active => "ACTIVE (being commanded now)",
+        Highlight::Targeted => "TARGETED (ringed - select to complete the action)",
+        Highlight::Spent => "spent (out of play)",
+    };
+    let mut out = format!(
+        "=== {} ===
+",
+        s.heading
+    );
+    for track in &s.tracks {
+        let items: Vec<String> = track
+            .items
+            .iter()
+            .map(|i| {
+                if i.current {
+                    format!("[{}]", i.label)
+                } else {
+                    i.label.clone()
+                }
+            })
+            .collect();
+        out.push_str(&format!(
+            "{}: {}
+",
+            track.title,
+            items.join(" > ")
+        ));
+    }
+    if !s.prompt.is_empty() {
+        out.push_str(&format!(
+            "
+PROMPT: {}
+",
+            s.prompt
+        ));
+    }
+
+    let mut names: std::collections::HashMap<CardId, String> = std::collections::HashMap::new();
+    let tile_line = |t: &Tile, out: &mut String| {
+        let side = match t.team {
+            Team::Left => "yours",
+            Team::Right => "theirs",
+        };
+        let badges: Vec<&str> = t.badges.iter().map(|b| b.text.as_str()).collect();
+        out.push_str(&format!(
+            "    {:<14} ({side})  {}
+                   {}
+",
+            t.title,
+            hl(t.highlight),
+            badges.join("  |  ")
+        ));
+    };
+    out.push_str(
+        "
+BOARD (left of the divider = yours, right = theirs):
+",
+    );
+    match &s.body {
+        SceneBody::Lanes(lanes) => {
+            for lane in lanes {
+                out.push_str(&format!(
+                    "  {}:
+",
+                    lane.label
+                ));
+                if lane.left.is_empty() && lane.right.is_empty() {
+                    out.push_str(
+                        "    (empty)
+",
+                    );
+                }
+                for t in lane.left.iter().chain(lane.right.iter()) {
+                    names.insert(t.card, t.title.clone());
+                    tile_line(t, &mut out);
+                }
+            }
+        }
+        SceneBody::Rows(rows) => {
+            for row in rows {
+                out.push_str(&format!(
+                    "  {}:
+",
+                    row.label
+                ));
+                for t in &row.tiles {
+                    names.insert(t.card, t.title.clone());
+                    tile_line(t, &mut out);
+                }
+            }
+        }
+    }
+
+    if !s.links.is_empty() {
+        out.push_str(
+            "
+ARROWS:
+",
+        );
+        for l in &s.links {
+            let name = |c: CardId| {
+                names
+                    .get(&c)
+                    .cloned()
+                    .unwrap_or_else(|| format!("#{}", c.0))
+            };
+            out.push_str(&format!(
+                "  {} -> {}  ({})
+",
+                name(l.from),
+                name(l.to),
+                if l.confirmed { "confirmed" } else { "offered" }
+            ));
+        }
+    }
+
+    if !s.choices.is_empty() {
+        out.push_str(
+            "
+CHOICES (the buttons):
+",
+        );
+        for (i, c) in s.choices.iter().enumerate() {
+            let mark = if c.chosen { " <- chosen" } else { "" };
+            let outlook = match c.outlook {
+                Outlook::Winnable => "  [winnable]",
+                Outlook::Doomed => "  [doomed]",
+                Outlook::Evaluating => "  [evaluating]",
+                Outlook::Unknown => "",
+            };
+            if c.why_not.is_empty() {
+                out.push_str(&format!(
+                    "  [{i}] {}{outlook}{mark}
+        {}
+",
+                    c.label, c.consequence
+                ));
+            } else {
+                out.push_str(&format!(
+                    "  [{i}] {} (BARRED: {})
+",
+                    c.label, c.why_not
+                ));
+            }
+        }
+    }
+    if !s.disabled_controls.is_empty() {
+        out.push_str(&format!(
+            "
+CONTROLS: control(s) {:?} disabled (index 0 = the Commit/Start control)
+",
+            s.disabled_controls
+        ));
+    }
+    if !s.log.is_empty() {
+        out.push_str(&format!(
+            "
+{}
+",
+            s.log_title
+        ));
+        for line in &s.log {
+            out.push_str(&format!(
+                "  {line}
+"
+            ));
+        }
+    }
+    out
+}
+
 fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
     let Some(s) = &scene.0 else {
         if !last.is_empty() {

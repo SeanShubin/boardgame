@@ -2438,8 +2438,8 @@ fn tile_look(highlight: Highlight, team: Team) -> (Color, Color, Color, f32) {
     match (highlight, team) {
         (Highlight::Spent, _) => (CARD_BACK, MUTED, MUTED, 2.0),
         // The one you are commanding: the brightest ring, and the thickest.
-        (Highlight::Active, Team::Left) => (CARD_FACE, ARMED_CUE, CARD_INK, 3.0),
-        (Highlight::Active, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 3.0),
+        (Highlight::Active, Team::Left) => (CARD_FACE, ARMED_CUE, CARD_INK, 5.0),
+        (Highlight::Active, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 5.0),
         // **Waiting on you** — amber, and as thick as Active, because "this one still needs you" is the thing
         // the screen most needs to shout. It is the only cue that says the step is not finished.
         (Highlight::Available, Team::Left) => (CARD_FACE, SELECTABLE_CUE, CARD_INK, 3.0),

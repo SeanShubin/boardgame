@@ -30,8 +30,29 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     let over = arena::outcome(board, arena).is_some();
     let tracks = build_tracks(w.step);
     let heading = format!("Round {}", w.round);
+    // The prompt LEADS WITH THE IMPERATIVE - the one thing to do right now, named for the body doing it -
+    // and the step's teaching text follows. "What should I do here?" must be answerable from the first
+    // clause alone.
     let prompt = if over {
         "The fight is decided - read the record, then leave.".to_string()
+    } else if let Some(f) = w.focus {
+        let name = &w.units[f].name;
+        if w.aiming {
+            format!(
+                "{name}: PICK A TARGET - click a ringed enemy, or one of the cards below. {}",
+                prompt_for(w.step)
+            )
+        } else {
+            format!(
+                "{name}: CHOOSE AN ORDER - one of the cards below. {}",
+                prompt_for(w.step)
+            )
+        }
+    } else if arena::pending_decision(board, arena).is_none() {
+        format!(
+            "All orders given - COMMIT resolves the step. {}",
+            prompt_for(w.step)
+        )
     } else {
         prompt_for(w.step).to_string()
     };
@@ -252,10 +273,30 @@ fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highl
             });
         }
     }
+    // The attention badge SAYS the state in words, so "which one is selected?" never rides on a border
+    // color alone: the commanded body says so, a body still waiting its turn says so, an ordered body
+    // names its order.
+    if u.side == Side::Party && !u.fallen {
+        match sel {
+            Highlight::Active => badges.push(Badge {
+                text: if w.aiming {
+                    "* PICKING A TARGET *".to_string()
+                } else {
+                    "* YOUR ORDERS NOW *".to_string()
+                },
+                tone: Tone::Good,
+            }),
+            Highlight::Available => badges.push(Badge {
+                text: "waits for orders".to_string(),
+                tone: Tone::Warn,
+            }),
+            _ => {}
+        }
+    }
     let plan = plan_text(board, w, i);
     if !plan.is_empty() {
         badges.push(Badge {
-            text: plan,
+            text: format!("ordered: {plan}"),
             tone: Tone::Good,
         });
     }
