@@ -10,12 +10,12 @@
 //! [`BoardGame`]: cardtable_model::BoardGame
 
 pub mod arena;
-pub mod battle;
+
 mod board_game;
-pub mod combat;
+
 pub mod fixtures;
 pub mod scene;
-pub mod solver;
+
 pub mod targets;
 pub mod units;
 pub mod verify;

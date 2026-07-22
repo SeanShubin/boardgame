@@ -72,7 +72,7 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
 
     let mut out = Vec::new();
     let mut prev_hp: Vec<u32> = before.units.iter().map(|u| u.health).collect();
-    let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.cadence).collect(); // Reset stands tempo up to Cadence
+    let mut prev_tp: Vec<u32> = before.units.iter().map(|u| u.tempo).collect(); // live pool as the steps found it
     let mut prev_rk: Vec<Rank> = before.ranks.clone();
     let mut prev_rg: Vec<u8> = before.regions.clone();
     for log in transcript {
@@ -256,6 +256,7 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
         }
         // Pass 2 - the dodge that ANSWERED each reach (it saw the bid, then out-reached it), plus any other tempo
         // that bought no reach.
+        #[allow(clippy::needless_range_loop)]
         for i in 0..log.tempo.len() {
             let spent = prev_tp[i].saturating_sub(log.tempo[i]);
             if spent == 0

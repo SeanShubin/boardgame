@@ -1,50 +1,51 @@
-//! **Stage 2/3 — board ↔ combat.** Represent a v2 fight on the physical `Board` and drive it through the
-//! stage-1 mechanics brain ([`crate::combat`]). The *entire* fight state is physical (cards-as-truth):
+//! **Board <-> the step machine.** The card-table fight surface over the CANON combat model
+//! (`rules::combat`, the eight-step round - see `docs/games/deckbound/combat-round-sequence.md`), with the
+//! **cards as the source of truth**:
 //!
-//! - **Rank is pile membership.** `[Arena]` holds a sub-pile per rank — `[Vanguard]` / `[Outrider]` /
-//!   `[Rearguard]` — plus a `[Pool]` of not-yet-ranked heroes. A combatant *is* in its rank's pile; assigning
-//!   a rank is just moving the card there (the generic "move a card into a pile", so drag and tap both work,
-//!   no combat-specific input path). A hero's constant stats are re-derived each resolve from the source; its
-//!   mutable state (HP / tempo on detail 0–1) and the player's *staged plan* (active / aim / bid / reaction on
-//!   detail 2+) ride its card, edited by taps, consumed on commit, cleared at each mini-phase boundary.
-//! - The **phase card** (loose in `[Arena]`) carries the walk position `(round, sub-phase, step)` where step
-//!   is Marshal → Strike → React → Extra. A round is Marshal then five sub-phases, each three one-way steps.
-//! - **Contacts** (a landed strike: attacker→target at a bid) are scratch `contact` cards (loose in `[Arena]`),
-//!   written at Strike so React and Extra can read what landed, and torn down at the sub-phase boundary.
-//!
-//! One [`commit`] advances **one step**, folding the party's staged plan (greedy fallback) with the greedy
-//! foe. Marshal gates on an empty `[Pool]` (the renderer disables Start until then); a direct commit fills any
-//! stragglers with their default rank. [`handle_tap`] edits the staged plan (and, in Marshal, cycles a hero's
-//! rank pile).
+//! - **Rank and region are pile membership - and both are EARNED, never declared.** `[Arena]` holds one pile
+//!   per (ground, rank): your `Vanguard`/`Rearguard` and the foes' `Foe Vanguard`/`Foe Rearguard`
+//!   (weapon-derived, fixed), plus `Outriders` (your bodies loose in THEIR line) and `Intruders` (their
+//!   bodies loose in YOURS) - the one rank you reach by playing. A body's card physically walks into the
+//!   enemy line pile when its crossing RESOLVES, and back out when it withdraws. There is no formation
+//!   declaration: a fight opens with both lines seated and face up.
+//! - **The `[Steps]` deck is the schedule**: eight cards, Havoc through Advance, top = the current step. Each
+//!   step is one declare/reveal **wave**: the eligible party bodies stage orders (an aim, a hold, a
+//!   go/stay), and **Commit** reveals the wave - scripted foes declare by `step_policy` - and resolves the
+//!   step on the spot. Waves nobody can act in auto-advance and journal as `- skipped`.
+//! - **The engine is transient; the cards persist.** Every read seats a `StepState` FROM the cards
+//!   (`StepState::resume`), and every Commit writes the resolution back: health/tempo on card detail,
+//!   position as pile moves, the round's `struck`/`arrived` commitments as marker lines. Between waves there
+//!   is nothing off-table to lose - the grit pile closes at each step, so no scratch state survives a wave.
+//! - **The journal is the record**, in the canonical log format (`round N` / `  step K/8: Name` / the
+//!   `target`/`bid`/`strike`/`resolve` minor steps), told by the SHARED formatter
+//!   ([`rules::combat::narrate`]) from the engine's recorded transcripts - the fight simulator's log and
+//!   this journal cannot tell the story differently.
 
-use cardtable_model::{Board, CardId, CardKind, Choice, Outlook, PileId};
-use deckbound_content::rank::Intention as Rank;
-use deckbound_content::schedule::{SCHEDULE, SUB_PHASE_NAMES};
-
-use crate::battle::{Greedy, Policy};
-use crate::combat::{self, Blows, Combatant, Contact, Dodge, Engage, Side};
-use crate::solver::{At, Fixed, Oracle, Verdict};
+use cardtable_model::{Board, CardId, CardKind, Choice, PileId};
+use rules::combat::narrate;
+use rules::combat::regions::{Board as Battlefield, MAX_ROUNDS, Rank};
+use rules::combat::resolve::{Combatant, Side};
+use rules::combat::step_game::{
+    STEPS, Step, StepChoice, StepCombat, StepState, step_coord, step_policy,
+};
+use rules::core::{Game, Outcome as FightOutcome, Solver, Verdict};
 
 /// The top-level zone a fight lives in while it runs.
 pub const ARENA: &str = "Arena";
-/// The holding pile for heroes who have not been assigned a rank yet (Marshal).
-pub const POOL: &str = "Pool";
-/// The foes' holding pile: they stand here, face up and fully readable, but **out of formation**, for as long
-/// as the player is declaring theirs.
-///
-/// Combat is a bet made blind - Marshal declares a formation without seeing the enemy's, and that secrecy is
-/// what simulates simultaneity. But you are entitled to know *who* you are fighting; only *where they stand*
-/// is withheld. So the foes muster here, and [`reveal`] moves them into their rank piles when you commit.
-/// Their formation cannot leak during your declaration because it is not on the table yet - which is a
-/// stronger guarantee than a renderer that merely declines to draw it.
-pub const MUSTER: &str = "Foes";
 
-/// The three rank piles, in formation display order (front to back).
-pub(crate) const RANK_PILES: [(&str, Rank); 3] = [
-    ("Outrider", Rank::Outrider),
-    ("Vanguard", Rank::Vanguard),
-    ("Rearguard", Rank::Rearguard),
+/// The six ground piles: `(label, region, rank)`. Region 0 is the party's ground, 1 the foes'. Listed in
+/// battlefield reading order, their back line to yours - the scene draws them in this order too.
+pub(crate) const GROUND_PILES: [(&str, u8, Rank); 6] = [
+    ("Foe Rearguard", 1, Rank::Rearguard),
+    ("Foe Vanguard", 1, Rank::Vanguard),
+    ("Outriders", 1, Rank::Outrider),
+    ("Intruders", 0, Rank::Outrider),
+    ("Vanguard", 0, Rank::Vanguard),
+    ("Rearguard", 0, Rank::Rearguard),
 ];
+
+/// The rotating step deck (eight cards, top = current) and its label.
+const STEPS_DECK: &str = "Steps";
 
 // ---- constant stats, derived from the source ([Might, Vitality, Grit, Cadence, Finesse]) ----------
 
@@ -56,19 +57,14 @@ struct Stats {
     finesse: u32,
 }
 
-fn stats_of(s: [u8; 5], melee: bool, ranged: bool, aoe: bool) -> (Stats, bool, bool, bool) {
-    (
-        Stats {
-            might: s[0] as u32,
-            vitality: s[1] as u32,
-            grit: s[2] as u32,
-            cadence: s[3] as u32,
-            finesse: s[4] as u32,
-        },
-        melee,
-        ranged,
-        aoe,
-    )
+fn stats_of(s: [u8; 5]) -> Stats {
+    Stats {
+        might: s[0] as u32,
+        vitality: s[1] as u32,
+        grit: s[2] as u32,
+        cadence: s[3] as u32,
+        finesse: s[4] as u32,
+    }
 }
 
 fn top_deck(board: &Board, label: &str) -> Option<PileId> {
@@ -79,7 +75,7 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
         .find(|&p| board.pile(p).map(|p| p.label.as_str()) == Some(label))
 }
 
-/// A sub-pile of `arena` by label (a rank pile or the pool).
+/// A sub-pile of `arena` by label (a ground pile or the step deck).
 pub(crate) fn sub_pile(board: &Board, arena: PileId, label: &str) -> Option<PileId> {
     board
         .pile(arena)?
@@ -103,9 +99,8 @@ fn character_deck(board: &Board, name: &str) -> Option<PileId> {
         })
 }
 
-/// A combatant's stats plus its **reach** `(melee, ranged)` and **area** flag — the attack shape it carries
-/// (see `catalog::ability_reach` / `ability_shape`). Returned together so callers position + gate + display
-/// it in one read.
+/// A hero's stats plus its reach `(melee, ranged)` and area flag, re-derived from the character deck (the
+/// source) on every read.
 fn hero_stats(board: &Board, name: &str) -> Option<(Stats, bool, bool, bool)> {
     let recipe = board.character_recipe(
         character_deck(board, name)?,
@@ -113,15 +108,15 @@ fn hero_stats(board: &Board, name: &str) -> Option<(Stats, bool, bool, bool)> {
     )?;
     let (melee, ranged) = deckbound_content::catalog::ability_reach(&recipe.ability);
     let (_ranged, aoe) = deckbound_content::catalog::ability_shape(&recipe.ability);
-    Some(stats_of(recipe.stats, melee, ranged, aoe))
+    Some((stats_of(recipe.stats), melee, ranged, aoe))
 }
 
 fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
     let c = deckbound_content::catalog::creature(name)?;
-    Some(stats_of(c.stats, c.melee, c.ranged, c.aoe))
+    Some((stats_of(c.stats), c.melee, c.ranged, c.aoe))
 }
 
-/// The vitality (max HP) of a combatant by name and side — the health bar's full value.
+/// The vitality (max HP, or body count for a horde) of a combatant by name and side.
 pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
     match side {
         Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
@@ -130,45 +125,10 @@ pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
     .unwrap_or(0)
 }
 
-/// The default opening rank (matching deckbound's stat-derived formation): ranged → Rearguard, else
-/// Might ≥ Grit → Outrider, else Vanguard. Heroes start in the Pool; foes take this automatically.
-fn default_rank(s: &Stats, ranged: bool) -> Rank {
-    if ranged {
-        Rank::Rearguard
-    } else if s.might >= s.grit {
-        Rank::Outrider
-    } else {
-        Rank::Vanguard
-    }
-}
-
-fn rank_label(rank: Rank) -> &'static str {
-    RANK_PILES
-        .iter()
-        .find(|(_, r)| *r == rank)
-        .map(|(l, _)| *l)
-        .unwrap_or("Vanguard")
-}
-
-// ---- the walk position: (round, sub-phase, step) on the phase card -------------------------------------
-
-/// One of the three one-way mini-phases within a sub-phase, plus the per-round Marshal (rank assignment).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Step {
-    /// Assign / re-assign ranks before the schedule runs (round start).
-    Marshal,
-    /// Attackers commit tempo to **reach** a target. More tempo makes them harder to slip; it buys no damage.
-    Engage,
-    /// Each target - seeing exactly what was committed - pays the exact price to slip, or stands.
-    Evade,
-    /// Each engager's one free opening blow, then either end of a melee contact pours in tempo, 1 card = 1 hit.
-    Strike,
-}
-
-// ---- combatant card state (HP/tempo on detail 0-1, staged plan on 2+) -----------------------------------
+// ---- combatant card state (HP / tempo / flags on detail; commitments + staging after) -----------------
 
 #[allow(clippy::too_many_arguments)]
-fn detail(
+fn detail_lines(
     hp: u32,
     max_hp: u32,
     tempo: u32,
@@ -177,23 +137,10 @@ fn detail(
     melee: bool,
     ranged: bool,
     area: bool,
-    pile: u32,
 ) -> Vec<String> {
-    // Health and Tempo are both **stacks of cards** you flip, so both read the same way: `up / total`. Health
-    // is Vitality-many cards (damage flips them down); Tempo is Cadence-many (bidding and striking flip them
-    // down, and they all stand back up each round). Showing only the remainder - as Tempo used to - hides how
-    // much of the pool is already spent, which is the whole decision in a bid.
-    //
-    // Finesse rides the card (the game re-derives stats from the source, but the renderer needs it to show
-    // affordability); the reach flags (`Melee` / `Ranged`) and the shape flag (`Area`) ride its line so the
-    // formation can flag effective positions and the renderer can style an area strike's targeting cue. All
-    // are constant; the staged plan starts after these lines.
-    //
-    // **The damage pile rides the card too**, and it must: it is the one piece of mutable combat state that
-    // spans the three mini-phases of a sub-phase (a Strike's blow and an Extra's blow bank into the same pile
-    // and only flip a Health card together). It used to live nowhere - rebuilt as 0 on every read - so it was
-    // silently wiped at every *step* boundary instead of the sub-phase boundary, and two 7s against a
-    // Grit 9 never added up. The cards are the state; anything that survives a step has to be on one.
+    // Health and Tempo are both **stacks of cards** you flip, so both read `up / total`. Tempo is LIVE across
+    // the whole round now (the step model): what a body spent at an early step it does not have at a late one,
+    // and the card is where that fact lives between waves.
     vec![
         format!("Health {hp}/{max_hp}"),
         format!("Tempo {tempo}/{max_tempo}"),
@@ -203,12 +150,12 @@ fn detail(
             if ranged { " Ranged" } else { "" },
             if area { " Area" } else { "" }
         ),
-        format!("Pile {pile}"),
     ]
 }
 
-/// The number of leading detail lines that are the unit's *state*. The staged plan starts after them.
-const BASE_LINES: usize = 4;
+/// The number of leading detail lines that are the unit's *state*. The round's commitments and the staged
+/// order follow them.
+const BASE_LINES: usize = 3;
 
 fn num_after(line: &str, prefix: &str) -> u32 {
     line.strip_prefix(prefix)
@@ -217,9 +164,84 @@ fn num_after(line: &str, prefix: &str) -> u32 {
         .unwrap_or(0)
 }
 
-/// Read one combatant card into a [`Combatant`] — constant stats from the source, mutable state from detail;
-/// its `rank` is supplied by the caller (it is the rank pile the card lives in).
-pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<Combatant> {
+/// One party body's **staged order** for the current wave - private until Commit reveals it (the commit is
+/// the information boundary). `Aim`/`Hold` at a strike step; `Go`/`Stay` at a movement step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Staged {
+    Aim(CardId),
+    Hold,
+    Go,
+    Stay,
+}
+
+fn read_flags(d: &[String]) -> (bool, bool, bool, Option<Staged>) {
+    let (mut struck, mut arrived, mut active, mut staged) = (false, false, false, None);
+    for line in d.iter().skip(BASE_LINES) {
+        match line.as_str() {
+            "struck" => struck = true,
+            "arrived" => arrived = true,
+            "active" => active = true,
+            "hold" => staged = Some(Staged::Hold),
+            "go" => staged = Some(Staged::Go),
+            "stay" => staged = Some(Staged::Stay),
+            l => {
+                if let Some(id) = l.strip_prefix("aim ") {
+                    staged = id.trim().parse().ok().map(|n| Staged::Aim(CardId(n)));
+                }
+            }
+        }
+    }
+    (struck, arrived, active, staged)
+}
+
+fn write_flags(
+    board: &mut Board,
+    card: CardId,
+    struck: bool,
+    arrived: bool,
+    active: bool,
+    staged: Option<Staged>,
+) {
+    let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
+        return;
+    };
+    let mut lines: Vec<String> = d.into_iter().take(BASE_LINES).collect();
+    while lines.len() < BASE_LINES {
+        lines.push(String::new());
+    }
+    if struck {
+        lines.push("struck".into());
+    }
+    if arrived {
+        lines.push("arrived".into());
+    }
+    if active {
+        lines.push("active".into());
+    }
+    match staged {
+        Some(Staged::Aim(t)) => lines.push(format!("aim {}", t.0)),
+        Some(Staged::Hold) => lines.push("hold".into()),
+        Some(Staged::Go) => lines.push("go".into()),
+        Some(Staged::Stay) => lines.push("stay".into()),
+        None => {}
+    }
+    let _ = board.set_card_detail(card, lines);
+}
+
+pub(crate) fn staged_of(board: &Board, card: CardId) -> Option<Staged> {
+    board.card(card).map(|c| read_flags(c.detail()).3)?
+}
+
+fn active_of(board: &Board, card: CardId) -> bool {
+    board
+        .card(card)
+        .map(|c| read_flags(c.detail()).2)
+        .unwrap_or(false)
+}
+
+/// Read one combatant card into a rules [`Combatant`] - constant stats from the source, mutable state from
+/// detail. Region and rank come from the pile it stands in, supplied by the caller.
+pub(crate) fn read_combatant(board: &Board, card: CardId) -> Option<Combatant> {
     let c = board.card(card)?;
     let name = c.front_title().to_string();
     let side = match c.card_type() {
@@ -232,7 +254,6 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         Side::Foe => foe_stats(&name)?,
     };
     let d = c.detail();
-    // Both lines read `up / total`; `num_after` stops at the `/`, so it reads the *up* count - what's left.
     let hp = d
         .first()
         .map(|l| num_after(l, "Health "))
@@ -241,746 +262,113 @@ pub(crate) fn read_combatant(board: &Board, card: CardId, rank: Rank) -> Option<
         .get(1)
         .map(|l| num_after(l, "Tempo "))
         .unwrap_or(stats.cadence);
-    // A horde is a foe-only property (heroes are never grouped in the UI); area came from the read above.
     let horde =
         side == Side::Foe && deckbound_content::catalog::creature(&name).is_some_and(|c| c.horde);
-    Some(Combatant {
-        name,
+    let mut u = Combatant::from_stats(
+        &name,
         side,
-        rank,
-        might: stats.might,
-        finesse: stats.finesse.max(1),
-        cadence: stats.cadence,
-        grit: stats.grit.max(1),
-        armor: 0,
+        [
+            stats.might as u8,
+            stats.vitality as u8,
+            stats.grit as u8,
+            stats.cadence as u8,
+            stats.finesse as u8,
+        ],
+        0,
         melee,
         ranged,
-        aoe,
-        horde,
-        tempo,
-        health: hp,
-        // The sub-phase damage pile, carried on the card so it survives from Strike through React to Extra.
-        pending: d.get(3).map(|l| num_after(l, "Pile ")).unwrap_or(0),
-        fallen: hp == 0,
-    })
-}
-
-/// Write a resolved combatant's mutable state back onto its card (HP / tempo). This also **clears the staged
-/// plan** (detail is reset to the two base lines).
-fn write_combatant(board: &mut Board, card: CardId, u: &Combatant, max: u32) {
-    // Reach is a constant of the character, re-derived from the source so it survives the writeback.
-    let (melee, ranged) = match u.side {
-        Side::Party => hero_stats(board, &u.name).map(|(_, m, r, _)| (m, r)),
-        Side::Foe => foe_stats(&u.name).map(|(_, m, r, _)| (m, r)),
-    }
-    .unwrap_or((true, false));
-    let _ = board.set_card_detail(
-        card,
-        detail(
-            u.health, max, u.tempo, u.cadence, u.finesse, melee, ranged, u.aoe, u.pending,
-        ),
     );
+    u.aoe = aoe;
+    u.horde = horde;
+    u.tempo = tempo;
+    u.health = hp;
+    u.fallen = hp == 0;
+    Some(u)
 }
 
-// ---- the staged plan (detail lines after the base two) ------------------------------------------------
+// ---- seating the engine from the cards -----------------------------------------------------------------
 
-/// One party unit's staged orders for the current mini-phase (read from / written to its detail).
-///
-/// `hold` is the **explicit** "this hero does nothing here" - distinct from having decided nothing yet. Both
-/// produce no strike, but only one of them means the player has answered, and Commit gates on the difference.
-///
-/// `aim`/`bid` are the Engage commitment; `dodge` is the Evade answer; at Strike, `bid` is the number of blows.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Staged {
-    pub(crate) active: bool,
-    pub(crate) aim: Option<CardId>,
-    pub(crate) bid: u32,
-    pub(crate) hold: bool,
-    pub(crate) dodge: Option<Dodge>,
+/// Everything the cards say about the fight, in engine terms - the bridge's read half.
+pub(crate) struct Seated {
+    pub(crate) cards: Vec<CardId>,
+    pub(crate) state: StepState,
 }
 
-fn dodge_label(d: Dodge) -> &'static str {
-    match d {
-        Dodge::Slip => "Slip",
-        Dodge::Stand => "Stand",
-    }
-}
-
-fn read_staged(d: &[String]) -> Staged {
-    let mut s = Staged::default();
-    for line in d.iter().skip(BASE_LINES) {
-        if line == "active" {
-            s.active = true;
-        } else if line == "hold" {
-            s.hold = true;
-        } else if let Some(id) = line.strip_prefix("aim ") {
-            s.aim = id.trim().parse().ok().map(CardId);
-        } else if let Some(n) = line.strip_prefix("bid ") {
-            s.bid = n.trim().parse().unwrap_or(0);
-        } else if let Some(k) = line.strip_prefix("dodge ") {
-            s.dodge = Some(if k == "Slip" {
-                Dodge::Slip
-            } else {
-                Dodge::Stand
-            });
-        }
-    }
-    s
-}
-
-/// Rewrite a unit card's detail as the two base lines followed by whatever of the plan is set.
-fn write_staged(board: &mut Board, card: CardId, s: &Staged) {
-    let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
-        return;
-    };
-    let mut lines: Vec<String> = d.into_iter().take(BASE_LINES).collect();
-    while lines.len() < BASE_LINES {
-        lines.push(String::new());
-    }
-    if s.active {
-        lines.push("active".into());
-    }
-    if let Some(aim) = s.aim {
-        lines.push(format!("aim {}", aim.0));
-    }
-    if s.bid > 0 {
-        lines.push(format!("bid {}", s.bid));
-    }
-    if s.hold {
-        lines.push("hold".into());
-    }
-    if let Some(d) = s.dodge {
-        lines.push(format!("dodge {}", dodge_label(d)));
-    }
-    let _ = board.set_card_detail(card, lines);
-}
-
-pub(crate) fn staged_of(board: &Board, card: CardId) -> Staged {
-    board
-        .card(card)
-        .map(|c| read_staged(c.detail()))
-        .unwrap_or_default()
-}
-
-// ---- contact scratch cards (loose in [Arena]) ---------------------------------------------------------
-
-fn write_contacts(board: &mut Board, arena: PileId, cards: &[CardId], contacts: &[Contact]) {
-    for c in contacts {
-        if let Ok(card) = board.add_card(
-            arena,
-            cardtable_model::Face::Down {
-                title: "contact".into(),
-            },
-            None,
-        ) {
-            let _ = board.set_card_kind(card, CardKind::Virtual);
-            let _ = board.set_card_type(card, "contact");
-            let _ = board.set_card_detail(
-                card,
-                vec![
-                    format!("from {}", cards[c.attacker].0),
-                    format!("to {}", cards[c.target].0),
-                    format!("bid {}", c.bid),
-                ],
-            );
-        }
-    }
-}
-
-/// Read the surviving contact cards back into [`Contact`]s (indices into `cards`).
-pub(crate) fn read_contacts(board: &Board, arena: PileId, cards: &[CardId]) -> Vec<Contact> {
-    let index = |id: u64| cards.iter().position(|c| c.0 == id);
-    board
-        .content_cards(arena)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("contact"))
-        .filter_map(|c| {
-            let d = board.card(c)?.detail().to_vec();
-            let atk = index(num_after(d.first()?, "from ") as u64)?;
-            let tgt = index(num_after(d.get(1)?, "to ") as u64)?;
-            let bid = num_after(d.get(2)?, "bid ");
-            Some(Contact {
-                attacker: atk,
-                target: tgt,
-                bid,
-            })
-        })
-        .collect()
-}
-
-fn clear_contacts(board: &mut Board, arena: PileId) {
-    let contacts: Vec<CardId> = board
-        .content_cards(arena)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("contact"))
-        .collect();
-    for c in contacts {
-        let _ = board.remove_card(c);
-    }
-}
-
-// ---- reading the arena into combatants + the walk position ---------------------------------------------
-
-/// The combatant cards (rank-pile order) and their [`Combatant`]s, plus the walk position from the phase
-/// card. Pool (unranked) heroes are not combatants yet — they are excluded until Marshal ranks them.
-pub(crate) fn arena_state(
-    board: &Board,
-    arena: PileId,
-) -> (Vec<CardId>, Vec<Combatant>, usize, u32, Step) {
+/// The combatant cards in ground-pile order with their (region, rank) read off pile membership.
+fn read_units(board: &Board, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, Vec<u8>, Vec<Rank>) {
     let mut cards = Vec::new();
     let mut units = Vec::new();
-    for (label, rank) in RANK_PILES {
-        let Some(rp) = sub_pile(board, arena, label) else {
+    let mut regions = Vec::new();
+    let mut ranks = Vec::new();
+    for (label, region, rank) in GROUND_PILES {
+        let Some(p) = sub_pile(board, arena, label) else {
             continue;
         };
-        for c in board.content_cards(rp) {
-            if let Some(u) = read_combatant(board, c, rank) {
+        for c in board.content_cards(p) {
+            if let Some(u) = read_combatant(board, c) {
                 cards.push(c);
                 units.push(u);
+                regions.push(region);
+                ranks.push(rank);
             }
         }
     }
-    let (sub, round, step) = read_phase(board, arena);
-    (cards, units, sub, round, step)
+    (cards, units, regions, ranks)
 }
 
-fn read_phase(board: &Board, arena: PileId) -> (usize, u32, Step) {
-    let round = board
+fn read_round(board: &Board, arena: PileId) -> usize {
+    board
         .content_cards(arena)
         .into_iter()
         .find(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
         .and_then(|c| board.card(c))
-        .map(|c| num_after(c.front_title(), "Round "))
-        .unwrap_or(1);
-    // The current major phase is the top of [Phases]; if it is a sub-phase, the mini-phase is the top of
-    // [Steps]. Marshal (or a missing deck) means the schedule has not started this round.
-    let major = deck_top(board, arena, PHASES);
-    match major.as_deref() {
-        Some(name) if name != "Marshal" => {
-            let sub = SUB_PHASE_NAMES.iter().position(|&n| n == name).unwrap_or(0);
-            let step = match deck_top(board, arena, STEPS).as_deref() {
-                Some("Evade") => Step::Evade,
-                Some("Strike") => Step::Strike,
-                _ => Step::Engage,
-            };
-            (sub, round, step)
-        }
-        _ => (0, round, Step::Marshal),
-    }
+        .map(|c| num_after(c.front_title(), "Round ") as usize)
+        .unwrap_or(1)
 }
 
-/// The vitality (max HP) of every combatant, index-aligned with the cards.
-pub(crate) fn maxes_of(board: &Board, units: &[Combatant]) -> Vec<u32> {
-    units
-        .iter()
-        .map(|u| max_health(board, &u.name, u.side).max(u.health))
-        .collect()
-}
-
-/// Heroes still in the Pool (unranked) — the formation is complete when this is empty.
-/// The foes still standing in the muster - on the table but not yet in formation (see [`MUSTER`]).
-fn muster_foes(board: &Board, arena: PileId) -> Vec<CardId> {
-    sub_pile(board, arena, MUSTER)
-        .map(|p| board.content_cards(p))
-        .unwrap_or_default()
+fn read_step(board: &Board, arena: PileId) -> Step {
+    let top = sub_pile(board, arena, STEPS_DECK)
+        .and_then(|d| board.pile(d).and_then(|p| p.cards().first().copied()))
+        .and_then(|c| board.card(c).map(|k| k.front_title().to_string()));
+    STEPS
         .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("foe"))
-        .collect()
+        .find(|&s| Some(step_coord(s).1) == top.as_deref())
+        .unwrap_or(Step::Havoc)
 }
 
-/// Spend the Marshal card: the formation is declared once, and the deck that remains is the five sub-phases.
-///
-/// The card is *removed*, not rotated under - so the phase deck physically becomes the round, and "is it
-/// Marshal?" stays a question you answer by looking at the top card. Nothing else needs to know the rule.
-fn discard_marshal(board: &mut Board, arena: PileId) {
-    let Some(deck) = sub_pile(board, arena, PHASES) else {
-        return;
-    };
-    let marshal = board
-        .pile(deck)
-        .and_then(|p| p.cards().first().copied())
-        .filter(|&c| board.card(c).map(|k| k.front_title()) == Some("Marshal"));
-    match marshal {
-        Some(c) => {
-            let _ = board.remove_card(c);
-        }
-        // Already spent (a headless double-commit, or a restart mid-fight): just advance.
-        None => rotate_deck(board, arena, PHASES),
+/// Seat the engine from the cards. The mutating ops keep the invariant that the card step's wave has a
+/// pending decision (or the fight is over), so seating on the read path never advances anything.
+pub(crate) fn seat(board: &Board, arena: PileId) -> Option<Seated> {
+    let (cards, units, regions, ranks) = read_units(board, arena);
+    if cards.is_empty() {
+        return None;
     }
-}
-
-/// **Reveal**: both formations go down at once. The player's is already placed; the foes now step out of the
-/// muster into their rank piles. Called on the Marshal commit, which is the moment the blind bet is settled -
-/// after this, everything resolves in the open.
-fn reveal(board: &mut Board, arena: PileId) {
-    for card in muster_foes(board, arena) {
-        let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
-            continue;
-        };
-        let Some((stats, _melee, ranged, _aoe)) = foe_stats(&name) else {
-            continue;
-        };
-        if let Some(rp) = sub_pile(board, arena, rank_label(default_rank(&stats, ranged))) {
-            let at = board.pile(rp).map_or(0, |p| p.cards().len());
-            let _ = board.move_card(card, rp, at);
+    let (mut struck, mut arrived) = (vec![false; cards.len()], vec![false; cards.len()]);
+    for (i, &c) in cards.iter().enumerate() {
+        if let Some(k) = board.card(c) {
+            let (s, a, _, _) = read_flags(k.detail());
+            struck[i] = s;
+            arrived[i] = a;
         }
     }
+    let state = StepState::resume(
+        units,
+        regions,
+        ranks,
+        read_round(board, arena),
+        read_step(board, arena),
+        struck,
+        arrived,
+    );
+    Some(Seated { cards, state })
 }
 
-fn pool_heroes(board: &Board, arena: PileId) -> Vec<CardId> {
-    sub_pile(board, arena, POOL)
-        .map(|p| board.content_cards(p))
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("unit"))
-        .collect()
-}
+// ---- the journal ---------------------------------------------------------------------------------------
 
-/// Whether every hero has been assigned a rank (the Pool is empty) — the Start gate.
-pub fn formation_complete(board: &Board, arena: PileId) -> bool {
-    pool_heroes(board, arena).is_empty()
-}
-
-// ---- opening a fight ----------------------------------------------------------------------------------
-
-/// Open a fight at `place`: build the `[Arena]` zone with a `[Pool]` and a pile per rank, a combatant card
-/// per stationed hero (moved into the Pool, unranked) and per instantiated foe (drawn from the Bestiary into
-/// its default rank pile), a phase card at round 1 · Marshal, and focus it.
-pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
-    let bestiary = top_deck(board, "Bestiary")?;
-    let root = board.root_id();
-    let arena = board.add_pile(root, ARENA).ok()?;
-    let pool = board.add_pile(arena, POOL).ok()?;
-    let muster = board.add_pile(arena, MUSTER).ok()?;
-    for (label, _) in RANK_PILES {
-        let _ = board.add_pile(arena, label);
-    }
-
-    // A hidden meta card remembers the originating place (for teardown) — loose in the arena.
-    if let Ok(meta) = board.add_card(
-        arena,
-        cardtable_model::Face::Down {
-            title: format!("place {}", place.0),
-        },
-        None,
-    ) {
-        let _ = board.set_card_kind(meta, CardKind::Virtual);
-        let _ = board.set_card_type(meta, "arena-meta");
-    }
-
-    // Heroes: each stationed hero position card becomes a party combatant, moved into the (unranked) Pool.
-    let heroes: Vec<CardId> = board
-        .content_cards(place)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-        .collect();
-    for card in heroes {
-        let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, melee, ranged, aoe)) = hero_stats(board, &name) {
-            let at = board.pile(pool).map_or(0, |p| p.cards().len());
-            let _ = board.move_card(card, pool, at);
-            let _ = board.set_card_type(card, "unit");
-            let _ = board.set_card_detail(
-                card,
-                detail(
-                    stats.vitality,
-                    stats.vitality,
-                    stats.cadence,
-                    stats.cadence,
-                    stats.finesse,
-                    melee,
-                    ranged,
-                    aoe,
-                    0,
-                ),
-            );
-        }
-    }
-
-    // Foes: instantiate the encounter roster from the Bestiary into the **muster** - on the table, face up,
-    // fully readable, but not yet in formation. `reveal` ranks them when the player commits their own.
-    let label = board.pile(place)?.label.clone();
-    let foes = board
-        .instantiate_from_bank(
-            bestiary,
-            arena,
-            &deckbound_content::catalog::encounter_roster(&label),
-        )
-        .ok()?;
-    for card in foes {
-        let name = board.card(card).map(|c| c.front_title().to_string())?;
-        if let Some((stats, melee, ranged, aoe)) = foe_stats(&name) {
-            let _ = board.set_card_type(card, "foe");
-            let _ = board.set_card_detail(
-                card,
-                detail(
-                    stats.vitality,
-                    stats.vitality,
-                    stats.cadence,
-                    stats.cadence,
-                    stats.finesse,
-                    melee,
-                    ranged,
-                    aoe,
-                    0,
-                ),
-            );
-            let at = board.pile(muster).map_or(0, |p| p.cards().len());
-            let _ = board.move_card(card, muster, at);
-        }
-    }
-
-    install_phase_decks(board, arena);
-    let _ = board.focus(arena);
-    Some(arena)
-}
-
-/// The two rotating **phase decks**, sub-piles of the arena, so the phase is encoded in the physical card
-/// ordering (packing up the deck tells you the phase). `[Phases]` holds the six major phases (Marshal + the
-/// five sub-phases); `[Steps]` holds the three mini-phases (Strike/React/Extra). The **top** card of each is
-/// the current one; a transition moves the top card to the bottom. A loose `round` card counts the rounds.
-const PHASES: &str = "Phases";
-const STEPS: &str = "Steps";
-
-/// (Re)install the phase decks + round counter at round 1: Marshal on top of `[Phases]`, Strike on top of
-/// `[Steps]`. Each sub-phase card carries its legal rank pairs, so the renderer reads them off the top card.
-fn install_phase_decks(board: &mut Board, arena: PileId) {
-    for label in [PHASES, STEPS] {
-        if let Some(p) = sub_pile(board, arena, label) {
-            let _ = board.remove_pile(p);
-        }
-    }
-    let stale: Vec<CardId> = board
-        .content_cards(arena)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
-        .collect();
-    for c in stale {
-        let _ = board.remove_card(c);
-    }
-    if let Ok(phases) = board.add_pile(arena, PHASES) {
-        add_deck_card(board, phases, "Marshal", "phase-major", None);
-        for (i, name) in SUB_PHASE_NAMES.iter().enumerate() {
-            add_deck_card(board, phases, name, "phase-major", Some(pairs_line(i)));
-        }
-    }
-    if let Ok(steps) = board.add_pile(arena, STEPS) {
-        for name in ["Engage", "Evade", "Strike"] {
-            add_deck_card(board, steps, name, "phase-mini", None);
-        }
-    }
-    set_round(board, arena, 1);
-}
-
-fn add_deck_card(
-    board: &mut Board,
-    deck: PileId,
-    title: &str,
-    card_type: &str,
-    pairs: Option<String>,
-) {
-    if let Ok(card) = board.add_card(
-        deck,
-        cardtable_model::Face::Up {
-            title: title.to_string(),
-        },
-        None,
-    ) {
-        let _ = board.set_card_kind(card, CardKind::Virtual);
-        let _ = board.set_card_type(card, card_type);
-        if let Some(p) = pairs {
-            let _ = board.set_card_detail(card, vec![format!("Pairs: {p}")]);
-        }
-    }
-}
-
-/// Write the round-counter card (`Round N`, loose in the arena).
-fn set_round(board: &mut Board, arena: PileId, round: u32) {
-    let title = format!("Round {round}");
-    if let Some(c) = board
-        .content_cards(arena)
-        .into_iter()
-        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
-    {
-        let _ = board.set_face(c, cardtable_model::Face::Up { title });
-    } else if let Ok(c) = board.add_card(arena, cardtable_model::Face::Up { title }, None) {
-        let _ = board.set_card_kind(c, CardKind::Virtual);
-        let _ = board.set_card_type(c, "round");
-    }
-}
-
-/// The title of a phase deck's top (current) card.
-fn deck_top(board: &Board, arena: PileId, label: &str) -> Option<String> {
-    let deck = sub_pile(board, arena, label)?;
-    let top = board.pile(deck)?.cards().first().copied()?;
-    board.card(top).map(|c| c.front_title().to_string())
-}
-
-/// Rotate a phase deck one step: move its top card to the bottom (a phase transition).
-fn rotate_deck(board: &mut Board, arena: PileId, label: &str) {
-    let Some(deck) = sub_pile(board, arena, label) else {
-        return;
-    };
-    let cards = board.pile(deck).map(|p| p.cards()).unwrap_or_default();
-    if let Some(&top) = cards.first() {
-        let _ = board.move_card(top, deck, cards.len());
-    }
-}
-
-/// The sub-phase's legal `attacker>target` rank pairs as first-letter codes (e.g. `"V>O,R>V"`).
-fn pairs_line(sub: usize) -> String {
-    let letter = |r: Rank| r.label().chars().next().unwrap_or('?');
-    SCHEDULE
-        .get(sub)
-        .map(|pairs| {
-            pairs
-                .iter()
-                .map(|(a, t)| format!("{}>{}", letter(*a), letter(*t)))
-                .collect::<Vec<_>>()
-                .join(",")
-        })
-        .unwrap_or_default()
-}
-
-// ---- the greedy AI (foe side always; party side when nothing is staged) --------------------------------
-//
-// The party-agnostic greedy strike / extra logic is [`battle::Greedy`] (the tooling policy); the arena reuses
-// it here for the foe (always) and the party fallback, so there is a single implementation of the greedy plan.
-// (The arena's *react* is simpler than the policy's - the greedy foe just eats; see the React step.)
-
-/// The party's staged engagements (aim + committed tempo), keeping only ones the SCHEDULE permits.
-fn party_engagements(
-    board: &Board,
-    cards: &[CardId],
-    units: &[Combatant],
-    sub: usize,
-) -> Vec<Engage> {
-    let mut out = Vec::new();
-    for (i, u) in units.iter().enumerate() {
-        if u.fallen
-            || u.side != Side::Party
-            || !combat::effective_in_rank(u.rank, u.melee, u.ranged)
-        {
-            continue;
-        }
-        let s = staged_of(board, cards[i]);
-        let (Some(aim), true) = (s.aim, s.bid > 0) else {
-            continue;
-        };
-        if let Some(t) = cards.iter().position(|&c| c == aim)
-            && combat::legal_strike(sub, u.rank, units[t].rank)
-            && combat::back_access_ok(units, u.rank, t)
-        {
-            out.push(Engage {
-                attacker: i,
-                target: t,
-                cards: s.bid,
-            });
-        }
-    }
-    out
-}
-
-/// The party's staged blows: tempo poured into an established contact, by either end of a melee edge.
-fn party_blows(
-    board: &Board,
-    cards: &[CardId],
-    units: &[Combatant],
-    contacts: &[Contact],
-) -> Vec<Blows> {
-    (0..units.len())
-        .filter(|&i| units[i].side == Side::Party && !units[i].fallen)
-        .filter_map(|i| {
-            let bid = staged_of(board, cards[i]).bid;
-            let target = combat::strike_target(units, contacts, i)?;
-            (bid > 0).then_some(Blows {
-                unit: i,
-                target,
-                cards: bid,
-            })
-        })
-        .collect()
-}
-
-/// Whether the player has given **any** order this step - an aim, a bid, or an explicit Hold. Distinguishes
-/// "the party does nothing because that is what I decided" from "nobody is driving", which is what the greedy
-/// fallback is for.
-fn party_has_orders(board: &Board, cards: &[CardId], units: &[Combatant]) -> bool {
-    units.iter().enumerate().any(|(i, u)| {
-        if u.side != Side::Party {
-            return false;
-        }
-        let s = staged_of(board, cards[i]);
-        s.hold || s.aim.is_some() || s.bid > 0
-    })
-}
-
-// ---- committing one step ------------------------------------------------------------------------------
-
-/// How a fight ended. A battle is decided by breaking a line - or, failing that, by the clock.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    /// Every foe is fallen.
-    Victory,
-    /// Every hero is fallen.
-    Defeat,
-    /// Neither line broke within the round cap: the two sides disengage.
-    Draw,
-}
-
-/// Whether the fight is over, and how. A side loses when all its units are fallen; heroes still in the Pool
-/// (not yet ranked, during Marshal) count as living party members. If both lines still stand once the
-/// **round cap** is spent, the fight is a [`Outcome::Draw`] - the same cap the batch resolver honours
-/// ([`crate::battle::MAX_ROUNDS`]), so the two engines end a stalemate at the same moment.
-pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
-    let (_, units, _, round, _) = arena_state(board, arena);
-    // Heroes still in the Pool and foes still in the muster are on the table but not yet ranked (Marshal), so
-    // they are not combatants - they are very much alive, though, and a fight must not read as won because
-    // the enemy has not stepped forward yet.
-    let party_alive = units.iter().any(|u| u.side == Side::Party && !u.fallen)
-        || !pool_heroes(board, arena).is_empty();
-    let foes_alive = units.iter().any(|u| u.side == Side::Foe && !u.fallen)
-        || !muster_foes(board, arena).is_empty();
-    match (party_alive, foes_alive) {
-        (false, _) => Some(Outcome::Defeat),
-        (true, false) => Some(Outcome::Victory),
-        // The round counter is bumped as each new round opens, so it reads `MAX_ROUNDS + 1` exactly when the
-        // last permitted round has finished with both lines intact.
-        (true, true) if round as usize > crate::battle::MAX_ROUNDS => Some(Outcome::Draw),
-        (true, true) => None,
-    }
-}
-
-/// A decision the player owes before this step can be committed, named as the Commit control's label. `None`
-/// means Commit is live.
-///
-/// **Nothing is decided by default.** A hero under fire that has not answered has *not* chosen to Eat - it has
-/// chosen nothing, and committing would silently make the choice for it. So Commit is barred and *says whose
-/// answer is missing*: a disabled control that will not say why is indistinguishable from a bug, the same rule
-/// that makes a barred choice carry its reason.
-pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
-    let (cards, units, sub, _round, step) = arena_state(board, arena);
-    if step == Step::Marshal {
-        return (!formation_complete(board, arena)).then(|| "Assign every hero a rank".to_string());
-    }
-    let contacts = read_contacts(board, arena, &cards);
-    let staged: Vec<Staged> = cards.iter().map(|&c| staged_of(board, c)).collect();
-    units.iter().enumerate().find_map(|(i, u)| {
-        owes_order(&units, &contacts, &staged, sub, step, i).then(|| match step {
-            Step::Evade => format!("{} has not answered", u.name),
-            _ => format!("{} has no orders", u.name),
-        })
-    })
-}
-
-/// Whether **anything is being asked of** party unit `i` this step - it has some legal move here, whether or
-/// not it has chosen one yet. A hero with no tempo, no legal target this sub-phase, or nothing to answer with
-/// is simply not in this step's conversation.
-///
-/// This is the single authority for "can this hero act right now", and the board must read the *same* thing
-/// the rules do. A Raider standing in the Outrider rank during the Clash has no schedule slot at all - and it
-/// has to look as unusable as a foe you cannot select, not merely a touch dimmer than one you can.
-pub(crate) fn can_act(
-    units: &[Combatant],
-    contacts: &[Contact],
-    sub: usize,
-    step: Step,
-    i: usize,
-) -> bool {
-    let u = &units[i];
-    if u.side != Side::Party || u.fallen || u.tempo == 0 {
-        return false;
-    }
-    match step {
-        Step::Marshal => false,
-        // Reach alone is not enough: the schedule must actually pair this rank against a living, reachable
-        // enemy rank *this sub-phase*. Omitting that was the bug - an Outrider at the Clash looked ready.
-        Step::Engage => {
-            combat::effective_in_rank(u.rank, u.melee, u.ranged)
-                && units.iter().enumerate().any(|(j, v)| {
-                    v.side == Side::Foe
-                        && !v.fallen
-                        && combat::legal_strike(sub, u.rank, v.rank)
-                        && combat::back_access_ok(units, u.rank, j)
-                })
-        }
-        // You are only asked to answer if something is reaching you AND you could actually afford to escape it.
-        // A slip you cannot pay for is not a choice you are being offered.
-        Step::Evade => combat::slip_cost(units, contacts, i).is_some_and(|cost| cost <= u.tempo),
-        // You may pour tempo into any edge you are on - the one you opened, or a melee one opened on you.
-        Step::Strike => combat::strike_target(units, contacts, i).is_some(),
-    }
-}
-
-/// Whether party unit `i` still **owes the player's order** this step: something is being asked of it
-/// ([`can_act`]) and it has not said what. The Commit gate bars itself on this, and the board lights the hero
-/// on it, so the two can never disagree about who is holding things up.
-///
-/// A hero that *could* act must say so, **including deliberately doing nothing** - "no aim" cannot mean both
-/// "I chose to keep my tempo" and "I have not looked yet".
-pub(crate) fn owes_order(
-    units: &[Combatant],
-    contacts: &[Contact],
-    staged: &[Staged],
-    sub: usize,
-    step: Step,
-    i: usize,
-) -> bool {
-    if !can_act(units, contacts, sub, step, i) {
-        return false;
-    }
-    let s = staged[i];
-    match step {
-        Step::Marshal => false,
-        Step::Engage => !s.hold && s.aim.is_none(),
-        Step::Evade => s.dodge.is_none(),
-        Step::Strike => !s.hold && s.bid == 0,
-    }
-}
-
-/// The label for the Commit control, given the current step (or the fight's decision). When a decision is
-/// owed, the label names it and the control is barred (see [`pending_decision`]).
-pub fn commit_label(board: &Board, arena: PileId) -> String {
-    match outcome(board, arena) {
-        Some(Outcome::Victory) => "Victory - leave".to_string(),
-        Some(Outcome::Defeat) => "Defeat - leave".to_string(),
-        Some(Outcome::Draw) => "Draw - leave".to_string(),
-        None => match pending_decision(board, arena) {
-            Some(owed) => owed,
-            // The Step deck already names the mini-phase (Strike/React/Extra), so the button is just "Commit".
-            None if arena_state(board, arena).4 == Step::Marshal => "Start".to_string(),
-            None => "Commit".to_string(),
-        },
-    }
-}
-
-/// Whether the current step offers the **player** any decision. A step with nothing for the party to do —
-/// no unit that can legally strike, no incoming contact to react to, no surviving contact to strike along —
-/// can be auto-resolved (greedy foe) and skipped. Marshal always needs input (assign ranks / Start).
-pub fn step_needs_input(board: &Board, arena: PileId) -> bool {
-    let (cards, units, sub, _round, step) = arena_state(board, arena);
-    if step == Step::Marshal {
-        return true; // assign ranks / Start
-    }
-    // The same authority the board and the Commit gate read: if nothing is being asked of any hero, there is
-    // nothing here for the player to do, and the step can be resolved greedily and skipped.
-    let contacts = read_contacts(board, arena, &cards);
-    (0..units.len()).any(|i| can_act(&units, &contacts, sub, step, i))
-}
-
-// ---- the event journal: what actually HAPPENED -----------------------------------------------------------
-
-/// Append one **event** — a thing that changed the state of the table: a card flipped, damage banked, a body
-/// fell. Stored on a loose card, so it is part of the board like everything else (and so Back rewinds it for
-/// free, and the physical log shows it).
-///
-/// The combat log used to be a *snapshot* of the current step, rebuilt from the board every frame: it could
-/// tell you what you *may* do but never what just happened, because the board does not remember. Guidance is
-/// the prompt's job and the choice cards' job. **The log's job is the record.**
-fn note_event(board: &mut Board, arena: PileId, sub: usize, line: String) {
-    let phase = SUB_PHASE_NAMES.get(sub).copied().unwrap_or("?");
-    let round = read_phase(board, arena).1;
-    let line = format!("{round}|{phase}|{line}");
+/// Append one journal line under `round`. Stored on a loose Virtual card so the record is part of the board
+/// like everything else (Back rewinds it for free; the outcome pile reads it back).
+fn note(board: &mut Board, arena: PileId, round: usize, line: String) {
+    let line = format!("{round}|{line}");
     if let Some(c) = board
         .content_cards(arena)
         .into_iter()
@@ -1005,12 +393,7 @@ fn note_event(board: &mut Board, arena: PileId, sub: usize, line: String) {
     }
 }
 
-/// Every event of the **whole battle**, in order (`"Round|Phase|line"`).
-///
-/// The journal spans the fight, not the round: the screen shows only the round you are in (nothing earlier
-/// still bears on what you do next, since the Reset closed it), but the *record* has to survive to the end,
-/// because a fight ends with a card carrying what happened in it.
-pub(crate) fn read_events(board: &Board, arena: PileId) -> Vec<String> {
+fn read_events(board: &Board, arena: PileId) -> Vec<String> {
     board
         .content_cards(arena)
         .into_iter()
@@ -1024,29 +407,14 @@ pub(crate) fn read_events(board: &Board, arena: PileId) -> Vec<String> {
         .collect()
 }
 
-/// One round of the journal, formatted for reading: sub-phase headers, indented events. The **one** formatter
-/// - the live panel and the outcome card must not be able to tell the story differently.
+/// One round of the journal, already formatted (the lines were written in the canonical format as they
+/// happened). The **one** formatter chain - the live panel and the outcome card read the same lines.
 pub(crate) fn round_log(board: &Board, arena: PileId, round: u32) -> Vec<String> {
-    let want = round.to_string();
-    let mut log = Vec::new();
-    let mut current = String::new();
-    for e in read_events(board, arena) {
-        let mut it = e.splitn(3, '|');
-        let (r, phase, line) = (
-            it.next().unwrap_or(""),
-            it.next().unwrap_or("").to_string(),
-            it.next().unwrap_or(""),
-        );
-        if r != want {
-            continue;
-        }
-        if phase != current {
-            log.push(phase.clone());
-            current = phase;
-        }
-        log.push(format!("  {line}"));
-    }
-    log
+    let want = format!("{round}|");
+    read_events(board, arena)
+        .into_iter()
+        .filter_map(|e| e.strip_prefix(&want).map(|s| s.to_string()))
+        .collect()
 }
 
 /// The rounds the journal has anything to say about, in order.
@@ -1062,7 +430,6 @@ fn rounds_logged(board: &Board, arena: PileId) -> Vec<u32> {
     out
 }
 
-/// Wipe the journal. Called only when a fight **restarts** - the record of a battle that no longer happened.
 fn clear_events(board: &mut Board, arena: PileId) {
     let stale: Vec<CardId> = board
         .content_cards(arena)
@@ -1074,455 +441,443 @@ fn clear_events(board: &mut Board, arena: PileId) {
     }
 }
 
-/// Report what a resolution did to the units, by diffing them — **only real changes**, each said once and in
-/// full. Damage is not health, so a blow reports both what it banked and whether that turned a card.
-fn note_damage(
-    board: &mut Board,
-    arena: PileId,
-    sub: usize,
-    before: &[Combatant],
-    after: &[Combatant],
-) {
-    for (b, a) in before.iter().zip(after) {
-        let flips = b.health.saturating_sub(a.health);
-        let banked = (a.pending + flips * a.grit).saturating_sub(b.pending);
-        if banked == 0 && flips == 0 {
-            continue;
-        }
-        let mut line = format!("{} takes {banked} damage", a.name);
-        if flips > 0 {
-            line.push_str(&format!(" - {flips} Health card{} turn", plural(flips)));
-        }
-        if a.pending > 0 {
-            line.push_str(&format!(" - {}/{} in its pile", a.pending, a.grit));
-        }
-        if a.health == 0 {
-            line.push_str(" - IT FALLS");
-        }
-        note_event(board, arena, sub, line);
-    }
+/// The last wave the journal printed a header for, kept on the meta card so headers (and `- skipped` fills)
+/// stay correct across commits: `(round, step index)`.
+fn read_wave_mark(board: &Board, arena: PileId) -> Option<(usize, usize)> {
+    let meta = meta_card(board, arena)?;
+    board.card(meta)?.detail().iter().find_map(|l| {
+        let rest = l.strip_prefix("wave ")?;
+        let mut it = rest.split_whitespace();
+        Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+    })
 }
 
-fn plural(n: u32) -> &'static str {
-    if n == 1 { "" } else { "s" }
-}
-
-/// Move any Pool stragglers into their default rank pile (a direct commit's safety net; the UI gates Start
-/// on an empty Pool, so this only fires for headless / auto play).
-fn autofill_pool(board: &mut Board, arena: PileId) {
-    for card in pool_heroes(board, arena) {
-        let Some(name) = board.card(card).map(|c| c.front_title().to_string()) else {
-            continue;
-        };
-        if let Some((stats, _melee, ranged, _aoe)) = hero_stats(board, &name) {
-            let rank = default_rank(&stats, ranged);
-            if let Some(rp) = sub_pile(board, arena, rank_label(rank)) {
-                let at = board.pile(rp).map_or(0, |p| p.cards().len());
-                let _ = board.move_card(card, rp, at);
-            }
-        }
-    }
-}
-
-/// Resolve **one step** — Marshal / Strike / React / Extra — folding the party's staged plan (or the greedy
-/// AI when nothing is staged) with the greedy foe plan, then writing the results back and advancing the walk.
-/// Returns whether the fight is over.
-pub fn commit(board: &mut Board, arena: PileId) -> bool {
-    let (_, _, _, round0, step0) = arena_state(board, arena);
-    let _ = round0;
-    if step0 == Step::Marshal {
-        autofill_pool(board, arena); // safety net; the UI gates Start until the Pool is empty
-        reveal(board, arena); // both formations go down at once: the foes leave the muster and take their ranks
-        // Round start: refresh every unit's tempo to its pool - Cadence, or body count for a horde (which
-        // "swarms with one card per living body"). The end-of-round refresh only covers later rounds, so the
-        // opening round is set here; idempotent for the rounds that were already refreshed.
-        let (cards, mut units, _, _, _) = arena_state(board, arena);
-        combat::refresh_round(&mut units);
-        let maxes = maxes_of(board, &units);
-        for (i, card) in cards.iter().enumerate() {
-            write_combatant(board, *card, &units[i], maxes[i]);
-        }
-        // **Marshal happens ONCE.** Its card is discarded, not rotated to the bottom - so the deck that
-        // remains is the five sub-phases, and a round now wraps Breach -> Intercept with no formation step in
-        // between.
-        //
-        // We proved re-Marshalling is decoration: across every kit and the full party against all eight
-        // encounters, there is no position where a mid-fight re-rank turns a loss into a win (and the LOSSES
-        // are exhaustive searches, so that is not an artefact of pruning). It cost 24x to model and bought
-        // nothing - see `examples/v2_remarshal`. What it *did* buy was a solver that could be wrong about the
-        // game: a fixed-formation search would have called you doomed in positions a re-rank might have saved.
-        // A certainty indicator may be silent, but it may never be wrong. So the rule goes, and the search
-        // becomes correct by construction.
-        discard_marshal(board, arena);
-        return outcome(board, arena).is_some();
-    }
-
-    let (cards, mut units, sub, round, step) = arena_state(board, arena);
-    let maxes = maxes_of(board, &units);
-    let writeback = |board: &mut Board, units: &[Combatant]| {
-        for (i, card) in cards.iter().enumerate() {
-            write_combatant(board, *card, &units[i], maxes[i]);
-        }
-    };
-
-    match step {
-        Step::Marshal => unreachable!("handled above"),
-
-        Step::Engage => {
-            let mut engagements = party_engagements(board, &cards, &units, sub);
-            // The greedy fallback is for headless play (tests, the solver), where nobody gave orders. It must
-            // NOT fire when the player deliberately Held: an empty list is then their decision, not an absent
-            // one.
-            if engagements.is_empty() && !party_has_orders(board, &cards, &units) {
-                engagements = Greedy.engagements(&units, Side::Party, sub);
-            }
-            engagements.extend(Greedy.engagements(&units, Side::Foe, sub));
-            let before = units.clone();
-            let reaching = combat::resolve_engage(&mut units, &engagements);
-            for c in &reaching {
-                note_event(
-                    board,
-                    arena,
-                    sub,
-                    format!(
-                        "{} spends {} tempo reaching {} (value {}) - slipping it costs {}",
-                        units[c.attacker].name,
-                        combat::reach_cards(&units, c),
-                        units[c.target].name,
-                        c.bid,
-                        c.bid / units[c.target].finesse.max(1) + 1
-                    ),
-                );
-            }
-            note_damage(board, arena, sub, &before, &units); // an area strike lands here and forms no contact
-            writeback(board, &units); // clears the staged engagement plan
-            write_contacts(board, arena, &cards, &reaching);
-            rotate_deck(board, arena, STEPS); // Engage -> Evade
-        }
-
-        Step::Evade => {
-            let reaching = read_contacts(board, arena, &cards);
-            let dodges: Vec<Dodge> = (0..units.len())
-                .map(|i| {
-                    if units[i].side != Side::Party {
-                        return Greedy.dodge(&units, &reaching, i);
-                    }
-                    match staged_of(board, cards[i]).dodge {
-                        Some(d) => d,
-                        None => Dodge::Stand, // nothing was asked, or nothing was answered: you stand
-                    }
-                })
-                .collect();
-            let before = units.clone();
-            let contacts = combat::resolve_evade(&mut units, &reaching, &dodges);
-            // Only a slip changes anything: it flips tempo and breaks the edge. Standing spends nothing, and
-            // what standing *cost* you shows up as the blow that lands in the Strike step.
-            for (i, b) in before.iter().enumerate() {
-                let paid = b.tempo - units[i].tempo;
-                if paid > 0 {
-                    note_event(
-                        board,
-                        arena,
-                        sub,
-                        format!(
-                            "{} spends {paid} tempo and slips away - nothing reaches it",
-                            b.name
-                        ),
-                    );
-                }
-            }
-            writeback(board, &units); // clears the staged dodges
-            clear_contacts(board, arena);
-            write_contacts(board, arena, &cards, &contacts);
-            rotate_deck(board, arena, STEPS); // Evade -> Strike
-        }
-
-        Step::Strike => {
-            let contacts = read_contacts(board, arena, &cards);
-            let mut blows = party_blows(board, &cards, &units, &contacts);
-            if blows.is_empty() && !party_has_orders(board, &cards, &units) {
-                blows = Greedy.blows(&units, Side::Party, &contacts);
-            }
-            blows.extend(Greedy.blows(&units, Side::Foe, &contacts));
-            let before = units.clone();
-            combat::resolve_strike(&mut units, &contacts, &blows);
-
-            // Who hit whom, how hard, and what it cost them - one line per striker. The opening blow is free
-            // (the Engage tempo already bought it), so the count and the spend are different numbers and both
-            // have to be said.
-            for i in 0..units.len() {
-                let opening = u32::from(contacts.iter().any(|c| c.attacker == i));
-                let spent = blows
-                    .iter()
-                    .filter(|b| b.unit == i)
-                    .map(|b| b.cards.min(before[i].tempo))
-                    .sum::<u32>();
-                let n = opening + spent;
-                if n == 0 {
-                    continue;
-                }
-                let Some(t) = combat::strike_target(&before, &contacts, i) else {
-                    continue;
-                };
-                let dealt = n * before[i].might;
-                let cost = if spent > 0 {
-                    format!(", spending {spent} tempo")
-                } else {
-                    " (the opening blow, already paid for)".to_string()
-                };
-                note_event(
-                    board,
-                    arena,
-                    sub,
-                    format!(
-                        "{} strikes {} {n}x for {dealt} damage{cost}",
-                        before[i].name, before[t].name
-                    ),
-                );
-            }
-            note_damage(board, arena, sub, &before, &units);
-            combat::end_sub_phase(&mut units);
-            clear_contacts(board, arena);
-
-            // Advance both decks: Steps back to Strike, Phases on to the next sub-phase. If Phases wraps back
-            // to Marshal, a new round has begun - refresh tempo and bump the round counter.
-            rotate_deck(board, arena, STEPS);
-            rotate_deck(board, arena, PHASES);
-            // The round wraps when the phase deck comes back round to its first sub-phase. (It used to wrap to
-            // Marshal; Marshal is gone after the first one.)
-            let new_round =
-                deck_top(board, arena, PHASES).as_deref() == SUB_PHASE_NAMES.first().copied();
-            if new_round {
-                // The Reset closes the round: it is a real change to every card on the table, and the last
-                // thing the player sees before the journal is wiped for the new one.
-                let unfinished: Vec<String> = units
-                    .iter()
-                    .filter(|u| u.pending > 0 && !u.fallen)
-                    .map(|u| format!("{} ({}/{})", u.name, u.pending, u.grit))
-                    .collect();
-                let mut line = "Reset: every tempo card stands back up".to_string();
-                if !unfinished.is_empty() {
-                    line.push_str(&format!(
-                        "; unfinished wounds close - {}",
-                        unfinished.join(", ")
-                    ));
-                }
-                note_event(board, arena, sub, line);
-                combat::refresh_round(&mut units);
-            }
-            writeback(board, &units);
-            if new_round {
-                set_round(board, arena, round + 1);
-                // The foes stay in their ranks. They used to step back into the muster each round, to keep
-                // their formation off the table while you re-declared yours - but nobody re-declares anything
-                // now, so there is nothing left to hide and nothing left to hide it from.
-            }
-        }
-    }
-
-    outcome(board, arena).is_some()
-}
-
-// ---- editing the plan by tap / drop -------------------------------------------------------------------
-
-/// The pile (Pool or a rank pile) a combatant `card` currently sits in, if it is in the arena.
-fn combatant_pile(board: &Board, arena: PileId, card: CardId) -> Option<PileId> {
-    std::iter::once(POOL)
-        .chain(RANK_PILES.iter().map(|(l, _)| *l))
-        .filter_map(|label| sub_pile(board, arena, label))
-        .find(|&p| board.pile(p).is_some_and(|p| p.cards().contains(&card)))
-}
-
-/// Whether `card` is a combatant in `arena` (in the Pool or a rank pile) — a legal tap target.
-pub fn is_combatant(board: &Board, arena: PileId, card: CardId) -> bool {
-    matches!(
-        board.card(card).map(|k| k.card_type()),
-        Some("unit") | Some("foe")
-    ) && combatant_pile(board, arena, card).is_some()
-}
-
-/// Whether `pile` is one of the arena's rank piles (a legal formation drop target).
-pub fn is_rank_pile(board: &Board, arena: PileId, pile: PileId) -> bool {
-    RANK_PILES
-        .iter()
-        .any(|(label, _)| sub_pile(board, arena, label) == Some(pile))
-}
-
-/// The current fight step (for the renderer / the drop rule).
-pub fn current_step(board: &Board, arena: PileId) -> Step {
-    read_phase(board, arena).2
-}
-
-/// Assign a hero to a rank by moving its card into that rank pile (the drag / drop path). No-op unless it is
-/// a party unit and `to` is a rank pile of the arena — rank *is* pile membership.
-pub fn assign(board: &mut Board, unit: CardId, to: PileId) {
-    let Some(arena) = find_arena(board) else {
+fn write_wave_mark(board: &mut Board, arena: PileId, round: usize, idx: usize) {
+    let Some(meta) = meta_card(board, arena) else {
         return;
     };
-    if board.card(unit).map(|k| k.card_type()) == Some("unit") && is_rank_pile(board, arena, to) {
-        let at = board.pile(to).map_or(0, |p| p.cards().len());
-        let _ = board.move_card(unit, to, at);
-    }
+    let mut d = board
+        .card(meta)
+        .map(|k| k.detail().to_vec())
+        .unwrap_or_default();
+    d.retain(|l| !l.starts_with("wave "));
+    d.push(format!("wave {round} {idx}"));
+    let _ = board.set_card_detail(meta, d);
 }
 
-/// Move a hero to the *next* pile in the Pool → Outrider → Vanguard → Rearguard → Pool cycle (the no-drag
-/// rank assignment, and the tap fallback during Marshal).
-fn cycle_rank_pile(board: &mut Board, arena: PileId, card: CardId) {
-    // **A tap never puts a hero back in the Pool.** The Pool is not a rank - it is the *absence* of one, the
-    // state you are here to leave. Cycling into it would un-rank a hero and re-bar the Start you had just
-    // earned, so it is a destination the tap simply does not have: a tap ranks an unranked hero, and after that
-    // only moves it between ranks. (Dragging it back to the Heroes row still works, on the first Marshal, while
-    // that row exists - deliberately: permit the input, then settle. What is barred is doing it *by accident*,
-    // which is all a tap-cycle through the Pool was ever going to achieve.)
-    let ranks: Vec<&str> = RANK_PILES.iter().map(|(l, _)| *l).collect();
-    let here = combatant_pile(board, arena, card);
-    let next = match ranks
-        .iter()
-        .position(|&l| sub_pile(board, arena, l) == here)
-    {
-        Some(i) => ranks[(i + 1) % ranks.len()],
-        None => ranks[0], // in the Pool: the first tap ranks it
+fn step_idx(s: Step) -> usize {
+    STEPS.iter().position(|&x| x == s).unwrap_or(0)
+}
+
+/// Print the wave header for `(round, step)`, filling in everything since the last header: a `round N`
+/// marker when the round advanced, and a `- skipped` line for every wave nobody could act in. The same shape
+/// as the fight simulator's log, via the same `step_coord` naming.
+fn log_wave_header(board: &mut Board, arena: PileId, round: usize, step: Step) {
+    let target = step_idx(step);
+    let (mut r, mut i) = match read_wave_mark(board, arena) {
+        Some((r0, i0)) => (r0, i0 + 1),
+        None => (0, STEPS.len()),
     };
-    if let Some(dest) = sub_pile(board, arena, next) {
-        let at = board.pile(dest).map_or(0, |p| p.cards().len());
-        let _ = board.move_card(card, dest, at);
+    while (r, i) < (round, target) {
+        if i >= STEPS.len() {
+            r += 1;
+            i = 0;
+            note(board, arena, r, format!("round {r}"));
+            continue;
+        }
+        let (k, name) = step_coord(STEPS[i]);
+        note(board, arena, r, format!("  step {k}/8: {name} - skipped"));
+        i += 1;
+    }
+    let (k, name) = step_coord(step);
+    note(board, arena, round, format!("  step {k}/8: {name}"));
+    write_wave_mark(board, arena, round, target);
+}
+
+// ---- the declaration labels (the commit lines' vocabulary) ---------------------------------------------
+
+/// What a declaration does at this step, in words - the commit line's label, matching the fight simulator's.
+fn describe(step: Step, units: &[Combatant], choice: &StepChoice) -> String {
+    let who = |t: usize| {
+        let u = &units[t];
+        let kind = if u.horde { "bodies" } else { "hp" };
+        format!("{} ({} {kind})", u.name, u.health)
+    };
+    match (step, choice) {
+        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
+        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some(t))) => {
+            format!("Advance on the exposed {}", who(*t))
+        }
+        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
+        (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
+        (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
+        (Step::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
+        (Step::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
+        (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
     }
 }
 
-fn select_active(board: &mut Board, cards: &[CardId], units: &[Combatant], chosen: usize) {
-    // An ineffective body (wrong reach for its position) carries no usable strike this phase, so it never
-    // becomes the active attacker - there is nothing for it to aim.
-    if !combat::effective_in_rank(
-        units[chosen].rank,
-        units[chosen].melee,
-        units[chosen].ranged,
+// ---- opening a fight -----------------------------------------------------------------------------------
+
+/// Open a fight at `place`: build the `[Arena]` with the six ground piles, seat every stationed hero and
+/// instantiated foe **directly in its weapon rank** (no formation declaration - rank is derived, position is
+/// earned), install the step deck at round 1 - Havoc, journal the opening, and auto-advance to the first
+/// party decision.
+pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
+    let bestiary = top_deck(board, "Bestiary")?;
+    let root = board.root_id();
+    let arena = board.add_pile(root, ARENA).ok()?;
+    for (label, _, _) in GROUND_PILES {
+        let _ = board.add_pile(arena, label);
+    }
+
+    // A hidden meta card remembers the originating place (for teardown) and the journal's wave mark.
+    if let Ok(meta) = board.add_card(
+        arena,
+        cardtable_model::Face::Down {
+            title: format!("place {}", place.0),
+        },
+        None,
     ) {
-        return;
+        let _ = board.set_card_kind(meta, CardKind::Virtual);
+        let _ = board.set_card_type(meta, "arena-meta");
     }
-    for (i, c) in cards.iter().enumerate() {
-        if units[i].side != Side::Party {
-            continue;
+
+    // Heroes: each stationed hero seats straight into its weapon rank - ranged-only at the back, everything
+    // else at the front. Nothing to declare; the fight opens on the first decision.
+    let heroes: Vec<CardId> = board
+        .content_cards(place)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+        .collect();
+    for card in heroes {
+        let name = board.card(card).map(|c| c.front_title().to_string())?;
+        if let Some((stats, melee, ranged, aoe)) = hero_stats(board, &name) {
+            let label = home_pile_label(Side::Party, melee, ranged);
+            let dest = sub_pile(board, arena, label)?;
+            let at = board.pile(dest).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, dest, at);
+            let _ = board.set_card_type(card, "unit");
+            let _ = board.set_card_detail(
+                card,
+                detail_lines(
+                    stats.vitality,
+                    stats.vitality,
+                    stats.cadence,
+                    stats.cadence,
+                    stats.finesse,
+                    melee,
+                    ranged,
+                    aoe,
+                ),
+            );
         }
-        let mut s = staged_of(board, *c);
-        s.active = i == chosen;
-        write_staged(board, *c, &s);
+    }
+
+    // Foes: instantiate the encounter roster from the Bestiary straight into their weapon ranks, face up.
+    // There is no muster: with no formation to declare, there is nothing to hide and no reveal to stage.
+    let label = board.pile(place)?.label.clone();
+    let foes = board
+        .instantiate_from_bank(
+            bestiary,
+            arena,
+            &deckbound_content::catalog::encounter_roster(&label),
+        )
+        .ok()?;
+    for card in foes {
+        let name = board.card(card).map(|c| c.front_title().to_string())?;
+        if let Some((stats, melee, ranged, aoe)) = foe_stats(&name) {
+            let _ = board.set_card_type(card, "foe");
+            let _ = board.set_card_detail(
+                card,
+                detail_lines(
+                    stats.vitality,
+                    stats.vitality,
+                    stats.cadence,
+                    stats.cadence,
+                    stats.finesse,
+                    melee,
+                    ranged,
+                    aoe,
+                ),
+            );
+            let dest = sub_pile(board, arena, home_pile_label(Side::Foe, melee, ranged))?;
+            let at = board.pile(dest).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, dest, at);
+        }
+    }
+
+    install_step_deck(board, arena);
+    set_round_card(board, arena, 1);
+    let _ = board.focus(arena);
+    // Round 1 opens at Havoc, and nobody is an outrider yet: advance (journalling the skipped waves) to the
+    // first wave with a party decision in it.
+    run_engine(board, arena, false);
+    Some(arena)
+}
+
+/// The home pile for a body of `side` with this reach - its weapon rank on its own ground.
+fn home_pile_label(side: Side, melee: bool, ranged: bool) -> &'static str {
+    let back = ranged && !melee;
+    match (side, back) {
+        (Side::Party, false) => "Vanguard",
+        (Side::Party, true) => "Rearguard",
+        (Side::Foe, false) => "Foe Vanguard",
+        (Side::Foe, true) => "Foe Rearguard",
     }
 }
 
-/// Aim the active party attacker at foe index `foe` (if the SCHEDULE permits), seeding a minimum bid.
-/// The minimum tempo the attacker must bid to *land* a strike on the target: `ceil(F_target / F_att)`.
-fn min_to_land(attacker: &Combatant, target: &Combatant) -> u32 {
-    if attacker.aoe {
-        return 1; // an area strike is unevadable - one card, no bid to raise
+/// (Re)install the step deck at round 1 - Havoc on top. The top card of the deck IS the current step; a
+/// step transition moves the top card to the bottom, and a full cycle is a round.
+fn install_step_deck(board: &mut Board, arena: PileId) {
+    if let Some(p) = sub_pile(board, arena, STEPS_DECK) {
+        let _ = board.remove_pile(p);
     }
-    target.finesse.div_ceil(attacker.finesse.max(1)).max(1)
+    if let Ok(deck) = board.add_pile(arena, STEPS_DECK) {
+        for s in STEPS {
+            let (k, name) = step_coord(s);
+            if let Ok(card) = board.add_card(
+                deck,
+                cardtable_model::Face::Up {
+                    title: name.to_string(),
+                },
+                None,
+            ) {
+                let _ = board.set_card_kind(card, CardKind::Virtual);
+                let _ = board.set_card_type(card, "step");
+                let _ = board.set_card_detail(card, vec![format!("Step {k} of 8")]);
+            }
+        }
+    }
 }
 
-fn aim_active(board: &mut Board, cards: &[CardId], units: &[Combatant], sub: usize, foe: usize) {
-    let Some(active) = (0..units.len())
-        .find(|&i| units[i].side == Side::Party && staged_of(board, cards[i]).active)
-    else {
-        return;
-    };
-    if !combat::effective_in_rank(
-        units[active].rank,
-        units[active].melee,
-        units[active].ranged,
-    ) || !combat::legal_strike(sub, units[active].rank, units[foe].rank)
-        || !combat::back_access_ok(units, units[active].rank, foe)
+/// Rotate the step deck until `step` is on top (a transition per move; a wrap is a new round).
+fn set_step_deck(board: &mut Board, arena: PileId, step: Step) {
+    for _ in 0..STEPS.len() {
+        if read_step(board, arena) == step {
+            return;
+        }
+        let Some(deck) = sub_pile(board, arena, STEPS_DECK) else {
+            return;
+        };
+        let cards = board.pile(deck).map(|p| p.cards()).unwrap_or_default();
+        if let Some(&top) = cards.first() {
+            let _ = board.move_card(top, deck, cards.len());
+        }
+    }
+}
+
+fn set_round_card(board: &mut Board, arena: PileId, round: usize) {
+    let title = format!("Round {round}");
+    if let Some(c) = board
+        .content_cards(arena)
+        .into_iter()
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("round"))
     {
-        return;
+        let _ = board.set_face(c, cardtable_model::Face::Up { title });
+    } else if let Ok(c) = board.add_card(arena, cardtable_model::Face::Up { title }, None) {
+        let _ = board.set_card_kind(c, CardKind::Virtual);
+        let _ = board.set_card_type(c, "round");
     }
-    let mut s = staged_of(board, cards[active]);
-    // Re-tapping the already-aimed foe cancels the strike (there is no bid-0 "no strike" state to cycle to).
-    if s.aim == Some(cards[foe]) {
-        s.aim = None;
-        s.bid = 0;
-        write_staged(board, cards[active], &s);
-        return;
-    }
-    // Only aim if the attacker can actually afford to land it; seed at the minimum landing bid.
-    let need = min_to_land(&units[active], &units[foe]);
-    if need > units[active].tempo {
-        return;
-    }
-    s.aim = Some(cards[foe]);
-    s.bid = need;
-    write_staged(board, cards[active], &s);
 }
 
-/// The party unit a step's choice cards are *about*: the one the player selected, or - when only one hero is
-/// being asked anything - that one, so a lone decision needs no selecting first.
-pub(crate) fn focused_party(board: &Board, arena: PileId) -> Option<(CardId, usize)> {
-    let (cards, units, sub, _round, step) = arena_state(board, arena);
-    if step == Step::Marshal {
+// ---- the outcome ---------------------------------------------------------------------------------------
+
+/// How a fight ended. A battle is decided by breaking a line - or, failing that, by the clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Every foe is fallen.
+    Victory,
+    /// Every hero is fallen.
+    Defeat,
+    /// Neither line broke within the round cap: the two sides disengage.
+    Draw,
+}
+
+/// Whether the fight is over, and how - read straight off the cards (a side with no standing body has
+/// lost; a round counter past the cap is the draw).
+pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
+    let (_, units, _, _) = read_units(board, arena);
+    if units.is_empty() {
         return None;
     }
-    let contacts = read_contacts(board, arena, &cards);
-    let asked: Vec<usize> = (0..units.len())
-        .filter(|&i| can_act(&units, &contacts, sub, step, i))
-        .collect();
-    let i = asked
-        .iter()
-        .copied()
-        .find(|&i| staged_of(board, cards[i]).active)
-        .or_else(|| (asked.len() == 1).then(|| asked[0]))?;
-    Some((cards[i], i))
-}
-
-/// What `n` blows of `might` really do to `target`, in words - for a choice card's consequence line.
-///
-/// **A Might is not a health count.** It banks into the target's damage pile and only turns a Health card each
-/// time that pile crosses Grit; whatever is left **closes at the Reset**, the round boundary. So "deal 7
-/// back" against a Grit 9 Wall promises damage it cannot deliver. Say what the pile does with it instead -
-/// including that the wound *keeps* for the rest of the round, which is what makes a blow under the bar worth
-/// striking at all.
-fn blows_phrase(target: &combat::Combatant, might: u32, n: u32) -> String {
-    let (flips, pile, bar) = combat::pile_effect_strikes(target, might, n);
-    let name = &target.name;
-    let total = might * n;
-    if flips > 0 {
-        format!("{total} damage: {name} loses {flips} health")
-    } else if pile == 0 {
-        format!("{total} damage: {name}'s armor stops it")
-    } else {
-        format!("{total} into {name}'s pile: {pile}/{bar} - it keeps until the Reset")
+    let party_alive = units.iter().any(|u| u.side == Side::Party && !u.fallen);
+    let foes_alive = units.iter().any(|u| u.side == Side::Foe && !u.fallen);
+    match (party_alive, foes_alive) {
+        (false, _) => Some(Outcome::Defeat),
+        (true, false) => Some(Outcome::Victory),
+        (true, true) if read_round(board, arena) > MAX_ROUNDS => Some(Outcome::Draw),
+        (true, true) => None,
     }
 }
 
-/// What taking a choice card does to the staged plan. The card says it in words; this is the same thing in
-/// data. Every decision in a fight is one of these - **a tap on the table never decides anything**, it only
-/// says *which* hero or foe we are talking about.
+// ---- the wave: who is asked, what is staged, what is owed ----------------------------------------------
+
+/// The current wave from the party's point of view: which bodies are asked, and what each has staged.
+pub(crate) struct Wave {
+    pub(crate) cards: Vec<CardId>,
+    pub(crate) units: Vec<Combatant>,
+    pub(crate) round: usize,
+    pub(crate) step: Step,
+    /// Asked this wave (eligible party bodies).
+    pub(crate) asked: Vec<bool>,
+    /// The staged order per body (party only; `None` = not yet answered).
+    pub(crate) staged: Vec<Option<Staged>>,
+    /// The body the choice cards address: the selected one, else the first asked-and-unanswered.
+    pub(crate) focus: Option<usize>,
+    /// Its legal strike targets (empty on movement steps).
+    pub(crate) targets: Vec<usize>,
+}
+
+pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
+    let seated = seat(board, arena)?;
+    let state = &seated.state;
+    let cards = seated.cards;
+    let units: Vec<Combatant> = state.board().units.clone();
+    let asked: Vec<bool> = (0..units.len())
+        .map(|i| units[i].side == Side::Party && state.is_eligible(i))
+        .collect();
+    let staged: Vec<Option<Staged>> = cards.iter().map(|&c| staged_of(board, c)).collect();
+    let focus = (0..units.len())
+        .find(|&i| asked[i] && active_of(board, cards[i]))
+        .or_else(|| (0..units.len()).find(|&i| asked[i] && staged[i].is_none()))
+        .or_else(|| (0..units.len()).find(|&i| asked[i]));
+    let targets = focus.map(|i| state.targets(i)).unwrap_or_default();
+    Some(Wave {
+        cards,
+        units,
+        round: state.round(),
+        step: state.step(),
+        asked,
+        staged,
+        focus,
+        targets,
+    })
+}
+
+/// A decision the player owes before this wave can be committed, named for the Commit control. `None` means
+/// Commit is live. **Nothing is decided by default**: an asked body that has not answered has not chosen to
+/// pass - it has chosen nothing, and committing would silently choose for it.
+pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
+    let w = wave(board, arena)?;
+    (0..w.units.len())
+        .find(|&i| w.asked[i] && w.staged[i].is_none())
+        .map(|i| format!("{} has no orders", w.units[i].name))
+}
+
+/// The label for the Commit control: the outcome once decided, the owed order while one is missing, else
+/// Commit - the step deck already names the wave.
+pub fn commit_label(board: &Board, arena: PileId) -> String {
+    match outcome(board, arena) {
+        Some(Outcome::Victory) => "Victory - leave".to_string(),
+        Some(Outcome::Defeat) => "Defeat - leave".to_string(),
+        Some(Outcome::Draw) => "Draw - leave".to_string(),
+        None => match pending_decision(board, arena) {
+            Some(owed) => owed,
+            None => "Commit".to_string(),
+        },
+    }
+}
+
+// ---- the decision surface: choice cards, taps, drags ---------------------------------------------------
+
+/// What taking a choice card does to the focused body's staged order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChoiceAction {
-    /// Engage: reach for this foe's card (committing one tempo to start).
-    Aim(CardId),
-    /// Engage: drop the reach and pick a target again.
-    Unaim,
-    /// Engage: commit this many tempo to the reach. Strike: pour this many blows in.
-    Bid(u32),
-    /// Evade: pay the exact price and break everything reaching you, or stand and keep the tempo to hit back.
-    Dodge(Dodge),
-    /// Engage / Strike: this hero deliberately does nothing here. **Not** the same as having decided nothing.
-    Hold,
+    Stage(Staged),
 }
 
-/// **Every decision on offer right now, as cards** - each carrying what it costs and does, and, when it cannot
-/// be taken, why not. This is the whole decision surface of a fight: Engage's targets and commitments, Evade's
-/// slip-or-stand, Strike's blows.
-///
-/// The rule it encodes: *a tap on a card says **which**; a choice card says **what***.
+/// **Every decision on offer right now, as cards** - the focused body's legal declarations for this wave,
+/// each carrying what it does. A tap on the table only says *which* body; the order itself is one of these.
 pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
-    let (_, _, _, _, step) = arena_state(board, arena);
-    match step {
-        Step::Marshal => Vec::new(),
-        Step::Engage => engage_choices(board, arena),
-        Step::Evade => evade_choices(board, arena),
-        Step::Strike => strike_choices(board, arena),
+    let Some(w) = wave(board, arena) else {
+        return Vec::new();
+    };
+    let Some(i) = w.focus else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    match w.step {
+        Step::Withdraw | Step::Cross => {
+            let (go, stay) = if w.step == Step::Withdraw {
+                (
+                    (
+                        "Withdraw to your own line",
+                        "rejoin your line at weapon rank - free; standing the havoc was the price",
+                    ),
+                    (
+                        "Stay loose in their ranks",
+                        "keep wreaking havoc inside their formation",
+                    ),
+                )
+            } else {
+                (
+                    (
+                        "Cross into their line",
+                        "walk uncontested - you declared no line strike; you land as an Outrider past their screen",
+                    ),
+                    (
+                        "Hold the line (do not cross)",
+                        "stay in formation; you can still swing at the Assault",
+                    ),
+                )
+            };
+            out.push((
+                Choice::new(go.0, go.1).chosen(w.staged[i] == Some(Staged::Go)),
+                ChoiceAction::Stage(Staged::Go),
+            ));
+            out.push((
+                Choice::new(stay.0, stay.1).chosen(w.staged[i] == Some(Staged::Stay)),
+                ChoiceAction::Stage(Staged::Stay),
+            ));
+        }
+        _ => {
+            for &t in &w.targets {
+                let label = describe(w.step, &w.units, &StepChoice::Strike(Some(t)));
+                let text = strike_consequence(&w.units, i, t);
+                out.push((
+                    Choice::new(label, text).chosen(w.staged[i] == Some(Staged::Aim(w.cards[t]))),
+                    ChoiceAction::Stage(Staged::Aim(w.cards[t])),
+                ));
+            }
+            out.push((
+                Choice::new(
+                    "Hold (pass this step)",
+                    "keep your tempo for a later step - or for the crossing (a line strike bars it)",
+                )
+                .chosen(w.staged[i] == Some(Staged::Hold)),
+                ChoiceAction::Stage(Staged::Hold),
+            ));
+        }
     }
+    out
 }
 
-/// The choice cards for the current step, for the renderer.
+/// What aiming at `t` buys, in one line: the bid the reach will make, the dodge it must clear, and the
+/// damage the blows would bank - both compared numbers on the page, same as the log will say.
+fn strike_consequence(units: &[Combatant], a: usize, t: usize) -> String {
+    let (u, foe) = (&units[a], &units[t]);
+    if u.aoe {
+        return format!(
+            "an area strike: one tempo, unevadable, every enemy in {}'s tier",
+            foe.name
+        );
+    }
+    let reach = rules::combat::regions::reach_cards(units, a, t);
+    let strikes = 1 + u.tempo.saturating_sub(reach);
+    let dmg = u.might.saturating_sub(foe.armor) * strikes;
+    format!(
+        "flip {reach} tempo to reach (dodge floor {}), then up to {strikes} blows = {dmg} damage vs Grit {}",
+        foe.tempo * foe.finesse.max(1),
+        foe.grit
+    )
+}
+
+/// The choice cards for the current wave, for the renderer.
 pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
     step_choices(board, arena)
         .into_iter()
@@ -1530,57 +885,343 @@ pub fn scene_choices(board: &Board, arena: PileId) -> Vec<Choice> {
         .collect()
 }
 
-// ---- the doom oracle: where each choice leads --------------------------------------------------------
+/// Take the scene's choice at `index` - stage the order on the focused body's card. Staging only; nothing
+/// resolves (or is revealed) until Commit.
+pub fn choose(board: &mut Board, index: usize) {
+    let Some(arena) = find_arena(board) else {
+        return;
+    };
+    let Some(w) = wave(board, arena) else {
+        return;
+    };
+    let Some(i) = w.focus else {
+        return;
+    };
+    let actions = step_choices(board, arena);
+    let Some((_, action)) = actions.get(index) else {
+        return;
+    };
+    let card = w.cards[i];
+    let (struck, arrived, _, _) = board
+        .card(card)
+        .map(|c| read_flags(c.detail()))
+        .unwrap_or((false, false, false, None));
+    let ChoiceAction::Stage(s) = action;
+    write_flags(board, card, struck, arrived, false, Some(*s));
+}
 
-/// Where each choice on offer **leads** - `Winnable`, `Evaluating`, or `Doomed` - index-aligned with
-/// [`scene_choices`].
-///
-/// Taking a choice only *stages* it; the step does not resolve until Commit, and other heroes may still be
-/// undecided. So the question a verdict answers is not "does this move win?" but the one the player is actually
-/// asking: **"if I take this, is there still some way to play the rest that wins?"** The search therefore
-/// honours every order already staged as a constraint, folds in the candidate, and is free over everything
-/// else.
-///
-/// It **marks, never bars**. A doomed move stays fully playable, and it has to: a position may have *no*
-/// un-doomed option (a bad formation is a bad formation), and barring them all would deadlock the fight. More
-/// to the point, a player who cannot make the losing move can never find out why it loses.
-///
-/// `budget` is a node allowance. Running out is not "no" - it is [`Outlook::Evaluating`], and the next call
-/// picks up with the memo warm.
+/// **A tap says which, never what.** Tapping an asked party body selects it (the choice cards become its
+/// orders); tapping one that already answered clears its order (re-asks it); tapping a legal enemy target
+/// while a body is focused is the shortcut for aiming at it.
+pub fn handle_tap(board: &mut Board, card: CardId) {
+    let Some(arena) = find_arena(board) else {
+        return;
+    };
+    let Some(w) = wave(board, arena) else {
+        return;
+    };
+    let Some(i) = w.cards.iter().position(|&c| c == card) else {
+        return;
+    };
+    if w.units[i].side == Side::Party {
+        if !w.asked[i] {
+            return;
+        }
+        if w.staged[i].is_some() {
+            // Re-ask: clear the staged order, and make it the focus.
+            let (struck, arrived, _, _) = board
+                .card(card)
+                .map(|c| read_flags(c.detail()))
+                .unwrap_or((false, false, false, None));
+            write_flags(board, card, struck, arrived, true, None);
+        } else {
+            // Select: move the active mark here.
+            for (j, &c) in w.cards.iter().enumerate() {
+                if w.units[j].side != Side::Party {
+                    continue;
+                }
+                let (struck, arrived, _, staged) = board
+                    .card(c)
+                    .map(|k| read_flags(k.detail()))
+                    .unwrap_or((false, false, false, None));
+                write_flags(board, c, struck, arrived, j == i, staged);
+            }
+        }
+        return;
+    }
+    // A foe tap: the aiming shortcut, when it is a legal target of the focused body.
+    if let Some(f) = w.focus
+        && w.targets.contains(&i)
+    {
+        let card_f = w.cards[f];
+        let (struck, arrived, _, _) = board
+            .card(card_f)
+            .map(|c| read_flags(c.detail()))
+            .unwrap_or((false, false, false, None));
+        write_flags(
+            board,
+            card_f,
+            struck,
+            arrived,
+            false,
+            Some(Staged::Aim(w.cards[i])),
+        );
+    }
+}
+
+/// The movement-step drag: dropping an asked body onto the pile its move would land it in stages `go`
+/// (position is EARNED - the card walks at resolution, so the drop stages the intent and the card settles
+/// back). Any other drop is a no-op.
+pub fn assign(board: &mut Board, unit: CardId, to: PileId) {
+    let Some(arena) = find_arena(board) else {
+        return;
+    };
+    let Some(w) = wave(board, arena) else {
+        return;
+    };
+    let Some(i) = w.cards.iter().position(|&c| c == unit) else {
+        return;
+    };
+    if !w.asked[i] {
+        return;
+    }
+    let dest_label = match w.step {
+        Step::Cross => "Outriders",
+        Step::Withdraw => home_pile_label(Side::Party, w.units[i].melee, w.units[i].ranged),
+        _ => return,
+    };
+    if sub_pile(board, arena, dest_label) == Some(to) {
+        let (struck, arrived, _, _) = board
+            .card(unit)
+            .map(|c| read_flags(c.detail()))
+            .unwrap_or((false, false, false, None));
+        write_flags(board, unit, struck, arrived, false, Some(Staged::Go));
+    }
+}
+
+/// Whether `card` is a combatant in the arena (a legal tap target).
+pub fn is_combatant(board: &Board, arena: PileId, card: CardId) -> bool {
+    matches!(
+        board.card(card).map(|k| k.card_type()),
+        Some("unit") | Some("foe")
+    ) && GROUND_PILES.iter().any(|(label, _, _)| {
+        sub_pile(board, arena, label)
+            .and_then(|p| board.pile(p))
+            .is_some_and(|p| p.cards().contains(&card))
+    })
+}
+
+/// Whether `pile` is one of the arena's ground piles (a legal movement-stage drop target).
+pub fn is_ground_pile(board: &Board, arena: PileId, pile: PileId) -> bool {
+    GROUND_PILES
+        .iter()
+        .any(|(label, _, _)| sub_pile(board, arena, label) == Some(pile))
+}
+
+// ---- committing a wave ---------------------------------------------------------------------------------
+
+/// **Commit the current wave**: reveal the staged party orders to the engine in cursor order, let the
+/// scripted foes declare (`step_policy`), resolve every step that completes, journal the whole thing (commit
+/// lines, then the shared narration), write the results back to the cards, and stop at the next party
+/// decision (or the fight's end). Returns whether the fight is over.
+pub fn commit(board: &mut Board, arena: PileId) -> bool {
+    run_engine(board, arena, true);
+    outcome(board, arena).is_some()
+}
+
+/// The engine loop behind [`commit`] and the auto-advance: feed declarations until a party body needs an
+/// order that is not staged (`use_staged` = whether staged orders are consumed; the auto path has none).
+fn run_engine(board: &mut Board, arena: PileId, use_staged: bool) {
+    let Some(seated) = seat(board, arena) else {
+        return;
+    };
+    let cards = seated.cards;
+    let mut state = seated.state;
+    state.set_record(true);
+    let mut prev_board: Battlefield = state.board().clone();
+    let staged: Vec<Option<Staged>> = cards.iter().map(|&c| staged_of(board, c)).collect();
+    let mut consumed = vec![false; cards.len()];
+
+    loop {
+        // Drain and journal any steps that resolved since the last declaration.
+        let logs = state.take_transcript();
+        if !logs.is_empty() {
+            let round = read_wave_round(board, arena);
+            for line in narrate::narrate(&prev_board, &logs) {
+                // The wave header was already printed with its commit lines; narrate's own header would
+                // double it. Its event lines land under ours.
+                if !line.trim_start().starts_with("step ") {
+                    note(board, arena, round, line);
+                }
+            }
+            prev_board = state.board().clone();
+        }
+        if StepCombat::outcome(&state).is_some() {
+            break;
+        }
+        let Some(i) = state.deciding() else {
+            break;
+        };
+        let choice = if state.board().units[i].side == Side::Foe {
+            step_policy(&state, i)
+        } else if use_staged && !consumed[i] && staged[i].is_some() {
+            consumed[i] = true;
+            match staged[i] {
+                Some(Staged::Aim(t)) => StepChoice::Strike(cards.iter().position(|&c| c == t)),
+                Some(Staged::Hold) => StepChoice::Strike(None),
+                Some(Staged::Go) => StepChoice::Move(true),
+                Some(Staged::Stay) => StepChoice::Move(false),
+                None => unreachable!(),
+            }
+        } else {
+            break; // a party decision with nothing staged: the player's turn
+        };
+        // The commit line, under its wave header (with skipped-wave fills).
+        let (round, step) = (state.round(), state.step());
+        if read_wave_mark(board, arena) != Some((round, step_idx(step))) {
+            log_wave_header(board, arena, round, step);
+        }
+        let u = &state.board().units[i];
+        let mark = if u.side == Side::Party { "" } else { "*" };
+        let line = format!(
+            "      commit  {mark}{} -> {}",
+            u.name,
+            describe(step, &state.board().units, &choice)
+        );
+        note(board, arena, round, line);
+        state = StepCombat::apply(&state, &choice);
+    }
+
+    write_back(board, arena, &cards, &state);
+    if let Some(o) = StepCombat::outcome(&state) {
+        let label = match o {
+            FightOutcome::Win => "Victory",
+            FightOutcome::Loss => "Defeat",
+            FightOutcome::Draw => "Draw",
+        };
+        note(
+            board,
+            arena,
+            state.round().min(MAX_ROUNDS),
+            format!("========== {label} =========="),
+        );
+    }
+}
+
+/// The round the journal is currently writing into (the wave mark's round, else the round card).
+fn read_wave_round(board: &Board, arena: PileId) -> usize {
+    read_wave_mark(board, arena)
+        .map(|(r, _)| r)
+        .unwrap_or_else(|| read_round(board, arena))
+}
+
+/// Write the engine's state back to the cards: health/tempo on detail, position as pile moves, the round's
+/// commitments as marker lines, staged orders cleared, the step deck and round card advanced.
+fn write_back(board: &mut Board, arena: PileId, cards: &[CardId], state: &StepState) {
+    let b = state.board();
+    for (i, &card) in cards.iter().enumerate() {
+        let u = &b.units[i];
+        let max_hp = max_health(board, &u.name, u.side).max(u.health);
+        let _ = board.set_card_detail(
+            card,
+            detail_lines(
+                u.health, max_hp, u.tempo, u.cadence, u.finesse, u.melee, u.ranged, u.aoe,
+            ),
+        );
+        write_flags(
+            board,
+            card,
+            state.struck_flag(i),
+            state.arrived_flag(i),
+            false,
+            None,
+        );
+        // Position is earned: the card walks to the pile its (region, rank) says.
+        let label = GROUND_PILES
+            .iter()
+            .find(|&&(_, region, rank)| region == b.regions[i] && rank == b.ranks[i])
+            .map(|&(l, _, _)| l);
+        if let Some(label) = label
+            && let Some(dest) = sub_pile(board, arena, label)
+            && !board.pile(dest).is_some_and(|p| p.cards().contains(&card))
+        {
+            let at = board.pile(dest).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, dest, at);
+        }
+    }
+    set_step_deck(board, arena, state.step());
+    set_round_card(board, arena, state.round());
+}
+
+// ---- the outlooks (where each choice leads) ------------------------------------------------------------
+
+/// Where each choice on offer **leads** - `Winnable` / `Evaluating` / `Doomed` - index-aligned with
+/// [`scene_choices`], computed with the generic solver over the SAME game the balance gate asserts. The
+/// candidate is applied on top of the orders already staged (in cursor order), and everything undecided is
+/// left free for the search. It **marks, never bars**: a doomed move stays fully playable. `budget` is a
+/// node allowance per call; running out is `Evaluating`, and the next frame picks up with the memo warm.
 pub fn choice_outlooks(
     board: &Board,
     arena: PileId,
-    oracle: &mut Oracle,
+    solver: &mut Solver<StepCombat>,
     budget: u64,
-) -> Vec<Outlook> {
-    let (cards, units, sub, round, step) = arena_state(board, arena);
-    let at = match step {
-        Step::Marshal => return Vec::new(), // not yet: the formation search is a different, larger question
-        Step::Engage => At::Engage,
-        Step::Evade => At::Evade,
-        Step::Strike => At::Strike,
-    };
-    let contacts = read_contacts(board, arena, &cards);
+) -> Vec<cardtable_model::Outlook> {
+    use cardtable_model::Outlook;
     let choices = step_choices(board, arena);
-    let Some((_, focus)) = focused_party(board, arena) else {
+    if choices.is_empty() {
+        return Vec::new();
+    }
+    let Some(w) = wave(board, arena) else {
+        return vec![Outlook::Unknown; choices.len()];
+    };
+    let Some(seated) = seat(board, arena) else {
+        return vec![Outlook::Unknown; choices.len()];
+    };
+    let Some(focus) = w.focus else {
         return vec![Outlook::Unknown; choices.len()];
     };
 
-    // One allowance, shared across the whole row: the choices sit in one another's subtrees, so the first is
-    // expensive and the rest are nearly free. Splitting the budget per card would starve the first and waste
-    // the others'.
+    // Apply the already-staged orders that come BEFORE the focus in cursor order; stop at the first gap (the
+    // engine cannot skip a declaration, so a candidate past a gap is unanswerable this frame).
+    let mut base = seated.state;
+    loop {
+        let Some(i) = base.deciding() else {
+            return vec![Outlook::Unknown; choices.len()];
+        };
+        if i == focus {
+            break;
+        }
+        let c = if base.board().units[i].side == Side::Foe {
+            step_policy(&base, i)
+        } else {
+            match w.staged[i] {
+                Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
+                Some(Staged::Hold) => StepChoice::Strike(None),
+                Some(Staged::Go) => StepChoice::Move(true),
+                Some(Staged::Stay) => StepChoice::Move(false),
+                None => return vec![Outlook::Unknown; choices.len()],
+            }
+        };
+        base = StepCombat::apply(&base, &c);
+    }
+
     let mut left = budget;
     let mut out = Vec::with_capacity(choices.len());
-    for (choice, action) in &choices {
-        if !choice.enabled() {
-            out.push(Outlook::Unknown); // it cannot be taken, so where it leads is not a question
-            continue;
-        }
-        let fixed = staged_as_fixed(board, &cards, &units, &contacts, sub, step, focus, *action);
-        let before = oracle.nodes;
-        let verdict = oracle.score(&units, round as usize - 1, sub, at, &contacts, &fixed, left);
-        left = left.saturating_sub(oracle.nodes - before);
-        out.push(match verdict {
+    for (_, action) in &choices {
+        let candidate = match action {
+            ChoiceAction::Stage(Staged::Aim(t)) => {
+                StepChoice::Strike(w.cards.iter().position(|&c| c == *t))
+            }
+            ChoiceAction::Stage(Staged::Hold) => StepChoice::Strike(None),
+            ChoiceAction::Stage(Staged::Go) => StepChoice::Move(true),
+            ChoiceAction::Stage(Staged::Stay) => StepChoice::Move(false),
+        };
+        let next = StepCombat::apply(&base, &candidate);
+        let before = solver.nodes();
+        solver.grant(left);
+        let v = solver.verdict(&next);
+        left = left.saturating_sub(solver.nodes().saturating_sub(before));
+        out.push(match v {
             Verdict::Winnable => Outlook::Winnable,
             Verdict::Doomed => Outlook::Doomed,
             Verdict::Evaluating => Outlook::Evaluating,
@@ -1589,415 +1230,32 @@ pub fn choice_outlooks(
     out
 }
 
-/// The party's staged orders as solver constraints, with `candidate` folded in for the hero being commanded.
-///
-/// This is the join that makes a per-choice verdict mean anything: the heroes you have already ordered are
-/// *pinned*, the one you are ordering takes the candidate, and everything you have not decided yet is left free
-/// for the search to optimise. Anything else would answer a question you did not ask - either ignoring the plan
-/// you have built, or assuming the rest of it.
-#[allow(clippy::too_many_arguments)]
-fn staged_as_fixed(
-    board: &Board,
-    cards: &[CardId],
-    units: &[Combatant],
-    contacts: &[Contact],
-    sub: usize,
-    step: Step,
-    focus: usize,
-    candidate: ChoiceAction,
-) -> Fixed {
-    let mut fixed = Fixed::empty(units.len());
-    for i in 0..units.len() {
-        if units[i].side != Side::Party || units[i].fallen {
-            continue;
-        }
-        let s = staged_of(board, cards[i]);
-        // The hero being commanded takes the candidate; the others take whatever they have already been given.
-        let s = if i == focus {
-            apply_action(s, cards, units, i, candidate)
-        } else {
-            s
-        };
-        match step {
-            Step::Engage => {
-                if s.hold {
-                    fixed.engage[i] = Some(None);
-                } else if let (Some(aim), true) = (s.aim, s.bid > 0)
-                    && let Some(t) = cards.iter().position(|&c| c == aim)
-                    && combat::legal_strike(sub, units[i].rank, units[t].rank)
-                    && combat::back_access_ok(units, units[i].rank, t)
-                {
-                    fixed.engage[i] = Some(Some(Engage {
-                        attacker: i,
-                        target: t,
-                        cards: s.bid,
-                    }));
-                }
-            }
-            Step::Evade => fixed.dodge[i] = s.dodge,
-            Step::Strike => {
-                if s.hold {
-                    fixed.blows[i] = Some(0);
-                } else if s.bid > 0 && combat::strike_target(units, contacts, i).is_some() {
-                    fixed.blows[i] = Some(s.bid);
-                }
-            }
-            Step::Marshal => {}
-        }
-    }
-    fixed
-}
+// ---- teardown ------------------------------------------------------------------------------------------
 
-/// The staged plan a hero would have **if it took this choice** - the same transition [`choose`] applies, but
-/// to a value rather than to the board. One rule, two callers: if these ever disagreed, the verdict would be
-/// about a move the player cannot make.
-fn apply_action(
-    mut s: Staged,
-    _cards: &[CardId],
-    _units: &[Combatant],
-    _i: usize,
-    action: ChoiceAction,
-) -> Staged {
-    match action {
-        ChoiceAction::Aim(foe) => {
-            s.aim = Some(foe);
-            s.bid = 1;
-            s.hold = false;
-        }
-        ChoiceAction::Unaim => {
-            s.aim = None;
-            s.bid = 0;
-        }
-        ChoiceAction::Bid(n) => {
-            s.bid = n;
-            s.hold = false;
-        }
-        ChoiceAction::Dodge(d) => s.dodge = Some(d),
-        ChoiceAction::Hold => {
-            s.hold = true;
-            s.aim = None;
-            s.bid = 0;
-        }
-    }
-    s
-}
-
-/// What committing `n` tempo to reach `foe` actually buys - **the whole attack decision, in one line.**
-///
-/// Two numbers, and they pull against each other: what it now costs the target to escape you, and how many
-/// blows you will have left if it cannot. Reaching buys exactly one blow however much it cost, so every extra
-/// card here is a card that will never be swung. Committing nothing is not an option; committing everything is
-/// a guaranteed hit you arrive at with nothing to hit with.
-///
-/// One builder, used by both the target cards and the commitment cards - the target card *is* a commitment of
-/// one, and if the two ever said different things one of them would be lying.
-fn commit_text(u: &Combatant, foe: &Combatant, n: u32) -> String {
-    let value = n * u.finesse.max(1);
-    let price = slip_price(u, foe, n);
-    let blows = 1 + (u.tempo - n); // the opening blow is paid for, however much you committed
-    if price > foe.tempo {
-        format!(
-            "value {value} - {} cannot escape ({price} tempo, has {}); then {blows} blows",
-            foe.name, foe.tempo
-        )
-    } else {
-        format!(
-            "value {value} - {} escapes for {price} tempo; else {blows} blows",
-            foe.name
-        )
-    }
-}
-
-/// What it would cost `foe` to slip a reach of `n` cards from `u` — the number the whole Engage decision turns
-/// on. Committing more raises it; that is the *only* thing committing more does.
-fn slip_price(u: &Combatant, foe: &Combatant, n: u32) -> u32 {
-    (n * u.finesse.max(1)) / foe.finesse.max(1) + 1
-}
-
-/// The fewest cards that put escape **out of `foe`'s reach entirely** — after which no further commitment buys
-/// anything at all. `None` if nothing you can afford prices them out.
-fn pins(u: &Combatant, foe: &Combatant) -> Option<u32> {
-    (1..=u.tempo).find(|&n| slip_price(u, foe, n) > foe.tempo)
-}
-
-/// **Engage.** With no target yet, the cards are the targets. Once reaching, they are the *commitment* - and
-/// each says the thing that makes this a decision: what it costs the target to slip you, and how many blows
-/// you will have left if they cannot. Every card you sink into reaching them is a card you cannot swing with.
-fn engage_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
-    let (cards, units, sub, _round, _step) = arena_state(board, arena);
-    let Some((card, i)) = focused_party(board, arena) else {
-        return Vec::new();
-    };
-    let u = &units[i];
-    let s = staged_of(board, card);
-    let mut out = Vec::new();
-
-    match s.aim.and_then(|a| cards.iter().position(|&c| c == a)) {
-        Some(t) => {
-            let foe = &units[t];
-            // **Once they cannot escape, committing more is strictly worse** - the same contact, and one fewer
-            // blow, because reaching buys exactly one blow however much it cost. That is a dominated move, and
-            // a dominated move should be impossible rather than merely bad: the identical reasoning that
-            // deleted the partial slip. So it is barred, and it says why - a player who wonders "should I push
-            // harder?" gets the answer from the card instead of from a wasted round.
-            //
-            // (This is why the Clash feels like it has no Engage decision, and rightly: The Wall holds ONE
-            // tempo card, so it cannot afford any dodge at all, so the contest is void before it starts. Two
-            // Vanguards toe to toe are not manoeuvring. The commitment lever is for catching something that
-            // does not want to be caught - a slippery Outrider - not for shoving a wall harder.)
-            let pin = pins(u, foe);
-            for n in 1..=u.tempo {
-                let choice = Choice::new(format!("Commit {n} tempo"), commit_text(u, foe, n))
-                    .chosen(s.bid == n);
-                let choice = match pin {
-                    Some(p) if n > p => choice.barred(format!(
-                        "{} already cannot escape {p} - this only costs you a blow",
-                        foe.name
-                    )),
-                    _ => choice,
-                };
-                out.push((choice, ChoiceAction::Bid(n)));
-            }
-            out.push((
-                Choice::new("Reach elsewhere", "pick another target"),
-                ChoiceAction::Unaim,
-            ));
-        }
-        None => {
-            for (j, foe) in units.iter().enumerate() {
-                if foe.side != Side::Foe
-                    || foe.fallen
-                    || !combat::legal_strike(sub, u.rank, foe.rank)
-                    || !combat::back_access_ok(&units, u.rank, j)
-                {
-                    continue;
-                }
-                // **Say what taking THIS card does, not what might happen two steps later.** It is not a
-                // target you are merely naming: taking it commits one tempo - the cheapest reach - right now.
-                // So it must carry the same consequence the "Commit 1 tempo" card carries, or it is a choice
-                // card in name only, describing a step it does not belong to.
-                out.push((
-                    Choice::new(
-                        format!("Reach for {}", foe.name),
-                        format!("commit 1 tempo: {}", commit_text(u, foe, 1)),
-                    ),
-                    ChoiceAction::Aim(cards[j]),
-                ));
-            }
-            let hold = Choice::new("Hold", format!("keep {} tempo for a later phase", u.tempo))
-                .chosen(s.hold);
-            out.push((hold, ChoiceAction::Hold));
-        }
-    }
-    out
-}
-
-/// **Evade.** You can see exactly what they committed, so the price of escaping is exact - which is why there
-/// is no partial slip to offer: underpaying would never be a gamble, only a waste. Two cards: pay it in full,
-/// or stand, keep the tempo, and (on a melee edge) hit back with it.
-fn evade_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
-    let (cards, units, _sub, _round, _step) = arena_state(board, arena);
-    let Some((card, i)) = focused_party(board, arena) else {
-        return Vec::new();
-    };
-    let reaching = read_contacts(board, arena, &cards);
-    let u = &units[i];
-    let s = staged_of(board, card).dodge;
-    let Some(cost) = combat::slip_cost(&units, &reaching, i) else {
-        return Vec::new();
-    };
-
-    let incoming: Vec<&Contact> = reaching.iter().filter(|c| c.target == i).collect();
-    let taken: u32 = incoming.iter().map(|c| units[c.attacker].might).sum();
-    let answer = incoming
-        .iter()
-        .any(|c| u.melee && !combat::rank_is_ranged(units[c.attacker].rank));
-
-    // **Standing does not spend anything, and it does not decide anything either.** How many blows you answer
-    // with is the *Strike* step's decision (0, 1, ... up to your tempo) - so this card must say what standing
-    // leaves you able to do, not what it will do. Quoting "then 2 blows back" here promised an allocation the
-    // player had not made and could not change, and hid the 0-and-1 options entirely.
-    let stand_text = if answer {
-        format!(
-            "take {taken} damage, spend nothing - keeps {} tempo to answer with at Strike",
-            u.tempo
-        )
-    } else {
-        format!("take {taken} damage, spend nothing - they are at range, nothing to answer with")
-    };
-    let stand = Choice::new("Stand", stand_text).chosen(s == Some(Dodge::Stand));
-
-    let slip_text = if cost <= u.tempo {
-        format!(
-            "spend {cost} tempo - nothing reaches you this phase; {} tempo left",
-            u.tempo - cost
-        )
-    } else {
-        format!("spend {cost} tempo - nothing reaches you this phase")
-    };
-    let slip = Choice::new("Slip", slip_text).chosen(s == Some(Dodge::Slip));
-    let slip = if cost <= u.tempo {
-        slip
-    } else {
-        slip.barred(format!("needs {cost} tempo, you have {}", u.tempo))
-    };
-
-    vec![
-        (slip, ChoiceAction::Dodge(Dodge::Slip)),
-        (stand, ChoiceAction::Dodge(Dodge::Stand)),
-    ]
-}
-
-/// **Strike.** Finesse is done; contact is made. One card per blow, each blow a Might - so this is where the
-/// tempo you did *not* sink into reaching them turns into damage.
-fn strike_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
-    let (cards, units, _sub, _round, _step) = arena_state(board, arena);
-    let Some((card, i)) = focused_party(board, arena) else {
-        return Vec::new();
-    };
-    let contacts = read_contacts(board, arena, &cards);
-    let Some(t) = combat::strike_target(&units, &contacts, i) else {
-        return Vec::new();
-    };
-    let u = &units[i];
-    let s = staged_of(board, card);
-
-    // **The opening blow is already bought.** If this unit opened the contact, the tempo it committed at Engage
-    // has already paid for one blow, which lands whatever it does now. So a card here spends one *more* card
-    // for one *more* blow, and every quoted total has to include the free one - otherwise the numbers on the
-    // cards are simply wrong. A unit merely *answering* along a melee edge someone else opened has no opening
-    // blow: it never committed anything.
-    let opening = u32::from(contacts.iter().any(|c| c.attacker == i));
-
-    let mut out = Vec::new();
-    for n in 1..=u.tempo {
-        let label = if opening > 0 {
-            format!("Strike {n} more")
-        } else {
-            format!("Strike back {n}x")
-        };
-        out.push((
-            Choice::new(label, blows_phrase(&units[t], u.might, opening + n)).chosen(s.bid == n),
-            ChoiceAction::Bid(n),
-        ));
-    }
-    let hold_text = if opening > 0 {
-        format!(
-            "no more blows - the opening blow still lands ({}); keeps {} tempo",
-            blows_phrase(&units[t], u.might, 1),
-            u.tempo
-        )
-    } else {
-        format!("do not answer - keeps {} tempo for a later phase", u.tempo)
-    };
-    out.push((
-        Choice::new("Hold", hold_text).chosen(s.hold),
-        ChoiceAction::Hold,
-    ));
-    out
-}
-
-/// Take the choice card at `index` (into [`step_choices`]). A barred option does nothing.
-pub fn choose(board: &mut Board, index: usize) {
-    let Some(arena) = find_arena(board) else {
-        return;
-    };
-    let Some((choice, action)) = step_choices(board, arena).into_iter().nth(index) else {
-        return;
-    };
-    if !choice.enabled() {
-        return;
-    }
-    let Some((card, _)) = focused_party(board, arena) else {
-        return;
-    };
-    let mut s = staged_of(board, card);
-    match action {
-        // Reaching starts at one card - the cheapest reach, and the most tempo kept back for blows. The player
-        // raises it from the commitment cards, each of which says what the extra card actually buys.
-        ChoiceAction::Aim(foe) => {
-            s.aim = Some(foe);
-            s.bid = 1;
-            s.hold = false;
-        }
-        ChoiceAction::Unaim => {
-            s.aim = None;
-            s.bid = 0;
-        }
-        ChoiceAction::Bid(n) => {
-            s.bid = n;
-            s.hold = false;
-        }
-        ChoiceAction::Dodge(d) => s.dodge = Some(d),
-        ChoiceAction::Hold => {
-            s.hold = true;
-            s.aim = None;
-            s.bid = 0;
-        }
-    }
-    write_staged(board, card, &s);
-}
-
-/// Handle a tap on combatant `card`: in Marshal, cycle its rank pile (the no-drag assignment); in a combat
-/// step, edit the staged plan (a no-op if the tap is meaningless there). Reads the step from the phase card.
-pub fn handle_tap(board: &mut Board, card: CardId) {
-    let Some(arena) = find_arena(board) else {
-        return;
-    };
-    let step = current_step(board, arena);
-    if step == Step::Marshal {
-        if board.card(card).map(|k| k.card_type()) == Some("unit") {
-            cycle_rank_pile(board, arena, card);
-        }
-        return;
-    }
-    let (cards, units, sub, _round, _step) = arena_state(board, arena);
-    let Some(i) = cards.iter().position(|&c| c == card) else {
-        return;
-    };
-    let side = units[i].side;
-    // **A tap says which, never what.** It selects the hero we are giving orders to, or (as a shortcut) the
-    // foe we mean; the order itself is always taken from a choice card, which says what it costs and does.
-    // Tapping used to cycle a bid, a rank or a reaction in place - naming an option but never its consequence.
-    let contacts = read_contacts(board, arena, &cards);
-    match (step, side) {
-        (Step::Marshal, _) => unreachable!("handled above"),
-        // A foe tap only means anything while reaching: it is the shortcut for picking a target.
-        (Step::Engage, Side::Foe) => aim_active(board, &cards, &units, sub, i),
-        // Any hero this step is asking something of may be selected - that is the whole rule, and it is the
-        // same `can_act` the choice cards and the Commit gate read.
-        (_, Side::Party) if can_act(&units, &contacts, sub, step, i) => {
-            select_active(board, &cards, &units, i)
-        }
-        _ => {}
-    }
-}
-
-// ---- teardown -----------------------------------------------------------------------------------------
-
-/// **The game-side authority for "is a fight modal right now".** The arena is *modal*: it is active whenever
-/// it **exists**, regardless of which zone `focus` points at. Every arena decision the game makes — the
-/// `Commit` / `Cancel` / `Tap` intentions and the `affordances` it offers — gates on this, **never on the
-/// focused pile**, so drilling `focus` into a rank sub-pile can't strip the fight's controls or actions.
-/// Mirrors the renderer's `active_arena`; both find the top-level `[Arena]` by label.
+/// **The game-side authority for "is a fight modal right now".** The arena is active whenever it exists.
 pub fn find_arena(board: &Board) -> Option<PileId> {
     top_deck(board, ARENA)
 }
 
-/// The place a fight was opened from, remembered in the hidden meta card.
-fn place_of(board: &Board, arena: PileId) -> Option<PileId> {
+fn meta_card(board: &Board, arena: PileId) -> Option<CardId> {
     board
         .content_cards(arena)
         .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("arena-meta"))
-        .find_map(|c| board.card(c).map(|k| k.front_title().to_string()))
-        .map(|s| PileId(num_after(&s, "place ") as u64))
+        .find(|&c| board.card(c).map(|k| k.card_type()) == Some("arena-meta"))
 }
 
-/// Every combatant card in the arena (across the Pool and all rank piles), by side-type.
+/// The place a fight was opened from, remembered in the hidden meta card.
+fn place_of(board: &Board, arena: PileId) -> Option<PileId> {
+    let meta = meta_card(board, arena)?;
+    board
+        .card(meta)
+        .map(|k| PileId(num_after(k.front_title(), "place ") as u64))
+}
+
+/// Every combatant card in the arena, by side-type.
 fn all_of_type(board: &Board, arena: PileId, card_type: &str) -> Vec<CardId> {
     let mut out = Vec::new();
-    for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
+    for (label, _, _) in GROUND_PILES {
         if let Some(p) = sub_pile(board, arena, label) {
             out.extend(
                 board
@@ -2010,9 +1268,8 @@ fn all_of_type(board: &Board, arena: PileId, card_type: &str) -> Vec<CardId> {
     out
 }
 
-/// Tear the arena down: return foe cards to the Bestiary, move the party's units back to the place as hero
-/// position cards, remove the arena, and leave it. `clear_encounter` removes the beaten encounter (a win);
-/// `spend_day` advances the day clock (a resolved fight costs a day, a cancel does not). Conservation-clean.
+/// Tear the arena down: foes back to the Bestiary, heroes back to the place as position cards, the arena
+/// removed. `clear_encounter` removes a beaten encounter; `spend_day` advances the day clock.
 fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: bool) {
     let place = place_of(board, arena);
     let bestiary = top_deck(board, "Bestiary");
@@ -2040,9 +1297,6 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
         }
     }
 
-    // Leave the arena subtree entirely before removing it. Focus may have drilled into a rank sub-pile, so a
-    // single `zoom_out` wouldn't fully exit — point focus at the root (the arena is always a root sub-pile)
-    // so nothing is left focused on a pile that's about to be removed (which would dangle / panic the draw).
     let root = board.root_id();
     let _ = board.focus(root);
     let _ = board.remove_pile(arena);
@@ -2053,10 +1307,8 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
     }
 }
 
-/// **Fold the fight back** after a decision: on a **win** the encounter is cleared; the fight spends a day.
-///
-/// The record goes down at the place *before* the arena is torn down - it is the only moment the journal still
-/// exists, and the place is the only thing that outlives the fight.
+/// **Fold the fight back** after a decision: on a win the encounter is cleared; the fight spends a day. The
+/// record goes down at the place before the arena is torn down.
 pub fn fold_back(board: &mut Board, arena: PileId) {
     let result = outcome(board, arena);
     let won = result == Some(Outcome::Victory);
@@ -2066,23 +1318,14 @@ pub fn fold_back(board: &mut Board, arena: PileId) {
     teardown(board, arena, won, true);
 }
 
-/// **What happened here**, left at the place as a pile: a named result you can read at a glance, and the whole
-/// battle inside it, one card per round.
-///
-/// A pile, not a card, and not a scroll pane. The log can run to hundreds of lines and the table has no
-/// chrome - no scrollbars, no prev/next buttons - so the answer is the one the card table already gives:
-/// **it is a stack you drill into.** The round cap bounds it at five cards, it needs no gesture the player does
-/// not already have, and it reads the same on a desk and on an iPad.
-///
-/// Replaces any previous result at this place: the last fight here is the one that happened.
+/// **What happened here**, left at the place as a pile: a named result, and the whole battle inside it, one
+/// card per round - a stack you drill into, bounded by the round cap.
 fn record_outcome(board: &mut Board, arena: PileId, place: PileId, result: Outcome) {
     let label = match result {
         Outcome::Victory => "Victory",
         Outcome::Defeat => "Defeat",
         Outcome::Draw => "Draw",
     };
-
-    // Out with the old. A place remembers one fight - the one that just happened.
     let stale: Vec<PileId> = board
         .pile(place)
         .map(|p| p.subpiles())
@@ -2111,424 +1354,82 @@ fn record_outcome(board: &mut Board, arena: PileId, place: PileId, result: Outco
         ) else {
             continue;
         };
-        // **A panel, not detail** - and the difference is the whole question of "how do we fit a combat log on
-        // a card?". Detail grows a card to Size::Medium, whose footprint is *unbounded*: a thirty-line round
-        // would become a 700px card that clips, because Medium has no cap and does not scroll. A panel grows it
-        // to Size::Large, which is what Large exists for ("a document-sized panel... e.g. a combat log"): it
-        // sizes itself to its content, caps at LARGE_MAX_H, and then **scrolls** - by drag, so it reads the
-        // same on a desk and on an iPad. The card is already sized at runtime; it just has to be the right
-        // kind of card. Virtual is what opts it into the scroll.
-        let _ = board.set_card_kind(card, CardKind::Virtual); // a readout, not a tabletop card
+        let _ = board.set_card_kind(card, CardKind::Virtual);
         let _ = board.set_card_type(card, "log");
         let _ = board.set_card_panel(card, round_log(board, arena, round));
     }
 }
 
-/// **Cancel the fight** (retreat): tear the arena down with nothing resolved — the encounter is left intact
-/// and no day is spent. The clean inverse of [`open_fight`], for backing out of a battle.
+/// **Cancel the fight** (retreat): tear the arena down with nothing resolved - encounter intact, no day
+/// spent.
 pub fn cancel_fight(board: &mut Board, arena: PileId) {
     teardown(board, arena, false, false);
 }
 
-/// **Restart the fight**: reset every combatant to full HP and fresh tempo, drop the staged plans and any
-/// landed contacts, and return to round 1 · Marshal — **keeping the current formation** (rank-pile
-/// membership), so you can re-form or just Start again. Foes, place, and encounter are untouched.
+/// **Restart the fight**: every combatant back to full health, fresh tempo, and its weapon rank on its own
+/// ground; the step deck back to round 1 - Havoc; the journal wiped (the record of a battle that no longer
+/// happened); then auto-advance to the first decision, as at open.
 pub fn restart_fight(board: &mut Board, arena: PileId) {
-    clear_contacts(board, arena);
-    clear_events(board, arena); // the record of a battle that no longer happened
-    for label in std::iter::once(POOL).chain(RANK_PILES.iter().map(|(l, _)| *l)) {
-        let Some(pile) = sub_pile(board, arena, label) else {
+    clear_events(board, arena);
+    let all: Vec<CardId> = all_of_type(board, arena, "unit")
+        .into_iter()
+        .chain(all_of_type(board, arena, "foe"))
+        .collect();
+    for card in all {
+        let Some((name, ctype)) = board
+            .card(card)
+            .map(|c| (c.front_title().to_string(), c.card_type().to_string()))
+        else {
             continue;
         };
-        for card in board.content_cards(pile) {
-            let Some((name, ctype)) = board
-                .card(card)
-                .map(|c| (c.front_title().to_string(), c.card_type().to_string()))
-            else {
-                continue;
-            };
-            let stats = match ctype.as_str() {
-                "unit" => hero_stats(board, &name),
-                "foe" => foe_stats(&name),
-                _ => None,
-            };
-            if let Some((s, melee, ranged, aoe)) = stats {
-                let _ = board.set_card_detail(
-                    card,
-                    detail(
-                        s.vitality, s.vitality, s.cadence, s.cadence, s.finesse, melee, ranged,
-                        aoe, 0,
-                    ),
-                );
-            }
-            // The foes go back into the muster: a restart returns to the moment *before* the Reveal, so their
-            // formation must be off the table again while the player re-declares theirs.
-            if ctype == "foe"
-                && let Some(m) = sub_pile(board, arena, MUSTER)
-            {
-                let at = board.pile(m).map_or(0, |p| p.cards().len());
-                let _ = board.move_card(card, m, at);
-            }
+        let (side, stats) = match ctype.as_str() {
+            "unit" => (Side::Party, hero_stats(board, &name)),
+            "foe" => (Side::Foe, foe_stats(&name)),
+            _ => continue,
+        };
+        let Some((s, melee, ranged, aoe)) = stats else {
+            continue;
+        };
+        let _ = board.set_card_detail(
+            card,
+            detail_lines(
+                s.vitality, s.vitality, s.cadence, s.cadence, s.finesse, melee, ranged, aoe,
+            ),
+        );
+        if let Some(dest) = sub_pile(board, arena, home_pile_label(side, melee, ranged))
+            && !board.pile(dest).is_some_and(|p| p.cards().contains(&card))
+        {
+            let at = board.pile(dest).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(card, dest, at);
         }
     }
-    install_phase_decks(board, arena);
+    install_step_deck(board, arena);
+    set_round_card(board, arena, 1);
+    clear_wave_mark(board, arena);
+    run_engine(board, arena, false);
+}
+
+fn clear_wave_mark(board: &mut Board, arena: PileId) {
+    let Some(meta) = meta_card(board, arena) else {
+        return;
+    };
+    let mut d = board
+        .card(meta)
+        .map(|k| k.detail().to_vec())
+        .unwrap_or_default();
+    d.retain(|l| !l.starts_with("wave "));
+    let _ = board.set_card_detail(meta, d);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sample_table;
+    use crate::fixtures::sample_table;
+    use rules::core::Outcome as EngineOutcome;
 
-    /// **Nothing is decided by default, and Commit says what is missing.** The Raider is reached at Intercept
-    /// and can Slip or Stand - so it is being *asked*. Committing before it answers would silently enter Stand
-    /// as if the player had chosen it.
-    #[test]
-    fn commit_is_barred_until_a_reached_hero_answers_and_names_who() {
-        let mut board = sample_table();
-        // The Raider marches alone: it ranks Outrider, so The Wall (an enemy Vanguard) screens it at Intercept.
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Marshal -> Intercept / Engage
-        commit(&mut board, arena); // Engage -> Evade: The Wall is reaching for the Raider
-
-        let (_, units, _, _, step) = arena_state(&board, arena);
-        assert_eq!(step, Step::Evade);
-        let (card, i) = focused_party(&board, arena).expect("a hero is being reached for");
-        assert!(
-            staged_of(&board, card).dodge.is_none(),
-            "nothing pre-chosen"
-        );
-        assert!(
-            scene_choices(&board, arena).iter().all(|c| !c.chosen),
-            "no option shows as taken before the player takes one"
-        );
-
-        let who = units[i].name.clone();
-        assert_eq!(
-            pending_decision(&board, arena),
-            Some(format!("{who} has not answered"))
-        );
-        assert_eq!(
-            commit_label(&board, arena),
-            format!("{who} has not answered")
-        );
-
-        // Answer, and Commit comes live.
-        let stand = scene_choices(&board, arena)
-            .iter()
-            .position(|c| c.label == "Stand")
-            .expect("Stand is always offered");
-        choose(&mut board, stand);
-        assert_eq!(pending_decision(&board, arena), None);
-        assert_eq!(commit_label(&board, arena), "Commit");
-    }
-
-    /// **Reaching buys ONE blow; the tempo you keep back buys the rest.** The Raider (Might 6) reaches The
-    /// Wall (Grit 6) with one card, stands its ground, then pours its remaining card in: 6 + 6 = 12 into one
-    /// pile, which crosses the Grit-6 bar twice and turns two Health cards. That is the only way anything
-    /// cracks a Wall.
-    #[test]
-    fn one_card_of_reach_plus_one_blow_cracks_the_wall() {
-        let mut board = sample_table();
-        // The lone Wall - the fight the Raider is built to solo.
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        // Rank the Raider as a Vanguard, so it meets The Wall in the Clash (Vanguard -> Vanguard).
-        let raider = pool_heroes(&board, arena)[0];
-        let van = sub_pile(&board, arena, "Vanguard").unwrap();
-        let _ = board.move_card(raider, van, 0);
-        commit(&mut board, arena); // Start / Reveal
-
-        let wall_card = {
-            let (cards, units, _, _, _) = arena_state(&board, arena);
-            cards[units.iter().position(|u| u.side == Side::Foe).unwrap()]
-        };
-        let wall = |b: &Board| read_combatant(b, wall_card, Rank::Vanguard).unwrap();
-        let me = |b: &Board| {
-            let (cards, units, _, _, _) = arena_state(b, arena);
-            cards[(0..units.len())
-                .find(|&i| units[i].side == Side::Party)
-                .unwrap()]
-        };
-        let hp0 = wall(&board).health;
-
-        // Walk to the Clash, answering every step on the way.
-        let clash = 3;
-        let mut guard = 0;
-        while arena_state(&board, arena).2 != clash || arena_state(&board, arena).4 != Step::Engage
-        {
-            answer_greedily(&mut board, arena);
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 40, "the Clash must arrive");
-        }
-
-        // Engage: reach for The Wall with the seeded single card - the cheapest reach, keeping tempo for blows.
-        let c = me(&board);
-        handle_tap(&mut board, c);
-        let reach = scene_choices(&board, arena)
-            .iter()
-            .position(|c| c.label.starts_with("Reach for The Wall"))
-            .expect("a Vanguard may reach the enemy Vanguard at the Clash");
-        choose(&mut board, reach);
-        assert_eq!(staged_of(&board, c).bid, 1, "reaching starts at one card");
-        commit(&mut board, arena);
-
-        // Evade: The Wall (greedy) stands - it is in melee and would rather answer. We are reached in turn.
-        answer_greedily(&mut board, arena);
-        commit(&mut board, arena);
-
-        // Strike: the opening blow is already paid for. Pour the last card in.
-        assert_eq!(arena_state(&board, arena).4, Step::Strike);
-        let c = me(&board);
-        handle_tap(&mut board, c);
-        let choices = scene_choices(&board, arena);
-        let one_more = choices
-            .iter()
-            .position(|c| c.label == "Strike 1 more")
-            .expect("one card left to swing with");
-        // The card must count the free opening blow: one MORE card is 2 blows, 12 damage, two Grit-6 bars.
-        assert_eq!(
-            choices[one_more].consequence,
-            "12 damage: The Wall loses 2 health"
-        );
-        choose(&mut board, one_more);
-        commit(&mut board, arena);
-
-        assert_eq!(
-            wall(&board).health,
-            hp0 - 2,
-            "the opening blow (6) plus one more (6) = 12, which crosses Grit 6 twice"
-        );
-        assert_eq!(
-            wall(&board).pending,
-            0,
-            "12 divides the Grit-6 bar evenly - no open wound remains"
-        );
-    }
-
-    /// Answer whatever the current step is asking, so a test can walk a fight without hand-playing it.
-    fn answer_greedily(board: &mut Board, arena: PileId) {
-        let mut guard = 0;
-        while pending_decision(board, arena).is_some() {
-            let choices = scene_choices(board, arena);
-            let Some(i) = choices.iter().position(|c| {
-                c.enabled() && (c.label == "Hold" || c.label == "Stand" || c.label == "Slip")
-            }) else {
-                break;
-            };
-            choose(board, i);
-            guard += 1;
-            assert!(guard < 20, "every asked hero must be answerable");
-        }
-    }
-
-    /// **At Engage the choice row IS the target list, then the commitment.** Tapping only says *which* hero;
-    /// the order is always a card that states what it does. And Hold is a real order - a hero that could reach
-    /// must say it is not reaching, so "no target" never has to mean two different things.
-    #[test]
-    fn engage_offers_targets_then_commitments_and_hold_is_a_real_order() {
-        let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Bastion", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Marshal -> Intercept / Engage
-
-        let (cards, units, _, _, _) = arena_state(&board, arena);
-        let hero = (0..units.len())
-            .find(|&i| units[i].side == Side::Party)
-            .expect("the Bastion marched");
-
-        // Walk to the Clash, where a Vanguard may reach the enemy Vanguard.
-        let mut guard = 0;
-        while arena_state(&board, arena).2 != 3 || arena_state(&board, arena).4 != Step::Engage {
-            answer_greedily(&mut board, arena);
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 40, "the Clash must arrive");
-        }
-        handle_tap(&mut board, cards[hero]);
-        let labels = |b: &Board| -> Vec<String> {
-            scene_choices(b, arena)
-                .iter()
-                .map(|c| c.label.clone())
-                .collect()
-        };
-        assert_eq!(labels(&board), vec!["Reach for The Wall", "Hold"]);
-
-        // **The target card must say what TAKING IT does.** It is not a name you are merely pointing at: it
-        // commits one tempo, right now. It used to read "Might 1 a blow, once you have them" - describing the
-        // Strike step, two commits away, and saying nothing whatever about the choice being made.
-        let reach = scene_choices(&board, arena);
-        let reach = &reach[0];
-        assert!(
-            reach.consequence.starts_with("commit 1 tempo:"),
-            "the target card states its own cost: {}",
-            reach.consequence
-        );
-        // ...and it is the SAME sentence the "Commit 1 tempo" card carries - a reach IS a commitment of one.
-        choose(&mut board, 0);
-        let commits = scene_choices(&board, arena);
-        let one = commits
-            .iter()
-            .find(|c| c.label == "Commit 1 tempo")
-            .unwrap();
-        assert!(
-            reach.consequence.ends_with(&one.consequence),
-            "the two must not be able to say different things:\n  {}\n  {}",
-            reach.consequence,
-            one.consequence
-        );
-        let back = labels(&board)
-            .iter()
-            .position(|l| l == "Reach elsewhere")
-            .unwrap();
-        choose(&mut board, back);
-
-        // Reach: the row becomes the commitment, and the hero no longer owes an order.
-        assert!(
-            pending_decision(&board, arena).is_some(),
-            "a hero with no target owes an order"
-        );
-        choose(&mut board, 0);
-        assert!(labels(&board).iter().any(|l| l.starts_with("Commit ")));
-        assert!(labels(&board).contains(&"Reach elsewhere".to_string()));
-        assert_eq!(pending_decision(&board, arena), None);
-
-        // Hold is equally an answer: it clears the reach, and Commit still comes live.
-        let back = labels(&board)
-            .iter()
-            .position(|l| l == "Reach elsewhere")
-            .unwrap();
-        choose(&mut board, back);
-        let hold = labels(&board).iter().position(|l| l == "Hold").unwrap();
-        choose(&mut board, hold);
-        assert!(staged_of(&board, cards[hero]).hold);
-        assert_eq!(
-            pending_decision(&board, arena),
-            None,
-            "holding IS deciding - it must not read as undecided"
-        );
-    }
-
-    /// **Evade decides slip-or-stand, and NOTHING else.** How many blows you answer with is the Strike step's
-    /// decision - 0, 1, ... up to your tempo. The Stand card used to read "then 2 blows back: 14 damage", which
-    /// promised an allocation the player had never made, could not change, and whose 0-and-1 alternatives it
-    /// hid entirely. Standing spends nothing; it *keeps* the tempo.
-    #[test]
-    fn standing_spends_nothing_and_the_blows_are_chosen_at_strike() {
-        let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Marshal -> Intercept / Engage
-        commit(&mut board, arena); // Engage -> Evade: The Wall reaches for the Raider
-
-        assert_eq!(arena_state(&board, arena).4, Step::Evade);
-        let (card, i) = focused_party(&board, arena).expect("a hero is being reached for");
-        let tempo = arena_state(&board, arena).1[i].tempo;
-
-        let stand = scene_choices(&board, arena);
-        let stand = stand.iter().find(|c| c.label == "Stand").unwrap();
-        assert_eq!(
-            stand.consequence,
-            format!("take 1 damage, spend nothing - keeps {tempo} tempo to answer with at Strike"),
-            "Stand must not pre-commit the blows"
-        );
-
-        let idx = scene_choices(&board, arena)
-            .iter()
-            .position(|c| c.label == "Stand")
-            .unwrap();
-        choose(&mut board, idx);
-        commit(&mut board, arena);
-
-        // ...and NOW the allocation is asked for, with every option from 0 (Hold) upward.
-        assert_eq!(arena_state(&board, arena).4, Step::Strike);
-        assert_eq!(
-            arena_state(&board, arena).1[i].tempo,
-            tempo,
-            "standing spent nothing"
-        );
-        handle_tap(&mut board, card);
-        let labels: Vec<String> = scene_choices(&board, arena)
-            .iter()
-            .map(|c| c.label.clone())
-            .collect();
-        for n in 1..=tempo {
-            assert!(
-                labels.contains(&format!("Strike back {n}x")),
-                "answering with {n} blows must be on offer: {labels:?}"
-            );
-        }
-        assert!(labels.contains(&"Hold".to_string()), "so must 0 blows");
-    }
-
-    /// **A choice must not promise damage it cannot deliver.** The Raider's blow (Might 7) on The Wall
-    /// (Grit 9) flips nothing on its own: it banks into the pile and keeps until the Reset. The card has to
-    /// say where the blow goes and how long it lasts, because that is the whole reason to strike under the bar.
-    #[test]
-    fn a_blow_under_the_bar_is_quoted_against_the_pile_not_as_health() {
-        let wall = combat::Combatant::from_stats(
-            "The Wall",
-            Side::Foe,
-            Rank::Vanguard,
-            [1, 4, 9, 1, 2],
-            0,
-            true,
-            false,
-        );
-        assert_eq!(
-            blows_phrase(&wall, 7, 1),
-            "7 into The Wall's pile: 7/9 - it keeps until the Reset"
-        );
-        // Two blows in one go DO cross it - which is exactly what makes keeping tempo back worth it.
-        assert_eq!(
-            blows_phrase(&wall, 7, 2),
-            "14 damage: The Wall loses 1 health"
-        );
-    }
-
-    /// A melee kit (the Raider carries Jab) must flag `Melee` (not `no strike`) on its combat card:
-    /// `hero_stats` reads the reach off the ability, and `detail` writes the token the renderer parses. Guards
-    /// the "hero shows no strike" regression - which can only occur if a card carries a stale, pre-reach
-    /// detail line (a fight persisted by an older build), never from this live path.
-    #[test]
-    fn a_melee_kit_flags_melee_on_its_combat_card() {
-        // The Raider starts in the party (a hero is its kit), so its build is already assembled.
-        let board = sample_table();
-        let (stats, melee, ranged, aoe) = hero_stats(&board, "Raider").expect("recipe resolves");
-        assert!(melee && !ranged, "Jab is melee-only");
-        assert!(!aoe, "Jab is single-target");
-        let d = detail(
-            stats.vitality,
-            stats.vitality,
-            stats.cadence,
-            stats.cadence,
-            stats.finesse,
-            melee,
-            ranged,
-            aoe,
-            0,
-        );
-        assert!(
-            d[2].contains("Melee"),
-            "the combat card carries the Melee token: {:?}",
-            d[2]
-        );
-        assert!(!d[2].contains("Ranged") && !d[2].contains("Area"));
-    }
-
-    /// Set up a fight at a place with an encounter, with the Marksman marched there.
-    fn open_a_fight(board: &mut Board) -> PileId {
-        open_a_fight_with(board, "Marksman")
-    }
-
-    /// As [`open_a_fight`], but march the hero of the named kit (so tests can pick the hero's attack type).
-    /// The party starts assembled and stationed at Ashfen — a hero *is* its kit — so there is nothing to
-    /// recruit: just walk the one we want out to the encounter, leaving the rest at home.
-    fn open_a_fight_with(board: &mut Board, kit_name: &str) -> PileId {
-        open_a_fight_at(board, kit_name, None)
-    }
-
-    /// March one kit's hero to `place_name` (or the first place with an encounter) and open the fight. Naming
-    /// the place matters: the first encounter cell is a **corner**, which fields four creatures and kills any
-    /// lone hero inside a round - useless for testing anything that has to survive to round 2.
-    fn open_a_fight_at(board: &mut Board, kit_name: &str, place_name: Option<&str>) -> PileId {
+    /// Move each kit's map position from the home cell to `place_name` (or the first encounter place) and
+    /// open the fight there. Pass several kits to field a party.
+    fn open_a_fight_at(board: &mut Board, kits: &[&str], place_name: Option<&str>) -> PileId {
         let locations = top_deck(board, "Locations").unwrap();
         let ashfen = board.pile(locations).unwrap().subpiles()[4];
         let place = board
@@ -2546,587 +1447,263 @@ mod tests {
                         .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
             })
             .unwrap();
-        // This kit's hero map-position card, standing at the home cell.
-        let position = board
-            .content_cards(ashfen)
-            .into_iter()
-            .find(|&c| {
-                board.card(c).map(|k| (k.card_type(), k.front_title())) == Some(("hero", kit_name))
-            })
-            .unwrap_or_else(|| panic!("{kit_name} is stationed at Ashfen"));
-        let progress = top_deck(board, "Progress").unwrap();
-        let _ = board.move_character(position, place, progress);
+        for kit in kits {
+            let position = board
+                .content_cards(ashfen)
+                .into_iter()
+                .find(|&c| {
+                    board.card(c).map(|k| (k.card_type(), k.front_title())) == Some(("hero", *kit))
+                })
+                .unwrap_or_else(|| panic!("{kit} is stationed at Ashfen"));
+            let progress = top_deck(board, "Progress").unwrap();
+            let _ = board.move_character(position, place, progress);
+        }
         open_fight(board, place).expect("a fight opens")
     }
 
-    /// **You may read the foes; you may not read their formation.** Marshal is a blind bet - the secrecy of the
-    /// two declarations is what simulates simultaneity - so the enemy stands in the muster, fully legible, and
-    /// only takes its ranks at the Reveal, when the player commits. The formation cannot leak because it is not
-    /// on the table yet: a stronger guarantee than a renderer that merely declines to draw it.
-    #[test]
-    fn foes_muster_unranked_at_marshal_and_take_the_field_at_reveal() {
-        let mut board = sample_table();
-        // The Raider against the lone Wall: the fight it is designed to solo, and it takes several rounds.
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        assert_eq!(current_step(&board, arena), Step::Marshal);
-        assert!(
-            !formation_complete(&board, arena),
-            "heroes start unranked in the Pool"
-        );
+    /// Convert an engine choice into the staged order that produces it.
+    fn as_staged(cards: &[CardId], c: &StepChoice) -> Staged {
+        match c {
+            StepChoice::Strike(Some(t)) => Staged::Aim(cards[*t]),
+            StepChoice::Strike(None) => Staged::Hold,
+            StepChoice::Move(true) => Staged::Go,
+            StepChoice::Move(false) => Staged::Stay,
+        }
+    }
 
-        // On the table and readable, but in no rank - so `arena_state` (which reads the ranks) sees no foe.
-        assert!(
-            !muster_foes(&board, arena).is_empty(),
-            "the foes are present"
-        );
-        let (_, units, _, _, _) = arena_state(&board, arena);
-        assert!(
-            units.is_empty(),
-            "nobody is in formation yet - neither side"
-        );
-        // ...and the fight must not read as already won just because the enemy has not stepped forward.
-        assert_eq!(outcome(&board, arena), None);
-
-        commit(&mut board, arena); // Start: the Reveal - both formations go down at once
-        assert!(muster_foes(&board, arena).is_empty(), "the muster empties");
-        let (_, units, _, _, _) = arena_state(&board, arena);
-        assert!(units.iter().any(|u| u.side == Side::Foe), "foes are ranked");
-        assert!(units.iter().any(|u| u.side == Side::Party), "so are we");
-
-        // **And Marshal never comes again.** The formation is declared once, so the round wraps Breach ->
-        // Intercept with no formation step between, and the foes stay standing in their ranks - there is no
-        // blind declaration left to keep them off the table for. (Re-Marshalling was decoration: no position
-        // exists where a mid-fight re-rank turns a loss into a win. See examples/v2_remarshal.)
+    /// Self-play THROUGH THE CARDS: stage the side-agnostic policy for every asked body (computed against
+    /// the state with all earlier staged orders applied, exactly as commit will apply them), then commit;
+    /// repeat to the end. This is the production path end to end - seat, stage, commit, write back.
+    fn auto_play(board: &mut Board, arena: PileId) {
         let mut guard = 0;
-        while arena_state(&board, arena).3 < 3 && outcome(&board, arena).is_none() {
-            assert_ne!(
-                arena_state(&board, arena).4,
-                Step::Marshal,
-                "Marshal happens exactly once, at the top of the battle"
+        while outcome(board, arena).is_none() && guard < 500 {
+            guard += 1;
+            let Some(w) = wave(board, arena) else { break };
+            let next_unstaged = (0..w.units.len()).find(|&i| w.asked[i] && w.staged[i].is_none());
+            let Some(i) = next_unstaged else {
+                commit(board, arena);
+                continue;
+            };
+            // The policy choice for this body, honest about everything already staged before it.
+            let seated = seat(board, arena).unwrap();
+            let mut st = seated.state;
+            while let Some(j) = st.deciding() {
+                if j == i {
+                    break;
+                }
+                let c = if st.board().units[j].side == Side::Foe {
+                    step_policy(&st, j)
+                } else {
+                    match w.staged[j] {
+                        Some(Staged::Aim(t)) => {
+                            StepChoice::Strike(w.cards.iter().position(|&c| c == t))
+                        }
+                        Some(Staged::Hold) => StepChoice::Strike(None),
+                        Some(Staged::Go) => StepChoice::Move(true),
+                        Some(Staged::Stay) => StepChoice::Move(false),
+                        None => break,
+                    }
+                };
+                st = StepCombat::apply(&st, &c);
+            }
+            let choice = step_policy(&st, i);
+            let card = w.cards[i];
+            let (struck, arrived, _, _) = board
+                .card(card)
+                .map(|c| read_flags(c.detail()))
+                .unwrap_or((false, false, false, None));
+            write_flags(
+                board,
+                card,
+                struck,
+                arrived,
+                false,
+                Some(as_staged(&w.cards, &choice)),
             );
-            commit(&mut board, arena);
+        }
+        assert!(guard < 500, "the self-play must terminate");
+    }
+
+    /// The reference: the same fight played straight through the engine, policy for both sides - the exact
+    /// playout the balance machinery trusts.
+    fn engine_play(mut state: StepState) -> (EngineOutcome, Vec<u32>) {
+        let mut guard = 0;
+        while StepCombat::outcome(&state).is_none() && guard < 4000 {
             guard += 1;
-            assert!(guard < 200, "the rounds must advance");
+            let i = state.deciding().unwrap();
+            let c = step_policy(&state, i);
+            state = StepCombat::apply(&state, &c);
         }
-        assert!(
-            muster_foes(&board, arena).is_empty(),
-            "the foes hold their ranks - nothing left to hide, and nobody to hide it from"
-        );
+        let healths = state.board().units.iter().map(|u| u.health).collect();
+        (StepCombat::outcome(&state).unwrap(), healths)
     }
 
-    /// The `read_combatant` plumbing carries area / horde from the source: a Bastion (Sweep) hero flags `aoe`,
-    /// and every foe faithfully mirrors its catalog `aoe`/`horde` (guards against a hardcoded-false regress).
+    /// **The no-drift gate.** The card path (seat -> stage -> commit -> write back, every wave) must
+    /// reproduce the pure engine playout EXACTLY - same outcome, same final healths, on a solo and on the
+    /// full-party capstone. If these ever disagree, the arena is playing a different game than the one the
+    /// balance gate asserts.
     #[test]
-    fn combat_reads_carry_aoe_for_a_sweep_hero_and_horde_for_foes() {
-        let mut board = sample_table();
-        let arena = open_a_fight_with(&mut board, "Bastion"); // the Bastion carries Sweep, an area attack
-        let bastion = pool_heroes(&board, arena)
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.front_title()) == Some("Bastion"))
-            .expect("the Bastion is in the pool");
-        let van = sub_pile(&board, arena, "Vanguard").unwrap();
-        assign(&mut board, bastion, van);
+    fn the_card_path_reproduces_the_engine_exactly() {
+        let solo: &[&str] = &["Raider"];
+        let party: &[&str] = &["Raider", "Marksman", "Bastion", "Bombardier"];
+        for (kits, place) in [
+            (solo, Some("The Sundered Vault")),
+            (party, Some("The Hollow Rampart")),
+        ] {
+            let mut board = sample_table();
+            let arena = open_a_fight_at(&mut board, kits, place);
 
-        let (_, units, _, _, _) = arena_state(&board, arena);
-        let sweep = units
-            .iter()
-            .find(|u| u.name == "Bastion")
-            .expect("the Sweep hero is ranked");
-        assert!(
-            sweep.aoe,
-            "a Bastion (Sweep) is an area attacker on its combat read"
-        );
-        assert!(!sweep.horde, "a hero is never a horde");
-        for u in units.iter().filter(|u| u.side == Side::Foe) {
-            let c =
-                deckbound_content::catalog::creature(&u.name).expect("foe is a catalog creature");
-            assert_eq!(u.horde, c.horde, "{} horde flag", u.name);
-            assert_eq!(u.aoe, c.aoe, "{} aoe flag", u.name);
+            // The reference playout, from the exact state the cards opened at.
+            let opened = seat(&board, arena).expect("the fight seats");
+            let (want_outcome, want_healths) = engine_play(opened.state);
+
+            auto_play(&mut board, arena);
+
+            let got = outcome(&board, arena).expect("the fight ends");
+            let want = match want_outcome {
+                EngineOutcome::Win => Outcome::Victory,
+                EngineOutcome::Loss => Outcome::Defeat,
+                EngineOutcome::Draw => Outcome::Draw,
+            };
+            assert_eq!(got, want, "{place:?}: the card path changed the outcome");
+
+            let (cards, units, _, _) = read_units(&board, arena);
+            assert_eq!(cards.len(), want_healths.len(), "no body lost or minted");
+            for (u, want_hp) in units.iter().zip(&want_healths) {
+                assert_eq!(
+                    u.health, *want_hp,
+                    "{place:?}: {} final health drifted from the engine",
+                    u.name
+                );
+            }
         }
     }
 
+    /// A fight opens with both lines seated in their weapon ranks - ranged-only at the back, everything else
+    /// at the front - and the schedule advanced to the first party decision (round 1 has no outriders, so
+    /// Havoc and Withdraw are skipped and say so on the record).
     #[test]
-    fn assigning_a_hero_to_a_rank_pile_completes_the_formation() {
+    fn a_fight_opens_seated_at_weapon_ranks() {
         let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
-        let hero = pool_heroes(&board, arena)[0];
-        let outrider = sub_pile(&board, arena, "Outrider").unwrap();
-        assign(&mut board, hero, outrider);
-        assert!(
-            formation_complete(&board, arena),
-            "the only hero is now ranked, so the Pool is empty"
+        let arena = open_a_fight_at(
+            &mut board,
+            &["Raider", "Marksman"],
+            Some("The Hollow Rampart"),
         );
-        let (_, units, _, _, _) = arena_state(&board, arena);
-        assert!(
-            units
+        let in_pile = |label: &str, name: &str| {
+            sub_pile(&board, arena, label)
+                .map(|p| board.content_cards(p))
+                .unwrap_or_default()
                 .iter()
-                .any(|u| u.side == Side::Party && u.rank == Rank::Outrider),
-            "the hero is a combatant in the Outrider rank"
+                .any(|&c| board.card(c).map(|k| k.front_title()) == Some(name))
+        };
+        assert!(in_pile("Vanguard", "Raider"), "melee at the front");
+        assert!(in_pile("Rearguard", "Marksman"), "ranged at the back");
+        assert!(in_pile("Foe Rearguard", "The Sniper"), "their back seated");
+        let w = wave(&board, arena).expect("a wave is pending");
+        assert!(
+            w.focus.is_some(),
+            "the fight opens at the first party decision"
         );
     }
 
-    /// **Committing past the pin is a dominated move, so it is barred.** Reaching buys exactly one blow however
-    /// much it cost, so once the target cannot escape *at all*, another card buys the same contact and one
-    /// fewer swing. Strictly worse. The same reasoning that deleted the partial slip: a dominated move should
-    /// be impossible, not merely bad - and it says why, so a player who wonders "should I push harder?" gets
-    /// the answer from the card instead of from a wasted round.
-    ///
-    /// This is also why the Clash offers no real Engage decision, and rightly. The Wall holds ONE tempo card,
-    /// so it cannot afford any dodge; the contest is void before it starts. Two Vanguards toe to toe are not
-    /// manoeuvring. The commitment lever exists for catching something that does not want to be caught.
+    /// Staging is the whole pre-commit surface: choices stage orders, the Commit gate names who still owes
+    /// one, and nothing resolves until the commit.
     #[test]
-    fn committing_past_the_pin_is_barred_and_says_why() {
-        let raider = combat::Combatant::from_stats(
-            "Raider",
-            Side::Party,
-            Rank::Vanguard,
-            [7, 6, 1, 3, 2], // Cadence 3 - room to over-commit
-            0,
-            true,
-            false,
-        );
-        // The Wall: Finesse 2, Cadence 1. One card of reach is value 2, which costs it 2 tempo to slip - and
-        // it holds one. It is pinned by the very first card, so there is nothing whatever to buy after that.
-        let wall = combat::Combatant::from_stats(
-            "The Wall",
-            Side::Foe,
-            Rank::Vanguard,
-            [1, 4, 9, 1, 2],
-            0,
-            true,
-            false,
-        );
-        assert_eq!(pins(&raider, &wall), Some(1), "pinned by one card");
-        assert_eq!(
-            slip_price(&raider, &wall, 1),
-            2,
-            "and it holds only 1 tempo"
-        );
-
-        // ...but a **slippery** target is a real decision: it can afford to slip a light reach, so paying more
-        // genuinely pins it. That is what the extra card is for, and it is the only thing it is for.
-        let quick = combat::Combatant::from_stats(
-            "Duelist",
-            Side::Foe,
-            Rank::Outrider,
-            [5, 5, 1, 3, 2], // Cadence 3: it can pay to escape a light reach
-            0,
-            true,
-            false,
-        );
-        assert_eq!(
-            slip_price(&raider, &quick, 1),
-            2,
-            "one card, it escapes for 2"
-        );
-        assert_eq!(
-            pins(&raider, &quick),
-            Some(3),
-            "three cards price it out - and that costs you two blows, so it is a real trade"
-        );
-
-        // And one too quick to pin at all bars nothing: every card you add still taxes its escape.
-        let quicker = combat::Combatant::from_stats(
-            "Duelist",
-            Side::Foe,
-            Rank::Outrider,
-            [5, 5, 1, 5, 2], // Cadence 5: three tempo cannot price it out
-            0,
-            true,
-            false,
-        );
-        assert_eq!(
-            pins(&raider, &quicker),
-            None,
-            "nothing you can afford pins it - so nothing is dominated, and nothing is barred"
-        );
-    }
-
-    /// **A fight leaves a card behind, and the whole battle is inside it.** The record is a *pile* - one card
-    /// per round - because the table has no chrome: no scrollbars, no prev/next. A stack you drill into is the
-    /// gesture the card table already has, it is bounded by the round cap, and it reads the same on a desk and
-    /// on an iPad. And it replaces the last one: a place remembers the fight that happened, not every fight
-    /// that ever did.
-    #[test]
-    fn a_finished_fight_leaves_its_whole_log_at_the_place() {
+    fn staging_gates_the_commit() {
         let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        let place = place_of(&board, arena).expect("the fight knows where it is");
+        let arena = open_a_fight_at(
+            &mut board,
+            &["Raider", "Bastion"],
+            Some("The Hollow Rampart"),
+        );
+        let owed = pending_decision(&board, arena).expect("orders are owed at the first wave");
+        assert!(owed.contains("has no orders"), "{owed}");
+        let hp_before: Vec<u32> = read_units(&board, arena)
+            .1
+            .iter()
+            .map(|u| u.health)
+            .collect();
 
         let mut guard = 0;
-        while outcome(&board, arena).is_none() {
-            commit(&mut board, arena);
+        while pending_decision(&board, arena).is_some() && guard < 10 {
             guard += 1;
-            assert!(guard < 500, "the fight must end");
+            assert!(
+                !scene_choices(&board, arena).is_empty(),
+                "an owed order always has its choice cards on offer"
+            );
+            choose(&mut board, 0);
         }
-        let rounds = rounds_logged(&board, arena);
-        assert!(!rounds.is_empty(), "something happened");
-        fold_back(&mut board, arena);
+        assert!(
+            pending_decision(&board, arena).is_none(),
+            "every asked body has an order"
+        );
+        let hp_now: Vec<u32> = read_units(&board, arena)
+            .1
+            .iter()
+            .map(|u| u.health)
+            .collect();
+        assert_eq!(hp_before, hp_now, "staging must not resolve anything");
+    }
 
-        // A Victory/Defeat/Draw pile now stands at the place, holding one card per round of the battle.
+    /// Cancel is conservation-clean: the arena tears down, the foes merge back into the Bestiary, the heroes
+    /// stand at the place again, and the total card count is exactly what it was before the fight opened.
+    #[test]
+    fn cancel_restores_the_table() {
+        let mut board = sample_table();
+        let total = board.card_count();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        cancel_fight(&mut board, arena);
+        assert_eq!(board.card_count(), total, "conservation (PC.2)");
+        assert!(find_arena(&board).is_none(), "the arena is gone");
+    }
+
+    /// Folding back after a decided fight leaves the record at the place: the named result pile with one log
+    /// card per round.
+    #[test]
+    fn fold_back_leaves_the_record() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        auto_play(&mut board, arena);
+        let result = outcome(&board, arena).expect("decided");
+        let place = place_of(&board, arena).unwrap();
+        fold_back(&mut board, arena);
+        let label = match result {
+            Outcome::Victory => "Victory",
+            Outcome::Defeat => "Defeat",
+            Outcome::Draw => "Draw",
+        };
         let record = board
             .pile(place)
             .unwrap()
             .subpiles()
             .into_iter()
-            .find(|&sp| {
-                board
-                    .pile(sp)
-                    .is_some_and(|p| matches!(p.label.as_str(), "Victory" | "Defeat" | "Draw"))
-            })
-            .expect("the fight left its result at the place");
-        let pages = board.content_cards(record);
-        assert_eq!(pages.len(), rounds.len(), "one card per round, and no more");
-
-        // ...and each page carries that round's events, in full - as a PANEL, which is what makes it a
-        // document-sized card that scrolls rather than a Medium card that grows without bound and clips.
-        let first = board.card(pages[0]).unwrap();
-        assert_eq!(first.front_title(), format!("Round {}", rounds[0]));
+            .find(|&sp| board.pile(sp).map(|p| p.label.as_str()) == Some(label))
+            .expect("the result pile stands at the place");
         assert!(
-            first.detail().is_empty(),
-            "detail would grow it to Medium, which has no cap and does not scroll"
-        );
-        assert!(
-            first.panel().iter().any(|l| l.contains("strikes")),
-            "the page holds the round's record: {:?}",
-            first.panel()
-        );
-        // A readout, not a tabletop card - it must not count toward the place's physical tally.
-        assert_eq!(
-            board.physical_card_count(record),
-            0,
-            "a log is software, not cardboard"
+            !board.content_cards(record).is_empty(),
+            "the record holds the battle, one card per round"
         );
     }
 
-    /// **The oracle marks, it never bars - and it must be able to say "doomed" about every option at once.**
-    /// A bad formation is a bad formation: a position may have no un-doomed move, and if the indicator barred
-    /// them the fight would deadlock. It is also the whole tutorial value - a player who cannot make the losing
-    /// move can never find out why it loses.
-    ///
-    /// The Bombardier alone against The Wall is exactly that fight: Might 3 against Grit 9, one tempo card a
-    /// round, and no line anywhere in the tree that wins.
+    /// The journal speaks the canonical log language: wave headers, commit lines, and the minor steps.
     #[test]
-    fn every_choice_can_be_doomed_and_none_of_them_is_barred() {
+    fn the_journal_speaks_the_canonical_format() {
         let mut board = sample_table();
-        // A ranged kit sent at the Wall: it cannot crack Grit 9, and it never will.
-        let arena = open_a_fight_at(&mut board, "Bombardier", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Start / Reveal
-        let mut oracle = crate::solver::Oracle::new();
-
-        // Walk to a step that asks something, answering nothing.
-        let mut guard = 0;
-        while pending_decision(&board, arena).is_none() && outcome(&board, arena).is_none() {
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 40, "some step must ask us something");
-        }
-
-        // A generous budget: we want the settled answer, not the in-progress one.
-        let outlooks = choice_outlooks(&board, arena, &mut oracle, 5_000_000);
-        let choices = scene_choices(&board, arena);
-        assert_eq!(outlooks.len(), choices.len(), "one verdict per choice");
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        auto_play(&mut board, arena);
+        let all: Vec<String> = rounds_logged(&board, arena)
+            .into_iter()
+            .flat_map(|r| round_log(&board, arena, r))
+            .collect();
+        let has = |needle: &str| all.iter().any(|l| l.contains(needle));
+        assert!(has("step "), "wave headers: {all:?}");
         assert!(
-            !outlooks.is_empty(),
-            "the step is asking something, so there is something to score"
+            has("- skipped"),
+            "the opening waves nobody could act in are on the record"
         );
-
-        // Doomed, all of them - and every one still playable.
-        for (c, o) in choices.iter().zip(&outlooks) {
-            assert_eq!(
-                *o,
-                Outlook::Doomed,
-                "the Bombardier cannot crack a Grit 9 Wall by any line: {}",
-                c.label
-            );
-            assert!(
-                c.enabled(),
-                "a doomed choice is MARKED, never barred: {}",
-                c.label
-            );
-        }
-        assert!(oracle.known() > 0, "and it remembers what it worked out");
-    }
-
-    /// **A winnable fight reads winnable** - the indicator is not simply pessimism. The Raider against the lone
-    /// Wall is the fight it is built for, and the solver knows it.
-    #[test]
-    fn a_winnable_fight_offers_a_winnable_choice() {
-        let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Start / Reveal
-        let mut oracle = crate::solver::Oracle::new();
-
-        let mut guard = 0;
-        while pending_decision(&board, arena).is_none() && outcome(&board, arena).is_none() {
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 40, "some step must ask us something");
-        }
-        let outlooks = choice_outlooks(&board, arena, &mut oracle, 5_000_000);
-        assert!(
-            outlooks.contains(&Outlook::Winnable),
-            "some line from here wins: {outlooks:?}"
-        );
-        assert!(
-            !outlooks.contains(&Outlook::Evaluating),
-            "given the budget it must reach an answer, not sit thinking"
-        );
-    }
-
-    /// **A tap never puts a hero back in the Pool.** The Pool is not a rank - it is the *absence* of one, the
-    /// state Marshal exists to leave. Cycling into it would un-rank a hero and re-bar the Start you had just
-    /// earned, which is not a thing anyone taps a card intending to do.
-    #[test]
-    fn tapping_a_hero_cycles_the_ranks_and_never_returns_it_to_the_pool() {
-        let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        let hero = pool_heroes(&board, arena)[0];
-        let pool = sub_pile(&board, arena, POOL).unwrap();
-        let rank_of = |b: &Board| {
-            RANK_PILES
-                .iter()
-                .find(|(l, _)| sub_pile(b, arena, l) == combatant_pile(b, arena, hero))
-                .map(|(l, _)| *l)
-        };
-
-        assert_eq!(rank_of(&board), None, "it starts unranked, in the Pool");
-        handle_tap(&mut board, hero);
-        assert_eq!(
-            rank_of(&board),
-            Some(RANK_PILES[0].0),
-            "the first tap ranks it"
-        );
-
-        // Keep tapping: it walks the three ranks, round and round, and never lands back in the Pool.
-        for _ in 0..8 {
-            handle_tap(&mut board, hero);
-            assert!(rank_of(&board).is_some(), "still ranked");
-            assert!(
-                combatant_pile(&board, arena, hero) != Some(pool),
-                "a tap must never un-rank a hero"
-            );
-        }
-        assert!(formation_complete(&board, arena), "so Start stays live");
-    }
-
-    /// **The log is the record: only what changed the table, said once and in full.** It used to be a snapshot
-    /// of the current step that mostly re-stated what you *may* do - which the prompt and the choice cards
-    /// already say, in more detail, right beside it - so the one line that mattered (the blow that landed) was
-    /// buried in speculation. Events are written to the board as they resolve, because the scene is rebuilt
-    /// from state every frame and state does not remember its own history.
-    #[test]
-    fn the_log_records_what_happened_not_what_might() {
-        let mut board = sample_table();
-        let arena = open_a_fight_at(&mut board, "Raider", Some("The Sundered Vault"));
-        commit(&mut board, arena); // Start: the Reveal
-        commit(&mut board, arena); // Intercept / Engage: The Wall reaches for the crossing Raider
-
-        let events = read_events(&board, arena);
-        assert!(
-            events
-                .iter()
-                .any(|e| e.starts_with("1|Intercept|The Wall spends 1 tempo reaching Raider")),
-            "the reach is a state change - tempo flipped: {events:?}"
-        );
-
-        // Stand, and let the blow land. THAT is what the log owes you.
-        let stand = scene_choices(&board, arena)
-            .iter()
-            .position(|c| c.label == "Stand")
-            .unwrap();
-        choose(&mut board, stand);
-        commit(&mut board, arena); // Evade -> Strike
-        commit(&mut board, arena); // Strike resolves
-
-        let events = read_events(&board, arena);
-        assert!(
-            events
-                .iter()
-                .any(|e| e.contains("The Wall strikes Raider 1x for 1 damage")),
-            "who hit whom, how hard: {events:?}"
-        );
-        assert!(
-            events
-                .iter()
-                .any(|e| e.contains("Raider takes 1 damage") && e.contains("Health card")),
-            "damage is not health - say what it banked AND whether a card turned: {events:?}"
-        );
-        // Nothing speculative: no line describes what anyone *may* do.
-        for e in &events {
-            assert!(
-                !e.contains(" may ") && !e.contains("no target yet"),
-                "the log is a record, not a guide: {e}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_fight_resolves_to_a_winner() {
-        let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
-        // Commit Marshal (auto-fills the Pool), then drive steps to a decision.
-        let mut guard = 0;
-        while outcome(&board, arena).is_none() {
-            commit(&mut board, arena);
-            guard += 1;
-            assert!(guard < 2000, "the fight must terminate");
-        }
-        assert!(
-            outcome(&board, arena).is_some(),
-            "the fight reached a winner"
-        );
-    }
-
-    /// The five-round cap is the fight's clock: two lines that cannot break each other part as a draw. Without
-    /// it a stalemate walks forever, and the batch resolver (which does cap) would disagree with the arena.
-    #[test]
-    fn the_round_cap_ends_an_unbroken_fight_in_a_draw() {
-        let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
-        commit(&mut board, arena); // leave Marshal; both lines are intact and standing
-        assert_eq!(outcome(&board, arena), None, "the fight is still live");
-
-        set_round(&mut board, arena, crate::battle::MAX_ROUNDS as u32 + 1);
-        assert_eq!(
-            outcome(&board, arena),
-            Some(Outcome::Draw),
-            "past the cap with both lines standing"
-        );
-        assert_eq!(commit_label(&board, arena), "Draw - leave");
-    }
-
-    #[test]
-    fn cancel_tears_the_arena_down_leaving_the_encounter_intact() {
-        let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
-        let place = place_of(&board, arena).expect("the fight remembers its place");
-        assert!(
-            board
-                .content_cards(place)
-                .iter()
-                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter")),
-            "the place has an encounter before the fight"
-        );
-
-        // Cancel from the arena (focus == arena, as after open_fight) must not panic and must tear down.
-        cancel_fight(&mut board, arena);
-
-        assert!(find_arena(&board).is_none(), "the arena was torn down");
-        assert!(
-            board
-                .content_cards(place)
-                .iter()
-                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter")),
-            "cancel leaves the encounter intact (no win)"
-        );
-        assert!(
-            board
-                .content_cards(place)
-                .iter()
-                .any(|&c| board.card(c).map(|k| k.card_type()) == Some("hero")),
-            "the heroes returned to the place"
-        );
-    }
-
-    #[test]
-    fn taps_stage_a_plan_and_engaging_persists_a_reach() {
-        let mut board = sample_table();
-        let arena = open_a_fight(&mut board);
-        commit(&mut board, arena); // Marshal -> Engage (auto-ranks the hero)
-        assert_eq!(current_step(&board, arena), Step::Engage);
-
-        let (cards, units, sub, _, _) = arena_state(&board, arena);
-        let pi = units.iter().position(|u| u.side == Side::Party).unwrap();
-        if let Some(fi) = (0..units.len()).find(|&j| {
-            units[j].side == Side::Foe && combat::legal_strike(sub, units[pi].rank, units[j].rank)
-        }) {
-            handle_tap(&mut board, cards[pi]); // select
-            assert!(staged_of(&board, cards[pi]).active);
-            handle_tap(&mut board, cards[fi]); // reach for the foe (seeds one card)
-            let staged = staged_of(&board, cards[pi]);
-            assert_eq!(staged.aim, Some(cards[fi]));
-            assert_eq!(staged.bid, 1, "reaching starts at the cheapest commitment");
-
-            commit(&mut board, arena); // resolve Engage
-            assert_eq!(current_step(&board, arena), Step::Evade);
-            let contacts = read_contacts(&board, arena, &arena_state(&board, arena).0);
-            assert!(
-                contacts.iter().any(|c| c.attacker == pi),
-                "the staged reach persisted as a contact for the Evade step"
-            );
-        }
-    }
-}
-
-#[cfg(test)]
-mod choice_tests {
-    use super::*;
-
-    fn combatant(name: &str, side: Side, rank: Rank, melee: bool, ranged: bool) -> Combatant {
-        let mut c = Combatant::from_stats(name, side, rank, [3, 5, 1, 2, 2], 0, melee, ranged);
-        c.tempo = 2;
-        c
-    }
-
-    /// **The question that started all this, answered by the model instead of a keyword.** You cannot strike
-    /// back at a shot from the back line - not because a rule forbids it, but because a ranged contact is
-    /// one-way: nothing came within your reach. Standing against an archer therefore buys you *nothing*, and
-    /// the Stand card has to say so, or the player cannot tell a rule from a bug.
-    #[test]
-    fn standing_against_a_shot_buys_nothing_and_the_card_says_so() {
-        let hero = combatant("hero", Side::Party, Rank::Outrider, true, false); // carries melee
-        let shooter = combatant("shooter", Side::Foe, Rank::Rearguard, false, true); // fires from the back
-        let units = vec![hero, shooter];
-        let reaching = vec![Contact {
-            attacker: 1,
-            target: 0,
-            bid: 2,
-        }];
-        assert_eq!(
-            combat::strike_target(&units, &reaching, 0),
-            None,
-            "a ranged edge is one-way - there is nothing to answer along it"
-        );
-    }
-
-    /// The Wall's case: a melee Vanguard reaching the crossing Outrider. The edge is **mutual**, so standing is
-    /// a real posture - you take the blow and answer it with everything you kept back. That is emergent from the
-    /// edge, not a Strike Back keyword.
-    #[test]
-    fn standing_against_a_melee_reach_lets_you_answer_with_everything_you_kept() {
-        let hero = combatant("Raider", Side::Party, Rank::Outrider, true, false);
-        let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
-        let units = vec![hero, wall];
-        let reaching = vec![Contact {
-            attacker: 1,
-            target: 0,
-            bid: 2,
-        }];
-        assert_eq!(
-            combat::strike_target(&units, &reaching, 0),
-            Some(1),
-            "they came to you - you may answer, in a phase the schedule never gave you"
-        );
-    }
-
-    /// **A slip you cannot pay for is not on offer**, and the card says the price rather than vanishing. With
-    /// Finesse 2 against a reach worth 6, escaping costs 4 tempo - and a body holding 2 simply cannot.
-    #[test]
-    fn an_unaffordable_slip_is_barred_with_its_price() {
-        let hero = combatant("hero", Side::Party, Rank::Vanguard, true, false); // Finesse 2, tempo 2
-        let wall = combatant("The Wall", Side::Foe, Rank::Vanguard, true, false);
-        let units = vec![hero, wall];
-        let reaching = vec![Contact {
-            attacker: 1,
-            target: 0,
-            bid: 6,
-        }];
-        // 6 / 2 + 1 = 4 cards to strictly exceed it.
-        assert_eq!(combat::slip_cost(&units, &reaching, 0), Some(4));
-        assert!(
-            !can_act(&units, &reaching, 0, Step::Evade, 0),
-            "with 2 tempo it cannot escape, so it is not being asked anything - it stands"
-        );
+        assert!(has("commit"), "commit lines");
+        assert!(has("strike"), "the strike minor step");
+        assert!(has("resolve"), "the resolve minor step");
     }
 }

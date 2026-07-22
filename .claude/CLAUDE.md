@@ -11,8 +11,10 @@ for the full layout and design.
 The product:
 
 - `crates/boardgame` — **the deployed binary**: the card-table app. Drives the
-  `cardtable` renderer with a `Tableau`. No game wired in yet — this is the small
-  seed the UI grows from. Built to WebAssembly with Trunk (see `deploy.yml`).
+  `cardtable` renderer with the deckbound card-table game wired in behind the
+  `BoardGame` seam (`deckbound-board`): recruit / march / advance-day and the
+  combat arena, which runs the canon step-machine combat (`rules::combat`).
+  Built to WebAssembly with Trunk (see `deploy.yml`).
 - `crates/cardtable` — the card-table Bevy renderer (the product's UI): every
   zone a deck, click-to-focus / drag-to-arrange. A shell over `cardtable-model`.
 - `crates/cardtable-model` — the pure card-table interaction model (decks, cards,

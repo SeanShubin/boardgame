@@ -11,7 +11,8 @@ use cardtable_model::{
 };
 
 use crate::sample_table;
-use crate::solver::Oracle;
+use rules::combat::step_game::StepCombat;
+use rules::core::Solver;
 
 /// Nodes the oracle may visit per frame.
 ///
@@ -32,7 +33,7 @@ const NODE_BUDGET: u64 = 2_500;
 /// and log it as a physical change - none of which it is.
 #[derive(Default)]
 pub struct DoomOracle {
-    oracle: Oracle,
+    solver: Solver<StepCombat>,
     /// The fight it is about. A new arena is a new tree, and a stale memo would be an answer about a battle
     /// that is not happening.
     fight: Option<PileId>,
@@ -70,7 +71,7 @@ pub enum Intention {
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
     Fight { place: PileId },
-    /// Assign `unit` a rank by moving it into rank pile `to` (the formation drag / drop).
+    /// Stage `unit`'s movement (Cross / Withdraw) by dropping it on the ground pile the move lands in.
     Assign { unit: CardId, to: PileId },
     /// Take the scene's choice at `index` - the decision the arena is asking for (a struck hero's
     /// reaction). Staging, like `Tap`: nothing is revealed until Commit.
@@ -110,23 +111,10 @@ impl BoardGame for CardTableGame {
                         if crate::arena::outcome(board, a).is_some() {
                             crate::arena::fold_back(board, a);
                         } else {
+                            // One commit reveals the staged wave, resolves every step through the next real
+                            // party decision (scripted foes and empty waves auto-advance inside), and stops
+                            // there - or at the fight's end.
                             crate::arena::commit(board, a);
-                            // Walk straight past any following step the player has no decision in - it
-                            // resolves greedily - and stop at the next real choice, or the fight's end.
-                            //
-                            // Nothing needs recording here any more. A skipped step is not a silent one: the
-                            // enemy still acts in it, and everything it *does* lands in the event journal like
-                            // any other change. The old skip-notes existed only because the log could not
-                            // remember what happened; now it can, so "you had no legal target" is answered by
-                            // the log simply not mentioning you.
-                            let mut guard = 0;
-                            while crate::arena::outcome(board, a).is_none()
-                                && !crate::arena::step_needs_input(board, a)
-                                && guard < 100
-                            {
-                                crate::arena::commit(board, a);
-                                guard += 1;
-                            }
                         }
                     }
                 }
@@ -155,10 +143,10 @@ impl BoardGame for CardTableGame {
             // equip pairing (a hero identity onto a kit), and the Inn is gone.
             DropTarget::Card(_) => None,
             DropTarget::Pile(dest) => {
-                // In the arena during Marshal, a hero dropped into a rank row takes that rank (pile membership).
+                // In the arena, a hero dropped onto the ground pile its move would land in stages the move
+                // (Cross / Withdraw) - position is EARNED, so the card walks at resolution, not at the drop.
                 if let Some(arena) = crate::arena::find_arena(board)
-                    && crate::arena::current_step(board, arena) == crate::arena::Step::Marshal
-                    && crate::arena::is_rank_pile(board, arena, dest)
+                    && crate::arena::is_ground_pile(board, arena, dest)
                     && board.card(dragged).map(|c| c.card_type()) == Some("unit")
                 {
                     return Some(Intention::Assign {
@@ -256,7 +244,7 @@ impl BoardGame for CardTableGame {
             // number is telemetry, and telemetry may never be the thing that takes the app down.
             let t0 = (!cfg!(target_arch = "wasm32")).then(std::time::Instant::now);
             let outlooks =
-                crate::arena::choice_outlooks(board, arena, &mut doom.oracle, NODE_BUDGET);
+                crate::arena::choice_outlooks(board, arena, &mut doom.solver, NODE_BUDGET);
             if let Some(t0) = t0 {
                 doom.elapsed_ms += t0.elapsed().as_secs_f64() * 1000.0;
             }
@@ -270,8 +258,8 @@ impl BoardGame for CardTableGame {
                 let (ms, frames, nodes, known) = (
                     doom.elapsed_ms,
                     doom.frames,
-                    doom.oracle.nodes,
-                    doom.oracle.known(),
+                    doom.solver.nodes(),
+                    doom.solver.states(),
                 );
                 eprintln!(
                     "doom oracle settled: {ms:.1} ms over {frames} frame(s), {nodes} nodes, {known} positions known"
