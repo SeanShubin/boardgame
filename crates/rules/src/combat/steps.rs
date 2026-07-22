@@ -1,7 +1,6 @@
 //! **The step machine's RESOLVER** - the eight-step round schedule, one resolver per step, plus
-//! [`play_steps`] composing them over a pre-supplied [`StepScript`]. **Additive and inert**: the shipped game
-//! still runs the wave model; this is stage A/B scaffolding of the step-machine restructure (see
-//! `needs-merge/round-sequence.md`, "IN FLIGHT: the step machine"). The decision layer ([`super::step_game`])
+//! [`play_steps`] composing them over a pre-supplied [`StepScript`]. **The shipped schedule** (canon:
+//! `docs/games/deckbound/combat-round-sequence.md`). The decision layer ([`super::step_game`])
 //! calls the per-step resolvers as each declare/reveal wave completes, so **later declarations react to earlier
 //! deaths in the same round** - the design intent the wave model could not express (targets declared up front
 //! could never aim at a rearguard whose screen fell mid-round).

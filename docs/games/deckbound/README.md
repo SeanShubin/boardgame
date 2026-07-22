@@ -29,6 +29,11 @@ The documentation is split by **authority**:
 - **[game-flow.md](game-flow.md) — the complete game-flow map.** Every cycle and phase, largest to
   smallest (**Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, plus the **Clash ⊃ Beat** RPS), each pointing
   to its authoritative source. Start here to see how the whole game is structured.
+- **[combat-round-sequence.md](combat-round-sequence.md) — the SHIPPED combat model's canon.**
+  The eight-step round (Havoc / Withdraw / Skirmish / Cross / Defensive Volley / Raid / Assault /
+  Advance) and the four-minor-step Interaction primitive (Target → Bid → Strike → Resolve), as
+  implemented in `crates/rules/src/combat` and asserted by the diagonal balance gate. Documents
+  the playable reference combat; it does not amend the aspirational `canon/2-spec`.
 - **[computability-and-balance.md](computability-and-balance.md) — the determinism discipline.**
   Elaborates **Charter #11**: why the canonical mode (Clash off, decks open) is deterministic and
   single-agent so **par is computable**, the invariants future mechanics must not break (with a

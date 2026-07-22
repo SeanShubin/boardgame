@@ -5,7 +5,7 @@
 //!
 //! The DECISION layer lives in [`super::step_game`] (the eight-step round as a `Game`) and the per-step
 //! RESOLVERS in [`super::steps`]; this module is what they both stand on. The rules it keeps are the settled
-//! canon (see `needs-merge/round-sequence.md`):
+//! canon (see `docs/games/deckbound/combat-round-sequence.md`):
 //!
 //! - **One region per side; a region is a formation, not a place.** It says who screens you and who an area
 //!   strike catches - nothing else. Position is never declared, only earned.

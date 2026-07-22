@@ -1,8 +1,14 @@
 # The crossing as a bid tree
 
-Status: design spec, agreed in conversation 2026-07-17. Not yet implemented.
-Supersedes the flat `Answer` trichotomy (Evade / Push / Abort) in
-`crates/rules/src/combat/regions.rs`.
+> **HISTORICAL (2026-07-22).** The crossing contest this specced was DISSOLVED by the
+> eight-step machine: evade / push / halt re-emerged as ordinary steps and the pooled
+> bid machinery was deleted. The canon is
+> [docs/games/deckbound/combat-round-sequence.md](../docs/games/deckbound/combat-round-sequence.md);
+> the surviving bid math (reach vs dodge) is stated there under Global rules. Kept as
+> the design record that led to the step machine.
+
+Status: design spec, agreed in conversation 2026-07-17. Later dissolved into the
+step schedule (see banner).
 
 ## Why
 
@@ -88,7 +94,7 @@ legible policy that governs every foe beat.
   hit?* (damage only; a volley never halts). Each pools within itself; the crosser
   **allocates its evade tempo between the two** (slip the line, dodge the arrows,
   or split). Pooling them would conflate a movement contest with a damage contest.
-  See [round-sequence.md](round-sequence.md) Phase 1 for the step-by-step form.
+  See [combat-round-sequence.md](../docs/games/deckbound/combat-round-sequence.md) for the step-by-step form.
 
 ### The free blow -- the engagement rule
 The general rule (it subsumes the old "double duty" framing): **engaging in melee
@@ -134,10 +140,10 @@ Only reached if the raider was caught.
 for a caught crosser, its declared **posture** (push / halt) with a **strike-back
 allocation**; the log derives the label:
 
-| beat-3 result | posture | label | crosser's blow |
-|---|---|---|---|
-| beat the pool | (n/a)   | Evade | none (untouched) |
-| caught        | push    | Push  | none (fled) |
+| beat-3 result | posture | label | crosser's blow                                         |
+| ------------- | ------- | ----- | ------------------------------------------------------ |
+| beat the pool | (n/a)   | Evade | none (untouched)                                       |
+| caught        | push    | Push  | none (fled)                                            |
 | caught        | halt    | Abort | one free blow + paid strike-back (melee catchers only) |
 
 ## Foe behavior: the behavior card

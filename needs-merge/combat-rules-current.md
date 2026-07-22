@@ -2,7 +2,7 @@
 
 > **SUPERSEDED 2026-07-21.** This snapshot describes the two-wave / three-ring model, which was
 > DELETED when the eight-step machine shipped. The current canonical rules are
-> [round-sequence.md](round-sequence.md) (steps: Havoc / Withdraw / Skirmish / Cross / Defensive
+> [docs/games/deckbound/combat-round-sequence.md](../docs/games/deckbound/combat-round-sequence.md) (steps: Havoc / Withdraw / Skirmish / Cross / Defensive
 > Volley / Raid / Assault / Advance). Kept only as a historical record of the model the step
 > machine was measured against; do not implement or reason from it.
 

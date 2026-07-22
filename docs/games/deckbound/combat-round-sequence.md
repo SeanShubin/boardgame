@@ -1,13 +1,22 @@
-# The round sequence
+# The combat round sequence
+
+> **CANON for the shipped combat model** (promoted from `needs-merge/`, 2026-07-22, after
+> review of the played combat). This is the authoritative step-by-step procedure for one
+> combat round as implemented in `crates/rules/src/combat` and asserted by the balance gate
+> (`cargo test -p deckbound-board --test diagonal`). Scope note: this documents the SHIPPED
+> board-combat model; it does not amend [`canon/2-spec`](canon/2-spec/README.md), the
+> aspirational full-game spec, whose combat sections describe a different (future) design.
 
 Status: **the shipped model**, 2026-07-21. The canonical step-by-step procedure
 for one combat round, written so a human can run it at a table - and it is what
 `rules::combat` actually runs: the round is **eight steps**, each its own
 declare/reveal wave (`step_game`), each resolved on the spot (`steps.rs`), and
 the combat log (`scripts/combat.sh` / `scripts\combat.ps1`, mirrored to
-`fight-log.txt`) prints these exact coordinates - `[round N - step K/8: Name]`.
-The crossing's bid math lives in [crossing-bid-tree.md](crossing-bid-tree.md);
-this document is the *frame* - the order of play, and who may do what when.
+`fight-log.txt`) prints these exact coordinates - `round N` / `step K/8: Name`.
+The dissolved crossing contest's bid-tree exploration is kept as history in
+[`needs-merge/crossing-bid-tree.md`](../../../needs-merge/crossing-bid-tree.md);
+the surviving bid math is stated inline under Global rules. This document is the
+*frame* - the order of play, and who may do what when.
 
 ## Two principles, stated once
 
