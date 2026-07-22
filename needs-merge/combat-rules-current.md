@@ -1,9 +1,15 @@
-# Combat rules -- current state (snapshot)
+# Combat rules -- SUPERSEDED snapshot (the wave model)
 
-Concise, precise reference for where the combat model stands **now**. Implemented in
+> **SUPERSEDED 2026-07-21.** This snapshot describes the two-wave / three-ring model, which was
+> DELETED when the eight-step machine shipped. The current canonical rules are
+> [round-sequence.md](round-sequence.md) (steps: Havoc / Withdraw / Skirmish / Cross / Defensive
+> Volley / Raid / Assault / Advance). Kept only as a historical record of the model the step
+> machine was measured against; do not implement or reason from it.
+
+Concise, precise reference for where the combat model stood at the time. Implemented in
 `crates/rules/src/combat/` (pure, `Game`-seam + resolver). ASCII only. `x` = multiply.
 
-Verified: **4/4 solos + 5/5 party fights** (`regions_diagonal`); 52 rules tests.
+Verified (then): **4/4 solos + 5/5 party fights** (`regions_diagonal`); 52 rules tests.
 
 ---
 
