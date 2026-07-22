@@ -211,6 +211,11 @@ pub enum Highlight {
     Settled,
     /// The current choice / a tile with a staged action — the brightest cue.
     Active,
+    /// **Select me to complete the action in progress** — the cue for a legal target while a source has
+    /// chosen a targeted action and is waiting on the whom. The renderer animates this one (a rotating
+    /// dotted ring), because it is the only state that is an *invitation mid-gesture* rather than a
+    /// standing fact about the tile.
+    Targeted,
     /// Inert / out of play — drawn the hardest-receded.
     Spent,
 }

@@ -137,7 +137,12 @@ impl Plugin for CardTablePlugin {
                     update_card_cues,
                     scroll_hovered_panel,
                     // Position authority first, then the feature that reads it.
-                    (track_card_rects, animate_target_arrows).chain(),
+                    (
+                        track_card_rects,
+                        animate_target_arrows,
+                        animate_target_rings,
+                    )
+                        .chain(),
                 ),
             )
             // Shove: feed surface + overlay obstacles, then re-settle the Table's piles (new/resized deck,
@@ -241,6 +246,12 @@ struct ModalTile;
 /// game (a [`Scene`]'s links); this marker just tags a drawn dot for cleanup.
 #[derive(Component)]
 struct ArrowDot;
+
+/// One transient dot of a **target ring** - the rotating dotted line around a [`Highlight::Targeted`] tile
+/// ("select me to complete the action in progress"). Re-spawned each frame by [`animate_target_rings`] so
+/// the dots march around the tile; the marker just tags a drawn dot for cleanup, same as [`ArrowDot`].
+#[derive(Component)]
+struct RingDot;
 
 /// **The single authority for where a card is on screen** — each on-screen card's rect in *logical* pixels
 /// (viewport origin, top-left), rebuilt every frame by [`track_card_rects`]. Any feature that needs a card's
@@ -2437,6 +2448,7 @@ fn tile_look(highlight: Highlight, team: Team) -> (Color, Color, Color, f32) {
         // done?" at a glance, which used to require reading every tile's small print.
         (Highlight::Settled, Team::Left) => (CARD_FACE, TARGET_CUE, CARD_INK, 2.0),
         (Highlight::Settled, Team::Right) => (CARD_BACK, TARGET_CUE, INK, 2.0),
+        (Highlight::Targeted, _) => (CARD_FACE, TARGET_CUE, CARD_INK, 3.0),
         (Highlight::Dim, _) => (DIM_FACE, MUTED, MUTED, 2.0),
         (Highlight::Idle, Team::Left) => (CARD_FACE, type_accent("hero"), CARD_INK, 2.0),
         (Highlight::Idle, Team::Right) => (CARD_BACK, type_accent("foe"), INK, 2.0),
@@ -2622,6 +2634,97 @@ fn spawn_arrow_dots(
             ));
             d += spacing;
         }
+    }
+}
+
+/// Draw the **target rings** - a rotating dotted line around every [`Highlight::Targeted`] tile. The ring is
+/// the mid-gesture invitation ("select me to complete the action in progress"), so it is the one cue that
+/// moves: a steady border is a fact, a marching ring is a question. Same transient-overlay discipline as the
+/// arrows - re-spawned each frame from [`CardScreenRects`], never eats clicks, wall-clock drives the motion.
+fn animate_target_rings(
+    mut commands: Commands,
+    time: Res<Time>,
+    rects: Res<CardScreenRects>,
+    scene: Res<SceneState>,
+    dots: Query<Entity, With<RingDot>>,
+) {
+    for e in &dots {
+        commands.entity(e).despawn(); // clear last frame's ring
+    }
+    let Some(scene) = &scene.0 else {
+        return;
+    };
+    let phase = time.elapsed_secs();
+    let mut ring = |tile: &Tile| {
+        if tile.highlight == Highlight::Targeted
+            && let Some(rect) = rects.0.get(&tile.card)
+        {
+            spawn_ring_dots(&mut commands, *rect, phase);
+        }
+    };
+    match &scene.body {
+        SceneBody::Lanes(lanes) => {
+            for lane in lanes {
+                for t in lane.left.iter().chain(lane.right.iter()) {
+                    ring(t);
+                }
+            }
+        }
+        SceneBody::Rows(rows) => {
+            for row in rows {
+                for t in &row.tiles {
+                    ring(t);
+                }
+            }
+        }
+    }
+}
+
+/// Spawn one tile's ring: dots spaced along the tile rect's perimeter (grown a few px clear of the border),
+/// phase-offset by wall-clock so the whole ring marches clockwise.
+fn spawn_ring_dots(commands: &mut Commands, rect: Rect, phase: f32) {
+    let grow = 5.0;
+    let min = rect.min - Vec2::splat(grow);
+    let max = rect.max + Vec2::splat(grow);
+    let (w, h) = (max.x - min.x, max.y - min.y);
+    let perim = 2.0 * (w + h);
+    let spacing = 13.0;
+    let n = (perim / spacing).max(4.0) as usize;
+    let offset = (phase * 34.0).rem_euclid(spacing); // px/sec around the tile
+    let rim = Color::srgba(0.0, 0.0, 0.0, 0.8);
+    for k in 0..n {
+        let d = (k as f32 * spacing + offset) % perim;
+        // Walk the perimeter clockwise from the top-left corner: top, right, bottom, left.
+        let p = if d < w {
+            Vec2::new(min.x + d, min.y)
+        } else if d < w + h {
+            Vec2::new(max.x, min.y + (d - w))
+        } else if d < 2.0 * w + h {
+            Vec2::new(max.x - (d - w - h), max.y)
+        } else {
+            Vec2::new(min.x, max.y - (d - 2.0 * w - h))
+        };
+        let size = 4.5;
+        commands.spawn((
+            RingDot,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(p.x - size * 0.5),
+                top: Val::Px(p.y - size * 0.5),
+                width: Val::Px(size),
+                height: Val::Px(size),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Percent(50.0)),
+                ..default()
+            },
+            BackgroundColor(TARGET_CUE),
+            BorderColor::all(rim),
+            GlobalZIndex(1000),
+            Pickable {
+                should_block_lower: false,
+                is_hoverable: false,
+            },
+        ));
     }
 }
 

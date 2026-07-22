@@ -175,34 +175,40 @@ pub(crate) enum Staged {
     Stay,
 }
 
-fn read_flags(d: &[String]) -> (bool, bool, bool, Option<Staged>) {
-    let (mut struck, mut arrived, mut active, mut staged) = (false, false, false, None);
+/// A body's marker lines, decoded: the round's commitments, the selection marks, and the staged order.
+/// `aiming` is the mid-gesture state - the body chose a targeted action (the WHAT) and is waiting on the
+/// target (the WHOM); it is not yet an answer, and Commit still counts it as owed.
+#[derive(Clone, Copy, Default)]
+struct Flags {
+    struck: bool,
+    arrived: bool,
+    active: bool,
+    aiming: bool,
+    staged: Option<Staged>,
+}
+
+fn read_flags(d: &[String]) -> Flags {
+    let mut f = Flags::default();
     for line in d.iter().skip(BASE_LINES) {
         match line.as_str() {
-            "struck" => struck = true,
-            "arrived" => arrived = true,
-            "active" => active = true,
-            "hold" => staged = Some(Staged::Hold),
-            "go" => staged = Some(Staged::Go),
-            "stay" => staged = Some(Staged::Stay),
+            "struck" => f.struck = true,
+            "arrived" => f.arrived = true,
+            "active" => f.active = true,
+            "aiming" => f.aiming = true,
+            "hold" => f.staged = Some(Staged::Hold),
+            "go" => f.staged = Some(Staged::Go),
+            "stay" => f.staged = Some(Staged::Stay),
             l => {
                 if let Some(id) = l.strip_prefix("aim ") {
-                    staged = id.trim().parse().ok().map(|n| Staged::Aim(CardId(n)));
+                    f.staged = id.trim().parse().ok().map(|n| Staged::Aim(CardId(n)));
                 }
             }
         }
     }
-    (struck, arrived, active, staged)
+    f
 }
 
-fn write_flags(
-    board: &mut Board,
-    card: CardId,
-    struck: bool,
-    arrived: bool,
-    active: bool,
-    staged: Option<Staged>,
-) {
+fn write_flags(board: &mut Board, card: CardId, f: Flags) {
     let Some(d) = board.card(card).map(|c| c.detail().to_vec()) else {
         return;
     };
@@ -210,16 +216,19 @@ fn write_flags(
     while lines.len() < BASE_LINES {
         lines.push(String::new());
     }
-    if struck {
+    if f.struck {
         lines.push("struck".into());
     }
-    if arrived {
+    if f.arrived {
         lines.push("arrived".into());
     }
-    if active {
+    if f.active {
         lines.push("active".into());
     }
-    match staged {
+    if f.aiming {
+        lines.push("aiming".into());
+    }
+    match f.staged {
         Some(Staged::Aim(t)) => lines.push(format!("aim {}", t.0)),
         Some(Staged::Hold) => lines.push("hold".into()),
         Some(Staged::Go) => lines.push("go".into()),
@@ -229,14 +238,31 @@ fn write_flags(
     let _ = board.set_card_detail(card, lines);
 }
 
+/// Read a card's flags, apply `edit`, write them back.
+fn edit_flags(board: &mut Board, card: CardId, edit: impl FnOnce(&mut Flags)) {
+    let mut f = board
+        .card(card)
+        .map(|c| read_flags(c.detail()))
+        .unwrap_or_default();
+    edit(&mut f);
+    write_flags(board, card, f);
+}
+
 pub(crate) fn staged_of(board: &Board, card: CardId) -> Option<Staged> {
-    board.card(card).map(|c| read_flags(c.detail()).3)?
+    board.card(card).map(|c| read_flags(c.detail()).staged)?
 }
 
 fn active_of(board: &Board, card: CardId) -> bool {
     board
         .card(card)
-        .map(|c| read_flags(c.detail()).2)
+        .map(|c| read_flags(c.detail()).active)
+        .unwrap_or(false)
+}
+
+fn aiming_of(board: &Board, card: CardId) -> bool {
+    board
+        .card(card)
+        .map(|c| read_flags(c.detail()).aiming)
         .unwrap_or(false)
 }
 
@@ -347,9 +373,9 @@ pub(crate) fn seat(board: &Board, arena: PileId) -> Option<Seated> {
     let (mut struck, mut arrived) = (vec![false; cards.len()], vec![false; cards.len()]);
     for (i, &c) in cards.iter().enumerate() {
         if let Some(k) = board.card(c) {
-            let (s, a, _, _) = read_flags(k.detail());
-            struck[i] = s;
-            arrived[i] = a;
+            let f = read_flags(k.detail());
+            struck[i] = f.struck;
+            arrived[i] = f.arrived;
         }
     }
     let state = StepState::resume(
@@ -732,7 +758,10 @@ pub(crate) struct Wave {
     pub(crate) staged: Vec<Option<Staged>>,
     /// The body the choice cards address: the selected one, else the first asked-and-unanswered.
     pub(crate) focus: Option<usize>,
-    /// Its legal strike targets (empty on movement steps).
+    /// Whether the focused body is mid-gesture: it chose a targeted action (the WHAT) and is waiting on the
+    /// WHOM. While true, its legal targets carry the animated invitation cue.
+    pub(crate) aiming: bool,
+    /// The focused body's legal strike targets (empty on movement steps).
     pub(crate) targets: Vec<usize>,
 }
 
@@ -751,6 +780,7 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         .or_else(|| (0..units.len()).find(|&i| asked[i] && staged[i].is_none()))
         .or_else(|| (0..units.len()).find(|&i| asked[i]));
     let targets = focus.map(|i| state.targets(i)).unwrap_or_default();
+    let aiming = focus.is_some_and(|i| aiming_of(board, cards[i]));
     Some(Wave {
         cards,
         units,
@@ -760,6 +790,7 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         asked,
         staged,
         focus,
+        aiming,
         targets,
     })
 }
@@ -769,9 +800,12 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
 /// pass - it has chosen nothing, and committing would silently choose for it.
 pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
     let w = wave(board, arena)?;
-    (0..w.units.len())
-        .find(|&i| w.asked[i] && w.staged[i].is_none())
-        .map(|i| format!("{} has no orders", w.units[i].name))
+    let i = (0..w.units.len()).find(|&i| w.asked[i] && w.staged[i].is_none())?;
+    Some(if w.focus == Some(i) && w.aiming {
+        format!("{} is picking a target", w.units[i].name)
+    } else {
+        format!("{} has no orders", w.units[i].name)
+    })
 }
 
 /// The label for the Commit control: the outcome once decided, the owed order while one is missing, else
@@ -790,10 +824,27 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
 
 // ---- the decision surface: choice cards, taps, drags ---------------------------------------------------
 
-/// What taking a choice card does to the focused body's staged order.
+/// What taking a choice card does to the focused body's order-in-progress.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChoiceAction {
+    /// Complete an order (a target picked, a hold, a movement answer).
     Stage(Staged),
+    /// Choose the targeted action (the WHAT) - enter targeting; the WHOM completes it.
+    BeginAim,
+    /// Drop the chosen action and return to the order menu.
+    CancelAim,
+}
+
+/// The step's strike verb, for the WHAT button and the target buttons.
+fn step_verb(step: Step) -> &'static str {
+    match step {
+        Step::Havoc => "Melee",
+        Step::Skirmish => "Skirmish",
+        Step::Volley => "Volley",
+        Step::Raid => "Raid",
+        Step::Advance => "Advance on",
+        _ => "Strike",
+    }
 }
 
 /// **Every decision on offer right now, as cards** - the focused body's legal declarations for this wave,
@@ -840,15 +891,34 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
                 ChoiceAction::Stage(Staged::Stay),
             ));
         }
-        _ => {
+        _ if w.aiming => {
+            // The WHOM: one button per ringed target (the board's rings and these buttons are the same
+            // menu), plus the way back out of the gesture.
             for &t in &w.targets {
                 let label = describe(w.step, &w.units, &StepChoice::Strike(Some(t)));
                 let text = strike_consequence(&w.units, i, t);
                 out.push((
-                    Choice::new(label, text).chosen(w.staged[i] == Some(Staged::Aim(w.cards[t]))),
+                    Choice::new(label, text),
                     ChoiceAction::Stage(Staged::Aim(w.cards[t])),
                 ));
             }
+            out.push((
+                Choice::new("Cancel", "put the action back - choose again"),
+                ChoiceAction::CancelAim,
+            ));
+        }
+        _ => {
+            // The WHAT: the step's verb (entering targeting - the ringed targets complete it), or the pass.
+            let verb = step_verb(w.step);
+            let n = w.targets.len();
+            out.push((
+                Choice::new(
+                    format!("{verb}..."),
+                    format!("pick a target: {n} in reach - they light up on the board",),
+                )
+                .chosen(matches!(w.staged[i], Some(Staged::Aim(_)))),
+                ChoiceAction::BeginAim,
+            ));
             out.push((
                 Choice::new(
                     "Hold (pass this step)",
@@ -907,12 +977,18 @@ pub fn choose(board: &mut Board, index: usize) {
         return;
     };
     let card = w.cards[i];
-    let (struck, arrived, _, _) = board
-        .card(card)
-        .map(|c| read_flags(c.detail()))
-        .unwrap_or((false, false, false, None));
-    let ChoiceAction::Stage(s) = action;
-    write_flags(board, card, struck, arrived, false, Some(*s));
+    match action {
+        ChoiceAction::Stage(s) => edit_flags(board, card, |f| {
+            f.staged = Some(*s);
+            f.aiming = false;
+            f.active = false;
+        }),
+        ChoiceAction::BeginAim => edit_flags(board, card, |f| {
+            f.staged = None;
+            f.aiming = true;
+        }),
+        ChoiceAction::CancelAim => edit_flags(board, card, |f| f.aiming = false),
+    }
 }
 
 /// **A tap says which, never what.** Tapping an asked party body selects it (the choice cards become its
@@ -934,43 +1010,33 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
         }
         if w.staged[i].is_some() {
             // Re-ask: clear the staged order, and make it the focus.
-            let (struck, arrived, _, _) = board
-                .card(card)
-                .map(|c| read_flags(c.detail()))
-                .unwrap_or((false, false, false, None));
-            write_flags(board, card, struck, arrived, true, None);
+            edit_flags(board, card, |f| {
+                f.staged = None;
+                f.active = true;
+            });
         } else {
             // Select: move the active mark here.
             for (j, &c) in w.cards.iter().enumerate() {
                 if w.units[j].side != Side::Party {
                     continue;
                 }
-                let (struck, arrived, _, staged) = board
-                    .card(c)
-                    .map(|k| read_flags(k.detail()))
-                    .unwrap_or((false, false, false, None));
-                write_flags(board, c, struck, arrived, j == i, staged);
+                edit_flags(board, c, |f| f.active = j == i);
             }
         }
         return;
     }
-    // A foe tap: the aiming shortcut, when it is a legal target of the focused body.
+    // A foe tap completes the gesture in progress: it is the WHOM of a chosen action, so it only means
+    // something while the focused body is AIMING (the ring is the tap's affordance).
     if let Some(f) = w.focus
+        && w.aiming
         && w.targets.contains(&i)
     {
-        let card_f = w.cards[f];
-        let (struck, arrived, _, _) = board
-            .card(card_f)
-            .map(|c| read_flags(c.detail()))
-            .unwrap_or((false, false, false, None));
-        write_flags(
-            board,
-            card_f,
-            struck,
-            arrived,
-            false,
-            Some(Staged::Aim(w.cards[i])),
-        );
+        let target = w.cards[i];
+        edit_flags(board, w.cards[f], |flags| {
+            flags.staged = Some(Staged::Aim(target));
+            flags.aiming = false;
+            flags.active = false;
+        });
     }
 }
 
@@ -996,11 +1062,10 @@ pub fn assign(board: &mut Board, unit: CardId, to: PileId) {
         _ => return,
     };
     if sub_pile(board, arena, dest_label) == Some(to) {
-        let (struck, arrived, _, _) = board
-            .card(unit)
-            .map(|c| read_flags(c.detail()))
-            .unwrap_or((false, false, false, None));
-        write_flags(board, unit, struck, arrived, false, Some(Staged::Go));
+        edit_flags(board, unit, |f| {
+            f.staged = Some(Staged::Go);
+            f.aiming = false;
+        });
     }
 }
 
@@ -1130,10 +1195,11 @@ fn write_back(board: &mut Board, arena: PileId, cards: &[CardId], state: &StepSt
         write_flags(
             board,
             card,
-            state.struck_flag(i),
-            state.arrived_flag(i),
-            false,
-            None,
+            Flags {
+                struck: state.struck_flag(i),
+                arrived: state.arrived_flag(i),
+                ..Flags::default()
+            },
         );
         // Position is earned: the card walks to the pile its (region, rank) says.
         let label = GROUND_PILES
@@ -1214,6 +1280,12 @@ pub fn choice_outlooks(
             ChoiceAction::Stage(Staged::Hold) => StepChoice::Strike(None),
             ChoiceAction::Stage(Staged::Go) => StepChoice::Move(true),
             ChoiceAction::Stage(Staged::Stay) => StepChoice::Move(false),
+            // The gesture beats (choose the verb / put it back) decide nothing by themselves - the verdicts
+            // belong to the completions they lead to.
+            ChoiceAction::BeginAim | ChoiceAction::CancelAim => {
+                out.push(Outlook::Unknown);
+                continue;
+            }
         };
         let next = StepCombat::apply(&base, &candidate);
         let before = solver.nodes();
@@ -1506,19 +1578,8 @@ mod tests {
                 st = StepCombat::apply(&st, &c);
             }
             let choice = step_policy(&st, i);
-            let card = w.cards[i];
-            let (struck, arrived, _, _) = board
-                .card(card)
-                .map(|c| read_flags(c.detail()))
-                .unwrap_or((false, false, false, None));
-            write_flags(
-                board,
-                card,
-                struck,
-                arrived,
-                false,
-                Some(as_staged(&w.cards, &choice)),
-            );
+            let staged = as_staged(&w.cards, &choice);
+            edit_flags(board, w.cards[i], |f| f.staged = Some(staged));
         }
         assert!(guard < 500, "the self-play must terminate");
     }
@@ -1685,6 +1746,54 @@ mod tests {
         );
     }
 
+    /// **The three-beat gesture: WHO -> WHAT -> WHOM.** The verb button enters targeting (the mid-gesture
+    /// state - Commit still counts the body as owed, phrased as picking a target); while aiming, the legal
+    /// targets invite completion and a tap on one stages the order; Cancel puts the action back.
+    #[test]
+    fn the_three_beat_gesture() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        let w = wave(&board, arena).expect("a wave is pending");
+        let i = w.focus.expect("the Raider is asked");
+        assert!(!w.aiming, "no gesture yet");
+
+        // Beat 2 - the WHAT: the first button is the step's verb; taking it enters targeting.
+        let labels: Vec<String> = scene_choices(&board, arena)
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        assert!(
+            labels[0].ends_with("..."),
+            "the verb button leads the menu: {labels:?}"
+        );
+        choose(&mut board, 0);
+        let w = wave(&board, arena).unwrap();
+        assert!(w.aiming, "the gesture is in progress");
+        assert!(
+            pending_decision(&board, arena).is_some_and(|m| m.contains("picking a target")),
+            "Commit still counts the body as owed, mid-gesture"
+        );
+        assert!(!w.targets.is_empty(), "the targets are on offer");
+
+        // Cancel puts the action back...
+        let n = scene_choices(&board, arena).len();
+        choose(&mut board, n - 1);
+        let w = wave(&board, arena).unwrap();
+        assert!(!w.aiming, "cancelled - back to the order menu");
+
+        // ...and the full gesture completes by tapping the ringed target.
+        choose(&mut board, 0);
+        let w = wave(&board, arena).unwrap();
+        let target = w.targets[0];
+        handle_tap(&mut board, w.cards[target]);
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(
+            w.staged[i],
+            Some(Staged::Aim(w.cards[target])),
+            "the tap completed the order"
+        );
+        assert!(!w.aiming, "the gesture is done");
+    }
     /// The journal speaks the canonical log language: wave headers, commit lines, and the minor steps.
     #[test]
     fn the_journal_speaks_the_canonical_format() {

@@ -174,26 +174,17 @@ fn build_lanes(
         });
     }
 
-    // Targeting arrows: from the focused body to its staged aim (confirmed) and its legal targets (offered).
+    // Targeting arrows: confirmed aims only. While aiming, the rings ARE the offer - arrows to every
+    // candidate on top of them read as noise, so the arrow appears when the choice lands.
     let mut links = Vec::new();
-    if let Some(f) = w.focus {
-        let broad = w.units[f].aoe;
-        if let Some(Staged::Aim(t)) = w.staged[f] {
+    for i in 0..w.units.len() {
+        if let Some(Staged::Aim(t)) = w.staged[i] {
             links.push(Link {
-                from: w.cards[f],
+                from: w.cards[i],
                 to: t,
                 confirmed: true,
-                broad,
+                broad: w.units[i].aoe,
             });
-        } else {
-            for &t in &w.targets {
-                links.push(Link {
-                    from: w.cards[f],
-                    to: w.cards[t],
-                    confirmed: false,
-                    broad,
-                });
-            }
         }
     }
     (lanes, links)
@@ -220,10 +211,12 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
         }
         return Highlight::Available;
     }
-    // A foe: the focused body's aimed target reads Active, its other legal targets Available.
+    // A foe: while the focused body is AIMING, its legal targets carry the animated invitation (the
+    // rotating ring - "select me to complete the action"); a confirmed aim reads Active; otherwise foes
+    // stand plain - nothing is being asked about them yet.
     match w.focus {
         Some(f) if w.staged[f] == Some(Staged::Aim(w.cards[i])) => Highlight::Active,
-        Some(_) if w.targets.contains(&i) => Highlight::Available,
+        Some(_) if w.aiming && w.targets.contains(&i) => Highlight::Targeted,
         _ => Highlight::Idle,
     }
 }
@@ -289,7 +282,8 @@ fn tap_is_live(w: &arena::Wave, i: usize) -> bool {
     if u.side == Side::Party {
         return w.asked[i];
     }
-    w.focus.is_some() && w.targets.contains(&i)
+    // A foe tap completes the gesture, so it is live exactly while the ring invites it.
+    w.aiming && w.targets.contains(&i)
 }
 
 /// The staged-order line: what this body will do when the wave commits.
