@@ -323,19 +323,18 @@ pub fn sample_table() -> Board {
 
     // The "Locations" deck: a fixed 3×3 grid (2-D, non-editable) of place-piles from the Name Bank,
     // each labelled by its Location-typed Zone card. **Ashfen Crossing** (the centre) is the party's home:
-    // the four heroes are stationed there at the bottom of this function. It stations no encounter — it is
-    // the safe cell you march out from. (It used to hold the **Inn**, a projection you recruited in; that
-    // concept was removed, see the Inn-removal commit.)
+    // the four heroes are stationed there at the bottom of this function - AND it stations the capstone
+    // (The Last Stand at Ashfen), like every other cell stations its encounter: the graduation exam is
+    // simply there, at your doorstep, fought when you choose to. (Ashfen once held the **Inn**, a
+    // projection you recruited in; that concept was removed, see the Inn-removal commit.)
     let locations = tree.add_pile(root, "Locations").expect("root exists");
     for place in LOCATIONS {
         let place_pile = tree.add_pile(locations, place).expect("locations exists");
         let name = typed(&mut tree, place_pile, place, "Location");
         tree.set_card_kind(name, CardKind::Zone)
             .expect("place name card");
-        if place != "Ashfen Crossing"
-            && let Some(enc) = catalog::encounter_for(place)
-        {
-            // Every location but the home cell stations an **encounter** card. Its foes are **virtual** — the
+        if let Some(enc) = catalog::encounter_for(place) {
+            // Every location stations its **encounter** card. Its foes are **virtual** — the
             // card *lists* them (name ×qty); the real foe cards live in the Bestiary and are only instantiated
             // into the battle arena when a fight starts. A solo (a home-adjacent cell) fields its one
             // keystone creature; a corner fields all four with the keystone doubled.
@@ -587,7 +586,7 @@ mod tests {
         //   Abilities 4 abilities x5 copies + a label
         //   Stats     5 names x5 copies + a label
         //   Numbers   9 digits x12 copies + a label
-        //   Locations a Zone card + 9 place names + 8 encounter headers + 8 Rumors (app-only readouts).
+        //   Locations a Zone card + 9 place names + 9 encounter headers + 9 Rumors (app-only readouts).
         //             The party's 4 map positions come out of Heroes, so they're already counted there.
         //   Rules     5 leaf phases + a label, and the Engage sub-deck's 5 + a label
         //   Progress  a Zone label (Day 0; the 4 move markers also come out of Heroes)
@@ -599,7 +598,7 @@ mod tests {
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
-                + (1 + 9 + 8 + 8)
+                + (1 + 9 + 9 + 9)
                 + ((5 + 1) + (5 + 1))
                 + 1
                 + (12 + 1)
@@ -661,9 +660,9 @@ mod tests {
     fn physical_card_count_sums_to_the_game_total() {
         let t = sample_table();
         // The headline invariant: the recursive tally of the whole table equals `card_count` minus the
-        // software-only cards (the 8 app-only Rumors readouts, one per encounter), so adding up the deck
+        // software-only cards (the 9 app-only Rumors readouts, one per encounter), so adding up the deck
         // chips on the table screen gives the real number of physical cards.
-        assert_eq!(t.physical_card_count(t.root_id()), t.card_count() - 8);
+        assert_eq!(t.physical_card_count(t.root_id()), t.card_count() - 9);
         // Inclusive of each deck's own title card, and stacks count by quantity. The party was dealt out of
         // Heroes, emptying it — all that is left is the "Heroes" label.
         assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 1);
@@ -683,13 +682,13 @@ mod tests {
         // Index 1 (Cinderwatch Keep) is a solo: 1 title + 1 header = 2.
         let a_solo = t.pile(locations).unwrap().subpiles()[1];
         assert_eq!(t.physical_card_count(a_solo), 1 + 1);
-        // The home cell (Ashfen, index 4) stations no encounter — just its title and the party standing
-        // there, one map-position card each.
+        // The home cell (Ashfen, index 4) stations the capstone like any other cell - its title, the
+        // encounter header, and the party standing there, one map-position card each.
         let ashfen = t.pile(locations).unwrap().subpiles()[4];
         assert_eq!(
             t.physical_card_count(ashfen),
-            1 + catalog::ROSTER.len(),
-            "the Location title plus the four heroes stationed at home"
+            1 + 1 + catalog::ROSTER.len(),
+            "the Location title, the Last Stand header, and the four heroes at home"
         );
     }
 
@@ -855,12 +854,12 @@ mod tests {
             corner_text.contains("full party"),
             "the corner's rumor calls for the party: {corner_text}"
         );
-        // The inn (Ashfen Crossing) has no encounter, so no Rumors card.
+        // The home cell stations the capstone, so it carries a Rumors card like every other encounter.
         assert!(
             t.content_cards(place("Ashfen Crossing"))
                 .into_iter()
-                .all(|c| t.card(c).unwrap().card_type() != "rumors"),
-            "the inn has no rumor"
+                .any(|c| t.card(c).unwrap().card_type() == "rumors"),
+            "the Last Stand has its rumor"
         );
     }
 

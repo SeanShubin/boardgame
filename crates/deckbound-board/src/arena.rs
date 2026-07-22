@@ -1547,7 +1547,7 @@ mod tests {
         let party: &[&str] = &["Raider", "Marksman", "Bastion", "Bombardier"];
         for (kits, place) in [
             (solo, Some("The Sundered Vault")),
-            (party, Some("The Hollow Rampart")),
+            (party, Some("Ashfen Crossing")),
         ] {
             let mut board = sample_table();
             let arena = open_a_fight_at(&mut board, kits, place);
