@@ -13,3 +13,4 @@ crates/cardtable/examples/fonts/*.ttf
 *.log
 fight-screen.txt
 fight-log.txt
+ui-scene.txt
