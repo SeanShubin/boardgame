@@ -1081,19 +1081,13 @@ fn run_engine(board: &mut Board, arena: PileId, use_staged: bool) {
         } else {
             break; // a party decision with nothing staged: the player's turn
         };
-        // The commit line, under its wave header (with skipped-wave fills).
+        // The wave header (with its round marker and skipped-wave fills). The app's journal is the
+        // MECHANICAL record only - the commit lines are the simulator's; here the staged orders are
+        // legible on the cards before Commit, and the narration says what they became.
         let (round, step) = (state.round(), state.step());
         if read_wave_mark(board, arena) != Some((round, step_idx(step))) {
             log_wave_header(board, arena, round, step);
         }
-        let u = &state.board().units[i];
-        let mark = if u.side == Side::Party { "" } else { "*" };
-        let line = format!(
-            "      commit  {mark}{} -> {}",
-            u.name,
-            describe(step, &state.board().units, &choice)
-        );
-        note(board, arena, round, line);
         state = StepCombat::apply(&state, &choice);
     }
 
@@ -1707,7 +1701,10 @@ mod tests {
             has("- skipped"),
             "the opening waves nobody could act in are on the record"
         );
-        assert!(has("commit"), "commit lines");
+        assert!(
+            !has("commit"),
+            "the app journal is the mechanical record only - no commit lines"
+        );
         assert!(has("strike"), "the strike minor step");
         assert!(has("resolve"), "the resolve minor step");
     }
