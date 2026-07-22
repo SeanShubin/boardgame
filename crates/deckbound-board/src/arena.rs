@@ -775,10 +775,10 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         .map(|i| units[i].side == Side::Party && state.is_eligible(i))
         .collect();
     let staged: Vec<Option<Staged>> = cards.iter().map(|&c| staged_of(board, c)).collect();
-    let focus = (0..units.len())
-        .find(|&i| asked[i] && active_of(board, cards[i]))
-        .or_else(|| (0..units.len()).find(|&i| asked[i] && staged[i].is_none()))
-        .or_else(|| (0..units.len()).find(|&i| asked[i]));
+    // The focus is ONLY ever the body the player explicitly selected - there is no auto-fallback. The
+    // selection click is informational by design: the player knows who is being commanded because the
+    // player did the selecting.
+    let focus = (0..units.len()).find(|&i| asked[i] && active_of(board, cards[i]));
     let targets = focus.map(|i| state.targets(i)).unwrap_or_default();
     let aiming = focus.is_some_and(|i| aiming_of(board, cards[i]));
     Some(Wave {
@@ -853,6 +853,8 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
     let Some(w) = wave(board, arena) else {
         return Vec::new();
     };
+    // Nothing selected: no buttons - the board is the menu (the unordered heroes carry the ring), and
+    // the selection click is the player's own act of choosing WHO.
     let Some(i) = w.focus else {
         return Vec::new();
     };
@@ -1013,6 +1015,12 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
             edit_flags(board, card, |f| {
                 f.staged = None;
                 f.active = true;
+            });
+        } else if w.focus == Some(i) {
+            // Tapping the selected hero again puts it back - deselected, gesture dropped.
+            edit_flags(board, card, |f| {
+                f.active = false;
+                f.aiming = false;
             });
         } else {
             // Select: move the active mark here.
@@ -1662,8 +1670,12 @@ mod tests {
         assert!(in_pile("Foe Rearguard", "The Sniper"), "their back seated");
         let w = wave(&board, arena).expect("a wave is pending");
         assert!(
-            w.focus.is_some(),
+            w.asked.iter().any(|&a| a),
             "the fight opens at the first party decision"
+        );
+        assert!(
+            w.focus.is_none(),
+            "nothing is selected until the player selects - the click is the information"
         );
     }
 
@@ -1686,13 +1698,25 @@ mod tests {
             .collect();
 
         let mut guard = 0;
-        while pending_decision(&board, arena).is_some() && guard < 10 {
+        while pending_decision(&board, arena).is_some() && guard < 20 {
             guard += 1;
-            assert!(
-                !scene_choices(&board, arena).is_empty(),
-                "an owed order always has its choice cards on offer"
-            );
-            choose(&mut board, 0);
+            let w = wave(&board, arena).unwrap();
+            match w.focus {
+                None => {
+                    // Choose WHO: click a ringed (asked, unordered) hero.
+                    let i = (0..w.units.len())
+                        .find(|&i| w.asked[i] && w.staged[i].is_none())
+                        .expect("an order is owed, so a hero is ringed");
+                    handle_tap(&mut board, w.cards[i]);
+                }
+                Some(_) => {
+                    assert!(
+                        !scene_choices(&board, arena).is_empty(),
+                        "a selected hero always has its order buttons on offer"
+                    );
+                    choose(&mut board, 0);
+                }
+            }
         }
         assert!(
             pending_decision(&board, arena).is_none(),
@@ -1753,8 +1777,21 @@ mod tests {
     fn the_three_beat_gesture() {
         let mut board = sample_table();
         let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+
+        // Beat 1 - the WHO: nothing selected, no buttons; the unordered hero carries the ring, and the
+        // player's own click selects it.
         let w = wave(&board, arena).expect("a wave is pending");
-        let i = w.focus.expect("the Raider is asked");
+        assert!(w.focus.is_none(), "nothing selected at open");
+        assert!(
+            scene_choices(&board, arena).is_empty(),
+            "no buttons until a hero is chosen - the board is the menu"
+        );
+        let i = (0..w.units.len())
+            .find(|&i| w.asked[i])
+            .expect("the Raider is asked");
+        handle_tap(&mut board, w.cards[i]);
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(w.focus, Some(i), "the click selected the hero");
         assert!(!w.aiming, "no gesture yet");
 
         // Beat 2 - the WHAT: the first button is the step's verb; taking it enters targeting.

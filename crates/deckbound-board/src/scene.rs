@@ -35,6 +35,11 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     // clause alone.
     let prompt = if over {
         "The fight is decided - read the record, then leave.".to_string()
+    } else if w.focus.is_none() && arena::pending_decision(board, arena).is_some() {
+        format!(
+            "CHOOSE A HERO - click a ringed hero to give it orders. {}",
+            prompt_for(w.step)
+        )
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
@@ -230,7 +235,14 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
         if w.staged[i].is_some() {
             return Highlight::Settled;
         }
-        return Highlight::Available;
+        // The ring is always THE click that advances the gesture: with nothing selected, the unordered
+        // heroes carry it (choose WHO); once a hero is selected the buttons are the move, so the others
+        // fall back to the steady cue (still tappable to switch).
+        return if w.focus.is_none() {
+            Highlight::Targeted
+        } else {
+            Highlight::Available
+        };
     }
     // A foe: while the focused body is AIMING, its legal targets carry the animated invitation (the
     // rotating ring - "select me to complete the action"); a confirmed aim reads Active; otherwise foes
@@ -414,8 +426,17 @@ mod tests {
         };
         assert_eq!(lanes.len(), 3, "one row per rank - wide, not tall");
         assert!(
+            s.choices.is_empty(),
+            "no buttons until a hero is selected - the ringed heroes are the menu"
+        );
+        // Select the asked hero: the order buttons appear.
+        let w = crate::arena::wave(&board, arena).unwrap();
+        let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
+        crate::arena::handle_tap(&mut board, w.cards[i]);
+        let s = scene(&board, arena).expect("a fight scene");
+        assert!(
             !s.choices.is_empty(),
-            "the pending decision has its choice cards"
+            "the selected hero has its order buttons"
         );
         assert_eq!(
             s.disabled_controls,
