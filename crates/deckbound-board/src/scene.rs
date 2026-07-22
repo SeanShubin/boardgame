@@ -10,6 +10,7 @@ use cardtable_model::{
     Badge, Board, Highlight, Lane, Link, PileId, Scene, SceneBody, Team, Tile, Tone, Track,
     TrackItem,
 };
+use rules::combat::regions::Rank;
 use rules::combat::resolve::{Combatant, Side};
 use rules::combat::step_game::{STEPS, Step, step_coord};
 
@@ -130,25 +131,32 @@ fn prompt_for(step: Step) -> &'static str {
     }
 }
 
-// ---- the battlefield: one lane per ground pile ---------------------------------------------------------
+// ---- the battlefield: three rank rows, heroes left of the divider, foes right --------------------------
+
+/// The three rank rows, top to bottom: the outriders (each side's bodies loose in the OTHER side's line -
+/// the row of bodies past the front), then the two formation tiers. The symmetry does the work: each side's
+/// column shows its own bodies by rank, the divider is the front line, and the six ground piles fold into
+/// three rows instead of six stacked lanes - wide, not tall.
+const RANK_ROWS: [(&str, Rank); 3] = [
+    ("Outrider", Rank::Outrider),
+    ("Vanguard", Rank::Vanguard),
+    ("Rearguard", Rank::Rearguard),
+];
 
 fn build_lanes(
     board: &Board,
-    arena: PileId,
+    _arena: PileId,
     w: &arena::Wave,
     maxes: &[u32],
 ) -> (Vec<Lane>, Vec<Link>) {
     let mut lanes = Vec::new();
-    for (label, _, _) in arena::GROUND_PILES {
-        let Some(pile) = arena::sub_pile(board, arena, label) else {
-            continue;
-        };
+    for (label, rank) in RANK_ROWS {
         let mut left = Vec::new();
         let mut right = Vec::new();
-        for card in board.content_cards(pile) {
-            let Some(i) = w.cards.iter().position(|&c| c == card) else {
+        for i in 0..w.units.len() {
+            if w.ranks[i] != rank {
                 continue;
-            };
+            }
             let sel = sel_of(w, i);
             let tile = lane_tile(board, w, maxes, i, sel);
             if w.units[i].side == Side::Party {
@@ -157,9 +165,8 @@ fn build_lanes(
                 right.push(tile);
             }
         }
-        // An empty ground pile still draws: the battlefield's shape (their back line to yours) is the map the
-        // player reads position from, and a lane that vanishes when empty makes a crossing look like a
-        // teleport to nowhere.
+        // An empty rank row still draws: the battlefield's shape is the map the player reads position from,
+        // and a row that vanishes when empty makes a crossing look like a teleport to nowhere.
         lanes.push(Lane {
             label: label.to_string(),
             left,
@@ -370,7 +377,7 @@ mod tests {
         let SceneBody::Lanes(lanes) = &s.body else {
             panic!("the battlefield is lanes");
         };
-        assert_eq!(lanes.len(), 6, "one lane per ground pile");
+        assert_eq!(lanes.len(), 3, "one row per rank - wide, not tall");
         assert!(
             !s.choices.is_empty(),
             "the pending decision has its choice cards"

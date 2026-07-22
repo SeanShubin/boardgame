@@ -33,8 +33,9 @@ use rules::core::{Game, Outcome as FightOutcome, Solver, Verdict};
 /// The top-level zone a fight lives in while it runs.
 pub const ARENA: &str = "Arena";
 
-/// The six ground piles: `(label, region, rank)`. Region 0 is the party's ground, 1 the foes'. Listed in
-/// battlefield reading order, their back line to yours - the scene draws them in this order too.
+/// The six ground piles: `(label, region, rank)`. Region 0 is the party's ground, 1 the foes'. (The scene
+/// folds these into three RANK rows - heroes left of the divider, foes right - reading the symmetry; the
+/// piles stay the physical truth of who stands where.)
 pub(crate) const GROUND_PILES: [(&str, u8, Rank); 6] = [
     ("Foe Rearguard", 1, Rank::Rearguard),
     ("Foe Vanguard", 1, Rank::Vanguard),
@@ -721,6 +722,8 @@ pub fn outcome(board: &Board, arena: PileId) -> Option<Outcome> {
 pub(crate) struct Wave {
     pub(crate) cards: Vec<CardId>,
     pub(crate) units: Vec<Combatant>,
+    /// Each body's rank, for the scene's rank rows (region is legible from side + rank).
+    pub(crate) ranks: Vec<Rank>,
     pub(crate) round: usize,
     pub(crate) step: Step,
     /// Asked this wave (eligible party bodies).
@@ -738,6 +741,7 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
     let state = &seated.state;
     let cards = seated.cards;
     let units: Vec<Combatant> = state.board().units.clone();
+    let ranks: Vec<Rank> = state.board().ranks.clone();
     let asked: Vec<bool> = (0..units.len())
         .map(|i| units[i].side == Side::Party && state.is_eligible(i))
         .collect();
@@ -750,6 +754,7 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
     Some(Wave {
         cards,
         units,
+        ranks,
         round: state.round(),
         step: state.step(),
         asked,
