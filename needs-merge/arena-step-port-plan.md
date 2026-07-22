@@ -57,6 +57,16 @@ round/step/minor-step log, verdict + best-route outlooks, the best marker).
    `units.rs` (kit/beast -> `rules` `Combatant`) is already the bridge the gate uses; the
    arena joins it.
 
+## Execution: ONE SHOT (revised 2026-07-22, user call)
+
+The staged coexistence below was insurance for multi-session work; executed as one
+continuous run it is overhead. The revised shape: build the bridge and its no-drift replay
+gate first (the net), then rewrite the arena surface directly on it - no switch, no
+parallel period - then the deletions, fixture rewrite, regenerated targets, and a full
+`verify.sh`. Clean commits at each internally-green boundary, but one sustained pass, old
+arena to new, in this order: bridge -> surface -> outlooks -> deletions + fixtures ->
+targets + docs -> verify. The original stages remain below as the work breakdown.
+
 ## Stages
 
 **A. The engine bridge (additive, inert).** A new module beside the old arena:
