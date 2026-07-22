@@ -117,13 +117,30 @@ fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
     Some((stats_of(c.stats), c.melee, c.ranged, c.aoe))
 }
 
-/// The vitality (max HP, or body count for a horde) of a combatant by name and side.
+/// The vitality (max HP, or body count for a horde) of a combatant by name and side. Keys off the CATALOG
+/// name, so callers must pass the un-disambiguated title, not a display name.
 pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
     match side {
         Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
         Side::Foe => foe_stats(name).map(|(s, _, _, _)| s.vitality),
     }
     .unwrap_or(0)
+}
+
+/// The max HP written on a combatant CARD's detail (`Health hp/max`) - the display total, robust to a
+/// disambiguated Combatant name (which would miss the catalog lookup). This is the one to use once names may
+/// carry a `1`/`2` suffix; it reads the total that was stamped when the card was seated.
+pub(crate) fn max_health_on(board: &Board, card: CardId) -> u32 {
+    board
+        .card(card)
+        .and_then(|c| c.detail().first().cloned())
+        .map(|l| {
+            l.rsplit('/')
+                .next()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0)
+        })
+        .unwrap_or(0)
 }
 
 // ---- combatant card state (HP / tempo / flags on detail; commitments + staging after) -----------------
@@ -340,7 +357,38 @@ fn read_units(board: &Board, arena: PileId) -> (Vec<CardId>, Vec<Combatant>, Vec
             }
         }
     }
+    disambiguate_names(&mut units);
     (cards, units, regions, ranks)
+}
+
+/// Give duplicate bodies distinct DISPLAY names ("The Wall 1", "The Wall 2") so the tiles, the arrows, and
+/// the journal never read two bodies as one. Purely cosmetic and applied AFTER the per-card stat lookup
+/// (which keys off the card's catalog title, untouched here) - the engine uses these names only to narrate.
+/// Numbered per side, in seat order, only when a name actually repeats.
+fn disambiguate_names(units: &mut [Combatant]) {
+    for side in [Side::Party, Side::Foe] {
+        let idxs: Vec<usize> = (0..units.len())
+            .filter(|&i| units[i].side == side)
+            .collect();
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for &i in &idxs {
+            *seen.entry(units[i].name.clone()).or_insert(0) += 1;
+        }
+        let dup: std::collections::HashSet<String> = seen
+            .into_iter()
+            .filter(|(_, n)| *n > 1)
+            .map(|(name, _)| name)
+            .collect();
+        let mut counter: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for &i in &idxs {
+            if dup.contains(&units[i].name) {
+                let n = counter.entry(units[i].name.clone()).or_insert(0);
+                *n += 1;
+                units[i].name = format!("{} {}", units[i].name, n);
+            }
+        }
+    }
 }
 
 fn read_round(board: &Board, arena: PileId) -> usize {
@@ -1193,7 +1241,7 @@ fn write_back(board: &mut Board, arena: PileId, cards: &[CardId], state: &StepSt
     let b = state.board();
     for (i, &card) in cards.iter().enumerate() {
         let u = &b.units[i];
-        let max_hp = max_health(board, &u.name, u.side).max(u.health);
+        let max_hp = max_health_on(board, card).max(u.health);
         let _ = board.set_card_detail(
             card,
             detail_lines(
@@ -1279,34 +1327,65 @@ pub fn choice_outlooks(
     }
 
     let mut left = budget;
-    let mut out = Vec::with_capacity(choices.len());
-    for (_, action) in &choices {
-        let candidate = match action {
-            ChoiceAction::Stage(Staged::Aim(t)) => {
-                StepChoice::Strike(w.cards.iter().position(|&c| c == *t))
-            }
-            ChoiceAction::Stage(Staged::Hold) => StepChoice::Strike(None),
-            ChoiceAction::Stage(Staged::Go) => StepChoice::Move(true),
-            ChoiceAction::Stage(Staged::Stay) => StepChoice::Move(false),
-            // The gesture beats (choose the verb / put it back) decide nothing by themselves - the verdicts
-            // belong to the completions they lead to.
-            ChoiceAction::BeginAim | ChoiceAction::CancelAim => {
-                out.push(Outlook::Unknown);
-                continue;
-            }
-        };
-        let next = StepCombat::apply(&base, &candidate);
+    // Ground one candidate out to an outlook, spending from the shared allowance.
+    let mut score = |solver: &mut Solver<StepCombat>, candidate: &StepChoice| -> Outlook {
+        let next = StepCombat::apply(&base, candidate);
         let before = solver.nodes();
         solver.grant(left);
         let v = solver.verdict(&next);
         left = left.saturating_sub(solver.nodes().saturating_sub(before));
-        out.push(match v {
+        match v {
             Verdict::Winnable => Outlook::Winnable,
             Verdict::Doomed => Outlook::Doomed,
             Verdict::Evaluating => Outlook::Evaluating,
-        });
+        }
+    };
+    let mut out = Vec::with_capacity(choices.len());
+    for (_, action) in &choices {
+        let outlook = match action {
+            ChoiceAction::Stage(Staged::Aim(t)) => score(
+                solver,
+                &StepChoice::Strike(w.cards.iter().position(|&c| c == *t)),
+            ),
+            ChoiceAction::Stage(Staged::Hold) => score(solver, &StepChoice::Strike(None)),
+            ChoiceAction::Stage(Staged::Go) => score(solver, &StepChoice::Move(true)),
+            ChoiceAction::Stage(Staged::Stay) => score(solver, &StepChoice::Move(false)),
+            // The verb button leads to a target choice - so its outlook is the BEST of the completions it
+            // opens (winnable if ANY target keeps a win alive). Otherwise it would sit blank beside a Hold
+            // that carries a verdict, reading as if only Hold were endorsed.
+            ChoiceAction::BeginAim => {
+                let mut best = Outlook::Doomed;
+                for &t in &w.targets {
+                    let o = score(solver, &StepChoice::Strike(Some(t)));
+                    best = best_outlook(best, o);
+                    if best == Outlook::Winnable {
+                        break; // a winnable completion is the best possible - no need to grind the rest
+                    }
+                }
+                best
+            }
+            // Cancel decides nothing.
+            ChoiceAction::CancelAim => Outlook::Unknown,
+        };
+        out.push(outlook);
     }
     out
+}
+
+/// The better of two outlooks for a "best of these" fold: Winnable beats Evaluating beats Doomed; Unknown
+/// only wins if that is all there is.
+fn best_outlook(
+    a: cardtable_model::Outlook,
+    b: cardtable_model::Outlook,
+) -> cardtable_model::Outlook {
+    use cardtable_model::Outlook::*;
+    let rank = |o: cardtable_model::Outlook| match o {
+        Winnable => 3,
+        Evaluating => 2,
+        Doomed => 1,
+        Unknown => 0,
+    };
+    if rank(a) >= rank(b) { a } else { b }
 }
 
 // ---- teardown ------------------------------------------------------------------------------------------
@@ -1831,6 +1910,40 @@ mod tests {
         );
         assert!(!w.aiming, "the gesture is done");
     }
+    /// Duplicate foes get distinct DISPLAY names, so the tiles and the journal never read two bodies as one -
+    /// while the cards keep their catalog title (stat lookup and the bestiary merge are untouched).
+    #[test]
+    fn duplicate_foes_read_apart() {
+        let mut board = sample_table();
+        // Ashfen fields The Wall x2 - the case that used to render as two identical "The Wall".
+        let arena = open_a_fight_at(
+            &mut board,
+            &["Raider", "Marksman", "Bastion", "Bombardier"],
+            Some("Ashfen Crossing"),
+        );
+        let (cards, units, _, _) = read_units(&board, arena);
+        let walls: Vec<&Combatant> = units
+            .iter()
+            .filter(|u| u.name.starts_with("The Wall"))
+            .collect();
+        assert_eq!(walls.len(), 2, "Ashfen fields two Walls");
+        assert_ne!(walls[0].name, walls[1].name, "the two Walls read apart");
+        assert!(
+            walls.iter().all(|u| u.name != "The Wall"),
+            "each duplicate is numbered: {:?}",
+            walls.iter().map(|u| &u.name).collect::<Vec<_>>()
+        );
+        // The cards themselves keep the catalog title, so the max-HP total is still legible from the card.
+        for (&c, u) in cards.iter().zip(&units) {
+            if u.name.starts_with("The Wall") {
+                assert!(
+                    max_health_on(&board, c) > 0,
+                    "max HP reads off the card, not the display name"
+                );
+            }
+        }
+    }
+
     /// The journal speaks the canonical log language: wave headers, commit lines, and the minor steps.
     #[test]
     fn the_journal_speaks_the_canonical_format() {

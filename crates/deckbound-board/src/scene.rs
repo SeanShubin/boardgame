@@ -21,9 +21,10 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     let arena = arena::find_arena(board)?;
     let w = arena::wave(board, arena)?;
     let maxes: Vec<u32> = w
-        .units
+        .cards
         .iter()
-        .map(|u| arena::max_health(board, &u.name, u.side).max(u.health))
+        .zip(&w.units)
+        .map(|(&c, u)| arena::max_health_on(board, c).max(u.health))
         .collect();
 
     let (k, name) = step_coord(w.step);
@@ -159,13 +160,21 @@ fn prompt_for(step: Step) -> &'static str {
 
 // ---- the battlefield: three rank rows, heroes left of the divider, foes right --------------------------
 
-/// The three rank rows, top to bottom: the outriders (each side's bodies loose in the OTHER side's line -
-/// the row of bodies past the front), then the two formation tiers. The symmetry does the work: each side's
-/// column shows its own bodies by rank, the divider is the front line, and the six ground piles fold into
-/// three rows instead of six stacked lanes - wide, not tall.
+/// The three rank rows, top to bottom - the battlefield as the two lines meeting, with the outriders shown on
+/// the side they crossed INTO:
+///
+/// | left column        | (divider)      | right column       |
+/// |--------------------|----------------|--------------------|
+/// | **your Vanguard**  | the front line | **their Vanguard** |
+/// | *their* Outriders  |                | *your* Outriders   |
+/// | **your Rearguard** | the back edges | **their Rearguard**|
+///
+/// So the front lines face off at the top, the back lines sit at the outer edges, and an outrider reads as a
+/// body loose in the enemy's column - your crosser over on their side, their intruder over on yours. The six
+/// ground piles fold into three rows: wide, not tall, and the map matches the fiction.
 const RANK_ROWS: [(&str, Rank); 3] = [
-    ("Outrider", Rank::Outrider),
     ("Vanguard", Rank::Vanguard),
+    ("Outrider", Rank::Outrider),
     ("Rearguard", Rank::Rearguard),
 ];
 
@@ -185,7 +194,16 @@ fn build_lanes(
             }
             let sel = sel_of(w, i);
             let tile = lane_tile(board, w, maxes, i, sel);
-            if w.units[i].side == Side::Party {
+            let party = w.units[i].side == Side::Party;
+            // Your bodies sit in the left column, theirs in the right - EXCEPT outriders, which show on the
+            // side they crossed into: your crosser is loose in their column (right), their intruder in yours
+            // (left). The tile keeps its own team colour; only its column moves.
+            let in_left = if rank == Rank::Outrider {
+                !party
+            } else {
+                party
+            };
+            if in_left {
                 left.push(tile);
             } else {
                 right.push(tile);
