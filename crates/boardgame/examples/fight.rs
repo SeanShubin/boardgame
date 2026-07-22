@@ -516,6 +516,32 @@ impl Fight {
     /// - when the choice closes a round - narrates the slip contests and the net damage. Because foes now declare
     /// through this same path, their attacks appear in the log with no reconstruction: a hero that falls has the
     /// creature that felled it named a line or two above.
+    /// Print the wave header for `(round, step)`, first filling in everything the cursor passed over since the
+    /// last header: a `round N` marker when the round advanced, and a `- skipped` header for every step nobody
+    /// was eligible to declare in. The declare section of a round therefore always shows the steps in schedule
+    /// order with no silent gaps.
+    fn log_wave_header(&mut self, round: usize, step: Step) {
+        let idx = |s: Step| SCHEDULE.iter().position(|&x| x == s).unwrap();
+        let (mut r, mut i) = match self.wave_mark {
+            Some((r0, s0)) => (r0, idx(s0) + 1),
+            None => (0, SCHEDULE.len()), // nothing printed yet: the loop opens round 1
+        };
+        while (r, i) < (round, idx(step)) {
+            if i >= SCHEDULE.len() {
+                r += 1;
+                i = 0;
+                self.log.push(format!("round {r}"));
+                continue;
+            }
+            let (k, name) = step_coord(SCHEDULE[i]);
+            self.log.push(format!("  step {k}/8: {name} - skipped"));
+            i += 1;
+        }
+        let (k, name) = step_coord(step);
+        self.log.push(format!("  step {k}/8: {name}"));
+        self.wave_mark = Some((round, step));
+    }
+
     fn apply_choice(&mut self, c: &StepChoice) {
         let round_before = self.state.round();
         let step = self.state.step();
@@ -525,10 +551,7 @@ impl Fight {
             // A wave header the first time this round reaches this step's declarations - the round.step
             // coordinate every commit below belongs to.
             if self.wave_mark != Some((round_before, step)) {
-                self.wave_mark = Some((round_before, step));
-                let (k, name) = step_coord(step);
-                self.log
-                    .push(format!("[round {round_before} - step {k}/8: {name}]"));
+                self.log_wave_header(round_before, step);
             }
             // Mark a foe with '*', exactly as the unit table does, so hero and creature declarations read
             // apart. The mark is the ONLY thing that says a body was scripted.
@@ -570,6 +593,20 @@ impl Fight {
         // flip, move and death is logged under the step it happened in. The steps a mid-round end never
         // reached hold no declarations and narrate as nothing.
         if self.state.round() != round_before || StepCombat::outcome(&self.state).is_some() {
+            // A completed round shows all eight steps: fill the trailing skipped waves before narrating. (A
+            // fight decided mid-round is different - the steps after the kill were never reached, not skipped.)
+            if StepCombat::outcome(&self.state).is_none()
+                && let Some((r0, s0)) = self.wave_mark
+                && r0 == round_before
+                && s0 != Step::Advance
+            {
+                let idx = SCHEDULE.iter().position(|&x| x == s0).unwrap();
+                for &s in &SCHEDULE[idx + 1..] {
+                    let (k, name) = step_coord(s);
+                    self.log.push(format!("  step {k}/8: {name} - skipped"));
+                }
+                self.wave_mark = Some((round_before, Step::Advance));
+            }
             let events = narrate_steps(&self.round_board, &self.script);
             if events.is_empty() {
                 self.log.push("  (no blood drawn)".into());
@@ -578,12 +615,9 @@ impl Fight {
             }
             self.round_board = self.state.board().clone();
             self.script = StepScript::default();
-            match StepCombat::outcome(&self.state) {
-                Some(o) => self.log.push(format!("========== {o:?} ==========")),
-                None => self.log.push(format!(
-                    "================= round {} =================",
-                    self.state.round()
-                )),
+            // The next round's `round N` marker prints lazily, with its first wave header.
+            if let Some(o) = StepCombat::outcome(&self.state) {
+                self.log.push(format!("========== {o:?} =========="));
             }
         }
     }
@@ -603,6 +637,18 @@ fn strike_verb(u: &Combatant) -> &'static str {
 
 /// A [`Step`] to its **step coordinate** `(number, name)` - the wave headers' vocabulary, matched one-for-one
 /// by the round-sequence doc.
+/// The eight steps in schedule order - the fill list for skipped wave headers.
+const SCHEDULE: [Step; 8] = [
+    Step::Havoc,
+    Step::Withdraw,
+    Step::Skirmish,
+    Step::Cross,
+    Step::Volley,
+    Step::Raid,
+    Step::Assault,
+    Step::Advance,
+];
+
 fn step_coord(p: Step) -> (u8, &'static str) {
     match p {
         Step::Havoc => (1, "Havoc"),
@@ -645,16 +691,16 @@ fn label_coord(step: &'static str) -> (u8, &'static str) {
 /// crossing or dissolution can happen silently. A tempo spend with no blow behind it (a slipper paying to evade,
 /// a catcher whose target slipped away) was exactly the kind of change that used to hide; now it does not.
 ///
-/// Within a step, in order:
-/// - **Strikes** - one line per attacker: the tempo it spent (reaching + pouring), the Might, and the damage it
-///   banked (`(Might - armor)` per blow, a horde swinging its whole body count at once; against a horde it *fells
-///   bodies* instead).
-/// - **Tempo spent with no blow** - a slipper evading, or a reach the target slipped: the cost, made visible.
-/// - **Crossings** landed or turned back, with the rank they take.
-/// - **Absorb / flips** - the damage a target soaked, the Grit bar, the Health cards that flipped (or fell short),
-///   and any remainder discarded when the pile closes.
-/// - **Rank / region** changes not already narrated (a dissolved outrider rejoining its line).
-/// - **Deaths**.
+/// Within a step, the four minor steps of the Interaction primitive, in order - each event line carries its
+/// minor step in the prefix column:
+/// - **target** - every aimed pair that resolved (landed or dodged), one line each.
+/// - **bid** - the contact contest: tempo flipped x Finesse (x bodies) = the reach generated, against the dodge
+///   floor it had to clear - or the dodge that answered it, or a reach that connected with nothing.
+/// - **strike** - the blows: the free opening blow plus the pour, at Might per blow (a horde swings its whole
+///   body count at once; against a horde it *fells bodies* instead of banking damage).
+/// - **resolve** - the damage actually applies: Health cards flipped at the Grit bar, remainders discarded when
+///   the pile closes, and any body that emptied is DOWNED here (being downed is one thing resolve can do).
+/// - (`move` closes the step: crossings, withdrawals, and dissolved outriders rejoining their line.)
 ///
 /// Snapshots enter the first step at full Health and full Tempo (Cadence, stood back up by the Reset); indices are
 /// stable across the clone, so names / stats are read from `before`. A step that did nothing prints nothing.
@@ -690,9 +736,28 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                 }
             }
         }
+        // --- Targets: every aimed pair that resolved this step, landed or dodged - the strike declarations as
+        // resolution actually read them (a stale declaration has already dropped). ---
+        for &(a, t) in &order {
+            lines.push((
+                "target",
+                format!("{} -> {}", before.units[a].name, before.units[t].name),
+            ));
+        }
+        for r in log.reaches.iter().filter(|r| r.evaded) {
+            lines.push((
+                "target",
+                format!(
+                    "{} -> {}",
+                    before.units[r.attacker].name, before.units[r.target].name
+                ),
+            ));
+        }
+
         // Each strike, in the pool -> flow vocabulary: the attacker FLIPS tempo (at its Finesse) to GENERATE the
-        // reach that lands the contact, then STRIKES for damage (Might per blow). The reach/tempo is a per-attacker
-        // fact - a sweep hits many for one flip - so it is stated once, on the attacker's first strike this step.
+        // reach that lands the contact - the BID line, both compared numbers on the page - then STRIKES for
+        // damage (Might per blow), pouring any tempo it held back. The bid/tempo is a per-attacker fact - a
+        // sweep hits many for one flip - so it is stated once, on the attacker's first strike this step.
         let mut tempo_said: Vec<usize> = Vec::new();
         for (&(a, t), &n) in order.iter().zip(&blows) {
             let (an, tn) = (&before.units[a].name, &before.units[t].name);
@@ -704,11 +769,11 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             } else {
                 1
             };
-            // The reach clause (once per attacker): tempo flipped x Finesse x bodies = the reach it generated, plus
-            // any tempo poured for extra strikes. Recovered from the recorded bid, so it always matches `land`.
-            let reach = if tempo_said.contains(&a) {
-                String::new()
-            } else {
+            // The bid (once per attacker): tempo flipped x Finesse x bodies = the reach it generated, against the
+            // dodge floor it had to clear. Recovered from the recorded bid, so it always matches `land`. What it
+            // did NOT flip for the bid is the pour - stated on the strike line, where it becomes blows.
+            let mut strike_prefix = String::new();
+            if !tempo_said.contains(&a) {
                 tempo_said.push(a);
                 let f = before.units[a].finesse.max(1);
                 let total = prev_tp[a].saturating_sub(log.tempo[a]);
@@ -726,7 +791,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                         };
                         // The dodge FLOOR the reach had to clear: the TARGET's utmost dodge - its whole tempo x its
                         // Finesse (no body multiplier, even for a horde). `reach_cards` sizes the bid to meet this,
-                        // and the reacher wins ties - so a connecting strike shows BOTH compared numbers (the reach,
+                        // and the reacher wins ties - so a connecting bid shows BOTH compared numbers (the reach,
                         // and the dodge it beat), not just its own reach. This is why the tempo cannot be smaller:
                         // below the floor the target simply slips the blow, so only tempo ABOVE it can pour.
                         let tf = before.units[t].finesse.max(1);
@@ -739,21 +804,24 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                                 tt * tf
                             )
                         };
+                        lines.push((
+                            "bid",
+                            format!(
+                                "{an}: flips {rt} tempo at {fclause} = {} reach{against}",
+                                r.bid
+                            ),
+                        ));
                         let pour = total.saturating_sub(rt);
-                        let poured = if pour > 0 {
-                            format!(", then pours {pour} more tempo")
-                        } else {
-                            String::new()
-                        };
-                        format!(
-                            "flips {rt} tempo at {fclause} = {} reach{against}{poured}, ",
-                            r.bid
-                        )
+                        if pour > 0 {
+                            strike_prefix = format!("pours {pour} more tempo, ");
+                        }
                     }
-                    // A sweep forms no reach contest (unevadable); the verb already says it swept.
-                    None => format!("flips {total} tempo, "),
+                    // A sweep forms no reach contest (unevadable), so it has no bid line; its one-card cost
+                    // rides the strike line, and the verb already says it swept.
+                    None => strike_prefix = format!("flips {total} tempo, "),
                 }
-            };
+            }
+            let reach = strike_prefix;
             let body = if before.units[t].horde {
                 // A horde's bodies are separate Grit-strong pools, no spill. A blow fells a body iff it penetrates
                 // (Might - armor >= Grit); a sweep clears the WHOLE pack at once, an aimed blow one body per blow.
@@ -789,7 +857,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                 } else {
                     base
                 };
-                format!("for {dmg} damage ({how})")
+                format!("{dmg} damage ({how})")
             };
             lines.push(("strike", format!("{an} {verb} {tn}: {reach}{body}")));
         }
@@ -820,7 +888,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                     format!("Finesse {f}")
                 };
                 lines.push((
-                    "reach",
+                    "bid",
                     format!(
                         "{} reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
                         before.units[i].name,
@@ -853,14 +921,14 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                 let f = before.units[i].finesse.max(1);
                 let dodge = spent * f;
                 lines.push((
-                    "dodge",
+                    "bid",
                     format!(
                         "{name}: flips {spent} tempo at Finesse {f} to generate {dodge} reach, dodging the {worst} reaching it"
                     ),
                 ));
             } else {
                 lines.push((
-                    "reach",
+                    "bid",
                     format!("{name}: flips {spent} tempo, no reach connects"),
                 ));
             }
@@ -933,7 +1001,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
                     String::new()
                 };
                 lines.push((
-                    "absorb",
+                    "resolve",
                     format!(
                         "{name}: flips {flipped} health at Grit {grit} to absorb {absorbed} damage{over}{remain}"
                     ),
@@ -941,7 +1009,7 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             } else if dmg_to[i] > 0 {
                 // Banked damage that flipped no card: short of Grit, and the pile clears when this sub-step closes.
                 lines.push((
-                    "absorb",
+                    "resolve",
                     format!(
                         "{name}: takes {} damage - under Grit {grit}, no health flips (discarded)",
                         dmg_to[i]
@@ -1002,9 +1070,12 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
         for &i in &log.fallen {
             let name = &before.units[i].name;
             if before.units[i].horde {
-                lines.push(("downed", format!("{name}: no bodies remaining, wiped out")));
+                lines.push((
+                    "resolve",
+                    format!("{name}: wiped out - no bodies remaining"),
+                ));
             } else {
-                lines.push(("downed", format!("{name}: no health remaining")));
+                lines.push(("resolve", format!("{name}: downed - no health remaining")));
             }
         }
 
@@ -1016,19 +1087,18 @@ fn narrate_steps(before: &Board, script: &StepScript) -> Vec<String> {
             // The coordinate: this step's own header, then the events in resolution order, each in its step
             // column - so any line reads as round . step K/8 . event-kind.
             let (k, name) = label_coord(log.step);
-            out.push(format!("  [step {k}/8] {name}"));
+            out.push(format!("  step {k}/8: {name}"));
             let rank = |s: &str| match s {
-                "reach" => 0,
-                "dodge" => 1,
+                "target" => 0,
+                "bid" => 1,
                 "strike" => 2,
-                "absorb" => 3,
-                "move" => 4,
-                _ => 5, // downed, and anything else, last
+                "resolve" => 3,
+                _ => 4, // move - dissolution and repositioning close the step
             };
             let mut evs = lines;
             evs.sort_by_key(|(s, _)| rank(s));
             for (step, text) in evs {
-                out.push(format!("      {step:<6} {text}"));
+                out.push(format!("      {step:<7} {text}"));
             }
         }
     }
@@ -1360,7 +1430,7 @@ fn screen_text(f: &Fight) -> String {
         writeln!(s, "the fight is over.").ok();
     } else {
         let (k, name) = step_coord(f.state.step());
-        writeln!(s, "step {k}/8 - {name}").ok();
+        writeln!(s, "step {k}/8: {name}").ok();
         // The same best-route mark the buttons carry: settled minimum only, lone option unmarked.
         let (best, all_done) = f.best_route();
         let marking = all_done && best.is_some() && f.options.len() > 1;
@@ -1604,21 +1674,30 @@ fn button(p: &mut ChildSpawnerCommands, hit: Hit, label: &str, bg: Color) {
 /// How many trailing history lines the panel and the mirror both show.
 const HISTORY_LINES: usize = 22;
 
-/// Colour a history line by what it is: a declaration (who chose what), an effect (indented - damage, a move), a
-/// death, a round marker, or the final outcome. So the player can read the story of the fight at a glance.
+/// Colour a history line by what it is: a round marker or step header (the coordinates), a fall (a resolve
+/// line that downed or wiped a body), an effect line, or the final outcome. So the player can read the story
+/// of the fight at a glance.
 fn history_color(line: &str) -> Color {
+    let body = line.trim_start();
     if line.starts_with("===") {
         if line.contains("Win") { GOOD } else { BAD }
-    } else if line.starts_with("---") {
+    } else if line.starts_with("round ") {
         MUTED // a round marker
-    } else if line.trim_start().starts_with("downed") {
+    } else if body.starts_with("step ") {
+        if body.ends_with("skipped") {
+            MUTED
+        } else {
+            INK
+        } // a step header - the coordinate line
+    } else if body.starts_with("resolve") && (body.contains("downed") || body.contains("wiped out"))
+    {
         BAD // a body fell
     } else if line.starts_with('*') {
         FOE // a foe's declaration: "*The Wall: Clash Marksman"
     } else if line.starts_with("  ") {
         WARN // an effect of the round: damage, a slip, a fall-back
     } else {
-        INK // a hero's declaration: "Raider: Clash Wall"
+        INK
     }
 }
 

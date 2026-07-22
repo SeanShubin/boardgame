@@ -81,22 +81,25 @@ upon in that same round.
 
 Eligibility is the branching rule: a body with no rank, target, or tempo for a
 step simply has no declaration there. The primitive under every strike is the
-same **Interaction**, four beats: **Target** (name whom, or pass) -> **Contact**
-(the reach bid against the dodge) -> **Strike** (the free opening blow plus paid
-extras, absorbed through the grit pile) -> **Downed** (deaths close at the step
-boundary). The log's line prefixes spell the same beats: `strike` (with its
-contact clause), `absorb`, `downed`.
+same **Interaction**, four minor steps: **Target** (name whom, or pass) ->
+**Bid** (the reach contest - tempo flipped at Finesse against the dodge floor)
+-> **Strike** (the free opening blow plus the poured extras, at Might per blow)
+-> **Resolve** (the damage actually applies: Health flips at the Grit bar, the
+pile closes, and a body that empties is DOWNED - being downed is one thing
+resolve can do, not a step of its own). The log's line prefixes are the same
+four words - `target` / `bid` / `strike` / `resolve` - plus `move` for the
+movement steps.
 
-| # | Step | Who -> whom | What happens |
-|---|---|---|---|
-| 1 | **Havoc** | O->RV, RV->O | Point-blank: every prior-round outrider and its hosts trade declared strikes - both tiers, no screen, mutual, aoe sweeps the region. A kill here opens a hole before anything else runs. Afterwards an outrider whose host formation is wiped **dissolves** back to its own line. |
-| 2 | **Withdraw** | O may move to V | Every surviving outrider may leave, rejoining its own line at weapon rank - free; standing step 1 was the price. A body felled at step 1 never leaves. |
-| 3 | **Skirmish** | V->V | The fast early trade, vanguards racing to meet - and the **interception window**: strike the body you predict will run. Blind: crossings are declared at step 4, after this resolves - a real feint layer between humans, dominated-choice-pruned against scripted foes. |
-| 4 | **Cross** | V may move to O | Only a vanguard that declared **no line strike** this round may cross; it walks uncontested and lands as an **Outrider**. The step-3 window behind it and the step-5 volley ahead of it are the price - the screen is a price, not a wall. |
-| 5 | **Defensive Volley** | R->O | The rearguards' one-way shots at outriders, fresh or old - the opening blow only. Holding off IS being quicker. |
-| 6 | **Raid** | O->R | THIS round's arrivals strike a back-line target - the opening blow only, evadable (a reached rearguard may dodge, spending tempo it then cannot fire). Prior-round outriders acted at step 1. |
-| 7 | **Assault** | RV->V | The methodical late set-piece, all firepower to bear: rearguard fire plus every vanguard that held back. A would-be crosser that thought better of it swings HERE - "halt" is emergent, not a rule. |
-| 8 | **Advance** | RV->R | Only against a rearguard with **no living vanguard at this step** - the same-round advance on a collapsed front. An exposed back is reachable the round its screen dies, not the round after. |
+| #   | Step                 | Who -> whom     | What happens                                                                                                                                                                                                                                                                      |
+| --- | -------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Havoc**            | O->RV, RV->O    | Point-blank: every prior-round outrider and its hosts trade declared strikes - both tiers, no screen, mutual, aoe sweeps the region. A kill here opens a hole before anything else runs. Afterwards an outrider whose host formation is wiped **dissolves** back to its own line. |
+| 2   | **Withdraw**         | O may move to V | Every surviving outrider may leave, rejoining its own line at weapon rank - free; standing step 1 was the price. A body felled at step 1 never leaves.                                                                                                                            |
+| 3   | **Skirmish**         | V->V            | The fast early trade, vanguards racing to meet - and the **interception window**: strike the body you predict will run. Blind: crossings are declared at step 4, after this resolves - a real feint layer between humans, dominated-choice-pruned against scripted foes.          |
+| 4   | **Cross**            | V may move to O | Only a vanguard that declared **no line strike** this round may cross; it walks uncontested and lands as an **Outrider**. The step-3 window behind it and the step-5 volley ahead of it are the price - the screen is a price, not a wall.                                        |
+| 5   | **Defensive Volley** | R->O            | The rearguards' one-way shots at outriders, fresh or old - the opening blow only. Holding off IS being quicker.                                                                                                                                                                   |
+| 6   | **Raid**             | O->R            | THIS round's arrivals strike a back-line target - the opening blow only, evadable (a reached rearguard may dodge, spending tempo it then cannot fire). Prior-round outriders acted at step 1.                                                                                     |
+| 7   | **Assault**          | RV->V           | The methodical late set-piece, all firepower to bear: rearguard fire plus every vanguard that held back. A would-be crosser that thought better of it swings HERE - "halt" is emergent, not a rule.                                                                               |
+| 8   | **Advance**          | RV->R           | Only against a rearguard with **no living vanguard at this step** - the same-round advance on a collapsed front. An exposed back is reachable the round its screen dies, not the round after.                                                                                     |
 
 ### Round end
 
