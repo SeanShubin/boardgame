@@ -619,14 +619,6 @@ fn log_click(
     ));
 }
 
-/// Log the **modal scene** — the combat screen — whenever its text changes.
-///
-/// Without this the debug log records the *cards* but not the *screen*, so a complaint like "the log says the
-/// phase was skipped, but the phase card still says Intercept" could not be checked against what the player
-/// actually saw; it had to be inferred from the arena's cards. Everything the screen says is written here:
-/// which phase and step each track is on, the prompt, the decision being asked for (with each option's
-/// consequence, or the reason it is barred), and the combat log lines themselves.
-
 /// **The current-screen snapshot** - `ui-scene.txt`, rewritten whenever the modal scene changes, so "what
 /// does the screen look like RIGHT NOW" is always answerable from one file, completely and unambiguously:
 /// every tile with its named attention state, every choice with its status, the controls, the prompt. The
@@ -827,6 +819,10 @@ CONTROLS: control(s) {:?} disabled (index 0 = the Commit/Start control)
     out
 }
 
+/// Log the **modal scene** — the combat screen — whenever its text changes (the append HISTORY, in
+/// `ui-state.log`; the present-tense snapshot is [`mirror_scene`]'s `ui-scene.txt`). Everything the screen
+/// says is written here: which phase and step each track is on, the prompt, the decision being asked for
+/// (with each option's consequence, or the reason it is barred), and the combat log lines themselves.
 fn log_scene(scene: Res<SceneState>, log: Res<UiLog>, mut last: Local<String>) {
     let Some(s) = &scene.0 else {
         if !last.is_empty() {
