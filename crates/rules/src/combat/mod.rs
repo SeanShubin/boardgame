@@ -6,6 +6,7 @@
 //! - [`regions`] - the rules of *formation*: regions, front/back posts, the slip, the schedule, and how a
 //!   whole round plays out. This is the file to read to know how combat works.
 
+pub mod narrate;
 pub mod regions;
 pub mod resolve;
 pub mod step_game;

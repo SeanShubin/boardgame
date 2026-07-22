@@ -15,7 +15,7 @@
 //! - **Validity is resolver-enforced** ([`super::steps`]): a stale declaration drops, never mislands.
 
 use super::regions::{
-    Board, MAX_ROUNDS, Rank, canonical, foe_catch, interchangeable, wants_to_cross,
+    Board, MAX_ROUNDS, Rank, StepLog, canonical, foe_catch, interchangeable, wants_to_cross,
 };
 use super::resolve::{Combatant, Side, refresh_round};
 use super::steps::{
@@ -47,7 +47,9 @@ pub enum Step {
     Advance,
 }
 
-const STEPS: [Step; 8] = [
+/// The eight steps in schedule order - public so drivers (the fight UI, the card-table arena) can walk the
+/// schedule for headers and skipped-wave fills without keeping their own copy.
+pub const STEPS: [Step; 8] = [
     Step::Havoc,
     Step::Withdraw,
     Step::Skirmish,
@@ -57,6 +59,21 @@ const STEPS: [Step; 8] = [
     Step::Assault,
     Step::Advance,
 ];
+
+/// A step's log coordinate: its 1-based number and display name - the ONE naming, shared by every driver so
+/// the wave headers, the narration, and the docs can never spell a step differently.
+pub fn step_coord(s: Step) -> (u8, &'static str) {
+    match s {
+        Step::Havoc => (1, "Havoc"),
+        Step::Withdraw => (2, "Withdraw"),
+        Step::Skirmish => (3, "Skirmish"),
+        Step::Cross => (4, "Crossing"),
+        Step::Volley => (5, "Defensive Volley"),
+        Step::Raid => (6, "Raid"),
+        Step::Assault => (7, "Assault"),
+        Step::Advance => (8, "Advance"),
+    }
+}
 
 /// One body's declaration at the current step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -84,6 +101,12 @@ pub struct StepState {
     /// Crossed this round (step-6 eligibility).
     arrived: Vec<bool>,
     round: usize,
+    /// When set, every resolved step's [`StepLog`] is kept in `transcript` for the driver to drain
+    /// ([`take_transcript`](StepState::take_transcript)). Off by default so solver clones stay cheap (an empty
+    /// vec clones without allocating); a live UI state turns it on to journal the real resolution instead of
+    /// re-simulating. Neither field is part of the memo key.
+    record: bool,
+    transcript: Vec<StepLog>,
 }
 
 impl StepState {
@@ -106,9 +129,81 @@ impl StepState {
             struck: vec![false; n],
             arrived: vec![false; n],
             round: 1,
+            record: false,
+            transcript: Vec::new(),
         };
         s.seek();
         s
+    }
+
+    /// **Resume a fight mid-round from external state** - the seam a persistent driver (the card-table arena)
+    /// needs: the cards are its source of truth, so it re-seats the engine from them at every wave rather than
+    /// keeping a live `StepState` across saves. `ranks` is taken as given (an earned Outrider must survive the
+    /// round trip - `Board::new` would re-derive weapon ranks); `struck`/`arrived` are the round's accumulated
+    /// commitments; `units` carry their live tempo and health. The cursor opens at `step`'s first eligible
+    /// body (seek runs, so a wave nobody can act in advances exactly as in a live game).
+    #[allow(clippy::too_many_arguments)]
+    pub fn resume(
+        units: Vec<Combatant>,
+        regions: Vec<u8>,
+        ranks: Vec<Rank>,
+        round: usize,
+        step: Step,
+        struck: Vec<bool>,
+        arrived: Vec<bool>,
+    ) -> StepState {
+        let n = units.len();
+        let party: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Party).collect();
+        let foes: Vec<usize> = (0..n).filter(|&i| units[i].side == Side::Foe).collect();
+        let order: Vec<usize> = party.iter().chain(foes.iter()).copied().collect();
+        let mut s = StepState {
+            board: Board {
+                units,
+                regions,
+                ranks,
+            },
+            order,
+            step,
+            next: 0,
+            decls: vec![None; n],
+            struck,
+            arrived,
+            round,
+            record: false,
+            transcript: Vec::new(),
+        };
+        s.seek();
+        s
+    }
+
+    /// Turn transcript recording on (or off) for this state. Recording survives `apply` (the new state clones
+    /// the flag and the collected logs), so a driver sets it once on its live state.
+    pub fn set_record(&mut self, on: bool) {
+        self.record = on;
+    }
+
+    /// Drain the recorded step transcripts (in resolution order) collected since the last drain.
+    pub fn take_transcript(&mut self) -> Vec<StepLog> {
+        std::mem::take(&mut self.transcript)
+    }
+
+    /// Whether body `i` has a genuine declaration at the current step - the wave-membership read a board
+    /// display needs ("who is being asked right now"). The cursor only ever stops on eligible bodies; this
+    /// exposes the same predicate for highlighting the whole wave at once.
+    pub fn is_eligible(&self, i: usize) -> bool {
+        self.eligible(i)
+    }
+
+    /// Whether body `i` declared a LINE strike this round (the crossing gate) - for persisting the round's
+    /// commitments across an external source of truth.
+    pub fn struck_flag(&self, i: usize) -> bool {
+        self.struck[i]
+    }
+
+    /// Whether body `i` crossed this round (raid eligibility) - same persistence seam as
+    /// [`struck_flag`](StepState::struck_flag).
+    pub fn arrived_flag(&self, i: usize) -> bool {
+        self.arrived[i]
     }
 
     pub fn board(&self) -> &Board {
@@ -227,7 +322,8 @@ impl StepState {
         }
     }
 
-    /// Resolve the current step from its collected declarations.
+    /// Resolve the current step from its collected declarations. When recording, the step's [`StepLog`] is
+    /// kept for the driver ([`take_transcript`](StepState::take_transcript)).
     fn resolve_phase(&mut self) {
         let strikes: Vec<(usize, usize)> = self
             .decls
@@ -247,34 +343,26 @@ impl StepState {
                 _ => None,
             })
             .collect();
-        match self.step {
-            Step::Havoc => {
-                resolve_havoc(&mut self.board, &strikes);
-            }
-            Step::Withdraw => {
-                resolve_withdraw(&mut self.board, &movers);
-            }
-            Step::Skirmish => {
-                resolve_skirmish(&mut self.board, &strikes);
-            }
+        let log = match self.step {
+            Step::Havoc => resolve_havoc(&mut self.board, &strikes),
+            Step::Withdraw => resolve_withdraw(&mut self.board, &movers),
+            Step::Skirmish => resolve_skirmish(&mut self.board, &strikes),
             Step::Cross => {
-                let (landed, _) = resolve_cross(&mut self.board, &movers, &self.struck);
+                let (landed, log) = resolve_cross(&mut self.board, &movers, &self.struck);
                 for i in landed {
                     self.arrived[i] = true;
                 }
+                log
             }
-            Step::Volley => {
-                resolve_volley(&mut self.board, &strikes);
-            }
-            Step::Raid => {
-                resolve_raid(&mut self.board, &strikes, &self.arrived);
-            }
-            Step::Assault => {
-                resolve_assault(&mut self.board, &strikes);
-            }
-            Step::Advance => {
-                resolve_advance(&mut self.board, &strikes);
-            }
+            Step::Volley => resolve_volley(&mut self.board, &strikes),
+            Step::Raid => resolve_raid(&mut self.board, &strikes, &self.arrived),
+            Step::Assault => resolve_assault(&mut self.board, &strikes),
+            Step::Advance => resolve_advance(&mut self.board, &strikes),
+        };
+        if self.record
+            && let Some(log) = log
+        {
+            self.transcript.push(log);
         }
     }
 
