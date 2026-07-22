@@ -117,16 +117,6 @@ fn foe_stats(name: &str) -> Option<(Stats, bool, bool, bool)> {
     Some((stats_of(c.stats), c.melee, c.ranged, c.aoe))
 }
 
-/// The vitality (max HP, or body count for a horde) of a combatant by name and side. Keys off the CATALOG
-/// name, so callers must pass the un-disambiguated title, not a display name.
-pub(crate) fn max_health(board: &Board, name: &str, side: Side) -> u32 {
-    match side {
-        Side::Party => hero_stats(board, name).map(|(s, _, _, _)| s.vitality),
-        Side::Foe => foe_stats(name).map(|(s, _, _, _)| s.vitality),
-    }
-    .unwrap_or(0)
-}
-
 /// The max HP written on a combatant CARD's detail (`Health hp/max`) - the display total, robust to a
 /// disambiguated Combatant name (which would miss the catalog lookup). This is the one to use once names may
 /// carry a `1`/`2` suffix; it reads the total that was stamped when the card was seated.
