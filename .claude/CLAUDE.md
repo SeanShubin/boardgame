@@ -43,6 +43,40 @@ The reference sample:
 - Game logic must be deterministic given a seed. Do not introduce wall-clock
   time or unseeded randomness into the rules.
 
+## Debug logs
+
+The running app writes plain-text debug logs to the **repo root** (native only —
+no filesystem on the web; all are gitignored). Read these to see what actually
+happened in a play session instead of guessing. The renderer's live logs are
+added by `LoggingPlugin` (see `crates/cardtable/src/logging.rs`, the source of
+truth for their exact contents):
+
+- `ui-state.log` — the UI + input trail: which view is entered, each card's
+  settled layout, and **every click/drag** with pointer position, what it hit,
+  and outcome — including `IGNORED (drag-guard)` for a swallowed tap and the
+  `tap-apply: card #N -> intention / NO intention` line for what the game made
+  of it. First stop for "I clicked and nothing happened." *Truncated on launch.*
+- `screen.txt` — the current screen as data (`mirror_screen`): viewport, every
+  card's rect, the text strings drawn, effect assignments, and overlap warnings.
+  Clip-aware. Use for geometry/overlap and to read on-screen coordinates.
+  *Rewritten when the settled screen changes.*
+- `ui-scene.txt` — the modal combat scene as text (`mirror_scene` →
+  `Scene::describe`): tracks, board tiles with their attention states, arrows,
+  the action cards, and the log. Use to read what the scene *says*, blind to
+  pixels. *Rewritten when the scene changes.*
+- `combat-log.log` — exactly the combat-log area the player reads, nothing else.
+  *Truncated at the start of each battle.*
+- `physical-cards.log` — the conserved card tree (indented, face up/down) plus
+  the transitions between states. *Truncated on launch.*
+
+The combat **simulator** (`cargo run -p boardgame --example fight`, a separate
+binary from the app) writes its own: `fight-screen.txt` (current screen) and
+`fight-log.txt` (the entire running transcript).
+
+Headless capture (no GUI): `BOARDGAME_AUTOFIGHT=1` opens the Ashfen fight on
+launch (`=play` self-plays); `crates/deckbound-board/examples/headless.rs` drives
+the fight through the public seam and prints `Scene::describe` at each decision.
+
 ## Parallel instances: the needs-merge directory
 
 Multiple Claude instances may run in parallel against this repo. To keep them
