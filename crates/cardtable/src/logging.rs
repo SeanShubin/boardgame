@@ -573,6 +573,7 @@ fn log_click(
     movables: Query<&Movable>,
     units: Query<&crate::TileCard>,
     affordances: Query<&crate::AffordanceControl>,
+    choices: Query<&crate::ChoiceControl>,
     backs: Query<(), With<crate::BackCard>>,
     zones: Query<&PileDropZone>,
     table: Res<Table>,
@@ -593,6 +594,10 @@ fn log_click(
         format!("{name} [combatant]")
     } else if let Ok(ctrl) = affordances.get(entity) {
         format!("affordance #{} [control]", ctrl.0)
+    } else if let Ok(c) = choices.get(entity) {
+        // The scene's decision buttons (a hero's order menu). These were previously UNLOGGED, so a dropped
+        // or double-needed choice click left no trace - exactly the "I clicked and nothing happened" case.
+        format!("choice #{} [choice]", c.0)
     } else if backs.get(entity).is_ok() {
         "Back [control]".into()
     } else if let Some(name) = interacted_card(&table.0, entity, &cards, &movables) {
