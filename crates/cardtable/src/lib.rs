@@ -2676,13 +2676,13 @@ fn animate_target_arrows(
     if links.is_empty() {
         return;
     }
-    // **Horizontally centred, vertically spaced.** These arrows run left (a body) to right (its target), so
-    // each end attaches at its card's horizontal centre and the fan spreads VERTICALLY. A card's arrows are
-    // laid out along its height at even fractions ((r+1)/(k+1)): the gap between neighbours is about the gap
-    // to the top and bottom edges, and a lone arrow lands centred. Crucially, a line keeps ONE fractional
-    // height across the gap - a card carrying a real fan (several arrows) drives the height, and a card with a
-    // single arrow borrows the other end's - so a source fanning to same-height targets stays a PARALLEL fan
-    // (top arrow high at both ends, bottom low) instead of collapsing back to centre at the targets.
+    // **Spread perpendicular to each line, from the card centre.** Generic in the cards' arrangement: a line
+    // attaches at its card's centre, offset SIDEWAYS (perpendicular to the line) by its place in the fan, so
+    // left-right lines spread vertically, top-bottom lines spread horizontally, and any diagonal spreads
+    // across its own width. A fan is laid out at even fractions so the gap between neighbours is about the gap
+    // to the card edge (a lone line stays centred). A line keeps ONE fan offset across the gap - the end with
+    // the real fan drives it, the single-line end borrows it - so a source fanning to several targets stays a
+    // PARALLEL fan (each line offset the same both ends) instead of collapsing back to centre at the targets.
     let mut outgoing: std::collections::HashMap<CardId, Vec<usize>> =
         std::collections::HashMap::new();
     let mut incoming: std::collections::HashMap<CardId, Vec<usize>> =
@@ -2691,41 +2691,78 @@ fn animate_target_arrows(
         outgoing.entry(l.from).or_default().push(i);
         incoming.entry(l.to).or_default().push(i);
     }
-    // Order each fan top-to-bottom by the OTHER end's position, so neighbouring arrows keep order (no cross).
-    let key = |id: CardId| {
-        let c = rects.0[&id].center();
-        (c.y, c.x)
+    let center = |id: CardId| rects.0[&id].center();
+    // Order a fan across its width: by the other end's position projected onto the perpendicular of the fan's
+    // mean direction, so neighbouring lines keep their order and do not cross - whatever way the fan points.
+    let order_fan = |group: &mut Vec<usize>, hub: CardId, other: &dyn Fn(usize) -> CardId| {
+        let c = center(hub);
+        let mean: Vec2 = group
+            .iter()
+            .map(|&i| (center(other(i)) - c).normalize_or_zero())
+            .sum();
+        let perp = Vec2::new(-mean.y, mean.x);
+        group.sort_by(|&a, &b| {
+            (center(other(a)) - c)
+                .dot(perp)
+                .partial_cmp(&(center(other(b)) - c).dot(perp))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     };
-    for g in outgoing.values_mut() {
-        g.sort_by(|&a, &b| {
-            key(links[a].to)
-                .partial_cmp(&key(links[b].to))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    let outs: Vec<CardId> = outgoing.keys().copied().collect();
+    for hub in outs {
+        let mut g = std::mem::take(outgoing.get_mut(&hub).unwrap());
+        order_fan(&mut g, hub, &|i| links[i].to);
+        *outgoing.get_mut(&hub).unwrap() = g;
     }
-    for g in incoming.values_mut() {
-        g.sort_by(|&a, &b| {
-            key(links[a].from)
-                .partial_cmp(&key(links[b].from))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    let ins: Vec<CardId> = incoming.keys().copied().collect();
+    for hub in ins {
+        let mut g = std::mem::take(incoming.get_mut(&hub).unwrap());
+        order_fan(&mut g, hub, &|i| links[i].from);
+        *incoming.get_mut(&hub).unwrap() = g;
     }
-    let frac = |rank: usize, count: usize| (rank as f32 + 1.0) / (count as f32 + 1.0);
+    // The signed fan offset in (-1, 1) for the `rank`-th of `count` lines: even spacing, edges left as margin.
+    let offset = |rank: usize, count: usize| 2.0 * (rank as f32 + 1.0) / (count as f32 + 1.0) - 1.0;
     for (i, l) in links.iter().enumerate() {
         let out = &outgoing[&l.from];
         let inc = &incoming[&l.to];
         let rs = out.iter().position(|&k| k == i).unwrap();
         let rd = inc.iter().position(|&k| k == i).unwrap();
-        let (src_own, dst_own) = (frac(rs, out.len()), frac(rd, inc.len()));
-        // The end with the real fan sets the height; the single-arrow end borrows it, keeping the line at one
-        // fractional height across the gap.
-        let src_frac = if out.len() > 1 { src_own } else { dst_own };
-        let dst_frac = if inc.len() > 1 { dst_own } else { src_own };
-        let (sr, dr) = (rects.0[&l.from], rects.0[&l.to]);
-        let a = Vec2::new(sr.center().x, sr.min.y + sr.height() * src_frac);
-        let b = Vec2::new(dr.center().x, dr.min.y + dr.height() * dst_frac);
+        // The end with the real fan sets the offset; a single-line end borrows the other's, so the line is one
+        // parallel translate of the centre-to-centre line.
+        let g = if out.len() > 1 {
+            offset(rs, out.len())
+        } else if inc.len() > 1 {
+            offset(rd, inc.len())
+        } else {
+            0.0
+        };
+        let (sc, dc) = (center(l.from), center(l.to));
+        let dir = (dc - sc).normalize_or_zero();
+        if dir == Vec2::ZERO {
+            continue;
+        }
+        let perp = Vec2::new(-dir.y, dir.x);
+        let a = sc + perp * (g * inscribed_extent(rects.0[&l.from], perp));
+        let b = dc + perp * (g * inscribed_extent(rects.0[&l.to], perp));
         spawn_arrow_dots(&mut commands, a, b, l.confirmed, l.broad, l.muted, phase);
     }
+}
+
+/// How far from a rect's centre a point can sit **along `dir`** and stay inside it (the inscribed half-extent
+/// in that direction) - so a fan offset never pushes an attach point off the card.
+fn inscribed_extent(rect: Rect, dir: Vec2) -> f32 {
+    let (hx, hy) = (rect.width() / 2.0, rect.height() / 2.0);
+    let tx = if dir.x.abs() < 1e-3 {
+        f32::INFINITY
+    } else {
+        hx / dir.x.abs()
+    };
+    let ty = if dir.y.abs() < 1e-3 {
+        f32::INFINITY
+    } else {
+        hy / dir.y.abs()
+    };
+    tx.min(ty)
 }
 
 /// Spawn one arrow's worth of dots from `a` to `b` (tile centers, logical px), flowing toward `b`. Confirmed
