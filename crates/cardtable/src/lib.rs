@@ -2095,6 +2095,11 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
             },
             BackgroundColor(PANEL),
             BorderColor::all(MUTED),
+            // **The log never eats a click.** It has no interaction, and its content is bottom-anchored so it
+            // can overflow UP under the decision strip; if it blocked picking there, a click on the lower half
+            // of an action card would land on the log instead. Ignore picking for the whole subtree so those
+            // clicks pass through to the cards behind it.
+            Pickable::IGNORE,
         ))
         .with_children(|panel| {
             panel.spawn((
@@ -2104,6 +2109,7 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
                     ..default()
                 },
                 TextColor(INK),
+                Pickable::IGNORE,
             ));
             for line in lines {
                 let header = !line.starts_with(' ');
@@ -2114,6 +2120,7 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
                         ..default()
                     },
                     TextColor(if header { INK } else { MUTED }),
+                    Pickable::IGNORE,
                 ));
             }
         });
@@ -2384,25 +2391,30 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
             // stays visible is the NEWEST lines - the oldest scroll off the top, not the latest off the
             // bottom. The whole log always survives in the post-fight record cards.
             if !scene.log.is_empty() {
-                root.spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    flex_shrink: 1.0,
-                    min_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Stretch,
-                    justify_content: JustifyContent::FlexEnd,
-                    overflow: Overflow::clip(),
-                    // Same inset from the bottom + sides as the sidebar has from the top-left: one margin
-                    // constant, every screen edge the same gap. (Top is 0 - the block above provides that gap.)
-                    padding: UiRect {
-                        left: SCREEN_MARGIN,
-                        right: SCREEN_MARGIN,
-                        top: Val::ZERO,
-                        bottom: SCREEN_MARGIN,
+                root.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        flex_shrink: 1.0,
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Stretch,
+                        justify_content: JustifyContent::FlexEnd,
+                        overflow: Overflow::clip(),
+                        // Same inset from the bottom + sides as the sidebar has from the top-left: one margin
+                        // constant, every screen edge the same gap. (Top is 0 - the block above provides it.)
+                        padding: UiRect {
+                            left: SCREEN_MARGIN,
+                            right: SCREEN_MARGIN,
+                            top: Val::ZERO,
+                            bottom: SCREEN_MARGIN,
+                        },
+                        ..default()
                     },
-                    ..default()
-                })
+                    // The valve container never eats a click either (see spawn_log_panel): if it stretches up
+                    // under the decision strip, clicks pass through to the action cards behind it.
+                    Pickable::IGNORE,
+                ))
                 .with_children(|bar| {
                     spawn_log_panel(bar, &scene.log_title, &scene.log);
                 });
