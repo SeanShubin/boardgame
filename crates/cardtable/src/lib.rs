@@ -2174,27 +2174,48 @@ fn draw_scene(
                 },
             ))
             .with_children(|side| {
-                for track in &scene.tracks {
-                    let labels: Vec<&str> = track.items.iter().map(|i| i.label.as_str()).collect();
-                    let current = track
-                        .items
-                        .iter()
-                        .find(|i| i.current)
-                        .map(|i| i.label.as_str())
-                        .unwrap_or("");
-                    spawn_track(side, &track.title, &labels, current);
-                }
-                // The legend sits under the tracks: always on screen, and never competing for room with the
-                // body, the decision or the log.
+                // Top: the progress track(s) and the schedule reference SIDE BY SIDE - twin eight-item lists
+                // (the current step, and who-hits-whom by step), so they read as one header block.
+                side.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::FlexStart,
+                    column_gap: Val::Px(10.0),
+                    ..default()
+                })
+                .with_children(|top| {
+                    top.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::FlexStart,
+                        row_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|tracks| {
+                        for track in &scene.tracks {
+                            let labels: Vec<&str> =
+                                track.items.iter().map(|i| i.label.as_str()).collect();
+                            let current = track
+                                .items
+                                .iter()
+                                .find(|i| i.current)
+                                .map(|i| i.label.as_str())
+                                .unwrap_or("");
+                            spawn_track(tracks, &track.title, &labels, current);
+                        }
+                    });
+                    // The schedule card, to the RIGHT of the track. **Monospaced**, because it is a table:
+                    // its columns are aligned with spaces, and in a proportional face that alignment is gone.
+                    if !scene.reference.is_empty() {
+                        spawn_legend_panel(top, &scene.reference, mono);
+                    }
+                });
+                // The legend sits under the header block: always on screen, never competing for room.
                 if !scene.legend.is_empty() {
                     spawn_legend_panel(side, &scene.legend, None);
                 }
-                // The schedule card, under the legend. The sidebar had 213 x 512 of free space below the legend
-                // and this needs about 190 x 90 of it - measured, not guessed (the `scene regions` block in
-                // ui-state.log). **Monospaced**, because it is a table: its columns are aligned with spaces,
-                // and in a proportional face that alignment is not merely ugly, it is gone.
-                if !scene.reference.is_empty() {
-                    spawn_legend_panel(side, &scene.reference, mono);
+                // The combat log fills the rest of the sidebar (where the schedule card used to sit): the
+                // record lives on the left, the battlefield fills the main column on the right.
+                if !scene.log.is_empty() {
+                    spawn_log_panel(side, &scene.log_title, &scene.log);
                 }
             });
 
@@ -2256,11 +2277,9 @@ fn draw_scene(
                     SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
                 });
 
-                // **The log, then the decision, then the controls** - the order you read them in. The log is
-                // what the decision is *about* ("The Wall reaches you, slipping costs 2"), so it cannot come
-                // second: you would be choosing before reading the thing that tells you how. And the controls
-                // sit with them rather than pinned to the far bottom of the viewport, because Commit is the
-                // last step of that same thought, not a separate piece of furniture.
+                // **The decision, then the controls**, under the board. The log that these are *about* now
+                // stands in the sidebar (left), read alongside the board rather than below the choices; the
+                // controls sit with the choices because Commit is the last step of the same thought.
                 main.spawn((
                     SceneRegion("decision"),
                     Node {
@@ -2273,9 +2292,7 @@ fn draw_scene(
                     },
                 ))
                 .with_children(|panel| {
-                    if !scene.log.is_empty() {
-                        spawn_log_panel(panel, &scene.log_title, &scene.log);
-                    }
+                    // The log now lives in the sidebar (left); here remain the decision and its controls.
                     if !scene.choices.is_empty() {
                         spawn_choice_row(panel, &scene.choices);
                     }
