@@ -2451,8 +2451,11 @@ fn draw_scene_lanes(root: &mut ChildSpawnerCommands, lanes: &[Lane]) {
 fn tile_look(highlight: Highlight, team: Team) -> (Color, Color, Color, f32) {
     match (highlight, team) {
         (Highlight::Spent, _) => (CARD_BACK, MUTED, MUTED, 2.0),
-        // The one you are commanding: the brightest ring, and the thickest.
-        (Highlight::Active, Team::Left) => (CARD_FACE, ARMED_CUE, CARD_INK, 5.0),
+        // **The one you are commanding** shares the amber "live card" look of a selectable body: a chosen
+        // source and a pick-me-instead alternative are the same KIND of thing (a live party card), so they
+        // read the same. What says "this is the one I chose" is not the border but the flowing connector out
+        // of it (the aim link) and the "* YOUR ORDERS NOW *" badge - the gesture, not a lone colour.
+        (Highlight::Active, Team::Left) => (CARD_FACE, SELECTABLE_CUE, CARD_INK, 3.0),
         (Highlight::Active, Team::Right) => (CARD_FACE, TARGET_CUE, CARD_INK, 5.0),
         // **Waiting on you** — amber, and as thick as Active, because "this one still needs you" is the thing
         // the screen most needs to shout. It is the only cue that says the step is not finished.
@@ -2779,9 +2782,6 @@ const MOVABLE_CUE: Color = Color::srgba(0.86, 0.90, 0.97, 0.50);
 const TARGET_CUE: Color = Color::srgba(0.36, 0.86, 0.42, 0.95);
 /// The **`Available`** tile cue (left team) — a tile you can act on this step. Warm amber "available".
 const SELECTABLE_CUE: Color = Color::srgb(0.92, 0.74, 0.34);
-/// The **`Active`** tile cue (left team) — the current in-progress choice. A bright silver-white ring,
-/// distinct from the green (right-team) target cue and the amber switch cue.
-const ARMED_CUE: Color = Color::srgb(0.95, 0.96, 1.0);
 /// The **`Dim`** tile face — nothing to act on this step; a greyed face that recedes so live tiles stand out.
 const DIM_FACE: Color = Color::srgb(0.44, 0.46, 0.44);
 /// A **cool-hued** badge accent ([`Tone::Cool`]) — a cool blue.

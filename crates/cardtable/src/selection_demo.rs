@@ -95,18 +95,19 @@ const LEGEND_SELECTABLE: u64 = 4;
 const LEGEND_TARGET: u64 = 5;
 const LEGEND_BACKGROUND: u64 = 6;
 
-/// The three cards of the gesture in progress, in order. Chosen (`source`, `action`) deliberately share the
-/// **selectable** look ([`Highlight::Available`]); only the connector marks them as the chosen ones. The
-/// `target` is the one card still carrying its own look (the ring).
+/// The three cards of the gesture in progress, in order. Chosen (`source`, `action`) carry the real
+/// [`Highlight::Active`], which now renders IDENTICALLY to the selectable look - the collapse is in the real
+/// `tile_look`, not faked here; only the connector marks them as the chosen ones. The `target` is the one
+/// card still carrying its own look (the ring).
 fn trio() -> Vec<Cell> {
     vec![
         Cell {
             caption: "source (chosen)",
-            tile: tile(SOURCE, "Raider", Team::Left, Highlight::Available, "you"),
+            tile: tile(SOURCE, "Raider", Team::Left, Highlight::Active, "you"),
         },
         Cell {
             caption: "action (chosen)",
-            tile: tile(ACTION, "Strike", Team::Left, Highlight::Available, "verb"),
+            tile: tile(ACTION, "Strike", Team::Left, Highlight::Active, "verb"),
         },
         Cell {
             caption: "target (completing)",
