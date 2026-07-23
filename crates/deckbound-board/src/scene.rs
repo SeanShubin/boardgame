@@ -42,7 +42,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
-            format!("{name}: TARGETING - click a ringed enemy, or a card below.")
+            format!("{name}: TARGETING - click a lit enemy, or a card below.")
         } else {
             format!("{name}: CHOOSE AN ORDER - one of the cards below.")
         }
@@ -221,36 +221,41 @@ fn build_lanes(
         });
     }
 
-    // Targeting arrows. A committed aim is a solid arrow. The body mid-gesture shows its OPTIONS as offered
-    // arrows - one per candidate - so the choices on the cards are also paths on the board; and while it
-    // aims, every other body's committed arrow is muted, so the gesture in progress owns the screen and a
-    // nearby committed arrow can't be mistaken for the aimer's own.
+    // Targeting arrows. A committed aim is a solid arrow, an offered one dotted; while a body aims, every
+    // other body's committed arrow is muted so the gesture in progress owns the screen. A SINGLE strike is
+    // one arrow to its target; an AREA strike fans one arrow to every body in its footprint - the whole slice
+    // it sweeps - so the extent shows on the board, not just the representative the choices collapsed to.
     let aiming_focus = if w.aiming { w.focus } else { None };
     let mut links = Vec::new();
+    let push_strike = |links: &mut Vec<Link>, from: usize, to: usize, confirmed: bool| {
+        links.push(Link {
+            from: w.cards[from],
+            to: w.cards[to],
+            confirmed,
+            broad: false,
+            muted: aiming_focus.is_some_and(|f| f != from),
+        });
+    };
+    // Committed aims.
     for i in 0..w.units.len() {
-        if let Some(Staged::Aim(t)) = w.staged[i] {
-            links.push(Link {
-                from: w.cards[i],
-                to: t,
-                confirmed: true,
-                broad: w.units[i].aoe,
-                muted: aiming_focus.is_some_and(|f| f != i),
-            });
+        let Some(Staged::Aim(t)) = w.staged[i] else {
+            continue;
+        };
+        if w.units[i].aoe {
+            for m in w.footprints[i].clone() {
+                push_strike(&mut links, i, m, true);
+            }
+        } else if let Some(t) = w.cards.iter().position(|&c| c == t) {
+            push_strike(&mut links, i, t, true);
         }
     }
-    // The aiming body's options, capped so a wide reach never turns the board into a hairball (past the cap
-    // the rings and the action cards still carry the offer).
+    // The aiming body's offer: one arrow per body its strike would reach (its whole footprint). Capped so a
+    // wide reach never turns the board into a hairball (past the cap the lit tiles and cards carry the offer).
     if let Some(f) = aiming_focus
-        && w.targets.len() <= OFFERED_ARROW_CAP
+        && w.footprints[f].len() <= OFFERED_ARROW_CAP
     {
-        for &t in &w.targets {
-            links.push(Link {
-                from: w.cards[f],
-                to: w.cards[t],
-                confirmed: false,
-                broad: w.units[f].aoe,
-                muted: false,
-            });
+        for m in w.footprints[f].clone() {
+            push_strike(&mut links, f, m, false);
         }
     }
     (lanes, links)
@@ -288,15 +293,30 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
             Highlight::Available
         };
     }
-    // A foe: while the focused body is AIMING, its legal targets are LIVE (tappable, lit) but no longer wear
-    // the ring - the offer is now carried by the amber arrow flowing to each of them and by the ringed action
-    // card, so a third ring on the foe itself would just be the same invitation a third time. A confirmed aim
-    // reads Active; otherwise foes stand plain - nothing is being asked about them yet.
-    match w.focus {
-        Some(f) if w.staged[f] == Some(Staged::Aim(w.cards[i])) => Highlight::Active,
-        Some(_) if w.aiming && w.targets.contains(&i) => Highlight::Available,
-        _ => Highlight::Idle,
+    // A foe lights up when a strike will reach it. A COMMITTED strike (a staged aim) that catches it reads
+    // Active - its fate is decided. The AIMING body's footprint reads Available (lit, tappable - the live
+    // offer; the ring lives on the action card now). "Catches it" is the whole slice for an area strike, just
+    // the named body for a single one - so an area strike lights its whole extent, not just the representative.
+    let committed = (0..w.units.len()).any(|j| match w.staged[j] {
+        Some(Staged::Aim(t)) => {
+            if w.units[j].aoe {
+                w.footprints[j].contains(&i)
+            } else {
+                w.cards[i] == t
+            }
+        }
+        _ => false,
+    });
+    if committed {
+        return Highlight::Active;
     }
+    if let Some(f) = w.focus
+        && w.aiming
+        && w.footprints[f].contains(&i)
+    {
+        return Highlight::Available;
+    }
+    Highlight::Idle
 }
 
 fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highlight) -> Tile {
@@ -446,8 +466,9 @@ fn tap_is_live(w: &arena::Wave, i: usize) -> bool {
     if u.side == Side::Party {
         return w.asked[i];
     }
-    // A foe tap completes the gesture, so it is live exactly while the ring invites it.
-    w.aiming && w.targets.contains(&i)
+    // A foe tap completes the gesture - live for any body in the aiming striker's footprint (the whole lit
+    // slice for an area strike), mirroring `arena::handle_tap`.
+    w.aiming && w.focus.is_some_and(|f| w.footprints[f].contains(&i))
 }
 
 /// The staged-order line: what this body will do when the wave commits.

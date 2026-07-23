@@ -873,8 +873,14 @@ pub(crate) struct Wave {
     /// Whether the focused body is mid-gesture: it chose a targeted action (the WHAT) and is waiting on the
     /// WHOM. While true, its legal targets carry the animated invitation cue.
     pub(crate) aiming: bool,
-    /// The focused body's legal strike targets (empty on movement steps).
+    /// The focused body's strike CHOICES (empty on movement steps): every reachable enemy for a single
+    /// striker, one representative per slice for an area striker - one action card each.
     pub(crate) targets: Vec<usize>,
+    /// Each asked body's strike **footprint** - the enemies its strike would actually reach this step (an
+    /// area striker's whole slice, a single striker's individual targets). Non-strikers get an empty list.
+    /// This, not `targets`, is what lights up and is tappable on the board, so an area strike shows its whole
+    /// extent rather than just the representative it collapsed to.
+    pub(crate) footprints: Vec<Vec<usize>>,
 }
 
 pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
@@ -895,6 +901,17 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
     // so no legal target looks mysteriously unpickable. The twin dedup stays a search optimisation, hidden in
     // the solver's own `targets`; picking a twin resolves fine (the resolver validates by rank, not the list).
     let targets = focus.map(|i| state.targets_all(i)).unwrap_or_default();
+    // Each asked body's footprint - what its strike actually reaches. The board lights and taps these, so an
+    // area strike shows its whole slice; `targets` (collapsed for area) is only the action-card menu.
+    let footprints: Vec<Vec<usize>> = (0..units.len())
+        .map(|j| {
+            if asked[j] {
+                state.reachable(j)
+            } else {
+                Vec::new()
+            }
+        })
+        .collect();
     let aiming = focus.is_some_and(|i| aiming_of(board, cards[i]));
     Some(Wave {
         cards,
@@ -907,6 +924,7 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         focus,
         aiming,
         targets,
+        footprints,
     })
 }
 
@@ -1164,10 +1182,11 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
         return;
     }
     // A foe tap completes the gesture in progress: it is the WHOM of a chosen action, so it only means
-    // something while the focused body is AIMING (the ring is the tap's affordance).
+    // something while the focused body is AIMING. Any body in the strike's footprint completes it - for an
+    // area strike that is the whole lit slice, not just the representative the choices collapsed to.
     if let Some(f) = w.focus
         && w.aiming
-        && w.targets.contains(&i)
+        && w.footprints[f].contains(&i)
     {
         let target = w.cards[i];
         edit_flags(board, w.cards[f], |flags| {

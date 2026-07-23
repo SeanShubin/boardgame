@@ -247,6 +247,19 @@ impl StepState {
         self.order.get(self.next).copied()
     }
 
+    /// **Every enemy `i` can strike this step**, no dedup and no slice collapse - the raw reach. For an area
+    /// striker this IS the area its strike catches (the reach rule and the slice rule pick out the same tier,
+    /// both tiers at Havoc), so it doubles as the FOOTPRINT the UI lights up; for a single striker it is just
+    /// the list of individual targets.
+    pub fn reachable(&self, i: usize) -> Vec<usize> {
+        let b = &self.board;
+        (0..b.units.len())
+            .filter(|&t| {
+                !b.units[t].fallen && b.units[t].side != b.units[i].side && self.reaches(i, t)
+            })
+            .collect()
+    }
+
     /// The strike targets for `i` a **player** picks. A single-target striker sees every reachable enemy as
     /// its own choice (nothing looks mysteriously unpickable; the interchangeable-twin collapse is a search
     /// optimisation kept behind the seam in [`targets`](StepState::targets)). An **area** striker instead
@@ -254,11 +267,7 @@ impl StepState {
     /// representative each - which also keeps the search from branching on identical choices.
     pub fn targets_all(&self, i: usize) -> Vec<usize> {
         let b = &self.board;
-        let reachable: Vec<usize> = (0..b.units.len())
-            .filter(|&t| {
-                !b.units[t].fallen && b.units[t].side != b.units[i].side && self.reaches(i, t)
-            })
-            .collect();
+        let reachable = self.reachable(i);
         if !b.units[i].aoe {
             return reachable;
         }
