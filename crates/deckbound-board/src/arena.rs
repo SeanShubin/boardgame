@@ -1292,33 +1292,39 @@ pub fn choice_outlooks(
         return vec![Outlook::Unknown; choices.len()];
     };
 
-    // Advance the engine (a strict cursor) to the selected body. Bodies before it in cursor order must be
-    // given SOME declaration to step past - foes and any hero you already ordered play what they will; a
-    // hero you have NOT yet ordered plays its default line (`step_policy`). So the outlook reads: "given my
-    // staged orders, and my not-yet-ordered EARLIER heroes on their default line, where does this lead?"
-    // (Undeclared heroes AFTER the selected one are searched freely by the solver - only the earlier ones
-    // are stood in for, because the cursor cannot skip them. Selecting in cursor order makes the read
-    // exact; out of order, it is this honest approximation instead of a blank.)
+    // Pin EXACTLY the player's staged orders plus this hero's candidate, and leave every other body to the
+    // solver - whatever order the player selected in. The wave's declaration order is outcome-irrelevant
+    // (one order-free commit-batch), so we REORDER the wave to make [staged bodies..., focus] its prefix,
+    // apply just those, and let the solver search the rest optimally. No stand-in, and exact for any
+    // selection order - the fix the strict forward cursor could not give on its own.
     let mut base = seated.state;
-    loop {
-        let Some(i) = base.deciding() else {
+    let staged_first: Vec<usize> = (0..w.units.len())
+        .filter(|&i| i != focus && w.units[i].side == Side::Party && w.staged[i].is_some())
+        .collect();
+    let mut prefix = staged_first.clone();
+    prefix.push(focus);
+    base.prioritize(&prefix);
+    // Apply the staged orders (now the prefix) up to - but not including - the focus.
+    for &i in &staged_first {
+        let Some(cursor) = base.deciding() else {
             return vec![Outlook::Unknown; choices.len()];
         };
-        if i == focus {
-            break;
+        if cursor != i {
+            // A staged body dropped out of eligibility (shouldn't happen mid-wave); bail rather than mislead.
+            return vec![Outlook::Unknown; choices.len()];
         }
-        let c = if base.board().units[i].side == Side::Foe {
-            step_policy(&base, i)
-        } else {
-            match w.staged[i] {
-                Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
-                Some(Staged::Hold) => StepChoice::Strike(None),
-                Some(Staged::Go) => StepChoice::Move(true),
-                Some(Staged::Stay) => StepChoice::Move(false),
-                None => step_policy(&base, i),
-            }
+        let c = match w.staged[i] {
+            Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
+            Some(Staged::Hold) => StepChoice::Strike(None),
+            Some(Staged::Go) => StepChoice::Move(true),
+            Some(Staged::Stay) => StepChoice::Move(false),
+            None => unreachable!("staged_first only holds staged bodies"),
         };
         base = StepCombat::apply(&base, &c);
+    }
+    // The cursor now rests on the focus.
+    if base.deciding() != Some(focus) {
+        return vec![Outlook::Unknown; choices.len()];
     }
 
     let mut left = budget;
@@ -1905,8 +1911,8 @@ mod tests {
         );
         assert!(!w.aiming, "the gesture is done");
     }
-    /// Selecting a hero OUT of cursor order still yields real outlooks - the earlier undeclared hero is
-    /// stood in for by its default line, not left as a blocking gap that blanks the row.
+    /// Selecting a hero OUT of cursor order still yields real outlooks (the wave is reordered so the choice
+    /// is pinned exactly, not stood in for) - it must not blank the verdict row.
     #[test]
     fn out_of_order_selection_still_scores() {
         use rules::combat::step_game::StepCombat;

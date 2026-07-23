@@ -206,6 +206,32 @@ impl StepState {
         self.arrived[i]
     }
 
+    /// **Reorder the CURRENT wave so `first` declares before everyone else**, in the given order, with the
+    /// rest keeping their relative order. Only meaningful before any declaration in the wave.
+    ///
+    /// Sound because within a wave the declaration order does NOT affect the resolved outcome - a step is one
+    /// order-free commit-batch (Spec 1.9), and no body's menu depends on another's pending declaration - so
+    /// this changes only the traversal, never the game. That is exactly what lets a caller pin a chosen
+    /// SUBSET of declarations (e.g. an outlook query: my staged orders + this candidate) as a cursor prefix
+    /// and leave the rest to the solver, whatever order the subset was chosen in. Without it the forward
+    /// cursor could only pin a subset that already happened to be a prefix.
+    pub fn prioritize(&mut self, first: &[usize]) {
+        let mut order: Vec<usize> = first.to_vec();
+        for &i in &self.order {
+            if !first.contains(&i) {
+                order.push(i);
+            }
+        }
+        debug_assert_eq!(
+            order.len(),
+            self.order.len(),
+            "prioritize kept a permutation"
+        );
+        self.order = order;
+        self.next = 0;
+        self.seek();
+    }
+
     pub fn board(&self) -> &Board {
         &self.board
     }
@@ -688,6 +714,41 @@ mod tests {
         o.grant(u64::MAX);
         assert_eq!(o.verdict(&s), Verdict::Winnable);
         assert!(!o.aborted(), "an unbudgeted search settles");
+    }
+
+    /// **Reordering a wave preserves its verdict** - the soundness of [`StepState::prioritize`]. Two heroes
+    /// both asked at the same wave: putting the second one first must not change whether the position is
+    /// Winnable, because a step resolves order-free. This is what lets an outlook query pin any hero exactly,
+    /// whatever order it was selected in.
+    #[test]
+    fn prioritize_preserves_the_verdict() {
+        let make = || {
+            StepState::new(vec![
+                unit("Raider", Side::Party, [6, 6, 1, 2, 2], true, false),
+                unit("Bastion", Side::Party, [3, 6, 3, 2, 2], true, false),
+                unit("Wall", Side::Foe, [1, 4, 3, 1, 2], true, false),
+                unit("Brute", Side::Foe, [3, 4, 1, 2, 2], true, false),
+            ])
+        };
+        let verdict = |s: &StepState| {
+            let mut o = Solver::<StepCombat>::new();
+            o.grant(u64::MAX);
+            o.verdict(s)
+        };
+        let base = make();
+        // Both heroes are asked at the opening Skirmish; the cursor natively rests on the first (Raider).
+        assert_eq!(base.deciding(), Some(0));
+        let plain = verdict(&base);
+
+        // Reorder so the SECOND hero (Bastion) declares first - a different traversal of the same wave.
+        let mut reordered = make();
+        reordered.prioritize(&[1]);
+        assert_eq!(reordered.deciding(), Some(1), "Bastion now leads the wave");
+        assert_eq!(
+            verdict(&reordered),
+            plain,
+            "reordering the wave must not change the verdict - resolution is order-free"
+        );
     }
 
     /// **A striking vanguard is not offered the crossing** - the commitment shows up in ELIGIBILITY, not just
