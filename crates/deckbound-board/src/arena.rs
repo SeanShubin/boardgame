@@ -473,13 +473,55 @@ fn read_events(board: &Board, arena: PileId) -> Vec<String> {
 }
 
 /// One round of the journal, already formatted (the lines were written in the canonical format as they
-/// happened). The **one** formatter chain - the live panel and the outcome card read the same lines.
+/// happened). Used for the post-fight RECORD (one card per round); the live in-fight panel shows
+/// [`recent_log`] instead.
 pub(crate) fn round_log(board: &Board, arena: PileId, round: u32) -> Vec<String> {
     let want = format!("{round}|");
     read_events(board, arena)
         .into_iter()
         .filter_map(|e| e.strip_prefix(&want).map(|s| s.to_string()))
         .collect()
+}
+
+/// **The journal since the player's last action** - every line the engine appended during the most recent
+/// automatic run (the last Commit's resolution, or the fight's opening), regardless of round or step
+/// boundary. This is what the live panel shows: "here is what happened, including the steps that resolved
+/// automatically (skipped waves, foe moves) since you last did something." The mark is set at the start of
+/// each [`run_engine`] call, so it captures exactly that run's output.
+pub(crate) fn recent_log(board: &Board, arena: PileId) -> Vec<String> {
+    let events = read_events(board, arena);
+    let mark = read_log_mark(board, arena).min(events.len());
+    events[mark..]
+        .iter()
+        .map(|e| e.split_once('|').map(|(_, l)| l).unwrap_or(e).to_string())
+        .collect()
+}
+
+/// The journal length at the start of the most recent automatic run - everything after it is "since your
+/// last action". Kept on the meta card, like the wave mark.
+fn read_log_mark(board: &Board, arena: PileId) -> usize {
+    meta_card(board, arena)
+        .and_then(|m| board.card(m))
+        .and_then(|c| {
+            c.detail().iter().find_map(|l| {
+                l.strip_prefix("logmark ")
+                    .and_then(|n| n.trim().parse().ok())
+            })
+        })
+        .unwrap_or(0)
+}
+
+fn write_log_mark(board: &mut Board, arena: PileId, mark: usize) {
+    let Some(meta) = meta_card(board, arena) else {
+        return;
+    };
+    let mut d = board
+        .card(meta)
+        .map(|k| k.detail().to_vec())
+        .unwrap_or_default();
+    d.retain(|l| !l.starts_with("logmark "));
+    d.push(format!("logmark {mark}"));
+    let _ = board.set_card_detail(meta, d);
 }
 
 /// The rounds the journal has anything to say about, in order.
@@ -557,6 +599,39 @@ fn log_wave_header(board: &mut Board, arena: PileId, round: usize, step: Step) {
     let (k, name) = step_coord(step);
     note(board, arena, round, format!("  step {k}/8: {name}"));
     write_wave_mark(board, arena, round, target);
+}
+
+/// Journal the auto-skipped waves BEFORE `step` (and any round marker), but NOT `step`'s own header - used
+/// when the engine STOPS at a player decision, so the panel shows which steps skipped on the way here while
+/// `step`'s header waits until it actually resolves (keeping header and resolution together). No-op when
+/// `step` is the round's first (nothing skipped before it).
+fn log_skipped_before(board: &mut Board, arena: PileId, round: usize, step: Step) {
+    let target = step_idx(step);
+    if target == 0 {
+        return; // Havoc: nothing before it this round
+    }
+    let (mut r, mut i) = match read_wave_mark(board, arena) {
+        Some((r0, i0)) => (r0, i0 + 1),
+        None => (0, STEPS.len()),
+    };
+    let mut wrote = false;
+    while (r, i) < (round, target) {
+        if i >= STEPS.len() {
+            r += 1;
+            i = 0;
+            note(board, arena, r, format!("round {r}"));
+            wrote = true;
+            continue;
+        }
+        let (k, name) = step_coord(STEPS[i]);
+        note(board, arena, r, format!("  step {k}/8: {name} - skipped"));
+        wrote = true;
+        i += 1;
+    }
+    if wrote {
+        // Mark the last skipped step, so `step`'s header (written when it resolves) fills nothing.
+        write_wave_mark(board, arena, round, target - 1);
+    }
 }
 
 // ---- the declaration labels (the commit lines' vocabulary) ---------------------------------------------
@@ -1157,6 +1232,10 @@ fn run_engine(board: &mut Board, arena: PileId, use_staged: bool) {
     let mut prev_board: Battlefield = state.board().clone();
     let staged: Vec<Option<Staged>> = cards.iter().map(|&c| staged_of(board, c)).collect();
     let mut consumed = vec![false; cards.len()];
+    // Mark where the journal stands NOW: everything this run appends (the resolution, the auto-skipped
+    // waves, the foe moves up to the next decision) is "what happened since the player's last action", and
+    // that is what the live panel shows via `recent_log`.
+    write_log_mark(board, arena, read_events(board, arena).len());
 
     loop {
         // Drain and journal any steps that resolved since the last declaration.
@@ -1190,7 +1269,10 @@ fn run_engine(board: &mut Board, arena: PileId, use_staged: bool) {
                 None => unreachable!(),
             }
         } else {
-            break; // a party decision with nothing staged: the player's turn
+            // A party decision with nothing staged: the player's turn. Journal the steps that auto-skipped
+            // on the way here (so they show in "what happened since your last move"), then hand back control.
+            log_skipped_before(board, arena, state.round(), state.step());
+            break;
         };
         // The wave header (with its round marker and skipped-wave fills). The app's journal is the
         // MECHANICAL record only - the commit lines are the simulator's; here the staged orders are

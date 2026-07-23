@@ -59,8 +59,12 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
 
     let (lanes, links) = build_lanes(board, arena, &w, &maxes);
 
-    let log_title = format!("Round {} - step {k}/8: {name}", w.round);
-    let log = arena::round_log(board, arena, w.round as u32);
+    // The panel shows what happened SINCE THE PLAYER'S LAST ACTION - the resolution of their last commit
+    // plus any steps that resolved automatically (skipped waves, foe moves) on the way to this decision -
+    // not the whole round. The lines carry their own round/step headers, so the title just frames it.
+    let log_title = "What happened (since your last move)".to_string();
+    let log = arena::recent_log(board, arena);
+    let _ = (k, name); // the step is named in the prompt + the log's own headers
 
     // The Commit control (index 0) is inert while the player still owes an order; its label names whose.
     let disabled_controls = if !over && arena::pending_decision(board, arena).is_some() {
