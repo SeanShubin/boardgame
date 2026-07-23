@@ -670,6 +670,7 @@ struct ScreenQuery<'w, 's> {
             &'static Text,
             &'static ComputedNode,
             &'static UiGlobalTransform,
+            Option<&'static bevy::ui::CalculatedClip>,
         ),
     >,
     /// Every rendered table card (felt or a Virtual readout).
@@ -864,12 +865,24 @@ fn mirror_screen(
     let mut texts: Vec<(i32, i32, String, f32, f32)> = q
         .texts
         .iter()
-        .filter_map(|(t, cn, gt)| {
+        .filter_map(|(t, cn, gt, clip)| {
             let s = t.0.trim().to_string();
             if s.is_empty() {
                 return None;
             }
             let (center, half) = crate::node_box(cn, gt);
+            // Honor an ancestor's overflow clip: text laid out fully OUTSIDE its clip rect is not on screen
+            // (e.g. a bottom-anchored log's oldest lines that overflow above their box), so it is not
+            // described. This keeps the snapshot to what is VISIBLE, not the pre-clip layout.
+            if let Some(clip) = clip {
+                let (cmin, cmax) = (clip.clip.min, clip.clip.max);
+                let (nmin, nmax) = (center - half, center + half);
+                let outside =
+                    nmax.x <= cmin.x || nmin.x >= cmax.x || nmax.y <= cmin.y || nmin.y >= cmax.y;
+                if outside {
+                    return None;
+                }
+            }
             let tl = center - half;
             Some((tl.y as i32, tl.x as i32, s, half.x * 2.0, half.y * 2.0))
         })

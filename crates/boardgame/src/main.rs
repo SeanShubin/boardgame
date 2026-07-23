@@ -55,9 +55,98 @@ fn main() -> AppExit {
         ))
         // Loose rail-action clicks aren't consumed by the board game, so drain that outbox each frame.
         .add_systems(Update, drain_requests.in_set(CardTableSet::Apply))
-        .add_systems(Update, autosave);
+        .add_systems(Update, autosave)
+        // Debug: `BOARDGAME_AUTOFIGHT=1` jumps straight into the Ashfen fight on launch (no clicking), so the
+        // combat screen can be captured (screen.txt) without a human driving the GUI.
+        .add_systems(Update, autofight);
 
     app.run()
+}
+
+/// When `BOARDGAME_AUTOFIGHT` is set, open the Ashfen capstone fight once on startup, on a fresh table -
+/// the same `open_fight` handler a click would reach. A headless-ish way to land on the combat screen for a
+/// layout capture; a no-op otherwise.
+fn autofight(
+    mut table: ResMut<Table>,
+    mut rebuild: ResMut<cardtable::NeedsRebuild>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
+    *done = true;
+    if std::env::var("BOARDGAME_AUTOFIGHT").is_err() {
+        return;
+    }
+    let mut board = sample_table();
+    let Some(locations) = board.pile(board.root_id()).and_then(|r| {
+        r.subpiles()
+            .into_iter()
+            .find(|&p| board.pile(p).map(|q| q.label.as_str()) == Some("Locations"))
+    }) else {
+        return;
+    };
+    let Some(place) = board.pile(locations).and_then(|p| {
+        p.subpiles()
+            .into_iter()
+            .find(|&sp| board.pile(sp).map(|q| q.label.as_str()) == Some("Ashfen Crossing"))
+    }) else {
+        return;
+    };
+    deckbound_board::arena::open_fight(&mut board, place);
+    // `BOARDGAME_AUTOFIGHT=play` also self-plays a few waves through the PUBLIC seam so the log grows long -
+    // the state that used to clip the board. Reuses the same handlers a click reaches.
+    if std::env::var("BOARDGAME_AUTOFIGHT").as_deref() == Ok("play") {
+        self_play_a_while(&mut board);
+    }
+    table.0 = board;
+    rebuild.0 = true;
+}
+
+/// Drive the open fight a bounded number of waves via the `BoardGame` seam (select a ringed hero, take its
+/// first choice, else commit), stopping once a round's log is long - so the capture stresses the layout.
+fn self_play_a_while(board: &mut cardtable_model::Board) {
+    use cardtable_model::{BoardGame, Highlight, SceneBody, Team};
+    let game = CardTableGame::default();
+    for _ in 0..80 {
+        let focus = board.focus_id();
+        let Some(scene) = game.scene(board, focus) else {
+            break;
+        };
+        // Stop once the log has a good number of lines (a full round's worth of narration is the stress).
+        if scene.log.len() >= 12 {
+            break;
+        }
+        let tiles: Vec<_> = match &scene.body {
+            SceneBody::Lanes(lanes) => lanes
+                .iter()
+                .flat_map(|l| l.left.iter().chain(&l.right))
+                .collect(),
+            SceneBody::Rows(rows) => rows.iter().flat_map(|r| r.tiles.iter()).collect(),
+        };
+        let active = tiles
+            .iter()
+            .any(|t| t.team == Team::Left && t.highlight == Highlight::Active);
+        if active {
+            let idx = scene
+                .choices
+                .iter()
+                .position(|c| c.why_not.is_empty())
+                .unwrap_or(0);
+            if let Some(i) = game.choice_intention(board, idx) {
+                game.apply(board, &[i]);
+            }
+        } else if let Some(t) = tiles.iter().find(|t| {
+            t.team == Team::Left
+                && matches!(t.highlight, Highlight::Targeted | Highlight::Available)
+        }) {
+            if let Some(i) = game.tap_intention(board, t.card) {
+                game.apply(board, &[i]);
+            }
+        } else {
+            game.apply(board, &[deckbound_board::Intention::Commit]);
+        }
+    }
 }
 
 /// Drain the core's loose-action outbox (rail-item clicks the board game doesn't handle) each frame.

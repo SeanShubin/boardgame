@@ -2150,14 +2150,16 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // TOP: the sidebar (Step over Stats) beside the main board column - together the "ABC" block that
-            // sits on top of the log. Takes all the height above the log.
+            // TOP: the sidebar (Step over Stats) beside the main board column - the must-see block. It is
+            // RESERVED FIRST and never yields: `flex-shrink: 0`, so it keeps its natural height and the log
+            // below absorbs all the space pressure. (Priority: the hero/foe tiles, choices and buttons must
+            // never be clipped; the step + stats sit with them; the log gives.)
             root.spawn(Node {
                 width: Val::Percent(100.0),
-                flex_grow: 1.0,
-                min_height: Val::Px(0.0),
+                flex_grow: 0.0,
+                flex_shrink: 0.0,
                 flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Stretch,
+                align_items: AlignItems::FlexStart,
                 ..default()
             })
             .with_children(|top| {
@@ -2216,28 +2218,20 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     if !scene.prompt.is_empty() {
                         spawn_prompt_line(main, &scene.prompt);
                     }
-                    // The body **takes the leftover space and clips**. Only the body: the decision and the log
-                    // that explains it must never be pushed out of sight by a tall formation, which is exactly
-                    // what happened when they lived in here — Bevy's `Overflow::scroll_y` only *clips*, it does
-                    // not scroll (nothing drives a `ScrollPosition` on this node), so anything below the fold was
-                    // not merely out of view, it was unreachable. A player could be asked a question they could
-                    // not see.
-                    // The body takes only the room it needs, and clips if it needs more. It used to *grow* to fill
-                    // the column, which shoved everything after it to the bottom of the screen - so the reading
-                    // order ran top, then a gulf, then bottom, and the log and the decision were as far from the
-                    // board as the layout could put them.
+                    // The body is the hero/foe tiles - PRIORITY 1, never clipped. It takes its natural height
+                    // and does NOT shrink (`flex-shrink: 0`); the log below is the region that yields, so the
+                    // rearguard row can never be squeezed out by a long log the way it was when the body
+                    // carried the shrink.
                     main.spawn((
                         SceneRegion("body"),
                         Node {
                             width: Val::Percent(100.0),
                             flex_grow: 0.0,
-                            flex_shrink: 1.0,
-                            min_height: Val::Px(0.0),
+                            flex_shrink: 0.0,
                             flex_direction: FlexDirection::Column,
                             align_items: AlignItems::Center,
                             justify_content: JustifyContent::FlexStart,
                             row_gap: Val::Px(8.0),
-                            overflow: Overflow::clip(),
                             ..default()
                         },
                     ))
@@ -2295,13 +2289,22 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                 });
             });
 
-            // BOTTOM: the combat log, full width, under everything (the "D" the ABC block sits on).
+            // BOTTOM: the combat log, full width, under everything (the "D" the ABC block sits on). This is
+            // the PRESSURE VALVE - PRIORITY 3, the only region that yields. It takes all the space the block
+            // above did not (`flex-grow: 1`), and clips its OWN overflow (`min-height: 0` + clip) so a long
+            // log can never push the block. It is **bottom-anchored** (`justify-content: FlexEnd`), so what
+            // stays visible is the NEWEST lines - the oldest scroll off the top, not the latest off the
+            // bottom. The whole log always survives in the post-fight record cards.
             if !scene.log.is_empty() {
                 root.spawn(Node {
                     width: Val::Percent(100.0),
-                    flex_shrink: 0.0,
+                    flex_grow: 1.0,
+                    flex_shrink: 1.0,
+                    min_height: Val::Px(0.0),
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Stretch,
+                    justify_content: JustifyContent::FlexEnd,
+                    overflow: Overflow::clip(),
                     padding: UiRect::horizontal(Val::Px(12.0)),
                     ..default()
                 })
