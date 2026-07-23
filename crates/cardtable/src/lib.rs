@@ -231,7 +231,7 @@ struct AdvanceDayCard;
 /// tap is recorded into [`TapRequest`] and interpreted by the game's `tap_intention` (the game decides what
 /// tapping it does). Also drives the tile's screen-rect tracking for arrow endpoints.
 #[derive(Component, Clone, Copy)]
-struct TileCard(CardId);
+pub(crate) struct TileCard(pub(crate) CardId);
 
 /// Marks a draggable tile that belongs to a **modal scene** (a formation tile). It carries [`Movable`] so the
 /// drag pipeline picks it up, but its position is owned by flex layout, not the table's model positions — so

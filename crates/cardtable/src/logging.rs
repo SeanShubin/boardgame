@@ -24,7 +24,7 @@ use std::sync::Mutex;
 use cardtable_model::{Board, CardId, Node as TableNode, PileId};
 
 use crate::board_driver::{DropTrace, SceneState};
-use crate::{CardRef, Dragging, Movable, PileDropZone, SceneRegion, Table};
+use crate::{CardRef, Dragging, Movable, PileDropZone, SceneRegion, Table, TileCard};
 
 /// A truncate-on-launch text log (native only; a no-op sink on the web).
 struct Log(Mutex<Option<std::fs::File>>);
@@ -95,6 +95,7 @@ impl Plugin for LoggingPlugin {
                     log_layout,
                     log_scene,
                     mirror_scene,
+                    mirror_screen,
                     log_combat,
                     drain_drop_trace,
                 ),
@@ -619,6 +620,297 @@ fn log_click(
     ));
 }
 
+/// A screen box for overlap testing: its title, the pile it stacks in (same-pile cards stack intentionally),
+/// its identity, and its rect (top-left + size, logical px). Pure data - no ECS - so [`screen_overlaps`] is
+/// unit-testable.
+#[derive(Clone)]
+struct ScreenBox {
+    title: String,
+    stack: Option<PileId>,
+    id: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+/// Every pair of boxes that overlap and are NOT an intentional same-pile stack, as
+/// `(title_a, title_b, overlap_w, overlap_h)`. The pure core of the screen snapshot's overlap check - the
+/// never-overlap invariant made checkable from the boxes alone (the geometry tenet: a settled layout clips,
+/// it never overlaps).
+fn screen_overlaps(boxes: &[ScreenBox]) -> Vec<(String, String, f32, f32)> {
+    let mut out = Vec::new();
+    for i in 0..boxes.len() {
+        for j in (i + 1)..boxes.len() {
+            let (a, b) = (&boxes[i], &boxes[j]);
+            if a.id == b.id || (a.stack.is_some() && a.stack == b.stack) {
+                continue; // the same card twice, or an intentional stack
+            }
+            let ox = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
+            let oy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
+            if ox > 0.5 && oy > 0.5 {
+                out.push((a.title.clone(), b.title.clone(), ox, oy));
+            }
+        }
+    }
+    out
+}
+
+/// The rendered elements [`mirror_screen`] reads - the actual UI render tree, so the snapshot describes what
+/// the screen shows rather than what the model intends.
+#[derive(SystemParam)]
+struct ScreenQuery<'w, 's> {
+    /// Every text node the renderer spawned, with its box - the complete "what text did we attempt to draw"
+    /// set, pre-wrapping (the string is the unwrapped source). Covers titles, badges, prompts, button
+    /// labels, the log - everything with words, on any screen.
+    texts: Query<
+        'w,
+        's,
+        (
+            &'static Text,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+    /// Every rendered table card (felt or a Virtual readout).
+    cards: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static CardRef,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+    /// Every rendered modal tile (a combat tile carries `TileCard`, not `CardRef`).
+    tiles: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static TileCard,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+}
+
+/// **The generic screen-description snapshot** - `screen.txt`, rewritten whenever the settled screen changes,
+/// on EVERY screen (felt or the modal fight). It is the present-tense answer to "what is on the screen right
+/// now", built by reading the actual UI RENDER TREE (the same nodes the GPU draws), not the model - so
+/// nothing that is drawn as a card or a piece of text escapes it:
+///
+/// - **TEXT** - every string the renderer attempted, with its box, in reading order. Pre-wrapping (the source
+///   string), because wrapping is a visual artifact, not content; the text we *tried* to draw is what
+///   matters.
+/// - **CARDS** - every card / tile with its box and z (render order), and any **effect** applied to it (the
+///   targeting ring, the commanded highlight). Effects are recorded as ASSIGNMENTS (*which* cards carry them)
+///   and never as animation frames: the marching-dots ring is drawn by [`animate_target_rings`] and is
+///   deliberately absent here; this file just says the ring is *on* The Wall and The Sniper.
+/// - **OVERLAPS** - since every card has a well-defined box, any two that overlap (and are not an intentional
+///   same-pile stack) are flagged from the boxes alone. In a settled layout there must be none.
+///
+/// It is the present tense; the append history stays in `ui-state.log`. (Native only.) The guarantee this
+/// reaches - "nothing rendered that is not described" - is observational: it reads the render tree, so any
+/// node with content is captured. Pure decoration (a background panel with no text) is out of scope, as are
+/// visual artifacts (wrapping, fonts, the animation frames themselves).
+fn mirror_screen(
+    q: ScreenQuery,
+    table: Res<Table>,
+    scene: Res<SceneState>,
+    dragging: Res<Dragging>,
+    mut last_frame: Local<String>,
+    mut last_written: Local<String>,
+) {
+    if cfg!(target_arch = "wasm32") {
+        return;
+    }
+
+    // The view header: the drilled-into zone, and whether the modal fight is up.
+    let focus = table.0.focus_id();
+    let view = table
+        .0
+        .pile(focus)
+        .map(|p| p.label.clone())
+        .unwrap_or_default();
+    let header = match &scene.0 {
+        Some(s) => format!("screen: MODAL - {}", s.heading),
+        None => format!("screen: felt - view [{view}]"),
+    };
+
+    // ---- effect assignments (which cards carry which cue), from the scene - never the animated dots. ----
+    let mut ring: Vec<String> = Vec::new();
+    let mut commanded: Vec<String> = Vec::new();
+    if let Some(s) = &scene.0 {
+        let mut note = |t: &cardtable_model::Tile| match t.highlight {
+            cardtable_model::Highlight::Targeted => ring.push(t.title.clone()),
+            cardtable_model::Highlight::Active => commanded.push(t.title.clone()),
+            _ => {}
+        };
+        match &s.body {
+            cardtable_model::SceneBody::Lanes(lanes) => {
+                for lane in lanes {
+                    for t in lane.left.iter().chain(lane.right.iter()) {
+                        note(t);
+                    }
+                }
+            }
+            cardtable_model::SceneBody::Rows(rows) => {
+                for row in rows {
+                    for t in &row.tiles {
+                        note(t);
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- the card / tile boxes (id, title, box, z, stack), for the geometry + overlap pass. ----
+    struct Box {
+        title: String,
+        id: CardId,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        pile: Option<PileId>,
+    }
+    let title_of = |id: CardId| {
+        table
+            .0
+            .card(id)
+            .map(|c| c.front_title().to_string())
+            .unwrap_or_else(|| format!("#{}", id.0))
+    };
+    let mut boxes: Vec<Box> = Vec::new();
+    let mut push_box = |id: CardId, cn: &ComputedNode, gt: &UiGlobalTransform| {
+        let (center, half) = crate::node_box(cn, gt);
+        let tl = center - half;
+        boxes.push(Box {
+            title: title_of(id),
+            id,
+            x: tl.x,
+            y: tl.y,
+            w: half.x * 2.0,
+            h: half.y * 2.0,
+            pile: table.0.pile_of(id),
+        });
+    };
+    for (_, cref, cn, gt) in q.cards.iter() {
+        push_box(cref.0, cn, gt);
+    }
+    for (_, tile, cn, gt) in q.tiles.iter() {
+        push_box(tile.0, cn, gt);
+    }
+    boxes.sort_by_key(|b| (b.y as i32, b.x as i32));
+
+    let effect_of = |b: &Box| -> String {
+        let t = &b.title;
+        if ring.contains(t) {
+            "  <targeting-ring>".to_string()
+        } else if commanded.contains(t) {
+            "  <commanded>".to_string()
+        } else {
+            String::new()
+        }
+    };
+    let cards_block: String = boxes
+        .iter()
+        .map(|b| {
+            format!(
+                "  {} @ ({:.0},{:.0}) size ({:.0}x{:.0}){}",
+                b.title,
+                b.x,
+                b.y,
+                b.w,
+                b.h,
+                effect_of(b)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // ---- overlaps: any two boxes that overlap and are not the same intentional stack. ----
+    let cells: Vec<ScreenBox> = boxes
+        .iter()
+        .map(|b| ScreenBox {
+            title: b.title.clone(),
+            stack: b.pile,
+            id: b.id.0,
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h,
+        })
+        .collect();
+    let overlaps: Vec<String> = screen_overlaps(&cells)
+        .into_iter()
+        .map(|(a, b, ox, oy)| format!("    ERROR overlap: {a} & {b} by ({ox:.0}x{oy:.0})"))
+        .collect();
+    let overlap_block = if dragging.0.is_some() {
+        "  overlaps: (drag in progress - transient overlap allowed)".to_string()
+    } else if overlaps.is_empty() {
+        "  overlaps: none".to_string()
+    } else {
+        format!(
+            "  ERROR: {} settled overlap(s):\n{}",
+            overlaps.len(),
+            overlaps.join("\n")
+        )
+    };
+
+    // ---- every text node, in reading order (top-to-bottom, left-to-right). ----
+    let mut texts: Vec<(i32, i32, String, f32, f32)> = q
+        .texts
+        .iter()
+        .filter_map(|(t, cn, gt)| {
+            let s = t.0.trim().to_string();
+            if s.is_empty() {
+                return None;
+            }
+            let (center, half) = crate::node_box(cn, gt);
+            let tl = center - half;
+            Some((tl.y as i32, tl.x as i32, s, half.x * 2.0, half.y * 2.0))
+        })
+        .collect();
+    texts.sort_by_key(|t| (t.0, t.1));
+    let text_block: String = texts
+        .iter()
+        .map(|(y, x, s, w, h)| format!("  {s:?} @ ({x},{y}) size ({w:.0}x{h:.0})"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let effects_block = {
+        let mut lines = Vec::new();
+        if !ring.is_empty() {
+            lines.push(format!("  targeting-ring on: {}", ring.join(", ")));
+        }
+        if !commanded.is_empty() {
+            lines.push(format!("  commanded: {}", commanded.join(", ")));
+        }
+        if lines.is_empty() {
+            "  (none)".to_string()
+        } else {
+            lines.join("\n")
+        }
+    };
+
+    let snapshot = format!(
+        "{header}\n\nEFFECTS (assignments, not animation frames):\n{effects_block}\n\nCARDS ({} on screen):\n{cards_block}\n{overlap_block}\n\nTEXT ({} strings attempted):\n{text_block}\n",
+        boxes.len(),
+        texts.len(),
+    );
+
+    // Write only a SETTLED frame (this frame equals the last) that differs from what is on disk - so the file
+    // holds a stable arrangement, never a mid-animation one, and is not rewritten every frame.
+    if snapshot == *last_frame && snapshot != *last_written {
+        let _ = std::fs::write("screen.txt", &snapshot);
+        *last_written = snapshot.clone();
+    }
+    *last_frame = snapshot;
+}
+
 /// **The current-screen snapshot** - `ui-scene.txt`, rewritten whenever the modal scene changes, so "what
 /// does the screen look like RIGHT NOW" is always answerable from one file, completely and unambiguously:
 /// every tile with its named attention state, every choice with its status, the controls, the prompt. The
@@ -948,4 +1240,60 @@ fn log_combat(
         out.push_str(&format!("{line}\n"));
     }
     log.write(&out);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ScreenBox, screen_overlaps};
+    use cardtable_model::PileId;
+
+    fn b(title: &str, stack: Option<u64>, x: f32, y: f32, w: f32, h: f32) -> ScreenBox {
+        ScreenBox {
+            title: title.into(),
+            stack: stack.map(PileId),
+            id: (x as u64) * 100_003 + (y as u64),
+            x,
+            y,
+            w,
+            h,
+        }
+    }
+
+    /// Disjoint boxes overlap nothing; a genuine spill is flagged with its overlap size; two cards of the
+    /// SAME pile are an intentional stack and are not flagged.
+    #[test]
+    fn screen_overlaps_flags_only_real_spills() {
+        // Two decks side by side, clear of each other.
+        let clear = vec![
+            b("[A]", None, 0.0, 0.0, 100.0, 100.0),
+            b("[B]", None, 120.0, 0.0, 100.0, 100.0),
+        ];
+        assert!(
+            screen_overlaps(&clear).is_empty(),
+            "disjoint boxes: no overlap"
+        );
+
+        // A card spilling onto another deck - a real error.
+        let spill = vec![
+            b("The Wall", Some(1), 0.0, 0.0, 100.0, 100.0),
+            b("[Bestiary]", None, 80.0, 20.0, 100.0, 100.0),
+        ];
+        let found = screen_overlaps(&spill);
+        assert_eq!(found.len(), 1, "the spill is flagged");
+        assert_eq!(
+            (found[0].2, found[0].3),
+            (20.0, 80.0),
+            "with its overlap size"
+        );
+
+        // Two cards of the SAME pile (a location's characters) - an intentional stack, not an error.
+        let stack = vec![
+            b("Raider", Some(7), 0.0, 0.0, 100.0, 100.0),
+            b("Marksman", Some(7), 10.0, 10.0, 100.0, 100.0),
+        ];
+        assert!(
+            screen_overlaps(&stack).is_empty(),
+            "same-pile cards stack intentionally"
+        );
+    }
 }

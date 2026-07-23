@@ -1,7 +1,8 @@
 # The generic screen-description file
 
-Status: staged design, 2026-07-22. NOT scheduled yet (user: "not necessarily now") - captured so the
-requirements are pinned while the first cut (`ui-scene.txt`, fight-only) is fresh.
+Status: **first cut SHIPPED 2026-07-22** - `screen.txt`, the every-screen snapshot (see "What shipped"
+below). The full-inversion guarantee (renderer draws FROM the description) remains the eventual target;
+the shipped version reaches the observational form of it. Requirements kept below.
 
 ## The requirement (user-stated)
 
@@ -17,7 +18,27 @@ file**. The description is the guarantee, not a best-effort log.
   target ring); it records **which effect is applied to which card** ("targeting ring: The Wall,
   The Sniper"). The animation is presentation; the *assignment* of the effect is state.
 
-## What exists today (the seeds)
+## What shipped (the first cut)
+
+`screen.txt` (renderer, `logging.rs::mirror_screen`) - a present-tense snapshot rewritten whenever the
+settled screen changes, on EVERY screen (felt or modal fight), built by reading the actual UI RENDER
+TREE (the same nodes the GPU draws), not the model:
+
+- **TEXT** - every `Text` node the renderer spawned, string (pre-wrapping - the source) + box, in reading
+  order. Complete "what text did we attempt to draw" coverage.
+- **CARDS** - every card / tile (`CardRef` / `TileCard`) with its box, plus any EFFECT applied to it
+  (`<targeting-ring>`, `<commanded>`) read from `SceneState` as an ASSIGNMENT - never the animation
+  frames (the marching dots are absent; the file says the ring is ON which cards).
+- **OVERLAPS** - `screen_overlaps`, a pure/unit-tested function over the boxes, flags any two that overlap
+  and are not an intentional same-pile stack (the never-overlap invariant, checkable from the file).
+
+Its guarantee is OBSERVATIONAL: it reads the render tree, so any node with content is captured. Pure
+decoration (a background panel with no text) and visual artifacts (wrapping, fonts, the dots themselves)
+are out of scope. The remaining gap to the FULL guarantee ("nothing rendered that is not described, by
+construction") is the inversion below - a renderer that can only draw what it first put in the
+description. `screen.txt`'s serializer is the prototype of that description's text/card/effect shape.
+
+## What exists alongside (the other seeds)
 
 - `ui-scene.txt` (2026-07-22) - the current-screen snapshot, **fight scene only**: every tile with
   its named attention state (which already satisfies the effects rule: `TARGETED (ringed...)` is the
