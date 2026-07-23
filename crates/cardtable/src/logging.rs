@@ -726,12 +726,27 @@ fn mirror_screen(
     table: Res<Table>,
     scene: Res<SceneState>,
     dragging: Res<Dragging>,
+    windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
     mut last_frame: Local<String>,
     mut last_written: Local<String>,
 ) {
     if cfg!(target_arch = "wasm32") {
         return;
     }
+
+    // The logical viewport size, so margins (e.g. the gap between the log and the bottom edge) are computable
+    // from the file: gap = viewport height - element bottom.
+    let viewport = windows
+        .single()
+        .map(|w| {
+            format!(
+                "viewport: {:.0} x {:.0} (logical px)
+",
+                w.width(),
+                w.height()
+            )
+        })
+        .unwrap_or_default();
 
     // The view header: the drilled-into zone, and whether the modal fight is up.
     let focus = table.0.focus_id();
@@ -741,8 +756,8 @@ fn mirror_screen(
         .map(|p| p.label.clone())
         .unwrap_or_default();
     let header = match &scene.0 {
-        Some(s) => format!("screen: MODAL - {}", s.heading),
-        None => format!("screen: felt - view [{view}]"),
+        Some(s) => format!("{viewport}screen: MODAL - {}", s.heading),
+        None => format!("{viewport}screen: felt - view [{view}]"),
     };
 
     // ---- effect assignments (which cards carry which cue), from the scene - never the animated dots. ----

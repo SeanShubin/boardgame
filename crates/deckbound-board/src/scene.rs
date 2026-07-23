@@ -288,6 +288,18 @@ fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highl
         tone: bar_tone,
     }];
     badges.push(stats_badge(u));
+    // A fallen body says so in words, like the other "why can't I use this" markers - a downed tile reads
+    // downed at a glance, not just faded.
+    if u.fallen {
+        badges.push(Badge {
+            text: if u.horde {
+                "x wiped out".to_string()
+            } else {
+                "x downed".to_string()
+            },
+            tone: Tone::Warn,
+        });
+    }
     // Why a party body is not in this wave, said on the card - drawing it dim answers "can I use this?",
     // only the words answer "why not?".
     if !u.fallen && u.side == Side::Party && sel == Highlight::Dim {

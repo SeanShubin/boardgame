@@ -2169,7 +2169,7 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::FlexStart,
-                        padding: UiRect::all(Val::Px(12.0)),
+                        padding: UiRect::all(SCREEN_MARGIN),
                         row_gap: Val::Px(10.0),
                         ..default()
                     },
@@ -2199,7 +2199,7 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                         min_width: Val::Px(0.0),
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
-                        padding: UiRect::all(Val::Px(12.0)),
+                        padding: UiRect::all(SCREEN_MARGIN),
                         row_gap: Val::Px(8.0),
                         ..default()
                     },
@@ -2305,7 +2305,14 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     align_items: AlignItems::Stretch,
                     justify_content: JustifyContent::FlexEnd,
                     overflow: Overflow::clip(),
-                    padding: UiRect::horizontal(Val::Px(12.0)),
+                    // Same inset from the bottom + sides as the sidebar has from the top-left: one margin
+                    // constant, every screen edge the same gap. (Top is 0 - the block above provides that gap.)
+                    padding: UiRect {
+                        left: SCREEN_MARGIN,
+                        right: SCREEN_MARGIN,
+                        top: Val::ZERO,
+                        bottom: SCREEN_MARGIN,
+                    },
                     ..default()
                 })
                 .with_children(|bar| {
@@ -2734,6 +2741,11 @@ fn spawn_ring_dots(commands: &mut Commands, rect: Rect, phase: f32) {
 }
 
 // ---- drawing ------------------------------------------------------------
+
+/// The uniform margin between a top-level scene region and the screen edge - the sidebar's inset from the
+/// top-left, and the log's inset from the bottom (and sides), so every edge reads the same gap. One constant,
+/// so the layout's margins are exact and computable without rendering.
+const SCREEN_MARGIN: Val = Val::Px(12.0);
 
 const FELT: Color = Color::srgb(0.06, 0.13, 0.10);
 const PANEL: Color = Color::srgb(0.10, 0.18, 0.15);
