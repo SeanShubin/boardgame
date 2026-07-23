@@ -1,32 +1,33 @@
-//! **Selection-states demo** - a standalone window showing the four attention states a card can be in during
-//! a multi-part selection (a source -> action -> target gesture), rendered with the **real** combat tile
-//! code (`draw_scene_tile` / `tile_look`) and the **real** rotating-ring animation, so what you see is
-//! exactly what the game draws - not a re-implementation.
+//! **Selection-states demo** - a standalone window for designing the attention states a card takes during a
+//! multi-part `source -> action -> target` gesture, rendered with the **real** combat tile code
+//! (`draw_scene_tile` / `tile_look`) and the **real** overlay animations (the flowing link dots and the
+//! rotating target ring), so what you see is exactly what the game draws - not a re-implementation.
 //!
-//! The four states (mapped to the renderer's rules-blind [`Highlight`] vocabulary):
+//! **The brainstorm this window is for.** Four states were being carried by four different tile borders, and
+//! two of them (the *chosen* parts of the gesture and the *selectable* alternatives) read almost the same. So
+//! this demo tries a different split: let an animated **connector** - the two-color dots flowing
+//! `source -> action -> target` - carry "these cards are the gesture in progress", which frees *chosen* and
+//! *selectable* to share ONE look. Then only three tile looks remain:
 //!
-//! - **Background** - not interactable right now -> [`Highlight::Dim`]: receded, no border.
-//! - **In the selection** - a part already chosen (the source, the action) -> [`Highlight::Active`]: the
-//!   bright, locked-in cue.
-//! - **Completing the selection** - the next step (a drop target / the candidates that finish the gesture) ->
-//!   [`Highlight::Targeted`]: carries the one animated cue, the rotating dotted ring.
-//! - **Selectable** - a legal start for a DIFFERENT selection (abort this one, pick another source) ->
-//!   [`Highlight::Available`]: the steady "you could pick this" cue.
+//! - **Background** -> [`Highlight::Dim`]: receded, dim face. (Distinct already.)
+//! - **In the gesture / selectable** -> [`Highlight::Available`]: the steady amber "live card" cue. The
+//!   flowing connector, not the border, says which of these live cards are the ones you already chose.
+//! - **Completing** -> [`Highlight::Targeted`]: green border + the rotating ring - the one card the gesture
+//!   is reaching for next.
 //!
-//! Answering the design question: this stays an EXAMPLE (a thin `main` calling this crate fn) - it does not
-//! need to be its own module - because the real drawing lives here in the crate and the example just runs it,
-//! the same pattern as `run_card_gallery`.
+//! The connector is two-color on purpose: the locked part of the chain (`source -> action`) flows green
+//! (confirmed), the proposed reach (`action -> target`) flows amber (not yet committed).
 //!
 //! Run: `cargo run -p cardtable --example selection_states`
 
 use bevy::prelude::*;
 use cardtable_model::{
-    Badge, CardId, Highlight, Lane, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
+    Badge, CardId, Highlight, Lane, Link, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
 };
 
 use crate::{
-    CardScreenRects, FELT, INK, MUTED, SceneState, animate_target_rings, draw_scene_tile,
-    install_ui_fonts, setup_camera, track_card_rects,
+    CardScreenRects, FELT, INK, MUTED, SceneState, animate_target_arrows, animate_target_rings,
+    draw_scene_tile, install_ui_fonts, setup_camera, track_card_rects,
 };
 
 /// Launch the demo window.
@@ -36,103 +37,125 @@ pub fn run_selection_states() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Selection states".into(),
-                resolution: (900u32, 420u32).into(),
+                resolution: (940u32, 520u32).into(),
                 ..default()
             }),
             ..default()
         }))
         .insert_resource(ClearColor(FELT))
         .init_resource::<CardScreenRects>()
-        // The real ring system reads the scene body for `Targeted` tiles; give it the same tiles we draw.
+        // The real overlay systems read this scene: its `body` for the `Targeted` tiles (rings) and its
+        // `links` for the flowing connector. Give them the same tiles/links we draw.
         .insert_resource(SceneState(Some(scene)))
         .add_systems(Startup, (setup_camera, install_ui_fonts, build).chain())
-        // The REAL systems: track each tile's rect, then ring the `Targeted` ones - identical to combat.
-        .add_systems(Update, (track_card_rects, animate_target_rings).chain())
+        // The REAL systems, in the real order: track each drawn tile's rect, then draw the connector dots and
+        // the target rings from those rects - identical to a live fight.
+        .add_systems(
+            Update,
+            (
+                track_card_rects,
+                animate_target_arrows,
+                animate_target_rings,
+            )
+                .chain(),
+        )
         .run();
 }
 
-/// One demo entry: a caption for the row and the real [`Tile`] to draw.
-struct Entry {
+/// One captioned tile to draw.
+struct Cell {
     caption: &'static str,
     tile: Tile,
 }
 
-/// Build one demo tile in a given state, with a couple of badge lines so it reads like a combat tile.
-fn tile(id: u64, title: &str, team: Team, highlight: Highlight, badges: &[&str]) -> Tile {
+/// Build one demo tile in a given state, with a badge line so it reads like a combat tile.
+fn tile(id: u64, title: &str, team: Team, highlight: Highlight, badge: &str) -> Tile {
     Tile {
         card: CardId(id),
         title: title.to_string(),
         team,
         highlight,
-        badges: badges
-            .iter()
-            .map(|b| Badge {
-                text: (*b).to_string(),
-                tone: Tone::Muted,
-            })
-            .collect(),
+        badges: vec![Badge {
+            text: badge.to_string(),
+            tone: Tone::Muted,
+        }],
         draggable: false,
-        // A `Dim` tile is background (not interactable); everything else is a live target of some gesture,
-        // so it is tappable - which is also what earns it a `TileCard` in `draw_scene_tile`, and thus the
-        // rect-tracking that the rotating ring needs to find the `Targeted` tiles.
+        // A `Dim` tile is background (not interactable); everything else is a live card, so it is tappable -
+        // which is also what earns it a `TileCard` in `draw_scene_tile`, and thus the rect-tracking the
+        // flowing connector and the rotating ring both need to find their endpoints.
         tappable: highlight != Highlight::Dim,
     }
 }
 
-/// The demo scene: the four states, illustrated as a source -> action -> target gesture in progress, plus a
-/// labeled one-per-state legend. Every tile carries the real [`Highlight`] so it renders exactly as combat.
-fn demo_scene() -> Scene {
-    // The gesture in progress + the alternatives + the background. Short caption per tile, so each reads as
-    // a compact cell (caption above the tile) that can flow into a grid.
-    let entries = vec![
-        Entry {
+// The card ids. The trio the connector runs through; the legend samples one of each remaining look.
+const SOURCE: u64 = 1;
+const ACTION: u64 = 2;
+const TARGET: u64 = 3;
+const LEGEND_SELECTABLE: u64 = 4;
+const LEGEND_TARGET: u64 = 5;
+const LEGEND_BACKGROUND: u64 = 6;
+
+/// The three cards of the gesture in progress, in order. Chosen (`source`, `action`) deliberately share the
+/// **selectable** look ([`Highlight::Available`]); only the connector marks them as the chosen ones. The
+/// `target` is the one card still carrying its own look (the ring).
+fn trio() -> Vec<Cell> {
+    vec![
+        Cell {
             caption: "source (chosen)",
-            tile: tile(1, "Raider", Team::Left, Highlight::Active, &["your source"]),
+            tile: tile(SOURCE, "Raider", Team::Left, Highlight::Available, "you"),
         },
-        Entry {
+        Cell {
             caption: "action (chosen)",
-            tile: tile(2, "Strike", Team::Left, Highlight::Active, &["your action"]),
+            tile: tile(ACTION, "Strike", Team::Left, Highlight::Available, "verb"),
         },
-        Entry {
+        Cell {
             caption: "target (completing)",
-            tile: tile(3, "The Wall", Team::Right, Highlight::Targeted, &["1 hp"]),
+            tile: tile(TARGET, "The Wall", Team::Right, Highlight::Targeted, "1 hp"),
         },
-        Entry {
-            caption: "target (completing)",
-            tile: tile(4, "The Sniper", Team::Right, Highlight::Targeted, &["1 hp"]),
-        },
-        Entry {
-            caption: "selectable (switch)",
+    ]
+}
+
+/// The remaining looks in isolation, so the three distinct treatments can be compared side by side.
+fn legend() -> Vec<Cell> {
+    vec![
+        Cell {
+            caption: "selectable / chosen (same look)",
             tile: tile(
-                5,
+                LEGEND_SELECTABLE,
                 "Bastion",
                 Team::Left,
                 Highlight::Available,
-                &["could pick"],
+                "could pick",
             ),
         },
-        Entry {
-            caption: "selectable (switch)",
+        Cell {
+            caption: "completing (the ring)",
             tile: tile(
-                6,
-                "Marksman",
-                Team::Left,
-                Highlight::Available,
-                &["could pick"],
+                LEGEND_TARGET,
+                "The Sniper",
+                Team::Right,
+                Highlight::Targeted,
+                "1 hp",
             ),
         },
-        Entry {
+        Cell {
             caption: "background",
-            tile: tile(7, "Bombardier", Team::Left, Highlight::Dim, &["reserve"]),
+            tile: tile(
+                LEGEND_BACKGROUND,
+                "Bombardier",
+                Team::Left,
+                Highlight::Dim,
+                "reserve",
+            ),
         },
-        Entry {
-            caption: "background",
-            tile: tile(8, "Kestrel", Team::Left, Highlight::Dim, &["reserve"]),
-        },
-    ];
-    // The tiles also live in the scene body so the real ring system finds the `Targeted` ones.
-    let all: Vec<Tile> = entries.iter().map(|e| e.tile.clone()).collect();
-    CAPTIONED.set(entries);
+    ]
+}
+
+/// The demo scene the real overlay systems read. Every drawn tile is in `body` (so the ring system finds the
+/// `Targeted` ones), and `links` chains the trio: `source -> action` confirmed (green), `action -> target`
+/// proposed (amber) - the two-color flow.
+fn demo_scene() -> Scene {
+    let all: Vec<Tile> = trio().into_iter().chain(legend()).map(|c| c.tile).collect();
     Scene {
         tracks: vec![Track {
             title: "Gesture".to_string(),
@@ -152,13 +175,28 @@ fn demo_scene() -> Scene {
             ],
         }],
         heading: "Selection states".to_string(),
-        prompt: "source -> action -> target: each card shows the state it is in".to_string(),
+        prompt: "source -> action -> target: the connector marks the chosen chain".to_string(),
         body: SceneBody::Lanes(vec![Lane {
             label: "cards".into(),
             left: all,
             right: vec![],
         }]),
-        links: vec![],
+        links: vec![
+            // The locked part of the chain flows green (confirmed).
+            Link {
+                from: CardId(SOURCE),
+                to: CardId(ACTION),
+                confirmed: true,
+                broad: false,
+            },
+            // The proposed reach to the not-yet-chosen target flows amber (not confirmed).
+            Link {
+                from: CardId(ACTION),
+                to: CardId(TARGET),
+                confirmed: false,
+                broad: false,
+            },
+        ],
         choices: vec![],
         log_title: String::new(),
         log: vec![],
@@ -168,38 +206,17 @@ fn demo_scene() -> Scene {
     }
 }
 
-/// A one-shot hand-off of the captioned tiles from `demo_scene` (built before the App) to `build` (a
-/// startup system). The scene in `SceneState` carries only the tiles the ring system needs; the captions
-/// ride here.
-use std::sync::OnceLock;
-static CAPTIONED: Captioned = Captioned(OnceLock::new());
-struct Captioned(OnceLock<Vec<(String, Tile)>>);
-impl Captioned {
-    fn set(&self, entries: Vec<Entry>) {
-        let _ = self.0.set(
-            entries
-                .into_iter()
-                .map(|e| (e.caption.to_string(), e.tile))
-                .collect(),
-        );
-    }
-    fn get(&self) -> Vec<(String, Tile)> {
-        self.0.get().cloned().unwrap_or_default()
-    }
-}
-
-/// Lay the captioned tiles out as compact cells (caption ABOVE the tile) that WRAP into a grid, so the
-/// demo is wide rather than tall. Each cell is drawn with the REAL [`draw_scene_tile`] (which resolves the
-/// tile's look via the real `tile_look`).
+/// Lay the demo out: a wide gesture row (the trio the connector runs through, spaced so the flowing dots have
+/// room), then a compact legend row of the three distinct looks. Each cell is caption-above-tile so a caption
+/// never pushes its tile sideways. Every tile is drawn with the REAL [`draw_scene_tile`].
 fn build(mut commands: Commands) {
-    let entries = CAPTIONED.get();
     commands
         .spawn(Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::FlexStart,
-            row_gap: Val::Px(14.0),
+            row_gap: Val::Px(18.0),
             padding: UiRect::all(Val::Px(24.0)),
             ..default()
         })
@@ -207,36 +224,50 @@ fn build(mut commands: Commands) {
             text(root, "Selection states", 26.0, INK);
             text(
                 root,
-                "A source -> action -> target gesture in progress. Each card is drawn by the real combat tile code.",
+                "The gesture in progress. The two-color dots flowing source -> action -> target mark the chosen chain, so 'chosen' and 'selectable' can share one look.",
                 14.0,
                 MUTED,
             );
-            // The tiles as a WRAPPING GRID of cells: caption on top, tile below - so a caption never pushes
-            // its tile sideways, and the cells flow across the width instead of stacking into one column.
-            root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                flex_wrap: FlexWrap::Wrap,
-                align_items: AlignItems::FlexStart,
-                column_gap: Val::Px(18.0),
-                row_gap: Val::Px(16.0),
+
+            // The gesture row: the trio, spaced wide so the connector dots have a clear run between centers.
+            section_label(root, "the gesture");
+            cell_row(root, &trio(), 150.0, 110.0);
+
+            // The legend: the three distinct looks in isolation, packed tighter.
+            section_label(root, "the looks, in isolation");
+            cell_row(root, &legend(), 170.0, 28.0);
+        });
+}
+
+/// A row of caption-above-tile cells with a fixed cell width and inter-cell gap.
+fn cell_row(root: &mut ChildSpawnerCommands, cells: &[Cell], cell_w: f32, gap: f32) {
+    root.spawn(Node {
+        flex_direction: FlexDirection::Row,
+        flex_wrap: FlexWrap::Wrap,
+        align_items: AlignItems::FlexStart,
+        column_gap: Val::Px(gap),
+        row_gap: Val::Px(16.0),
+        ..default()
+    })
+    .with_children(|row| {
+        for cell in cells {
+            row.spawn(Node {
+                width: Val::Px(cell_w),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(6.0),
                 ..default()
             })
-            .with_children(|grid| {
-                for (caption, t) in &entries {
-                    grid.spawn(Node {
-                        width: Val::Px(150.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(6.0),
-                        ..default()
-                    })
-                    .with_children(|cell| {
-                        cell.spawn((Text::new(caption.clone()), TextColor(MUTED)));
-                        draw_scene_tile(cell, t);
-                    });
-                }
+            .with_children(|c| {
+                c.spawn((Text::new(cell.caption), TextColor(MUTED)));
+                draw_scene_tile(c, &cell.tile);
             });
-        });
+        }
+    });
+}
+
+fn section_label(parent: &mut ChildSpawnerCommands, s: &str) {
+    text(parent, s, 13.0, MUTED);
 }
 
 fn text(parent: &mut ChildSpawnerCommands, s: &str, size: f32, color: Color) {
