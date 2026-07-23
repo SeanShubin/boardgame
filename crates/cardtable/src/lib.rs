@@ -255,6 +255,12 @@ struct ArrowDot;
 #[derive(Component)]
 struct RingDot;
 
+/// A **control node that carries the rotating ring** - the same "this is the click that advances" invitation
+/// a live tile gets, but on a footer control (the Commit card when no order is still owed). Ringed by
+/// [`animate_target_rings`] off the node's own rect, since a control has no [`CardId`] to track.
+#[derive(Component)]
+struct PendingPulse;
+
 /// **The single authority for where a card is on screen** — each on-screen card's rect in *logical* pixels
 /// (viewport origin, top-left), rebuilt every frame by [`track_card_rects`]. Any feature that needs a card's
 /// position (the targeting arrows, and future point-at-a-card work) reads this instead of re-deriving the
@@ -2359,6 +2365,16 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                                 for (i, label) in affordances.iter().enumerate() {
                                     if scene.disabled_controls.contains(&i) {
                                         spawn_disabled_nav(row, label);
+                                    } else if i == 0 {
+                                        // The primary control (Commit, or "leave" once the fight is decided)
+                                        // wears the ring when it is what we are waiting on: it is only enabled
+                                        // here when no hero still owes an order, so "commit" is then the one
+                                        // click that advances - the same invitation a live tile carries.
+                                        spawn_nav_card(
+                                            row,
+                                            (AffordanceControl(i), Pinned, PendingPulse),
+                                            label,
+                                        );
                                     } else {
                                         spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
                                     }
@@ -2741,6 +2757,7 @@ fn animate_target_rings(
     rects: Res<CardScreenRects>,
     scene: Res<SceneState>,
     dots: Query<Entity, With<RingDot>>,
+    pulse: Query<(&ComputedNode, &UiGlobalTransform), With<PendingPulse>>,
 ) {
     for e in &dots {
         commands.entity(e).despawn(); // clear last frame's ring
@@ -2749,6 +2766,10 @@ fn animate_target_rings(
         return;
     };
     let phase = time.elapsed_secs();
+    // A pending control (the live Commit) rings off its own node rect - it has no CardId to look up.
+    for (cn, gt) in &pulse {
+        spawn_ring_dots(&mut commands, node_rect(cn, gt), phase);
+    }
     let mut ring = |tile: &Tile| {
         if tile.highlight == Highlight::Targeted
             && let Some(rect) = rects.0.get(&tile.card)
