@@ -247,22 +247,30 @@ impl StepState {
         self.order.get(self.next).copied()
     }
 
-    /// The legal strike targets for `i` at the current step - the menu, with the symmetric-target dedup (two
-    /// interchangeable enemies collapse to the lowest-index representative, same as the wave model).
-    pub fn targets(&self, i: usize) -> Vec<usize> {
+    /// **Every** legal strike target for `i` at the current step - no dedup. The player-facing list: the
+    /// screen shows each enemy as its own target so nothing looks mysteriously unpickable; the collapse of
+    /// interchangeable twins is a search optimisation ([`targets`](StepState::targets)), kept behind the seam.
+    pub fn targets_all(&self, i: usize) -> Vec<usize> {
         let b = &self.board;
-        let candidates: Vec<usize> = (0..b.units.len())
+        (0..b.units.len())
             .filter(|&t| {
                 !b.units[t].fallen && b.units[t].side != b.units[i].side && self.reaches(i, t)
             })
-            .collect();
+            .collect()
+    }
+
+    /// The legal strike targets for `i` with the **symmetric-target dedup** (two interchangeable enemies
+    /// collapse to the lowest-index representative, same as the wave model) - the SEARCH menu, where offering
+    /// both twins is wasted branching. The player-facing menu uses [`targets_all`](StepState::targets_all).
+    pub fn targets(&self, i: usize) -> Vec<usize> {
+        let candidates = self.targets_all(i);
         candidates
             .iter()
             .copied()
             .filter(|&t| {
                 !candidates
                     .iter()
-                    .any(|&t2| t2 < t && interchangeable(b, t2, t))
+                    .any(|&t2| t2 < t && interchangeable(&self.board, t2, t))
             })
             .collect()
     }

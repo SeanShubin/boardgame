@@ -918,7 +918,10 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
     // selection click is informational by design: the player knows who is being commanded because the
     // player did the selecting.
     let focus = (0..units.len()).find(|&i| asked[i] && active_of(board, cards[i]));
-    let targets = focus.map(|i| state.targets(i)).unwrap_or_default();
+    // The PLAYER-facing target list is undeduped: the screen shows every reachable enemy as its own choice,
+    // so no legal target looks mysteriously unpickable. The twin dedup stays a search optimisation, hidden in
+    // the solver's own `targets`; picking a twin resolves fine (the resolver validates by rank, not the list).
+    let targets = focus.map(|i| state.targets_all(i)).unwrap_or_default();
     let aiming = focus.is_some_and(|i| aiming_of(board, cards[i]));
     Some(Wave {
         cards,
