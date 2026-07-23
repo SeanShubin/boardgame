@@ -72,7 +72,10 @@ fn tile(id: u64, title: &str, team: Team, highlight: Highlight, badges: &[&str])
             })
             .collect(),
         draggable: false,
-        tappable: false,
+        // A `Dim` tile is background (not interactable); everything else is a live target of some gesture,
+        // so it is tappable - which is also what earns it a `TileCard` in `draw_scene_tile`, and thus the
+        // rect-tracking that the rotating ring needs to find the `Targeted` tiles.
+        tappable: highlight != Highlight::Dim,
     }
 }
 
