@@ -1661,7 +1661,6 @@ fn redraw(
     history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
-    mono: Option<Res<MonoFont>>,
     roots: Query<Entity, With<CardTableRoot>>,
 ) {
     if !rebuild.0 {
@@ -1678,13 +1677,7 @@ fn redraw(
     }
     // A game **scene** (a combat arena, etc.) is modal: the game declares it, the renderer draws it blind.
     if let Some(scene) = &scene.0 {
-        draw_scene(
-            &mut commands,
-            scene,
-            &affordances.0,
-            history.can_undo(),
-            mono.as_deref(),
-        );
+        draw_scene(&mut commands, scene, &affordances.0, history.can_undo());
         return;
     }
     build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
@@ -2019,7 +2012,7 @@ fn spawn_log_panel(parent: &mut ChildSpawnerCommands, title: &str, lines: &[Stri
         .spawn((
             SceneRegion("log"),
             Node {
-                width: Val::Px(720.0),
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(12.0)),
                 margin: UiRect::top(Val::Px(6.0)),
@@ -2142,188 +2135,180 @@ fn spawn_disabled_nav(parent: &mut ChildSpawnerCommands, label: &str) {
 /// affordance controls pinned to the footer. The renderer draws this **without knowing what any of it means**
 /// — the game decided every tile, badge, highlight and link. (Links are drawn separately by
 /// [`animate_target_arrows`], which reads the same [`SceneState`].)
-fn draw_scene(
-    commands: &mut Commands,
-    scene: &Scene,
-    affordances: &[String],
-    can_undo: bool,
-    mono: Option<&MonoFont>,
-) {
+fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], can_undo: bool) {
     commands
         .spawn((
             CardTableRoot,
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
+                // The whole screen is a COLUMN: the board area on top, the combat log full-width below it.
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Stretch,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // Left sidebar: the progress tracks, stacked (fixed order, current highlighted).
-            root.spawn((
-                SceneRegion("sidebar"),
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::FlexStart,
-                    padding: UiRect::all(Val::Px(12.0)),
-                    row_gap: Val::Px(10.0),
-                    ..default()
-                },
-            ))
-            .with_children(|side| {
-                // Top: the progress track(s) and the schedule reference SIDE BY SIDE - twin eight-item lists
-                // (the current step, and who-hits-whom by step), so they read as one header block.
-                side.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::FlexStart,
-                    column_gap: Val::Px(10.0),
-                    ..default()
-                })
-                .with_children(|top| {
-                    top.spawn(Node {
+            // TOP: the sidebar (Step over Stats) beside the main board column - together the "ABC" block that
+            // sits on top of the log. Takes all the height above the log.
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Stretch,
+                ..default()
+            })
+            .with_children(|top| {
+                // Left sidebar: the Step track (A), then the Stats legend (B) under it.
+                top.spawn((
+                    SceneRegion("sidebar"),
+                    Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::FlexStart,
+                        padding: UiRect::all(Val::Px(12.0)),
                         row_gap: Val::Px(10.0),
                         ..default()
-                    })
-                    .with_children(|tracks| {
-                        for track in &scene.tracks {
-                            let labels: Vec<&str> =
-                                track.items.iter().map(|i| i.label.as_str()).collect();
-                            let current = track
-                                .items
-                                .iter()
-                                .find(|i| i.current)
-                                .map(|i| i.label.as_str())
-                                .unwrap_or("");
-                            spawn_track(tracks, &track.title, &labels, current);
-                        }
-                    });
-                    // The schedule card, to the RIGHT of the track. **Monospaced**, because it is a table:
-                    // its columns are aligned with spaces, and in a proportional face that alignment is gone.
-                    if !scene.reference.is_empty() {
-                        spawn_legend_panel(top, &scene.reference, mono);
+                    },
+                ))
+                .with_children(|side| {
+                    for track in &scene.tracks {
+                        let labels: Vec<&str> =
+                            track.items.iter().map(|i| i.label.as_str()).collect();
+                        let current = track
+                            .items
+                            .iter()
+                            .find(|i| i.current)
+                            .map(|i| i.label.as_str())
+                            .unwrap_or("");
+                        spawn_track(side, &track.title, &labels, current);
+                    }
+                    if !scene.legend.is_empty() {
+                        spawn_legend_panel(side, &scene.legend, None);
                     }
                 });
-                // The legend sits under the header block: always on screen, never competing for room.
-                if !scene.legend.is_empty() {
-                    spawn_legend_panel(side, &scene.legend, None);
-                }
-                // The combat log fills the rest of the sidebar (where the schedule card used to sit): the
-                // record lives on the left, the battlefield fills the main column on the right.
-                if !scene.log.is_empty() {
-                    spawn_log_panel(side, &scene.log_title, &scene.log);
-                }
-            });
 
-            // Main column: heading, prompt, then the body + log (fill + scroll). Bottom padding keeps the
-            // last row clear of the pinned footer bar.
-            root.spawn((
-                SceneRegion("main"),
-                Node {
-                    flex_grow: 1.0,
-                    min_width: Val::Px(0.0),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::all(Val::Px(12.0)),
-                    row_gap: Val::Px(8.0),
-                    ..default()
-                },
-            ))
-            .with_children(|main| {
-                if !scene.heading.is_empty() {
+                // Main column: heading, prompt (which names the current step), then the board (C) + the decision.
+                top.spawn((
+                    SceneRegion("main"),
+                    Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(12.0)),
+                        row_gap: Val::Px(8.0),
+                        ..default()
+                    },
+                ))
+                .with_children(|main| {
+                    if !scene.heading.is_empty() {
+                        main.spawn((
+                            Text::new(scene.heading.clone()),
+                            TextFont {
+                                font_size: FONT_HEAD,
+                                ..default()
+                            },
+                            TextColor(INK),
+                        ));
+                    }
+                    if !scene.prompt.is_empty() {
+                        spawn_prompt_line(main, &scene.prompt);
+                    }
+                    // The body **takes the leftover space and clips**. Only the body: the decision and the log
+                    // that explains it must never be pushed out of sight by a tall formation, which is exactly
+                    // what happened when they lived in here — Bevy's `Overflow::scroll_y` only *clips*, it does
+                    // not scroll (nothing drives a `ScrollPosition` on this node), so anything below the fold was
+                    // not merely out of view, it was unreachable. A player could be asked a question they could
+                    // not see.
+                    // The body takes only the room it needs, and clips if it needs more. It used to *grow* to fill
+                    // the column, which shoved everything after it to the bottom of the screen - so the reading
+                    // order ran top, then a gulf, then bottom, and the log and the decision were as far from the
+                    // board as the layout could put them.
                     main.spawn((
-                        Text::new(scene.heading.clone()),
-                        TextFont {
-                            font_size: FONT_HEAD,
+                        SceneRegion("body"),
+                        Node {
+                            width: Val::Percent(100.0),
+                            flex_grow: 0.0,
+                            flex_shrink: 1.0,
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::FlexStart,
+                            row_gap: Val::Px(8.0),
+                            overflow: Overflow::clip(),
                             ..default()
                         },
-                        TextColor(INK),
-                    ));
-                }
-                if !scene.prompt.is_empty() {
-                    spawn_prompt_line(main, &scene.prompt);
-                }
-                // The body **takes the leftover space and clips**. Only the body: the decision and the log
-                // that explains it must never be pushed out of sight by a tall formation, which is exactly
-                // what happened when they lived in here — Bevy's `Overflow::scroll_y` only *clips*, it does
-                // not scroll (nothing drives a `ScrollPosition` on this node), so anything below the fold was
-                // not merely out of view, it was unreachable. A player could be asked a question they could
-                // not see.
-                // The body takes only the room it needs, and clips if it needs more. It used to *grow* to fill
-                // the column, which shoved everything after it to the bottom of the screen - so the reading
-                // order ran top, then a gulf, then bottom, and the log and the decision were as far from the
-                // board as the layout could put them.
-                main.spawn((
-                    SceneRegion("body"),
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 0.0,
-                        flex_shrink: 1.0,
-                        min_height: Val::Px(0.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::FlexStart,
-                        row_gap: Val::Px(8.0),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                ))
-                .with_children(|mid| match &scene.body {
-                    SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
-                    SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
-                });
+                    ))
+                    .with_children(|mid| match &scene.body {
+                        SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
+                        SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
+                    });
 
-                // **The decision, then the controls**, under the board. The log that these are *about* now
-                // stands in the sidebar (left), read alongside the board rather than below the choices; the
-                // controls sit with the choices because Commit is the last step of the same thought.
-                main.spawn((
-                    SceneRegion("decision"),
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_shrink: 0.0,
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(8.0),
-                        ..default()
-                    },
-                ))
-                .with_children(|panel| {
-                    // The log now lives in the sidebar (left); here remain the decision and its controls.
-                    if !scene.choices.is_empty() {
-                        spawn_choice_row(panel, &scene.choices);
-                    }
-                    // The zone's affordances. A control the scene marks disabled is drawn inert.
-                    panel
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Row,
-                            justify_content: JustifyContent::Center,
-                            column_gap: Val::Px(10.0),
-                            padding: UiRect::vertical(Val::Px(6.0)),
+                    // **The decision, then the controls**, under the board. The log that these are *about* now
+                    // stands in the sidebar (left), read alongside the board rather than below the choices; the
+                    // controls sit with the choices because Commit is the last step of the same thought.
+                    main.spawn((
+                        SceneRegion("decision"),
+                        Node {
+                            width: Val::Percent(100.0),
+                            flex_shrink: 0.0,
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(8.0),
                             ..default()
-                        })
-                        .with_children(|row| {
-                            // **Back** - rewind one move. It sits with the scene's own controls but is the
-                            // renderer's, not the game's: the board is the whole state, so stepping back is
-                            // just restoring the previous board, and nothing here needs to know what the move
-                            // meant. Keep pressing and you walk back out of the fight entirely, onto the
-                            // location you opened it from.
-                            if can_undo {
-                                spawn_nav_card(row, (UndoControl, Pinned), "Back");
-                            }
-                            for (i, label) in affordances.iter().enumerate() {
-                                if scene.disabled_controls.contains(&i) {
-                                    spawn_disabled_nav(row, label);
-                                } else {
-                                    spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
+                        },
+                    ))
+                    .with_children(|panel| {
+                        // The log now lives in the sidebar (left); here remain the decision and its controls.
+                        if !scene.choices.is_empty() {
+                            spawn_choice_row(panel, &scene.choices);
+                        }
+                        // The zone's affordances. A control the scene marks disabled is drawn inert.
+                        panel
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::Center,
+                                column_gap: Val::Px(10.0),
+                                padding: UiRect::vertical(Val::Px(6.0)),
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                // **Back** - rewind one move. It sits with the scene's own controls but is the
+                                // renderer's, not the game's: the board is the whole state, so stepping back is
+                                // just restoring the previous board, and nothing here needs to know what the move
+                                // meant. Keep pressing and you walk back out of the fight entirely, onto the
+                                // location you opened it from.
+                                if can_undo {
+                                    spawn_nav_card(row, (UndoControl, Pinned), "Back");
                                 }
-                            }
-                        });
+                                for (i, label) in affordances.iter().enumerate() {
+                                    if scene.disabled_controls.contains(&i) {
+                                        spawn_disabled_nav(row, label);
+                                    } else {
+                                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
+                                    }
+                                }
+                            });
+                    });
                 });
             });
+
+            // BOTTOM: the combat log, full width, under everything (the "D" the ABC block sits on).
+            if !scene.log.is_empty() {
+                root.spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_shrink: 0.0,
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Stretch,
+                    padding: UiRect::horizontal(Val::Px(12.0)),
+                    ..default()
+                })
+                .with_children(|bar| {
+                    spawn_log_panel(bar, &scene.log_title, &scene.log);
+                });
+            }
         });
 }
 

@@ -31,36 +31,30 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     let over = arena::outcome(board, arena).is_some();
     let tracks = build_tracks(w.step);
     let heading = format!("Round {}", w.round);
-    // The prompt LEADS WITH THE IMPERATIVE - the one thing to do right now, named for the body doing it -
-    // and the step's teaching text follows. "What should I do here?" must be answerable from the first
-    // clause alone.
-    let prompt = if over {
+    // The text under the heading DESCRIBES THE STEP (name + what it is), then names the one thing to do right
+    // now. The step description replaces the old "eight steps" reference card: you are told about the step you
+    // are on, not the whole schedule.
+    let step_desc = format!("Step {k}/8 - {name}: {}", prompt_for(w.step));
+    let action = if over {
         "The fight is decided - read the record, then leave.".to_string()
     } else if w.focus.is_none() && arena::pending_decision(board, arena).is_some() {
-        format!(
-            "CHOOSE A HERO - click a ringed hero to give it orders. {}",
-            prompt_for(w.step)
-        )
+        "CHOOSE A HERO - click a ringed hero to give it orders.".to_string()
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
-            format!(
-                "{name}: PICK A TARGET - click a ringed enemy, or one of the cards below. {}",
-                prompt_for(w.step)
-            )
+            format!("{name}: PICK A TARGET - click a ringed enemy, or one of the cards below.")
         } else {
-            format!(
-                "{name}: CHOOSE AN ORDER - one of the cards below. {}",
-                prompt_for(w.step)
-            )
+            format!("{name}: CHOOSE AN ORDER - one of the cards below.")
         }
     } else if arena::pending_decision(board, arena).is_none() {
-        format!(
-            "All orders given - COMMIT resolves the step. {}",
-            prompt_for(w.step)
-        )
+        "All orders given - COMMIT resolves the step.".to_string()
     } else {
-        prompt_for(w.step).to_string()
+        String::new()
+    };
+    let prompt = if action.is_empty() {
+        step_desc
+    } else {
+        format!("{step_desc}\n>> {action}")
     };
 
     let (lanes, links) = build_lanes(board, arena, &w, &maxes);
@@ -87,7 +81,9 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         log_title,
         log,
         legend: stat_legend(),
-        reference: crate::targets::schedule_card(),
+        // No reference card: the step is described under the heading now (`step_desc`), so the whole-schedule
+        // card is gone. (`targets::schedule_card` survives for the reference doc and its test.)
+        reference: Vec::new(),
         disabled_controls,
     })
 }

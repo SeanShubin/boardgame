@@ -271,3 +271,188 @@ pub struct Link {
     /// A broad association — the renderer fans the dots into several parallel threads.
     pub broad: bool,
 }
+
+impl Scene {
+    /// A complete, rules-blind text description of this scene - every tile with its named
+    /// attention state, every choice with its status, the tracks, prompt, controls and log. The one
+    /// serializer both the renderer's snapshot files and a headless harness read, so they cannot describe
+    /// the same scene differently.
+    pub fn describe(&self) -> String {
+        use crate::model::CardId;
+        use crate::scene::{Highlight, Outlook, SceneBody, Team, Tile};
+        let hl = |h: Highlight| match h {
+            Highlight::Idle => "idle",
+            Highlight::Dim => "dim (nothing to do here)",
+            Highlight::Available => "AVAILABLE (awaiting your order)",
+            Highlight::Settled => "settled (ordered - tap to change)",
+            Highlight::Active => "ACTIVE (being commanded now)",
+            Highlight::Targeted => "TARGETED (ringed - select to complete the action)",
+            Highlight::Spent => "spent (out of play)",
+        };
+        let mut out = format!(
+            "=== {} ===
+    ",
+            self.heading
+        );
+        for track in &self.tracks {
+            let items: Vec<String> = track
+                .items
+                .iter()
+                .map(|i| {
+                    if i.current {
+                        format!("[{}]", i.label)
+                    } else {
+                        i.label.clone()
+                    }
+                })
+                .collect();
+            out.push_str(&format!(
+                "{}: {}
+    ",
+                track.title,
+                items.join(" > ")
+            ));
+        }
+        if !self.prompt.is_empty() {
+            out.push_str(&format!(
+                "
+    PROMPT: {}
+    ",
+                self.prompt
+            ));
+        }
+
+        let mut names: std::collections::HashMap<CardId, String> = std::collections::HashMap::new();
+        let tile_line = |t: &Tile, out: &mut String| {
+            let side = match t.team {
+                Team::Left => "yours",
+                Team::Right => "theirs",
+            };
+            let badges: Vec<&str> = t.badges.iter().map(|b| b.text.as_str()).collect();
+            out.push_str(&format!(
+                "    {:<14} ({side})  {}
+                       {}
+    ",
+                t.title,
+                hl(t.highlight),
+                badges.join("  |  ")
+            ));
+        };
+        out.push_str(
+            "
+    BOARD (left of the divider = yours, right = theirs):
+    ",
+        );
+        match &self.body {
+            SceneBody::Lanes(lanes) => {
+                for lane in lanes {
+                    out.push_str(&format!(
+                        "  {}:
+    ",
+                        lane.label
+                    ));
+                    if lane.left.is_empty() && lane.right.is_empty() {
+                        out.push_str(
+                            "    (empty)
+    ",
+                        );
+                    }
+                    for t in lane.left.iter().chain(lane.right.iter()) {
+                        names.insert(t.card, t.title.clone());
+                        tile_line(t, &mut out);
+                    }
+                }
+            }
+            SceneBody::Rows(rows) => {
+                for row in rows {
+                    out.push_str(&format!(
+                        "  {}:
+    ",
+                        row.label
+                    ));
+                    for t in &row.tiles {
+                        names.insert(t.card, t.title.clone());
+                        tile_line(t, &mut out);
+                    }
+                }
+            }
+        }
+
+        if !self.links.is_empty() {
+            out.push_str(
+                "
+    ARROWS:
+    ",
+            );
+            for l in &self.links {
+                let name = |c: CardId| {
+                    names
+                        .get(&c)
+                        .cloned()
+                        .unwrap_or_else(|| format!("#{}", c.0))
+                };
+                out.push_str(&format!(
+                    "  {} -> {}  ({})
+    ",
+                    name(l.from),
+                    name(l.to),
+                    if l.confirmed { "confirmed" } else { "offered" }
+                ));
+            }
+        }
+
+        if !self.choices.is_empty() {
+            out.push_str(
+                "
+    CHOICES (the buttons):
+    ",
+            );
+            for (i, c) in self.choices.iter().enumerate() {
+                let mark = if c.chosen { " <- chosen" } else { "" };
+                let outlook = match c.outlook {
+                    Outlook::Winnable => "  [winnable]",
+                    Outlook::Doomed => "  [doomed]",
+                    Outlook::Evaluating => "  [evaluating]",
+                    Outlook::Unknown => "",
+                };
+                if c.why_not.is_empty() {
+                    out.push_str(&format!(
+                        "  [{i}] {}{outlook}{mark}
+            {}
+    ",
+                        c.label, c.consequence
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "  [{i}] {} (BARRED: {})
+    ",
+                        c.label, c.why_not
+                    ));
+                }
+            }
+        }
+        if !self.disabled_controls.is_empty() {
+            out.push_str(&format!(
+                "
+    CONTROLS: control(s) {:?} disabled (index 0 = the Commit/Start control)
+    ",
+                self.disabled_controls
+            ));
+        }
+        if !self.log.is_empty() {
+            out.push_str(&format!(
+                "
+    {}
+    ",
+                self.log_title
+            ));
+            for line in &self.log {
+                out.push_str(&format!(
+                    "  {line}
+    "
+                ));
+            }
+        }
+        out
+    }
+}
