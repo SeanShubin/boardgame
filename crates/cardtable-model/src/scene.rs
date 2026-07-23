@@ -239,6 +239,7 @@ pub enum Tone {
 }
 
 /// A short text line under a tile's title, with a color tone.
+#[derive(Clone)]
 pub struct Badge {
     pub text: String,
     pub tone: Tone,
@@ -246,6 +247,7 @@ pub struct Badge {
 
 /// One card tile in a scene: a card, a title, its side and attention state, badge lines, and which input
 /// verbs it accepts. Carries no game meaning — the game has already decided every field.
+#[derive(Clone)]
 pub struct Tile {
     /// The physical card this tile stands for (its screen rect is tracked by id for arrow endpoints).
     pub card: CardId,
