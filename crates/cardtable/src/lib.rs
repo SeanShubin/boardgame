@@ -270,13 +270,6 @@ struct PendingPulse;
 #[derive(Resource, Default)]
 struct CardScreenRects(HashMap<CardId, Rect>);
 
-impl CardScreenRects {
-    /// The card's on-screen centre in logical pixels, if it is currently rendered as a card.
-    fn center(&self, card: CardId) -> Option<Vec2> {
-        self.0.get(&card).map(Rect::center)
-    }
-}
-
 /// A card face whose panel **scrolls** — its content can exceed the card, so the wheel
 /// ([`scroll_hovered_panel`]) and a drag ([`on_panel_drag`]) move it. Worn only by expanded
 /// [`CardKind::Virtual`] readouts (a combat log), which can run long; ordinary panel cards clip.
@@ -2675,90 +2668,63 @@ fn animate_target_arrows(
     };
     let phase = time.elapsed_secs();
     // Only links whose endpoints are both on screen.
-    let drawable: Vec<&Link> = scene
+    let links: Vec<&Link> = scene
         .links
         .iter()
         .filter(|l| rects.0.contains_key(&l.from) && rects.0.contains_key(&l.to))
         .collect();
-    if drawable.is_empty() {
+    if links.is_empty() {
         return;
     }
-    // **Attach each arrow to the box EDGE facing its other end, and space the arrows sharing an edge evenly
-    // along it.** Offsetting from tile centres (the old way) let arrows converging on one enemy pile onto its
-    // centre; attaching to the perimeter and distributing along the edge keeps them apart at BOTH ends, with
-    // the gap between neighbours about the same as the gap to the corners (a lone arrow lands centred).
-    let n = drawable.len();
-    let mut attach_from = vec![Vec2::ZERO; n];
-    let mut attach_to = vec![Vec2::ZERO; n];
-    // Every arrow end that touches a given card: (link index, the OTHER end's centre, is this the `from` end?).
-    let mut ends: std::collections::HashMap<CardId, Vec<(usize, Vec2, bool)>> =
+    // **Horizontally centred, vertically spaced.** These arrows run left (a body) to right (its target), so
+    // each end attaches at its card's horizontal centre and the fan spreads VERTICALLY. A card's arrows are
+    // laid out along its height at even fractions ((r+1)/(k+1)): the gap between neighbours is about the gap
+    // to the top and bottom edges, and a lone arrow lands centred. Crucially, a line keeps ONE fractional
+    // height across the gap - a card carrying a real fan (several arrows) drives the height, and a card with a
+    // single arrow borrows the other end's - so a source fanning to same-height targets stays a PARALLEL fan
+    // (top arrow high at both ends, bottom low) instead of collapsing back to centre at the targets.
+    let mut outgoing: std::collections::HashMap<CardId, Vec<usize>> =
         std::collections::HashMap::new();
-    for (i, l) in drawable.iter().enumerate() {
-        // Both are present (filtered above); the other end's centre is where this arrow points from/to.
-        let from_c = rects.center(l.from).unwrap();
-        let to_c = rects.center(l.to).unwrap();
-        ends.entry(l.from).or_default().push((i, to_c, true));
-        ends.entry(l.to).or_default().push((i, from_c, false));
+    let mut incoming: std::collections::HashMap<CardId, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, l) in links.iter().enumerate() {
+        outgoing.entry(l.from).or_default().push(i);
+        incoming.entry(l.to).or_default().push(i);
     }
-    for (card, list) in &ends {
-        let bx = rects.0[card];
-        let center = bx.center();
-        let (hx, hy) = (bx.width().max(1.0) / 2.0, bx.height().max(1.0) / 2.0);
-        // Sort each arrow onto the edge it most faces: 0 left, 1 right, 2 top, 3 bottom.
-        let mut by_edge: [Vec<usize>; 4] = core::array::from_fn(|_| Vec::new());
-        for (slot, &(_, other, _)) in list.iter().enumerate() {
-            let d = other - center;
-            let edge = if (d.x.abs() / hx) >= (d.y.abs() / hy) {
-                if d.x < 0.0 { 0 } else { 1 }
-            } else if d.y < 0.0 {
-                2
-            } else {
-                3
-            };
-            by_edge[edge].push(slot);
-        }
-        for (edge, group) in by_edge.iter_mut().enumerate() {
-            if group.is_empty() {
-                continue;
-            }
-            // Order them along the edge by where their other end sits, so neighbouring arrows do not cross.
-            let vertical = edge < 2;
-            group.sort_by(|&a, &b| {
-                let (ka, kb) = if vertical {
-                    (list[a].1.y, list[b].1.y)
-                } else {
-                    (list[a].1.x, list[b].1.x)
-                };
-                ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let k = group.len();
-            for (j, &slot) in group.iter().enumerate() {
-                let f = (j as f32 + 1.0) / (k as f32 + 1.0); // equal gaps, incl. to the corners; centred at k=1
-                let p = match edge {
-                    0 => Vec2::new(bx.min.x, bx.min.y + bx.height() * f),
-                    1 => Vec2::new(bx.max.x, bx.min.y + bx.height() * f),
-                    2 => Vec2::new(bx.min.x + bx.width() * f, bx.min.y),
-                    _ => Vec2::new(bx.min.x + bx.width() * f, bx.max.y),
-                };
-                let (link_idx, _, is_from) = list[slot];
-                if is_from {
-                    attach_from[link_idx] = p;
-                } else {
-                    attach_to[link_idx] = p;
-                }
-            }
-        }
+    // Order each fan top-to-bottom by the OTHER end's position, so neighbouring arrows keep order (no cross).
+    let key = |id: CardId| {
+        let c = rects.0[&id].center();
+        (c.y, c.x)
+    };
+    for g in outgoing.values_mut() {
+        g.sort_by(|&a, &b| {
+            key(links[a].to)
+                .partial_cmp(&key(links[b].to))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
-    for (i, l) in drawable.iter().enumerate() {
-        spawn_arrow_dots(
-            &mut commands,
-            attach_from[i],
-            attach_to[i],
-            l.confirmed,
-            l.broad,
-            l.muted,
-            phase,
-        );
+    for g in incoming.values_mut() {
+        g.sort_by(|&a, &b| {
+            key(links[a].from)
+                .partial_cmp(&key(links[b].from))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    let frac = |rank: usize, count: usize| (rank as f32 + 1.0) / (count as f32 + 1.0);
+    for (i, l) in links.iter().enumerate() {
+        let out = &outgoing[&l.from];
+        let inc = &incoming[&l.to];
+        let rs = out.iter().position(|&k| k == i).unwrap();
+        let rd = inc.iter().position(|&k| k == i).unwrap();
+        let (src_own, dst_own) = (frac(rs, out.len()), frac(rd, inc.len()));
+        // The end with the real fan sets the height; the single-arrow end borrows it, keeping the line at one
+        // fractional height across the gap.
+        let src_frac = if out.len() > 1 { src_own } else { dst_own };
+        let dst_frac = if inc.len() > 1 { dst_own } else { src_own };
+        let (sr, dr) = (rects.0[&l.from], rects.0[&l.to]);
+        let a = Vec2::new(sr.center().x, sr.min.y + sr.height() * src_frac);
+        let b = Vec2::new(dr.center().x, dr.min.y + dr.height() * dst_frac);
+        spawn_arrow_dots(&mut commands, a, b, l.confirmed, l.broad, l.muted, phase);
     }
 }
 
@@ -2782,10 +2748,10 @@ fn spawn_arrow_dots(
     }
     let unit = dir / len;
     let perp = Vec2::new(-unit.y, unit.x); // sideways - the offset for an area strike's fanned threads
-    // `a` and `b` are on the box perimeters; nudge a little off each edge so the dots read as a gap-spanning
-    // arrow rather than touching the boxes.
-    let start = a + unit * 12.0;
-    let end = b - unit * 12.0;
+    // `a` and `b` are on the card faces (horizontal centre, a spaced height); a small nudge keeps the very
+    // first/last dot off the exact attach point, but the arrow still reads as ending ON the target card.
+    let start = a + unit * 6.0;
+    let end = b - unit * 6.0;
     let span = (end - start).length();
     let spacing = if confirmed { 11.0 } else { 17.0 };
     let flow = (phase * 42.0).rem_euclid(spacing); // px/sec toward the target
