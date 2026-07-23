@@ -50,7 +50,15 @@ impl Log {
 #[derive(Resource)]
 struct PhysicalLog(Log);
 #[derive(Resource)]
-struct UiLog(Log);
+pub(crate) struct UiLog(Log);
+
+impl UiLog {
+    /// Append a diagnostic line to `ui-state.log` (native only; a no-op on the web). Lets other systems drop
+    /// a note into the same stream as the click log, so a gesture and its outcome sit side by side.
+    pub(crate) fn note(&self, text: &str) {
+        self.0.write(text);
+    }
+}
 
 /// `combat-log.log` — **only** what the combat-log area shows the player, and truncated at the start of each
 /// battle, so it always holds the last fight and nothing else. Unlike the other two it is not a launch-time

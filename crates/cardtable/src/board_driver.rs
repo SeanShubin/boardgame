@@ -207,13 +207,28 @@ fn apply_tap<G>(
     game: Res<GameRes<G>>,
     mut rebuild: ResMut<NeedsRebuild>,
     mut history: ResMut<BoardHistory>,
+    ui: Option<Res<crate::logging::UiLog>>,
 ) where
     G: BoardGame + Send + Sync + 'static,
 {
     let Some(card) = request.0.take() else {
         return;
     };
-    if let Some(intention) = game.0.tap_intention(&table.0, card) {
+    let intention = game.0.tap_intention(&table.0, card);
+    // Diagnostic: pair a recorded tap with what the game made of it, in the same log as the click. A
+    // `tap-record` with no `tap-apply`, or a `tap-apply: NO intention`, pins a "clicked and nothing happened".
+    if let Some(log) = &ui {
+        log.note(&format!(
+            "  tap-apply: card #{} -> {}\n",
+            card.0,
+            if intention.is_some() {
+                "intention (applying)"
+            } else {
+                "NO intention (no-op)"
+            }
+        ));
+    }
+    if let Some(intention) = intention {
         if game.0.is_checkpoint(&intention) {
             history.push(&table.0);
         }
