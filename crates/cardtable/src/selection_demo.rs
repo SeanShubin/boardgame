@@ -36,7 +36,7 @@ pub fn run_selection_states() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Selection states".into(),
-                resolution: (1000u32, 720u32).into(),
+                resolution: (900u32, 420u32).into(),
                 ..default()
             }),
             ..default()
@@ -79,26 +79,27 @@ fn tile(id: u64, title: &str, team: Team, highlight: Highlight, badges: &[&str])
 /// The demo scene: the four states, illustrated as a source -> action -> target gesture in progress, plus a
 /// labeled one-per-state legend. Every tile carries the real [`Highlight`] so it renders exactly as combat.
 fn demo_scene() -> Scene {
-    // The gesture in progress + the alternatives + the background, each captioned.
+    // The gesture in progress + the alternatives + the background. Short caption per tile, so each reads as
+    // a compact cell (caption above the tile) that can flow into a grid.
     let entries = vec![
         Entry {
-            caption: "Source chosen (in the selection)",
+            caption: "source (chosen)",
             tile: tile(1, "Raider", Team::Left, Highlight::Active, &["your source"]),
         },
         Entry {
-            caption: "Action chosen (in the selection)",
+            caption: "action (chosen)",
             tile: tile(2, "Strike", Team::Left, Highlight::Active, &["your action"]),
         },
         Entry {
-            caption: "Target candidates (completing - ringed)",
+            caption: "target (completing)",
             tile: tile(3, "The Wall", Team::Right, Highlight::Targeted, &["1 hp"]),
         },
         Entry {
-            caption: "",
+            caption: "target (completing)",
             tile: tile(4, "The Sniper", Team::Right, Highlight::Targeted, &["1 hp"]),
         },
         Entry {
-            caption: "A different source (selectable - switch)",
+            caption: "selectable (switch)",
             tile: tile(
                 5,
                 "Bastion",
@@ -108,7 +109,7 @@ fn demo_scene() -> Scene {
             ),
         },
         Entry {
-            caption: "",
+            caption: "selectable (switch)",
             tile: tile(
                 6,
                 "Marksman",
@@ -118,11 +119,11 @@ fn demo_scene() -> Scene {
             ),
         },
         Entry {
-            caption: "Not in this gesture (background)",
+            caption: "background",
             tile: tile(7, "Bombardier", Team::Left, Highlight::Dim, &["reserve"]),
         },
         Entry {
-            caption: "",
+            caption: "background",
             tile: tile(8, "Kestrel", Team::Left, Highlight::Dim, &["reserve"]),
         },
     ];
@@ -184,8 +185,9 @@ impl Captioned {
     }
 }
 
-/// Lay the captioned tiles out in a column so all four states are visible at once, using the REAL
-/// [`draw_scene_tile`] (which resolves each tile's look via the real `tile_look`).
+/// Lay the captioned tiles out as compact cells (caption ABOVE the tile) that WRAP into a grid, so the
+/// demo is wide rather than tall. Each cell is drawn with the REAL [`draw_scene_tile`] (which resolves the
+/// tile's look via the real `tile_look`).
 fn build(mut commands: Commands) {
     let entries = CAPTIONED.get();
     commands
@@ -206,25 +208,31 @@ fn build(mut commands: Commands) {
                 14.0,
                 MUTED,
             );
-            for (caption, t) in &entries {
-                root.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(16.0),
-                    ..default()
-                })
-                .with_children(|row| {
-                    row.spawn((
-                        Node {
-                            width: Val::Px(340.0),
-                            ..default()
-                        },
-                        Text::new(caption.clone()),
-                        TextColor(MUTED),
-                    ));
-                    draw_scene_tile(row, t);
-                });
-            }
+            // The tiles as a WRAPPING GRID of cells: caption on top, tile below - so a caption never pushes
+            // its tile sideways, and the cells flow across the width instead of stacking into one column.
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                align_items: AlignItems::FlexStart,
+                column_gap: Val::Px(18.0),
+                row_gap: Val::Px(16.0),
+                ..default()
+            })
+            .with_children(|grid| {
+                for (caption, t) in &entries {
+                    grid.spawn(Node {
+                        width: Val::Px(150.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(|cell| {
+                        cell.spawn((Text::new(caption.clone()), TextColor(MUTED)));
+                        draw_scene_tile(cell, t);
+                    });
+                }
+            });
         });
 }
 
