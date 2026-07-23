@@ -576,9 +576,25 @@ fn step_idx(s: Step) -> usize {
     STEPS.iter().position(|&x| x == s).unwrap_or(0)
 }
 
+/// **Why a step had no decision** - a short parenthetical for its `- skipped` line. A step is skipped
+/// exactly when the thing it does was not possible, so each reason names the missing prerequisite. Havoc and
+/// Withdraw are the clean cases: both act only on outriders, so their absence is the whole reason.
+fn skip_reason(step: Step) -> &'static str {
+    match step {
+        Step::Havoc => "no outriders",
+        Step::Withdraw => "no outriders",
+        Step::Skirmish => "no vanguard trade",
+        Step::Cross => "no crossing available",
+        Step::Volley => "no enemy outriders",
+        Step::Raid => "no fresh arrivals",
+        Step::Assault => "no vanguard in reach",
+        Step::Advance => "the rear is screened",
+    }
+}
+
 /// Print the wave header for `(round, step)`, filling in everything since the last header: a `round N`
-/// marker when the round advanced, and a `- skipped` line for every wave nobody could act in. The same shape
-/// as the fight simulator's log, via the same `step_coord` naming.
+/// marker when the round advanced, and a `- skipped (reason)` line for every wave nobody could act in. The
+/// same shape as the fight simulator's log, via the same `step_coord` naming.
 fn log_wave_header(board: &mut Board, arena: PileId, round: usize, step: Step) {
     let target = step_idx(step);
     let (mut r, mut i) = match read_wave_mark(board, arena) {
@@ -593,7 +609,12 @@ fn log_wave_header(board: &mut Board, arena: PileId, round: usize, step: Step) {
             continue;
         }
         let (k, name) = step_coord(STEPS[i]);
-        note(board, arena, r, format!("  step {k}/8: {name} - skipped"));
+        note(
+            board,
+            arena,
+            r,
+            format!("  step {k}/8: {name} - skipped ({})", skip_reason(STEPS[i])),
+        );
         i += 1;
     }
     let (k, name) = step_coord(step);
@@ -624,7 +645,12 @@ fn log_skipped_before(board: &mut Board, arena: PileId, round: usize, step: Step
             continue;
         }
         let (k, name) = step_coord(STEPS[i]);
-        note(board, arena, r, format!("  step {k}/8: {name} - skipped"));
+        note(
+            board,
+            arena,
+            r,
+            format!("  step {k}/8: {name} - skipped ({})", skip_reason(STEPS[i])),
+        );
         wrote = true;
         i += 1;
     }
